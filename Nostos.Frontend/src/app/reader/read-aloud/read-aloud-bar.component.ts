@@ -10,6 +10,10 @@ import { READ_ALOUD_RATES } from './read-aloud.types';
 export function readAloudVoiceLabel(voice: ReadAloudServerVoice, all: readonly ReadAloudServerVoice[]): string {
   const accents = new Set(all.map((v) => v.language));
   if (accents.size < 2) return voice.name;
+  // Every voice is offered when the book does not say its language: name the
+  // language, not just the accent.
+  const languages = new Set(all.map((v) => v.language.split('-')[0]));
+  if (languages.size > 1) return `${voice.name} · ${languageName(voice.language)}`;
   const accent: Record<string, string> = { 'en-GB': 'British', 'en-US': 'American', 'pt-BR': 'Brazilian' };
   return accent[voice.language] ? `${voice.name} · ${accent[voice.language]}` : voice.name;
 }
@@ -62,6 +66,14 @@ export class ReadAloudBarComponent {
 
   formatRate(rate: number): string {
     return formatRate(rate);
+  }
+}
+
+function languageName(tag: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(tag) ?? tag;
+  } catch {
+    return tag;
   }
 }
 

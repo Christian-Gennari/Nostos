@@ -180,6 +180,14 @@
 /* The menus open in the overlay, outside this component, so these rules are
    global. A choice list keeps every label in one column: the check sits in a
    slot that unchecked items leave empty. */
+/* A book that does not say its language lists every voice: more than a phone
+   screen holds, so the menu scrolls. */
+::ng-deep .read-aloud-menu.nostos-menu {
+  max-height: min(32rem, calc(100dvh - 7rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 ::ng-deep .read-aloud-menu .nostos-menu-item:not(.is-selected) {
   padding-left: calc(0.65rem + 16px + 0.6rem);
 }

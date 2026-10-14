@@ -43,11 +43,10 @@ public sealed class ReadAloudEndpointTests
         status.Reason.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("sv")]
-    [InlineData("")]
-    public async Task Status_is_unavailable_for_a_language_no_voice_reads(string language)
+    [Fact]
+    public async Task Status_is_unavailable_for_a_language_no_voice_reads()
     {
+        const string language = "sv";
         using var factory = new LibraryEndpointFactory();
         using var host = CreateHost(factory, new FakeReadAloudProvider());
         using var client = host.CreateClient();
@@ -59,6 +58,27 @@ public sealed class ReadAloudEndpointTests
         status.DefaultVoice.Should().BeNull();
         status.Voices.Should().BeEmpty();
         status.Reason.Should().Be(ReadAloudErrorCodes.UnsupportedLanguage);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task Status_offers_every_voice_and_chooses_none_when_the_book_does_not_say_its_language(
+        string? language)
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, new FakeReadAloudProvider());
+        using var client = host.CreateClient();
+
+        var route = language is null
+            ? ReadAloudEndpoints.StatusRoute
+            : $"{ReadAloudEndpoints.StatusRoute}?language={language}";
+        var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(route);
+
+        status!.Available.Should().BeTrue();
+        status.DefaultVoice.Should().BeNull();
+        status.Voices.Should().HaveCount(KokoroVoices.All.Count);
+        status.Reason.Should().Be(ReadAloudErrorCodes.LanguageUnknown);
     }
 
     [Fact]

@@ -1353,8 +1353,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    */
   private bookLanguage(): string | null {
     const metadata = (this.epubBook as any)?.packaging?.metadata;
-    const language = typeof metadata?.language === 'string' ? metadata.language.trim() : '';
-    return language || languageTagFromCatalogue(this.book()?.language);
+    // The package's dc:language is often a name ("english") or a three-letter
+    // code, which the voices would not match as written.
+    const declared = typeof metadata?.language === 'string' ? metadata.language : null;
+    return languageTagFromCatalogue(declared) ?? languageTagFromCatalogue(this.book()?.language);
   }
 
   /**

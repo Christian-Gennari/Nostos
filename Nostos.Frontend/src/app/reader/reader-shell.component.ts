@@ -418,10 +418,18 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.readAloudVoiceChoice() === 'device' ? 'device' : (this.readAloudServerVoiceId() ?? 'device'),
   );
 
-  /** Why the natural voice is not offered for this book, in the person's terms; null when it is. */
+  /**
+   * Why the natural voice is not offered for this book, or why none is chosen
+   * for it, in the person's terms; null when there is nothing to explain.
+   */
   readonly readAloudVoiceNote = computed<string | null>(() => {
     const server = this.readAloudServer();
-    if (!server || server.available) return null;
+    if (!server) return null;
+    if (server.available) {
+      return server.reason === 'read_aloud_language_unknown' && !this.readAloudServerVoiceId()
+        ? 'This book does not say its language. Choose a natural voice that speaks it.'
+        : null;
+    }
     return readAloudUnavailableNote(server.reason ?? null, server.managed);
   });
 
@@ -476,7 +484,10 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   private applyReadAloudVoices(server: ReadAloudStatus): void {
-    const useServer = server.available && this.readAloudVoiceChoice() !== 'device';
+    // A book that does not say its language has no default voice: until one
+    // is chosen, the device reads it.
+    const useServer =
+      server.available && this.readAloudVoiceChoice() !== 'device' && this.readAloudServerVoiceId() !== null;
     if (useServer) {
       this.readAloud.setVoices(this.serverVoice, this.browserVoice, readAloudFallbackNotice);
     } else {

@@ -14,6 +14,7 @@
  * e2e/visual-evidence/read-aloud/.
  */
 import { expect, test, type Page } from '@playwright/test';
+import JSZip from 'jszip';
 import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -23,7 +24,15 @@ const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'read-aloud.epub'
 const EVIDENCE_DIR = path.join(__dirname, 'visual-evidence', 'read-aloud');
 const CAPTURE = !!process.env['NOSTOS_CAPTURE_EVIDENCE'];
 
-async function seedBook(baseUrl: string, title: string): Promise<string> {
+/** The fixture with its package's dc:language replaced, as some real EPUBs write it. */
+async function epubDeclaringLanguage(language: string): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(EPUB_BYTES);
+  const opf = await zip.file('OEBPS/content.opf')!.async('string');
+  zip.file('OEBPS/content.opf', opf.replace(/<dc:language>[^<]*</, `<dc:language>${language}<`));
+  return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
+}
+
+async function seedBook(baseUrl: string, title: string, epub: Buffer = EPUB_BYTES): Promise<string> {
   const created = await apiPost<any>(baseUrl, '/api/books/', {
     type: 'ebook',
     title,
@@ -33,7 +42,7 @@ async function seedBook(baseUrl: string, title: string): Promise<string> {
   if (!bookId) throw new Error(`No book id in create response: ${JSON.stringify(created)}`);
 
   const form = new FormData();
-  form.append('file', new Blob([EPUB_BYTES], { type: 'application/epub+zip' }), 'read-aloud.epub');
+  form.append('file', new Blob([new Uint8Array(epub)], { type: 'application/epub+zip' }), 'read-aloud.epub');
   const response = await fetch(`${baseUrl}/api/books/${bookId}/file`, { method: 'POST', body: form });
   if (!response.ok) throw new Error(`file upload -> ${response.status}: ${await response.text()}`);
   return bookId as string;
@@ -123,11 +132,11 @@ async function openViewSettings(page: Page): Promise<void> {
   }).toPass({ timeout: 20_000 });
 }
 
-async function openBook(page: Page, theme: 'light' | 'dark', run: string): Promise<void> {
+async function openBook(page: Page, theme: 'light' | 'dark', run: string, epub?: Buffer): Promise<void> {
   const { baseUrl } = loadFixture();
   await installSpeechStandIn(page, theme);
   void run;
-  const bookId = await seedBook(baseUrl, 'Pride and Prejudice');
+  const bookId = await seedBook(baseUrl, 'Pride and Prejudice', epub);
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.frameLocator('#epub-viewer iframe').first().locator('p').first().waitFor({ timeout: 45_000 });
   await revealChrome(page);
@@ -400,6 +409,64 @@ test.describe('read aloud (EPUB), server voice', () => {
       'Natural voices are not included in your plan.',
     );
     await capture(page, 'read-aloud-voice-menu-unavailable-1280-light');
+  });
+
+  test('a book that writes its language as a word still gets the natural voice', async ({ page }) => {
+    const asked: Array<string | null> = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/read-aloud/status')) {
+        asked.push(new URL(request.url()).searchParams.get('language'));
+      }
+    });
+    const calls = await stubServerVoice(page);
+    await openBook(page, 'light', `${run}-english`, await epubDeclaringLanguage('english'));
+    await startReading(page);
+
+    await expect.poll(() => calls.length).toBeGreaterThan(0);
+    expect(asked).toEqual(['en']);
+    expect(calls[0]).toEqual({ text: 'Chapter 1', voice: 'bf_emma', language: 'en' });
+  });
+
+  test('a book that does not say its language offers every voice and reads with the chosen one', async ({
+    page,
+  }) => {
+    const everyVoice = [...SERVER_VOICES, { id: 'if_sara', name: 'Sara', language: 'it' }];
+    const asked: Array<string | null> = [];
+    const calls = await stubServerVoice(page);
+    await page.route('**/api/read-aloud/status*', (route) => {
+      asked.push(new URL(route.request().url()).searchParams.get('language'));
+      return route.fulfill({
+        json: {
+          available: true,
+          managed: true,
+          defaultVoice: null,
+          voices: everyVoice,
+          maxCharacters: 1200,
+          reason: 'read_aloud_language_unknown',
+        },
+      });
+    });
+    await openBook(page, 'light', `${run}-undetermined`, await epubDeclaringLanguage('und'));
+    await setSpeechDelay(page, 60_000);
+    await startReading(page);
+
+    // Nothing is guessed: the device reads until a voice is chosen.
+    await expect.poll(async () => (await spoken(page)).length).toBeGreaterThan(0);
+    expect(asked).toEqual(['']);
+    expect(calls).toEqual([]);
+
+    const voice = page.getByTestId('read-aloud-voice');
+    await expect(voice).toContainText('Device');
+    await voice.click();
+    const menu = page.getByTestId('read-aloud-voice-menu');
+    await expect(page.getByTestId('read-aloud-voice-note')).toHaveText(
+      'This book does not say its language. Choose a natural voice that speaks it.',
+    );
+    await capture(page, 'read-aloud-voice-menu-language-unknown-1280-light');
+
+    await menu.getByRole('menuitem', { name: 'Sara · Italian' }).click();
+    await expect(voice).toContainText('Sara');
+    await expect.poll(() => calls.at(-1)?.voice).toBe('if_sara');
   });
 
   test('an exhausted allowance falls back to the device voice and says why', async ({ page }) => {

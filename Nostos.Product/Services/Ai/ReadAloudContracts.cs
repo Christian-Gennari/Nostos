@@ -28,6 +28,12 @@ public static class ReadAloudErrorCodes
     /// <summary>The server voice has nothing for the book's language.</summary>
     public const string UnsupportedLanguage = "read_aloud_unsupported_language";
 
+    /// <summary>
+    /// Status only: the book does not say its language, so every voice is
+    /// listed and none is chosen for the reader.
+    /// </summary>
+    public const string LanguageUnknown = "read_aloud_language_unknown";
+
     /// <summary>The speech server rejected the configured credential.</summary>
     public const string Permission = "read_aloud_permission_denied";
 
