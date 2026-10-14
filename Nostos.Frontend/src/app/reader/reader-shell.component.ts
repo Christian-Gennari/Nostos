@@ -459,6 +459,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!server) return;
     const wasActive = this.readAloud.active();
     if (wasActive) this.readAloud.stop();
+    this.serverVoice.forget();
     this.applyReadAloudVoices(server);
     if (wasActive) {
       this.serverVoice.prime();
