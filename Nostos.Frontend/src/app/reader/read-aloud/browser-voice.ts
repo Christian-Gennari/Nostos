@@ -135,6 +135,8 @@ export class BrowserVoice implements ReadAloudVoice {
 
       try {
         synth.speak(utterance);
+        // The device voice starts at once; there is nothing to wait for.
+        options.onStart?.();
       } catch {
         finish('failed');
       }

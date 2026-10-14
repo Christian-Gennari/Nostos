@@ -55,12 +55,21 @@ class FakeVoice implements ReadAloudVoice {
   spoken: Array<{ text: string; rate: number }> = [];
   prepared: string[][] = [];
   failAll = false;
+  failure: string | null = null;
+  primed = 0;
   private settle: ((outcome: ReadAloudOutcome) => void) | null = null;
 
   constructor(readonly id: string) {}
 
+  private onStart: (() => void) | undefined;
+
+  started(): void {
+    this.onStart?.();
+  }
+
   speak(text: string, options: ReadAloudSpeakOptions): Promise<ReadAloudOutcome> {
     this.spoken.push({ text, rate: options.rate });
+    this.onStart = options.onStart;
     if (this.failAll) return Promise.resolve('failed');
     return new Promise((resolve) => {
       this.settle = resolve;
@@ -69,6 +78,14 @@ class FakeVoice implements ReadAloudVoice {
 
   prepare(texts: string[]): void {
     this.prepared.push(texts);
+  }
+
+  prime(): void {
+    this.primed++;
+  }
+
+  lastFailure(): string | null {
+    return this.failure;
   }
 
   cancel(): void {
@@ -131,10 +148,36 @@ describe('ReadAloudController', () => {
     expect(source.ended).toBe(1);
   });
 
+  it('primes the voice inside the tap that starts or resumes reading', async () => {
+    void controller.start();
+    expect(voice.primed).toBe(1);
+    await settled();
+
+    controller.pause();
+    controller.resume();
+    expect(voice.primed).toBe(2);
+  });
+
   it('tells the voice what comes next so it can get ahead', async () => {
     await controller.start();
     await settled();
     expect(voice.prepared[0]).toEqual(['Two.', 'Three.']);
+  });
+
+  it('shows it is waiting until the voice actually starts', async () => {
+    await controller.start();
+    await settled();
+    expect(controller.buffering()).toBe(true);
+
+    voice.started();
+    expect(controller.buffering()).toBe(false);
+
+    voice.finish();
+    await settled();
+    expect(controller.buffering()).toBe(true);
+
+    controller.pause();
+    expect(controller.buffering()).toBe(false);
   });
 
   it('pauses on the current sentence and says it again on resume', async () => {
@@ -245,7 +288,8 @@ describe('ReadAloudController', () => {
   it('falls back to the second voice, with a notice, when the first cannot speak', async () => {
     const server = new FakeVoice('server');
     server.failAll = true;
-    controller.setVoices(server, voice, 'Reading with this device’s voice.');
+    server.failure = 'ai_usage_limit_reached';
+    controller.setVoices(server, voice, (code) => `Reading with this device’s voice (${code}).`);
 
     await controller.start();
     await settled();
@@ -253,7 +297,7 @@ describe('ReadAloudController', () => {
     expect(server.texts).toEqual(['One.']);
     expect(voice.texts).toEqual(['One.']);
     expect(controller.activeVoiceId()).toBe('device');
-    expect(controller.notice()).toBe('Reading with this device’s voice.');
+    expect(controller.notice()).toBe('Reading with this device’s voice (ai_usage_limit_reached).');
     expect(controller.status()).toBe('playing');
   });
 

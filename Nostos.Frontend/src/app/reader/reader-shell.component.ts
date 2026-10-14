@@ -73,6 +73,38 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
 import { BrowserVoice } from './read-aloud/browser-voice';
 import { ReadAloudBarComponent } from './read-aloud/read-aloud-bar.component';
 import { ReadAloudController } from './read-aloud/read-aloud-controller';
+import { ServerVoice } from './read-aloud/server-voice';
+import {
+  READ_ALOUD_UNAVAILABLE,
+  ReadAloudService,
+  ReadAloudStatus,
+} from '../core/services/read-aloud.service';
+import { firstValueFrom } from 'rxjs';
+
+const READ_ALOUD_VOICE_KEY = 'nostos.readAloud.voice';
+
+function readStoredReadAloudVoice(): string | null {
+  try {
+    return localStorage.getItem(READ_ALOUD_VOICE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Why the server voice gave way to the device's, in the person's terms. */
+function readAloudFallbackNotice(code: string | null): string {
+  switch (code) {
+    case 'ai_usage_limit_reached':
+      return 'Your AI allowance is used up. Reading with this device’s voice.';
+    case 'ai_access_denied':
+    case 'read_aloud_access_denied':
+      return 'Your plan does not include the natural voice. Reading with this device’s voice.';
+    case 'read_aloud_unsupported_language':
+      return 'The natural voice cannot read this language. Reading with this device’s voice.';
+    default:
+      return 'The natural voice is not available right now. Reading with this device’s voice.';
+  }
+}
 
 @Component({
   selector: 'app-reader-shell',
@@ -104,9 +136,17 @@ export class ReaderShell implements OnInit, OnDestroy {
     effect(() => {
       const source = this.activeReader()?.readAloud ?? null;
       untracked(() => {
+        this.readAloudServer.set(null);
         this.readAloud.setVoices(this.browserVoice);
         this.readAloud.attach(source);
       });
+    });
+
+    // While a book is read aloud, a headset's or lock screen's buttons drive it.
+    effect(() => {
+      const active = this.readAloud.active();
+      const book = this.book();
+      untracked(() => this.syncReadAloudMediaSession(active, book?.title, book?.author));
     });
 
     effect(() => {
@@ -323,9 +363,117 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly showPanelReadAloud = computed(() => this.readAloudOffered() && this.veryNarrow());
   readonly showHeaderReadAloud = computed(() => this.readAloudOffered() && !this.veryNarrow());
 
-  toggleReadAloud(): void {
-    if (this.readAloud.active()) this.readAloud.stop();
-    else void this.readAloud.start();
+  // The server voice, when this host has one. It is asked for per book
+  // language; null means not asked yet.
+  private readonly readAloudApi = inject(ReadAloudService);
+  readonly readAloudServer = signal<ReadAloudStatus | null>(null);
+  private readAloudServerRequest: Promise<ReadAloudStatus> | null = null;
+  private readonly serverVoice = new ServerVoice((text) =>
+    this.readAloudApi.speech(
+      text,
+      this.readAloudServerVoiceId(),
+      this.activeReader()?.readAloud?.language() ?? null,
+    ),
+  );
+
+  /** 'device', or the id of a server voice. Remembered on this device. */
+  readonly readAloudVoiceChoice = signal<string | null>(readStoredReadAloudVoice());
+  readonly readAloudServerVoices = computed(() => {
+    const server = this.readAloudServer();
+    return server?.available ? server.voices : [];
+  });
+  /** The server voice in use: the remembered one when this book's language has it, else the default. */
+  readonly readAloudServerVoiceId = computed<string | null>(() => {
+    const server = this.readAloudServer();
+    if (!server?.available) return null;
+    const choice = this.readAloudVoiceChoice();
+    return server.voices.some((voice) => voice.id === choice) ? choice : server.defaultVoice;
+  });
+  /** What the voice row shows as selected. */
+  readonly readAloudSelectedVoice = computed(() =>
+    this.readAloudVoiceChoice() === 'device' ? 'device' : (this.readAloudServerVoiceId() ?? 'device'),
+  );
+
+  async toggleReadAloud(): Promise<void> {
+    if (this.readAloud.active()) {
+      this.readAloud.stop();
+      return;
+    }
+
+    // Inside the tap: a phone only lets audio start from one, and asking the
+    // server which voices it has would come too late.
+    this.serverVoice.prime();
+    this.applyReadAloudVoices(await this.loadReadAloudServer());
+    await this.readAloud.start();
+  }
+
+  setReadAloudVoice(choice: string): void {
+    this.readAloudVoiceChoice.set(choice);
+    try {
+      localStorage.setItem(READ_ALOUD_VOICE_KEY, choice);
+    } catch {
+      // The choice still applies for this session.
+    }
+
+    const server = this.readAloudServer();
+    if (!server) return;
+    const wasActive = this.readAloud.active();
+    if (wasActive) this.readAloud.stop();
+    this.applyReadAloudVoices(server);
+    if (wasActive) {
+      this.serverVoice.prime();
+      void this.readAloud.start();
+    }
+  }
+
+  /** Asks the server once per open book which voices it has for the book's language. */
+  private loadReadAloudServer(): Promise<ReadAloudStatus> {
+    const known = this.readAloudServer();
+    if (known) return Promise.resolve(known);
+
+    this.readAloudServerRequest ??= firstValueFrom(
+      this.readAloudApi.status(this.activeReader()?.readAloud?.language() ?? null),
+    )
+      .catch(() => READ_ALOUD_UNAVAILABLE)
+      .then((status) => {
+        this.readAloudServerRequest = null;
+        this.readAloudServer.set(status);
+        return status;
+      });
+    return this.readAloudServerRequest;
+  }
+
+  private applyReadAloudVoices(server: ReadAloudStatus): void {
+    const useServer = server.available && this.readAloudVoiceChoice() !== 'device';
+    if (useServer) {
+      this.readAloud.setVoices(this.serverVoice, this.browserVoice, readAloudFallbackNotice);
+    } else {
+      this.readAloud.setVoices(this.browserVoice);
+    }
+  }
+
+  private syncReadAloudMediaSession(active: boolean, title?: string, author?: string): void {
+    const session = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
+    if (!session) return;
+
+    const handlers: Array<[MediaSessionAction, (() => void) | null]> = [
+      ['play', active ? () => this.readAloud.resume() : null],
+      ['pause', active ? () => this.readAloud.pause() : null],
+      ['nexttrack', active ? () => this.readAloud.next() : null],
+      ['previoustrack', active ? () => this.readAloud.previous() : null],
+      ['stop', active ? () => this.readAloud.stop() : null],
+    ];
+    for (const [action, handler] of handlers) {
+      try {
+        session.setActionHandler(action, handler);
+      } catch {
+        // An action this browser does not know.
+      }
+    }
+
+    if (active && typeof MediaMetadata === 'function') {
+      session.metadata = new MediaMetadata({ title: title ?? 'Nostos', artist: author ?? '' });
+    }
   }
 
   /**
@@ -434,6 +582,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.tocOpen.set(false);
       this.notesOpen.set(false);
       this.typoOpen.set(true);
+      if (this.readAloudOffered()) void this.loadReadAloudServer();
       this.focusOverlay('.typo-panel button');
       return;
     }

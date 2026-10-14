@@ -1,0 +1,34 @@
+<div class="setting-row" data-testid="read-aloud-voice-row">
+  <div class="setting-label">
+    <span class="label-text">Natural voice</span>
+    <span class="label-desc">
+      Books are read aloud with each device’s own voice. Connect a speech server to read with a
+      natural voice instead, the same one on every device.
+    </span>
+  </div>
+  @if (connected() !== null) {
+    <span class="read-aloud-state" [class.is-off]="!connected()" data-testid="read-aloud-connected">
+      <nostos-icon [name]="connected() ? 'check-circle' : 'info'" [size]="15"></nostos-icon>
+      {{ connected() ? 'Connected' : 'Not connected' }}
+    </span>
+  }
+</div>
+
+@if (connected() === false) {
+  <div appNotice class="read-aloud-notice" role="status" data-testid="read-aloud-setup">
+    <p>Whoever runs this server sets it up once:</p>
+    <ul>
+      <li>
+        Run a speech server that offers the OpenAI speech route. The guide uses Kokoro, an open
+        model that runs on your own machine and sends no text anywhere.
+      </li>
+      <li>
+        Set <code>ReadAloud__Enabled=true</code> and <code>ReadAloud__BaseUrl</code> to its address,
+        for example <code>http://kokoro:8880</code>, then restart Nostos.
+      </li>
+    </ul>
+    <p>
+      <a [href]="guideUrl" target="_blank" rel="noopener">Read the setup guide</a>
+    </p>
+  </div>
+}

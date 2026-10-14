@@ -463,6 +463,7 @@ public static class NostosProductComposition
         routes.MapTopicsEndpoints();
         routes.MapWritingsEndpoints();
         routes.MapTranscriptionEndpoints();
+        routes.MapReadAloudEndpoints();
         routes.MapAssistantEndpoints();
         routes.MapAiProviderSettingsEndpoints();
         routes.MapAssistantSettingsEndpoints();

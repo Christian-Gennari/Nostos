@@ -36,6 +36,8 @@ export class ReadAloudController implements OnDestroy {
   readonly rate = signal(readStoredRate());
   /** A short message for the person: why the voice changed, or why it stopped. */
   readonly notice = signal<string | null>(null);
+  /** True while a sentence has been asked for and no sound has started yet. */
+  readonly buffering = signal(false);
   /** Which voice is speaking, by its id. */
   readonly activeVoiceId = signal<string | null>(null);
 
@@ -45,7 +47,8 @@ export class ReadAloudController implements OnDestroy {
   private readonly source = signal<ReaderReadAloud | null>(null);
   private voice: ReadAloudVoice | null = null;
   private fallback: ReadAloudVoice | null = null;
-  private fallbackNotice = 'Reading with this device’s voice.';
+  private fallbackNotice: (code: string | null) => string = () =>
+    'Reading with this device’s voice.';
   private speaking: ReadAloudVoice | null = null;
   private current: ReadAloudSegment | null = null;
   private generation = 0;
@@ -75,12 +78,13 @@ export class ReadAloudController implements OnDestroy {
 
   /**
    * `voice` is tried first. When it cannot speak a sentence, `fallback` takes
-   * over for the rest of the session and `fallbackNotice` says why.
+   * over for the rest of the session and `fallbackNotice` says why, given the
+   * code the first voice failed with.
    */
   setVoices(
     voice: ReadAloudVoice | null,
     fallback: ReadAloudVoice | null = null,
-    fallbackNotice?: string,
+    fallbackNotice?: (code: string | null) => string,
   ): void {
     this.voice = voice;
     this.fallback = fallback && fallback !== voice ? fallback : null;
@@ -102,6 +106,7 @@ export class ReadAloudController implements OnDestroy {
     const generation = ++this.generation;
     this.notice.set(null);
     this.speaking = this.voice;
+    this.voice.prime?.();
     this.activeVoiceId.set(this.voice.id);
     this.status.set('starting');
 
@@ -119,12 +124,14 @@ export class ReadAloudController implements OnDestroy {
     if (!this.playing()) return;
     this.generation++;
     this.speaking?.cancel();
+    this.buffering.set(false);
     this.status.set('paused');
     this.releaseWakeLock();
   }
 
   resume(): void {
     if (this.status() !== 'paused' || !this.current) return;
+    this.speaking?.prime?.();
     void this.run(this.current, ++this.generation);
   }
 
@@ -134,6 +141,7 @@ export class ReadAloudController implements OnDestroy {
     this.speaking?.cancel();
     this.source()?.end();
     this.current = null;
+    this.buffering.set(false);
     this.status.set('idle');
     this.releaseWakeLock();
   }
@@ -228,17 +236,28 @@ export class ReadAloudController implements OnDestroy {
       if (!voice) break;
 
       const options = { language: source.language(), rate: this.rate() };
-      voice.prepare?.(source.upcoming(3), options);
+      this.buffering.set(true);
+      // The sentence to say now is asked for first. A speech server that
+      // renders one request at a time would otherwise make it wait behind the
+      // ones that are only being fetched ahead.
+      const speaking = voice.speak(segment.text, {
+        ...options,
+        onStart: () => {
+          if (generation === this.generation) this.buffering.set(false);
+        },
+      });
+      voice.prepare?.(source.upcoming(2), options);
 
-      const outcome = await voice.speak(segment.text, options);
+      const outcome = await speaking;
       if (generation !== this.generation) return;
+      this.buffering.set(false);
       if (outcome === 'cancelled') return;
 
       if (outcome === 'failed') {
         if (this.fallback && voice !== this.fallback) {
           this.speaking = this.fallback;
           this.activeVoiceId.set(this.fallback.id);
-          this.notice.set(this.fallbackNotice);
+          this.notice.set(this.fallbackNotice(voice.lastFailure?.() ?? null));
           continue;
         }
         this.finish('Read aloud is not available on this device.');
@@ -256,6 +275,7 @@ export class ReadAloudController implements OnDestroy {
     this.generation++;
     this.source()?.end();
     this.current = null;
+    this.buffering.set(false);
     this.status.set('idle');
     if (notice) this.notice.set(notice);
     this.releaseWakeLock();

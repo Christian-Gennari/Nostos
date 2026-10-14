@@ -191,6 +191,21 @@ builder.Services.AddSingleton<NineRouterSttProvider>();
 builder.Services.AddSingleton<ISTtProvider>(
     sp => sp.GetRequiredService<NineRouterSttProvider>());
 
+// --- READ ALOUD: the server voice ---
+// Off until the owner connects a speech server (ReadAloud:Enabled + BaseUrl).
+// Registered either way, so the status endpoint can say "not configured"
+// rather than "this host has no such thing".
+var readAloudOptions =
+    builder.Configuration.GetSection(ReadAloudOptions.SectionName).Get<ReadAloudOptions>()
+    ?? new ReadAloudOptions();
+builder.Services.AddSingleton(readAloudOptions);
+builder.Services.AddHttpClient(OpenAiCompatibleReadAloudProvider.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(1, readAloudOptions.RequestTimeoutSeconds));
+});
+builder.Services.AddSingleton<ReadAloudAudioCache>();
+builder.Services.AddSingleton<IReadAloudProvider, OpenAiCompatibleReadAloudProvider>();
+
 // Alignment transcription is a separate concrete service. It resolves
 // effective settings per call and never changes the voice STT registration.
 builder.Services.AddHttpClient(
