@@ -8,6 +8,7 @@
 import { expect, test, type Route } from '@playwright/test';
 
 import { loadFixture } from './support/fixture';
+import { enableAssistant } from './support/assistant';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -22,6 +23,7 @@ test('desktop assistant expands into a focus workspace without losing the draft'
     });
   });
 
+  await enableAssistant(page);
   await page.goto(`${fixture.baseUrl}/library`, { waitUntil: 'domcontentloaded' });
 
   await page.locator('[data-testid="assistant-trigger"]').click();

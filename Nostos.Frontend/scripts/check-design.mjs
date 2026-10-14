@@ -1013,8 +1013,9 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
       'rail-foot-action', 'mobile-nav-header', 'topic-action', 'merge-picker-close',
       'merge-target', 'merge-picker-cancel', 'merge-picker-confirm', 'related-chip', 'related-more'])],
   ['src/app/book-detail/book-detail.component.html',
-    // 'edit-menu-item' is gone from this ledger: the Edit menu is `nostos-menu`.
-    new Set(['btn-back', 'cover-overlay-btn', 'status-chip', 'status-dropdown-item',
+    // Gone from this ledger: 'edit-menu-item' (the Edit menu is `nostos-menu`)
+    // and 'status-chip' / 'status-dropdown-item' (the status is `app-dropdown`).
+    new Set(['btn-back', 'cover-overlay-btn',
       'expand-btn', 'edition-select-card', 'edition-section-action'])],
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
     new Set(['manage-member-action', 'manage-link-candidate'])],

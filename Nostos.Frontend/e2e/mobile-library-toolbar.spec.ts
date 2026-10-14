@@ -33,7 +33,7 @@ interface Box {
   height: number;
 }
 
-test('mobile header controls share the original compact rhythm', async ({ page }) => {
+test('mobile header controls share one height and one rhythm', async ({ page }) => {
   await openLibrary(page);
 
   const boxes = await page.evaluate(() => {
@@ -67,15 +67,26 @@ test('mobile header controls share the original compact rhythm', async ({ page }
   expect(boxes.sort!.x - (boxes.collections!.x + boxes.collections!.width)).toBeGreaterThanOrEqual(7);
   expect(boxes.sort!.x - (boxes.collections!.x + boxes.collections!.width)).toBeLessThanOrEqual(9);
 
-  const firstRow = [boxes.collections!, boxes.sort!, boxes.view!, boxes.add!];
+  // One height for the row's buttons and dropdown, and it is the touch rung:
+  // 44px. (38px until the dropdown took its touch size; see
+  // library.component.css.) The view toggle is the exception by design: its
+  // options are 44px, so its track is 50px, and it sits centred on the row.
+  const firstRow = [boxes.collections!, boxes.sort!, boxes.add!];
   for (const box of firstRow) {
-    expect(Math.abs(box.height - 38), `first-row height was ${box.height}px`).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(box.height - 44), `first-row height was ${box.height}px`).toBeLessThanOrEqual(0.5);
     expect(Math.abs(box.y - firstRow[0].y), `first-row y was ${box.y}px`).toBeLessThanOrEqual(1);
   }
-
-  expect(Math.abs(boxes.search!.height - 38), `search height was ${boxes.search!.height}px`).toBeLessThanOrEqual(0.5);
+  const centre = (box: Box) => box.y + box.height / 2;
+  expect(boxes.view!.height, 'the view toggle keeps 44px options in its track').toBeGreaterThanOrEqual(44);
   expect(
-    Math.abs(boxes.search!.y - (firstRow[0].y + firstRow[0].height + 10)),
+    Math.abs(centre(boxes.view!) - centre(firstRow[0])),
+    'the view toggle is centred on the row',
+  ).toBeLessThanOrEqual(1);
+
+  expect(Math.abs(boxes.search!.height - 44), `search height was ${boxes.search!.height}px`).toBeLessThanOrEqual(0.5);
+  expect(
+    // Below the row's tallest control, which is the view toggle.
+    Math.abs(boxes.search!.y - (boxes.view!.y + boxes.view!.height + 10)),
     'search should sit exactly one toolbar gap below the first row',
   ).toBeLessThanOrEqual(1);
 
@@ -90,7 +101,7 @@ test('mobile sidebar opener keeps a 44px hit area and restores focus after filte
 
   const hitArea = await toggle.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    // Three pixels outside the 38px visual box must still hit the opener.
+    // Just outside the visible box must still hit the opener.
     const target = document.elementFromPoint(r.left - 2, r.top + r.height / 2);
     return el === target || el.contains(target);
   });

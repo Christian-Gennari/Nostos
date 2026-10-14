@@ -33,7 +33,8 @@ test.describe('issue 357 — Add Book canonical form controls', () => {
       try {
         await page.goto(`${fixture.baseUrl}/library`, { waitUntil: 'domcontentloaded' });
         await page.locator('button').filter({ hasText: 'Add Book' }).first().click();
-        await page.locator('.add-intent-choice').filter({ hasText: 'Add by hand' }).click();
+        // The dialog opens on the catalogue search; the form is behind "Add manually".
+        await page.getByRole('button', { name: 'Add manually' }).click();
 
         const form = page.locator('#add-book-form');
         await expect(form).toBeVisible();
@@ -55,6 +56,9 @@ test.describe('issue 357 — Add Book canonical form controls', () => {
           await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'dark');
         }
 
+        // Most fields now sit behind the "more details" disclosure; open it so
+        // the whole form is measured, as it was when every field was on show.
+        await form.locator('details.metadata-disclosure > summary').click();
         const visibleControls = form.locator('.nostos-form-control:visible');
         expect(await visibleControls.count()).toBeGreaterThanOrEqual(10);
 
@@ -75,7 +79,9 @@ test.describe('issue 357 — Add Book canonical form controls', () => {
         );
 
         expect(geometry.every((g) => g.width > 0 && g.right <= g.viewport + 1)).toBe(true);
-        const floor = tc.width < 768 ? 44 : 39;
+        // Desktop: the form uses the compact field rung, 36px since #921 (it was
+        // 40px when this was written). Touch still grows every field to 44px.
+        const floor = tc.width < 768 ? 44 : 36;
         console.log(`[issue-357:${tc.name}] geometry`, JSON.stringify(geometry));
         expect(geometry.every((g) => g.height >= floor - 0.1)).toBe(true);
         expect(new Set(geometry.map((g) => g.borderRadius)).size).toBe(1);

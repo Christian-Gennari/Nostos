@@ -30,6 +30,7 @@
 import { expect, test, type Route } from '@playwright/test';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { enableAssistant } from './support/assistant';
 
 test.describe.configure({ mode: 'serial' });
 test.use({ serviceWorkers: 'block' });
@@ -65,7 +66,7 @@ test('a typed follow-up continues the conversation and names book and page', asy
   });
 
   const turns: any[] = [];
-  await page.route('**/api/assistant/turn', async (route: Route) => {
+  await page.route('**/api/assistant/turn/stream', async (route: Route) => {
     turns.push(route.request().postDataJSON());
     const firstTurn = turns.length === 1;
 
@@ -77,7 +78,8 @@ test('a typed follow-up continues the conversation and names book and page', asy
           ? {
               reply: 'What page are you on?',
               acknowledgement: null,
-              anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' },
+              // The app only shows an anchor prompt that carries a continuation id.
+              anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'continuation-1' },
               suggestions: [],
               pendingPlan: null,
               capturedNoteId: null,
@@ -94,6 +96,7 @@ test('a typed follow-up continues the conversation and names book and page', asy
     });
   });
 
+  await enableAssistant(page);
   await page.goto(`${fixture.baseUrl}/library/${bookId}`);
 
   // The ambient book must be resolved before the first message: a physical book
@@ -124,21 +127,21 @@ test('a typed follow-up continues the conversation and names book and page', asy
   await expect(prompt).toContainText('What page are you on?');
 
   // 2. The answer continues the same capture (as a voice transcript would).
-  // The service resends the original thought with the newly answered anchor.
   await composer.fill('Page 247.');
   await composer.press('Enter');
 
   await expect.poll(() => turns.length).toBe(2);
-  expect(turns[1].message).toBe(THOUGHT);
+  // The answer is sent as its own message, tied to the question by the
+  // continuation id; the server joins it to the original thought.
+  expect(turns[1].message).toBe('Page 247.');
+  expect(turns[1].continuationId).toBe('continuation-1');
   expect(turns[1].context.bookTitle).toBe(BOOK_TITLE);
-  expect(turns[1].context.anchor).toEqual({
-    kind: 'physical_page',
-    value: '247',
-    verified: false,
-  });
+  // The page is no longer parsed in the browser: the anchor stays empty and
+  // the server resolves "Page 247." against the pending question.
+  expect(turns[1].context.anchor).toBeNull();
 
   // 4. The acknowledgement entry names the book and the page.
   const transcript = page.locator('[data-testid="assistant-transcript"]');
-  await expect(transcript).toContainText(`${BOOK_TITLE} · p. 247`);
+  await expect(transcript).toContainText(`Saved to ${BOOK_TITLE}.`);
   await expect(transcript).toContainText('Saved');
 });
