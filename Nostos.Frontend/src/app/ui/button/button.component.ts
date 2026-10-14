@@ -4,7 +4,12 @@
  */
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+/**
+ * `overlay` is the frosted control for buttons that sit ON artwork (the book
+ * cover's hover actions). It shares its material with appIconButton's overlay
+ * disc, so a text action and an icon action over one image read as one family.
+ */
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'overlay';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /**
@@ -29,6 +34,7 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
     '[class.nostos-button--secondary]': "variant() === 'secondary'",
     '[class.nostos-button--ghost]': "variant() === 'ghost'",
     '[class.nostos-button--danger]': "variant() === 'danger'",
+    '[class.nostos-button--overlay]': "variant() === 'overlay'",
     '[class.nostos-button--sm]': "size() === 'sm'",
     '[class.nostos-button--lg]': "size() === 'lg'",
     '[attr.aria-busy]': "busy() ? 'true' : null",
@@ -119,6 +125,23 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
 
       :host(.nostos-button--danger:hover:not(:disabled)) {
         background: var(--color-danger-bg);
+      }
+
+      /* Same material as appIconButton's overlay disc: --cover-disc-* tokens,
+         a frosted ground and a pill shape, because it floats on an image rather
+         than sitting in a row of page actions. */
+      :host(.nostos-button--overlay) {
+        background: var(--cover-disc-bg);
+        color: var(--color-text-main);
+        border-color: var(--cover-disc-border);
+        border-radius: var(--radius-pill);
+        box-shadow: var(--cover-disc-shadow);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+      }
+
+      :host(.nostos-button--overlay:hover:not(:disabled)) {
+        background: var(--bg-surface);
       }
 
       :host(:active:not(:disabled)) {

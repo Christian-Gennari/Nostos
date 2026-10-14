@@ -164,7 +164,6 @@ describe('BookDetail reset progress', () => {
     // remain product-owned rather than being flattened into generic primitives.
     expect(statusChipButton()!.classList.contains('nostos-chip')).toBe(false);
     expect(fixture.nativeElement.querySelector('.btn-back')?.classList.contains('nostos-button')).toBe(false);
-    expect(fixture.nativeElement.querySelector('.cover-overlay-btn')?.classList.contains('nostos-button')).toBe(false);
   });
 
   it('surfaces a timed-out replacement upload instead of failing silently', async () => {

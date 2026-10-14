@@ -10,6 +10,12 @@ import type { NostosIconName, NostosIconWeight } from '../icon/nostos-icons';
 export type IconButtonSize = 'xxs' | 'xs' | 'md';
 /** Tone affects the hover ink only; the fill stays neutral. */
 export type IconButtonTone = 'default' | 'danger';
+/**
+ * What the button sits on. `plain` is the app's chrome; `overlay` is a frosted
+ * disc for buttons that sit ON artwork (cover corners, cover hover actions),
+ * where a transparent button would vanish into the image.
+ */
+export type IconButtonSurface = 'plain' | 'overlay';
 
 /**
  * A single icon button, replacing 30 hand-built copies across 5 templates.
@@ -111,6 +117,7 @@ export type IconButtonTone = 'default' | 'danger';
     '[class.icon-btn--danger]': "tone() === 'danger'",
     '[class.icon-btn--xxs]': "size() === 'xxs'",
     '[class.icon-btn--xs]': "size() === 'xs'",
+    '[class.icon-btn--overlay]': "surface() === 'overlay'",
     '[attr.aria-pressed]': 'pressedAttr()',
   },
   styles: [
@@ -133,6 +140,39 @@ export type IconButtonTone = 'default' | 'danger';
       :host(.icon-btn--xs) {
         width: var(--control-h-xs);
         height: var(--control-h-xs);
+      }
+
+      /* OVERLAY: one material for every button that sits on cover artwork. It
+         used to be three hand-built discs on the Library card alone (32px
+         frosted corners, 36px solid centre discs, each with its own hover), so a
+         card showed two shapes and two inks. The disc owns its shape here, so the
+         radius rule above does not apply to it. Selected inks (the favourite's
+         red, the finished tick's green) stay with the surface. */
+      :host(.icon-btn--overlay) {
+        border-radius: var(--radius-round);
+        background: var(--cover-disc-bg);
+        border: 1px solid var(--cover-disc-border);
+        color: var(--cover-disc-ink);
+        box-shadow: var(--cover-disc-shadow);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        transition:
+          background-color 0.15s ease,
+          color 0.15s ease,
+          opacity 0.2s ease,
+          transform 0.1s ease;
+      }
+      :host(.icon-btn--overlay:hover:not(:disabled)) {
+        background: var(--bg-surface);
+        color: var(--color-text-main);
+      }
+      /* Pressed solidifies the ground only; its ink is the surface's (red heart,
+         green tick), so this rule must not set a colour. */
+      :host(.icon-btn--overlay[aria-pressed='true']) {
+        background: var(--bg-surface);
+      }
+      :host(.icon-btn--overlay.icon-btn--danger:hover:not(:disabled)) {
+        color: var(--color-danger);
       }
 
       /* The host is the native button, so :active arrives on pointer-down with no
@@ -173,6 +213,9 @@ export class IconButtonComponent {
 
   /** `danger` tints the hover ink; the fill stays neutral by design. */
   readonly tone = input<IconButtonTone>('default');
+
+  /** `overlay` = frosted round disc for buttons that sit on cover artwork. */
+  readonly surface = input<IconButtonSurface>('plain');
 
   /**
    * Tri-state `aria-pressed`. `null` (the default) leaves the attribute OFF

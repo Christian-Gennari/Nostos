@@ -54,6 +54,8 @@
 import pauseFill from '@phosphor-icons/core/fill/pause-fill.svg';
 import playFill from '@phosphor-icons/core/fill/play-fill.svg';
 import starFill from '@phosphor-icons/core/fill/star-fill.svg';
+import heartFill from '@phosphor-icons/core/fill/heart-fill.svg';
+import checkCircleFill from '@phosphor-icons/core/fill/check-circle-fill.svg';
 import archiveLight from '@phosphor-icons/core/light/archive-light.svg';
 import bookLight from '@phosphor-icons/core/light/book-light.svg';
 import bookOpenLight from '@phosphor-icons/core/light/book-open-light.svg';
@@ -226,7 +228,7 @@ export const NOSTOS_ICONS = {
   'caret-right': { regular: caretRight, },
   'caret-up': { regular: caretUp, },
   'check': { regular: check, },
-  'check-circle': { regular: checkCircle, light: checkCircleLight, },
+  'check-circle': { regular: checkCircle, light: checkCircleLight, fill: checkCircleFill, },
   'circle-dashed': { regular: circleDashed, light: circleDashedLight, },
   'circle-notch': { regular: circleNotch, },
   'clock': { regular: clock, },
@@ -246,7 +248,7 @@ export const NOSTOS_ICONS = {
   'globe': { regular: globe, },
   'hash': { regular: hash, light: hashLight, },
   'headphones': { regular: headphones, light: headphonesLight, },
-  'heart': { regular: heart, light: heartLight, },
+  'heart': { regular: heart, light: heartLight, fill: heartFill, },
   'highlighter': { regular: highlighter, },
   'image': { regular: image, },
   'info': { regular: info, },

@@ -94,26 +94,30 @@
             <div class="cover-overlay">
               <button
                 type="button"
+                appButton
+                variant="overlay"
                 id="uploadorChangeCover"
                 class="cover-overlay-btn"
                 [attr.aria-label]="store.book()?.coverUrl ? 'Change cover' : 'Upload cover'"
                 (click)="triggerCoverPicker()"
               >
                 <nostos-icon name="image" [size]="15"></nostos-icon>
-                <span>{{ store.book()?.coverUrl ? 'Change Cover' : 'Upload Cover' }}</span>
+                <span>{{ store.book()?.coverUrl ? 'Change cover' : 'Upload cover' }}</span>
               </button>
 
               @if (store.book()?.coverUrl) {
               <button
                 type="button"
+                appIconButton
+                surface="overlay"
+                tone="danger"
                 id="removeCover"
-                class="cover-overlay-btn danger"
+                icon="trash"
+                [glyphSize]="15"
                 aria-label="Remove cover"
+                title="Remove cover"
                 (click)="deleteCover()"
-              >
-                <nostos-icon name="trash" [size]="15"></nostos-icon>
-                <span>Remove</span>
-              </button>
+              ></button>
               }
             </div>
           </div>

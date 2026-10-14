@@ -20,6 +20,7 @@ import { ButtonComponent } from './button.component';
     </button>
     <button appButton variant="ghost" type="button">Quiet action</button>
     <button appButton variant="primary" size="lg" type="button">Prominent action</button>
+    <button appButton variant="overlay" type="button">Change cover</button>
   `,
 })
 class ButtonHarnessComponent {}
@@ -65,5 +66,13 @@ describe('ButtonComponent', () => {
     expect(ghost.classList.contains('nostos-button--ghost')).toBe(true);
     expect(ghost.disabled).toBe(false);
     expect(ghost.getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('has an overlay variant for actions that sit on artwork', () => {
+    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>;
+    const overlay = buttons[3];
+
+    expect(overlay.classList.contains('nostos-button--overlay')).toBe(true);
+    expect(overlay.classList.contains('nostos-button--secondary')).toBe(false);
   });
 });

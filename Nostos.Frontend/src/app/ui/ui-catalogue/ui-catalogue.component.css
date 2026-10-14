@@ -231,3 +231,10 @@
 .catalogue-notices p {
   margin: 0;
 }
+
+/* A stand-in cover: the overlay surface only makes sense on artwork. */
+.catalogue-artwork {
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: var(--primary-fill);
+}
