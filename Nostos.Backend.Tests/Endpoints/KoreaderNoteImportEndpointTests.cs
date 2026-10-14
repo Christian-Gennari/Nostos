@@ -47,8 +47,8 @@ public sealed class KoreaderNoteImportEndpointTests
 
         notes.Should().HaveCount(2);
         notes.Should().OnlyContain(note => note.CaptureSource == "import");
-        // KOReader's own colour names are not the four pens: an import arrives amber.
-        notes.Should().OnlyContain(note => note.HighlightColour == "amber");
+        // KOReader's own colour names are not the four pens: an import arrives in the default pen.
+        notes.Should().OnlyContain(note => note.HighlightColour == "sage");
         notes.Should().OnlyContain(note => note.ProcessingMode == "verbatim" && note.RawContent == null);
         notes.Should().Contain(note =>
             note.SelectedText == "A synthetic highlighted sentence."

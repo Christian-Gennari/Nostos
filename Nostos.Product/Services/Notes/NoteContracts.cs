@@ -57,9 +57,14 @@ public static class NoteErrorCodes
 public static class NoteHighlightColours
 {
     /// <summary>The default pen, and what a note with no recorded colour is drawn in.</summary>
+    public const string Sage = "sage";
+
     public const string Amber = "amber";
 
-    public static readonly IReadOnlyList<string> All = [Amber, "sage", "blue", "rose"];
+    /// <summary>The pen a new highlight gets when nothing chose one, such as an import.</summary>
+    public const string Default = Sage;
+
+    public static readonly IReadOnlyList<string> All = [Sage, Amber, "blue", "rose"];
 
     /// <summary>
     /// The canonical name for <paramref name="value"/>, or null when it is not

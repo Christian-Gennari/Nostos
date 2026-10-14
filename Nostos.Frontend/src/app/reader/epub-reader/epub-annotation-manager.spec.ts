@@ -328,7 +328,7 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
       cfiRange: CFI,
       selectedText: 'Save me',
       // The default pen, stored with the highlight (#861).
-      highlightColour: 'amber',
+      highlightColour: 'sage',
     });
     expect(onNoteCreated).toHaveBeenCalledTimes(1);
     expect(manager.highlights()).toEqual([CFI]);
@@ -511,7 +511,7 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
       await flush();
       expect(annotations.highlight).toHaveBeenCalledTimes(1);
 
-      manager.setHighlightColour('sage');
+      manager.setHighlightColour('rose');
 
       expect(views[0].pane.removeMark).toHaveBeenCalledTimes(1);
       expect(annotations.highlight).toHaveBeenCalledTimes(2);
@@ -520,7 +520,7 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
         { nostosPending: true },
         undefined,
         'epubjs-hl-pending',
-        { fill: 'fill:--highlight-sage' },
+        { fill: 'fill:--highlight-rose' },
       ]);
       expect(notesService.create).not.toHaveBeenCalled();
     });
@@ -546,7 +546,7 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
       manager.restoreHighlights([
         { id: 'a', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/2)', highlightColour: 'sage' },
         { id: 'b', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/4)', highlightColour: 'blue' },
-        // No recorded pen (made before the field, or imported): amber.
+        // No recorded pen (made before the field, or imported): sage.
         { id: 'c', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/6)' },
       ]);
 
@@ -554,7 +554,7 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
       expect(fills).toEqual([
         ['epubcfi(/6/2)', { fill: 'fill:--highlight-sage' }],
         ['epubcfi(/6/4)', { fill: 'fill:--highlight-blue' }],
-        ['epubcfi(/6/6)', { fill: 'fill:--highlight-amber' }],
+        ['epubcfi(/6/6)', { fill: 'fill:--highlight-sage' }],
       ]);
     });
 
@@ -813,7 +813,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
       content: 'My thought about it',
       cfiRange: CFI,
       selectedText: 'The passage',
-      highlightColour: 'amber',
+      highlightColour: 'sage',
     });
     expect(annotations.add).toHaveBeenCalledTimes(1);
   });

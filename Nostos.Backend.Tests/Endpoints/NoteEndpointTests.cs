@@ -267,7 +267,7 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync())
-            .Should().Contain("Highlight colour must be one of: amber, sage, blue, rose.");
+            .Should().Contain("Highlight colour must be one of: sage, amber, blue, rose.");
     }
 
     [Fact]

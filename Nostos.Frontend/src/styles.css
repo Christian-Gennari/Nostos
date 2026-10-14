@@ -258,8 +258,9 @@
   --color-info-bg: #e6f7ff;
 
   /* ── Highlight ── */
-  --color-highlight: #ffda00;
-  --color-highlight-hover: #f0cc00;
+  /* The default pen is sage (the fill of --highlight-sage below). */
+  --color-highlight: #b7e4cf;
+  --color-highlight-hover: #a3d9c2;
 
   /* ── Borders ── */
   --border-color: #E5E7EB;

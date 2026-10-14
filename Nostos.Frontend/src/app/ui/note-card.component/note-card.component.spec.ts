@@ -85,13 +85,13 @@ describe('NoteCard highlight pen (issue #861)', () => {
     await edit(highlight);
 
     expect(pens().map((pen) => pen.getAttribute('data-testid'))).toEqual([
-      'note-edit-pen-amber',
       'note-edit-pen-sage',
+      'note-edit-pen-amber',
       'note-edit-pen-blue',
       'note-edit-pen-rose',
     ]);
     expect(pens().map((pen) => pen.getAttribute('aria-pressed'))).toEqual([
-      'false', 'true', 'false', 'false',
+      'true', 'false', 'false', 'false',
     ]);
     // A fill is a token reference, never a hex.
     expect(pens()[3].style.background).toBe('var(--highlight-rose)');
@@ -153,10 +153,10 @@ describe('NoteCard highlight pen (issue #861)', () => {
       expect(quote?.querySelector('.visually-hidden')?.textContent).toBe('Sage highlight');
     });
 
-    it('uses amber for a highlight known to have no recorded pen', async () => {
+    it('uses sage for a highlight known to have no recorded pen', async () => {
       const quote = await show({ ...highlight, highlightColour: null });
 
-      expect(quote?.getAttribute('data-testid')).toBe('note-pen-amber');
+      expect(quote?.getAttribute('data-testid')).toBe('note-pen-sage');
     });
 
     it('keeps the accent rule when the source does not say which pen (search hits)', async () => {
