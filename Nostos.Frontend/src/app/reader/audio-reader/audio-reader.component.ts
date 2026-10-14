@@ -30,6 +30,10 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 
+import { ButtonComponent } from '../../ui/button/button.component';
+import { ChipComponent } from '../../ui/chip/chip.component';
+import { SegmentedComponent } from '../../ui/segmented/segmented.component';
+
 @Component({
   selector: 'app-audio-reader',
   standalone: true,
@@ -40,6 +44,9 @@ import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-in
     BloomArtDirective,
     IconButtonComponent,
     LoadingIndicatorComponent,
+    ButtonComponent,
+    ChipComponent,
+    SegmentedComponent,
   ],
   templateUrl: './audio-reader.component.html',
   styleUrl: './audio-reader.component.css',
@@ -166,6 +173,7 @@ export class AudioReader implements OnDestroy, IReader {
   // with ±0.05 stepping in the same menu for the fine one. Remembered
   // reader-wide — a speed is a habit, not a property of one audiobook.
   availableRates = [0.8, 1, 1.25, 1.5, 2];
+  readonly rateOptions = this.availableRates.map((value) => ({ value, label: this.formatRate(value) }));
   private static readonly RATE_KEY = 'nostos.audio-rate';
   private static readonly RATE_STEP = 0.05;
   private static readonly RATE_MIN = 0.5;

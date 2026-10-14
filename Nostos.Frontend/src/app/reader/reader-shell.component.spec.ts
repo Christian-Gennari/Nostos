@@ -1235,7 +1235,7 @@ describe('ReaderShell toolbar contract', () => {
   describe('App appearance row in View settings (#651)', () => {
     function appearanceButtons(): HTMLButtonElement[] {
       return Array.from(fixture.nativeElement.querySelectorAll(
-        '[data-testid="reader-appearance"] .typo-opt',
+        '[data-testid="reader-appearance"] .seg-opt',
       ));
     }
 
@@ -1267,8 +1267,8 @@ describe('ReaderShell toolbar contract', () => {
       localStorage.setItem(THEME_STORAGE_KEY, 'dark');
       await openPanelFor('iliad.epub');
 
-      expect(button('Dark').getAttribute('aria-pressed')).toBe('true');
-      expect(button('Light').getAttribute('aria-pressed')).toBe('false');
+      expect(button('Dark').getAttribute('aria-checked')).toBe('true');
+      expect(button('Light').getAttribute('aria-checked')).toBe('false');
     });
 
     it('drives the app-wide ThemeService and persists with the Settings key', async () => {
@@ -1281,7 +1281,7 @@ describe('ReaderShell toolbar contract', () => {
       expect(theme.theme()).toBe('dark');
       expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
-      expect(button('Dark').getAttribute('aria-pressed')).toBe('true');
+      expect(button('Dark').getAttribute('aria-checked')).toBe('true');
       const layout = fixture.debugElement.query(By.css('.reader-layout'));
       expect(layout.nativeElement.hasAttribute('data-theme')).toBe(false);
 
@@ -1347,13 +1347,12 @@ describe('ReaderShell toolbar contract', () => {
       .toBeGreaterThanOrEqual(4);
   });
 
-  it('exposes selected state on every Reader view-setting option', () => {
+  it('draws every Reader view-setting choice with the shared segmented control', () => {
+    // The selected state (role="radio" + aria-checked) is the component's
+    // contract, so the panel must not hand-roll option buttons again.
     const source = readSource('./reader-shell.component.html');
-    const optionTags = [...source.matchAll(/<button\b(?=[^>]*class="typo-opt")[^>]*>/g)]
-      .map((m) => m[0]);
-
-    expect(optionTags.length).toBeGreaterThan(0);
-    expect(optionTags.every((tag) => tag.includes('[attr.aria-pressed]'))).toBe(true);
+    expect(source).not.toContain('class="typo-opt"');
+    expect((source.match(/<nostos-segmented\b/g) ?? []).length).toBe(7);
   });
 
   it('has no overflow menu left to reach the desktop-only controls', async () => {
@@ -1792,7 +1791,7 @@ describe('ReaderShell typography panel (EPUB)', () => {
 
     const typefaces = Array.from(
       fixture.nativeElement.querySelectorAll(
-        '[data-testid="typo-panel"] [aria-labelledby="typo-typeface"] .typo-opt',
+        '[data-testid="typo-panel"] [aria-labelledby="typo-typeface"] .seg-opt',
       ) as NodeListOf<HTMLButtonElement>,
     );
     // The reader's options are shown as given: four choices, Libron first and
@@ -1803,7 +1802,7 @@ describe('ReaderShell typography panel (EPUB)', () => {
       'Sans',
       'Mono',
     ]);
-    expect(typefaces.map((el) => el.getAttribute('aria-pressed'))).toEqual([
+    expect(typefaces.map((el) => el.getAttribute('aria-checked'))).toEqual([
       'true',
       'false',
       'false',
@@ -2059,21 +2058,17 @@ describe('ReaderShell UI kit migration (#362)', () => {
     expect(canonicalLabels).toContain('Add note');
     expect(canonicalLabels).toContain('Reset');
 
-    // These are intentionally Reader-owned interaction contracts, not ordinary
-    // actions wearing local styling.
-    expect(fixture.nativeElement.querySelector('.typo-opt.nostos-button')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.typo-step.nostos-button')).toBeNull();
+    // Page input keeps its Reader-owned contract.
     expect(fixture.nativeElement.querySelector('.page-input.nostos-form-control')).toBeNull();
 
     const template = readSource('./reader-shell.component.html');
     expect(template).not.toContain('class="btn btn-primary"');
     expect(template).not.toContain('class="btn btn-secondary"');
 
-    // Audio transport, time navigation, speed and sleep controls have a distinct
-    // playback contract and stay product-owned. The menu close uses the shared
-    // icon-button primitive like the other transient reader panels.
+    // The audio transport (play, skip) keeps its own playback contract. The
+    // speed and sleep choices in the settings menu are shared primitives, and the
+    // menu close uses the shared icon button like the other reader panels.
     const audioTemplate = readSource('./audio-reader/audio-reader.component.html');
-    expect(audioTemplate).not.toContain('appButton');
     const transportStart = audioTemplate.indexOf('<div class="main-controls">');
     const transportEnd = audioTemplate.indexOf('</div>', transportStart);
     const transportTemplate = audioTemplate.slice(transportStart, transportEnd);
@@ -2095,7 +2090,6 @@ describe('ReaderShell UI kit migration (#362)', () => {
     const mobileEnd = css.indexOf('@media (max-width: 360px)');
     const mobile = css.slice(mobileStart, mobileEnd);
 
-    expect(mobile).toContain('.typo-opt,');
     expect(mobile).toContain('.typo-step,');
     expect(mobile).toContain('.quick-actions button[appButton]');
     expect(mobile).toContain('min-height: var(--control-h-touch)');

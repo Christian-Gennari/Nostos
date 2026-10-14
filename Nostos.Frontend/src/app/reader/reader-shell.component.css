@@ -783,32 +783,8 @@
   color: var(--color-text-light);
 }
 
-.typo-opts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-
-.typo-opt {
-  padding: 0.375rem 0.625rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-action);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.typo-opt:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.typo-opt.active {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-color);
-}
+/* The single-choice rows are nostos-segmented (track, thumb, radio semantics,
+   touch floor); the panel owns only the row layout around them. */
 
 /* Text size: the two steps that used to sit in the toolbar next to PDF zoom,
    where the same pair of glyphs meant two different things depending on format. */
@@ -817,20 +793,9 @@
   align-items: center;
   gap: 0.5rem;
 }
+/* The steps are appButton sm; only their minimum width is the panel's. */
 .typo-step {
   min-width: 40px;
-  min-height: 32px;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-action);
-  background: transparent;
-  color: var(--color-text-main);
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-.typo-step:hover {
-  background: var(--bg-hover);
-  color: var(--color-primary);
 }
 .typo-step-value {
   min-width: 48px;
@@ -967,11 +932,8 @@
     border-color: var(--color-primary);
   }
 
-  /* Reader-specific controls keep their contracts, but their phone hit areas
-     still follow the same touch floor as the shared kit. This deliberately does
-     NOT turn typography choices, zoom steps or page navigation into generic
-     buttons. */
-  .typo-opt,
+  /* Phone hit areas follow the shared touch floor. The typography choices are
+     nostos-segmented, which carries its own floor. */
   .typo-step,
   .typo-reset,
   .quick-actions button[appButton] {
@@ -1336,22 +1298,6 @@
   text-transform: none;
   letter-spacing: 0;
   color: var(--color-text-muted);
-}
-
-.reader-layout.immersive .typo-opts {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-}
-
-.reader-layout.immersive .typo-opt {
-  padding-inline: 0.5rem;
-}
-
-.reader-layout.immersive .typo-opt.active {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  box-shadow: none;
 }
 
 @media (max-width: 768px) {

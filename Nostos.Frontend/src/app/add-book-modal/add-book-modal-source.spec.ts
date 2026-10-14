@@ -309,7 +309,7 @@ describe('AddBookModal — From a Source', () => {
     fixture.detectChanges();
 
     const labels = Array.from(
-      fixture.nativeElement.querySelectorAll('.source-filter') as NodeListOf<HTMLButtonElement>,
+      fixture.nativeElement.querySelectorAll('.source-filters [role="radio"]') as NodeListOf<HTMLButtonElement>,
     ).map((button) => button.textContent?.trim());
 
     expect(labels).toEqual(['All', 'E-books', 'Audiobooks']);

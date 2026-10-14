@@ -72,6 +72,8 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
 
 import { BrowserVoice } from './read-aloud/browser-voice';
 import { ReadAloudBarComponent } from './read-aloud/read-aloud-bar.component';
+import { SegmentedComponent } from '../ui/segmented/segmented.component';
+import { EPUB_LINE_OPTIONS } from './epub-reader/epub-typography';
 import { ReadAloudController } from './read-aloud/read-aloud-controller';
 import { ServerVoice } from './read-aloud/server-voice';
 import {
@@ -142,6 +144,7 @@ function readAloudFallbackNotice(code: string | null): string {
     InputDirective,
     TextareaDirective,
     ReadAloudBarComponent,
+    SegmentedComponent,
   ],
   providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
@@ -614,6 +617,15 @@ export class ReaderShell implements OnInit, OnDestroy {
     { value: 'dark', label: 'Dark' },
   ];
 
+  /** Line heights as segmented options; the label is the value at one decimal. */
+  readonly lineHeightOptions = EPUB_LINE_OPTIONS.map((value) => ({ value, label: value.toFixed(1) }));
+
+  /** The PDF page-colour choice, as the two values the segmented control emits. */
+  readonly pageColourOptions = [
+    { value: 'inverted', label: 'Inverted' },
+    { value: 'printed', label: 'As printed' },
+  ] as const;
+
   setAppTheme(theme: Theme): void {
     this.themeService.setTheme(theme);
   }
@@ -709,6 +721,15 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   pdfZoomLabel(): string {
     return this.pdfReader?.zoomLabel() ?? '';
+  }
+
+  /** The preset currently in effect, or null when the zoom is a free value. */
+  pdfZoomPreset(): string | number | null {
+    return this.pdfZoomPresets().find((preset) => this.isZoomPreset(preset.value))?.value ?? null;
+  }
+
+  pdfScrollMode(): ScrollModeType | null {
+    return this.pdfReader?.scrollMode() ?? null;
   }
 
   isZoomPreset(value: string | number): boolean {

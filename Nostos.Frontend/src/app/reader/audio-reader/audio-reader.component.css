@@ -547,31 +547,14 @@
   gap: 0.5rem;
 }
 
+/* The steps are appButton sm; the menu keeps them square. */
 .rate-step {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-action);
-  background: transparent;
-  color: var(--color-text-main);
+  min-width: 30px;
+  padding: 0;
   font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
-}
-
-.rate-step:hover {
-  border-color: var(--color-primary-dim);
-  color: var(--color-primary);
 }
 
 .rate-step:focus-visible,
-.rate-option:focus-visible,
 .sleep-option:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
@@ -586,41 +569,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-.rate-options,
+/* Speed presets are nostos-segmented; sleep presets are appChip toggles, which
+   wrap when "Chapter end" is offered. The menu owns only the layout. */
 .sleep-options {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-}
-
-.rate-option,
-.sleep-option {
-  padding: 0.35rem 0.7rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
-}
-
-.rate-option:hover,
-.sleep-option:hover {
-  border-color: var(--color-primary-dim);
-  color: var(--color-primary);
-}
-
-.rate-option[aria-selected='true'],
-.sleep-option[aria-selected='true'] {
-  border-color: var(--color-primary);
-  background: var(--bg-hover);
-  color: var(--color-primary);
-  font-weight: var(--fw-semibold);
 }
 
 .sleep-status {
@@ -747,11 +701,10 @@
 
   /* The popover's rows are touch targets on a phone too. */
   .rate-step {
-    width: 44px;
-    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
-  .rate-option,
   .sleep-option {
     min-height: 44px;
     padding: 0.45rem 0.75rem;

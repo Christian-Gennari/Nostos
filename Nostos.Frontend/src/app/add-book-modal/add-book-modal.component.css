@@ -343,35 +343,9 @@
   font-size: 0.8rem;
   color: var(--color-danger);
 }
+/* The material filter is nostos-segmented; the modal owns its spacing only. */
 .source-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
   margin-top: 0.65rem;
-}
-.source-filter {
-  min-height: 34px;
-  padding: 0.3rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-alt);
-  color: var(--color-text-light);
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
-}
-.source-filter:hover:not(:disabled) {
-  color: var(--color-text-main);
-}
-.source-filter.active {
-  border-color: var(--border-focus);
-  background: var(--color-accent-bg);
-  color: var(--color-text-main);
-}
-.source-filter:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 .source-search {
   display: flex;

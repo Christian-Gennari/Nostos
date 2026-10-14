@@ -35,6 +35,7 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
 import { DropZoneComponent } from '../ui/drop-zone/drop-zone.component';
+import { SegmentedComponent } from '../ui/segmented/segmented.component';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -67,6 +68,7 @@ export interface AddBookPrefill {
     DialogActionsComponent,
     ButtonComponent,
     BadgeComponent,
+    SegmentedComponent,
   ],
   templateUrl: './add-book-modal.component.html',
   styleUrl: './add-book-modal.component.css',
@@ -776,6 +778,11 @@ export class AddBookModal {
 
   sourceQuery = signal('');
   sourceKind = signal<'all' | 'ebook' | 'audiobook'>('all');
+  readonly sourceKinds = [
+    { value: 'all', label: 'All' },
+    { value: 'ebook', label: 'E-books' },
+    { value: 'audiobook', label: 'Audiobooks' },
+  ] as const;
   sourceResults = signal<ProviderItem[]>([]);
   sourceStatuses = signal<ProviderDiscoverySourceStatus[]>([]);
   sourceHasMore = signal(false);

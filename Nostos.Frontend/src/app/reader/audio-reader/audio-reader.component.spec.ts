@@ -655,7 +655,7 @@ describe('AudioReader sleep timer (issue #47)', () => {
     );
     expect(labels).toEqual(['Off', '15 min', '30 min', '45 min', '60 min']);
     // Speed lives in the same menu now (issue #227 §3): the presets and the fine step.
-    const rateOptions = Array.from(menu!.querySelectorAll('.rate-option')).map((el: Element) =>
+    const rateOptions = Array.from(menu!.querySelectorAll('.rate-options [role="radio"]')).map((el: Element) =>
       el.textContent?.trim(),
     );
     expect(rateOptions).toEqual(['0.8×', '1×', '1.25×', '1.5×', '2×']);

@@ -36,10 +36,10 @@ for (const width of viewports) {
           await page.locator('#epub-viewer').click({ position: { x: width / 2, y: 12 } });
         }
         await page.getByRole('button', { name: 'View settings', exact: true }).click();
-        const option = page.getByRole('group', { name: 'Margins', exact: true })
-          .getByRole('button', { name: preset, exact: true });
+        const option = page.getByRole('radiogroup', { name: 'Margins', exact: true })
+          .getByRole('radio', { name: preset, exact: true });
         await option.click();
-        await expect(option).toHaveAttribute('aria-pressed', 'true');
+        await expect(option).toHaveAttribute('aria-checked', 'true');
         await expect.poll(() => page.evaluate(() =>
           JSON.parse(localStorage.getItem('nostos.epub-typography')!).margin
         )).toBe(preset.toLowerCase());
