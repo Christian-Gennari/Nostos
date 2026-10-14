@@ -10,4 +10,12 @@ describe('languageTagFromCatalogue', () => {
     expect(languageTagFromCatalogue('')).toBeNull();
     expect(languageTagFromCatalogue(null)).toBeNull();
   });
+
+  it('reads three-letter codes and refuses "undetermined"', () => {
+    expect(languageTagFromCatalogue('eng')).toBe('en');
+    expect(languageTagFromCatalogue('EN')).toBe('EN');
+    expect(languageTagFromCatalogue('fre')).toBe('fr');
+    expect(languageTagFromCatalogue('por-BR')).toBe('pt-BR');
+    expect(languageTagFromCatalogue('und')).toBeNull();
+  });
 });

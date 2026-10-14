@@ -51,6 +51,19 @@ public static class ReadAloudEndpoints
         if (!await access.IsAllowedAsync(ct))
             return Results.Ok(Unavailable(availability.Managed, ReadAloudErrorCodes.AccessDenied));
 
+        // A book that does not say its language gets every voice to choose
+        // from and no default: picking one for it would be a guess.
+        if (string.IsNullOrWhiteSpace(language))
+        {
+            return Results.Ok(new ReadAloudStatusResponse(
+                Available: provider.Voices.Count > 0,
+                Managed: availability.Managed,
+                DefaultVoice: null,
+                Voices: provider.Voices,
+                MaxCharacters: availability.MaxCharacters,
+                Reason: ReadAloudErrorCodes.LanguageUnknown));
+        }
+
         var voices = ReadAloudVoiceSelection.ForLanguage(provider.Voices, language);
         return Results.Ok(new ReadAloudStatusResponse(
             Available: voices.Count > 0,
