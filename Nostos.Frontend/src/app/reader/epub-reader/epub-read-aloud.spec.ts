@@ -132,6 +132,21 @@ describe('EpubReadAloud', () => {
     expect(unmeasured.calls.displayedCfis).toEqual([]);
   });
 
+  it('reads a hard-wrapped paragraph in whole sentences, and marks each one', async () => {
+    const { readAloud, calls } = setup([
+      section(
+        0,
+        '<p>Elizabeth was glad to be taken to her\nimmediately; and Jane was delighted at her entrance.\nElizabeth silently attended\nher.</p>',
+      ),
+    ]);
+
+    await expect(readAloud.begin()).resolves.toEqual({
+      text: 'Elizabeth was glad to be taken to her immediately; and Jane was delighted at her entrance.',
+    });
+    await expect(readAloud.step(1)).resolves.toEqual({ text: 'Elizabeth silently attended her.' });
+    expect(calls.marks.at(-1)).toBe('cfi(0:Elizabeth silently attended\nher.)');
+  });
+
   it('reads a floated caption where it stands, without turning to it', async () => {
     // A document with a window, so styles are computed.
     const frame = document.createElement('iframe');

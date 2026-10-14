@@ -5,7 +5,7 @@ import {
   splitReadAloudSentences,
 } from '../read-aloud/read-aloud-sentences';
 import {
-  normalizedEpubResourceText,
+  normalizedEpubResourceProse,
   rangeForNormalizedResourceSpan,
 } from './epub-grounded-source';
 import { VisibleEpubContent, firstVisibleEpubText } from './epub-visible-excerpt';
@@ -173,7 +173,7 @@ export class EpubReadAloud implements ReaderReadAloud {
   private loadSection(content: ReadAloudEpubContent, index?: number): void {
     this.sectionIndex = index ?? this.currentSectionOf(content);
     this.spans = splitReadAloudSentences(
-      normalizedEpubResourceText(content.document),
+      normalizedEpubResourceProse(content.document),
       this.host.language(),
     );
   }

@@ -2,6 +2,7 @@ import {
   epubPassageCandidates,
   nodeAtKoreaderXPointer,
   normalizedResourceOffsetOfNode,
+  normalizedEpubResourceProse,
   normalizedEpubResourceText,
   rangeForNormalizedResourceSpan,
   sentenceSpanAt,
@@ -37,6 +38,17 @@ describe('EPUB normalized resource search text (#761)', () => {
 
     expect(range).not.toBeNull();
     expect(range!.toString()).toBe('Transylvania');
+  });
+
+  it('turns the file’s own line wraps into spaces for prose, keeping every offset', () => {
+    const doc = bookDocument('<h1>Chapter I</h1><p>It is a truth universally\nacknowledged, that a single man.</p>');
+
+    const text = normalizedEpubResourceText(doc);
+    const prose = normalizedEpubResourceProse(doc);
+
+    expect(text).toBe('Chapter I\nIt is a truth universally\nacknowledged, that a single man.');
+    expect(prose).toBe('Chapter I\nIt is a truth universally acknowledged, that a single man.');
+    expect(prose.length).toBe(text.length);
   });
 });
 
