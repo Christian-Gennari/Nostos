@@ -2,6 +2,7 @@
 import { Signal } from '@angular/core';
 import { ImportedNoteLocation, Note } from '../core/dtos/note.dtos';
 import { HighlightColour } from './highlight-colours';
+import { ReaderReadAloud } from './read-aloud/read-aloud.types';
 
 export interface TocItem {
   label: string;
@@ -76,6 +77,9 @@ export interface IReader {
    */
   commitHighlight(content?: string, colour?: HighlightColour): void;
   discardHighlight(): void;
+
+  /** Present on a reader whose text can be read aloud. */
+  readAloud?: ReaderReadAloud;
 
   // Reactive State
   toc: Signal<TocItem[]>;

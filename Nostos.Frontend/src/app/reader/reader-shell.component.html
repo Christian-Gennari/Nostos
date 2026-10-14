@@ -90,6 +90,19 @@
         data-testid="typo-toggle"
       ></button>
       }
+      @if (showHeaderReadAloud()) {
+      <button
+        appIconButton
+        icon="speaker-high"
+        [glyphSize]="20"
+        (click)="toggleReadAloud()"
+        [title]="readAloud.active() ? 'Stop reading aloud' : 'Read aloud'"
+        [attr.aria-label]="readAloud.active() ? 'Stop reading aloud' : 'Read aloud'"
+        [attr.aria-pressed]="readAloud.active()"
+        [class.active]="readAloud.active()"
+        data-testid="read-aloud-start"
+      ></button>
+      }
       }
 
       <!-- Continue in another edition of the same work. Present only when one
@@ -525,6 +538,10 @@
   <!-- The pager. This is the one piece of chrome that stays at the bottom on
        purpose: it is what a thumb reaches for while reading, and it is what the
        PDF reader's bottom clearance is measured against. -->
+  <!-- Read aloud's transport. A child of the layout, not of the page, so it
+       stacks against the pager it sits beside or above. -->
+  <app-read-aloud-bar />
+
   @if (!loadError() && fileType() && fileType() !== 'audio') {
   <header
     class="reader-toolbar"
@@ -620,6 +637,20 @@
       <nostos-icon [name]="switchEditionIcon()" [size]="16"></nostos-icon>
       <span class="typo-switch-label">Continue in another edition</span>
       <nostos-icon name="caret-right" [size]="13"></nostos-icon>
+    </button>
+    }
+
+    @if (showPanelReadAloud()) {
+    <button
+      appButton
+      type="button"
+      variant="ghost"
+      class="typo-switch"
+      (click)="toggleReadAloud(); toggleTypo()"
+      data-testid="read-aloud-start-panel"
+    >
+      <nostos-icon name="speaker-high" [size]="16"></nostos-icon>
+      <span class="typo-switch-label">{{ readAloud.active() ? 'Stop reading aloud' : 'Read aloud' }}</span>
     </button>
     }
 

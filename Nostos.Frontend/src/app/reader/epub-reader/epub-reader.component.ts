@@ -63,6 +63,7 @@ import {
   sentenceSpanInResource,
   type EpubSpineSource,
 } from './epub-grounded-source';
+import { EpubReadAloud, type ReadAloudEpubContent } from './epub-read-aloud';
 import { registerNostosReaderThemes, selectNostosReaderTheme } from './epub-reader-theme';
 import {
   DEFAULT_TYPOGRAPHY,
@@ -289,6 +290,28 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private annotationManager: EpubAnnotationManager | null = null;
   private currentCfi: string | null = null;
   private pendingGroundedSource: ReaderSourceTarget | null = null;
+
+  /**
+   * Read aloud. The cursor logic lives in {@link EpubReadAloud}; this object is
+   * the reader's side of it: what is rendered, how to turn to a place, and
+   * where the mark is drawn.
+   */
+  readonly readAloud = new EpubReadAloud({
+    language: () => this.bookLanguage(),
+    renderedContents: () => this.renderedContents() as unknown as ReadAloudEpubContent[],
+    readingViewRect: () => this.readingViewRect(),
+    spineLength: () => this.spineLength(),
+    displaySection: (index) => this.readAloudDisplaySection(index),
+    displayCfi: async (cfi) => {
+      await this.readAloudDisplay(cfi);
+    },
+    isRangeVisible: (range, content) =>
+      this.isGroundedRangeVisible(range, content as unknown as Contents),
+    showMark: (cfi) => this.annotationManager?.showReadAloudMark(cfi),
+    clearMark: () => this.annotationManager?.clearReadAloudMark(),
+  });
+  /** Counts page turns read-aloud asked for, so `relocated` can tell them from the person's. */
+  private readAloudMoves = 0;
 
   // --- In-book search (#761) ---
   searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
@@ -1322,6 +1345,43 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     return rect;
   }
 
+  /** The language the EPUB declares for itself, e.g. "en" or "it-IT". */
+  private bookLanguage(): string | null {
+    const metadata = (this.epubBook as any)?.packaging?.metadata;
+    const language = typeof metadata?.language === 'string' ? metadata.language.trim() : '';
+    return language || null;
+  }
+
+  /**
+   * A page turn made for read-aloud. While one is in flight, and briefly after
+   * it resolves (epub.js reports the new location a frame later), `relocated`
+   * is not treated as the person moving the book.
+   */
+  private async readAloudDisplay(target: string): Promise<boolean> {
+    const rendition = this.rendition;
+    if (!rendition) return false;
+
+    this.readAloudMoves++;
+    try {
+      await rendition.display(target);
+      return true;
+    } catch (error) {
+      console.warn('Read aloud could not turn the page:', error);
+      return false;
+    } finally {
+      setTimeout(() => {
+        this.readAloudMoves = Math.max(0, this.readAloudMoves - 1);
+      }, 300);
+    }
+  }
+
+  private async readAloudDisplaySection(index: number): Promise<boolean> {
+    const section = (this.epubBook?.spine as any)?.get?.(index);
+    const href = typeof section?.href === 'string' ? section.href : null;
+    if (!href) return false;
+    return this.readAloudDisplay(href);
+  }
+
   private renderedContents(): Contents[] {
     try {
       const raw = this.rendition?.getContents?.();
@@ -1562,6 +1622,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     rendition.on('relocated', (location: any) => {
       this.currentCfi = location.start.cfi;
+      if (this.readAloudMoves === 0) this.readAloud.notifyUserMoved();
       this.assistantLocation.set(location.start.cfi);
       this.currentHref.set(location.start.href);
       this.spineIndex.set(typeof location.start.index === 'number' ? location.start.index : null);
@@ -2140,6 +2201,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   ngOnDestroy(): void {
+    this.readAloud.end();
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
     this.cancelGroundedNavigation();

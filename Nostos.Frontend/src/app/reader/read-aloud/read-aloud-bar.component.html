@@ -1,0 +1,54 @@
+@if (controller.active()) {
+<div class="read-aloud-bar" role="group" aria-label="Read aloud" data-testid="read-aloud-bar">
+  <button
+    appIconButton
+    icon="skip-back"
+    [glyphSize]="20"
+    (click)="controller.previous()"
+    title="Previous sentence"
+    aria-label="Previous sentence"
+  ></button>
+  <button
+    appIconButton
+    class="read-aloud-toggle"
+    [icon]="controller.playing() ? 'pause' : 'play'"
+    weight="fill"
+    [glyphSize]="20"
+    (click)="controller.toggle()"
+    [title]="toggleLabel()"
+    [attr.aria-label]="toggleLabel()"
+    data-testid="read-aloud-toggle"
+  ></button>
+  <button
+    appIconButton
+    icon="skip-forward"
+    [glyphSize]="20"
+    (click)="controller.next()"
+    title="Next sentence"
+    aria-label="Next sentence"
+  ></button>
+  <button
+    type="button"
+    class="read-aloud-rate"
+    (click)="controller.cycleRate()"
+    title="Reading speed"
+    [attr.aria-label]="'Reading speed ' + rateLabel() + '. Change speed'"
+    data-testid="read-aloud-rate"
+  >{{ rateLabel() }}</button>
+  <button
+    appIconButton
+    icon="x"
+    [glyphSize]="20"
+    (click)="controller.stop()"
+    title="Stop reading"
+    aria-label="Stop reading"
+    data-testid="read-aloud-stop"
+  ></button>
+</div>
+}
+@if (controller.notice(); as notice) {
+<div class="read-aloud-notice" role="status" aria-live="polite" data-testid="read-aloud-notice">
+  <span>{{ notice }}</span>
+  <button appIconButton icon="x" size="xs" (click)="controller.dismissNotice()" aria-label="Dismiss"></button>
+</div>
+}

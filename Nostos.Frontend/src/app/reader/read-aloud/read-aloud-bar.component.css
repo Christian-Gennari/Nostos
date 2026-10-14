@@ -1,0 +1,75 @@
+:host {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  z-index: 50;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100% - 2rem);
+  pointer-events: none;
+}
+
+.read-aloud-bar,
+.read-aloud-notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  box-shadow: var(--shadow-sm);
+}
+
+.read-aloud-bar {
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-pill);
+}
+
+/* Reading controls are used without looking: each is a full touch target at
+   every width, whatever size the shared icon button has elsewhere. */
+.read-aloud-bar button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.read-aloud-toggle {
+  background-color: var(--primary-fill);
+  color: var(--on-primary);
+  border-color: var(--primary-fill);
+}
+
+.read-aloud-rate {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-pill);
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+.read-aloud-rate:hover {
+  background-color: var(--bg-hover);
+}
+
+.read-aloud-rate:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.read-aloud-notice {
+  gap: 0.5rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.75rem;
+  border-radius: var(--radius-action);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
