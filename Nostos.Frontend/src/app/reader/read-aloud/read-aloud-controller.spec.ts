@@ -266,9 +266,14 @@ describe('ReadAloudController', () => {
   it('cycles through the offered speeds', () => {
     controller.cycleRate();
     expect(controller.rate()).toBe(1.25);
-    controller.setRate(2);
+    controller.setRate(1.5);
     controller.cycleRate();
     expect(controller.rate()).toBe(0.75);
+  });
+
+  it('brings a remembered speed above the fastest one offered down to it', () => {
+    localStorage.setItem('nostos.readAloud.rate', '2');
+    expect(TestBed.runInInjectionContext(() => new ReadAloudController()).rate()).toBe(1.5);
   });
 
   it('carries on from the new page when the person turns it', async () => {
