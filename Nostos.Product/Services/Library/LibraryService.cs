@@ -14,7 +14,7 @@ namespace Nostos.Backend.Services.Library;
 /// books and collections. Mutations are exact-once through
 /// LibraryCommandReceipt (separate from reading receipts on purpose).
 /// </summary>
-public sealed class LibraryService : ILibraryService
+public sealed partial class LibraryService : ILibraryService
 {
     private readonly IDbContextFactory<NostosDbContext> _contexts;
     private readonly LibraryReadService _reads;

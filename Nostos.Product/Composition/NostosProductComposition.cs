@@ -251,6 +251,7 @@ public static class NostosProductComposition
 
         services.AddScoped<BookLookupService>();
         services.AddScoped<ILibraryService, LibraryService>();
+        services.AddScoped<ILibraryChangesetService, LibraryService>();
         services.AddScoped<LibraryReceiptRetentionService>();
         services.AddScoped<MediaMetadataService>();
         services.AddScoped<AudiobookPackageService>();
