@@ -31,6 +31,7 @@
       <label class="changeset__step-control">
         <input
           type="checkbox"
+          appCheckbox
           [checked]="step.included"
           [disabled]="disabled() || (!step.included && stepBlocked(step.index))"
           (change)="toggleStep(step.index, $event)"

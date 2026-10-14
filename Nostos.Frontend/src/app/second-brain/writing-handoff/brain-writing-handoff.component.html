@@ -155,6 +155,7 @@
       <label class="open-after">
         <input
           type="checkbox"
+          appCheckbox
           [checked]="openWritingAfterAdd()"
           [disabled]="saving()"
           (change)="openWritingAfterAdd.set($any($event.target).checked)"

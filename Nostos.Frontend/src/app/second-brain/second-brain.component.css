@@ -2356,12 +2356,6 @@
   background: var(--bg-hover);
 }
 
-.source-select-control input {
-  width: 15px;
-  height: 15px;
-  margin: 0;
-  accent-color: var(--color-primary);
-}
 
 
 .brain-note-provenance {

@@ -18,6 +18,7 @@ import { DropdownComponent, type DropdownOption } from '../dropdown/dropdown.com
 import { FormFieldComponent } from '../form-field/form-field.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { SegmentedComponent } from '../segmented/segmented.component';
+import { CheckboxDirective, RadioDirective } from '../check/check.directive';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SwitchComponent } from '../switch/switch.component';
@@ -45,6 +46,8 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
     FormFieldComponent,
     IconButtonComponent,
     SegmentedComponent,
+    CheckboxDirective,
+    RadioDirective,
     InputDirective,
     ModalShell,
     LoadingIndicatorComponent,

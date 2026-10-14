@@ -910,6 +910,7 @@
                             <label class="source-format-family">
                               <input
                                 type="radio"
+                                appRadio
                                 name="sourceFormatFamily"
                                 [value]="family"
                                 [checked]="selectedFormatFamily() === family"
@@ -941,6 +942,7 @@
                               <label class="source-asset">
                                 <input
                                   type="radio"
+                                  appRadio
                                   name="sourceAsset"
                                   [value]="asset.id"
                                   [checked]="selectedAssetId() === asset.id"

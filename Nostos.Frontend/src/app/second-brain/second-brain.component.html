@@ -858,6 +858,7 @@
           <label class="source-select-control" (click)="$event.stopPropagation()">
             <input
               type="checkbox"
+              appCheckbox
               [checked]="isSourceSelected(note.noteId)"
               [attr.aria-label]="'Select source from ' + (note.bookTitle || 'unknown source')"
               (change)="setSourceSelected(note.noteId, $any($event.target).checked)"

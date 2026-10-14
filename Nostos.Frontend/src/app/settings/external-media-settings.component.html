@@ -210,7 +210,7 @@
                 @for (item of review().items; track item.key) {
                   <li class="external-row is-question" data-testid="external-media-review-row">
                     <label class="external-row-main">
-                      <input type="checkbox" [checked]="isSelected(item)" (change)="toggle(item)" />
+                      <input type="checkbox" appCheckbox [checked]="isSelected(item)" (change)="toggle(item)" />
                       <span class="external-row-text">
                         <span class="external-row-title">{{ item.title }}</span>
                         <span class="external-row-sub">{{ describeItem(item) }}</span>
@@ -239,7 +239,7 @@
                 @for (item of ready().items; track item.key) {
                   <li class="external-row" data-testid="external-media-ready-row">
                     <label class="external-row-main">
-                      <input type="checkbox" [checked]="isSelected(item)" (change)="toggle(item)" />
+                      <input type="checkbox" appCheckbox [checked]="isSelected(item)" (change)="toggle(item)" />
                       <nostos-icon
                         [name]="item.kind === 'audiobook' ? 'headphones' : 'book-open'"
                         [size]="15"

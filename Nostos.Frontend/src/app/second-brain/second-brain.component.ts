@@ -83,11 +83,13 @@ import {
   type SourceOption,
 } from './second-brain.helpers';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
+import { CheckboxDirective } from '../ui/check/check.directive';
 
 @Component({
   standalone: true,
   selector: 'app-brain',
   imports: [
+    CheckboxDirective,
     ...NOSTOS_MENU,
     NoteCaptureDetailsComponent,
     CommonModule,

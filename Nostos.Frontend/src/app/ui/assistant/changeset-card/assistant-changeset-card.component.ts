@@ -6,6 +6,7 @@ import type {
   LibraryChangesetCountsDto,
   LibraryCollectionChangeDto,
 } from '../assistant.service';
+import { CheckboxDirective } from '../../check/check.directive';
 
 /** How many books the details list shows before it summarises the rest. */
 const BOOK_LIST_LIMIT = 40;
@@ -21,7 +22,7 @@ const BOOK_LIST_LIMIT = 40;
 @Component({
   selector: 'app-assistant-changeset-card',
   standalone: true,
-  imports: [ButtonComponent],
+  imports: [CheckboxDirective, ButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './assistant-changeset-card.component.html',
   styleUrl: './assistant-changeset-card.component.css',
