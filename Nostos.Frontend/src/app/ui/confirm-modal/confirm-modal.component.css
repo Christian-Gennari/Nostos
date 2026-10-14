@@ -42,20 +42,7 @@
    styling belongs to appButton. ConfirmModal keeps only the question-specific
    typography/mark and its busy spinner. */
 
-.spin-icon {
-  animation: spin 0.8s linear infinite;
-}
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 /* The card and backdrop guards live with the shell now; this one is for the
    spinner, which is this component's own. */
-@media (prefers-reduced-motion: reduce) {
-  .spin-icon {
-    animation: none;
-  }
-}

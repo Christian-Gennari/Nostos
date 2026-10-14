@@ -12,6 +12,7 @@ import { LibraryFilterService } from '../../library/library-filter.service';
 import { Book } from '../../core/dtos/book.dtos';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 
 export type PaletteEntry =
   | { kind: 'book'; id: string; label: string; sub: string }
@@ -38,7 +39,7 @@ const ACTIONS: PaletteEntry[] = [
 @Component({
   selector: 'app-command-palette',
   standalone: true,
-  imports: [CommonModule, FormsModule, NostosIconComponent],
+  imports: [LoadingIndicatorComponent, CommonModule, FormsModule, NostosIconComponent],
   templateUrl: './command-palette.component.html',
   styleUrl: './command-palette.component.css',
 })

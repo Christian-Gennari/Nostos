@@ -4,7 +4,7 @@
 
     @switch (entry.view().kind) {
       @case ('loading') {
-        <div class="cloud-entry__spinner" aria-hidden="true"></div>
+        <nostos-loading-indicator class="cloud-entry__spinner" decorative size="xl" />
         <h1>Opening Nostos…</h1>
         <p>Checking your library.</p>
       }
@@ -284,7 +284,7 @@
       }
 
       @case ('provisioning') {
-        <div class="cloud-entry__spinner" aria-hidden="true"></div>
+        <nostos-loading-indicator class="cloud-entry__spinner" decorative size="xl" />
         <p class="cloud-entry__eyebrow">Almost there</p>
         <h1>Preparing your Nostos library…</h1>
         <div

@@ -284,7 +284,7 @@
 
 <ng-template #progress let-verb>
   <div class="highlight-progress" role="status" aria-live="polite">
-    <nostos-icon name="circle-notch" [size]="22" class="spin"></nostos-icon>
+    <nostos-loading-indicator decorative size="xl" />
     <p class="highlight-progress-title">
       @if (fileCount() > 1) {
         {{ verb }} file {{ currentIndex() }} of {{ fileCount() }}…

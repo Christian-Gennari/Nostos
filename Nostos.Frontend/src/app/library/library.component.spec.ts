@@ -820,7 +820,7 @@ describe('Library', () => {
     expect(progress.getAttribute('aria-valuenow')).toBe('42');
     expect(progress.querySelector('.import-status-label')!.textContent).toBe('Downloading');
     expect(progress.querySelector('.cover-progress-percent')!.textContent).toBe('42%');
-    expect((progress.querySelector('.cover-progress-track i') as HTMLElement).style.width).toBe(
+    expect((progress.querySelector('.cover-progress-track .nostos-progress__fill') as HTMLElement).style.width).toBe(
       '42%',
     );
   });
@@ -858,7 +858,7 @@ describe('Library', () => {
     expect(row.classList.contains('is-importing')).toBe(true);
     expect(row.querySelector('.list-progress')!.getAttribute('aria-valuenow')).toBe('61');
     expect(row.querySelector('.list-progress-caption')!.textContent).toContain('61%');
-    expect((row.querySelector('.list-progress-track i') as HTMLElement).style.width).toBe('61%');
+    expect((row.querySelector('.list-progress-track .nostos-progress__fill') as HTMLElement).style.width).toBe('61%');
   });
 
   it('explains a failure on the card itself, with the actions reachable', () => {

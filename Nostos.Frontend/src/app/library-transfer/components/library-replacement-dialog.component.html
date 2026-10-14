@@ -114,7 +114,6 @@
           (click)="confirm()"
         >
           @if (busy()) {
-            <nostos-icon name="circle-notch" [size]="14" class="spin-icon" />
             <span>{{ busyLabel() }}</span>
           } @else {
             Replace library

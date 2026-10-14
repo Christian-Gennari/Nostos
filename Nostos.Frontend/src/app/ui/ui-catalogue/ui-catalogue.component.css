@@ -232,7 +232,7 @@
   margin: 0;
 }
 
-/* A stand-in cover: the overlay surface only makes sense on artwork. */
+/* A stand-in cover for controls that sit on artwork. */
 .catalogue-artwork {
   padding: 1rem;
   border-radius: var(--radius-lg);

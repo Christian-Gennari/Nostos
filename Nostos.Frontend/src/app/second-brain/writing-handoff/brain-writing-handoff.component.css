@@ -287,16 +287,6 @@
   font-size: 0.9rem;
 }
 
-.spin-icon {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @keyframes loading-pulse {
   to {
     opacity: 0.52;
@@ -371,8 +361,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .destination-option,
-  .loading-row,
-  .spin-icon {
+  .loading-row {
     animation: none;
     transition: none;
   }

@@ -742,7 +742,6 @@
                     [busy]="aiLoadingKind() === 'llm'"
                   >
                     @if (aiLoadingKind() === 'llm') {
-                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                       {{ copy.loading }}
                     } @else {
                       {{ copy.loadModels }}
@@ -802,7 +801,6 @@
                   [busy]="aiTestingKind() === 'llm'"
                 >
                   @if (aiTestingKind() === 'llm') {
-                    <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                     {{ copy.testing }}
                   } @else {
                     {{ copy.testConnection }}
@@ -879,7 +877,6 @@
                     [busy]="aiLoadingKind() === 'stt'"
                   >
                     @if (aiLoadingKind() === 'stt') {
-                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                       {{ copy.loading }}
                     } @else {
                       {{ copy.loadModels }}
@@ -939,7 +936,6 @@
                   [busy]="aiTestingKind() === 'stt'"
                 >
                   @if (aiTestingKind() === 'stt') {
-                    <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                     {{ copy.testing }}
                   } @else {
                     {{ copy.testConnection }}
@@ -1036,7 +1032,6 @@
                         [busy]="aiLoadingKind() === 'alignmentStt'"
                       >
                         @if (aiLoadingKind() === 'alignmentStt') {
-                          <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                           {{ copy.loading }}
                         } @else {
                           {{ copy.loadModels }}
@@ -1110,7 +1105,6 @@
                     [busy]="aiTestingKind() === 'alignmentStt'"
                   >
                     @if (aiTestingKind() === 'alignmentStt') {
-                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                       {{ copy.testing }}
                     } @else {
                       {{ copy.testConnection }}
@@ -1190,7 +1184,6 @@
                       [busy]="aiLoadingKind() === 'embedding'"
                     >
                       @if (aiLoadingKind() === 'embedding') {
-                        <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                         {{ copy.loading }}
                       } @else {
                         {{ copy.loadModels }}
@@ -1252,7 +1245,6 @@
                     [busy]="aiTestingKind() === 'embedding'"
                   >
                     @if (aiTestingKind() === 'embedding') {
-                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                       {{ copy.testing }}
                     } @else {
                       {{ copy.testConnection }}
@@ -1371,7 +1363,6 @@
                     data-testid="read-aloud-test"
                   >
                     @if (aiTestingKind() === 'tts') {
-                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
                       {{ copy.testing }}
                     } @else {
                       {{ copy.testConnection }}
@@ -1401,9 +1392,6 @@
                 [busy]="aiSaving()"
                 data-testid="ai-provider-save"
               >
-                @if (aiSaving()) {
-                  <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
-                }
                 {{ copy.save }}
               </button>
               @if (aiSaveStatus(); as status) {
@@ -1456,7 +1444,6 @@
             (click)="triggerBackup()"
           >
             @if (backingUp()) {
-              <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
               Backing up...
             } @else {
               <nostos-icon name="arrows-clockwise" [size]="16"></nostos-icon>
@@ -1545,9 +1532,7 @@
               <div class="progress-step-label">
                 Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
               </div>
-              <div class="progress-bar">
-                <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
-              </div>
+              <nostos-progress [value]="progress().percentComplete" [label]="progress().currentStep" />
               @if (showSlowNotice()) {
                 <div appNotice tone="caution" class="slow-notice">
                   This step may take a few minutes for large libraries.
@@ -1569,7 +1554,6 @@
               (click)="scanForBackups()"
             >
               @if (importing()) {
-                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
                 Scanning...
               } @else {
                 <nostos-icon name="folder-simple" [size]="16"></nostos-icon>
@@ -1905,7 +1889,6 @@
                   (click)="openFirstRunImportPicker()"
                 >
                   @if (cloudEntry.actionPending()) {
-                    <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
                     Importing…
                   } @else {
                     <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
@@ -1944,7 +1927,6 @@
               (click)="exportAllNostosData()"
             >
               @if (portableExportBusy()) {
-                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
                 Exporting…
               } @else {
                 <nostos-icon name="download-simple" [size]="16"></nostos-icon>

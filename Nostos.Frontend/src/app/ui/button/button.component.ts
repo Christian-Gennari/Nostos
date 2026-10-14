@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 
 /**
  * `overlay` is the frosted control for buttons that sit ON artwork (the book
@@ -26,8 +27,18 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
 @Component({
   selector: 'button[appButton], a[appButton]',
   standalone: true,
+  imports: [LoadingIndicatorComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: '<ng-content />',
+  template: `
+    @if (busy()) {
+      <nostos-loading-indicator
+        class="nostos-button__spinner"
+        decorative
+        [size]="size() === 'sm' ? 'sm' : 'md'"
+      />
+    }
+    <ng-content />
+  `,
   host: {
     class: 'nostos-button',
     '[class.nostos-button--primary]': "variant() === 'primary'",
@@ -171,6 +182,17 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
         font-size: 0.875rem;
       }
 
+      /* Busy: the button draws the one spinner, in its own ink, and hides its
+         leading glyph so a busy "Save" never shows a spinner AND a check. Call
+         sites used to place a circle-notch by hand with one of nine copies of a
+         spin keyframe, at 14, 15 or 16px. */
+      .nostos-button__spinner {
+        color: inherit;
+      }
+      :host([aria-busy='true']) ::ng-deep > nostos-icon {
+        display: none;
+      }
+
       @media (prefers-reduced-motion: reduce) {
         :host {
           transition: none;
@@ -184,9 +206,9 @@ export class ButtonComponent {
   readonly size = input<ButtonSize>('md');
 
   /**
-   * Busy is an accessibility/status signal only. It intentionally does not
-   * override the native disabled attribute; callers decide whether work in
-   * flight should block activation.
+   * Busy sets aria-busy and draws the button's spinner (replacing any leading
+   * glyph). It intentionally does not override the native disabled attribute;
+   * callers decide whether work in flight should block activation.
    */
   readonly busy = input(false);
 }

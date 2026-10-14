@@ -68,6 +68,7 @@ import {
   AlignmentTranscriptionSectionUpdate,
 } from '../core/dtos/ai-provider.dtos';
 import { NoticeComponent } from '../ui/notice/notice.component';
+import { ProgressComponent } from '../ui/progress/progress.component';
 
 const SLOW_STEP_THRESHOLD_MS = 30_000;
 
@@ -253,6 +254,7 @@ const defaultProgress: BackupProgress = {
   standalone: true,
   selector: 'app-settings',
   imports: [
+    ProgressComponent,
     NoticeComponent,
     CommonModule,
     FormsModule,

@@ -24,10 +24,12 @@ import {
   transferProgressLiveText,
   transferProgressValueText,
 } from '../library-transfer.copy';
+import { ProgressComponent } from '../../ui/progress/progress.component';
 
 @Component({
   selector: 'app-library-transfer-progress',
   standalone: true,
+  imports: [ProgressComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './library-transfer-progress.component.html',
   styleUrl: './library-transfer-progress.component.css',

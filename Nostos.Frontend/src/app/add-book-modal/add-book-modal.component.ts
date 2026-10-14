@@ -37,6 +37,7 @@ import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
 import { DropZoneComponent } from '../ui/drop-zone/drop-zone.component';
 import { SegmentedComponent } from '../ui/segmented/segmented.component';
 import { RadioDirective } from '../ui/check/check.directive';
+import { ProgressComponent } from '../ui/progress/progress.component';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -53,6 +54,7 @@ export interface AddBookPrefill {
   standalone: true,
   imports: [
     RadioDirective,
+    ProgressComponent,
     DropZoneComponent,
     IconTileComponent,
     NoticeComponent,

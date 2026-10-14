@@ -60,9 +60,7 @@
                 <span>{{ stageLabel(job) }}</span>
                 <span>{{ job.percent }}%</span>
               </div>
-              <div class="source-progress-track">
-                <div class="source-progress-fill" [style.width.%]="job.percent"></div>
-              </div>
+              <nostos-progress [value]="job.percent" [label]="stageLabel(job)" />
               @if (job.detail) {
                 <span class="source-hint">{{ job.detail }}</span>
               }
