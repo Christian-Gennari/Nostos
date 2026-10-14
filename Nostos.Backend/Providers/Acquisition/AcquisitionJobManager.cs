@@ -21,6 +21,7 @@ namespace Nostos.Backend.Providers.Acquisition;
 public sealed class AcquisitionJobManager : BackgroundService, IAcquisitionJobManager
 {
     private readonly ConcurrentDictionary<string, Job> _jobs = new(StringComparer.Ordinal);
+    private readonly object _startSync = new();
     private readonly Channel<Job> _queue;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AcquisitionOptions _options;
@@ -49,14 +50,39 @@ public sealed class AcquisitionJobManager : BackgroundService, IAcquisitionJobMa
     {
         Sweep();
 
-        var job = new Job(Guid.NewGuid().ToString("N"), request);
-        _jobs[job.Id] = job;
+        Job job;
 
-        if (!_queue.Writer.TryWrite(job))
+        // The check and the add are one step: two requests for the same item
+        // arriving together (a double-click on Import) must not both see "none
+        // in flight" and queue two jobs.
+        lock (_startSync)
         {
-            _jobs.TryRemove(job.Id, out _);
-            throw new InvalidOperationException(
-                "The acquisition queue is full. Wait for the current imports to finish and try again.");
+            // The same item already in flight is the same import. A second job
+            // would only re-ask the source catalogue, and when that one answer
+            // fails the user is told the import failed while the first job
+            // imports the book.
+            var inFlight = _jobs.Values
+                .Where(existing => IsSameItem(existing.Request, request))
+                .Select(existing => existing.Snapshot())
+                .FirstOrDefault(status => !status.IsFinished);
+
+            if (inFlight is not null)
+            {
+                _logger.LogInformation(
+                    "Acquisition {JobId} for {Provider}/{ExternalId} is already in flight; not queuing another.",
+                    inFlight.JobId, request.ProviderId, request.ExternalId);
+                return inFlight;
+            }
+
+            job = new Job(Guid.NewGuid().ToString("N"), request);
+            _jobs[job.Id] = job;
+
+            if (!_queue.Writer.TryWrite(job))
+            {
+                _jobs.TryRemove(job.Id, out _);
+                throw new InvalidOperationException(
+                    "The acquisition queue is full. Wait for the current imports to finish and try again.");
+            }
         }
 
         _logger.LogInformation(
@@ -65,6 +91,14 @@ public sealed class AcquisitionJobManager : BackgroundService, IAcquisitionJobMa
 
         return job.Snapshot();
     }
+
+    private static bool IsSameItem(AcquisitionRequest a, AcquisitionRequest b) =>
+        string.Equals(a.ProviderId, b.ProviderId, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(a.ExternalId?.Trim(), b.ExternalId?.Trim(), StringComparison.OrdinalIgnoreCase)
+        && string.Equals(NormalizeAsset(a.AssetId), NormalizeAsset(b.AssetId), StringComparison.OrdinalIgnoreCase);
+
+    private static string? NormalizeAsset(string? assetId) =>
+        string.IsNullOrWhiteSpace(assetId) ? null : assetId.Trim();
 
     public AcquisitionJobStatus? Get(string jobId) =>
         string.IsNullOrWhiteSpace(jobId) || !_jobs.TryGetValue(jobId, out var job)

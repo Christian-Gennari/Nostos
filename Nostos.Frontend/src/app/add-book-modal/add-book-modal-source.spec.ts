@@ -757,6 +757,46 @@ describe('AddBookModal — From a Source', () => {
     expect(closed).toHaveBeenCalled();
   });
 
+  it('queues one import however many times Import is pressed before the server answers', async () => {
+    // A double-click used to queue the same book twice: one job imported it, the
+    // other met a passing 504 at the source and reported the import as failed.
+    const answer = new Subject<ProviderAcquisition>();
+    const acquire = vi.spyOn(providers, 'acquire').mockReturnValue(answer.asObservable());
+
+    component.enterSourceMode();
+    await fixture.whenStable();
+    component.selectSourceItem(pride);
+    component.seedFromSelectedItem();
+
+    component.submit();
+    component.submit();
+    component.importSelected();
+
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(component.isSubmitting()).toBe(true);
+
+    answer.next(job());
+    answer.complete();
+
+    expect(component.isSubmitting()).toBe(false);
+  });
+
+  it('lets the user try again after an import could not be started', async () => {
+    const acquire = vi
+      .spyOn(providers, 'acquire')
+      .mockReturnValueOnce(throwError(() => ({ error: { detail: 'Queue full.' } })))
+      .mockReturnValueOnce(of(job()));
+
+    component.enterSourceMode();
+    await fixture.whenStable();
+    component.selectSourceItem(pride);
+
+    component.importSelected();
+    component.importSelected();
+
+    expect(acquire).toHaveBeenCalledTimes(2);
+  });
+
   it('shows error when import fails to start', async () => {
     vi.spyOn(providers, 'acquire').mockReturnValue(
       throwError(() => ({ error: { detail: 'The import could not be started.' } })),

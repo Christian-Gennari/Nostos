@@ -1207,10 +1207,14 @@ export class AddBookModal {
 
   importSelected(): void {
     const item = this.selectedItem();
-    if (!item || this.runningAcquisition()) return;
+    // isSubmitting covers the request itself: until the server answers, nothing
+    // else marks the import as started, and a second click (or Enter plus a
+    // click) would queue the same book twice.
+    if (!item || this.runningAcquisition() || this.isSubmitting()) return;
 
     this.sourceImportError.set(null);
     this.acquisition.set(null);
+    this.isSubmitting.set(true);
 
     this.providers
       .acquire(item.providerId, {
@@ -1221,6 +1225,7 @@ export class AddBookModal {
       })
       .subscribe({
         next: (job) => {
+          this.isSubmitting.set(false);
           if (job?.bookId) this.bookCreated.emit(job.bookId);
           else if (job?.jobId) this.importQueued.emit(job.jobId);
           this.toast.success(
@@ -1233,10 +1238,12 @@ export class AddBookModal {
           this.bookAdded.emit();
           this.closeModal.emit();
         },
-        error: (error) =>
+        error: (error) => {
+          this.isSubmitting.set(false);
           this.sourceImportError.set(
             this.describeError(error, 'The import could not be started.'),
-          ),
+          );
+        },
       });
   }
 
