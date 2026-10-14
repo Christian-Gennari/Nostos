@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { epubMarkCount } from './support/epub-marks';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'tiny.epub'));
 
@@ -113,11 +114,11 @@ test.describe('unified reader search', () => {
 
     await input.fill(query);
     await expect(panel.locator('.reader-search-status')).toHaveText(/\d+ of \d+/, { timeout: 30_000 });
-    await expect(page.locator('[ref="epubjs-search-current"]')).toHaveCount(1);
+    await expect.poll(() => epubMarkCount(page, 'search')).toBe(1);
 
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
-    await expect(page.locator('[ref="epubjs-search-current"]')).toHaveCount(0);
+    await expect.poll(() => epubMarkCount(page, 'search')).toBe(0);
   });
 
   test('PDF: shared search uses PDF.js counts and next wraps through real matches', async ({ page }) => {
