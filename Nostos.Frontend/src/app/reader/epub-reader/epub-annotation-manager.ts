@@ -9,12 +9,16 @@ import {
   resolveHighlightFill,
 } from '../highlight-colours';
 import { Note } from '../../core/dtos/note.dtos';
+import type { Theme } from '../../core/services/theme.service';
+import { EpubTextMarks, TextMark, textMarksSupported } from './epub-text-marks';
 
 interface PendingEpubHighlight {
   cfiRange: string;
   selectedText: string;
   contents: Contents;
   temporaryAnnotation?: PendingHighlightAnnotation;
+  /** The same preview when it is painted into the text (EpubTextMarks). */
+  temporaryMark?: TextMark;
   /** Offered from a live touch selection, which is still on the page. */
   touch: boolean;
 }
@@ -102,6 +106,20 @@ export class EpubAnnotationManager {
   private notesService: NotesService;
 
   /**
+   * Marks painted by the text itself, which follow every reflow. Null in a
+   * browser without the CSS Custom Highlight API, where epub.js's overlay
+   * (measured once, redrawn only on a frame resize) is the fallback.
+   */
+  private readonly textMarks: EpubTextMarks | null = textMarksSupported()
+    ? new EpubTextMarks(() => this.renderedContents())
+    : null;
+  /** Saved highlights painted by textMarks, by location. */
+  private readonly savedMarks = new Map<string, TextMark>();
+  private searchMark: TextMark | null = null;
+  private landingMark: TextMark | null = null;
+  private readAloudMark: TextMark | null = null;
+
+  /**
    * The book's chosen pen (issue #208): the colour of the NEXT highlight made
    * here. A saved highlight is drawn in its own stored pen (issue #861).
    */
@@ -157,9 +175,35 @@ export class EpubAnnotationManager {
     // An offered passage previews the pen it will be saved in. The fill is
     // baked into the mark when it is drawn, so a new pen is a redraw.
     const pending = this.pendingHighlight;
-    if (pending?.temporaryAnnotation && !this.committing) {
+    if ((pending?.temporaryAnnotation || pending?.temporaryMark) && !this.committing) {
       this.removePendingAnnotation();
+      this.drawPending(pending);
+    }
+  }
+
+  private drawPending(pending: PendingEpubHighlight): void {
+    if (this.textMarks) {
+      pending.temporaryMark = this.textMarks.add(pending.cfiRange, {
+        kind: 'pen',
+        colour: this.highlightColour,
+      });
+    } else {
       pending.temporaryAnnotation = this.drawPendingAnnotation(pending.cfiRange);
+    }
+  }
+
+  /** The page changed theme; painted marks are tinted to suit it. */
+  setTheme(theme: Theme): void {
+    this.textMarks?.setTheme(theme);
+  }
+
+  private renderedContents(): Contents[] {
+    try {
+      const raw = this.rendition.getContents?.() as unknown;
+      if (Array.isArray(raw)) return raw as Contents[];
+      return raw ? [raw as Contents] : [];
+    } catch {
+      return [];
     }
   }
 
@@ -199,6 +243,7 @@ export class EpubAnnotationManager {
       return;
     }
     this.injectSelectionStyles(contents);
+    this.textMarks?.attach(contents);
 
     /**
      * Captures the current selection. A mouse capture takes the selection
@@ -350,6 +395,11 @@ export class EpubAnnotationManager {
 
   /** Adds a persisted highlight in the pen saved with it. */
   private addPersistedHighlight(cfiRange: string, colour: HighlightColour): void {
+    if (this.textMarks) {
+      this.textMarks.remove(this.savedMarks.get(cfiRange));
+      this.savedMarks.set(cfiRange, this.textMarks.add(cfiRange, { kind: 'pen', colour }));
+      return;
+    }
     this.rendition.annotations.add('highlight', cfiRange, {}, undefined, undefined, {
       fill: this.highlightFill(colour),
     });
@@ -365,6 +415,10 @@ export class EpubAnnotationManager {
   public showSearchHighlight(cfiRange: string): void {
     this.clearSearchHighlight();
     this.searchCfiRange = cfiRange;
+    if (this.textMarks) {
+      this.searchMark = this.textMarks.add(cfiRange, { kind: 'search' });
+      return;
+    }
     this.rendition.annotations.underline(
       cfiRange,
       { nostosSearch: true },
@@ -380,6 +434,12 @@ export class EpubAnnotationManager {
 
   public clearSearchHighlight(): void {
     if (!this.searchCfiRange) return;
+    if (this.textMarks) {
+      this.textMarks.remove(this.searchMark);
+      this.searchMark = null;
+      this.searchCfiRange = null;
+      return;
+    }
     this.rendition.annotations.remove(this.searchCfiRange, 'underline');
     this.searchCfiRange = null;
   }
@@ -392,6 +452,10 @@ export class EpubAnnotationManager {
   public showLandingMark(cfiRange: string): void {
     this.clearLandingMark();
     this.landingCfiRange = cfiRange;
+    if (this.textMarks) {
+      this.landingMark = this.textMarks.add(cfiRange, { kind: 'landing' });
+      return;
+    }
     this.rendition.annotations.underline(
       cfiRange,
       { nostosLanding: true },
@@ -404,6 +468,12 @@ export class EpubAnnotationManager {
 
   public clearLandingMark(): void {
     if (!this.landingCfiRange) return;
+    if (this.textMarks) {
+      this.textMarks.remove(this.landingMark);
+      this.landingMark = null;
+      this.landingCfiRange = null;
+      return;
+    }
     this.rendition.annotations.remove(this.landingCfiRange, 'underline');
     this.landingCfiRange = null;
   }
@@ -418,6 +488,10 @@ export class EpubAnnotationManager {
     if (this.readAloudCfiRange === cfiRange) return;
     this.clearReadAloudMark();
     this.readAloudCfiRange = cfiRange;
+    if (this.textMarks) {
+      this.readAloudMark = this.textMarks.add(cfiRange, { kind: 'read-aloud' });
+      return;
+    }
     this.rendition.annotations.underline(
       cfiRange,
       { nostosReadAloud: true },
@@ -428,6 +502,12 @@ export class EpubAnnotationManager {
 
   public clearReadAloudMark(): void {
     if (!this.readAloudCfiRange) return;
+    if (this.textMarks) {
+      this.textMarks.remove(this.readAloudMark);
+      this.readAloudMark = null;
+      this.readAloudCfiRange = null;
+      return;
+    }
     this.rendition.annotations.remove(this.readAloudCfiRange, 'underline');
     this.readAloudCfiRange = null;
   }
@@ -471,15 +551,13 @@ export class EpubAnnotationManager {
       this.pendingHighlight = null;
     }
 
-    const temporaryAnnotation = this.drawPendingAnnotation(cfiRange);
-
     this.pendingHighlight = {
       cfiRange,
       selectedText,
       contents,
-      temporaryAnnotation,
       touch: input === 'touch',
     };
+    this.drawPending(this.pendingHighlight);
     this.lastCapturedKey = key;
 
     if (input === 'touch') {
@@ -539,6 +617,7 @@ export class EpubAnnotationManager {
       selectedText: pending.selectedText,
       contents: pending.contents,
       temporaryAnnotation: pending.temporaryAnnotation,
+      temporaryMark: pending.temporaryMark,
       touch: pending.touch,
     };
     // The pen in hand when Save was pressed is the one stored and drawn, even
@@ -562,6 +641,7 @@ export class EpubAnnotationManager {
             this.committing = false;
             this.addPersistedHighlight(snapshot.cfiRange, colour);
             this.removeAnnotation(snapshot.temporaryAnnotation);
+            this.textMarks?.remove(snapshot.temporaryMark);
             // A touch selection is still live; left in place it would be
             // offered again at the next touch.
             snapshot.contents.window.getSelection()?.removeAllRanges();
@@ -593,7 +673,10 @@ export class EpubAnnotationManager {
   }
 
   private removePendingAnnotation(): void {
-    this.removeAnnotation(this.pendingHighlight?.temporaryAnnotation);
+    const pending = this.pendingHighlight;
+    this.removeAnnotation(pending?.temporaryAnnotation);
+    this.textMarks?.remove(pending?.temporaryMark);
+    if (pending) pending.temporaryMark = undefined;
   }
 
   /**
@@ -641,12 +724,17 @@ export class EpubAnnotationManager {
    */
   public recolourHighlight(cfiRange: string, colour: HighlightColour): void {
     if (!this.highlights().includes(cfiRange)) return;
-    this.rendition.annotations.remove(cfiRange, 'highlight');
+    if (!this.textMarks) this.rendition.annotations.remove(cfiRange, 'highlight');
     this.addPersistedHighlight(cfiRange, colour);
   }
 
   public removeHighlight(cfiRange: string) {
-    this.rendition.annotations.remove(cfiRange, 'highlight');
+    if (this.textMarks) {
+      this.textMarks.remove(this.savedMarks.get(cfiRange));
+      this.savedMarks.delete(cfiRange);
+    } else {
+      this.rendition.annotations.remove(cfiRange, 'highlight');
+    }
     this.highlights.update((current) => current.filter((cfi) => cfi !== cfiRange));
   }
 
@@ -659,6 +747,8 @@ export class EpubAnnotationManager {
     this.clearSearchHighlight();
     this.clearLandingMark();
     this.clearReadAloudMark();
+    this.textMarks?.clear();
+    this.savedMarks.clear();
 
     if (this.selectedHandler) {
       this.rendition.off('selected', this.selectedHandler);
