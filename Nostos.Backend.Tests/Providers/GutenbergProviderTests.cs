@@ -434,4 +434,73 @@ public sealed class GutenbergProviderTests
 
         item.Should().BeNull();
     }
+
+    [Fact]
+    public async Task PlanAcquisition_WhenTheCatalogueAnswers504Once_RetriesAndPlans()
+    {
+        // The import that started this: one passing 504 from the item lookup
+        // failed the whole import. A retry must carry it through.
+        var detailXml = LoadFixture("book-1342.opds");
+        var calls = 0;
+        var handler = new StubHttpMessageHandler().Register("/ebooks/1342.opds", _ =>
+            Interlocked.Increment(ref calls) == 1
+                ? new HttpResponseMessage(HttpStatusCode.GatewayTimeout)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(detailXml, System.Text.Encoding.UTF8, "application/atom+xml"),
+                });
+        var provider = CreateProviderWithoutRetryWaits(handler);
+
+        var plan = await provider.PlanAcquisitionAsync(new ProviderAcquisitionRequest("1342", AssetId: null), CancellationToken.None);
+
+        plan.Should().NotBeNull();
+        calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task PlanAcquisition_WhenTheCatalogueKeepsAnswering504_GivesUpAsUnavailable()
+    {
+        var handler = new StubHttpMessageHandler().Register("/ebooks/1342.opds", _ =>
+            new HttpResponseMessage(HttpStatusCode.GatewayTimeout));
+        var provider = CreateProviderWithoutRetryWaits(handler);
+
+        var act = () => provider.PlanAcquisitionAsync(new ProviderAcquisitionRequest("1342", AssetId: null), CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ProviderException>()).Which.Code.Should().Be(ProviderException.Unavailable);
+        // One attempt plus one per configured retry, and no more.
+        handler.RecordedRequests.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task PlanAcquisition_ANonTransientError_IsNotRetried()
+    {
+        var handler = new StubHttpMessageHandler().Register("/ebooks/1342.opds", _ =>
+            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var provider = CreateProviderWithoutRetryWaits(handler);
+
+        var act = () => provider.PlanAcquisitionAsync(new ProviderAcquisitionRequest("1342", AssetId: null), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+        handler.RecordedRequests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Search_WhenTheCatalogueAnswers504_IsNotRetried()
+    {
+        // Search fails fast: the user is watching it and can search again.
+        var handler = new StubHttpMessageHandler().SetFallback(_ =>
+            new HttpResponseMessage(HttpStatusCode.GatewayTimeout));
+        var provider = CreateProviderWithoutRetryWaits(handler);
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("austen"), CancellationToken.None);
+
+        await act.Should().ThrowAsync<ProviderException>();
+        handler.RecordedRequests.Should().ContainSingle();
+    }
+
+    private static GutenbergProvider CreateProviderWithoutRetryWaits(StubHttpMessageHandler handler) =>
+        new(new StubHttpClientFactory(handler), NullLogger<GutenbergProvider>.Instance)
+        {
+            CatalogueRetryDelays = [TimeSpan.Zero, TimeSpan.Zero],
+        };
 }

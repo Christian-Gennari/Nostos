@@ -297,32 +297,62 @@ public sealed partial class GutenbergProvider : IContentProvider,
         if (!EbookId().IsMatch(id))
             return null;
 
-        var feed = await LoadAsync($"/ebooks/{id}.opds", ct);
+        // The item lookup is the first step of every import, and gutenberg.org
+        // answers it with a passing 502/503/504 often enough that failing the
+        // whole import on one of them is the wrong default. Search keeps a
+        // single attempt: the user is looking at it and can simply search again.
+        var feed = await LoadAsync($"/ebooks/{id}.opds", ct, CatalogueRetryDelays);
         return feed is null ? null : GutenbergCatalog.ParseDetail(feed, id);
     }
 
-    private async Task<XDocument?> LoadAsync(string path, CancellationToken ct)
+    /// <summary>
+    /// The waits between attempts at an item lookup that met a transient
+    /// gateway error; one retry per entry. Settable so a test does not sleep.
+    /// </summary>
+    internal IReadOnlyList<TimeSpan> CatalogueRetryDelays { get; init; } =
+        [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3)];
+
+    private async Task<XDocument?> LoadAsync(
+        string path,
+        CancellationToken ct,
+        IReadOnlyList<TimeSpan>? retryDelays = null)
     {
-        using var response = await _http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
-
-        // The catalogue answers 404 for an unknown ebook; that is an ordinary
-        // "no such item", not a source failure.
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
-            return null;
-
-        if (!response.IsSuccessStatusCode)
-            throw ProviderException.UnavailableFor(Id, $"the catalogue answered HTTP {(int)response.StatusCode}");
-
-        try
+        for (var attempt = 0; ; attempt++)
         {
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            return await XDocument.LoadAsync(stream, LoadOptions.None, ct);
-        }
-        catch (XmlException ex)
-        {
-            // A maintenance page or an HTML error document: worth reporting as a
-            // source problem, never worth passing off as an empty catalogue.
-            throw ProviderException.InvalidResponse(Id, ex.Message);
+            using var response = await _http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            // The catalogue answers 404 for an unknown ebook; that is an ordinary
+            // "no such item", not a source failure.
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+                return null;
+
+            if (response.StatusCode is HttpStatusCode.BadGateway
+                    or HttpStatusCode.ServiceUnavailable
+                    or HttpStatusCode.GatewayTimeout
+                && retryDelays is not null
+                && attempt < retryDelays.Count)
+            {
+                _logger.LogInformation(
+                    "Gutenberg catalogue answered HTTP {Status} for {Path}; retrying.",
+                    (int)response.StatusCode, path);
+                await Task.Delay(retryDelays[attempt], ct);
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+                throw ProviderException.UnavailableFor(Id, $"the catalogue answered HTTP {(int)response.StatusCode}");
+
+            try
+            {
+                await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                return await XDocument.LoadAsync(stream, LoadOptions.None, ct);
+            }
+            catch (XmlException ex)
+            {
+                // A maintenance page or an HTML error document: worth reporting as a
+                // source problem, never worth passing off as an empty catalogue.
+                throw ProviderException.InvalidResponse(Id, ex.Message);
+            }
         }
     }
 
