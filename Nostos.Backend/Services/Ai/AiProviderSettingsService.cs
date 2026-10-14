@@ -42,7 +42,8 @@ public sealed class AiProviderSettingsService(
     EmbeddingOptions embeddingOptions,
     IDataProtectionProvider dataProtection,
     IHttpClientFactory httpClientFactory,
-    ILogger<AiProviderSettingsService> logger) : IAiProviderSettingsService
+    ILogger<AiProviderSettingsService> logger,
+    ReadAloudOptions? readAloudOptions = null) : IAiProviderSettingsService
 {
     /// <summary>Registered HTTP client for ordinary settings probes.</summary>
     public const string HttpClientName = "ai-provider-settings";
@@ -76,6 +77,10 @@ public sealed class AiProviderSettingsService(
         CancellationToken ct = default) =>
         ResolveAlignmentStt(await LoadRowAsync(ct));
 
+    public async Task<EffectiveAiProviderConfig> GetEffectiveTtsAsync(
+        CancellationToken ct = default) =>
+        ResolveTts(await LoadRowAsync(ct));
+
     // ------------------------------------------------------------------
     // GET / PUT
     // ------------------------------------------------------------------
@@ -105,7 +110,8 @@ public sealed class AiProviderSettingsService(
                 displayedAlignment.KeyFromServerEnv,
                 effectiveAlignment.UseVoiceTranscription,
                 row?.AlignmentTranscriptionApiStyle
-                    ?? AlignmentTranscriptionApiStyles.OpenAiMultipart));
+                    ?? AlignmentTranscriptionApiStyles.OpenAiMultipart),
+            ToDto(ResolveTts(row)));
     }
 
     public async Task<AiProviderSettingsResponse> UpdateAsync(
@@ -146,6 +152,11 @@ public sealed class AiProviderSettingsService(
         if (request.AlignmentTranscription is not null)
         {
             ApplyAlignmentUpdate(row, request.AlignmentTranscription);
+        }
+
+        if (request.Tts is not null)
+        {
+            ApplyTtsUpdate(row, request.Tts);
         }
 
         row.UpdatedAtUtc = DateTime.UtcNow;
@@ -207,6 +218,32 @@ public sealed class AiProviderSettingsService(
 
         row.SttApiKeyEncrypted = ApplyKey(
             update.ApiKey, row.SttApiKeyEncrypted);
+    }
+
+    private void ApplyTtsUpdate(
+        AiProviderSettingsModel row,
+        AiProviderSectionUpdate update)
+    {
+        ValidateBaseUrl(update.BaseUrl);
+        ValidateModel(update.Model);
+
+        if (update.Enabled is { } enabled)
+        {
+            row.TtsEnabled = enabled;
+        }
+
+        if (update.BaseUrl is not null)
+        {
+            row.TtsBaseUrl = update.BaseUrl.Trim();
+        }
+
+        if (update.Model is not null)
+        {
+            row.TtsModel = update.Model.Trim();
+        }
+
+        row.TtsApiKeyEncrypted = ApplyKey(
+            update.ApiKey, row.TtsApiKeyEncrypted);
     }
 
     private void ApplyEmbeddingUpdate(
@@ -464,6 +501,8 @@ public sealed class AiProviderSettingsService(
                     await TestLlmAsync(baseUrl, model, apiKey, ct),
                 AiProviderKind.Embedding =>
                     await TestEmbeddingAsync(baseUrl, model, apiKey, ct),
+                AiProviderKind.Tts =>
+                    await TestTtsAsync(baseUrl, model, apiKey, ct),
                 _ =>
                     await TestSttAsync(baseUrl, model, apiKey, ct),
             };
@@ -658,6 +697,70 @@ public sealed class AiProviderSettingsService(
             : new AiProviderTestResult(false, null, error);
     }
 
+    /// <summary>
+    /// Asks the speech server to say one word, as read aloud would. Answering
+    /// with audio is the test: a server that answers JSON is not a speech
+    /// server, whatever its status code.
+    /// </summary>
+    private async Task<AiProviderTestResult> TestTtsAsync(
+        string baseUrl,
+        string model,
+        string? apiKey,
+        CancellationToken ct)
+    {
+        var uri = OpenAiCompatibleReadAloudProvider.SpeechUri(baseUrl);
+        if (uri is null)
+        {
+            return new AiProviderTestResult(
+                false, null, "Read aloud baseUrl must be an absolute http:// or https:// URL.");
+        }
+
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new
+            {
+                model,
+                input = "Test.",
+                voice = KokoroVoices.All[0].Id,
+                response_format = "mp3",
+                speed = 1.0,
+            }),
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        try
+        {
+            using var response = await httpClientFactory
+                .CreateClient(OpenAiCompatibleReadAloudProvider.HttpClientName)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+            if (!response.IsSuccessStatusCode)
+            {
+                return new AiProviderTestResult(
+                    false, null, $"The speech server answered {(int)response.StatusCode}.");
+            }
+
+            return mediaType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+                || mediaType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase)
+                ? new AiProviderTestResult(true, $"{model} answered with audio.", null)
+                : new AiProviderTestResult(
+                    false, null, "The server answered, but not with audio. Is this a speech server?");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            return new AiProviderTestResult(false, null, "The speech server could not be reached.");
+        }
+    }
+
     private async Task<AiProviderTestResult> TestEmbeddingAsync(
         string baseUrl,
         string model,
@@ -765,8 +868,32 @@ public sealed class AiProviderSettingsService(
             AiProviderKind.Embedding => ResolveEmbedding(row),
             AiProviderKind.AlignmentTranscription =>
                 ResolveAlignmentStt(row).Provider,
+            AiProviderKind.Tts => ResolveTts(row),
             _ => ResolveStt(row),
         };
+    }
+
+    /// <summary>
+    /// The read-aloud speech server: the saved override when set, otherwise
+    /// the <c>ReadAloud</c> configuration section. A local speech server needs
+    /// no key, so this section is usable without one.
+    /// </summary>
+    private EffectiveAiProviderConfig ResolveTts(
+        AiProviderSettingsModel? row)
+    {
+        var options = readAloudOptions ?? new ReadAloudOptions();
+        var (key, fromEnv) = ResolveKey(
+            row?.TtsApiKeyEncrypted,
+            options.ApiKeyEnvironmentVariable,
+            "read aloud");
+
+        return new EffectiveAiProviderConfig(
+            row?.TtsEnabled ?? options.Enabled,
+            OverrideOrFallback(row?.TtsBaseUrl, options.BaseUrl),
+            OverrideOrFallback(row?.TtsModel, options.Model),
+            options.ApiKeyEnvironmentVariable,
+            key,
+            fromEnv);
     }
 
     private EffectiveAiProviderConfig ResolveLlm(
@@ -941,8 +1068,9 @@ public sealed class AiProviderSettingsService(
             "stt" => AiProviderKind.Stt,
             "embedding" => AiProviderKind.Embedding,
             "alignment-transcription" => AiProviderKind.AlignmentTranscription,
+            "tts" => AiProviderKind.Tts,
             _ => throw new AiProviderValidationException(
-                "kind must be 'llm', 'stt', 'embedding' or 'alignment-transcription'."),
+                "kind must be 'llm', 'stt', 'embedding', 'alignment-transcription' or 'tts'."),
         };
 
     private static string KindLabel(AiProviderKind kind) => kind switch
@@ -950,6 +1078,7 @@ public sealed class AiProviderSettingsService(
         AiProviderKind.Llm => "LLM",
         AiProviderKind.Embedding => "Embedding",
         AiProviderKind.AlignmentTranscription => "Alignment transcription",
+        AiProviderKind.Tts => "Read aloud",
         _ => "STT",
     };
 

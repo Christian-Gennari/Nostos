@@ -91,7 +91,7 @@ cd publish
 | -------------------------- | ------------- | ----------------- |
 | `Logging:LogLevel:Default` | `Information` | Minimum log level |
 | `ExternalMedia:Root`       | not set (`/external/media` in the Docker image) | Absolute path of a folder of existing books to read in place. See [External media](external-media.md) |
-| `ReadAloud:Enabled`, `ReadAloud:BaseUrl` | off, not set | Connects a speech server so books are read aloud with a natural voice. See [Read aloud](read-aloud.md) |
+| `ReadAloud:Enabled`, `ReadAloud:BaseUrl` | off, not set | Connects a speech server so books are read aloud with a natural voice. Also settable in Settings → AI connections. See [Read aloud](read-aloud.md) |
 
 The SQLite database file path is resolved in `Program.cs` using `Path.Combine(builder.Environment.ContentRootPath, "nostos.db")` to ensure an absolute path is used regardless of the working directory.
 

@@ -1296,6 +1296,126 @@
                 }
               </div>
             }
+
+            <!-- Read aloud (the natural voice). Hidden when the host manages the voice. -->
+            @if (aiTtsAvailable()) {
+              <div class="provider-section provider-section--wide" data-testid="ai-provider-tts">
+                <h3 class="provider-heading">{{ copy.readAloud }}</h3>
+                <p class="provider-help">{{ copy.readAloudDescription }}</p>
+
+                <div class="provider-toggle-row">
+                  <label appSwitch>
+                    <input
+                      type="checkbox"
+                      [checked]="aiTts().enabled"
+                      (change)="setAiTtsEnabled($event)"
+                      [attr.aria-label]="copy.readAloudToggle"
+                      data-testid="read-aloud-toggle"
+                    >
+                  </label>
+                  <span class="provider-toggle-label">{{ copy.readAloudToggle }}</span>
+                </div>
+                <p class="provider-help provider-toggle-help">{{ copy.readAloudToggleHelp }}</p>
+
+                <div class="provider-field">
+                  <label class="provider-label" for="ai-tts-base-url">{{ copy.endpoint }}</label>
+                  <input
+                    id="ai-tts-base-url"
+                    appInput
+                    controlSize="compact"
+                    class="provider-input"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [placeholder]="copy.endpointPlaceholderTts"
+                    [value]="aiTts().baseUrl"
+                    (input)="setAiBaseUrl('tts', $event)"
+                  />
+                  <p class="provider-help">{{ copy.endpointHelpTts }}</p>
+                </div>
+
+                <div class="provider-field">
+                  <label class="provider-label" for="ai-tts-model">{{ copy.model }}</label>
+                  <input
+                    id="ai-tts-model"
+                    appInput
+                    controlSize="compact"
+                    class="provider-input"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [placeholder]="copy.modelPlaceholderTts"
+                    [value]="aiTts().model"
+                    (input)="setAiModel('tts', $event)"
+                  />
+                  <p class="provider-help">{{ copy.modelHelp }}</p>
+                </div>
+
+                <div class="provider-field">
+                  <label class="provider-label" for="ai-tts-api-key">{{ copy.apiKey }}</label>
+                  <input
+                    id="ai-tts-api-key"
+                    appInput
+                    controlSize="compact"
+                    class="provider-input"
+                    type="password"
+                    autocomplete="new-password"
+                    [placeholder]="
+                      aiTts().hasKey || aiTts().keyFromServerEnv
+                        ? copy.apiKeyPlaceholderSet
+                        : copy.apiKeyPlaceholderUnset
+                    "
+                    [value]="aiTts().key"
+                    (input)="setAiKey('tts', $event)"
+                  />
+                  @if (aiTts().hasKey || aiTts().key.length > 0) {
+                    <div class="provider-key-row">
+                      <span class="provider-key-state">
+                        <nostos-icon name="check" [size]="14"></nostos-icon>
+                        {{ aiTts().keyFromServerEnv ? copy.configuredFromEnv : copy.configured }}
+                      </span>
+                      <button
+                        type="button"
+                        appButton variant="secondary" size="sm"
+                        (click)="clearAiKey('tts')"
+                        [disabled]="aiBusy()"
+                      >
+                        {{ copy.clear }}
+                      </button>
+                    </div>
+                  }
+                  <p class="provider-help">{{ copy.apiKeyHelpTts }}</p>
+                </div>
+
+                <div class="provider-actions">
+                  <button
+                    type="button"
+                    appButton variant="secondary"
+                    (click)="testAiConnection('tts')"
+                    [disabled]="aiBusy()"
+                    [busy]="aiTestingKind() === 'tts'"
+                    data-testid="read-aloud-test"
+                  >
+                    @if (aiTestingKind() === 'tts') {
+                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
+                      {{ copy.testing }}
+                    } @else {
+                      {{ copy.testConnection }}
+                    }
+                  </button>
+                  <a class="provider-guide-link" [href]="readAloudGuideUrl" target="_blank" rel="noopener">{{ copy.readAloudGuide }}</a>
+                </div>
+
+                @if (aiTtsStatus(); as status) {
+                  <p
+                    class="provider-status"
+                    [class.is-ok]="status.tone === 'ok'"
+                    [class.is-error]="status.tone === 'error'"
+                    role="status"
+                  >{{ status.text }}</p>
+                }
+              </div>
+            }
             </div>
 
             <div class="provider-footer">
@@ -1325,16 +1445,6 @@
         }
       </section>
 
-            <section class="settings-card" data-testid="read-aloud-settings-card">
-              <div class="card-header">
-                <div class="card-header-copy">
-                  <h2>Read aloud voice</h2>
-                </div>
-              </div>
-              <div class="card-body">
-                <app-read-aloud-settings />
-              </div>
-            </section>
           </section>
           }
 

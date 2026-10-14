@@ -10,7 +10,7 @@
  */
 
 /** The independently configurable providers behind one "AI provider" card. */
-export type AiProviderKind = 'llm' | 'stt' | 'embedding' | 'alignmentStt';
+export type AiProviderKind = 'llm' | 'stt' | 'embedding' | 'alignmentStt' | 'tts';
 
 export type AlignmentTranscriptionApiStyle = 'openai-multipart' | 'json-base64';
 
@@ -45,6 +45,8 @@ export interface AiProviderSettings {
   embedding?: AiProviderSection;
   /** Absent when the host does not expose alignment transcription settings. */
   alignmentTranscription?: AlignmentTranscriptionSection;
+  /** The read-aloud speech server. Absent when the host manages the voice itself. */
+  tts?: AiProviderSection;
 }
 
 /**
@@ -70,6 +72,7 @@ export interface AiProviderUpdate {
   stt?: AiProviderSectionUpdate;
   embedding?: AiProviderSectionUpdate;
   alignmentTranscription?: AlignmentTranscriptionSectionUpdate;
+  tts?: AiProviderSectionUpdate;
 }
 
 /** `POST .../models` body. `baseUrl`/`apiKey` omitted fall back to effective values. */

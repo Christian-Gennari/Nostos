@@ -7,6 +7,8 @@ public enum AiProviderKind
     Stt,
     Embedding,
     AlignmentTranscription,
+    /// <summary>The read-aloud speech server (text to speech).</summary>
+    Tts,
 }
 
 /// <summary>
@@ -109,6 +111,19 @@ public interface IAiProviderConfigResolver
     /// as unavailable.
     /// </summary>
     Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
+        Task.FromResult(new EffectiveAiProviderConfig(
+            Enabled: false,
+            BaseUrl: string.Empty,
+            Model: string.Empty,
+            ApiKeyEnvironmentVariable: string.Empty,
+            ApiKey: null,
+            KeyFromServerEnv: false));
+
+    /// <summary>
+    /// The read-aloud speech server. A host that predates the setting keeps
+    /// compiling and reports it as off.
+    /// </summary>
+    Task<EffectiveAiProviderConfig> GetEffectiveTtsAsync(CancellationToken ct = default) =>
         Task.FromResult(new EffectiveAiProviderConfig(
             Enabled: false,
             BaseUrl: string.Empty,

@@ -33,18 +33,15 @@ Nostos talks to any speech server that offers the OpenAI speech route
 an open model, served by [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI).
 It runs on your own machine, needs no account or key, and no text leaves it.
 
-### Docker Compose
+### 1. Run a speech server
 
-Add the speech server next to Nostos and point Nostos at it:
+With Docker Compose, add it next to Nostos:
 
 ```yaml
 services:
   nostos:
     image: ghcr.io/christian-gennari/nostos:latest
-    environment:
-      ReadAloud__Enabled: "true"
-      ReadAloud__BaseUrl: "http://kokoro:8880"
-    # ...the rest of your existing nostos service
+    # ...your existing nostos service, unchanged
 
   kokoro:
     # Pin a release tag from the Kokoro-FastAPI project instead of `latest`.
@@ -53,28 +50,40 @@ services:
 ```
 
 Then run `docker compose up -d`. The speech server does not need a published
-port: only Nostos calls it.
+port: only Nostos calls it. Without Docker, start Kokoro-FastAPI any other way
+and note its address, for example `http://localhost:8880`.
 
-### Without Docker
+### 2. Connect it in Settings
 
-Start a speech server, then set two environment variables and restart Nostos:
+Open **Settings → AI connections → Read aloud voice**:
+
+1. Switch on **Enable the natural voice**.
+2. Set **Endpoint** to the speech server's address: `http://kokoro:8880` in the
+   Compose example above.
+3. Leave **Model** as `kokoro` and **API key** empty for a local server.
+4. Press **Test connection**. It asks the server to say one word and reports
+   whether audio came back.
+5. Press **Save**.
+
+Then open a book and press the speaker button. The first sentence takes a
+moment while the server renders it; the play button pulses until sound starts.
+
+### Or connect it in configuration
+
+The same values can be set as environment variables (or in
+`appsettings.json`), which suits a server set up from a script. Anything saved
+in Settings takes precedence.
 
 ```bash
 export ReadAloud__Enabled=true
 export ReadAloud__BaseUrl=http://localhost:8880
 ```
 
-### Check that it works
-
-**Settings → AI connections → Read aloud voice** shows **Connected** when the
-switch is on and an address is set. Then open a book and press the speaker
-button. The first sentence takes a moment while the server renders it; the play
-button pulses until sound starts.
-
-## Settings
+## Configuration settings
 
 All of these go in the `ReadAloud` section of `appsettings.json`, or as
-`ReadAloud__Name` environment variables.
+`ReadAloud__Name` environment variables. The first four can also be set in
+Settings, which takes precedence.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
