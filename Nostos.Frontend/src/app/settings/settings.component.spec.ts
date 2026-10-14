@@ -2994,7 +2994,7 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(coordinator().state().kind).toBe('uploading');
     expect(testId('import-uploading')).toBeTruthy();
 
-    await transport.releaseAll();
+    await transport.releaseUntil(() => coordinator().state().kind === 'ready-empty');
     await waitForKind('ready-empty');
 
     const state = coordinator().state();

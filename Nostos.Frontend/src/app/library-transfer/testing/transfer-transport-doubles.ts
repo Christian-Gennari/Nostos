@@ -65,6 +65,23 @@ export class GatedUploadTransport extends DelegatingTransport {
       }),
     );
   }
+
+  /**
+   * Keeps releasing until `done()` holds. `releaseAll` only frees the chunks
+   * gated at that instant; an upload that queues its next chunk afterwards is
+   * gated again, so a single release finishes the transfer only when every
+   * chunk happened to be queued already — a race slow CI runners lose.
+   */
+  async releaseUntil(done: () => boolean, timeoutMs = 5_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!done()) {
+      if (Date.now() > deadline) {
+        throw new Error(`Gated upload did not settle within ${timeoutMs} ms.`);
+      }
+      await this.releaseAll();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+  }
 }
 
 /** Rejects status reads with a 401 until the test restores authorization. */
