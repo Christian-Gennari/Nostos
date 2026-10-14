@@ -132,6 +132,36 @@ describe('EpubReadAloud', () => {
     expect(unmeasured.calls.displayedCfis).toEqual([]);
   });
 
+  it('reads a floated caption where it stands, without turning to it', async () => {
+    // A document with a window, so styles are computed.
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument!;
+    doc.body.innerHTML =
+      '<p>Elizabeth silently attended her.</p>' +
+      '<div style="float: left"><p>The Apothecary came.</p></div>' +
+      '<p>When breakfast was over, they were joined by the sisters.</p>';
+    const content: ReadAloudEpubContent = {
+      document: doc,
+      sectionIndex: 0,
+      cfiFromRange: (range: Range) => `cfi(0:${range.toString()})`,
+    };
+
+    try {
+      const { readAloud, calls } = setup([content], { visible: false });
+      await readAloud.begin();
+
+      await expect(readAloud.step(1)).resolves.toEqual({ text: 'The Apothecary came.' });
+      expect(calls.displayedCfis).toEqual([]);
+      expect(calls.marks.at(-1)).toBe('cfi(0:The Apothecary came.)');
+
+      await readAloud.step(1);
+      expect(calls.displayedCfis).toEqual(['cfi(0:When breakfast was over, they were joined by the sisters.)']);
+    } finally {
+      frame.remove();
+    }
+  });
+
   it('clears the mark and forgets the cursor when reading ends', async () => {
     const { readAloud, calls } = setup([section(0, CHAPTER_ONE)]);
     await readAloud.begin();
