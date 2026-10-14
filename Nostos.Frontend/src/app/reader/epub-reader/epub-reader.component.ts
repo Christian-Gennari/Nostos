@@ -1619,6 +1619,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       () => this.commitFailed.emit(),
     );
     this.annotationManager.setHighlightColour(this.highlightColour());
+    this.annotationManager.setTheme(this.themeService.theme());
     this.annotationManager.setOnSelectionCaptured((text, anchor) => {
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
@@ -2181,6 +2182,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const themes = this.rendition?.themes;
     if (!themes) return;
     selectNostosReaderTheme(themes, this.renderedContents(), theme);
+    this.annotationManager?.setTheme(theme);
   }
 
   public deleteHighlight(cfiRange: string) {

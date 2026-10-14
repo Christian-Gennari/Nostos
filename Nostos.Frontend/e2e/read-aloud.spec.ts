@@ -19,6 +19,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { epubMarkCount } from './support/epub-marks';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'read-aloud.epub'));
 const EVIDENCE_DIR = path.join(__dirname, 'visual-evidence', 'read-aloud');
@@ -165,13 +166,13 @@ test.describe('read aloud (EPUB)', () => {
       await revealChrome(page);
       await expect(start).toHaveAttribute('aria-pressed', 'true');
       // The sentence being spoken is marked on the page.
-      await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(1);
+      await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
       expect((await spoken(page))[0]).toBe('Chapter 1');
       expect(await page.evaluate(() => (window as any).__spoken[0].lang)).toBe('en-GB');
 
       // One sentence on, for a picture with a marked sentence of prose.
       await page.getByRole('button', { name: 'Next sentence' }).click();
-      await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(1);
+      await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
       await expect.poll(async () => (await spoken(page)).at(-1)).toContain('truth universally acknowledged');
       await capture(page, `read-aloud-epub-1280-${theme}`);
 
@@ -187,7 +188,7 @@ test.describe('read aloud (EPUB)', () => {
 
       // The end of the book ends the session and clears the mark.
       await expect(bar).toHaveCount(0, { timeout: 30_000 });
-      await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(0);
+      await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(0);
       expect((await spoken(page)).at(-1)).toContain('since we are not to visit');
     });
   }
@@ -217,7 +218,7 @@ test.describe('read aloud (EPUB)', () => {
 
     // Skipping while paused moves the mark and says nothing.
     await page.getByRole('button', { name: 'Next sentence' }).click();
-    await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(1);
+    await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
     expect((await spoken(page)).length).toBe(1);
 
     await toggle.click();
@@ -232,7 +233,7 @@ test.describe('read aloud (EPUB)', () => {
 
     await page.getByTestId('read-aloud-stop').click();
     await expect(page.getByTestId('read-aloud-bar')).toHaveCount(0);
-    await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(0);
+    await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(0);
   });
 
   test('carries on from the new page when the person turns it', async ({ page }) => {
@@ -263,7 +264,7 @@ test.describe('read aloud (EPUB), phone width', () => {
       const bar = page.getByTestId('read-aloud-bar');
       await expect(bar).toBeVisible();
       await page.getByRole('button', { name: 'Next sentence' }).click();
-      await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(1);
+      await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
       await capture(page, `read-aloud-epub-390-${theme}-chrome`);
 
       // A tap on the page puts the chrome away; the transport stays.
@@ -355,7 +356,7 @@ test.describe('read aloud (EPUB), server voice', () => {
     expect(calls[1].text).toContain('truth universally acknowledged');
     expect(await spoken(page)).toEqual([]);
     await expect(page.getByTestId('read-aloud-notice')).toHaveCount(0);
-    await expect(page.locator('.epubjs-read-aloud-mark')).toHaveCount(1);
+    await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
   });
 
   for (const theme of ['light', 'dark'] as const) {
