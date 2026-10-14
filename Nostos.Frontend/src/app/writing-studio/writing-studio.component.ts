@@ -987,6 +987,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (id) this.selectTopic(id);
   }
 
+  /** Bound for the shared detail-header template, which calls its `back` context value. */
+  readonly backToTopicsAction = (): void => this.backToTopics();
+  readonly backToBooksAction = (): void => this.backToBooks();
+
   backToTopics(): void {
     this.rememberReferenceScroll('topicNotes');
     this.selectedTopicId.set(null);

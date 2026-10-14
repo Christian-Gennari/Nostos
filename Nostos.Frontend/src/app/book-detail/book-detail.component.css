@@ -744,67 +744,18 @@
   font-weight: var(--fw-medium);
 }
 
-/* Status dropdown container */
-.status-dropdown-container {
-  position: relative;
-  display: inline-flex;
+/* The reading status is the shared dropdown in its `pill` appearance; this
+   page only says what colour each status is. */
+.status-dropdown.finished {
+  --dropdown-pill-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --dropdown-pill-bg-hover: color-mix(in srgb, var(--color-success) 22%, transparent);
+  --dropdown-pill-ink: var(--color-success-dark);
 }
 
-/* Interactive status chip button */
-.status-chip-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 5px 10px 5px 9px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: var(--bg-hover);
-  color: var(--color-text-muted);
-  line-height: 1.2;
-  white-space: nowrap;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-
-.status-chip-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--bg-hover));
-  border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
-}
-
-.status-chip-btn.finished {
-  background: color-mix(in srgb, var(--color-success) 15%, transparent);
-  color: var(--color-success-dark);
-}
-.status-chip-btn.finished:hover {
-  background: color-mix(in srgb, var(--color-success) 22%, transparent);
-}
-
-.status-chip-btn.reading {
-  background: color-mix(in srgb, var(--color-brand-accent) 12%, transparent);
-  color: var(--color-brand-accent);
-}
-.status-chip-btn.reading:hover {
-  background: color-mix(in srgb, var(--color-brand-accent) 20%, transparent);
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.75;
-}
-
-.status-chevron {
-  transition: transform 0.2s ease;
-  opacity: 0.7;
-}
-
-.status-chip-btn.open .status-chevron {
-  transform: rotate(180deg);
+.status-dropdown.reading {
+  --dropdown-pill-bg: color-mix(in srgb, var(--color-brand-accent) 12%, transparent);
+  --dropdown-pill-bg-hover: color-mix(in srgb, var(--color-brand-accent) 20%, transparent);
+  --dropdown-pill-ink: var(--color-brand-accent);
 }
 
 /* ── Editions card: the entry to managing this work ───────────────────────
@@ -853,64 +804,6 @@
 .edit-menu-chevron {
   margin-left: 0.1rem;
   opacity: 0.7;
-}
-
-/* Status dropdown menu */
-.status-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 50;
-  min-width: 145px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-popover);
-  box-shadow: var(--shadow-glass-lg, 0 10px 25px -5px rgba(0, 0, 0, 0.1));
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  backdrop-filter: blur(12px);
-  animation: fadeIn 0.15s ease;
-}
-
-.status-dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: var(--radius-popover-item);
-  background: transparent;
-  color: var(--color-text-main);
-  font-family: inherit;
-  font-size: 0.82rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.status-dropdown-item:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.status-dropdown-item.selected {
-  background: var(--control-active-fill);
-  color: var(--control-active-ink);
-  font-weight: 600;
-}
-
-.status-dropdown-item.status-reading.selected {
-  background: color-mix(in srgb, var(--color-brand-accent) 10%, transparent);
-  color: var(--color-brand-accent);
-}
-
-.status-dropdown-item.status-finished.selected {
-  background: color-mix(in srgb, var(--color-success) 15%, transparent);
-  color: var(--color-success-dark);
 }
 
 .reset-confirm-backdrop {
@@ -1286,6 +1179,17 @@
 .notes-feed {
   display: flex;
   flex-direction: column;
+}
+
+/* The book's notes are set as a reading column, like a topic's notes in the
+   Brain: the note card's `passage` layout (upright quotation at a reading
+   measure, no box). A hairline and space separate one passage from the next. */
+.notes-feed app-note-card {
+  padding: 1.5rem 0;
+}
+
+.notes-feed app-note-card + app-note-card {
+  border-top: 1px solid var(--border-color);
 }
 .notes-empty {
   margin: 0;

@@ -366,10 +366,6 @@
     line-height: 1.15;
   }
 
-  .destination-filter {
-    min-height: 38px;
-  }
-
   .destination-list {
     max-height: none;
   }

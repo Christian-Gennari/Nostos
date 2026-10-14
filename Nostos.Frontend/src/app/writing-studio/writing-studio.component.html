@@ -442,21 +442,7 @@
           <div class="notes-list kept-notes-list">
             @for (note of keptNotes(); track note.id) {
               <div class="reference-source-row">
-                <button
-                  appButton
-                  variant="ghost"
-                  size="sm"
-                  class="reference-source-row-main"
-                  [attr.aria-label]="sourceRowLabel(note)"
-                  (click)="inspectSource(note)"
-                >
-                  @if (hasQuotePreview(note)) {
-                    <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
-                  } @else {
-                    <span class="reference-source-preview">{{ referencePreview(note) }}</span>
-                  }
-                  <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
-                </button>
+                <ng-container *ngTemplateOutlet="sourceRowMain; context: { $implicit: note }"></ng-container>
                 <button
                   appIconButton
                   class="reference-row-action"
@@ -522,13 +508,7 @@
               </div>
             }
           } @else {
-            <div class="brain-detail-header">
-              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="backToTopics()">
-                <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-                Back to Topics
-              </button>
-              <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
-            </div>
+            <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Topics', back: backToTopicsAction }"></ng-container>
 
             @if (topicNotesState() === 'loading') {
               <p class="reference-state" role="status">Loading topic notes…</p>
@@ -541,33 +521,8 @@
               <div class="notes-list reference-note-list">
                 @for (note of selectedTopicNotes(); track note.id) {
                   <div class="reference-source-row">
-                    <button
-                      appButton
-                      variant="ghost"
-                      size="sm"
-                      class="reference-source-row-main"
-                      [attr.aria-label]="sourceRowLabel(note)"
-                      (click)="inspectSource(note)"
-                    >
-                      @if (hasQuotePreview(note)) {
-                        <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
-                      } @else {
-                        <span class="reference-source-preview">{{ referencePreview(note) }}</span>
-                      }
-                      <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
-                    </button>
-                    <button
-                      appIconButton
-                      class="reference-row-action library-keep-action"
-                      icon="bookmark-simple"
-                      [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
-                      [glyphSize]="16"
-                      [class.active]="keptNoteIds().has(note.id)"
-                      [disabled]="!activeItem() || keepingNoteIds().has(note.id)"
-                      (click)="keepNote(note.id); $event.stopPropagation()"
-                      [title]="keepActionLabel(note.id)"
-                      [attr.aria-label]="keepActionLabel(note.id)"
-                    ></button>
+                    <ng-container *ngTemplateOutlet="sourceRowMain; context: { $implicit: note }"></ng-container>
+                    <ng-container *ngTemplateOutlet="sourceKeepAction; context: { $implicit: note }"></ng-container>
                   </div>
                 }
                 @if (selectedTopicNotes().length === 0) {
@@ -631,13 +586,7 @@
               </div>
             }
           } @else {
-            <div class="brain-detail-header">
-              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="backToBooks()">
-                <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-                Back to Books
-              </button>
-              <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
-            </div>
+            <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Books', back: backToBooksAction }"></ng-container>
 
             @if (bookNotesState() === 'loading') {
               <p class="reference-state" role="status">Loading book notes…</p>
@@ -650,33 +599,8 @@
               <div class="notes-list reference-note-list">
                 @for (note of selectedBookNotes(); track note.id) {
                   <div class="reference-source-row">
-                    <button
-                      appButton
-                      variant="ghost"
-                      size="sm"
-                      class="reference-source-row-main"
-                      [attr.aria-label]="sourceRowLabel(note)"
-                      (click)="inspectSource(note)"
-                    >
-                      @if (hasQuotePreview(note)) {
-                        <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
-                      } @else {
-                        <span class="reference-source-preview">{{ referencePreview(note) }}</span>
-                      }
-                      <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
-                    </button>
-                    <button
-                      appIconButton
-                      class="reference-row-action library-keep-action"
-                      icon="bookmark-simple"
-                      [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
-                      [glyphSize]="16"
-                      [class.active]="keptNoteIds().has(note.id)"
-                      [disabled]="!activeItem() || keepingNoteIds().has(note.id)"
-                      (click)="keepNote(note.id); $event.stopPropagation()"
-                      [title]="keepActionLabel(note.id)"
-                      [attr.aria-label]="keepActionLabel(note.id)"
-                    ></button>
+                    <ng-container *ngTemplateOutlet="sourceRowMain; context: { $implicit: note }"></ng-container>
+                    <ng-container *ngTemplateOutlet="sourceKeepAction; context: { $implicit: note }"></ng-container>
                   </div>
                 }
                 @if (selectedBookNotes().length === 0) {
@@ -713,3 +637,49 @@
   >
   </app-confirm-modal>
 </div>
+
+<!-- Shared pieces of the Reference panel. A source row and a detail header
+     were each written out once per list (kept sources, a topic's notes, a
+     book's notes); they are one template each, so the three lists cannot drift. -->
+<ng-template #sourceRowMain let-note>
+  <button
+    appButton
+    variant="ghost"
+    size="sm"
+    class="reference-source-row-main"
+    [attr.aria-label]="sourceRowLabel(note)"
+    (click)="inspectSource(note)"
+  >
+    @if (hasQuotePreview(note)) {
+      <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
+    } @else {
+      <span class="reference-source-preview">{{ referencePreview(note) }}</span>
+    }
+    <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
+  </button>
+</ng-template>
+
+<ng-template #sourceKeepAction let-note>
+  <button
+    appIconButton
+    class="reference-row-action library-keep-action"
+    icon="bookmark-simple"
+    [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
+    [glyphSize]="16"
+    [class.active]="keptNoteIds().has(note.id)"
+    [disabled]="!activeItem() || keepingNoteIds().has(note.id)"
+    (click)="keepNote(note.id); $event.stopPropagation()"
+    [title]="keepActionLabel(note.id)"
+    [attr.aria-label]="keepActionLabel(note.id)"
+  ></button>
+</ng-template>
+
+<ng-template #referenceDetailHeader let-label="label" let-back="back">
+  <div class="brain-detail-header">
+    <button appButton variant="ghost" size="sm" class="goto-btn" (click)="back()">
+      <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
+      Back to {{ label }}
+    </button>
+    <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
+  </div>
+</ng-template>

@@ -97,12 +97,12 @@
 
 .nostos-menu-item--danger,
 .nostos-menu-item--danger nostos-icon {
-  color: var(--danger-ink);
+  color: var(--danger-field-ink);
 }
 
 .nostos-menu-item--danger:hover,
 .nostos-menu-item--danger:focus-visible {
-  background: var(--danger-surface);
+  background: var(--danger-field);
 }
 
 .nostos-menu-separator {

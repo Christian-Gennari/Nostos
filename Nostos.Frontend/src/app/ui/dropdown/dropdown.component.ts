@@ -20,7 +20,14 @@ import type { NostosIconName } from '../icon/nostos-icons';
 
 export type DropdownSize = 'normal' | 'compact';
 export type DropdownAlignment = 'start' | 'end';
-export type DropdownAppearance = 'field' | 'subtle';
+/**
+ * `field` is the form control; `subtle` is the low-chrome toolbar control;
+ * `pill` is a status capsule that opens a choice (a book's reading status):
+ * a leading dot, the value and a caret, in the colours the call site sets
+ * through `--dropdown-pill-bg`, `--dropdown-pill-bg-hover` and
+ * `--dropdown-pill-ink`.
+ */
+export type DropdownAppearance = 'field' | 'subtle' | 'pill';
 
 export interface DropdownOption {
   readonly value: string;
@@ -48,6 +55,7 @@ let nextDropdownId = 0;
     class: 'nostos-dropdown',
     '[class.nostos-dropdown--compact]': "controlSize() === 'compact'",
     '[class.nostos-dropdown--subtle]': "appearance() === 'subtle'",
+    '[class.nostos-dropdown--pill]': "appearance() === 'pill'",
     '[class.nostos-dropdown--full]': 'fullWidth()',
     '[class.nostos-dropdown--disabled]': 'disabled()',
   },
@@ -68,6 +76,9 @@ let nextDropdownId = 0;
       (click)="toggle()"
       (keydown)="onTriggerKeydown($event)"
     >
+      @if (appearance() === 'pill') {
+        <span class="nostos-dropdown__dot" aria-hidden="true"></span>
+      }
       <span class="nostos-dropdown__value">{{ selectedOption()?.label ?? placeholder() }}</span>
       <nostos-icon
         class="nostos-dropdown__chevron"
@@ -178,6 +189,46 @@ let nextDropdownId = 0;
 
       .nostos-dropdown__trigger:hover:not(:disabled) {
         background: var(--bg-hover);
+      }
+
+      /* The pill: a status capsule, sized by its text rather than by a field
+         rung, and coloured by the call site. It keeps that size on touch. */
+      :host(.nostos-dropdown--pill) .nostos-dropdown__trigger {
+        justify-content: flex-start;
+        gap: 0.4rem;
+        width: auto;
+        min-width: 0;
+        min-height: 0;
+        padding: 5px 10px 5px 9px;
+        border-color: transparent;
+        border-radius: var(--radius-pill);
+        background: var(--dropdown-pill-bg, var(--bg-hover));
+        color: var(--dropdown-pill-ink, var(--color-text-muted));
+        font-size: 0.8rem;
+        font-weight: var(--fw-medium);
+        line-height: 1.2;
+      }
+
+      :host(.nostos-dropdown--pill) .nostos-dropdown__trigger:hover:not(:disabled) {
+        border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+        background: var(
+          --dropdown-pill-bg-hover,
+          color-mix(in srgb, var(--color-primary) 8%, var(--bg-hover))
+        );
+      }
+
+      :host(.nostos-dropdown--pill) .nostos-dropdown__chevron {
+        color: inherit;
+        opacity: 0.7;
+      }
+
+      .nostos-dropdown__dot {
+        flex: 0 0 auto;
+        width: 6px;
+        height: 6px;
+        border-radius: var(--radius-round);
+        background: currentColor;
+        opacity: 0.75;
       }
 
       .nostos-dropdown__trigger:focus-visible {
