@@ -4,6 +4,8 @@
   <div class="edit-box" (click)="$event.stopPropagation()">
     @if (note.selectedText || editSelectedText) {
     <textarea
+      appTextarea
+      controlSize="compact"
       class="edit-quote-input"
       [(ngModel)]="editSelectedText"
       placeholder="Quote text..."

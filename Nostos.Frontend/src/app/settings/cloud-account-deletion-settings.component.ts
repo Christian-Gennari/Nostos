@@ -8,11 +8,12 @@ import { CloudAccountDeletionService } from '../core/services/cloud-account-dele
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
+import { InputDirective } from '../ui/form-control/form-control.directive';
 
 @Component({
   selector: 'app-cloud-account-deletion-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, ConfirmModal],
+  imports: [InputDirective, CommonModule, FormsModule, ButtonComponent, ConfirmModal],
   templateUrl: './cloud-account-deletion-settings.component.html',
   styleUrl: './cloud-account-deletion-settings.component.css',
 })

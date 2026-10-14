@@ -62,22 +62,10 @@
 }
 
 .account-deletion-confirmation input {
-  display: block;
-  width: 100%;
-  min-height: 2.6rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-field);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  font: inherit;
+  /* appInput owns the field; the spacing reads the typed word more clearly. */
   letter-spacing: 0.04em;
 }
 
-.account-deletion-confirmation input:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
 
 .account-deletion-help {
   display: block;

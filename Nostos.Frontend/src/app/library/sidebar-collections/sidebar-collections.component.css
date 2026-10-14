@@ -329,22 +329,12 @@ a.nav-item {
   cursor: default;
 }
 
-.sidebar-input {
-  padding: 4px 8px;
-  border-radius: var(--radius-row);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  font-size: 0.9rem;
-  color: var(--color-text-main);
+/* appInput compact; held to the nav row's height so adding a collection does
+   not push the rail down. */
+input.sidebar-input {
   width: 100%;
-  outline: none;
-  font-family: inherit;
-}
-
-.sidebar-input:focus {
-  /* Not --color-primary (the ink role — dim green on dark). */
-  border-color: var(--border-focus);
-  outline: none;
+  min-height: 30px;
+  padding: 2px 8px;
 }
 
 /* --- RAIL LABELS ------------------------------------------------------

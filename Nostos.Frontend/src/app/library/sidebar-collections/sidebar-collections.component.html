@@ -178,6 +178,8 @@
             <nostos-icon name="plus" [size]="16" weight="light"></nostos-icon>
             <input
               type="text"
+              appInput
+              controlSize="compact"
               class="sidebar-input"
               [(ngModel)]="newName"
               (keydown.enter)="create()"

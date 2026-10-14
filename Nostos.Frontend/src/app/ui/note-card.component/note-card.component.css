@@ -354,26 +354,15 @@ button.expand-btn {
 }
 
 /* NEW: Style for the quote input textarea */
+/* appTextarea compact; the quote keeps its serif italic, which is content. */
 .edit-quote-input {
-  width: 100%;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background-color: var(--bg-hover);
-  padding: 0.5rem;
   font-family: 'Newsreader', serif;
   font-style: italic;
   font-size: 0.95rem;
-  color: var(--color-text-main);
-  resize: vertical;
   min-height: 60px;
   margin-bottom: 0.75rem;
 }
 
-.edit-quote-input:focus {
-  outline: none;
-  /* Not --color-primary (the ink role — dim green on dark). */
-  border-color: var(--border-focus);
-}
 
 /* The highlight's pen in the editor (issue #861): the reader's `.hl-pen` dots,
    so one colour control reads the same in both places. 22px dots on a 34px

@@ -22,11 +22,12 @@ import { TopicInputComponent } from '../topic-input.component/topic-input.compon
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
+import { TextareaDirective } from '../form-control/form-control.directive';
 
 @Component({
   selector: 'app-note-card',
   standalone: true,
-  imports: [
+  imports: [TextareaDirective, 
     CommonModule,
     FormsModule,
     NostosIconComponent,
