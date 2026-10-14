@@ -119,6 +119,22 @@ export class BookDetailStore {
       });
   }
 
+  /**
+   * Re-reads the open book, its notes and the collections after the library
+   * changed elsewhere. Quiet on purpose: no loading state, and a failed read
+   * keeps what is on screen instead of replacing the page with "not found".
+   */
+  refreshInBackground(id: string) {
+    this.booksService.get(id).subscribe({
+      next: (data) => {
+        if (this.book()?.id === id) this.book.set(data);
+      },
+      error: () => undefined,
+    });
+    this.loadNotes(id);
+    this.loadCollections();
+  }
+
   loadNotes(id: string) {
     this.notesService.list(id).subscribe({
       next: (data) => this.notes.set(data),

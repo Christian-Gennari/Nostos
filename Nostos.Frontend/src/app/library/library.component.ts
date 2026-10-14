@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { BooksService } from '../core/services/books.service';
+import { BooksService, type BookListOptions } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { Collection } from '../core/dtos/collection.dtos';
 import { CommonModule, DOCUMENT } from '@angular/common';
@@ -26,7 +26,7 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { SidebarCollections } from './sidebar-collections/sidebar-collections.component';
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
-import { Subject } from 'rxjs';
+import { Subject, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { InfiniteScrollDirective } from '../core/directives/infinite-scroll.directive';
 import { BloomArtDirective } from '../ui/bloom-art/bloom-art.directive';
@@ -35,6 +35,7 @@ import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { ImportService } from '../core/services/import.service';
+import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
@@ -143,6 +144,7 @@ export class Library implements OnInit, OnDestroy {
   readonly filters = inject(LibraryFilterService);
   /** The background-import feed. Owned by the service, not by this list. */
   readonly imports = inject(ImportService);
+  private readonly libraryChanges = inject(LibraryChangesService);
 
   // Enums for Template Access
   BookSort = BookSort;
@@ -276,6 +278,16 @@ export class Library implements OnInit, OnDestroy {
     // re-render the page under the reader's hands.
     this.imports.bookPatched.pipe(takeUntilDestroyed()).subscribe((book) => this.onImportPatched(book));
 
+    // A change made somewhere else — Ask Nostos, MCP, another tab — is re-read
+    // quietly and in place: the same pages, no reset to the top, no swap.
+    this.libraryChanges
+      .watch()
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => {
+        this.loadCollections();
+        this.refreshInPlace();
+      });
+
     // Returning from the Studio or the Second Brain rebuilds this component with
     // no results in hand. The user has already seen the library in this session,
     // so cross-fade the results in instead of flashing a placeholder again.
@@ -367,28 +379,9 @@ export class Library implements OnInit, OnDestroy {
     }
 
     const seq = ++this.requestSeq;
-    const status = this.filters.status();
-    const format = this.filters.format();
-    const collectionId = this.filters.collectionId();
-    const sort = this.activeSort();
-    const search = this.searchQuery();
-    const page = this.currentPage();
-    // Mobile cover decoding is the dominant first-paint cost. Load a smaller
-    // first batch there; the existing sentinel still fetches every book as the
-    // user scrolls.
-    const pageSize = window.innerWidth < 768 ? Math.min(this.pageSize(), 12) : this.pageSize();
 
     this.booksService
-      .list({
-        filter: status === 'all' ? undefined : status,
-        sort,
-        search,
-        page,
-        pageSize,
-        collectionId: collectionId ?? undefined,
-        groupByWork: this.preferences.groupByWork(),
-        format: format === 'all' ? null : format,
-      })
+      .list(this.listQuery(this.currentPage()))
       .subscribe({
         next: (data) => {
           // A stale response must never paint over a newer request's results.
@@ -403,6 +396,62 @@ export class Library implements OnInit, OnDestroy {
           this.swapping.set(false);
         },
       });
+  }
+
+  /**
+   * Re-reads every page already loaded, after the library changed elsewhere,
+   * and replaces the list without the swap animation or a reset to page one.
+   * Books keep their identity in the template, so an unchanged library
+   * re-renders nothing and a changed one updates where the reader is looking.
+   *
+   * A read the user started is newer than this one and is left alone; the
+   * change it may have missed arrives with the next announcement.
+   */
+  private refreshInPlace(): void {
+    if (this.loading() || this.loadingMore() || this.swapping()) return;
+
+    const seq = ++this.requestSeq;
+    const pages = Array.from({ length: Math.max(1, this.currentPage()) }, (_, i) =>
+      this.booksService.list(this.listQuery(i + 1)),
+    );
+
+    forkJoin(pages).subscribe({
+      next: (results) => {
+        if (seq !== this.requestSeq) return;
+        const seen = new Set<string>();
+        this.rawBooks.set(
+          results
+            .flatMap((page) => page.items)
+            .filter((book) => !seen.has(book.id) && !!seen.add(book.id)),
+        );
+        this.totalItems.set(results[results.length - 1].totalCount);
+      },
+      // A background re-read that fails leaves the list as it was; the next
+      // change or a user action reads again.
+      error: () => undefined,
+    });
+  }
+
+  /** The list query for one page under the current filters, sort and search. */
+  private listQuery(page: number): BookListOptions {
+    const status = this.filters.status();
+    const format = this.filters.format();
+    const collectionId = this.filters.collectionId();
+    // Mobile cover decoding is the dominant first-paint cost. Load a smaller
+    // first batch there; the existing sentinel still fetches every book as the
+    // user scrolls.
+    const pageSize = window.innerWidth < 768 ? Math.min(this.pageSize(), 12) : this.pageSize();
+
+    return {
+      filter: status === 'all' ? undefined : status,
+      sort: this.activeSort(),
+      search: this.searchQuery(),
+      page,
+      pageSize,
+      collectionId: collectionId ?? undefined,
+      groupByWork: this.preferences.groupByWork(),
+      format: format === 'all' ? null : format,
+    };
   }
 
   /**

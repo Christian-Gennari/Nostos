@@ -2,12 +2,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 
 import { BookDetail } from './book-detail.component';
 import { Book } from '../core/dtos/book.dtos';
 import { ToastService } from '../core/services/toast.service';
 import { ImportService } from '../core/services/import.service';
+import { LibraryChangesService } from '../core/services/library-changes.service';
 
 const book: Book = {
   id: 'b1',
@@ -1049,5 +1050,93 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
       .flush({ ...book, hasFile: true, coverUrl: null });
     expect(component.coverDeletePending()).toBe(false);
     drainTopics();
+  });
+});
+
+describe('BookDetail live library changes', () => {
+  let component: BookDetail;
+  let fixture: ComponentFixture<BookDetail>;
+  let httpMock: HttpTestingController;
+  let libraryChanged: Subject<void>;
+
+  async function setup() {
+    fixture = TestBed.createComponent(BookDetail);
+    component = fixture.componentInstance;
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    httpMock.expectOne('/api/books/b1').flush(book);
+    httpMock.expectOne('/api/books/b1/notes').flush([]);
+    httpMock.expectOne('/api/collections').flush([]);
+    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    fixture.detectChanges();
+  }
+
+  /** Every book read issued since the last call, flushed with `reply`. */
+  function bookReads(reply: Book = book): number {
+    const reads = httpMock.match('/api/books/b1');
+    reads.forEach((request) => request.flush(reply));
+    httpMock.match('/api/books/b1/notes').forEach((request) => request.flush([]));
+    httpMock.match('/api/collections').forEach((request) => request.flush([]));
+    return reads.length;
+  }
+
+  beforeEach(async () => {
+    libraryChanged = new Subject<void>();
+    await TestBed.configureTestingModule({
+      imports: [BookDetail],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: of(convertToParamMap({ id: book.id })) },
+        },
+      ],
+    }).compileComponents();
+
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  it('re-reads the open book quietly when the library changes elsewhere', async () => {
+    await setup();
+
+    libraryChanged.next();
+    TestBed.flushEffects();
+
+    expect(bookReads({ ...book, title: 'Renamed elsewhere' })).toBe(1);
+    expect(component.store.book()?.title).toBe('Renamed elsewhere');
+    expect(component.store.loading()).toBe(false);
+  });
+
+  it('waits for Edit Book to close, so a change elsewhere cannot wipe the form', async () => {
+    await setup();
+    component.openMetadataModal();
+    fixture.detectChanges();
+
+    libraryChanged.next();
+    TestBed.flushEffects();
+    expect(bookReads()).toBe(0);
+
+    component.closeMetadataModal();
+    TestBed.flushEffects();
+    expect(bookReads()).toBe(1);
+  });
+
+  it('keeps the page when the background read fails', async () => {
+    await setup();
+
+    libraryChanged.next();
+    TestBed.flushEffects();
+    httpMock
+      .expectOne('/api/books/b1')
+      .flush('gone', { status: 404, statusText: 'Not Found' });
+    httpMock.match('/api/books/b1/notes').forEach((request) => request.flush([]));
+    httpMock.match('/api/collections').forEach((request) => request.flush([]));
+
+    expect(component.store.book()?.id).toBe('b1');
+    expect(component.store.error()).toBeNull();
   });
 });

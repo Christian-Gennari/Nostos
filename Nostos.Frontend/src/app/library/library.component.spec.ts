@@ -7,6 +7,7 @@ import { Library } from './library.component';
 import { BooksService } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
+import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
 import { ImportActivity } from '../core/dtos/import.dtos';
 import { PaginatedResponse } from '../core/dtos/book.dtos';
@@ -29,6 +30,9 @@ describe('Library', () => {
   let importEntries: WritableSignal<ImportActivity[]>;
   let progressByBookId: Signal<Map<string, ImportActivity>>;
   let importPatched: Subject<Book>;
+
+  /** "The library changed elsewhere", driven per test. */
+  let libraryChanged: Subject<void>;
 
   function activity(overrides: Partial<ImportActivity> = {}): ImportActivity {
     return {
@@ -63,6 +67,7 @@ describe('Library', () => {
 
     importEntries = signal<ImportActivity[]>([]);
     importPatched = new Subject<Book>();
+    libraryChanged = new Subject<void>();
     progressByBookId = computed(() => {
       const byBook = new Map<string, ImportActivity>();
       for (const entry of importEntries()) {
@@ -97,6 +102,7 @@ describe('Library', () => {
             delete: vi.fn(() => of(null)),
           } as unknown as CollectionsService,
         },
+        { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
         {
           // The library reads the feed as signals: it starts the connection,
           // looks up the import driving a given book, and patches the single book
@@ -331,6 +337,49 @@ describe('Library', () => {
     expect(component.rawBooks()[0].title).toBe('New Title');
     expect(component.rawBooks()[1].title).toBe('Untouched');
     // The rest of the library did not change, so it is not re-queried.
+    expect(listSpy).not.toHaveBeenCalled();
+  });
+
+  it('re-reads every loaded page in place when the library changes elsewhere', () => {
+    const page = (n: number) =>
+      Array.from({ length: 20 }, (_, i) => ({ id: `p${n}-${i}`, title: `Book ${n}.${i}` }) as Book);
+    listSpy.mockImplementation((query: { page: number }) =>
+      of({ items: page(query.page), totalCount: 60 } as PaginatedResponse<Book>),
+    );
+    component.rawBooks.set([...page(1), ...page(2)]);
+    component.totalItems.set(60);
+    component.currentPage.set(2);
+    listSpy.mockClear();
+    const collections = TestBed.inject(CollectionsService) as unknown as {
+      list: ReturnType<typeof vi.fn>;
+    };
+    collections.list.mockClear();
+
+    listSpy.mockImplementation((query: { page: number }) =>
+      of({
+        items: page(query.page).map((book) => ({ ...book, title: `${book.title} (renamed)` })),
+        totalCount: 60,
+      } as PaginatedResponse<Book>),
+    );
+    libraryChanged.next();
+
+    // Both pages the reader had loaded, not a reset to the first one.
+    expect(listSpy.mock.calls.map((args: unknown[]) => (args[0] as { page: number }).page)).toEqual([1, 2]);
+    expect(component.currentPage()).toBe(2);
+    expect(component.rawBooks()).toHaveLength(40);
+    expect(component.rawBooks()[25].title).toBe('Book 2.5 (renamed)');
+    // Quietly: no swap and no loading state.
+    expect(component.swapping()).toBe(false);
+    expect(component.loading()).toBe(false);
+    expect(collections.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a read the user started alone when the library changes', () => {
+    component.loadingMore.set(true);
+    listSpy.mockClear();
+
+    libraryChanged.next();
+
     expect(listSpy).not.toHaveBeenCalled();
   });
 

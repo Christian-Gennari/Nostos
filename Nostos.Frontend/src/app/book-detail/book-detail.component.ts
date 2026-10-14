@@ -1,5 +1,6 @@
-import { afterNextRender, Component, effect, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef } from '@angular/core';
+import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -51,6 +52,7 @@ import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
+import { LibraryChangesService } from '../core/services/library-changes.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaBookStatus, ExternalMediaService } from '../core/services/external-media.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -104,6 +106,14 @@ export class BookDetail implements OnInit, OnDestroy {
   private toast = inject(ToastService);
   private cloudEntry = inject(CloudEntryService);
   private externalMediaApi = inject(ExternalMediaService);
+  private libraryChanges = inject(LibraryChangesService);
+
+  /**
+   * A library change announced while Edit Book is open. The modal re-seeds its
+   * form whenever the book it was given changes, so re-reading the book under
+   * it would discard what the user is typing; the re-read waits for it to close.
+   */
+  private readonly changePending = signal(false);
 
   /**
    * Set when this book's media is read from the server's linked folder (#843)
@@ -148,6 +158,19 @@ export class BookDetail implements OnInit, OnDestroy {
    * still collapses when the window narrows — and expands again when it grows.
    */
   constructor() {
+    this.libraryChanges
+      .watch()
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.changePending.set(true));
+
+    effect(() => {
+      if (!this.changePending() || this.showMetadataModal() || this.deleting()) return;
+      const id = this.store.book()?.id;
+      if (!id) return;
+      this.changePending.set(false);
+      untracked(() => this.store.refreshInBackground(id));
+    });
+
     effect(() => {
     const book = this.store.book();
     if (book) this.preferences.setActiveEditionId(book.workId, book.id);
