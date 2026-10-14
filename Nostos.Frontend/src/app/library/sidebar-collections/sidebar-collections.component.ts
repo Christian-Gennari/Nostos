@@ -7,7 +7,9 @@ import {
   computed,
   HostListener,
   ElementRef,
+  effect,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -26,6 +28,7 @@ import { FlatTreeComponent } from '../../ui/flat-tree/flat-tree.component';
 import { ToastService } from '../../core/services/toast.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ReadingListService } from '../../core/services/reading-list.service';
+import { LibraryChangesService } from '../../core/services/library-changes.service';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -51,6 +54,29 @@ export class SidebarCollections implements OnInit {
   private toast = inject(ToastService);
   /** Only its count is shown here; the list itself lives on its own page. */
   readonly readingList = inject(ReadingListService);
+  private readonly libraryChanges = inject(LibraryChangesService);
+
+  /**
+   * A change announced while a collection is being added or renamed inline. The
+   * re-read waits until that input is gone, so it never replaces the row being
+   * typed into.
+   */
+  private readonly changePending = signal(false);
+
+  constructor() {
+    this.libraryChanges
+      .watch()
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.changePending.set(true));
+
+    effect(() => {
+      if (!this.changePending() || this.adding() || this.editingId()) return;
+      this.changePending.set(false);
+      this.load();
+      this.loadCounts();
+      this.loadStatusCounts();
+    });
+  }
 
   // State
   collections = signal<Collection[]>([]);
