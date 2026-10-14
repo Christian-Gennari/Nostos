@@ -168,7 +168,7 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
         var result = await h.Service.CreateAsync(book.Id, new CreateNoteDto("a plain note"));
 
         result.Value!.HighlightColour.Should().BeNull(
-            "no colour is invented for a note that never chose one; readers draw null as amber");
+            "no colour is invented for a note that never chose one; readers draw null as sage");
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
 
         result.Success.Should().BeFalse();
         result.ErrorCode.Should().Be("invalid_highlight_colour");
-        result.ErrorMessage.Should().Be("Highlight colour must be one of: amber, sage, blue, rose.");
+        result.ErrorMessage.Should().Be("Highlight colour must be one of: sage, amber, blue, rose.");
         (await h.Db.Notes.CountAsync()).Should().Be(0);
     }
 

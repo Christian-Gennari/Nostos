@@ -1835,17 +1835,17 @@ describe('ReaderShell typography panel (EPUB)', () => {
       fixture.nativeElement.querySelectorAll('.hl-pen') as NodeListOf<HTMLButtonElement>,
     );
     expect(pens.length).toBe(4);
-    // Amber is the default pen, announced as pressed rather than only drawn.
+    // Sage is the default pen, announced as pressed rather than only drawn.
     expect(pens[0].getAttribute('aria-pressed')).toBe('true');
     expect(component.highlightColour()).toBe(DEFAULT_HIGHLIGHT_COLOUR);
 
     pens[1].click();
     render();
 
-    expect(localStorage.getItem('nostos.highlight.book-pens')).toBe('sage');
+    expect(localStorage.getItem('nostos.highlight.book-pens')).toBe('amber');
     const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
       .componentInstance as EpubReaderStub;
-    expect(stub.highlightColour()).toBe('sage');
+    expect(stub.highlightColour()).toBe('amber');
     expect(pens[1].getAttribute('aria-pressed')).toBe('true');
 
     // That a SECOND book does not inherit this pen is pinned in

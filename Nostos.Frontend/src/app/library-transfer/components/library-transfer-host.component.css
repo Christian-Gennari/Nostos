@@ -10,9 +10,9 @@
   padding: 14px 0;
 }
 
-.transfer-host__entry:last-child {
-  padding-bottom: 0;
-}
+/* The card has no vertical padding of its own (its rows bring it), so the
+   last flow keeps its bottom padding: the Import button must not sit on the
+   card's edge. */
 
 .transfer-host__entry + .transfer-host__entry {
   border-top: 1px solid var(--border-light);

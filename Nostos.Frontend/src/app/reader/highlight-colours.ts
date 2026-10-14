@@ -7,7 +7,7 @@
  * theme-invariant). Storing a hex instead would freeze one theme's value into
  * whatever the user happened to be reading in.
  */
-export type HighlightColour = 'amber' | 'sage' | 'blue' | 'rose';
+export type HighlightColour = 'sage' | 'amber' | 'blue' | 'rose';
 
 export interface HighlightColourOption {
   id: HighlightColour;
@@ -16,14 +16,14 @@ export interface HighlightColourOption {
 }
 
 export const HIGHLIGHT_COLOURS: readonly HighlightColourOption[] = [
-  { id: 'amber', label: 'Amber' },
   { id: 'sage', label: 'Sage' },
+  { id: 'amber', label: 'Amber' },
   { id: 'blue', label: 'Blue' },
   { id: 'rose', label: 'Rose' },
 ];
 
 /** The colour a book starts on, and the fallback for an unknown stored value. */
-export const DEFAULT_HIGHLIGHT_COLOUR: HighlightColour = 'amber';
+export const DEFAULT_HIGHLIGHT_COLOUR: HighlightColour = 'sage';
 
 /** `--highlight-<name>`, the CSS custom property holding that pen's fill. */
 export function highlightFillVar(colour: HighlightColour): string {

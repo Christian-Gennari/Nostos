@@ -1018,7 +1018,7 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     expect(JSON.parse(firstDto.cfiRange)).toMatchObject({ pageNumber: 3 });
     // The pen is the note's own field now, not part of the location (#861).
     expect(JSON.parse(firstDto.cfiRange)).not.toHaveProperty('colour');
-    expect(firstDto.highlightColour).toBe('amber');
+    expect(firstDto.highlightColour).toBe('sage');
   });
 
   const touchEnd = (component: PdfReader) =>
@@ -1179,7 +1179,7 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     try {
       component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
       expect(paint.mock.lastCall?.[1]).toEqual([
-        expect.objectContaining({ pageNumber: 3, colour: 'amber' }),
+        expect.objectContaining({ pageNumber: 3, colour: 'sage' }),
       ]);
 
       component.discardHighlight();

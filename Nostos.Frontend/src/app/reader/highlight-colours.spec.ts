@@ -21,10 +21,10 @@ describe('highlight colours', () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => localStorage.clear());
 
-  it('offers four named pens, with amber as the default', () => {
-    expect(HIGHLIGHT_COLOURS.map((option) => option.id)).toEqual(['amber', 'sage', 'blue', 'rose']);
+  it('offers four named pens, with sage as the default', () => {
+    expect(HIGHLIGHT_COLOURS.map((option) => option.id)).toEqual(['sage', 'amber', 'blue', 'rose']);
     expect(HIGHLIGHT_COLOURS.every((option) => !!option.label)).toBe(true);
-    expect(DEFAULT_HIGHLIGHT_COLOUR).toBe('amber');
+    expect(DEFAULT_HIGHLIGHT_COLOUR).toBe('sage');
   });
 
   it('derives token names from the colour, so no hex lives in code', () => {
@@ -80,7 +80,7 @@ describe('highlight colours', () => {
     expect(
       noteHighlightColour({ cfiRange: JSON.stringify({ pageNumber: 2, rects: [], colour: 'sage' }) }),
     ).toBe('sage');
-    // An EPUB highlight with no recorded pen, and an import, are amber.
+    // An EPUB highlight with no recorded pen, and an import, are sage.
     expect(noteHighlightColour({ cfiRange: 'epubcfi(/6/4)' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
     expect(noteHighlightColour({ highlightColour: null })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
     expect(noteHighlightColour({ highlightColour: 'gray' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
