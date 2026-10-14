@@ -1225,7 +1225,7 @@ describe('LibraryImportFlowComponent', () => {
     expect(bar.getAttribute('role')).toBe('progressbar');
     expect(bar.getAttribute('aria-valuemax')).toBe('100');
 
-    await transport.releaseAll();
+    await transport.releaseUntil(() => harness.coordinator.state().kind === 'ready-empty');
     await waitForKind(harness, 'ready-empty');
   });
 

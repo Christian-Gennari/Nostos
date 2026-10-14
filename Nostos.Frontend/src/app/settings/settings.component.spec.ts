@@ -1883,8 +1883,8 @@ describe('SettingsComponent backup-only surface', () => {
     // The card stays visible; the supporting sentence is substituted in place.
     const card = assistantCard();
     expect(card).not.toBeNull();
-    expect(card!.textContent).toContain(
-      'Set up an AI provider in Settings to enable this.',
+    expect(card!.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Connect an AI provider in AI connections to turn this on.',
     );
     expect(card!.textContent).not.toContain('Show the dock capsule');
 
@@ -1896,6 +1896,21 @@ describe('SettingsComponent backup-only surface', () => {
     expect(toggle.closest('label.nostos-switch')).not.toBeNull();
   });
 
+  it('links the setup hint straight to AI connections', () => {
+    assistantStatusMock.available.set(false);
+    render();
+
+    const link = fixture.nativeElement.querySelector(
+      '[data-testid="assistant-setup-hint"] .label-link',
+    ) as HTMLAnchorElement;
+    expect(link.textContent?.trim()).toBe('AI connections');
+    expect(link.getAttribute('href')).toBe('/settings?section=connections');
+    link.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('connections');
+  });
+
   it('uses product copy for an unavailable managed Cloud assistant', () => {
     capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
     assistantStatusMock.available.set(false);
@@ -1904,7 +1919,7 @@ describe('SettingsComponent backup-only surface', () => {
     const card = assistantCard();
     expect(card).not.toBeNull();
     expect(card!.textContent).toContain('Ask Nostos is temporarily unavailable.');
-    expect(card!.textContent).not.toContain('Set up an AI provider');
+    expect(card!.textContent).not.toContain('Connect an AI provider');
   });
 
   it('never records a preference while the assistant is unavailable', () => {
@@ -2930,7 +2945,7 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(coordinator().state().kind).toBe('uploading');
     expect(testId('import-uploading')).toBeTruthy();
 
-    await transport.releaseAll();
+    await transport.releaseUntil(() => coordinator().state().kind === 'ready-empty');
     await waitForKind('ready-empty');
 
     const state = coordinator().state();

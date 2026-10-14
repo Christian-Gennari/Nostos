@@ -106,6 +106,15 @@ export class ServerVoice implements ReadAloudVoice {
     });
   }
 
+  /**
+   * Drops every sentence rendered so far. The renderings are kept by their
+   * text alone, so a new voice must call this or the sentences already heard,
+   * and those fetched ahead, would play again in the old one.
+   */
+  forget(): void {
+    this.rendered.clear();
+  }
+
   cancel(): void {
     this.turn++;
     const settle = this.settle;
