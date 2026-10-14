@@ -59,7 +59,7 @@ import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
 import { CloudAccountDeletionSettingsComponent } from './cloud-account-deletion-settings.component';
 import { ExternalMediaSettingsComponent } from './external-media-settings.component';
-import { ReadAloudSettingsComponent } from './read-aloud-settings.component';
+import { READ_ALOUD_GUIDE_URL } from './read-aloud-guide';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
@@ -105,6 +105,16 @@ const AI_PROVIDER_COPY = {
   alignmentApiStyleMultipart: 'OpenAI-compatible (multipart upload)',
   alignmentApiStyleJson: 'JSON (base64 audio)',
   alignmentApiStyleHelp: 'Most transcription providers use the multipart upload format.',
+  readAloud: 'Read aloud voice',
+  readAloudDescription:
+    'Read books aloud with a natural voice from a speech server, on every device. Without one, each device reads with its own voice.',
+  readAloudToggle: 'Enable the natural voice',
+  readAloudToggleHelp: 'Send the sentence being read to the speech server below.',
+  endpointPlaceholderTts: 'http://kokoro:8880',
+  endpointHelpTts: 'Address of a speech server with the OpenAI speech route, e.g. Kokoro.',
+  modelPlaceholderTts: 'kokoro',
+  apiKeyHelpTts: 'Leave empty for a speech server on your own network.',
+  readAloudGuide: 'How to set up a speech server',
   embeddings: 'Embeddings',
   embeddingToggle: 'Enable passage embeddings',
   embeddingToggleHelp:
@@ -278,7 +288,6 @@ const defaultProgress: BackupProgress = {
     ConfirmModal,
     CloudAccountDeletionSettingsComponent,
     ExternalMediaSettingsComponent,
-    ReadAloudSettingsComponent,
     LibraryTransferHostComponent,
   ],
   templateUrl: './settings.component.html',
@@ -727,6 +736,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** False when the host reports no embedding section (it manages embeddings itself). */
   aiEmbeddingAvailable = signal(false);
+  aiTts = signal<AiProviderForm>(emptyAiProviderForm());
+  aiTtsAvailable = signal(false);
+  aiTtsModels = signal<string[]>([]);
+  aiTtsStatus = signal<AiProviderStatus | null>(null);
+  readonly readAloudGuideUrl = READ_ALOUD_GUIDE_URL;
 
   /** False when the host does not report alignment transcription settings. */
   aiAlignmentAvailable = signal(false);
@@ -1201,6 +1215,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.patchAiForm('embedding', { enabled: (event.target as HTMLInputElement).checked });
   }
 
+  setAiTtsEnabled(event: Event): void {
+    this.patchAiForm('tts', { enabled: (event.target as HTMLInputElement).checked });
+  }
+
   clearAiKey(kind: AiProviderKind): void {
     this.patchAiForm(kind, { key: '', keyCleared: true });
     this.setAiStatus(kind, { text: AI_PROVIDER_COPY.keyCleared, tone: 'neutral' });
@@ -1305,6 +1323,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.aiAlignmentAvailable()) {
       const alignment = this.buildAiAlignmentUpdate(this.aiAlignment());
       if (alignment) update.alignmentTranscription = alignment;
+    }
+    if (this.aiTtsAvailable()) {
+      const tts = this.buildAiSectionUpdate(this.aiTts());
+      if (tts) update.tts = tts;
     }
 
     this.aiSaving.set(true);
@@ -1415,6 +1437,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.aiEmbedding.set(
       settings.embedding ? this.toAiForm(settings.embedding) : emptyAiProviderForm(),
     );
+    this.aiTtsAvailable.set(!!settings.tts);
+    this.aiTts.set(settings.tts ? this.toAiForm(settings.tts) : emptyAiProviderForm());
     this.aiAlignmentAvailable.set(!!settings.alignmentTranscription);
     this.aiAlignment.set(
       settings.alignmentTranscription
@@ -1431,6 +1455,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         return this.aiStt;
       case 'embedding':
         return this.aiEmbedding;
+      case 'tts':
+        return this.aiTts;
     }
   }
 
@@ -1457,6 +1483,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
       case 'embedding':
         this.aiEmbeddingModels.set(models);
         break;
+      case 'tts':
+        this.aiTtsModels.set(models);
+        break;
       case 'alignmentStt':
         this.aiAlignmentModels.set(models);
         break;
@@ -1473,6 +1502,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
         break;
       case 'embedding':
         this.aiEmbeddingStatus.set(status);
+        break;
+      case 'tts':
+        this.aiTtsStatus.set(status);
         break;
       case 'alignmentStt':
         this.aiAlignmentStatus.set(status);

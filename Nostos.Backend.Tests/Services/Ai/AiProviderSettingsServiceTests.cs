@@ -24,6 +24,7 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
     private const string SttEnvVariable = "NOSTOS_AI_PROVIDER_SERVICE_TEST_STT_TOKEN";
     private const string EmbeddingEnvVariable = "NOSTOS_AI_PROVIDER_SERVICE_TEST_EMBEDDING_TOKEN";
     private const string AlignmentEnvVariable = "NOSTOS_ALIGNMENT_STT_TOKEN";
+    private const string TtsEnvVariable = "NOSTOS_AI_PROVIDER_SERVICE_TEST_TTS_TOKEN";
     private const string EnvKeyValue = "sk-from-environment";
 
     private readonly SqliteTestFixture _fixture = new();
@@ -248,6 +249,99 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
         disabled.Embedding!.Enabled.Should().BeFalse();
         disabled.Embedding.HasKey.Should().BeTrue();
         (await service.GetEffectiveEmbeddingAsync()).IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Read_aloud_settings_fall_back_to_configuration_and_round_trip_with_the_key_encrypted()
+    {
+        const string key = "sk-speech-owner-key";
+        var path = _fixture.CreateDatabasePath();
+        var service = CreateService(new StubHttpMessageHandler(), path);
+
+        // Nothing saved: the ReadAloud configuration section is in effect.
+        var before = await service.GetAsync();
+        before.Tts!.Enabled.Should().BeFalse();
+        before.Tts.BaseUrl.Should().Be("http://kokoro.lan:8880");
+        before.Tts.Model.Should().Be("kokoro");
+        before.Tts.HasKey.Should().BeFalse();
+
+        var updated = await service.UpdateAsync(
+            new AiProviderSettingsUpdateRequest(
+                Llm: null,
+                Stt: null,
+                Tts: new AiProviderSectionUpdate(
+                    true,
+                    "https://speech.example.test/v1/openai",
+                    "hexgrad/Kokoro-82M",
+                    key)));
+
+        updated.Tts!.Enabled.Should().BeTrue();
+        updated.Tts.BaseUrl.Should().Be("https://speech.example.test/v1/openai");
+        updated.Tts.Model.Should().Be("hexgrad/Kokoro-82M");
+        updated.Tts.HasKey.Should().BeTrue();
+        updated.Stt.Model.Should().Be("groq/whisper-large-v3-turbo");
+
+        var effective = await service.GetEffectiveTtsAsync();
+        effective.Enabled.Should().BeTrue();
+        effective.ApiKey.Should().Be(key);
+
+        await using (var db = _fixture.CreateContext(path))
+        {
+            var row = await db.AiProviderSettings.SingleAsync();
+            row.TtsApiKeyEncrypted.Should().NotBeNullOrWhiteSpace();
+            row.TtsApiKeyEncrypted.Should().NotContain(key);
+        }
+
+        var cleared = await service.UpdateAsync(
+            new AiProviderSettingsUpdateRequest(
+                Llm: null,
+                Stt: null,
+                Tts: new AiProviderSectionUpdate(false, null, null, "")));
+
+        cleared.Tts!.Enabled.Should().BeFalse();
+        cleared.Tts.HasKey.Should().BeFalse();
+        (await service.GetEffectiveTtsAsync()).ApiKey.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Read_aloud_test_asks_the_speech_server_for_audio()
+    {
+        var handler = new StubHttpMessageHandler();
+        string? body = null;
+        handler.Register("/v1/audio/speech", request =>
+        {
+            body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([0x49, 0x44, 0x33]),
+            };
+            response.Content.Headers.ContentType = new("audio/mpeg");
+            return response;
+        });
+
+        var service = CreateService(handler);
+        var result = await service.TestAsync(
+            new AiProviderTestRequest("tts", "http://kokoro.lan:8880", null, null));
+
+        result.Ok.Should().BeTrue();
+        var json = JsonDocument.Parse(body!).RootElement;
+        json.GetProperty("model").GetString().Should().Be("kokoro");
+        json.GetProperty("input").GetString().Should().Be("Test.");
+        json.GetProperty("response_format").GetString().Should().Be("mp3");
+    }
+
+    [Fact]
+    public async Task Read_aloud_test_refuses_a_server_that_does_not_answer_with_audio()
+    {
+        var handler = new StubHttpMessageHandler();
+        handler.Register("/v1/audio/speech", _ => Json("""{"ok":true}"""));
+
+        var service = CreateService(handler);
+        var result = await service.TestAsync(
+            new AiProviderTestRequest("tts", "http://kokoro.lan:8880", "kokoro", null));
+
+        result.Ok.Should().BeFalse();
+        result.Error.Should().Contain("not with audio");
     }
 
     [Fact]
@@ -1054,7 +1148,14 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
             embedding,
             new EphemeralDataProtectionProvider(),
             new StubHttpClientFactory(handler),
-            NullLogger<AiProviderSettingsService>.Instance);
+            NullLogger<AiProviderSettingsService>.Instance,
+            new ReadAloudOptions
+            {
+                Enabled = false,
+                BaseUrl = "http://kokoro.lan:8880",
+                Model = "kokoro",
+                ApiKeyEnvironmentVariable = TtsEnvVariable,
+            });
     }
 
     private sealed class TestDbContextFactory(string path)

@@ -77,6 +77,18 @@ namespace Nostos.Backend.Migrations
                     b.Property<string>("SttModel")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TtsApiKeyEncrypted")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TtsBaseUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("TtsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TtsModel")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("TEXT");
 

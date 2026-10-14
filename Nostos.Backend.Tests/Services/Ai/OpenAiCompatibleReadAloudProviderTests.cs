@@ -181,8 +181,28 @@ public sealed class OpenAiCompatibleReadAloudProviderTests : IDisposable
         return new OpenAiCompatibleReadAloudProvider(
             new StubHttpClientFactory(handler),
             options,
+            new OptionsResolver(options),
             new ReadAloudAudioCache(options, NullLogger<ReadAloudAudioCache>.Instance),
             NullLogger<OpenAiCompatibleReadAloudProvider>.Instance);
+    }
+
+    /// <summary>Reports the options as the effective settings, as a server with nothing saved does.</summary>
+    private sealed class OptionsResolver(ReadAloudOptions options) : IAiProviderConfigResolver
+    {
+        public Task<EffectiveAiProviderConfig> GetEffectiveTtsAsync(CancellationToken ct = default) =>
+            Task.FromResult(new EffectiveAiProviderConfig(
+                options.Enabled,
+                options.BaseUrl,
+                options.Model,
+                options.ApiKeyEnvironmentVariable,
+                Environment.GetEnvironmentVariable(options.ApiKeyEnvironmentVariable),
+                KeyFromServerEnv: true));
+
+        public Task<EffectiveAiProviderConfig> GetEffectiveLlmAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException();
+
+        public Task<EffectiveAiProviderConfig> GetEffectiveSttAsync(CancellationToken ct = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

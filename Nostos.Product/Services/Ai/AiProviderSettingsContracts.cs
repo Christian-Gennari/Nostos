@@ -50,7 +50,9 @@ public sealed record AiProviderSettingsResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     AiProviderSectionDto? Embedding = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    AlignmentTranscriptionSectionDto? AlignmentTranscription = null);
+    AlignmentTranscriptionSectionDto? AlignmentTranscription = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AiProviderSectionDto? Tts = null);
 
 public sealed record AiProviderSectionUpdate(
     bool? Enabled,
@@ -70,7 +72,8 @@ public sealed record AiProviderSettingsUpdateRequest(
     AiProviderSectionUpdate? Llm,
     AiProviderSectionUpdate? Stt,
     AiProviderSectionUpdate? Embedding = null,
-    AlignmentTranscriptionSectionUpdate? AlignmentTranscription = null);
+    AlignmentTranscriptionSectionUpdate? AlignmentTranscription = null,
+    AiProviderSectionUpdate? Tts = null);
 
 public sealed record AiProviderModelsRequest(
     string Kind,

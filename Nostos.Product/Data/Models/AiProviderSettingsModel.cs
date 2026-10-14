@@ -2,7 +2,8 @@ namespace Nostos.Backend.Data.Models;
 
 /// <summary>
 /// Singleton row holding the server-wide overrides for the assistant's LLM,
-/// voice STT, alignment transcription and passage-embedding providers.
+/// voice STT, alignment transcription, passage-embedding and read-aloud
+/// speech providers.
 ///
 /// Every provider override column is nullable. NULL means "no override",
 /// preserving the distinction between an explicit false and an unset value.
@@ -61,6 +62,14 @@ public class AiProviderSettingsModel
 
     /// <summary>Data-Protection ciphertext of the owner-supplied embedding key, or null.</summary>
     public string? EmbeddingApiKeyEncrypted { get; set; }
+
+    // --- Read aloud (speech server) overrides ---
+    public bool? TtsEnabled { get; set; }
+    public string? TtsBaseUrl { get; set; }
+    public string? TtsModel { get; set; }
+
+    /// <summary>Data-Protection ciphertext of the owner-supplied speech server key, or null.</summary>
+    public string? TtsApiKeyEncrypted { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

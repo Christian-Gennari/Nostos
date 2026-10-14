@@ -11,6 +11,9 @@ namespace Nostos.Backend.Services.Ai;
 /// Read-aloud against a speech server the installation's owner runs, over the
 /// OpenAI speech route (<c>POST …/v1/audio/speech</c>).
 ///
+/// The server is read per call from the effective settings: what the owner
+/// saved in Settings, otherwise the <c>ReadAloud</c> configuration section.
+///
 /// One call per sentence, no retry: the reader answers a failed call by
 /// carrying on with the device voice. The token, when there is one, is attached
 /// only to the outbound request and never logged or returned.
@@ -18,6 +21,7 @@ namespace Nostos.Backend.Services.Ai;
 public sealed class OpenAiCompatibleReadAloudProvider(
     IHttpClientFactory httpClientFactory,
     ReadAloudOptions options,
+    IAiProviderConfigResolver config,
     ReadAloudAudioCache cache,
     ILogger<OpenAiCompatibleReadAloudProvider> logger) : IReadAloudProvider
 {
@@ -25,12 +29,15 @@ public sealed class OpenAiCompatibleReadAloudProvider(
 
     public IReadOnlyList<ReadAloudVoice> Voices => KokoroVoices.All;
 
-    public Task<ReadAloudAvailability> GetAvailabilityAsync(CancellationToken ct = default) =>
-        Task.FromResult(new ReadAloudAvailability(
-            Enabled: options.Enabled,
-            Configured: SpeechUri(options.BaseUrl) is not null && !string.IsNullOrWhiteSpace(options.Model),
+    public async Task<ReadAloudAvailability> GetAvailabilityAsync(CancellationToken ct = default)
+    {
+        var effective = await config.GetEffectiveTtsAsync(ct);
+        return new ReadAloudAvailability(
+            Enabled: effective.Enabled,
+            Configured: SpeechUri(effective.BaseUrl) is not null && !string.IsNullOrWhiteSpace(effective.Model),
             Managed: false,
-            MaxCharacters: options.MaxCharacters));
+            MaxCharacters: options.MaxCharacters);
+    }
 
     public async Task<ReadAloudAudio> SynthesizeAsync(
         ReadAloudSpeechRequest request,
@@ -38,22 +45,24 @@ public sealed class OpenAiCompatibleReadAloudProvider(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var uri = SpeechUri(options.BaseUrl);
-        if (!options.Enabled)
+        var effective = await config.GetEffectiveTtsAsync(ct);
+        var uri = SpeechUri(effective.BaseUrl);
+        if (!effective.Enabled)
         {
             throw new ReadAloudException(
                 ReadAloudErrorCodes.Disabled,
                 "The server voice for read aloud is switched off.");
         }
 
-        if (uri is null || string.IsNullOrWhiteSpace(options.Model))
+        if (uri is null || string.IsNullOrWhiteSpace(effective.Model))
         {
             throw new ReadAloudException(
                 ReadAloudErrorCodes.NotConfigured,
-                "ReadAloud:BaseUrl and ReadAloud:Model must both be set.");
+                "A speech server address and model must both be set.");
         }
 
-        var cacheKey = ReadAloudAudioCache.Key(uri.AbsoluteUri, options.Model, request.Voice, request.Text);
+        var model = effective.Model;
+        var cacheKey = ReadAloudAudioCache.Key(uri.AbsoluteUri, model, request.Voice, request.Text);
         var cached = await cache.TryGetAsync(cacheKey, ct);
         if (cached is not null)
             return cached;
@@ -65,7 +74,7 @@ public sealed class OpenAiCompatibleReadAloudProvider(
             Content = new StringContent(
                 JsonSerializer.Serialize(new
                 {
-                    model = options.Model,
+                    model,
                     input = request.Text,
                     voice = request.Voice,
                     response_format = "mp3",
@@ -75,9 +84,8 @@ public sealed class OpenAiCompatibleReadAloudProvider(
                 "application/json"),
         };
 
-        var token = Environment.GetEnvironmentVariable(options.ApiKeyEnvironmentVariable);
-        if (!string.IsNullOrWhiteSpace(token))
-            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+        if (!string.IsNullOrWhiteSpace(effective.ApiKey))
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", effective.ApiKey.Trim());
 
         var client = httpClientFactory.CreateClient(HttpClientName);
 
