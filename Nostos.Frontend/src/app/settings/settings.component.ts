@@ -144,7 +144,7 @@ const AI_PROVIDER_COPY = {
   modelsError: (message: string) => `Could not load models: ${message}`,
   connectionError: (message: string) => `Connection failed: ${message}`,
   keyCleared: 'Key removed. Falling back to environment variable if present.',
-  oldCardEmptyState: 'Set up an AI provider in Settings to enable this.',
+  oldCardEmptyState: 'Connect an AI provider in Settings to turn this on.',
   // Capture processing (issue #262): the stored, global choice that used to be a
   // per-capture select in the widget. The description shown is the one belonging
   // to the currently selected option, followed by `captureScope`.

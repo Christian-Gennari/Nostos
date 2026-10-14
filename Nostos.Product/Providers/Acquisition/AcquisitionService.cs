@@ -1,4 +1,6 @@
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
@@ -629,7 +631,7 @@ public sealed class AcquisitionService(
 
         var attach = await library.AttachAcquiredAssetAsync(new LibraryAttachAcquiredAssetRequest(
             ClientId: "acquisition",
-            IdempotencyKey: $"acquire-{plan.ProviderId}-{plan.ExternalId}-{plan.Asset.Id}-{Guid.NewGuid():N}",
+            IdempotencyKey: AcquisitionIdempotencyKey(plan, edition: false),
             BookId: bookId,
             FileName: staged is null ? string.Empty : Path.GetFileName(staged),
             ProviderId: plan.ProviderId,
@@ -826,6 +828,17 @@ public sealed class AcquisitionService(
             : fromUser.Trim();
     }
 
+    // The library caps idempotency keys at 128 characters, and a provider's
+    // external id has no such bound: Standard Ebooks' slug for The Brothers
+    // Karamazov alone is 57. The GUID already makes every key unique, so the
+    // item identity is folded into a short hash rather than spelled out.
+    private static string AcquisitionIdempotencyKey(ProviderAcquisitionPlan plan, bool edition)
+    {
+        var identity = SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{plan.ProviderId}\n{plan.ExternalId}\n{plan.Asset.Id}"));
+        return $"acquire-{Convert.ToHexStringLower(identity)[..16]}{(edition ? "-edition" : string.Empty)}-{Guid.NewGuid():N}";
+    }
+
     private static LibraryCreateBookRequest BuildCreateRequest(
         ProviderRegistration provider,
         ProviderAcquisitionPlan plan,
@@ -836,7 +849,7 @@ public sealed class AcquisitionService(
     {
         return new LibraryCreateBookRequest(
             ClientId: "acquisition",
-            IdempotencyKey: $"acquire-{plan.ProviderId}-{plan.ExternalId}-{plan.Asset.Id}{(edition ? "-edition" : string.Empty)}-{Guid.NewGuid():N}",
+            IdempotencyKey: AcquisitionIdempotencyKey(plan, edition),
             Type: expectedType,
             Title: metadata.Title,
             Subtitle: metadata.Subtitle,
