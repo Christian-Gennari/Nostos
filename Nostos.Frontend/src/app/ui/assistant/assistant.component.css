@@ -761,51 +761,6 @@
 }
 
 /* ------------------------------
-   Raw transcript
------------------------------- */
-.assistant-raw {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding-top: 11px;
-  border-top: 1px solid var(--border-color);
-}
-
-.raw-toggle {
-  align-self: flex-start;
-}
-
-.raw-body {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 9px 10px;
-  border-left: 1px solid var(--border-color);
-  background: var(--bg-surface-alt);
-}
-
-.raw-text {
-  margin: 0;
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.raw-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.raw-mode {
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
-}
-
-/* ------------------------------
    Composer
 ------------------------------ */
 .assistant-composer {

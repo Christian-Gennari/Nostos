@@ -19,7 +19,6 @@ internal sealed record StoredAssistantContinuation(
     string ArgumentsJson,
     string OriginalMessage,
     AssistantContextDto Context,
-    string ProcessingMode,
     DateTimeOffset ExpiresAt,
     int BookResolutionAttempts = 0);
 
@@ -60,8 +59,7 @@ public sealed class AssistantContinuationStore
         string kind,
         string argumentsJson,
         string originalMessage,
-        AssistantContextDto context,
-        string processingMode)
+        AssistantContextDto context)
     {
         lock (_gate)
         {
@@ -82,7 +80,6 @@ public sealed class AssistantContinuationStore
                 argumentsJson,
                 originalMessage,
                 context,
-                processingMode,
                 Now + ActiveLifetime);
 
             _activeById[continuation.ContinuationId] = continuation;

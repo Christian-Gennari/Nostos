@@ -285,17 +285,6 @@ interface AssistantTurnRequestDto {
   history: AssistantHistoryMessage[];
 }
 
-/**
- * The raw transcript of one note and the mode its current text reflects
- * (mirrors the backend `NoteRawTranscriptDto`).
- */
-export interface NoteRawTranscriptDto {
-  id: string;
-  rawContent: string | null;
-  content: string;
-  processingMode: string;
-}
-
 /** Mirrors the backend `AssistantContextDto` field-for-field. */
 interface AssistantContextDto {
   surface: string;
@@ -493,16 +482,8 @@ export class AssistantService {
     projectContextualModelHistory(this.eventLedger()),
   );
 
-  /**
-   * The note the last turn captured, if any (issue #262 §8). Its raw transcript
-   * is what the surface can show and restore; nothing is shown when it is null.
-   */
+  /** The note the last turn captured, if any. */
   readonly capturedNoteId = signal<string | null>(null);
-  /** True while the captured note's raw-transcript view is open. */
-  readonly rawOpen = signal(false);
-  /** The fetched raw transcript, once loaded. */
-  readonly rawTranscript = signal<NoteRawTranscriptDto | null>(null);
-  readonly rawLoading = signal(false);
 
   /** The user removed the ambient anchor for this session (saves as unknown). */
   private readonly anchorDismissed = signal(false);
@@ -715,9 +696,6 @@ export class AssistantService {
     this.draft.set('');
     this.capturedNoteId.set(null);
     this.finishTurnUi(null);
-    this.rawOpen.set(false);
-    this.rawTranscript.set(null);
-    this.rawLoading.set(false);
     this.persistSession();
   }
 
@@ -882,63 +860,6 @@ export class AssistantService {
   /** Remove a wrong ambient anchor for this session. */
   dismissAnchor(): void {
     this.anchorDismissed.set(true);
-  }
-
-  /**
-   * Open (and load) or close the raw-transcript view for the note the last turn
-   * captured (issue #262 §8). The raw words are kept server-side, so the original
-   * stays readable after any mode processed it.
-   */
-  toggleRawTranscript(): void {
-    const noteId = this.capturedNoteId();
-    if (!noteId) return;
-
-    if (this.rawOpen()) {
-      this.rawOpen.set(false);
-      return;
-    }
-
-    this.rawOpen.set(true);
-    this.loadRawTranscript(noteId);
-  }
-
-  /** Fetch one note's raw transcript and the mode its text currently reflects. */
-  loadRawTranscript(noteId: string): void {
-    this.rawLoading.set(true);
-    this.http.get<NoteRawTranscriptDto>(`/api/notes/${noteId}/raw`).subscribe({
-      next: (raw) => {
-        this.rawLoading.set(false);
-        this.rawTranscript.set(raw);
-      },
-      error: () => {
-        this.rawLoading.set(false);
-        this.rawOpen.set(false);
-        this.lastError.set('The original text could not be loaded.');
-      },
-    });
-  }
-
-  /**
-   * Restore the captured note's text from its raw transcript. The transcript
-   * itself is never erased: restoring is not a way to lose the capture.
-   */
-  restoreRawTranscript(): void {
-    const noteId = this.capturedNoteId();
-    if (!noteId || this.sending()) return;
-
-    this.sending.set(true);
-    this.http.post<NoteRawTranscriptDto>(`/api/notes/${noteId}/raw/restore`, {}).subscribe({
-      next: (restored) => {
-        this.sending.set(false);
-        this.lastError.set(null);
-        this.rawTranscript.set(restored);
-        this.pushEntry(createId(), 'assistant', 'Original text restored.', null, 'Restored');
-      },
-      error: () => {
-        this.sending.set(false);
-        this.lastError.set('The original text could not be restored.');
-      },
-    });
   }
 
   /**
@@ -1583,9 +1504,6 @@ export class AssistantService {
     }
 
     this.capturedNoteId.set(response.capturedNoteId ?? null);
-    this.rawOpen.set(false);
-    this.rawTranscript.set(null);
-    this.rawLoading.set(false);
 
     if (response.acknowledgement) {
       this.pushEntry(

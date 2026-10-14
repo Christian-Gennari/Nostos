@@ -403,52 +403,6 @@
     </div>
     }
 
-    <!-- The raw transcript of the note this turn captured (issue #262 §8): the
-         original words stay readable after any mode processed them, and restoring
-         never erases the transcript it restores from. -->
-    @if (assistant.capturedNoteId()) {
-    <div class="assistant-raw" data-testid="assistant-raw">
-      <button
-        appButton
-        variant="ghost"
-        size="sm"
-        type="button"
-        class="raw-toggle"
-        (click)="assistant.toggleRawTranscript()"
-        [attr.aria-expanded]="assistant.rawOpen()"
-        data-testid="assistant-raw-toggle"
-      >
-        {{ assistant.rawOpen() ? 'Hide original' : 'Show original' }}
-      </button>
-      @if (assistant.rawOpen()) {
-      <div class="raw-body" data-testid="assistant-raw-body">
-        @if (assistant.rawLoading()) {
-        <p class="raw-text">Loading…</p>
-        } @else if (assistant.rawTranscript(); as raw) {
-          @if (raw.rawContent) {
-          <p class="raw-text" data-testid="assistant-raw-text">{{ raw.rawContent }}</p>
-          <div class="raw-actions">
-            <span class="raw-mode" data-testid="assistant-raw-mode">Now: {{ raw.processingMode }}</span>
-            <button
-              appButton
-              variant="ghost"
-              size="sm"
-              type="button"
-              [disabled]="assistant.sending()"
-              (click)="assistant.restoreRawTranscript()"
-              data-testid="assistant-raw-restore"
-            >
-              Restore original
-            </button>
-          </div>
-          } @else {
-          <p class="raw-text" data-testid="assistant-raw-empty">This note kept no separate original text.</p>
-          }
-        }
-      </div>
-      }
-    </div>
-    }
   </div>
 
   <div class="assistant-composer">

@@ -353,21 +353,3 @@ public sealed record AssistantPlanStepOutcomeDto(
     string? ErrorCode,
     string? ErrorMessage,
     object? Data);
-
-// --- ASSISTANT SETTINGS (issue #262 §7) ---
-// The settings the owner picks once, stored on the server. The wire contract is
-// frozen: GET/PUT /api/settings/assistant carry exactly the one field below.
-
-/// <summary>
-/// The stored assistant settings as returned to the client. The single field is
-/// the effective capture post-processing mode; it is <c>"verbatim"</c> when the
-/// owner has never chosen.
-/// </summary>
-public sealed record AssistantSettingsResponse(string CaptureProcessingMode);
-
-/// <summary>
-/// A settings update. <c>CaptureProcessingMode</c> must be one of the supported
-/// modes; anything else (including absent) is refused with
-/// <c>invalid_processing_mode</c> and stores nothing.
-/// </summary>
-public sealed record AssistantSettingsUpdateRequest(string? CaptureProcessingMode);

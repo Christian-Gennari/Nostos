@@ -1167,7 +1167,7 @@ describe('AssistantService voice transcript alignment', () => {
     });
   });
 
-  it('clears the captured note and its raw view on a later turn', () => {
+  it('clears the captured note on a later turn', () => {
     service.open();
     service.updateDraft('First');
     service.submit();
@@ -1178,32 +1178,6 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
     http.expectOne('/api/assistant/turn/stream').flush(turn());
     expect(service.capturedNoteId()).toBeNull();
-    expect(service.rawOpen()).toBe(false);
-  });
-
-  it('loads the raw transcript and restores it without erasing it', () => {
-    service.open();
-    service.capturedNoteId.set('note-1');
-
-    service.toggleRawTranscript();
-    expect(service.rawOpen()).toBe(true);
-    http.expectOne('/api/notes/note-1/raw').flush({
-      id: 'note-1',
-      rawContent: 'raw words',
-      content: 'Polished.',
-      processingMode: 'light_polish',
-    });
-    expect(service.rawTranscript()?.rawContent).toBe('raw words');
-
-    service.restoreRawTranscript();
-    http.expectOne('/api/notes/note-1/raw/restore').flush({
-      id: 'note-1',
-      rawContent: 'raw words',
-      content: 'raw words',
-      processingMode: 'verbatim',
-    });
-    expect(service.rawTranscript()?.content).toBe('raw words');
-    expect(service.rawTranscript()?.processingMode).toBe('verbatim');
   });
 
   it('runs inline Brain proposals and accepted links without synthetic conversation entries', () => {

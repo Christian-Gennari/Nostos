@@ -291,7 +291,6 @@ public static class NostosProductComposition
         services.AddSingleton<AssistantPlanStore>();
         services.AddSingleton<AssistantContinuationStore>();
         services.AddSingleton<AssistantTurnExecutionRegistry>();
-        services.AddSingleton<IAssistantSettingsService, AssistantSettingsService>();
         services.AddScoped<AssistantOrchestrator>();
 
         services.AddScoped(sp => new AssistantCapabilityRegistry(AssistantCapabilities.Build(
@@ -466,7 +465,6 @@ public static class NostosProductComposition
         routes.MapReadAloudEndpoints();
         routes.MapAssistantEndpoints();
         routes.MapAiProviderSettingsEndpoints();
-        routes.MapAssistantSettingsEndpoints();
         routes.MapDeploymentCapabilitiesEndpoints();
         routes.MapManagedBackupEndpoints(
             policies.ManagedBackupsAuthorizationPolicy,

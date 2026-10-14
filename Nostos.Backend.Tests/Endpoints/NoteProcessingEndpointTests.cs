@@ -198,15 +198,12 @@ public sealed class NoteProcessingEndpointTests : IClassFixture<LibraryEndpointF
     [InlineData("reader-quick-note", "epubcfi(/6/4)", "A quick thought.", null, "text")]
     [InlineData("reader-highlight", "3", "", "The exact selected passage.", "text")]
     [InlineData("import", null, "Imported wording.", "Imported quotation.", "import")]
-    public async Task Direct_note_routes_ignore_the_assistant_setting_and_edits_do_not_process(
+    public async Task Direct_note_routes_and_edits_do_not_process(
         string route, string? cfiRange, string content, string? selectedText, string captureSource)
     {
         var provider = new FakeLlmProvider { Failure = LlmException.ProviderFailure("must not process") };
         using var host = CreateHost(provider);
         using var client = host.CreateClient();
-        var settings = await client.PutAsJsonAsync("/api/settings/assistant",
-            new AssistantSettingsUpdateRequest("clarify"));
-        settings.StatusCode.Should().Be(HttpStatusCode.OK);
         var book = await CreateBookAsync(client);
         var response = await client.PostAsJsonAsync($"/api/books/{book.Id}/notes",
             new { content, cfiRange, selectedText, captureSource });

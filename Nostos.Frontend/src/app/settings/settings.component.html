@@ -516,7 +516,7 @@
           >
             <header class="settings-section-header">
               <h2 class="settings-section-title" id="assistant-heading">Assistant</h2>
-              <p class="settings-section-desc">How Ask Nostos appears while you read and how it saves your thoughts.</p>
+              <p class="settings-section-desc">How Ask Nostos appears while you read.</p>
             </header>
 
       <!-- Reading assistant (W1). Availability is the server's to decide; this
@@ -579,38 +579,6 @@
                   data-testid="managed-voice-transcription-toggle"
                 >
               </label>
-            </div>
-          }
-
-          <!-- The stored capture-processing choice (issue #262). It applies to
-               the user's own words as they become a note; it is not gated on
-               availability and has no disabled state — that is the toggle's
-               business, this is a preference the server applies at capture. -->
-          @if (assistantSettingsFailed()) {
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text">{{ copy.captureLoadFailed }}</span>
-                <span class="label-desc">{{ copy.captureLoadFailedHelp }}</span>
-              </div>
-            </div>
-          } @else {
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text">{{ copy.captureLabel }}</span>
-                <span class="label-desc">{{ captureModeDescription() }} {{ copy.captureScope }}</span>
-                @if (assistantSettingsSaveFailed()) {
-                  <span class="label-desc">{{ copy.captureSaveFailed }}</span>
-                }
-              </div>
-              <app-dropdown
-                class="select-sm"
-                data-testid="capture-processing-mode"
-                controlSize="compact"
-                [ariaLabel]="copy.captureLabel"
-                [options]="processingModes"
-                [value]="captureProcessingMode()"
-                (valueChange)="changeCaptureProcessingMode($event)"
-              />
             </div>
           }
         </div>

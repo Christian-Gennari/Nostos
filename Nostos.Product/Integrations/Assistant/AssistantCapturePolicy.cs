@@ -21,14 +21,12 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
     public Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
         AssistantContextDto? context,
-        string processingMode,
         CancellationToken ct) =>
-        PrepareAsync(argumentsJson, context, processingMode, fallbackContent: null, ct);
+        PrepareAsync(argumentsJson, context, fallbackContent: null, ct);
 
     public async Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
         AssistantContextDto? context,
-        string processingMode,
         string? fallbackContent,
         CancellationToken ct)
     {
@@ -55,7 +53,6 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             context,
             anchor,
             book.BookId!.Value,
-            processingMode,
             fallbackContent,
             out var quoteFidelity);
 
@@ -244,7 +241,6 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         AssistantContextDto? context,
         AnchorDecision decision,
         Guid bookId,
-        string mode,
         string? fallbackContent,
         out bool quoteFidelity)
     {
@@ -286,13 +282,10 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         obj["sourceAnchorValue"] = decision.Value;
         obj["anchorVerified"] = decision.Verified;
 
-        // The stored setting is the ONLY source of the mode. Whatever
+        // Ask Nostos keeps the user's words exactly as given. Whatever
         // `processingMode` the tool call carried is overwritten on purpose: the
-        // owner chose the mode once, so neither a per-capture request nor the
-        // model may change it. It rides on the canonical `processingMode`
-        // argument the capability's reader already accepts, so the frozen
-        // capability signature does not change (issue #262 §7).
-        obj["processingMode"] = mode;
+        // model may not ask for its own rewrite of the user's thought.
+        obj["processingMode"] = ThoughtProcessingModes.Verbatim;
 
         if (string.Equals(decision.Kind, "epub_cfi", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(decision.Value))
@@ -397,11 +390,7 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         return null;
     }
 
-    public static string BuildAcknowledgement(
-        string? bookTitle,
-        bool quoteFidelity,
-        JsonElement? savedNote = null,
-        string requestedMode = "verbatim")
+    public static string BuildAcknowledgement(string? bookTitle, bool quoteFidelity)
     {
         var text = string.IsNullOrWhiteSpace(bookTitle)
             ? "Saved."
@@ -416,27 +405,8 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             text += $" {AssistantOrchestrator.QuoteFidelityNote}";
         }
 
-        // Read the committed result, including a replayed receipt. A quote-only
-        // capture has no raw thought and is intentionally verbatim, not a failure.
-        if (ProcessingFellBack(savedNote, requestedMode))
-        {
-            text += " Wording could not be processed, so your original words were saved verbatim.";
-        }
-
         return text;
     }
-
-    public static bool ProcessingFellBack(JsonElement? savedNote, string requestedMode) =>
-        ThoughtProcessingModes.Normalize(requestedMode) != ThoughtProcessingModes.Verbatim
-            && savedNote is { ValueKind: JsonValueKind.Object } envelope
-            && envelope.TryGetProperty("value", out var note)
-            && note.ValueKind == JsonValueKind.Object
-            && note.TryGetProperty("processingMode", out var mode)
-            && mode.ValueKind == JsonValueKind.String
-            && mode.GetString() == ThoughtProcessingModes.Verbatim
-            && note.TryGetProperty("rawContent", out var raw)
-            && raw.ValueKind == JsonValueKind.String
-            && !string.IsNullOrWhiteSpace(raw.GetString());
 
 
     private static string NormalizePageAnswer(string answer)
