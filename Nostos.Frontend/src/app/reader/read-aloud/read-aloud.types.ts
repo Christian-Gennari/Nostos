@@ -64,4 +64,5 @@ export interface ReadAloudVoice {
   lastFailure?(): string | null;
 }
 
-export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+/** Up to 1.5×: faster, a natural voice cannot render sentences as quickly as they are spoken. */
+export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5] as const;

@@ -12,8 +12,11 @@ const RATE_KEY = 'nostos.readAloud.rate';
 
 function readStoredRate(): number {
   try {
+    const rates = READ_ALOUD_RATES as readonly number[];
     const stored = Number(localStorage.getItem(RATE_KEY));
-    return (READ_ALOUD_RATES as readonly number[]).includes(stored) ? stored : 1;
+    // A speed above the fastest one offered (2× once was) becomes the fastest.
+    if (stored > rates[rates.length - 1]) return rates[rates.length - 1];
+    return rates.includes(stored) ? stored : 1;
   } catch {
     return 1;
   }
