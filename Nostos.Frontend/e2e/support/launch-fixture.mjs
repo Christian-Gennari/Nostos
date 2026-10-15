@@ -6,11 +6,9 @@
  *   - a fresh temp directory (temp DB via --contentRoot, temp wwwroot with a
  *     freshly built Angular app, backend logs);
  *   - the real ASP.NET Core backend (Debug build of Nostos.Backend.dll) on a
- *     random free 127.0.0.1 port, with MCP Streamable HTTP explicitly enabled
- *     and authenticated with a per-run random bearer token (the product
- *     default keeps MCP disabled; this fixture opts in deliberately);
+ *     random free 127.0.0.1 port;
  *   - deterministic lifecycle: `launch` (build + start + wait healthy),
- *     `restart` (same DB/wwwroot/token, new process — persistence check),
+ *     `restart` (same DB/wwwroot, new process — persistence check),
  *     `kill` (terminate + clean up temp dir, keep backend.log evidence).
  *     The backend is spawned DETACHED with stdout/stderr redirected into
  *     backend.log via file descriptors, so the launch CLI exits as soon as
@@ -18,10 +16,8 @@
  *     restart/kill still work. `E2E_SKIP_BUILDS=1` reuses existing build
  *     artifacts (verified to exist) for deterministic lifecycle checks.
  *
- * State is written to e2e/support/fixture-state.json (owner-only, mode
- * 0600 — it retains the MCP bearer token) so specs, global setup/teardown,
- * and the restart path all agree on the same instance. The token is never
- * printed by this launcher.
+ * State is written to e2e/support/fixture-state.json so specs, global
+ * setup/teardown, and the restart path all agree on the same instance.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -38,7 +34,6 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import crypto from 'node:crypto';
 import net from 'node:net';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -62,9 +57,8 @@ function readState() {
   return JSON.parse(readFileSync(STATE_FILE, 'utf8'));
 }
 
-// The handoff file retains the MCP bearer token: owner-only permissions.
 function writeState(state) {
-  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+  writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
 function freePort() {
@@ -147,10 +141,6 @@ function spawnBackend(state) {
         env: {
           ...process.env,
           ASPNETCORE_ENVIRONMENT: 'Production',
-          Mcp__Enabled: 'true',
-          Mcp__Path: '/mcp',
-          Mcp__ApiKeyEnvironmentVariable: 'NOSTOS_MCP_TOKEN',
-          NOSTOS_MCP_TOKEN: state.token,
           DOTNET_NOLOGO: '1',
         },
         stdio: ['ignore', logFd, logFd],
@@ -201,7 +191,6 @@ export async function launch() {
   const state = {
     baseUrl: `http://127.0.0.1:${port}`,
     port,
-    token: crypto.randomBytes(24).toString('hex'),
     tempDir,
     repoRoot: REPO_ROOT,
     backendPid: null,
@@ -221,8 +210,6 @@ export async function launch() {
     throw err;
   }
 
-  // Note: never log the MCP token; it is only handed to the backend via env
-  // and persisted (owner-only) in fixture-state.json.
   log(`fixture ready: ${state.baseUrl} (pid ${child.pid})`);
   return state;
 }

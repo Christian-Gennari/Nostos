@@ -691,7 +691,7 @@ traffic.
 
 SelfHosted now uses one singleton `ILibraryMaintenanceCoordinator`. HTTP operations
 take shared leases across their complete response/stream and request-scope
-disposal. REST, OPDS, MCP and database readiness traffic all participate. During
+disposal. REST, OPDS and database readiness traffic all participate. During
 drain/exclusivity new operations receive HTTP 503, stable code
 `migration_activation_busy`, and `Retry-After: 5`. Process liveness, static UI and
 the GET backup-progress endpoint remain available without opening the library.

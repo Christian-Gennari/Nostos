@@ -5,14 +5,12 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using ModelContextProtocol.Protocol;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Assistant;
-using Nostos.Backend.Integrations.Mcp;
 using Nostos.Backend.Health;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Acquisition;
@@ -131,56 +129,6 @@ builder.Services.Replace(ServiceDescriptor.Singleton<IMigrationPhaseAvailability
 builder.Services.AddScoped<IPortableImportStaging, FilePortableImportStaging>();
 builder.Services.AddScoped<Nostos.Backend.Services.Portability.Migration.IMigrationStagingCleanup,
     Nostos.Backend.Services.Portability.Migration.FilePortableImportStagingCleanup>();
-
-// --- MCP (Model Context Protocol) Streamable HTTP foundation (Task 9A) ---
-// Opt-in and disabled by default. When enabled, the bearer token is resolved
-// ONLY from the configured environment variable at startup; a missing token
-// fails startup closed so the server never runs unauthenticated. The
-// validated options instance is registered as a singleton so the maintenance
-// guard, the authentication middleware, and the endpoint mapping always
-// agree on the normalized route. The token itself is captured in the local
-// `mcpApiKey` variable, never stored in configuration, logging, or responses.
-var mcpOptions = builder.Configuration.GetSection("Mcp").Get<McpOptions>() ?? new McpOptions();
-string mcpApiKey = string.Empty;
-if (mcpOptions.Enabled)
-{
-    if (!McpOptions.TryNormalizePath(mcpOptions.Path, out var normalizedPath, out var pathError))
-    {
-        throw new InvalidOperationException(
-            $"MCP is enabled but 'Mcp:Path' is invalid ({pathError}). Disable MCP (Mcp:Enabled=false) or fix the path.");
-    }
-
-    mcpOptions.Path = normalizedPath;
-
-    if (string.IsNullOrWhiteSpace(mcpOptions.ApiKeyEnvironmentVariable))
-    {
-        throw new InvalidOperationException(
-            "MCP is enabled but 'Mcp:ApiKeyEnvironmentVariable' is empty. Configure an environment variable name.");
-    }
-
-    var resolvedToken = Environment.GetEnvironmentVariable(mcpOptions.ApiKeyEnvironmentVariable);
-    if (!string.IsNullOrWhiteSpace(resolvedToken))
-    {
-        mcpApiKey = resolvedToken.Trim();
-    }
-    else
-    {
-        throw new InvalidOperationException(
-            $"MCP is enabled but environment variable '{mcpOptions.ApiKeyEnvironmentVariable}' is not set or empty. " +
-            "Set the token before starting Nostos, or disable MCP (Mcp:Enabled=false).");
-    }
-
-    builder.Services
-        .AddMcpServer(server => server.ServerInfo = new Implementation
-        {
-            Name = "nostos",
-            Version = "1.0.0",
-        })
-        .WithHttpTransport()
-        .WithToolsFromAssembly();
-}
-
-builder.Services.AddSingleton(mcpOptions);
 
 // --- SPEECH-TO-TEXT (issue #262 §2/§3) ---
 builder.Services.AddHttpClient(NineRouterSttProvider.HttpClientName, client =>
@@ -500,18 +448,6 @@ app.UseStatusCodePages();
 app.UseRouting();
 app.UseMiddleware<LibraryMaintenanceMiddleware>();
 
-// --- MCP AUTHENTICATION GATE ---
-// Registered after the maintenance guard (so maintenance cannot be bypassed
-// by authenticating) and before static files and endpoint routing (so the
-// configured MCP route cannot be reached without the exact bearer token).
-// When MCP is disabled nothing is registered and the route stays unmapped.
-if (mcpOptions.Enabled)
-{
-    app.UseMiddleware<McpAuthenticationMiddleware>(mcpApiKey);
-}
-
-// -----------------------------------
-
 app.MapOpenApi();
 
 // Cheap process liveness deliberately has no dependency checks. Readiness is
@@ -541,18 +477,10 @@ app.MapNostosProductEndpoints(opdsOptions, NostosProductEndpointPolicies.None);
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
 
-// --- MCP STREAMABLE HTTP ENDPOINT ---
-if (mcpOptions.Enabled)
-{
-    app.MapMcp(mcpOptions.Path);
-}
-
 // --- HANDLE ANGULAR ROUTING ---
-// The SPA shell is served ONLY for client-side routes. The API, OPDS and MCP
-// namespaces are never answered by index.html: unknown /api paths, wrong
-// methods on API routes, and the MCP route family (the configured path
-// when enabled, plus the conventional /mcp namespace in every
-// configuration) resolve as ordinary 404/405 responses, so probes and
+// The SPA shell is served ONLY for client-side routes. The API and OPDS
+// namespaces are never answered by index.html: unknown /api paths and wrong
+// methods on API routes resolve as ordinary 404/405 responses, so probes and
 // misdirected clients never receive the Angular application shell. The
 // fallback is deliberately method-constrained (GET/HEAD only), mirroring
 // the static-file layer: every other verb on an unmapped path stays a 405
@@ -571,10 +499,7 @@ RequestDelegate serveClientRoute = async context =>
     }
 
     var path = context.Request.Path;
-    var isMcpPath = mcpOptions.Enabled && mcpOptions.Path.Length > 0 &&
-                    path.StartsWithSegments(mcpOptions.Path);
-    if (path.StartsWithSegments("/api") || path.StartsWithSegments("/opds") ||
-        path.StartsWithSegments("/mcp") || isMcpPath)
+    if (path.StartsWithSegments("/api") || path.StartsWithSegments("/opds"))
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return;

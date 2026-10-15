@@ -20,7 +20,7 @@ public static class CollectionsEndpoints
         );
 
         // GET: descendant-inclusive book counts for every collection
-        // (sidebar; REST-only — CollectionDto stays frozen for MCP).
+        // (sidebar; kept off CollectionDto so the plain list stays small).
         // Registered before /{id} so the literal segment always wins.
         group.MapGet(
             "/counts",

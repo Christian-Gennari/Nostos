@@ -1,9 +1,8 @@
 # Nostos — Architecture Overview
 
 > **Status note (2026-08-12):** this overview predates the issue #34 library
-> service and the agent-facing integration surfaces. The **Integrations**
-> section below is the current reference for MCP and the
-> canonical library service; decision 1's fallback description has been
+> service. The **Library service** section below is the current reference
+> for the canonical library service; decision 1's fallback description has been
 > corrected to the shipped method-constrained fallback. The remaining
 > sections are historical and largely unchanged.
 
@@ -83,7 +82,7 @@ Nostos.sln
 
 ### 1. Single-Binary Deployment
 
-The Angular frontend is built and copied into the backend's `wwwroot/` directory at release time. The ASP.NET Core app serves both the API (`/api/*`, `/opds/*`) and the SPA (via `UseStaticFiles` + a custom method-constrained fallback: the shell is served for GET/HEAD client-side routes only, and `/api`, `/mcp`, and the configured MCP path are never answered by `index.html` — unknown paths there resolve as 404 and wrong verbs as 405).
+The Angular frontend is built and copied into the backend's `wwwroot/` directory at release time. The ASP.NET Core app serves both the API (`/api/*`, `/opds/*`) and the SPA (via `UseStaticFiles` + a custom method-constrained fallback: the shell is served for GET/HEAD client-side routes only, and `/api` and `/opds` are never answered by `index.html` — unknown paths there resolve as 404 and wrong verbs as 405).
 
 ### 2. Standalone Components (Angular)
 
@@ -117,33 +116,18 @@ Notes use `[[Topic Name]]` syntax. The `NoteProcessorService` parses these on sa
 
 Scheduled background workers (`BackupWorker`) create ZIP archives containing the database and book files. The system implements a maintenance mode (via middleware) that blocks API access during restoration to prevent data corruption.
 
-## Integrations (MCP, Hermes)
-
-The backend exposes an agent-facing surface on top of the canonical domain
-service:
-
-- **MCP (Model Context Protocol)** — opt-in (`Mcp:Enabled`, default disabled)
-  bearer-authenticated Streamable HTTP endpoint at `/mcp` (`Mcp:Path`). The
-  token is resolved exclusively from the `Mcp:ApiKeyEnvironmentVariable`
-  environment variable (default `NOSTOS_MCP_TOKEN`) at startup; enabling MCP
-  without the token fails startup closed. Tools are discovered from the
-  assembly (`WithToolsFromAssembly`) and register as `mcp__nostos__*`
-  (double underscore). The shipped surface is the 11 Library tools
-  (issue #34). The maintenance-mode guard covers the MCP route as
-  well as `/api`.
+## Library service
 
 The canonical service is the only domain entry point: `ILibraryService`
 (books and collections) receives every command — REST endpoints, the Angular
-UI, and MCP tools all forward to it, and the endpoint/MCP layers hold no domain
-rules (thin connector doctrine). Books are added through
-`library_create_or_match_book` (or the legacy-permissive REST create); the
-earlier raw-curl add-book recipe is superseded.
+UI, and Ask Nostos all forward to it, and the endpoint layer holds no domain
+rules (thin connector doctrine). External agents use the REST API; the
+`nostos-library` skill in `.agents/skills/` documents the calls.
 
 The library domain is exact-once on `(clientId, idempotencyKey)` receipts and a
 state version: `LibraryCommandReceipt` keys on `(ClientId, IdempotencyKey)`
 (client id ≤ 64 chars, key ≤ 128 chars, enforced by the
-`CK_LibraryCommandReceipts_Bounds` CHECK constraint; fixed MCP client
-`nostos-mcp`), and the `LibraryState` singleton carries the version string
+`CK_LibraryCommandReceipts_Bounds` CHECK constraint), and the `LibraryState` singleton carries the version string
 returned in every envelope (`{ reply, data, stateVersion, duplicate }`, where
 `duplicate=true` only on receipt replay). Book identity is normalized at
 write time: checksum-validated ISBN/ASIN feed filtered unique indexes

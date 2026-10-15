@@ -5,8 +5,8 @@ namespace Nostos.Shared.Dtos;
 
 // --- STABLE RESPONSE ENVELOPE (library domain) ---
 // Mirror of the reading envelope. Every library mutation accepts a client id
-// and idempotency key and returns this same semantic result across REST, MCP
-// and the UI. `duplicate` means receipt replay ONLY — matching an existing
+// and idempotency key and returns this same semantic result across REST, Ask
+// Nostos and the UI. `duplicate` means receipt replay ONLY — matching an existing
 // book is `outcome: matched`, never `duplicate: true`.
 public sealed record LibraryCommandResultDto(
     string Reply,
@@ -55,7 +55,7 @@ public sealed record LibraryCreateBookRequest(
     Guid? ConfirmedBookId = null,
     bool ForceCreate = false,
     // Multi-collection membership at create time. APPENDED to the record so
-    // existing positional callers (REST/MCP) keep compiling. When supplied
+    // existing positional callers keep compiling. When supplied
     // non-empty it is authoritative and CollectionId above acts as the legacy
     // single-value form.
     IReadOnlyList<Guid>? CollectionIds = null,

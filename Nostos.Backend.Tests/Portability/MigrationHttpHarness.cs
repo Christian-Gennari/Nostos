@@ -395,7 +395,6 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
             builder.UseSetting("Storage:MaxChunkBytes", (4 * 1024 * 1024).ToString());
             builder.UseSetting("Storage:DiskSafetyMarginBytes", "0");
             builder.UseSetting("Storage:DiskSafetyMarginPercent", "0");
-            builder.UseSetting("Mcp:Enabled", "false");
             if (harness.LibraryMigrationEnabled is { } enabled)
             {
                 builder.UseSetting(

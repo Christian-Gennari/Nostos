@@ -276,9 +276,9 @@ preferences.
   them. `EnsureCreated`-based tests will NOT catch this.
 - **`BookDto` is a positional record.** Append new fields; inserting one
   renumbers the JSON of every existing client.
-- **The MCP surface is FROZEN** (`docs/library-mcp-contracts.md`). Its singular
-  `collectionId`/`clearCollection` arguments are translated into set operations
-  *in the service* — never change a tool signature to add a capability.
+- **The singular `collectionId` on a book update replaces every membership**
+  with that one collection; the service translates it into a set. To add or
+  remove one collection, send the full list to `PUT /api/books/{id}/collections`.
 - **Deleting a collection deletes membership rows, never books.** The join
   table's collection FK is `Restrict`, so membership rows must go first.
 - Membership is **per book (per edition)** by decision, not per work.

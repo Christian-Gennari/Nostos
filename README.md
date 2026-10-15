@@ -157,7 +157,6 @@ In the public SelfHosted application, AI provider configuration remains under th
 - **Read aloud:** Listen to an EPUB or a PDF from the page it is open on. Nostos marks the sentence being spoken and turns the pages. It uses the device's own voice, or a natural voice from a speech server you connect. See the [Read aloud guide](docs/read-aloud.md).
 - **Local backup and restore:** SelfHosted installations include local backup and restore workflows with integrity checks and restore safeguards.
 - **OPDS export:** A configurable OPDS catalogue can expose a self-hosted library to compatible readers on networks you control.
-- **MCP:** An optional bearer-protected Model Context Protocol endpoint lets compatible tools work with Nostos through the documented library contracts.
 
 #### Moving a library
 
@@ -223,7 +222,6 @@ Nostos/
 - **Editor:** TinyMCE with Turndown for Markdown conversion
 - **Icons:** Phosphor
 - **Typography:** Newsreader and Hanken Grotesk
-- **MCP:** Model Context Protocol support through the ASP.NET Core SDK
 
 ---
 
@@ -359,7 +357,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 - **[External media](docs/external-media.md):** Setting up and using a folder of books that is already on a SelfHosted server.
 - **[Read aloud](docs/read-aloud.md):** Listening to a book, and connecting a natural voice on a SelfHosted server.
 - **[Content Providers & Acquisition](docs/content-providers.md):** Provider architecture and import behavior for external catalogues.
-- **[MCP Library Contracts](docs/library-mcp-contracts.md):** Stable Model Context Protocol contracts for agents and tools.
+- **[Library skill for agents](.agents/skills/nostos-library/SKILL.md):** How an AI agent adds and organises books and collections through the REST API.
 - **[Backend Endpoints](Nostos.Backend/_docs/endpoints.md):** REST API reference.
 - **[Public/private boundary ADR](docs/adr/cloud-public-private-boundary.md):** Ownership boundary between the public product and official hosted composition.
 - **[Deployment Capabilities](docs/cloud/deployment-modes.md):** SelfHosted and Cloud capability contract.

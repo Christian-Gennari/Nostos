@@ -9,8 +9,8 @@ using Nostos.Shared.Enums;
 namespace Nostos.Backend.Services.Library;
 
 /// <summary>
-/// Canonical library domain service (issue #34). REST endpoints, MCP tools and
-/// the Angular UI all call this one service; it is the single writer for
+/// Canonical library domain service (issue #34). REST endpoints, Ask Nostos
+/// and the Angular UI all call this one service; it is the single writer for
 /// books and collections. Mutations are exact-once through
 /// LibraryCommandReceipt (separate from reading receipts on purpose).
 /// </summary>
@@ -444,7 +444,7 @@ public sealed partial class LibraryService : ILibraryService
         }
 
         // Create-time membership. CollectionIds (the set) is authoritative when
-        // supplied; the singular CollectionId is the legacy MCP/REST shape and is
+        // supplied; the singular CollectionId is the legacy REST shape and is
         // still honoured so no existing caller changes behaviour. The join rows
         // are added after SaveChanges, once the book id exists.
         var membershipIds = request.CollectionIds is { Count: > 0 }
@@ -835,8 +835,7 @@ public sealed partial class LibraryService : ILibraryService
                     LibraryReplyFormatter.CollectionNotFound, state.StateVersion));
 
             // Legacy singular set: replace whatever membership exists with this
-            // one collection. (The MCP surface is frozen on this shape, so the
-            // translation lives here rather than in the tool signature.)
+            // one collection.
             var current = await db.BookCollections
                 .Where(bc => bc.BookId == book.Id)
                 .ToListAsync(ct);
@@ -1127,8 +1126,8 @@ public sealed partial class LibraryService : ILibraryService
         CancellationToken ct)
     {
         // Preserve the historical check order (invalid name wins over
-        // collection_not_found) that the frozen MCP surface relies on; the
-        // shared core validates the name after loading the collection.
+        // collection_not_found); the shared core validates the name after
+        // loading the collection.
         var state = await EnsureStateAsync(db, ct);
         if (string.IsNullOrWhiteSpace(request.Name))
             return NoChange(Failure("invalid_collection_name", "Collection name is required.", state.StateVersion));
@@ -1166,7 +1165,7 @@ public sealed partial class LibraryService : ILibraryService
     /// values with a single SaveChanges. When
     /// <paramref name="treatUnchangedAsNoOp"/> is set (combined update), a
     /// request whose name and parent are both unchanged succeeds without a
-    /// stateVersion bump; the two frozen MCP ops (rename/move) keep their
+    /// stateVersion bump; the separate rename/move ops keep their
     /// historical always-bump-on-success behavior.
     /// </summary>
     private async Task<(bool DidChange, LibraryCommandResultDto Result)> UpdateCollectionCoreAsync(

@@ -280,7 +280,7 @@ export class Library implements OnInit, OnDestroy {
     // re-render the page under the reader's hands.
     this.imports.bookPatched.pipe(takeUntilDestroyed()).subscribe((book) => this.onImportPatched(book));
 
-    // A change made somewhere else — Ask Nostos, MCP, another tab — is re-read
+    // A change made somewhere else — Ask Nostos, another tab — is re-read
     // quietly and in place: the same pages, no reset to the top, no swap.
     this.libraryChanges
       .watch()

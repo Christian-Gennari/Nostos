@@ -16,8 +16,8 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// Design rules, in one place:
 /// <list type="bullet">
 /// <item>Tools are generated from the registry, one per capability, using its
-/// <c>Summary</c>. There is no MCP round trip: the assistant reaches its own
-/// Nostos instance through the same canonical services the REST surface uses.</item>
+/// <c>Summary</c>. The assistant reaches its own Nostos instance
+/// directly, through the same canonical services the REST surface uses.</item>
 /// <item>Trust classes are enforced here as well as in the registry.
 /// <see cref="AssistantTrustClass.Capture"/> and normal
 /// <see cref="AssistantTrustClass.Act"/> work execute inside the tool loop,

@@ -40,7 +40,6 @@ public class LibraryEndpointFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = $"Data Source={_dbPath}",
-                ["Mcp:Enabled"] = "false",
             });
         });
         builder.ConfigureServices(services =>

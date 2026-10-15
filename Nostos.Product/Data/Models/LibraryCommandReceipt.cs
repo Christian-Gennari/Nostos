@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Nostos.Backend.Data.Models;
 
 // Exact-once command record for library mutations. The unique
-// (ClientId, IdempotencyKey) index makes retried UI/MCP/connector commands
+// (ClientId, IdempotencyKey) index makes retried UI/assistant/connector commands
 // return the stored response without re-running the command. It is deliberately
 // separate from NoteCommandReceipt so a note mutation can never replay a
 // library response (and vice versa). Inputs are bounded: the

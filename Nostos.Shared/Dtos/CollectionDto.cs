@@ -24,7 +24,7 @@ public sealed record UpdateCollectionDto(
 );
 
 // REST-only sidebar counts: descendant-inclusive book counts per collection.
-// Deliberately NOT added to CollectionDto (the MCP contract is frozen).
+// Deliberately NOT added to CollectionDto, so the plain list stays small.
 public sealed record CollectionCountDto(
     Guid CollectionId,
     int BookCount

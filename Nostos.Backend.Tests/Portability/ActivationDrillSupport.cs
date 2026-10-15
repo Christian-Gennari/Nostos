@@ -378,7 +378,6 @@ internal sealed class ActivationDrillHost : IAsyncDisposable
         startInfo.Environment["Storage__BooksRoot"] = fixture.BooksRoot;
         startInfo.Environment["Storage__TransferPath"] = fixture.TransferRoot;
         startInfo.Environment["Storage__BackupsRoot"] = fixture.BackupRoot;
-        startInfo.Environment["Mcp__Enabled"] = "false";
         startInfo.Environment["Logging__LogLevel__Default"] = "Warning";
         startInfo.Environment["Logging__LogLevel__Microsoft.AspNetCore"] = "Warning";
         if (stopAt is not null)
@@ -428,7 +427,6 @@ internal sealed class ActivationDrillHost : IAsyncDisposable
         startInfo.Environment["Storage__BooksRoot"] = fixture.BooksRoot;
         startInfo.Environment["Storage__TransferPath"] = fixture.TransferRoot;
         startInfo.Environment["Storage__BackupsRoot"] = fixture.BackupRoot;
-        startInfo.Environment["Mcp__Enabled"] = "false";
         startInfo.Environment["Logging__LogLevel__Default"] = "Warning";
         startInfo.Environment["Logging__LogLevel__Microsoft.AspNetCore"] = "Warning";
         if (extraEnvironment is not null)

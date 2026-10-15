@@ -13,7 +13,7 @@ namespace Nostos.Backend.Tests.Endpoints;
 
 /// <summary>
 /// The library change feed is what lets an open screen show a change made
-/// somewhere else — Ask Nostos, MCP, another tab — without a reload. These tests
+/// somewhere else — Ask Nostos, another tab — without a reload. These tests
 /// drive it over real HTTP against the real save pipeline: the revision has to
 /// move because <c>NostosDbContext</c> advanced it, not because the test did.
 /// </summary>

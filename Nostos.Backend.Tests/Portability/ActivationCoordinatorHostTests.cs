@@ -460,7 +460,6 @@ public sealed class ActivationCoordinatorHostTests
             builder.UseSetting("Persistence:DatabasePath", databasePath);
             builder.UseSetting("Storage:BooksRoot", booksRoot);
             builder.UseSetting("Storage:BackupsRoot", Path.Combine(root, "backups"));
-            builder.UseSetting("Mcp:Enabled", "false");
             builder.ConfigureServices(services =>
             {
                 foreach (var service in services.Where(d => d.ServiceType == typeof(IHostedService)).ToArray())

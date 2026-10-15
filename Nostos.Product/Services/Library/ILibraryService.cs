@@ -7,8 +7,8 @@ using Nostos.Shared.Enums;
 namespace Nostos.Backend.Services.Library;
 
 /// <summary>
-/// Canonical library domain service. REST endpoints, MCP tools and the UI all
-/// call this one service; no surface computes or caches authoritative library
+/// Canonical library domain service. REST endpoints, Ask Nostos and the UI
+/// all call this one service; no surface computes or caches authoritative library
 /// state. Mutations are exact-once through LibraryCommandReceipt.
 /// </summary>
 public interface ILibraryService
@@ -45,7 +45,7 @@ public interface ILibraryService
     // --- Mutations (all exact-once) ---
     /// <summary>
     /// Create or match a book by normalized identity. When
-    /// <paramref name="strictConfirmation"/> is true (MCP), ambiguity returns
+    /// <paramref name="strictConfirmation"/> is true (Ask Nostos), ambiguity returns
     /// confirmation_required instead of creating; when false (REST, preserving
     /// legacy UI behavior), ambiguity auto-creates while exact matches still
     /// match.

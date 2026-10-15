@@ -6,7 +6,7 @@ using Nostos.Backend.Services.Portability;
 namespace Nostos.Backend.Middleware;
 
 /// <summary>
-/// Covers REST, OPDS, MCP, DB readiness, and their complete response/stream lifetimes.
+/// Covers REST, OPDS, DB readiness, and their complete response/stream lifetimes.
 /// Its inner request scope disposes DbContexts before releasing the shared lease.
 /// Only liveness, static UI, and backup progress avoid the active library entirely.
 /// </summary>
@@ -14,12 +14,11 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
 {
     private const string MigrationBasePath = "/api/portability/migration";
 
-    public async Task InvokeAsync(HttpContext context, ILibraryMaintenanceCoordinator maintenance, McpOptions mcp)
+    public async Task InvokeAsync(HttpContext context, ILibraryMaintenanceCoordinator maintenance)
     {
         var path = context.Request.Path;
         var libraryPath = path.StartsWithSegments("/api") || path.StartsWithSegments("/opds")
-            || path.StartsWithSegments("/health/ready")
-            || (mcp.Enabled && path.StartsWithSegments(mcp.Path));
+            || path.StartsWithSegments("/health/ready");
         if (!libraryPath || (HttpMethods.IsGet(context.Request.Method) && path == "/api/backup/progress"))
         {
             await next(context);

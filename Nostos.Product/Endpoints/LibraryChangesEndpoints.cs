@@ -12,7 +12,7 @@ namespace Nostos.Backend.Endpoints;
 /// The signal is the singleton library revision
 /// (<see cref="Data.Models.LibraryState.StateVersion"/>). <see cref="NostosDbContext"/>
 /// advances it on every save that touches portable user-owned state, whatever
-/// made the save — the UI, MCP, Ask Nostos, an import or a restore — so the feed
+/// made the save — the UI, Ask Nostos, an import or a restore — so the feed
 /// cannot miss a write path, and no caller has to remember to publish anything.
 ///
 /// The stream re-reads the revision through the request's own
