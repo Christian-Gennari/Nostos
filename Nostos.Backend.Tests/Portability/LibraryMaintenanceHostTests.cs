@@ -301,7 +301,6 @@ public sealed class LibraryMaintenanceHostTests
             builder.UseSetting("Persistence:DatabasePath", Path.Combine(_root, "nostos.db"));
             builder.UseSetting("Storage:BooksRoot", Path.Combine(_root, "books"));
             builder.UseSetting("Storage:BackupsRoot", Path.Combine(_root, "backups"));
-            builder.UseSetting("Mcp:Enabled", "false");
             builder.ConfigureServices(services =>
             {
                 foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IHostedService)).ToArray())

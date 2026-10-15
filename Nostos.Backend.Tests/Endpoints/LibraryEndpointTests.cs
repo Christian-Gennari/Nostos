@@ -20,7 +20,7 @@ using Xunit;
 namespace Nostos.Backend.Tests.Endpoints;
 
 // Full-host HTTP coverage for the canonical library REST surface (issue #34
-// Phase 1b). The Angular UI and MCP tools share this exact surface; these
+// Phase 1b). The Angular UI uses this exact surface; these
 // tests prove the refactored endpoints keep the legacy REST contracts while
 // routing through ILibraryService.
 public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>

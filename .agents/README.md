@@ -13,6 +13,15 @@ Treat `.agents/skills/` as a **skill registry**, not as startup prompt content.
 
 Normal coding workers must not preload every `.agents/skills/*/SKILL.md`. Current GitHub CLI Agent Skills support uses `.agents/skills/` as the shared project registry for GitHub Copilot, Codex, Cursor, Gemini CLI, and several other hosts, and Agent Skills use progressive disclosure.
 
+## Nostos skills
+
+These are written and maintained in this repository, not vendored. Update them
+in the same pull request as the code they describe.
+
+| Skill | Purpose |
+| --- | --- |
+| `nostos-library` | Let an agent add, find, update and organise books and collections through the SelfHosted REST API |
+
 ## Vendored skills and provenance
 
 Source: `github/awesome-copilot`

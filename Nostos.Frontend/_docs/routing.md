@@ -45,8 +45,7 @@ All leaf routes use `loadComponent: () => import(...)` for code-splitting. Each 
 
 The production build registers the Angular service worker (`ngsw-config.json`, `provideServiceWorker` in `app.config.ts`). The worker answers **navigations** from its app-shell cache, and by default "navigation" means *any dotless path* (`/**` minus paths whose last segment contains `.` or `__`). That silently swallowed backend namespaces: a navigation to `/api/books/{id}/file/download` (the book-detail **Download** button, `window.open`) or `/api/backup/download/{id}` never reached the backend — the worker returned cached `index.html`, which booted the app and the `**` route redirected to `library`.
 
-`ngsw-config.json` therefore declares `navigationUrls` explicitly: the Angular defaults plus `!/api`, `!/opds`, `!/mcp` (bare path **and** `/**`). This mirrors the backend rule that the SPA shell never answers those namespaces (`Program.cs`).
+`ngsw-config.json` therefore declares `navigationUrls` explicitly: the Angular defaults plus `!/api` and `!/opds` (bare path **and** `/**`). This mirrors the backend rule that the SPA shell never answers those namespaces (`Program.cs`).
 
 - Adding a backend namespace under a new root path means adding an exclusion pair here too.
-- `Mcp:Path` is configurable at runtime, but this list is baked into the build: a deployment that moves MCP off `/mcp` must add that path here as well.
 - The policy is guarded by `e2e/service-worker-navigation.spec.ts` (real production build, real backend): API navigations must download the exact file bytes, and client routes must still be answered from the app-shell cache.

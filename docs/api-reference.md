@@ -1,14 +1,13 @@
 # Nostos — API Reference
 
-All endpoints return JSON. Base path: `/api` (except OPDS at `/opds` and MCP
-at `/mcp`).
+All endpoints return JSON. Base path: `/api` (except OPDS at `/opds`).
 
 > **Coverage note (2026-08-12):** this reference predates several shipped
-> surfaces — Backup, MCP, and the issue #34 canonical
+> surfaces — Backup and the issue #34 canonical
 > library service. The Books / Notes / Collections / Topics / Writings /
 > OPDS sections below remain accurate (inline corrections noted where the
-> library service changed behavior); the sections at the end cover Backup,
-> MCP, and Library. The authoritative route tables live in
+> library service changed behavior); the sections at the end cover Backup
+> and Library. The authoritative route tables live in
 > [`Nostos.Backend/_docs/endpoints.md`](../Nostos.Backend/_docs/endpoints.md).
 
 ---
@@ -59,7 +58,7 @@ Create a new book.
 (`outcome: created`), or `200 OK` with the existing `BookDto` when an exact
 normalized-identity match was found (`outcome: matched`). Legacy permissive
 mode: ambiguity creates rather than asking — the strict confirmation flow is
-available through the MCP tool `library_create_or_match_book`.
+used only by Ask Nostos.
 
 ### `PUT /api/books/{id}`
 
@@ -670,33 +669,8 @@ the effective access model once at startup.
 | `POST`     | `/import`        | Scan `/backups` folder for untracked files |
 | `GET`      | `/progress`      | Real-time step-by-step progress tracking |
 
-During a restore the application enters maintenance mode: `/api` (and the MCP
-route, when enabled) return `503`
+During a restore the application enters maintenance mode: `/api` returns `503`
 `{ "error": "Application is in maintenance mode during restore." }`.
-
----
-
-## MCP — Model Context Protocol
-
-Opt-in (`Mcp:Enabled`, default disabled) bearer-authenticated **Streamable
-HTTP** endpoint at `/mcp` (configurable via `Mcp:Path`). The bearer token is
-resolved exclusively from the `Mcp:ApiKeyEnvironmentVariable` environment
-variable (default `NOSTOS_MCP_TOKEN`) at startup; enabling MCP without the
-token fails startup closed. Tools are discovered from the assembly and
-registered as `mcp__nostos__*` (double underscore).
-
-The shipped surface is the **11 Library tools** below. Library
-tools: `library_list_books`, `library_get_book`, `library_resolve_book`,
-`library_create_or_match_book`, `library_update_book`,
-`library_list_collections`, `library_get_collection`,
-`library_create_collection`, `library_rename_collection`,
-`library_move_collection`, `library_delete_collection`. Responses use the
-`{ reply, data, stateVersion, duplicate }` envelope; `duplicate=true` only on
-receipt replay. Every library mutation requires a caller-supplied
-`idempotencyKey` and is exact-once on `(clientId, idempotencyKey)` with the
-fixed client `nostos-mcp`. Full contracts:
-[`docs/library-mcp-contracts.md`](library-mcp-contracts.md) and
-`Nostos.Backend/_docs/endpoints.md`.
 
 ---
 

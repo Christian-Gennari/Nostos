@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Playwright E2E config for Nostos.
  *
  * The fixture is launched by globalSetup (fresh temp SQLite DB + real backend
- * + freshly built Angular app + MCP enabled with a random bearer token); the
+ * + freshly built Angular app); the
  * base URL is read from e2e/support/fixture-state.json at runtime, so no port
  * is hard-coded here. Tests run serially (workers: 1) because all specs share
  * the single isolated backend instance and its temp DB.

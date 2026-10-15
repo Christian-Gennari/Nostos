@@ -338,11 +338,11 @@ public sealed class MigrationEngineReviewTests
         var context = new DefaultHttpContext { RequestServices = h.Provider };
         context.Request.Method = "PUT"; context.Request.Path = $"/api/migration/jobs/{id}/sessions/{session.SessionId}/chunks/0";
         await using var body = new GatedStream(bytes, entered, release); context.Request.Body = body;
-        var request = middleware.InvokeAsync(context, h.Maintenance, new McpOptions());
+        var request = middleware.InvokeAsync(context, h.Maintenance);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var entering = h.Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation); entering.IsCompleted.Should().BeFalse();
         var denied = new DefaultHttpContext { RequestServices = h.Provider }; denied.Request.Path = context.Request.Path; denied.Request.Method = "PUT"; denied.Response.Body = new MemoryStream();
-        await middleware.InvokeAsync(denied, h.Maintenance, new McpOptions()); denied.Response.StatusCode.Should().Be(503);
+        await middleware.InvokeAsync(denied, h.Maintenance); denied.Response.StatusCode.Should().Be(503);
         release.TrySetResult(); await request.WaitAsync(TimeSpan.FromSeconds(10));
         await using (await entering.WaitAsync(TimeSpan.FromSeconds(10))) witness!.Disposed.Should().BeTrue();
         (await h.Status(id, session)).ReceivedChunks.Should().Equal(0);

@@ -9,7 +9,6 @@ import path from 'node:path';
 export interface FixtureState {
   baseUrl: string;
   port: number;
-  token: string;
   tempDir: string;
   repoRoot: string;
   backendPid: number | null;
@@ -22,7 +21,7 @@ export function loadFixture(): FixtureState {
   return JSON.parse(readFileSync(STATE_FILE, 'utf8')) as FixtureState;
 }
 
-/** Stable client identity used for REST seeding (distinct from the MCP fixed id). */
+/** Stable client identity used for REST seeding. */
 export const SEED_CLIENT = 'task13-e2e';
 
 export function seedKey(scope: string, run: string, name: string): string {

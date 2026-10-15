@@ -194,7 +194,7 @@ public static partial class AssistantCapabilities
 
     /// <summary>
     /// Library mutations return an envelope whose failures are data, exactly as
-    /// the REST/MCP callers receive them; the assistant does not re-map those
+    /// the REST callers receive them; the assistant does not re-map those
     /// codes.
     /// </summary>
     private static AssistantToolResult LibraryResult(LibraryCommandResultDto result)

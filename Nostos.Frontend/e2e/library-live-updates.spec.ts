@@ -1,5 +1,5 @@
 /**
- * Changes made somewhere else — Ask Nostos, MCP, another tab — appear on an
+ * Changes made somewhere else — Ask Nostos, another tab — appear on an
  * open page without a reload. The writes here go straight to the API, as any
  * of those would, while the page is left alone; the page must catch up through
  * the library change feed (`/api/library/changes`).

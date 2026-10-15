@@ -44,8 +44,7 @@ keep their repository-backed implementations.
 identity match returns the existing book (`200 OK`, `outcome: matched`),
 otherwise a book is created (`201 Created` with `Location: /api/books/{id}`,
 `outcome: created`). Ambiguity creates rather than asks — the strict
-confirmation flow exists only on the MCP surface
-(`library_create_or_match_book`). `PUT /{id}/progress` validates the
+confirmation flow is used only by Ask Nostos. `PUT /{id}/progress` validates the
 percentage 0–100 and aligns `FinishedAt` with the finished state. `DELETE
 /{id}` returns `409 book_in_use` when the book is referenced by a training
 assignment or a note, and storage files are removed only after the database
@@ -182,58 +181,9 @@ mapped only when `Opds:Enabled` is true, which is the default.
 | `POST`     | `/import`        | Scan `/backups` folder for untracked files | `IBackupService`               |
 | `GET`      | `/progress`      | Real-time step-by-step progress tracking   | `BackupSettingsProvider`       |
 
-## MCP (Model Context Protocol)
-
-The MCP surface is opt-in (`Mcp:Enabled`, default disabled) and served as a
-bearer-authenticated **Streamable HTTP** endpoint at `/mcp` (`Mcp:Path`). The
-token is resolved exclusively from the `Mcp:ApiKeyEnvironmentVariable`
-environment variable (default `NOSTOS_MCP_TOKEN`) at startup; enabling MCP
-without the token fails startup closed. Tools are discovered from the
-assembly (`WithToolsFromAssembly`) and registered under the `mcp__nostos__`
-prefix. Maintenance mode guards the MCP route as well as `/api`.
-
-The shipped surface is the 11 Library tools below (manifest asserted in
-tests). All library tools forward to the canonical `ILibraryService` and return
-its envelope unchanged.
-
-### Library tools (issue #34)
-
-Every mutation requires a caller-supplied `idempotencyKey` (no default) and
-is exact-once on `(ClientId, IdempotencyKey)` with the fixed MCP client id
-`nostos-mcp`; retries replay the stored receipt instead of re-executing.
-Responses use the envelope `{ reply, data, stateVersion, duplicate }`, where
-`duplicate=true` only on receipt replay and `stateVersion` is the library
-state version string. Read-only tools never mutate.
-
-| Tool | Mutates | Behavior |
-| ---- | ------- | -------- |
-| `library_list_books` | no | Books with filter/sort/search/page/pageSize/collectionId |
-| `library_get_book` | no | One book by id |
-| `library_resolve_book` | no | Identity resolution: `exact_match` \| `candidates` \| `not_found` \| `identity_conflict`; external-metadata prefill when `includeExternalMetadata`; `lookupError: lookup_timeout` on lookup failure |
-| `library_create_or_match_book` | yes | Strict create-or-match (see below) |
-| `library_update_book` | yes | Patch metadata; empty string clears text fields; an identifier already held elsewhere → `duplicate_identifier` |
-| `library_list_collections` | no | Flat collection list (order is presentation-only) |
-| `library_get_collection` | no | One collection by id |
-| `library_create_collection` | yes | Duplicate sibling returns the existing collection |
-| `library_rename_collection` | yes | Sibling name collision → `collection_name_conflict` |
-| `library_move_collection` | yes | `newParentId` null = root; cycle → `collection_cycle`; name collision at destination → `collection_name_conflict` |
-| `library_delete_collection` | yes | `confirm=true` required; unlinks books; `collection_has_children` while children exist |
-
-`library_create_or_match_book` resolves in order: `confirmedBookId`, exact
-ISBN/ASIN, exactly one exact title+author match (returns `outcome: matched`
-without creating). Multiple title+author matches or an ambiguous bare title
-return `confirmation_required` with candidates — the caller must ask the
-user, then call again with a **new** idempotency key and either
-`confirmedBookId` or `forceCreate=true`; the original key is never reused.
-Type rules: audiobooks use ASIN only, physical/ebook books use ISBN only; a
-mismatch returns `invalid_book_identity`. Matching uses checksum-validated
-normalized ISBN/ASIN (filtered unique indexes) and normalized title+author —
-both title and author are required for an exact match (title-only yields
-candidates).
-
 ## Maintenance Mode Middleware
 
-`LibraryMaintenanceMiddleware` takes shared operation leases for `/api`, `/opds`, the enabled MCP route, and database readiness. It holds them through complete response streaming and request-scope disposal. New operations are refused while the single coordinator drains or holds exclusive maintenance. GET `/api/backup/progress`, process liveness and static UI remain available without opening the library. The backup restore endpoint delegates admission to `BackupService` for its shared-to-exclusive handoff.
+`LibraryMaintenanceMiddleware` takes shared operation leases for `/api`, `/opds`, and database readiness. It holds them through complete response streaming and request-scope disposal. New operations are refused while the single coordinator drains or holds exclusive maintenance. GET `/api/backup/progress`, process liveness and static UI remain available without opening the library. The backup restore endpoint delegates admission to `BackupService` for its shared-to-exclusive handoff.
 
 - **Status Code:** 503 Service Unavailable
 - **Response:** `{"code": "migration_activation_busy", "error": "The library is in maintenance. Try again later."}`; `Retry-After: 5`.

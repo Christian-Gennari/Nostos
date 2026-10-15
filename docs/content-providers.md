@@ -105,7 +105,7 @@ An earlier design created the book *before* downloading, reasoning that storage
 is keyed by a book id. That was wrong on its own terms — the id is a `Guid` we
 can generate without touching the database — and it was wrong in practice: a
 whole audiobook takes tens of minutes, so a file-less book row sat visible in
-the library (Kobo, OPDS, MCP, the UI) for that entire window, and a restart
+the library (Kobo, OPDS, the UI) for that entire window, and a restart
 mid-download leaked it permanently. Phase 1 therefore has **zero** database
 side effects; if anything fails or the process dies, the staging directory is
 simply removed.

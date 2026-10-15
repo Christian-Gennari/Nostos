@@ -83,7 +83,6 @@ public sealed class ActivationStartupHostTests
             builder.UseSetting("Persistence:DatabasePath", files.Paths.LiveDatabase);
             builder.UseSetting("Storage:BooksRoot", files.Paths.LiveMedia);
             builder.UseSetting("Storage:BackupsRoot", Path.Combine(files.Root, "backups"));
-            builder.UseSetting("Mcp:Enabled", "false");
             builder.ConfigureServices(services =>
             {
                 foreach (var service in services.Where(d => d.ServiceType == typeof(IHostedService)).ToArray()) services.Remove(service);

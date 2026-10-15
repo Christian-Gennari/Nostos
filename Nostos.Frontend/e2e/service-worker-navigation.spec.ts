@@ -18,7 +18,7 @@
  *     deliver the exact bytes of the uploaded file;
  *   - the book-detail Download button (window.open) must download the file
  *     instead of opening another copy of the app;
- *   - the dotless backend namespaces (/api, /opds, /mcp) must reach the
+ *   - the dotless backend namespaces (/api, /opds) must reach the
  *     network on a navigation request;
  *   - client routes must still be answered from the worker's app-shell cache
  *     (asserted with the network switched off, which only the cache satisfies).
@@ -26,11 +26,6 @@
  * Note: `Response.fromServiceWorker()` is NOT a discriminator here — for a
  * controlled page it is true for every response, including the ones the worker
  * passes through to the network (verified against this fixture).
- *
- * Known limitation, not covered here: `Mcp:Path` is configurable at runtime
- * (McpOptions), while `navigationUrls` is baked into the build. The exclusion
- * covers the default `/mcp`; a deployment that moves MCP to another absolute
- * path must add that path to ngsw-config.json too.
  *
  * The spec runs in the desktop project (playwright.config.ts testIgnore covers
  * the mobile project's `mobile.*.spec.ts` match).
@@ -172,8 +167,8 @@ test('dotless backend namespaces are fetched from the network, not the shell', a
   await ensureServiceWorkerControl(page);
 
   // Every dotless namespace the backend owns: the library API, the backup
-  // endpoints behind Settings → download, and the OPDS/MCP namespaces.
-  const namespaces = ['/api/books', '/api/backup/status', '/opds', '/mcp'];
+  // endpoints behind Settings → download, and the OPDS namespace.
+  const namespaces = ['/api/books', '/api/backup/status', '/opds'];
 
   for (const namespace of namespaces) {
     const probe = await context.newPage();

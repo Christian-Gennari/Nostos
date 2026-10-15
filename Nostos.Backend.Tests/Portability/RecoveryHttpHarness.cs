@@ -94,7 +94,6 @@ internal sealed class RecoveryHttpHarness : IAsyncDisposable
             builder.UseSetting("Storage:BackupsRoot", Path.Combine(harness.Bed.Root, "backups"));
             builder.UseSetting("Storage:DiskSafetyMarginBytes", "0");
             builder.UseSetting("Storage:DiskSafetyMarginPercent", "0");
-            builder.UseSetting("Mcp:Enabled", "false");
             builder.ConfigureTestServices(services =>
             {
                 // Retained copies were created with the bed's clock. The HTTP

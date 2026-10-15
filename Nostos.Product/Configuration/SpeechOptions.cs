@@ -3,7 +3,7 @@ namespace Nostos.Backend.Configuration;
 /// <summary>
 /// Speech-to-text configuration (issue #262 §2/§3).
 ///
-/// Optional and disabled by default, exactly like <see cref="McpOptions"/>: with
+/// Optional and disabled by default: with
 /// <see cref="Enabled"/> false the transcription endpoint is still mapped, but
 /// answers with a typed "disabled" error rather than calling a provider or
 /// 500-ing. The credential is never read from configuration — only the NAME of

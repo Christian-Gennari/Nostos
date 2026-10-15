@@ -1,7 +1,7 @@
 /**
  * Global setup for Task 13 Playwright: launch the isolated fixture
  * (fresh temp SQLite DB, freshly built Angular app served by the real
- * ASP.NET Core backend, MCP enabled with a random bearer token).
+ * ASP.NET Core backend).
  */
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';

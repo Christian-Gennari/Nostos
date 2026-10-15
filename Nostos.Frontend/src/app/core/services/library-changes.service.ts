@@ -6,7 +6,7 @@ import { Observable, Subject, auditTime, defer, finalize } from 'rxjs';
 const SETTLE_MS = 250;
 
 /**
- * "The library changed somewhere else" — Ask Nostos, MCP, another tab, an
+ * "The library changed somewhere else" — Ask Nostos, another tab, an
  * import — so a screen that is showing it can re-read without a reload.
  *
  * The server's `GET /api/library/changes` stream announces the library revision,

@@ -5,7 +5,6 @@ namespace Nostos.Backend.Endpoints;
 
 /// <summary>
 /// The reading list: books the user wants to read and does not have yet.
-/// REST-only. The MCP surface is frozen and does not see it.
 /// </summary>
 public static class ReadingListEndpoints
 {

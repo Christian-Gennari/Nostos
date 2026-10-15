@@ -24,8 +24,7 @@
  *   kill-instance <name>             terminate one instance + remove its root
  *   kill-all                         terminate every instance + remove roots
  *
- * State lives in e2e/support/library-transfer-fixture-state.json (no tokens:
- * this fixture never enables MCP).
+ * State lives in e2e/support/library-transfer-fixture-state.json.
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { deflateRawSync } from 'node:zlib';
