@@ -80,7 +80,9 @@
 }
 
 /* The next sentence is being fetched: a ring turns around the button until
-   sound starts. */
+   sound starts. Most sentences arrive well inside a second, already fetched
+   ahead, so the ring only shows once the wait has lasted one; otherwise it
+   would flash between every sentence. */
 .read-aloud-toggle.is-buffering::after {
   content: '';
   position: absolute;
@@ -88,7 +90,15 @@
   border: 2px solid transparent;
   border-top-color: var(--color-text-muted);
   border-radius: var(--radius-round);
-  animation: read-aloud-buffering 0.9s linear infinite;
+  animation:
+    read-aloud-buffering-reveal 0.2s ease-out 1s both,
+    read-aloud-buffering 0.9s linear infinite;
+}
+
+@keyframes read-aloud-buffering-reveal {
+  from {
+    opacity: 0;
+  }
 }
 
 @keyframes read-aloud-buffering {
@@ -177,7 +187,7 @@
   }
 
   .read-aloud-toggle.is-buffering::after {
-    animation: none;
+    animation: read-aloud-buffering-reveal 0s 1s both;
     border-color: var(--color-text-muted);
     opacity: 0.6;
   }
