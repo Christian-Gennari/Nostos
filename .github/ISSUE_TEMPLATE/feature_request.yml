@@ -1,0 +1,75 @@
+name: Feature request
+description: Suggest an idea or improvement for Nostos.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Describing the problem you want
+        solved helps more than a finished design, so start there.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: What are you trying to do, and what gets in the way today?
+      placeholder: "e.g. When I finish an audiobook I have to find my notes for it by hand..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+      description: Describe the change you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have considered
+      description: Workarounds you use today, or other ways this could work.
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      description: Which deployment do you use?
+      options:
+        - SelfHosted
+        - Nostos Cloud
+        - Both / not sure
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Nostos does this affect?
+      multiple: true
+      options:
+        - Library / collections
+        - Reading (EPUB / PDF)
+        - Audiobooks
+        - Second Brain / notes
+        - Writing Studio
+        - Ask Nostos (assistant)
+        - Sync across devices
+        - Backup / restore / portability
+        - Settings / account
+        - Other / not sure
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, mockups, or examples from other apps.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been requested yet.
+          required: true
