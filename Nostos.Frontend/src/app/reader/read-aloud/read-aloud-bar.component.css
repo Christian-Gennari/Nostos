@@ -26,6 +26,23 @@
   background: var(--bg-surface);
   color: var(--color-text-main);
   box-shadow: var(--shadow-md);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    visibility 0s;
+}
+
+/* The chrome is put away: the transport goes with it, in the pager's motion,
+   and stays where it was so it comes back in the same place. */
+.read-aloud-bar.is-resting {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    visibility 0s linear var(--motion-fast);
 }
 
 .read-aloud-transport {
@@ -79,10 +96,8 @@
   transform: scale(1);
 }
 
-/* The next sentence is being fetched: a ring turns around the button until
-   sound starts. Most sentences arrive well inside a second, already fetched
-   ahead, so the ring only shows once the wait has lasted one; otherwise it
-   would flash between every sentence. */
+/* The next sentence has been waited on for a while (the component counts the
+   second, see `waiting`): a ring turns around the button until sound starts. */
 .read-aloud-toggle.is-buffering::after {
   content: '';
   position: absolute;
@@ -91,7 +106,7 @@
   border-top-color: var(--color-text-muted);
   border-radius: var(--radius-round);
   animation:
-    read-aloud-buffering-reveal 0.2s ease-out 1s both,
+    read-aloud-buffering-reveal 0.2s ease-out,
     read-aloud-buffering 0.9s linear infinite;
 }
 
@@ -180,6 +195,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .read-aloud-bar,
+  .read-aloud-bar.is-resting {
+    transition: none;
+  }
+
   .read-aloud-toggle,
   .read-aloud-toggle:hover {
     transition: none;
@@ -187,7 +207,7 @@
   }
 
   .read-aloud-toggle.is-buffering::after {
-    animation: read-aloud-buffering-reveal 0s 1s both;
+    animation: none;
     border-color: var(--color-text-muted);
     opacity: 0.6;
   }

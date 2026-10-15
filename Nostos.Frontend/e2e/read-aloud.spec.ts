@@ -4,7 +4,7 @@
  * Unit tests own the queue and the sentence splitter. What only a browser can
  * show is here: epub.js draws the mark on the sentence being spoken, the page
  * turns when the voice reaches the next one, a second spine section opens when
- * the first runs out, and the transport stays in reach while the chrome rests.
+ * the first runs out, and the transport rests and comes back with the chrome.
  *
  * The device voice is replaced by a stand-in that records what it is asked to
  * say and finishes each sentence after a short delay, so the test neither
@@ -256,7 +256,7 @@ test.describe('read aloud (EPUB), phone width', () => {
   const run = newRunId();
 
   for (const theme of ['light', 'dark'] as const) {
-    test(`${theme}: the transport stays in reach while the chrome rests`, async ({ page }) => {
+    test(`${theme}: the transport rests with the chrome and comes back with it`, async ({ page }) => {
       await openBook(page, theme, `${run}-phone-${theme}`);
       await setSpeechDelay(page, 60_000);
       await startReading(page);
@@ -267,10 +267,18 @@ test.describe('read aloud (EPUB), phone width', () => {
       await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
       await capture(page, `read-aloud-epub-390-${theme}-chrome`);
 
-      // A tap on the page puts the chrome away; the transport stays.
+      // A tap on the page puts the chrome away, the transport with it, in place:
+      // reading goes on.
+      const place = (await bar.boundingBox())!;
       await page.mouse.click(195, 300);
       await expect(page.getByTestId('typo-toggle')).toBeHidden();
+      await expect(bar).toBeHidden();
+      await capture(page, `read-aloud-epub-390-${theme}-resting`);
+
+      // The next tap brings both back, the transport where it was.
+      await page.mouse.click(195, 300);
       await expect(bar).toBeVisible();
+      await expect.poll(async () => (await bar.boundingBox())!.y).toBeCloseTo(place.y, 0);
       await capture(page, `read-aloud-epub-390-${theme}`);
 
       // Every control is a full touch target and nothing scrolls sideways.
@@ -357,6 +365,31 @@ test.describe('read aloud (EPUB), server voice', () => {
     expect(await spoken(page)).toEqual([]);
     await expect(page.getByTestId('read-aloud-notice')).toHaveCount(0);
     await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
+  });
+
+  test('the loading ring does not flash between sentences fetched ahead', async ({ page }) => {
+    const calls = await stubServerVoice(page);
+    await openBook(page, 'light', `${run}-ring`);
+    // Every frame: is the ring drawn around the play button?
+    await page.evaluate(() => {
+      const scope = window as any;
+      scope.__ringFrames = { seen: 0, ring: 0 };
+      const sample = () => {
+        const toggle = document.querySelector('[data-testid="read-aloud-toggle"]');
+        if (toggle) {
+          scope.__ringFrames.seen++;
+          if (toggle.classList.contains('is-buffering')) scope.__ringFrames.ring++;
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await startReading(page);
+    await expect.poll(() => calls.length, { timeout: 30_000 }).toBeGreaterThan(6);
+
+    const frames = await page.evaluate(() => (window as any).__ringFrames);
+    expect(frames.seen).toBeGreaterThan(0);
+    expect(frames.ring).toBe(0);
   });
 
   for (const theme of ['light', 'dark'] as const) {

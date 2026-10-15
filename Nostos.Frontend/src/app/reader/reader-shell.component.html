@@ -546,6 +546,7 @@
     [selectedVoice]="readAloudSelectedVoice()"
     [managed]="!!readAloudServer()?.managed"
     [voiceNote]="readAloudVoiceNote()"
+    [resting]="immersiveReader() && !chromeShown()"
     (voiceChange)="setReadAloudVoice($event)"
   />
 

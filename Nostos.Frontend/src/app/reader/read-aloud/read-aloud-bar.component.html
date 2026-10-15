@@ -1,5 +1,13 @@
 @if (controller.active()) {
-<div class="read-aloud-bar" role="group" aria-label="Read aloud" data-testid="read-aloud-bar">
+<div
+  class="read-aloud-bar"
+  [class.is-resting]="resting()"
+  [attr.aria-hidden]="resting() ? 'true' : null"
+  [attr.inert]="resting() ? '' : null"
+  role="group"
+  aria-label="Read aloud"
+  data-testid="read-aloud-bar"
+>
   <button
     type="button"
     class="read-aloud-chip read-aloud-voice"
@@ -28,8 +36,8 @@
     <button
       type="button"
       class="read-aloud-toggle"
-      [class.is-buffering]="controller.buffering()"
-      [attr.aria-busy]="controller.buffering()"
+      [class.is-buffering]="waiting()"
+      [attr.aria-busy]="waiting()"
       (click)="controller.toggle()"
       [title]="toggleLabel()"
       [attr.aria-label]="toggleLabel()"
