@@ -1,0 +1,104 @@
+name: Bug report
+description: Something in Nostos is broken or behaves unexpectedly.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        **Security issue?** Do not file it here — report it privately as
+        described in [SECURITY.md](https://github.com/Christian-Gennari/Nostos/blob/main/SECURITY.md).
+
+        Please leave out passwords, API keys and personal library data from
+        logs and screenshots.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you see?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the bug.
+      placeholder: |
+        1. Open the library
+        2. Click on a book
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - SelfHosted (Docker / Compose)
+        - SelfHosted (without Docker)
+        - Nostos Cloud
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        SelfHosted: the image tag or digest (`docker inspect`), or the commit
+        you built from. Cloud: leave blank.
+      placeholder: "e.g. ghcr.io/christian-gennari/nostos:latest, or a commit SHA"
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Nostos is affected?
+      multiple: true
+      options:
+        - Library / collections
+        - Reading (EPUB / PDF)
+        - Audiobooks
+        - Second Brain / notes
+        - Writing Studio
+        - Ask Nostos (assistant)
+        - Sync across devices
+        - Backup / restore / portability
+        - Settings / account
+        - Other / not sure
+
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and device
+      placeholder: "e.g. Firefox 131 on Windows 11, Safari on iPhone 15"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: >-
+        Browser console errors, server logs (`docker logs <container>`), or
+        screenshots. Paste text here; drag images into the box.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been reported yet.
+          required: true
