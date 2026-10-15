@@ -970,6 +970,7 @@ describe('Library', () => {
 
     expect(title.textContent?.trim()).toBe('Library');
     expect(title.classList.contains('library-title')).toBe(true);
+    expect(title.classList.contains('visually-hidden-phone')).toBe(true);
 
     component.collections.set([{ id: 'c1', name: 'Science Fiction', parentId: null }]);
     component.filters.toggleStatus('reading');

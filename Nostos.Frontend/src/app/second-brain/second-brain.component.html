@@ -16,7 +16,10 @@
       is the only thing it can act on, so it stays with the list in the rail.
     -->
     <header class="brain-header">
-      <div class="brain-header-title">
+      <!-- On a phone the active bottom dock already names Brain, so the identity
+           block (heading, inventory, purpose line) is screen-reader-only there and
+           the Notes/Topics switch becomes the top of the page. -->
+      <div class="brain-header-title visually-hidden-phone">
         <div class="brain-header-heading">
           <h1>Brain</h1>
           @if (isReviewing()) {
