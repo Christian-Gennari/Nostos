@@ -167,6 +167,19 @@
   white-space: nowrap;
 }
 
+/* The format line ("Audiobook", "EPUB"): the choice row's meta tier with a
+   leading format glyph. Editions of one work share a title and author, so this
+   is the only line that tells the rows of a set apart. */
+.manage-member-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* `.card-status-pill.current`, verbatim — the page's own words for this state, in
    the page's own pill. It sits in the row's trailing slot, where the Unlink button
    sits on a member row: the slot has to be one or the other, or the title's

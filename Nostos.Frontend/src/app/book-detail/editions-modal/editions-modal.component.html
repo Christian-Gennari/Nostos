@@ -55,6 +55,12 @@
             <span class="manage-member-text nostos-choice-row__text">
               <span class="manage-member-title nostos-choice-row__title">{{ member.title }}</span>
               <span class="manage-member-author nostos-choice-row__sub">{{ member.author || 'Unknown author' }}</span>
+              @if (member.format) {
+              <span class="manage-member-format nostos-choice-row__meta">
+                <nostos-icon [concept]="member.formatIcon ?? 'ebook'" [size]="12" aria-hidden="true"></nostos-icon>
+                {{ member.format }}
+              </span>
+              }
             </span>
             <!-- The book you are viewing takes the row's action slot, as a pill. It
                  is state, not an action, so it wears the page's own "you are here"
