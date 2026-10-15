@@ -7,12 +7,20 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
+import { ButtonComponent } from '../../ui/button/button.component';
 
 /** One book in the current work, as the membership list needs it. */
 export interface WorkMember {
   id: string;
   title: string;
   author: string | null;
+  /**
+   * The edition's format as the page's edition rows name it ("Audiobook",
+   * "EPUB", "Physical"). Editions of one work usually share a title and author,
+   * so without it the rows of a set are indistinguishable.
+   */
+  format?: string;
+  formatIcon?: 'audiobook' | 'ebook' | 'pdf' | 'physical';
 }
 
 /**
@@ -36,7 +44,7 @@ export interface WorkMember {
 @Component({
   selector: 'app-editions-modal',
   standalone: true,
-  imports: [ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
+  imports: [ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
   templateUrl: './editions-modal.component.html',
   styleUrl: './editions-modal.component.css',
 })

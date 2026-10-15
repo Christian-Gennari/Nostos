@@ -514,11 +514,15 @@ export class BookDetail implements OnInit, OnDestroy {
       id: book.id,
       title: book.title,
       author: book.author,
+      format: this.getEditionLabel(book),
+      formatIcon: this.getEditionConcept(book.type, this.getEditionLabel(book)),
     };
     const others = (book.otherEditions ?? []).map<WorkMember>((edition) => ({
       id: edition.id,
       title: edition.title?.trim() || this.getEditionTitleOrFallback(edition),
       author: edition.author ?? null,
+      format: this.getSummaryEditionLabel(edition),
+      formatIcon: this.getEditionConcept(edition.type, this.getSummaryEditionLabel(edition)),
     }));
     return [current, ...others];
   });
@@ -711,6 +715,14 @@ export class BookDetail implements OnInit, OnDestroy {
       edition.narrator,
       edition.edition,
     );
+  }
+
+  /** The format concept for a member row's icon, read from the same label the row shows. */
+  private getEditionConcept(type: string, label: string): WorkMember['formatIcon'] {
+    const normalizedType = type.toLowerCase();
+    if (normalizedType === 'audiobook' || normalizedType === 'audio') return 'audiobook';
+    if (normalizedType === 'physical') return 'physical';
+    return label.startsWith('PDF') ? 'pdf' : 'ebook';
   }
 
   private buildEditionLabel(

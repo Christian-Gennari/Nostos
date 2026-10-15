@@ -2,12 +2,15 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
-import type { ConnectedPosition } from '@angular/cdk/overlay';
+import { CdkMenu, CdkMenuItem, CdkMenuTrigger, MENU_SCROLL_STRATEGY } from '@angular/cdk/menu';
+import type { ConnectedPosition, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
 import {
   ChangeDetectionStrategy,
   Component,
   Directive,
+  ElementRef,
+  Injector,
+  NgZone,
   ViewEncapsulation,
   inject,
   input,
@@ -101,6 +104,19 @@ export class MenuSeparatorDirective {}
 @Directive({
   selector: '[nostosMenuTriggerFor]',
   standalone: true,
+  providers: [
+    {
+      provide: MENU_SCROLL_STRATEGY,
+      useFactory: () => {
+        const host: HTMLElement = inject(ElementRef).nativeElement;
+        const zone = inject(NgZone);
+        const injector = inject(Injector);
+        // Resolved lazily: the trigger is what injects this token.
+        const close = () => zone.run(() => injector.get(CdkMenuTrigger).close());
+        return () => new FollowAnyScrollStrategy(host, zone, close);
+      },
+    },
+  ],
   hostDirectives: [
     {
       directive: CdkMenuTrigger,
@@ -124,6 +140,65 @@ const MENU_POSITIONS: ConnectedPosition[] = [
   { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
   { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
 ];
+
+/**
+ * Keeps an open menu attached to its trigger through any scroll.
+ *
+ * The CDK's own reposition strategy only hears the window and containers
+ * registered as `cdkScrollable`. Pages here scroll inside their own container
+ * (`.layout-content` on book detail), so the menu stayed pinned to the viewport
+ * while its trigger scrolled away. A capturing listener on the document hears
+ * every scroll, whichever element owns it. Once the trigger leaves the viewport
+ * the menu closes rather than hanging from nothing.
+ */
+class FollowAnyScrollStrategy implements ScrollStrategy {
+  private overlayRef: OverlayRef | null = null;
+  private frame = 0;
+
+  constructor(
+    private readonly trigger: HTMLElement,
+    private readonly zone: NgZone,
+    private readonly close: () => void,
+  ) {}
+
+  attach(overlayRef: OverlayRef): void {
+    this.overlayRef = overlayRef;
+  }
+
+  enable(): void {
+    this.zone.runOutsideAngular(() =>
+      document.addEventListener('scroll', this.onScroll, { capture: true, passive: true }),
+    );
+  }
+
+  disable(): void {
+    document.removeEventListener('scroll', this.onScroll, { capture: true });
+    cancelAnimationFrame(this.frame);
+    this.frame = 0;
+  }
+
+  detach(): void {
+    this.disable();
+    this.overlayRef = null;
+  }
+
+  private readonly onScroll = (event: Event): void => {
+    // Scrolling a long menu's own list is not the page moving under it.
+    const pane = this.overlayRef?.overlayElement;
+    if (pane && event.target instanceof Node && pane.contains(event.target)) return;
+    if (this.frame) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      if (!this.overlayRef) return;
+      const rect = this.trigger.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        this.close();
+        return;
+      }
+      this.overlayRef.updatePosition();
+    });
+  };
+}
 
 /** Everything a template needs to declare and open a menu. */
 export const NOSTOS_MENU = [

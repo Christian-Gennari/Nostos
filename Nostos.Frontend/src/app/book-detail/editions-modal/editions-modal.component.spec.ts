@@ -157,7 +157,7 @@ describe('EditionsModal', () => {
     expect(seen).toEqual(['medit']);
   });
 
-  it('uses the canonical input for ordinary search while edition actions stay product-owned', async () => {
+  it('uses the canonical input and button, while the candidate row stays product-owned', async () => {
     await setup();
 
     const search = fixture.nativeElement.querySelector('.manage-link-search') as HTMLInputElement;
@@ -166,8 +166,24 @@ describe('EditionsModal', () => {
 
     const unlink = fixture.nativeElement.querySelector('.manage-member-action') as HTMLButtonElement;
     const candidate = fixture.nativeElement.querySelector('.manage-link-candidate') as HTMLButtonElement;
-    expect(unlink.classList.contains('nostos-button')).toBe(false);
+    // Unlink is appButton sm; without the component imported it rendered as a
+    // bare browser button. The candidate row is itself the button, so it is not.
+    expect(unlink.classList.contains('nostos-button')).toBe(true);
     expect(candidate.classList.contains('nostos-button')).toBe(false);
+  });
+
+  it('names each member\'s format, so editions sharing a title can be told apart', async () => {
+    await setup({
+      members: [
+        { id: 'current', title: 'Anna Karenina', author: 'Leo Tolstoy', format: 'EPUB', formatIcon: 'ebook' },
+        { id: 'sibling', title: 'Anna Karenina', author: 'Leo Tolstoy', format: 'Audiobook', formatIcon: 'audiobook' },
+      ],
+    });
+
+    const formats = Array.from<HTMLElement>(
+      fixture.nativeElement.querySelectorAll('.manage-member-format'),
+    ).map((el) => el.textContent?.trim());
+    expect(formats).toEqual(['EPUB', 'Audiobook']);
   });
 
   it('will not close while a mutation is in flight', async () => {

@@ -95,4 +95,39 @@ describe('Menu', () => {
 
     expect(menu()).toBeNull();
   });
+
+  // The page scrolls inside its own container, not the window, so the menu
+  // has to hear any element's scroll to stay with its trigger.
+  describe('when a scroll container moves the trigger', () => {
+    const scrollSomething = async () => {
+      fixture.nativeElement.dispatchEvent(new Event('scroll'));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      fixture.detectChanges();
+    };
+    const triggerAt = (top: number) =>
+      vi.spyOn(trigger(), 'getBoundingClientRect').mockReturnValue(
+        { top, bottom: top + 40, left: 0, right: 80, width: 80, height: 40, x: 0, y: top } as DOMRect,
+      );
+
+    it('stays open while the trigger is still on screen', async () => {
+      trigger().click();
+      fixture.detectChanges();
+      triggerAt(200);
+
+      await scrollSomething();
+
+      expect(menu()).not.toBeNull();
+    });
+
+    it('closes once the trigger has scrolled out of view', async () => {
+      trigger().click();
+      fixture.detectChanges();
+      triggerAt(-100);
+
+      await scrollSomething();
+
+      expect(menu()).toBeNull();
+      expect(trigger().getAttribute('aria-expanded')).toBe('false');
+    });
+  });
 });
