@@ -103,6 +103,17 @@
 
   /* The dock's selected item is ink, not the accent. */
   --dock-item-active-ink: var(--color-primary);
+  /* The floating desktop dock's geometry. The compact Ask Nostos panel opens
+     from the dock, so it reads the same two numbers rather than guessing. */
+  --dock-float-bottom: 24px;
+  --dock-bar-h: 48px;
+  /* The pill that slides behind the selected dock item, the wash under a
+     hovered one, and the inset field that launches Ask Nostos. Each is one
+     step off the dock surface: inward on light, upward on dark, where the
+     surface itself is lifted. */
+  --dock-pill: #ECEDEF;
+  --dock-hover: #F4F4F5;
+  --dock-field: #F6F6F7;
   /* Cover art in a grid frame. The hairline alone cannot read against a dark
      page, so it also carries a shadow. */
   --cover-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
@@ -809,6 +820,9 @@
   /* Silver, matching the heading rule: on dark the dock's selected label is
      ink, and the marker beside it is the accent — one state colour, not two. */
   --dock-item-active-ink: var(--color-text-main);
+  --dock-pill: #414657;
+  --dock-hover: #383c4a;
+  --dock-field: #282b36;
   --cover-shadow: 0 2px 12px rgba(0, 0, 0, 0.50);
   /* The dark primary is a light fill, so a top highlight would not show. */
   --button-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);

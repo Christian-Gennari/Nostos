@@ -17,6 +17,7 @@ import {
   AssistantTurnResponse,
 } from './assistant.service';
 import { AssistantStatusService } from './assistant-status.service';
+import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import {
   AssistantContext,
@@ -718,6 +719,61 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   it('shows the capsule when the preference is on and the server is available', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
     expect(status.ensureLoaded).toHaveBeenCalled();
+  });
+
+  describe('with the dock carrying the launcher', () => {
+    let detach: () => void;
+    let launcher: AssistantLauncherService;
+
+    beforeEach(() => {
+      launcher = TestBed.inject(AssistantLauncherService);
+      detach = launcher.attachDock();
+      fixture.detectChanges();
+    });
+
+    afterEach(() => detach());
+
+    it('stands its own capsule down and opens the panel above the dock', () => {
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
+
+      launcher.toggle();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('[data-testid="assistant-panel"]') as HTMLElement;
+      expect(panel).toBeTruthy();
+      expect(panel.classList).toContain('is-docked');
+
+      launcher.toggle();
+      fixture.detectChanges();
+      expect(assistant.isOpen()).toBe(false);
+    });
+
+    it('does not treat a press on the launcher as an outside click', () => {
+      const dockLauncher = document.createElement('button');
+      dockLauncher.setAttribute(ASSISTANT_LAUNCHER_ATTR, '');
+      document.body.appendChild(dockLauncher);
+
+      fixture.componentInstance.open();
+      fixture.detectChanges();
+      // A real press is pointerdown, then click. Closing on the pointerdown
+      // would let the click's toggle reopen the panel straight away.
+      dockLauncher.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      expect(assistant.isOpen()).toBe(true);
+      launcher.toggle();
+      expect(assistant.isOpen()).toBe(false);
+
+      // Anywhere else is still outside.
+      fixture.componentInstance.open();
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      expect(assistant.isOpen()).toBe(false);
+      dockLauncher.remove();
+    });
+
+    it('brings the capsule back when the dock leaves (the reader)', () => {
+      detach();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
+    });
   });
 
   it('leaves the reader selection surface as the only contextual assistant entry', () => {

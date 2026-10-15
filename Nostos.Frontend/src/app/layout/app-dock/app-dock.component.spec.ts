@@ -1,12 +1,19 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Subject, of } from 'rxjs';
 
 import { AppDockComponent } from './app-dock.component';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
 import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
+import { AssistantLauncherService } from '../../ui/assistant/assistant-launcher.service';
+import { AssistantService } from '../../ui/assistant/assistant.service';
+import { AssistantStatusService } from '../../ui/assistant/assistant-status.service';
+import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
+import { NOSTOS_ICONS } from '../../ui/icon/nostos-icons';
 
 @Component({ standalone: true, template: '' })
 class BlankComponent {}
@@ -46,6 +53,8 @@ describe('AppDockComponent', () => {
     capabilities = cloudCapabilities;
     TestBed.configureTestingModule({
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         provideRouter([{ path: '**', component: BlankComponent }]),
         {
           provide: DeploymentCapabilitiesService,
@@ -105,14 +114,117 @@ describe('AppDockComponent', () => {
     const fixture = render(1280);
 
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeNull();
-    // No divider and no utility restyle: the SelfHosted dock is exactly the
-    // dock it shipped with, with nothing reserved for the absent Cloud action.
-    expect(fixture.nativeElement.querySelector('.dock-divider')).toBeNull();
+    // Settings alone is the utility group: one hairline, one icon button, and
+    // nothing reserved for the absent Cloud action.
+    expect(fixture.nativeElement.querySelectorAll('.dock-divider').length).toBe(1);
     const labels = Array.from<Element>(
       fixture.nativeElement.querySelectorAll('.dock-item .label'),
     ).map((label) => label.textContent?.trim());
     expect(labels).toEqual(['Library', 'Brain', 'Studio', 'Settings']);
-    expect(fixture.nativeElement.querySelectorAll('.dock-item-utility').length).toBe(0);
+    const utilities = fixture.nativeElement.querySelectorAll('.dock-item-utility');
+    expect(utilities.length).toBe(1);
+    expect(utilities[0].getAttribute('title')).toBe('Settings');
+  });
+
+  describe('Ask Nostos launcher', () => {
+    function enableAssistant(): void {
+      TestBed.inject(LibraryPreferencesService).assistantEnabled.set(true);
+      TestBed.inject(AssistantStatusService).available.set(true);
+    }
+
+    it('is absent while Ask Nostos is off, with no divider reserved for it', () => {
+      const fixture = render(1280);
+
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
+      // Only the utility divider: Feedback and Settings.
+      expect(fixture.nativeElement.querySelectorAll('.dock-divider').length).toBe(1);
+      expect(render(390).nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
+    });
+
+    it('sits between the destinations and the utilities on a wide shell', () => {
+      enableAssistant();
+      const fixture = render(1280);
+      const ask = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-trigger"]',
+      ) as HTMLButtonElement;
+
+      expect(ask).toBeTruthy();
+      expect(ask.classList).toContain('dock-ask');
+      expect(ask.hasAttribute('data-assistant-launcher')).toBe(true);
+      expect(ask.getAttribute('aria-label')).toBe('Ask Nostos');
+      expect(ask.querySelector('.dock-ask-key')?.textContent?.trim()).toMatch(/^(⌘ J|Ctrl J)$/);
+      // Destinations, divider, Ask, divider, utilities.
+      const order = Array.from<Element>(fixture.nativeElement.querySelector('.dock-bar').children)
+        .filter((el) => !el.classList.contains('dock-pill'))
+        .map((el) =>
+          el.classList.contains('dock-divider')
+            ? '|'
+            : el.classList.contains('dock-ask')
+              ? 'Ask'
+              : el.querySelector('.label')?.textContent?.trim(),
+        );
+      expect(order).toEqual(['Library', 'Brain', 'Studio', '|', 'Ask', '|', 'Feedback', 'Settings']);
+    });
+
+    it('takes the centre slot of the phone rail', () => {
+      enableAssistant();
+      const fixture = render(390);
+      const labels = Array.from<Element>(
+        fixture.nativeElement.querySelectorAll('.dock-item .label'),
+      ).map((label) => label.textContent?.trim());
+
+      expect(labels).toEqual(['Library', 'Brain', 'Ask', 'Studio', 'More']);
+      const ask = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-trigger"]',
+      ) as HTMLButtonElement;
+      expect(ask.classList).toContain('dock-item-ask');
+      expect(ask.hasAttribute('data-assistant-launcher')).toBe(true);
+    });
+
+    it('toggles the assistant and mirrors whether it is open', () => {
+      enableAssistant();
+      const fixture = render(1280);
+      const launcher = TestBed.inject(AssistantLauncherService);
+      const assistant = TestBed.inject(AssistantService);
+      const toggles: number[] = [];
+      launcher.toggleRequested.subscribe(() => toggles.push(1));
+      const ask = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-trigger"]',
+      ) as HTMLButtonElement;
+
+      expect(ask.getAttribute('aria-expanded')).toBe('false');
+      ask.click();
+      expect(toggles.length).toBe(1);
+
+      assistant.open();
+      fixture.detectChanges();
+      expect(ask.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('hosts the launcher only while the dock is on screen', () => {
+      const launcher = TestBed.inject(AssistantLauncherService);
+      expect(launcher.dockHosted()).toBe(false);
+
+      const fixture = render(1280);
+      expect(launcher.dockHosted()).toBe(true);
+
+      fixture.destroy();
+      expect(launcher.dockHosted()).toBe(false);
+    });
+  });
+
+  it('fills the selected destination icon and leaves the others regular', async () => {
+    await TestBed.inject(Router).navigateByUrl('/studio');
+    const fixture = render(1280);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const firstPath = (svg: string) => /\sd="([^"]+)"/.exec(svg)?.[1] ?? '';
+    const iconOf = (title: string) =>
+      (fixture.nativeElement.querySelector(`.dock-item[title="${title}"] nostos-icon`) as HTMLElement)
+        .innerHTML;
+    expect(iconOf('Writing Studio')).toContain(firstPath(NOSTOS_ICONS['pen-nib'].fill));
+    expect(iconOf('Library')).toContain(firstPath(NOSTOS_ICONS.books.regular));
   });
 
   it('replaces the Settings slot with More on a narrow Cloud shell', () => {

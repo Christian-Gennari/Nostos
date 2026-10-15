@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ElementRef,
   HostListener,
   afterNextRender,
@@ -22,6 +23,7 @@ import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
+import { AssistantLauncherService } from '../../ui/assistant/assistant-launcher.service';
 
 /** The phone rail's breakpoint, matching the dock's own stylesheet. */
 function isNarrowViewport(): boolean {
@@ -38,17 +40,24 @@ function isNarrowViewport(): boolean {
   imports: [RouterLink, RouterLinkActive, NostosIconComponent],
   template: `
     <nav class="app-dock-container" aria-label="Main navigation">
-      <div class="dock-bar" #dockBar>
+      <div class="dock-bar" #dockBar [class.has-pending]="pendingDestination() !== null">
         <span class="dock-pill" aria-hidden="true"></span>
         <a
           [routerLink]="getLink('/library')"
           (click)="handleDockClick('/library', $event)"
           routerLinkActive="active"
+          #libraryRla="routerLinkActive"
           [class.pending]="pendingDestination() === '/library'"
           class="dock-item"
           title="Library"
         >
-          <nostos-icon name="books" [size]="20" weight="light"></nostos-icon>
+          <span class="dock-icon">
+            <nostos-icon
+              name="books"
+              [size]="20"
+              [weight]="isSelected('/library', libraryRla.isActive) ? 'fill' : 'regular'"
+            ></nostos-icon>
+          </span>
           <span class="label">Library</span>
         </a>
 
@@ -56,23 +65,57 @@ function isNarrowViewport(): boolean {
           [routerLink]="getLink('/second-brain')"
           (click)="handleDockClick('/second-brain', $event)"
           routerLinkActive="active"
+          #brainRla="routerLinkActive"
           [class.pending]="pendingDestination() === '/second-brain'"
           class="dock-item"
           title="The Brain"
         >
-          <nostos-icon name="brain" [size]="20" weight="light"></nostos-icon>
+          <span class="dock-icon">
+            <nostos-icon
+              name="brain"
+              [size]="20"
+              [weight]="isSelected('/second-brain', brainRla.isActive) ? 'fill' : 'regular'"
+            ></nostos-icon>
+          </span>
           <span class="label">Brain</span>
         </a>
+
+        @if (isNarrow() && launcher.available()) {
+          <!-- On the phone rail Ask Nostos takes the centre slot, between the
+               destinations, so it is one thumb-reach from either side. -->
+          <button
+            type="button"
+            class="dock-item dock-item-ask"
+            data-assistant-launcher
+            data-testid="assistant-trigger"
+            (click)="launcher.toggle()"
+            aria-haspopup="dialog"
+            [attr.aria-expanded]="launcher.isOpen()"
+            title="Ask Nostos"
+          >
+            <span class="dock-icon dock-ask-tile">
+              <nostos-icon name="sparkle" [size]="20" weight="fill"></nostos-icon>
+            </span>
+            <span class="label">Ask</span>
+          </button>
+        }
 
         <a
           [routerLink]="getLink('/studio')"
           (click)="handleDockClick('/studio', $event)"
           routerLinkActive="active"
+          #studioRla="routerLinkActive"
           [class.pending]="pendingDestination() === '/studio'"
           class="dock-item"
           title="Writing Studio"
         >
-          <nostos-icon name="pen-nib" [size]="20" weight="light"></nostos-icon>
+          <span class="dock-icon">
+            <nostos-icon
+              name="pen-nib"
+              [size]="20"
+              [weight]="isSelected('/studio', studioRla.isActive) ? 'fill' : 'regular'"
+            ></nostos-icon>
+          </span>
           <span class="label">Studio</span>
         </a>
 
@@ -89,7 +132,9 @@ function isNarrowViewport(): boolean {
               title="More"
               data-testid="dock-more"
             >
-              <nostos-icon name="dots-three" [size]="20" weight="light"></nostos-icon>
+              <span class="dock-icon">
+                <nostos-icon name="dots-three" [size]="20"></nostos-icon>
+              </span>
               <span class="label">More</span>
             </button>
           } @else {
@@ -97,30 +142,63 @@ function isNarrowViewport(): boolean {
               routerLink="/settings"
               (click)="handleDockClick('/settings', $event)"
               routerLinkActive="active"
+              #settingsNarrowRla="routerLinkActive"
               [class.pending]="pendingDestination() === '/settings'"
               class="dock-item"
               title="Settings"
             >
-              <nostos-icon name="gear-six" [size]="20" weight="light"></nostos-icon>
+              <span class="dock-icon">
+                <nostos-icon
+                  name="gear-six"
+                  [size]="20"
+                  [weight]="isSelected('/settings', settingsNarrowRla.isActive) ? 'fill' : 'regular'"
+                ></nostos-icon>
+              </span>
               <span class="label">Settings</span>
             </a>
           }
         } @else {
-          @if (feedbackUrl(); as feedbackHref) {
-            <!-- One hairline sets the utility pair apart from the primary
-                 destinations; without Feedback (SelfHosted) the dock is
-                 unchanged and Settings stays where it always was. -->
+          @if (launcher.available()) {
             <span class="dock-divider" aria-hidden="true"></span>
+            <!-- Looks like a field because it is the way into one: pressing it
+                 grows the Ask Nostos panel up out of the dock. -->
+            <button
+              type="button"
+              class="dock-ask"
+              data-assistant-launcher
+              data-testid="assistant-trigger"
+              (click)="launcher.toggle()"
+              aria-haspopup="dialog"
+              [attr.aria-expanded]="launcher.isOpen()"
+              aria-label="Ask Nostos"
+            >
+              <nostos-icon
+                class="dock-ask-glyph"
+                name="sparkle"
+                [size]="16"
+                [weight]="launcher.isOpen() ? 'fill' : 'regular'"
+              ></nostos-icon>
+              <span class="dock-ask-label">Ask Nostos<span class="dock-ask-ellipsis">…</span></span>
+              <kbd class="dock-ask-key" aria-hidden="true">{{ launcher.shortcutLabel }}</kbd>
+            </button>
+          }
+          <!-- Feedback and Settings are utilities, not destinations: one hairline
+               sets them apart, and they are icon-only so the dock reads
+               Library / Brain / Studio first. The label stays in the DOM as the
+               accessible name and the tooltip carries it for the pointer. -->
+          <span class="dock-divider" aria-hidden="true"></span>
+          @if (feedbackUrl(); as feedbackHref) {
             <a
               class="dock-item dock-item-utility"
               [href]="feedbackHref"
               target="_blank"
               rel="noopener noreferrer"
               title="Send feedback"
-              aria-label="Send feedback"
               data-testid="dock-feedback"
             >
-              <nostos-icon name="paper-plane-tilt" [size]="20" weight="light"></nostos-icon>
+              <span class="dock-icon">
+                <nostos-icon name="paper-plane-tilt" [size]="20"></nostos-icon>
+              </span>
               <span class="label">Feedback</span>
             </a>
           }
@@ -128,12 +206,18 @@ function isNarrowViewport(): boolean {
             routerLink="/settings"
             (click)="handleDockClick('/settings', $event)"
             routerLinkActive="active"
+            #settingsRla="routerLinkActive"
             [class.pending]="pendingDestination() === '/settings'"
-            class="dock-item"
-            [class.dock-item-utility]="!!feedbackUrl()"
+            class="dock-item dock-item-utility"
             title="Settings"
           >
-            <nostos-icon name="gear-six" [size]="20" weight="light"></nostos-icon>
+            <span class="dock-icon">
+              <nostos-icon
+                name="gear-six"
+                [size]="20"
+                [weight]="isSelected('/settings', settingsRla.isActive) ? 'fill' : 'regular'"
+              ></nostos-icon>
+            </span>
             <span class="label">Settings</span>
           </a>
         }
@@ -144,7 +228,7 @@ function isNarrowViewport(): boolean {
     `
       :host {
         position: fixed;
-        bottom: 24px;
+        bottom: var(--dock-float-bottom);
         left: 50%;
         z-index: var(--layer-navigation);
         width: auto;
@@ -170,19 +254,26 @@ function isNarrowViewport(): boolean {
         position: relative;
         display: flex;
         align-items: center;
-        justify-content: center;
         gap: 2px;
-        padding: 3px 6px;
+        /* The bar's total height is the token the Ask Nostos panel opens above,
+           so the two can never drift. The 1px borders are outside it. */
+        box-sizing: border-box;
+        height: calc(var(--dock-bar-h) - 2px);
+        padding: 0 4px;
       }
 
+      /* The selected item's pill. It is one element that slides between items
+         (positioned by movePill), so a route change reads as motion rather than
+         two unrelated repaints. */
       .dock-pill {
         position: absolute;
-        bottom: 3px;
+        top: 4px;
+        bottom: 4px;
         left: 0;
-        z-index: 1;
-        height: 2px;
+        z-index: 0;
         width: 0;
-        background: var(--color-brand-accent);
+        border-radius: calc(var(--radius-dock) - 5px);
+        background: var(--dock-pill);
         opacity: 0;
         pointer-events: none;
         transition:
@@ -193,43 +284,49 @@ function isNarrowViewport(): boolean {
 
       .dock-item {
         position: relative;
+        z-index: 1;
         display: inline-flex;
-        min-width: 78px;
-        flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 4px;
-        padding: 8px 12px 7px;
+        gap: 7px;
+        height: 38px;
+        padding: 0 14px 0 12px;
         border: 0;
-        border-bottom: 2px solid transparent;
-        /* Links and the native More button must paint exactly the same at rest.
+        /* Links and the native buttons must paint exactly the same at rest.
            In particular, a button's default ButtonFace is not a dock state. */
         -webkit-appearance: none;
         appearance: none;
         background: transparent;
-        /* Concentric with the container: the bar's 3px padding is the gap
-           between the item box and the box edge, so the inner corner is the
-           outer one minus that gap. Without this the hover wash reads as a
-           square tile nested in a round box. */
-        border-radius: calc(var(--radius-dock) - 3px);
+        /* Concentric with the container: the item sits 5px inside the box edge
+           (4px bar inset + 1px border), so the inner corner is the outer one
+           minus that gap. */
+        border-radius: calc(var(--radius-dock) - 5px);
         color: var(--color-text-muted);
         cursor: pointer;
         font-family: 'Hanken Grotesk', sans-serif;
         font-size: inherit;
         line-height: inherit;
         text-decoration: none;
+        white-space: nowrap;
         transition:
           background-color var(--motion-fast) ease,
           color var(--motion-fast) ease,
           transform var(--motion-fast) var(--ease-out);
         touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .dock-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
 
       /* Touch browsers may retain :hover after a tap. More is not a route
          and therefore must not look selected after its sheet closes. */
       @media (hover: hover) {
         .dock-item:hover {
-          background: var(--bg-hover);
+          background: var(--dock-hover);
           color: var(--color-text-main);
         }
       }
@@ -238,62 +335,158 @@ function isNarrowViewport(): boolean {
         transform: scale(0.96);
       }
 
-      .dock-item:focus-visible {
+      .dock-item:focus-visible,
+      .dock-ask:focus-visible {
         /* Width comes from the shared token like every other ring in the app. The
-           COLOUR stays local and deliberately so: this dock's items include
-           destructive actions, and an accent-coloured ring distinguishes "this dock
-           item" from the neutral slate used everywhere else. That is a role
-           difference, not drift — the drift was the hardcoded width. */
+           COLOUR stays local and deliberately so: an accent-coloured ring
+           distinguishes "this dock item" from the neutral slate used everywhere
+           else. That is a role difference, not drift. */
         outline: var(--focus-ring-width) solid var(--color-accent);
         outline-offset: -2px;
       }
 
-      .dock-item.active {
-        border-bottom-color: transparent;
+      /* The selected item: the sliding pill paints behind it, so the item itself
+         stays transparent and only its ink changes. RouterLinkActive cannot
+         update until navigation commits; a pending item carries the user's
+         intent during that gap, and while one exists it outranks the outgoing
+         active item. */
+      .dock-item.pending,
+      .dock-bar:not(.has-pending) .dock-item.active {
         background: transparent;
-        /* Ink on light; porcelain on dark, matching the heading rule. */
-        color: var(--dock-item-active-ink);
-      }
-
-      /* RouterLinkActive cannot update until navigation commits. A pending item
-         carries the user's intent during that gap, so touch never returns to an
-         inert-looking dock between release and NavigationEnd. */
-      .dock-item.pending {
-        background: var(--bg-hover);
         color: var(--dock-item-active-ink);
       }
 
       /* The narrow-viewport More sheet's trigger while it is open. Deliberately
          not the active class: that one also owns the sliding route pill. */
       .dock-item-open {
-        background: var(--bg-hover);
+        background: var(--dock-hover);
         color: var(--dock-item-active-ink);
       }
 
-      /* Feedback and Settings are utilities, not destinations: one hairline
-         separates them from the primary trio, and their labels sit a touch
-         lighter so the dock still reads Library/Brain/Studio first. */
+      .label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.005em;
+        line-height: 1;
+      }
+
       .dock-divider {
-        align-self: stretch;
+        align-self: center;
+        flex: none;
         width: 1px;
-        margin: 7px 5px;
+        height: 22px;
+        margin: 0 5px;
         background: var(--dock-border);
       }
 
+      /* Utilities are square, icon-only buttons; the label is kept as the
+         accessible name. */
       .dock-item-utility {
-        min-width: 72px;
+        width: 38px;
+        padding: 0;
       }
 
       .dock-item-utility .label {
-        font-size: 0.64rem;
-        font-weight: 500;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
       }
 
-      .label {
-        font-size: 0.68rem;
-        font-weight: 600;
-        letter-spacing: 0.015em;
+      /* The Ask Nostos launcher: an inset field inside the bar. */
+      .dock-ask {
+        display: inline-flex;
+        flex: none;
+        align-items: center;
+        gap: 8px;
+        width: 236px;
+        height: 36px;
+        box-sizing: border-box;
+        margin: 0 1px;
+        padding: 0 8px 0 11px;
+        border: 1px solid var(--dock-border);
+        -webkit-appearance: none;
+        appearance: none;
+        border-radius: calc(var(--radius-dock) - 6px);
+        background: var(--dock-field);
+        color: var(--color-text-muted);
+        cursor: text;
+        font-family: 'Hanken Grotesk', sans-serif;
+        font-size: 0.82rem;
+        font-weight: 500;
         line-height: 1;
+        text-align: left;
+        white-space: nowrap;
+        transition:
+          border-color var(--motion-fast) ease,
+          color var(--motion-fast) ease,
+          background-color var(--motion-fast) ease;
+        touch-action: manipulation;
+      }
+
+      .dock-ask-glyph {
+        flex: none;
+        color: var(--color-brand-accent);
+      }
+
+      .dock-ask-label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .dock-ask-key {
+        flex: none;
+        padding: 4px 6px;
+        border: 1px solid var(--dock-border);
+        border-radius: 6px;
+        background: var(--dock-surface);
+        color: var(--color-text-muted);
+        font-family: inherit;
+        font-size: 0.66rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        line-height: 1;
+      }
+
+      @media (hover: hover) {
+        .dock-ask:hover {
+          border-color: var(--control-border-hover);
+          color: var(--color-text-main);
+        }
+      }
+
+      .dock-ask[aria-expanded='true'] {
+        border-color: var(--color-brand-accent);
+        background: var(--dock-surface);
+        color: var(--color-text-main);
+      }
+
+      /* Mid widths (tablets, split windows): the dock gives its width back.
+         Unselected destinations go icon-only (the tooltip still names them), the
+         selected one keeps its label, and the Ask field becomes a short pill. */
+      @media (max-width: 1199px) and (min-width: 769px) {
+        .dock-item:not(.dock-item-utility) {
+          padding: 0 11px;
+        }
+
+        .dock-bar.has-pending .dock-item:not(.pending) .label,
+        .dock-bar:not(.has-pending) .dock-item:not(.active) .label {
+          display: none;
+        }
+
+        .dock-ask {
+          width: auto;
+          padding: 0 13px 0 11px;
+        }
+
+        .dock-ask-ellipsis,
+        .dock-ask-key {
+          display: none;
+        }
       }
 
       @media (max-width: 768px) {
@@ -320,10 +513,8 @@ function isNarrowViewport(): boolean {
           box-shadow: var(--dock-shadow-rail);
           /* The rail's TOTAL height is the token the shell reserves for it, and it
              is set here rather than on the inner bar because this element owns the
-             remaining 1px border: sizing the bar left the dock 1px taller than the
-             reserve, which put it 1px over the last line of content. The inset is
-             part of the height on a notched phone, matching the shell's reserve.
-             "height" not "min-height": a floor lets natural content win. */
+             remaining 1px border. The inset is part of the height on a notched
+             phone, matching the shell's reserve. */
           box-sizing: border-box;
           height: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px));
         }
@@ -331,50 +522,97 @@ function isNarrowViewport(): boolean {
         .dock-bar {
           width: 100%;
           justify-content: space-around;
-          gap: 1px;
-          /* Fill the container, whose height is the reserved --dock-rail-h.
-             Content clearance and dock height are therefore one value rather than
-             two that can drift (they were 96px and 58px, leaving 38px of dead space
-             above the dock on every page). */
+          gap: 0;
           box-sizing: border-box;
           height: 100%;
-          padding: 3px 10px max(3px, env(safe-area-inset-bottom));
+          padding: 0 6px env(safe-area-inset-bottom, 0px);
+        }
+
+        /* On the rail the selected marker is a pill around the icon, not a
+           slab behind the whole item: five items share 390px, so a slab
+           would touch its neighbours. */
+        .dock-pill {
+          display: none;
         }
 
         .dock-item {
           min-width: 0;
+          height: 100%;
           min-height: 44px;
           flex: 1;
-          gap: 2px;
-          padding: 5px 4px 6px;
-          /* The phone rail is a full-bleed rectangle with square corners, so
-             there is no outer curve for these to be concentric with; keep the
-             app's default small radius (this is the mobile dock as it shipped). */
-          border-radius: var(--radius-sm);
+          flex-direction: column;
+          gap: 3px;
+          padding: 0;
+          border-radius: 0;
         }
 
-        .dock-item nostos-icon {
-          /* 20px icons: the desktop 0.9 scale (18px) is too small to read or
-             hit comfortably on a phone. */
-          transform: none;
+        .dock-icon {
+          width: 52px;
+          height: 30px;
+          border-radius: 999px;
+          transition:
+            background-color var(--motion-base) var(--ease-out),
+            color var(--motion-fast) ease;
         }
 
-        .label {
-          font-size: 0.7rem;
+        .dock-item.pending .dock-icon,
+        .dock-bar:not(.has-pending) .dock-item.active .dock-icon,
+        .dock-item-open .dock-icon {
+          background: var(--dock-pill);
         }
 
+        .dock-item-open {
+          background: transparent;
+        }
+
+        /* The hover wash belongs to the pill on touch, not the whole column. */
         .dock-item:hover {
-          transform: none;
+          background: transparent;
         }
 
         .dock-item:active {
-          transform: scale(0.96);
+          transform: none;
+        }
+
+        .dock-item:active .dock-icon {
+          transform: scale(0.94);
+        }
+
+        .label {
+          /* 0.7rem is the floor: below ~11px the labels stop being readable at
+             arm's length (mobile-dock.spec). */
+          font-size: 0.7rem;
+          font-weight: 500;
+          letter-spacing: 0.01em;
+        }
+
+        .dock-item.pending .label,
+        .dock-bar:not(.has-pending) .dock-item.active .label {
+          font-weight: 650;
+        }
+
+        /* Ask Nostos is an action, not a place: a filled tile in the CTA ink,
+           the same shape as the selected pill so the rail stays one system. */
+        .dock-ask-tile {
+          background: var(--cta-surface);
+          color: var(--cta-ink);
+          box-shadow: var(--button-shadow-primary);
+        }
+
+        .dock-item-ask {
+          color: var(--color-text-main);
+        }
+
+        .dock-item-ask .label {
+          font-weight: 650;
         }
       }
 
       @media (prefers-reduced-motion: reduce) {
         :host,
         .dock-item,
+        .dock-icon,
+        .dock-ask,
         .dock-pill {
           transition: none;
         }
@@ -390,6 +628,7 @@ export class AppDockComponent {
 
   readonly sheet = inject(UtilitySheetService);
   readonly feedbackUrl = inject(FeedbackLinkService).url;
+  readonly launcher = inject(AssistantLauncherService);
 
   /** Destination chosen by the pointer but not yet committed by the router. */
   readonly pendingDestination = signal<string | null>(null);
@@ -408,7 +647,32 @@ export class AppDockComponent {
         this.movePill();
       }
     });
-    afterNextRender(() => this.movePill());
+    // While the dock is on screen it carries the Ask Nostos launcher, so the
+    // assistant's own floating capsule stands down.
+    const detachLauncher = this.launcher.attachDock();
+    let resizeObserver: ResizeObserver | null = null;
+    inject(DestroyRef).onDestroy(() => {
+      detachLauncher();
+      resizeObserver?.disconnect();
+    });
+
+    afterNextRender(() => {
+      this.movePill();
+      // The bar's contents change width without a route change: the Ask
+      // launcher and Feedback appear once their answers arrive, and the
+      // webfont settles after first paint. Re-measure whenever the bar does.
+      const bar = this.dockBar()?.nativeElement;
+      if (bar && typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => this.movePill());
+        resizeObserver.observe(bar);
+      }
+    });
+  }
+
+  /** The item that reads as selected: the pending one, else the active route. */
+  isSelected(prefix: string, routeActive: boolean): boolean {
+    const pending = this.pendingDestination();
+    return pending !== null ? pending === prefix : routeActive;
   }
 
   @HostListener('window:resize')
@@ -439,8 +703,8 @@ export class AppDockComponent {
       const barRect = bar.getBoundingClientRect();
       const itemRect = active.getBoundingClientRect();
       pill.style.opacity = '1';
-      pill.style.width = `${Math.max(0, itemRect.width - 24)}px`;
-      pill.style.transform = `translateX(${itemRect.left - barRect.left + 12}px)`;
+      pill.style.width = `${itemRect.width}px`;
+      pill.style.transform = `translateX(${itemRect.left - barRect.left}px)`;
     });
   }
 

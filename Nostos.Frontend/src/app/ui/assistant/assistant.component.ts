@@ -28,6 +28,7 @@ import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { AssistantChangesetCardComponent } from './changeset-card/assistant-changeset-card.component';
+import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 
 /**
  * How close to the end of the transcript still counts as "reading the newest
@@ -244,6 +245,7 @@ export class AssistantComponent {
   private readonly status = inject(AssistantStatusService);
   private readonly router = inject(Router, { optional: true });
   private readonly preferences = inject(LibraryPreferencesService);
+  private readonly launcher = inject(AssistantLauncherService);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly composer = viewChild<ElementRef<HTMLTextAreaElement>>('composer');
   /** The transcript's scroll container. */
@@ -293,9 +295,14 @@ export class AssistantComponent {
    * server can run it (available). The panel and the capsule share this one
    * gate, so neither can appear without the other's precondition.
    */
-  readonly visible = computed(
-    () => this.preferences.assistantEnabled() && this.status.available(),
-  );
+  readonly visible = this.launcher.available;
+
+  /**
+   * The workspace dock carries the launcher, so the floating capsule stands
+   * down and the compact panel opens centred above the dock instead of from the
+   * corner. Routes without a dock (the reader) keep the capsule.
+   */
+  readonly docked = this.launcher.dockHosted;
 
   /** Product-level voice preference; provider configuration stays server-side. */
   readonly voiceTranscriptionEnabled = this.preferences.assistantVoiceEnabled;
@@ -330,7 +337,7 @@ export class AssistantComponent {
   );
 
   /** A quiet, platform-appropriate hint shown in the collapsed desktop pill. */
-  readonly shortcutLabel = this.resolveShortcutLabel();
+  readonly shortcutLabel = this.launcher.shortcutLabel;
 
   /**
    * Desktop-only focus workspace. This changes only the shell geometry; the
@@ -394,8 +401,13 @@ export class AssistantComponent {
       this.open();
     });
 
+    // A launcher outside this component (the dock) toggles through the
+    // launcher service; the lifecycle stays here.
+    const launcherSubscription = this.launcher.toggleRequested.subscribe(() => this.toggle());
+
     this.destroyRef.onDestroy(() => {
       surfaceOpenSubscription.unsubscribe();
+      launcherSubscription.unsubscribe();
       this.bodyObserver?.disconnect();
       this.stopViewportTracking();
     });
@@ -651,6 +663,9 @@ export class AssistantComponent {
     if (!this.assistant.isOpen()) return;
     const target = event.target as Node | null;
     if (target && this.host.nativeElement.contains(target)) return;
+    // Pressing a launcher is not an outside click: closing here would let the
+    // launcher's own click reopen the panel straight away.
+    if (target instanceof Element && target.closest(`[${ASSISTANT_LAUNCHER_ATTR}]`)) return;
     this.close();
   }
 
@@ -812,13 +827,6 @@ export class AssistantComponent {
 
     this.viewportHeightCss.set(`${Math.max(1, Math.round(viewport.height))}px`);
     this.viewportTopCss.set(`${Math.max(0, Math.round(viewport.offsetTop))}px`);
-  }
-
-  private resolveShortcutLabel(): string {
-    if (typeof navigator === 'undefined') return 'Ctrl J';
-    return /Macintosh|Mac OS X|iPhone|iPad|iPod/i.test(navigator.userAgent)
-      ? '⌘ J'
-      : 'Ctrl J';
   }
 
   private isPhoneViewport(): boolean {
