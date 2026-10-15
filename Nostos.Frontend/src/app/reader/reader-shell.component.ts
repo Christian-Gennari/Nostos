@@ -873,7 +873,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       active
       && typeof active.closest === 'function'
       && active.closest(
-        '.reader-header, .reader-toolbar, .notes-panel, .toc-panel, .typo-panel, .reader-search-panel',
+        '.reader-header, .reader-toolbar, .notes-panel, .toc-panel, .typo-panel, .reader-search-panel, .read-aloud-bar',
       )
     ) {
       active.blur();
