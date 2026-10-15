@@ -164,6 +164,9 @@ export interface LinkableBookDto {
   author: string | null;
   workId?: string | null;
   editionCount?: number;
+  /** The book's own format, for a candidate that is a single edition. */
+  type?: string;
+  fileName?: string | null;
 }
 
 export interface CreateBookDto {

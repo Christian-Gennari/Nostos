@@ -144,6 +144,12 @@
                 @if (candidate.author) {
                 <span class="manage-member-author nostos-choice-row__sub">{{ candidate.author }}</span>
                 }
+                @if (candidate.format) {
+                <span class="manage-member-format nostos-choice-row__meta">
+                  <nostos-icon [concept]="candidate.formatIcon ?? 'ebook'" [size]="12" aria-hidden="true"></nostos-icon>
+                  {{ candidate.format }}
+                </span>
+                }
               </span>
               @if ((candidate.editionCount || 1) > 1) {
               <span class="manage-link-group-flag">{{ candidate.editionCount }} editions</span>

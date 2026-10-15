@@ -23,6 +23,12 @@ export interface WorkMember {
   formatIcon?: 'audiobook' | 'ebook' | 'pdf' | 'physical';
 }
 
+/** A link candidate with its format named the way a member row names it. */
+export interface LinkCandidate extends LinkableBookDto {
+  format?: string;
+  formatIcon?: WorkMember['formatIcon'];
+}
+
 /**
  * The advanced work-membership surface: which books are editions of the same
  * topicual work, and the explicit override for when automatic grouping got it
@@ -55,7 +61,7 @@ export class EditionsModal {
   members = input<WorkMember[]>([]);
 
   /** Books that could be linked in, already deduplicated by work. */
-  candidates = input<LinkableBookDto[]>([]);
+  candidates = input<LinkCandidate[]>([]);
 
   /** The book being viewed: named in the copy and marked in the list. */
   currentBookId = input<string | null>(null);

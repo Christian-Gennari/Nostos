@@ -334,6 +334,8 @@ export class BookDetailStore {
               author: candidate.author,
               workId: candidate.workId,
               editionCount: candidate.editionCount,
+              type: candidate.type,
+              fileName: candidate.fileName,
             });
           }
 
