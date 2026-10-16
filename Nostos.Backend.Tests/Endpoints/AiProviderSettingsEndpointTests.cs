@@ -68,10 +68,10 @@ public sealed class AiProviderSettingsEndpointTests
         body.Stt.Model.Should().Be(SttModel);
         body.Stt.HasKey.Should().BeFalse();
 
-        // Embeddings ship unconfigured: a model default, no endpoint, no key.
+        // Embeddings ship unconfigured: no model, no endpoint, no key.
         body.Embedding.Should().NotBeNull();
         body.Embedding!.BaseUrl.Should().BeEmpty();
-        body.Embedding.Model.Should().Be("alibaba/qwen3-embedding-0-6b");
+        body.Embedding.Model.Should().BeEmpty();
         body.Embedding.HasKey.Should().BeFalse();
     }
 

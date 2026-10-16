@@ -21,11 +21,12 @@ public sealed class SpeechOptions
     public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>
-    /// Model id sent verbatim. The <c>groq/</c> prefix is mandatory: a bare
-    /// <c>whisper-1</c> routes to an uncredentialed <c>openai</c> provider and
-    /// 400s. This value is never normalized or rewritten.
+    /// Model id sent verbatim and never normalized or rewritten, because
+    /// providers name the same model differently (<c>whisper-1</c> on OpenAI,
+    /// <c>groq/whisper-large-v3-turbo</c> through some gateways). Empty by
+    /// default for the same reason.
     /// </summary>
-    public string Model { get; set; } = "groq/whisper-large-v3-turbo";
+    public string Model { get; set; } = string.Empty;
 
     /// <summary>Name of the environment variable holding the bearer token.</summary>
     public string ApiKeyEnvironmentVariable { get; set; } = "NOSTOS_STT_TOKEN";
