@@ -58,8 +58,7 @@ Keep different kinds of books in one collection without flattening them into the
 - **Free-source acquisition:** Search and import supported public-domain material from Project Gutenberg and LibriVox. Imported books become ordinary Nostos library items rather than remaining dependent on the source.
 
 <div align="center">
-<img width="1919" height="916" alt="image" src="https://github.com/user-attachments/assets/b145d36c-75ad-4468-a3b9-34b08cffe646" />
-
+  <img width="2880" height="1800" alt="Nostos Library with collections and book covers" src="docs/screenshots/library.png" />
 </div>
 
 <details>
@@ -90,6 +89,10 @@ Nostos includes readers for the formats it stores, so notes and progress can sta
 - **Audiobook player:** Listen to chaptered audiobooks with saved playback progress.
 - **Contextual notes:** Keep thoughts attached to the book they came from instead of moving them into a disconnected notes folder.
 - **E-reader highlights:** Import Kobo databases or KOReader sidecars from Settings → Library & data. Review destinations, match an existing book or add a missing one, and undo an import. Repeat imports keep confirmed matches and avoid duplicates.
+
+<div align="center">
+  <img width="2880" height="1800" alt="Nostos EPUB reader open at the first chapter of Moby-Dick" src="docs/screenshots/reader.png" />
+</div>
 
 ---
 
