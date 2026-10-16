@@ -1191,6 +1191,8 @@ app-note-card.is-flashed {
    page; revealing them never resizes the rendition or the PDF scrollport. */
 .reader-layout.immersive {
   --header-height: 72px;
+  /* The pager's height above the bottom safe area; panels end above it. */
+  --pager-height: 64px;
   background: var(--bg-surface);
 }
 
@@ -1278,7 +1280,7 @@ app-note-card.is-flashed {
 .reader-layout.immersive .reader-toolbar {
   bottom: 0;
   z-index: 45;
-  min-height: 64px;
+  min-height: var(--pager-height);
   padding:
     0
     max(1rem, env(safe-area-inset-right, 0px))
@@ -1407,7 +1409,12 @@ app-note-card.is-flashed {
 .reader-layout.immersive .typo-panel {
   padding: 1.25rem;
   gap: 1rem;
-  max-height: calc(100dvh - var(--header-height) - env(safe-area-inset-top, 0px) - 1.5rem);
+  /* Open panels pin the pager on screen, and the pager is drawn above them:
+     the panel ends above it and scrolls inside itself when it cannot fit. */
+  max-height: calc(
+    100dvh - var(--header-height) - env(safe-area-inset-top, 0px) - var(--pager-height) -
+      env(safe-area-inset-bottom, 0px) - 1.5rem
+  );
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1415,6 +1422,7 @@ app-note-card.is-flashed {
 @media (max-width: 768px) {
   .reader-layout.immersive {
     --header-height: 64px;
+    --pager-height: 60px;
   }
 
   .reader-layout.audio-immersive {
@@ -1481,7 +1489,7 @@ app-note-card.is-flashed {
   }
 
   .reader-layout.immersive .reader-toolbar {
-    min-height: calc(60px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(var(--pager-height) + env(safe-area-inset-bottom, 0px));
     padding-inline: max(0.5rem, env(safe-area-inset-right, 0px)) max(0.5rem, env(safe-area-inset-left, 0px));
   }
 

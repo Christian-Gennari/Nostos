@@ -87,10 +87,21 @@ async function openViewSettings(page: Page) {
  * The phone panel has to fit a phone: short enough for a screen whose browser
  * bars are showing, with no choice clipped or pushed out sideways.
  */
-async function expectCompactPanel(page: Page, maxHeight = 470) {
+/**
+ * The panel stays compact, unclipped and clear of the pager, which open panels
+ * pin on screen and which is drawn above them. With `mayScroll`, a panel taller
+ * than the room between the header and the pager scrolls inside itself; its
+ * last row must still be reachable.
+ *
+ * 500 at 390px: the panel gained its Appearance / Page / Text headings in
+ * 9537516c after the 470 budget was set; the PDF panel measured 489px.
+ */
+async function expectCompactPanel(page: Page, maxHeight = 500, mayScroll = false) {
   const panel = page.locator('[data-testid="typo-panel"]');
   const box = (await panel.boundingBox())!;
   expect(box.height, 'panel height').toBeLessThanOrEqual(maxHeight);
+  const pager = await page.getByTestId('reader-chrome-bottom').boundingBox();
+  if (pager) expect(box.y + box.height, 'panel ends above the pager').toBeLessThanOrEqual(pager.y + 1);
   const clipped = await panel.evaluate((el) => {
     const outer = el.getBoundingClientRect();
     return [...el.querySelectorAll<HTMLElement>('.seg-opt, .typo-step, .typo-step-value, .typo-label')]
@@ -101,7 +112,20 @@ async function expectCompactPanel(page: Page, maxHeight = 470) {
       .map((c) => c.textContent?.trim());
   });
   expect(clipped, 'clipped controls').toEqual([]);
-  expect(await panel.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+  if (!mayScroll) {
+    expect(await panel.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+    return;
+  }
+  const lastRowVisible = await panel.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    const rows = el.querySelectorAll<HTMLElement>('.typo-row');
+    const last = rows[rows.length - 1]?.getBoundingClientRect();
+    const outer = el.getBoundingClientRect();
+    const visible = !!last && last.bottom <= outer.bottom + 1;
+    el.scrollTop = 0;
+    return visible;
+  });
+  expect(lastRowVisible, 'last row reachable by scrolling the panel').toBe(true);
 }
 
 async function chooseTheme(page: Page, label: 'Light' | 'Dark') {
@@ -196,10 +220,12 @@ export function readerThemeSwitchSpecs(viewportName: 'desktop' | 'mobile') {
 
   if (viewportName === 'mobile') {
     // 360px is the narrowest width with a label column; below it rows stack.
-    // 480 at 360px: the budget was set at 470 before the phone panel gained its
-    // "Read aloud" row (shown on very narrow screens instead of the header
-    // button), which measured 478px on a 780px-tall viewport.
-    for (const [width, maxHeight] of [[360, 480], [320, 620]] as const) {
+    // 560 at 360px: the phone panel's "Read aloud" row (shown on very narrow
+    // screens instead of the header button) and then its section headings
+    // (9537516c) took the PDF panel to 549px on a 780px-tall viewport. At 320px
+    // the stacked PDF panel (654px) is taller than the room above the pager, so
+    // there it scrolls inside itself instead of running under the pager.
+    for (const [width, maxHeight, mayScroll] of [[360, 560, false], [320, 660, true]] as const) {
       test(`View settings stays compact and unclipped at ${width}px`, async ({ page }) => {
         await page.setViewportSize({ width, height: 780 });
         for (const id of [epubId, pdfId]) {
@@ -208,7 +234,7 @@ export function readerThemeSwitchSpecs(viewportName: 'desktop' | 'mobile') {
           await page.waitForTimeout(800);
           await openViewSettings(page);
           await chooseTheme(page, 'Dark');
-          await expectCompactPanel(page, maxHeight);
+          await expectCompactPanel(page, maxHeight, mayScroll);
           await snap(page, `reader-theme-${id === epubId ? 'epub' : 'pdf'}-panel-dark-${width}`);
           await chooseTheme(page, 'Light');
         }
