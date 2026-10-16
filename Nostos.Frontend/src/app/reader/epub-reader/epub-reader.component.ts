@@ -82,6 +82,21 @@ import {
   type EpubTypography,
 } from './epub-typography';
 import { visibleEpubExcerpt } from './epub-visible-excerpt';
+import {
+  cfiRangeEnds,
+  cfiSpineIndex,
+  cutSection,
+  fragmentHtml,
+  passageEnds,
+  passagePlainText,
+} from './epub-passage';
+import {
+  PassageDraft,
+  PassageMark,
+  closingOf,
+  countWords,
+  excerptOf,
+} from '../passage/passage-mark';
 
 export {
   resolveGroundedEpubResourceHref,
@@ -2247,6 +2262,85 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   discardHighlight(): void {
     this.annotationManager?.discardHighlight();
     this.assistantSelection.set(null);
+  }
+
+  /**
+   * The selection on offer as one end of a passage (issue #1014). Null when
+   * nothing is selected or its location cannot be read.
+   */
+  passageMarkFromSelection(): PassageMark | null {
+    const pending = this.annotationManager?.pendingSelection();
+    if (!pending) return null;
+    const ends = cfiRangeEnds(pending.cfiRange);
+    if (!ends) return null;
+    return {
+      format: 'epub',
+      start: ends.start,
+      end: ends.end,
+      excerpt: excerptOf(pending.selectedText),
+      label: this.chapterLabelFor(ends.start),
+    };
+  }
+
+  /**
+   * The passage between two marks, in book order whichever was made first:
+   * its text lifted from every section between them without rendering one.
+   * Null when either end can no longer be found in this book.
+   */
+  async buildPassage(a: PassageMark, b: PassageMark): Promise<PassageDraft | null> {
+    if (a.format !== 'epub' || b.format !== 'epub' || !this.epubBook) return null;
+    const { start, end } = passageEnds(a, b);
+    const first = cfiSpineIndex(start);
+    const last = cfiSpineIndex(end);
+    if (!Number.isInteger(first) || !Number.isInteger(last) || last < first) return null;
+
+    const html: string[] = [];
+    const text: string[] = [];
+    for (let index = first; index <= last; index++) {
+      const part = await this.withSectionDocument(index, (document) => {
+        const fragment = cutSection(
+          document,
+          index === first ? start : null,
+          index === last ? end : null,
+        );
+        return fragment ? { html: fragmentHtml(fragment), text: passagePlainText(fragment) } : null;
+      });
+      if (!part) {
+        // The ends must resolve; a section between them that cannot be read
+        // (missing, non-linear) is left out rather than failing the passage.
+        if (index === first || index === last) return null;
+        continue;
+      }
+      if (part.text) {
+        html.push(part.html);
+        text.push(part.text);
+      }
+    }
+
+    const plain = text.join('\n\n').trim();
+    if (!plain) return null;
+    return {
+      anchorKind: 'epub_cfi',
+      start,
+      end,
+      title: this.chapterLabelFor(start) ?? excerptOf(plain, 48),
+      html: html.join(''),
+      text: plain,
+      words: countWords(plain),
+      opening: excerptOf(plain, 140),
+      closing: closingOf(plain, 140),
+    };
+  }
+
+  /** The TOC entry for the section a CFI points into. */
+  private chapterLabelFor(cfi: string): string | null {
+    try {
+      const index = cfiSpineIndex(cfi);
+      const href = this.epubSpineSources().find((item) => item.index === index)?.href ?? null;
+      return findTocItemForHref(this.toc(), href)?.label?.trim() || null;
+    } catch {
+      return null;
+    }
   }
 
   ngOnDestroy(): void {

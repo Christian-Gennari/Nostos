@@ -1,8 +1,25 @@
-<div class="note-card-container" [class.editing]="isEditing" [class.is-passage]="layout === 'passage'">
+<div
+  class="note-card-container"
+  [class.editing]="isEditing"
+  [class.is-passage]="layout === 'passage'"
+  [class.is-kept-passage]="isPassageNote"
+>
   @if (isEditing) {
 
   <div class="edit-box" (click)="$event.stopPropagation()">
-    @if (note.selectedText || editSelectedText) {
+    @if (isPassageNote) {
+    <label class="visually-hidden" [attr.for]="'passage-title-' + note.id">Passage title</label>
+    <input
+      appInput
+      controlSize="compact"
+      class="edit-passage-title"
+      [id]="'passage-title-' + note.id"
+      [(ngModel)]="editPassageTitle"
+      maxlength="300"
+      placeholder="Passage title"
+      data-testid="passage-edit-title"
+    />
+    } @else if (note.selectedText || editSelectedText) {
     <textarea
       appTextarea
       controlSize="compact"
@@ -12,7 +29,7 @@
       rows="2"
     ></textarea>
     }
-    @if (note.selectedText) {
+    @if (note.selectedText || isPassageNote) {
     <!-- The highlight's pen (issue #861), the same four dots as the reader's
          own pen row. Shown for any highlight, imported ones included. -->
     <div class="edit-pens" role="group" aria-label="Highlight colour">
@@ -47,6 +64,25 @@
   } @else {
 
   <div class="content-row">
+    @if (isPassageNote) {
+    <!-- A passage (issue #1014): a title to recognise it by, its size, and
+         its opening. It is read in the passage viewer, not in the card. -->
+    <button
+      type="button"
+      class="passage-head"
+      data-testid="passage-card-read"
+      [attr.aria-label]="'Read passage: ' + (note.passageTitle || 'Passage')"
+      (click)="readPassage($event)"
+    >
+      <span class="passage-glyph" aria-hidden="true">
+        <nostos-icon concept="passage" [size]="16"></nostos-icon>
+      </span>
+      <span class="passage-heading">
+        <span class="passage-title" data-testid="passage-card-title">{{ note.passageTitle || 'Passage' }}</span>
+        <span class="passage-size">{{ passageSize }}</span>
+      </span>
+    </button>
+    }
     <div class="collapsible-body" [class.collapsed]="shouldShowExpandBtn && !isExpanded">
       @if (note.selectedText) {
       <!-- The quote rule is drawn in the highlight's pen (issue #861), so a
@@ -59,7 +95,7 @@
         @if (penColour; as pen) {
         <span class="visually-hidden">{{ pen.label }} highlight</span>
         }
-        @if (layout === 'passage') {
+        @if (layout === 'passage' || isPassageNote) {
         <p class="quote-text">{{ note.selectedText }}</p>
         } @else {
         <p class="quote-text">&ldquo;{{ note.selectedText }}&rdquo;</p>
@@ -71,7 +107,7 @@
         [innerHTML]="note.content | noteFormat : topicMap"
         (click)="onContentClick($event)"
       ></p>
-      } @else if (layout !== 'passage') {
+      } @else if (layout !== 'passage' && !isPassageNote) {
       <p class="note-meta-placeholder">No additional comment</p>
       }
     </div>
@@ -131,6 +167,18 @@
         </a>
         }
       </div>
+
+      @if (isPassageNote) {
+      <button
+        type="button"
+        class="passage-read"
+        data-testid="passage-card-read-button"
+        (click)="readPassage($event)"
+      >
+        Read passage
+        <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
+      </button>
+      }
 
       @if (actionsTemplate) {
       <div class="note-actions custom-actions">

@@ -1,5 +1,5 @@
 // Nostos.Frontend/src/app/ui/note-card.component/note-card.component.ts
-import { Component, EventEmitter, Input, Output, TemplateRef } from '@angular/core';
+import { Component, EventEmitter, Input, Output, TemplateRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -10,7 +10,9 @@ export interface NoteSourceNavigation {
   label: 'Return to passage' | 'Open book';
 }
 
-import { Note, formatAudioTime } from '../../core/dtos/note.dtos';
+import { Note, formatAudioTime, isPassage, passageSizeLabel } from '../../core/dtos/note.dtos';
+import { PassageViewerRequest, PassageViewerService } from '../passage-viewer/passage-viewer.service';
+import { InputDirective } from '../form-control/form-control.directive';
 import {
   HIGHLIGHT_COLOURS,
   HighlightColour,
@@ -27,7 +29,7 @@ import { TextareaDirective } from '../form-control/form-control.directive';
 @Component({
   selector: 'app-note-card',
   standalone: true,
-  imports: [TextareaDirective, 
+  imports: [TextareaDirective, InputDirective,
     CommonModule,
     FormsModule,
     NostosIconComponent,
@@ -61,6 +63,12 @@ export class NoteCardComponent {
    * Set by the audio reader only; null shows nothing.
    */
   @Input() audioTime: number | null = null;
+  /**
+   * How the passage viewer opened from this card behaves (issue #1014). The
+   * reader passes its own "Open in book", which turns the open book instead of
+   * reloading it.
+   */
+  @Input() passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> | null = null;
   @Input() actionsTemplate: TemplateRef<unknown> | null = null;
   @Input() actionsContext: Record<string, unknown> = {};
 
@@ -71,14 +79,19 @@ export class NoteCardComponent {
     content: string;
     selectedText?: string;
     highlightColour?: HighlightColour;
+    /** Present only when a passage's title was changed in this edit. */
+    passageTitle?: string;
   }>();
   @Output() delete = new EventEmitter<string>();
   @Output() topicClick = new EventEmitter<string>();
   @Output() quoteClick = new EventEmitter<void>();
   @Output() cardClick = new EventEmitter<void>();
 
+  private readonly passageViewer = inject(PassageViewerService);
+
   isEditing = false;
   editContent = '';
+  editPassageTitle = '';
   editSelectedText = '';
   /** The pen picked in the editor; a highlight's colour is changed here (#861). */
   editColour: HighlightColour = noteHighlightColour({});
@@ -95,6 +108,20 @@ export class NoteCardComponent {
     if (!this.note.selectedText || this.note.highlightColour === undefined) return null;
     const colour = noteHighlightColour(this.note);
     return HIGHLIGHT_COLOURS.find((option) => option.id === colour) ?? null;
+  }
+
+  /** A passage (issue #1014): its own card, read in the passage viewer. */
+  get isPassageNote(): boolean {
+    return isPassage(this.note);
+  }
+
+  get passageSize(): string {
+    return passageSizeLabel(this.note);
+  }
+
+  readPassage(event?: Event): void {
+    event?.stopPropagation();
+    this.passageViewer.open(this.note.id, this.passageViewerOptions ?? {});
   }
 
   get audioTimeLabel(): string | null {
@@ -117,6 +144,8 @@ export class NoteCardComponent {
   readonly PASSAGE_COLLAPSE_THRESHOLD = 4000;
   get shouldShowExpandBtn(): boolean {
     if (this.isEditing) return false;
+    // A passage shows only its opening; the viewer is where it is read.
+    if (this.isPassageNote) return false;
 
     // A quote is the reason the note exists and is set as the card's hero, so it
     // is not truncated merely for existing: collapsing a normal quotation buries
@@ -146,6 +175,7 @@ export class NoteCardComponent {
     this.editContent = this.note.content;
     this.editSelectedText = this.note.selectedText || ''; // Initialize quote editor
     this.editColour = noteHighlightColour(this.note);
+    this.editPassageTitle = this.note.passageTitle ?? '';
     this.isEditing = true;
     this.isExpanded = true;
   }
@@ -162,6 +192,23 @@ export class NoteCardComponent {
     event?.stopPropagation();
     const cleanContent = this.editContent.trim();
     const cleanQuote = this.editSelectedText.trim();
+
+    if (this.isPassageNote) {
+      // A passage's text and ends are fixed; its title, note and pen are not.
+      const title = this.editPassageTitle.trim();
+      const titleChanged = !!title && title !== (this.note.passageTitle ?? '');
+      const penChanged = this.editColour !== noteHighlightColour(this.note);
+      if (titleChanged || penChanged || cleanContent !== this.note.content) {
+        this.update.emit({
+          id: this.note.id,
+          content: cleanContent,
+          ...(titleChanged ? { passageTitle: title } : {}),
+          ...(penChanged ? { highlightColour: this.editColour } : {}),
+        });
+      }
+      this.isEditing = false;
+      return;
+    }
 
     // Check if either field changed
     const contentChanged = cleanContent !== this.note.content;

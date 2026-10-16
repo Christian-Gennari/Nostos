@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 
 import { NoteCardComponent } from './note-card.component';
 import type { Note } from '../../core/dtos/note.dtos';
+import { PassageViewerService } from '../passage-viewer/passage-viewer.service';
 
 describe('NoteCard source navigation', () => {
   let fixture: ComponentFixture<NoteCardComponent>;
@@ -286,5 +287,71 @@ describe('NoteCard audio time (issue #906)', () => {
 
     expect(time()).toBeNull();
     expect(fixture.nativeElement.querySelector('.note-metadata .meta-separator')).toBeNull();
+  });
+});
+
+describe('NoteCard passage (issue #1014)', () => {
+  let fixture: ComponentFixture<NoteCardComponent>;
+  let viewer: PassageViewerService;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoteCardComponent],
+      providers: [provideRouter([])],
+    }).compileComponents();
+
+    viewer = TestBed.inject(PassageViewerService);
+    fixture = TestBed.createComponent(NoteCardComponent);
+    fixture.componentInstance.note = {
+      id: 'passage-1',
+      bookId: 'book-1',
+      content: 'Reread every year.',
+      selectedText: '“Even this must have a preface—that is, a literary preface,” laughed Ivan…',
+      createdAt: '2026-10-16T00:00:00Z',
+      kind: 'passage',
+      passageTitle: 'The Grand Inquisitor',
+      passageEnd: 'epubcfi(/6/80!/4/112/1:285)',
+      passageWordCount: 9262,
+      sourceAnchorKind: 'epub_cfi',
+      sourceAnchorValue: 'epubcfi(/6/80!/4/2/1:0)',
+      anchorVerified: true,
+      highlightColour: 'blue',
+    } satisfies Note;
+  });
+
+  it('leads with its title and size and never offers to unfold the text in place', () => {
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="passage-card-title"]')?.textContent).toBe('The Grand Inquisitor');
+    expect(el.querySelector('.passage-size')?.textContent).toBe('9,262 words · 37 min');
+    expect(el.querySelector('.quote-text')?.textContent).toContain('Even this must have a preface');
+    expect(el.querySelector('.expand-btn')).toBeNull();
+    expect(el.querySelector('.note-meta-placeholder')).toBeNull();
+  });
+
+  it('opens the passage viewer with the options its host gave it', () => {
+    const openInBook = vi.fn();
+    fixture.componentInstance.passageViewerOptions = { openInBook };
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[data-testid="passage-card-read-button"]') as HTMLButtonElement).click();
+
+    expect(viewer.request()).toEqual({ noteId: 'passage-1', openInBook });
+  });
+
+  it('edits the title, note and pen, and never sends the opening back as the text', () => {
+    const emitted: unknown[] = [];
+    fixture.componentInstance.update.subscribe((event) => emitted.push(event));
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.edit-quote-input')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="passage-edit-title"]')).not.toBeNull();
+
+    fixture.componentInstance.editPassageTitle = 'The Inquisitor';
+    fixture.componentInstance.editContent = 'Reread every year.';
+    fixture.componentInstance.saveEdit();
+
+    expect(emitted).toEqual([{ id: 'passage-1', content: 'Reread every year.', passageTitle: 'The Inquisitor' }]);
   });
 });

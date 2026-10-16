@@ -1,6 +1,8 @@
 import {
   Note,
   formatAudioTime,
+  isPassage,
+  passageSizeLabel,
   importedNoteLocation,
   noteAudioSeconds,
   noteNavigationTarget,
@@ -179,5 +181,25 @@ describe('audio note time (issue #906)', () => {
     expect(formatAudioTime(3599)).toBe('59:59');
     expect(formatAudioTime(3600)).toBe('1:00:00');
     expect(formatAudioTime(57_540)).toBe('15:59:00');
+  });
+});
+
+describe('passageSizeLabel (issue #1014)', () => {
+  it('names a passage by its words, its pages or its time', () => {
+    expect(passageSizeLabel({ kind: 'passage', passageWordCount: 9262, sourceAnchorKind: 'epub_cfi' })).toBe(
+      '9,262 words · 37 min',
+    );
+    expect(passageSizeLabel({ kind: 'passage', sourceAnchorKind: 'pdf_page', sourceAnchorValue: '241', passageEnd: '256' })).toBe(
+      'Pages 241–256',
+    );
+    expect(passageSizeLabel({ kind: 'passage', sourceAnchorKind: 'pdf_page', sourceAnchorValue: '12', passageEnd: '12' })).toBe(
+      'Page 12',
+    );
+    expect(
+      passageSizeLabel({ kind: 'passage', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '3600', passageEnd: '5400' }),
+    ).toBe('1:00:00–1:30:00 · 30:00');
+    expect(isPassage({ kind: 'passage' })).toBe(true);
+    expect(isPassage({ kind: 'note' })).toBe(false);
+    expect(isPassage({})).toBe(false);
   });
 });

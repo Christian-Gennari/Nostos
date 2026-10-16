@@ -685,6 +685,12 @@ export class EpubAnnotationManager {
     });
   }
 
+  /** The selection on offer, if any, as its location and text (issue #1014). */
+  pendingSelection(): { cfiRange: string; selectedText: string } | null {
+    const pending = this.pendingHighlight;
+    return pending ? { cfiRange: pending.cfiRange, selectedText: pending.selectedText } : null;
+  }
+
   discardHighlight(): void {
     this.removePendingAnnotation();
     this.pendingHighlight?.contents.window.getSelection()?.removeAllRanges();

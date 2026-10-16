@@ -158,6 +158,7 @@ import pencilSimple from '@phosphor-icons/core/regular/pencil-simple.svg';
 import play from '@phosphor-icons/core/regular/play.svg';
 import plus from '@phosphor-icons/core/regular/plus.svg';
 import quotes from '@phosphor-icons/core/regular/quotes.svg';
+import scroll from '@phosphor-icons/core/regular/scroll.svg';
 import scan from '@phosphor-icons/core/regular/scan.svg';
 import sidebarSimple from '@phosphor-icons/core/regular/sidebar-simple.svg';
 import slidersHorizontal from '@phosphor-icons/core/regular/sliders-horizontal.svg';
@@ -283,6 +284,7 @@ export const NOSTOS_ICONS = {
   'play': { regular: play, fill: playFill, },
   'plus': { regular: plus, thin: plusThin, light: plusLight, },
   'quotes': { regular: quotes, },
+  'scroll': { regular: scroll, },
   'scan': { regular: scan, },
   'sidebar-simple': { regular: sidebarSimple, },
   'sliders-horizontal': { regular: slidersHorizontal, },

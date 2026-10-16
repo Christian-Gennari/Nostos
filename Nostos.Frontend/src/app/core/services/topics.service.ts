@@ -61,6 +61,11 @@ export interface NoteContextDto {
   anchorVerified?: boolean;
   /** The note's highlighter pen, by name; absent when none was recorded. */
   highlightColour?: string | null;
+  /** A passage (issue #1014); `selectedText` is then only its opening. */
+  kind?: 'note' | 'passage';
+  passageTitle?: string | null;
+  passageEnd?: string | null;
+  passageWordCount?: number | null;
 }
 
 export interface TopicDetailDto {

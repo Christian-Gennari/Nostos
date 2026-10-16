@@ -59,6 +59,15 @@ import { InputDirective, TextareaDirective } from '../ui/form-control/form-contr
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
+import { ModalShell } from '../ui/modal-shell/modal-shell.component';
+import { Passage, passageReadingMinutes } from '../core/dtos/note.dtos';
+import { PassageViewerRequest } from '../ui/passage-viewer/passage-viewer.service';
+import {
+  PassageDraft,
+  PassageMark,
+  readPassageMark,
+  writePassageMark,
+} from './passage/passage-mark';
 import { FeedbackLinkService } from '../core/services/feedback-link.service';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
@@ -170,6 +179,7 @@ function readAloudFallbackNotice(code: string | null): string {
     MenuItemComponent,
     MenuSeparatorDirective,
     MenuTriggerDirective,
+    ModalShell,
   ],
   providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
@@ -198,6 +208,8 @@ export class ReaderShell implements OnInit, OnDestroy {
     const bookId = this.book()?.id;
     if (!bookId) return;
     this.highlightColour.set(readHighlightColour(bookId));
+    // A passage end marked earlier in this book is still waiting for its pair.
+    this.passageMark.set(readPassageMark(bookId));
     });
 
     // A page turn moves the text away from an anchored selection menu (#650).
@@ -1249,6 +1261,134 @@ export class ReaderShell implements OnInit, OnDestroy {
     });
   }
 
+  // ------------------------------------------------------------------
+  // Passages (issue #1014): two marks in either order, then a save sheet.
+  // ------------------------------------------------------------------
+
+  /** One end of a passage, waiting for the other. Kept per book across visits. */
+  readonly passageMark = signal<PassageMark | null>(null);
+  readonly passageSheetOpen = signal(false);
+  readonly passageDraft = signal<PassageDraft | null>(null);
+  readonly passageBuilding = signal(false);
+  readonly passageBuildFailed = signal(false);
+  readonly passageSaving = signal(false);
+  readonly passageTitle = signal('');
+  readonly passageNote = signal('');
+  private passageBuildSeq = 0;
+  readonly readingMinutes = passageReadingMinutes;
+
+  /** The reader in use can mark passages. */
+  readonly canMarkPassage = computed(() => !!this.activeReader()?.passageMarkFromSelection);
+
+  /** The passage viewer, opened from this reader's notes, turns this book. */
+  readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
+    openInBook: (passage: Passage) => {
+      this.notesOpen.set(false);
+      this.activeReader()?.goTo(passage.start);
+    },
+  };
+
+  /**
+   * "Mark passage" on a selection. The first mark is kept and the reader reads
+   * on (or turns back); the second, anywhere in the book, opens the save sheet
+   * with the passage between them, whichever came first.
+   */
+  markPassage(): void {
+    const bookId = this.book()?.id;
+    const reader = this.activeReader();
+    const mark = reader?.passageMarkFromSelection?.() ?? null;
+    if (!bookId || !mark) return;
+    this.discardHighlight();
+
+    const first = this.passageMark();
+    if (!first || first.format !== mark.format) {
+      this.passageMark.set(mark);
+      writePassageMark(bookId, mark);
+      this.showSaveFeedback('Passage started');
+      return;
+    }
+    void this.openPassageSheet(first, mark);
+  }
+
+  /** Turn to the waiting mark, to see where the passage starts or ends. */
+  goToPassageMark(): void {
+    const mark = this.passageMark();
+    if (mark) this.activeReader()?.goTo(mark.start);
+  }
+
+  cancelPassageMark(): void {
+    const bookId = this.book()?.id;
+    this.passageMark.set(null);
+    if (bookId) writePassageMark(bookId, null);
+  }
+
+  private async openPassageSheet(a: PassageMark, b: PassageMark): Promise<void> {
+    const seq = ++this.passageBuildSeq;
+    this.passageDraft.set(null);
+    this.passageBuildFailed.set(false);
+    this.passageBuilding.set(true);
+    this.passageTitle.set('');
+    this.passageNote.set('');
+    this.passageSheetOpen.set(true);
+
+    let draft: PassageDraft | null = null;
+    try {
+      draft = (await this.activeReader()?.buildPassage?.(a, b)) ?? null;
+    } catch (error) {
+      console.warn('Could not gather the passage:', error);
+    }
+    if (seq !== this.passageBuildSeq) return;
+    this.passageBuilding.set(false);
+    if (!draft) {
+      this.passageBuildFailed.set(true);
+      return;
+    }
+    this.passageDraft.set(draft);
+    this.passageTitle.set(draft.title);
+  }
+
+  closePassageSheet(): void {
+    if (this.passageSaving()) return;
+    this.passageBuildSeq++;
+    this.passageSheetOpen.set(false);
+    this.passageDraft.set(null);
+    this.passageBuilding.set(false);
+  }
+
+  savePassage(): void {
+    const bookId = this.book()?.id;
+    const draft = this.passageDraft();
+    const title = this.passageTitle().trim();
+    if (!bookId || !draft || !title || this.passageSaving()) return;
+
+    this.passageSaving.set(true);
+    this.notesService
+      .create(bookId, {
+        content: this.passageNote().trim(),
+        kind: 'passage',
+        passageTitle: title,
+        sourceAnchorKind: draft.anchorKind,
+        sourceAnchorValue: draft.start,
+        passageEnd: draft.end,
+        selectedText: draft.text ?? undefined,
+        passageHtml: draft.html ?? undefined,
+        highlightColour: this.highlightColour(),
+      })
+      .subscribe({
+        next: () => {
+          this.passageSaving.set(false);
+          this.cancelPassageMark();
+          this.closePassageSheet();
+          this.loadNotes(bookId);
+          this.showSaveFeedback('Passage saved');
+        },
+        error: () => {
+          this.passageSaving.set(false);
+          this.toast.error('Could not save the passage.');
+        },
+      });
+  }
+
   loadNotes(bookId: string) {
     this.notesService.list(bookId).subscribe((notes) => {
       this.dbNotes.set(notes.reverse());
@@ -1722,12 +1862,14 @@ export class ReaderShell implements OnInit, OnDestroy {
     content: string;
     selectedText?: string;
     highlightColour?: HighlightColour;
+    passageTitle?: string;
   }) {
     this.notesService
       .update(event.id, {
         content: event.content,
         selectedText: event.selectedText,
         highlightColour: event.highlightColour,
+        passageTitle: event.passageTitle,
       })
       .subscribe({
         next: (updated) => {

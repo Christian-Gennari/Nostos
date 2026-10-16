@@ -13,6 +13,8 @@ import { CommandPaletteService } from './ui/command-palette/command-palette.serv
 import { RecentItemsService } from './ui/command-palette/recent-items.service';
 import { HighlightImportModal } from './ui/highlight-import-modal/highlight-import-modal.component';
 import { AssistantComponent } from './ui/assistant/assistant.component';
+import { PassageViewerComponent } from './ui/passage-viewer/passage-viewer.component';
+import { PassageViewerService } from './ui/passage-viewer/passage-viewer.service';
 import { SwUpdateService } from './core/services/sw-update.service';
 import { ThemeService } from './core/services/theme.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
@@ -29,6 +31,7 @@ import { LibraryActivationController } from './library-transfer/services/library
     ToastContainerComponent,
     CommandPalette,
     HighlightImportModal,
+    PassageViewerComponent,
     AssistantComponent,
     CloudEntryComponent,
     LibraryActivationOverlayComponent,
@@ -45,6 +48,7 @@ export class App {
   readonly activation = inject(LibraryActivationController);
   /** Opens the deferred command palette; see app.component.html. */
   readonly palette = inject(CommandPaletteService);
+  readonly passageViewer = inject(PassageViewerService);
 
   constructor() {
     // Applies the persisted theme immediately. `index.html` already set the

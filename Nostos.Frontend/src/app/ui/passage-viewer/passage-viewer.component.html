@@ -1,0 +1,132 @@
+@if (request(); as req) {
+<app-modal-shell
+  [isOpen]="true"
+  variant="sheet"
+  cardClass="passage-viewer-card"
+  [maxWidth]="'720px'"
+  [maxHeight]="'min(940px, calc(100dvh - 2.5rem))'"
+  [layer]="130"
+  [trapFocus]="true"
+  ariaLabelledBy="passage-viewer-title"
+  [style.--modal-head-padding]="'1.1rem 1.25rem 0.85rem'"
+  (closed)="close()"
+>
+  <header class="pv-head" shellHeader>
+    <span class="pv-mark" aria-hidden="true"><nostos-icon concept="passage" [size]="18"></nostos-icon></span>
+    <div class="pv-heading">
+      <h2 id="passage-viewer-title" class="pv-title" data-testid="passage-viewer-title">
+        {{ passage()?.title || 'Passage' }}
+      </h2>
+      @if (subtitle()) {
+      <p class="pv-subtitle">{{ subtitle() }}</p>
+      }
+    </div>
+    <button
+      appIconButton
+      icon="x"
+      type="button"
+      class="pv-close"
+      aria-label="Close passage"
+      title="Close"
+      data-testid="passage-viewer-close"
+      (click)="close()"
+    ></button>
+  </header>
+
+  <div class="pv-body">
+    @switch (state()) {
+      @case ('loading') {
+      <p class="pv-status" role="status">Opening the passage…</p>
+      }
+      @case ('error') {
+      <p class="pv-status" role="alert">This passage could not be opened.</p>
+      }
+      @default {
+        @if (body()) {
+        <div
+          class="pv-frame"
+          #frame
+          data-testid="passage-viewer-frame"
+          (pointerdown)="onPointerDown($event)"
+          (pointerup)="onPointerUp($event)"
+        >
+          <article
+            class="pv-columns"
+            #columns
+            lang="und"
+            [style.column-width.px]="pageWidth() || null"
+            [style.column-gap.px]="pageGap"
+            [style.transform]="'translateX(' + offset() + 'px)'"
+            [innerHTML]="body()"
+            data-testid="passage-viewer-text"
+          ></article>
+        </div>
+        } @else {
+        <p class="pv-status">This passage has no text to show here. Open it in the book to read it.</p>
+        }
+      }
+    }
+  </div>
+
+  <footer class="pv-foot" shellActions>
+    <div class="pv-progress" aria-hidden="true">
+      <span class="pv-progress-fill" [style.width.%]="progress()"></span>
+    </div>
+    <div class="pv-foot-row">
+      <button
+        appButton
+        variant="ghost"
+        type="button"
+        class="pv-open"
+        [disabled]="!passage()"
+        data-testid="passage-viewer-open-in-book"
+        (click)="openInBook()"
+      >
+        <nostos-icon name="book-open" [size]="16"></nostos-icon>
+        Open in book
+      </button>
+
+      @if (req.quoteSelection) {
+      <button
+        appButton
+        variant="secondary"
+        type="button"
+        class="pv-quote"
+        [disabled]="!selection().trim()"
+        data-testid="passage-viewer-quote"
+        (click)="quote()"
+      >
+        <nostos-icon name="quotes" [size]="16"></nostos-icon>
+        Quote in writing
+      </button>
+      }
+
+      <div class="pv-pager" role="group" aria-label="Pages">
+        <button
+          appIconButton
+          icon="caret-left"
+          type="button"
+          aria-label="Previous page"
+          title="Previous page"
+          data-testid="passage-viewer-previous"
+          [disabled]="page() === 0 || state() !== 'ready'"
+          (click)="previous()"
+        ></button>
+        <span class="pv-page-label" aria-live="polite" data-testid="passage-viewer-page">
+          Page {{ page() + 1 }} of {{ pageCount() }}
+        </span>
+        <button
+          appIconButton
+          icon="caret-right"
+          type="button"
+          aria-label="Next page"
+          title="Next page"
+          data-testid="passage-viewer-next"
+          [disabled]="page() >= pageCount() - 1 || state() !== 'ready'"
+          (click)="next()"
+        ></button>
+      </div>
+    </div>
+  </footer>
+</app-modal-shell>
+}
