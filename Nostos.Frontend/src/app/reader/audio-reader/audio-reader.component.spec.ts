@@ -1086,3 +1086,104 @@ describe('AudioReader current chapter (issue #904)', () => {
     ]);
   });
 });
+
+describe('AudioReader keeps its place when the player loses it', () => {
+  let fixture: ComponentFixture<AudioReader>;
+  let component: AudioReader;
+  let howl: any;
+  let visibility: DocumentVisibilityState;
+  const booksServiceMock = { updateProgress: vi.fn(() => of(null)) };
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    booksServiceMock.updateProgress.mockClear();
+    visibility = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+
+    await TestBed.configureTestingModule({
+      imports: [AudioReader],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AudioReader);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('bookId', 'book-1');
+    // 43 minutes into a two-hour book.
+    fixture.componentRef.setInput('book', makeBook({ lastLocation: '2580' }));
+    fixture.detectChanges();
+    howl = mockPlayer(component);
+    let position = 0;
+    howl.seek = vi.fn((seconds?: number) => {
+      if (seconds === undefined) return position;
+      position = seconds;
+      return howl;
+    });
+    howl.config.onload();
+    howl.resetPosition = () => (position = 0);
+    booksServiceMock.updateProgress.mockClear();
+  });
+
+  afterEach(() => {
+    component.ngOnDestroy();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  function savedLocations(): string[] {
+    return booksServiceMock.updateProgress.mock.calls.map((call: unknown[]) => call[1] as string);
+  }
+
+  function leaveAndReturn() {
+    visibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    // The phone drops the paused media element while the tab is away.
+    howl.resetPosition();
+    visibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+  }
+
+  it('returning to a paused book keeps the place and never saves 0:00', () => {
+    leaveAndReturn();
+    vi.advanceTimersByTime(5000);
+
+    expect(component.currentTime()).toBe(2580);
+    expect(howl.seek()).toBe(2580);
+    expect(savedLocations()).not.toContain('0');
+    expect(savedLocations().every((location) => location === '2580')).toBe(true);
+  });
+
+  it('play from the lock screen after a reset resumes from the place, not the start', () => {
+    howl.resetPosition();
+    component.togglePlay();
+
+    expect(howl.seek).toHaveBeenCalledWith(2580);
+    expect(howl.play).toHaveBeenCalled();
+    expect(howl.seek()).toBe(2580);
+  });
+
+  it('a reset noticed while playing puts the player back', () => {
+    howl.config.onplay();
+    howl.resetPosition();
+    vi.advanceTimersByTime(5000);
+
+    expect(component.currentTime()).toBe(2580);
+    expect(savedLocations()).not.toContain('0');
+  });
+
+  it('a seek to the start that the listener made is kept and saved', () => {
+    component.goToTime(0);
+    leaveAndReturn();
+    vi.advanceTimersByTime(5000);
+
+    expect(component.currentTime()).toBe(0);
+    expect(savedLocations()).toContain('0');
+  });
+
+  it('a finished book plays again from the start', () => {
+    component.goToTime(7200);
+    howl.resetPosition();
+    component.togglePlay();
+
+    expect(howl.seek()).toBe(0);
+  });
+});
