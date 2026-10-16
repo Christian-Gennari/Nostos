@@ -194,12 +194,12 @@
               }
             </div>
             } @else if (store.book()?.hasFile) { @if (isAudioBook(store.book())) {
-            <button appButton variant="primary" (click)="openReader()">
+            <button appButton variant="primary" size="lg" (click)="openReader()">
               <nostos-icon name="headphones" [size]="18"></nostos-icon>
               <span>Listen</span>
             </button>
             } @else {
-            <button appButton variant="primary" (click)="openReader()">
+            <button appButton variant="primary" size="lg" (click)="openReader()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
               <span>Read Book</span>
             </button>
@@ -208,6 +208,7 @@
             <button
               appButton
               variant="secondary"
+              size="lg"
               (click)="downloadFile()"
               [attr.title]="downloadHint(store.book())"
             >
@@ -218,7 +219,7 @@
               }
             </button>
             } @else if (store.book()?.type !== 'physical') {
-            <button appButton variant="primary" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
+            <button appButton variant="primary" size="lg" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
               <span>Upload File</span>
             </button>
@@ -241,6 +242,7 @@
               <button
                 appButton
                 variant="secondary"
+                size="lg"
                 class="edit-metadata-btn"
                 title="Edit"
                 [nostosMenuTriggerFor]="editMenu"

@@ -339,6 +339,12 @@
   color: var(--color-primary);
 }
 
+/* The longest line a block of prose on this page runs to (review, synopsis):
+   about 70 characters, so a wide column does not stretch text to its edge. */
+.detail-main {
+  --detail-measure: 42rem;
+}
+
 /* Body: the reading column plus a details rail. The rail is what fills the width
    the old cover column used to take, so the page reads full at any size. */
 .detail-grid {
@@ -350,32 +356,20 @@
 .detail-main {
   min-width: 0;
 }
+/* The rail is set apart by one hairline on its inner edge, not by boxing each
+   block in it. Its contents are text to read, and a bordered card around the
+   details and another around the editions made the page a stack of outlines. */
 .detail-side {
   position: sticky;
   top: 1.5rem;
+  padding-left: 2rem;
+  border-left: 1px solid var(--border-color);
 }
-/* Details rail card. The rail always has content, so the two-column body is never
-   left with an empty gutter — the editions block below it is conditional and
-   absent for most books.
-
-   The editions section is the same card, declared with it rather than given a
-   second copy: two cards stacked in one 320px column are only consistent as long
-   as one rule owns their ground, radius and padding. */
+/* Details and editions are sections of the rail, separated by space and their
+   own labels. One rule owns both, so the two stay in step. */
 .details-card,
 .edition-section {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
-}
-.details-title {
-  text-transform: uppercase;
-  font-weight: var(--fw-semibold);
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  color: var(--color-text-light);
-  margin: 0 0 0.75rem;
+  margin-bottom: 2.5rem;
 }
 /* The strip and grid were laid out for the wide synopsis card; in the narrow rail
    they stack, and a `span 2` item would be invalid in a single-column grid. */
@@ -661,10 +655,30 @@
 .edition-list {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.25rem;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* Out of a card, the rows need no box of their own: only the current edition
+   keeps its fill, and another edition shows a fill under the pointer. A border
+   on every row, inside the rail, was the box inside a box this page is
+   dropping. The Editions and Switch edition dialogs keep the bordered row. */
+.edition-list .edition-select-card:not(.nostos-choice-row--selected) {
+  border-color: transparent;
+  background: transparent;
+}
+
+@media (hover: hover) {
+  .edition-list button.edition-select-card:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+}
+
+/* The format glyph alone, with no square drawn behind it. */
+.edition-list .edition-select-card .card-icon-frame {
+  background: transparent;
 }
 
 /* The row itself (box, text tiers, hover, focus, the selected fill) is the
@@ -800,7 +814,7 @@ button.edition-section-action {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 0.5rem;
+  gap: 0.625rem;
   width: 100%;
 }
 /* What a multi-track download contains ("54 tracks · 521 MiB"). Secondary to
@@ -825,56 +839,50 @@ button.edition-section-action {
 .divider {
   border: none;
   border-bottom: 1px solid var(--border-color);
-  margin: 2rem 0;
+  margin: 3rem 0;
   opacity: 0.6;
 }
+/* The review and synopsis are set on the page like the notes below them: no
+   card, a section label, and a reading measure. The block keeps its class
+   because the expanded state hangs off it. */
 .synopsis-metadata-block {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  padding: 1.5rem;
-  margin-bottom: 2rem;
   position: relative;
-  transition: color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease;
 }
 .synopsis-content {
   position: relative;
   overflow: hidden;
   margin-bottom: 1rem;
 }
-.synopsis-content h4 {
+/* One section label for the whole page: Synopsis, My Review, Personal Notes,
+   Details and Editions all wear it. The synopsis label used to carry its own
+   underline, and the review label was a larger green variant. */
+.synopsis-content h4,
+.review-label,
+.notes-header h3,
+.details-title {
+  font-family: 'Hanken Grotesk', sans-serif;
   text-transform: uppercase;
   font-weight: var(--fw-semibold);
   font-size: 0.75rem;
   letter-spacing: 0.12em;
-  margin-bottom: 0.75rem;
+  line-height: 1.2;
   color: var(--color-text-light);
-  border-bottom: 1px solid var(--border-color);
-  padding-bottom: 0.5rem;
-  display: inline-block;
+  margin: 0 0 1rem;
 }
 
-/* NEW: Personal Review Styles */
 .personal-review {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 2.5rem;
 }
 .review-label {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
-  font-weight: var(--fw-semibold);
-  color: var(--color-primary);
-  margin-bottom: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 .review-text {
+  max-width: var(--detail-measure);
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: 1rem;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--color-text-main);
   white-space: pre-wrap;
 }
@@ -922,15 +930,16 @@ button.edition-section-action {
   background: linear-gradient(
     to bottom,
     transparent 25%,
-    var(--bg-surface) 100%
+    var(--bg-body) 100%
   );
   pointer-events: none;
 }
 
 .description-text {
+  max-width: var(--detail-measure);
   font-family: Newsreader, serif;
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 1.0625rem;
+  line-height: 1.65;
   color: var(--color-text-main);
   display: -webkit-box;
   line-clamp: 3;
@@ -952,7 +961,7 @@ button.edition-section-action {
   /* Same recipe as the review fade above, and `transparent` rather than a
      hard-coded `rgba(255, 255, 255, 0)`: a transparent stop carrying a WHITE
      hue is a light-theme assumption in a token-driven theme. */
-  background: linear-gradient(to bottom, transparent 25%, var(--bg-surface) 100%);
+  background: linear-gradient(to bottom, transparent 25%, var(--bg-body) 100%);
   pointer-events: none;
   opacity: 1;
   transition: opacity 0.2s;
@@ -1059,12 +1068,9 @@ button.edition-section-action {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 .notes-header h3 {
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   margin: 0;
 }
 .new-note-box {
@@ -1204,8 +1210,13 @@ button.edition-section-action {
     grid-template-columns: 1fr;
     gap: 2rem;
   }
+  /* Under the reading column the rail's hairline moves to its top edge. */
   .detail-side {
     position: static;
+    padding-left: 0;
+    border-left: none;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border-color);
   }
   /* Below this width the rail is no longer a 320px column — it is the full body
      width — so one row per line would leave ~540px of empty space to the right
@@ -1224,9 +1235,6 @@ button.edition-section-action {
     width: 100%;
     max-width: 240px;
     margin: 0 auto;
-  }
-  .synopsis-metadata-block {
-    padding: 1.25rem 1rem;
   }
 }
 @media (max-width: 480px) {

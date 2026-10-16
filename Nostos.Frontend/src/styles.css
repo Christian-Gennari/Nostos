@@ -118,9 +118,11 @@
      page, so it also carries a shadow. */
   --cover-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 
-  /* Buttons sit a hair above the page: a contact shadow, and on a filled
-     button a top highlight so the fill reads as a surface, not a flat block. */
-  --button-shadow: 0 1px 2px rgba(18, 19, 22, 0.05);
+  /* A filled button carries a contact shadow and a top highlight so the fill
+     reads as a surface, not a flat block. The outlined (secondary) button has
+     none: its hairline already draws its edge, and a shadow under every
+     outlined action added one more edge to each row of controls. */
+  --button-shadow: none;
   --button-shadow-primary: 0 1px 2px rgba(18, 19, 22, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 
   /* Fields: the border a pointer finds, and the halo focus draws around it.
@@ -825,7 +827,7 @@
   --dock-field: #282b36;
   --cover-shadow: 0 2px 12px rgba(0, 0, 0, 0.50);
   /* The dark primary is a light fill, so a top highlight would not show. */
-  --button-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --button-shadow: none;
   --button-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.4);
   /* Both layers neutral black, and that is now doubly right: the palette is
      cool-neutral end to end, so a tinted layer would be the only chromatic
