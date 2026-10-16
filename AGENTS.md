@@ -24,8 +24,8 @@ cd "$AGENT_WORKTREE"
 
 `agent-worktree` gives you an isolated tree, a private writable copy of
 `nostos.db`, shared `Storage`/`node_modules` (symlinked, never copied), and a
-`frontend`/`backend` port pair that cannot collide with production (5214) or
-another agent. It retires the worktree automatically once the branch merges.
+`frontend`/`backend` port pair that cannot collide with another agent. It
+retires the worktree automatically once the branch merges.
 See `agent-worktree` (no arguments) for usage.
 
 **Why the shared checkout is not safe for a new branch.** `git checkout -b`
@@ -33,7 +33,7 @@ switches the branch of the *entire working tree*. Every other agent and the
 human share those files, so:
 
 - their uncommitted work silently follows you onto your branch;
-- a build you trigger writes the same `wwwroot/` that production is serving;
+- a build you trigger overwrites the `wwwroot/` everyone else's run uses;
 - a `git stash` / `reset` / `clean` intended for your files can destroy theirs.
 
 This has already happened in this repo, more than once.
@@ -323,7 +323,9 @@ preferences.
 - `npm test` is the runner (`ng test`) — run it bare. `npx vitest run <file>`
   fails with `describe is not defined`, and `ng test --include` breaks the
   `.html` loader.
-- **This machine also serves production. Run one heavy job at a time.** A
+- **This machine is shared: other agents, the Nostos-Cloud CI runner and other
+  services run on it. Run one heavy job at a time.** (It no longer serves a
+  self-hosted Nostos; the pm2 app `nostos` on port 5214 is retired.) A
   frontend suite, a backend suite, a production build and a model on the GPU
   each fit; two or three side by side have filled the swap and stalled the
   host. Check `free -m` and `uptime` first. `npm test` is capped at four
