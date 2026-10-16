@@ -308,13 +308,15 @@ describe('App shell utility area', () => {
     // slot reserved for it, so there is no gap or placeholder to collapse.
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
 
-    // Enabled and available: the assistant appears as its own floating control,
-    // while Feedback remains the quiet dock sibling of Settings.
+    // Enabled and available: the dock carries the one launcher, the assistant's
+    // floating capsule stands down, and Feedback stays a dock utility.
     TestBed.inject(LibraryPreferencesService).assistantEnabled.set(true);
     assistantAvailable.set(true);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
+    const launchers = fixture.nativeElement.querySelectorAll('[data-testid="assistant-trigger"]');
+    expect(launchers.length).toBe(1);
+    expect(dock(fixture).contains(launchers[0])).toBe(true);
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });
 

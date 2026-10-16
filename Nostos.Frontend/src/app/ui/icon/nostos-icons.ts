@@ -98,6 +98,10 @@ import bookOpen from '@phosphor-icons/core/regular/book-open.svg';
 import book from '@phosphor-icons/core/regular/book.svg';
 import bookmarkSimple from '@phosphor-icons/core/regular/bookmark-simple.svg';
 import bookmarkSimpleFill from '@phosphor-icons/core/fill/bookmark-simple-fill.svg';
+import booksFill from '@phosphor-icons/core/fill/books-fill.svg';
+import brainFill from '@phosphor-icons/core/fill/brain-fill.svg';
+import penNibFill from '@phosphor-icons/core/fill/pen-nib-fill.svg';
+import sparkleFill from '@phosphor-icons/core/fill/sparkle-fill.svg';
 import books from '@phosphor-icons/core/regular/books.svg';
 import brain from '@phosphor-icons/core/regular/brain.svg';
 import buildings from '@phosphor-icons/core/regular/buildings.svg';
@@ -219,8 +223,8 @@ export const NOSTOS_ICONS = {
   'book': { regular: book, thin: bookThin, light: bookLight, },
   'book-open': { regular: bookOpen, thin: bookOpenThin, light: bookOpenLight, },
   'bookmark-simple': { regular: bookmarkSimple, fill: bookmarkSimpleFill, },
-  'books': { regular: books, light: booksLight, },
-  'brain': { regular: brain, thin: brainThin, light: brainLight, },
+  'books': { regular: books, light: booksLight, fill: booksFill, },
+  'brain': { regular: brain, thin: brainThin, light: brainLight, fill: brainFill, },
   'buildings': { regular: buildings, },
   'calendar-blank': { regular: calendarBlank, },
   'caret-down': { regular: caretDown, },
@@ -266,7 +270,7 @@ export const NOSTOS_ICONS = {
   'palette': { regular: palette, light: paletteLight, },
   'paper-plane-tilt': { regular: paperPlaneTilt, light: paperPlaneTiltLight, },
   'pause': { regular: pause, fill: pauseFill, },
-  'pen-nib': { regular: penNib, light: penNibLight, },
+  'pen-nib': { regular: penNib, light: penNibLight, fill: penNibFill, },
   'pencil-simple': { regular: pencilSimple, },
   'play': { regular: play, fill: playFill, },
   'plus': { regular: plus, thin: plusThin, light: plusLight, },
@@ -277,7 +281,7 @@ export const NOSTOS_ICONS = {
   'skip-back': { regular: skipBack, },
   'skip-forward': { regular: skipForward, },
   'speaker-high': { regular: speakerHigh, },
-  'sparkle': { regular: sparkle, light: sparkleLight, },
+  'sparkle': { regular: sparkle, light: sparkleLight, fill: sparkleFill, },
   'squares-four': { regular: squaresFour, light: squaresFourLight, },
   'stack': { regular: stack, },
   'star': { regular: star, fill: starFill, },

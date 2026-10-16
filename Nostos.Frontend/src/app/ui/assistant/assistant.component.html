@@ -15,6 +15,7 @@
 <section
   class="assistant-panel"
   [class.is-expanded]="expanded()"
+  [class.is-docked]="docked()"
   role="dialog"
   aria-label="Nostos assistant"
   data-testid="assistant-panel"
@@ -516,7 +517,9 @@
 </section>
 }
 
-@if (!readerSelectionActive()) {
+<!-- In the workspace the dock carries the launcher; this capsule serves the
+     routes without one (the reader). -->
+@if (!readerSelectionActive() && !docked()) {
 <button
   type="button"
   class="assistant-trigger"

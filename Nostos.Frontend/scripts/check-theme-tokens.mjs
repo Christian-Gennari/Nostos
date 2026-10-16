@@ -46,7 +46,7 @@ const rawSource = css;
  * the themed `--color-highlight` is a pale sage on dark). Three per-theme copies
  * would be three ways to state one value.
  */
-const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|container-width|fw|transition|glass-blur|modal-scrim-blur|sidebar-width|brand-|highlight-|control-h|focus-ring-width|dock-rail-h)/;
+const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|container-width|fw|transition|glass-blur|modal-scrim-blur|sidebar-width|brand-|highlight-|control-h|focus-ring-width|dock-rail-h|dock-float-bottom|dock-bar-h)/;
 
 /**
  * Tokens whose value is a `color-mix()` of another token. They re-derive

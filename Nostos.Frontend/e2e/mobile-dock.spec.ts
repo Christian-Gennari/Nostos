@@ -183,11 +183,16 @@ test('Cloud More has the same neutral rest state as its dock siblings in both th
     expect(Math.abs(neutral[3].width - neutral[1].width)).toBeLessThanOrEqual(1);
     expect(Math.abs(neutral[3].height - neutral[1].height)).toBeLessThanOrEqual(1);
 
+    // The open state is the rail's pill around the icon, the same marker a
+    // selected destination wears, not a wash over the whole column.
+    const morePill = more.locator('.dock-icon');
+    const pillAtRest = await morePill.evaluate((el) => getComputedStyle(el).backgroundColor);
+
     await more.click();
     await expect(more).toHaveAttribute('aria-expanded', 'true');
     await expect
-      .poll(() => more.evaluate((el) => getComputedStyle(el).backgroundColor))
-      .not.toBe(neutral[3].background);
+      .poll(() => morePill.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .not.toBe(pillAtRest);
 
     await page.keyboard.press('Escape');
     await expect(more).toHaveAttribute('aria-expanded', 'false');
@@ -196,6 +201,9 @@ test('Cloud More has the same neutral rest state as its dock siblings in both th
     await expect
       .poll(() => more.evaluate((el) => getComputedStyle(el).backgroundColor))
       .toBe(neutral[3].background);
+    await expect
+      .poll(() => morePill.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe(pillAtRest);
   }
 });
 

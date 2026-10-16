@@ -121,6 +121,21 @@
   animation: assistant-reveal var(--motion-base) var(--ease-out) both;
 }
 
+/* Opened from the dock: the compact panel rises from the bar it was launched
+   from, centred on it, instead of from the corner capsule. The dock is centred
+   on the viewport, so the panel is too. Margin-inline auto (not a transform)
+   centres it, because the reveal animation owns the transform. */
+@media (min-width: 769px) {
+  .assistant-panel.is-docked:not(.is-expanded) {
+    right: 0;
+    bottom: calc(var(--dock-float-bottom) + var(--dock-bar-h) + 12px);
+    left: 0;
+    max-height: min(640px, calc(100vh - var(--dock-float-bottom) - var(--dock-bar-h) - 36px));
+    margin-inline: auto;
+    transform-origin: bottom center;
+  }
+}
+
 /* A deliberate desktop workspace, not browser-edge fullscreen. The equal
    left/right insets cap the surface at 1000px while still leaving a quiet
    margin on narrower laptop screens. The conversation component itself is not
