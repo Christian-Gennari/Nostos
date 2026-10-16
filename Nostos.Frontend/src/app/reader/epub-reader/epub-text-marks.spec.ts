@@ -156,6 +156,15 @@ describe('EpubTextMarks', () => {
     }
   });
 
+  it('draws a pen that carries a note as its own layer, the same fill with a dotted rule', () => {
+    const noted = textMarkName({ kind: 'pen', colour: 'sage', noted: true });
+    expect(noted).toBe('nostos-mark-pen-sage-noted');
+
+    const css = textMarkCss('light');
+    const rule = css.slice(css.indexOf(`::highlight(${noted})`));
+    expect(rule).toMatch(/^::highlight\(nostos-mark-pen-sage-noted\)\{background-color:#b7e4cf;[^}]*text-decoration-style:dotted/);
+  });
+
   it('skips a location the markup cannot resolve', () => {
     const contents = makeContents();
     (contents.range as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -225,6 +234,66 @@ describe('EpubAnnotationManager with marks painted by the text', () => {
     expect(registry.has(textMarkName({ kind: 'pen', colour: 'blue' }))).toBe(false);
   });
 
+  it('draws a saved highlight with a note on the noted layer, and keeps it there through a recolour', () => {
+    const { manager } = setup();
+    const roseNoted = textMarkName({ kind: 'pen', colour: 'rose', noted: true });
+    const blueNoted = textMarkName({ kind: 'pen', colour: 'blue', noted: true });
+    const blue = textMarkName({ kind: 'pen', colour: 'blue' });
+
+    manager.restoreHighlights([{ cfiRange: CFI_A, highlightColour: 'rose', content: 'a thought' } as never]);
+    expect(registry.get(roseNoted)!.ranges).toHaveLength(1);
+
+    manager.recolourHighlight(CFI_A, 'blue');
+    expect(registry.has(roseNoted)).toBe(false);
+    expect(registry.get(blueNoted)!.ranges).toHaveLength(1);
+
+    // The note was cleared: same pen, no rule.
+    manager.recolourHighlight(CFI_A, 'blue', false);
+    expect(registry.has(blueNoted)).toBe(false);
+    expect(registry.get(blue)!.ranges).toHaveLength(1);
+  });
+
+  describe('finding the saved highlight under a point', () => {
+    const original = Range.prototype.getClientRects;
+    beforeEach(() => {
+      // jsdom does no layout. "Hello" (offset 0) is laid out at x 0..50 and
+      // "world" (offset 6) at x 60..110, both on the line y 10..30.
+      Range.prototype.getClientRects = function (this: Range) {
+        const left = this.startOffset === 0 ? 0 : 60;
+        return [{ left, right: left + 50, top: 10, bottom: 30, width: 50, height: 20 }] as never;
+      };
+    });
+    afterEach(() => {
+      Range.prototype.getClientRects = original;
+    });
+
+    it('reports the saved highlight a point falls on, with the box to open at', () => {
+      const { manager, contents } = setup();
+      manager.restoreHighlights([
+        { cfiRange: CFI_A, highlightColour: 'rose' } as never,
+        { cfiRange: CFI_B, highlightColour: 'sage' } as never,
+      ]);
+
+      expect(manager.highlightsAt(contents, 80, 20)).toEqual([
+        { identifier: CFI_B, anchor: { left: 60, right: 110, top: 10, bottom: 30 } },
+      ]);
+      expect(manager.highlightsAt(contents, 25, 20, false)).toEqual([{ identifier: CFI_A, anchor: null }]);
+      expect(manager.highlightsAt(contents, 25, 60)).toEqual([]);
+    });
+
+    it('ignores highlights in other sections and ones that have been removed', () => {
+      const { manager, contents } = setup();
+      manager.restoreHighlights([
+        { cfiRange: CFI_A, highlightColour: 'rose' } as never,
+        { cfiRange: OTHER_SECTION, highlightColour: 'rose' } as never,
+      ]);
+      manager.removeHighlight(CFI_A);
+
+      expect(manager.highlightsAt(contents, 25, 20)).toEqual([]);
+      expect(contents.range).not.toHaveBeenCalledWith(OTHER_SECTION);
+    });
+  });
+
   it('swaps the offered passage for the saved highlight on commit', async () => {
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       cb(0);
@@ -251,6 +320,29 @@ describe('EpubAnnotationManager with marks painted by the text', () => {
     expect(registry.get(amber)!.ranges).toHaveLength(1);
     manager.removeHighlight(CFI_A);
     expect(registry.has(amber)).toBe(false);
+    manager.destroy();
+  });
+
+  it('saves a highlight made with a note straight onto the noted layer', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const { manager, contents } = setup();
+    (contents as unknown as { cfiFromRange: () => string }).cfiFromRange = () => CFI_A;
+    manager.registerContents(contents);
+    manager.setHighlightColour('amber');
+
+    const range = document.createRange();
+    range.selectNodeContents(document.body.querySelector('p')!);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+
+    await manager.commitHighlight('Why this line?');
+
+    expect(registry.has(textMarkName({ kind: 'pen', colour: 'amber' }))).toBe(false);
+    expect(registry.get(textMarkName({ kind: 'pen', colour: 'amber', noted: true }))!.ranges).toHaveLength(1);
     manager.destroy();
   });
 });

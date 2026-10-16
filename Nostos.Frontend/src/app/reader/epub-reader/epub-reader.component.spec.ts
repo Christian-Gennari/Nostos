@@ -153,6 +153,60 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
+  describe('a click on a saved highlight', () => {
+    const CFI = 'epubcfi(/6/4!/4/2/1:0)';
+
+    async function wire(hits: unknown[]) {
+      await setupComponent();
+      const reader = fixture.componentInstance as unknown as {
+        annotationManager: { highlightsAt: ReturnType<typeof vi.fn> };
+        registerContentsInteraction(contents: unknown): void;
+        highlightActivated: { subscribe(fn: (value: unknown) => void): void };
+        surfaceInteracted: { subscribe(fn: () => void): void };
+      };
+      const doc = document.implementation.createHTMLDocument('Section');
+      doc.body.innerHTML = '<p>Sing, goddess, <a href="#n1">the anger</a></p>';
+      // jsdom cannot follow the link; the reader's routing is what is tested.
+      doc.addEventListener('click', (event) => event.preventDefault());
+      const highlightsAt = vi.fn(() => hits);
+      reader.annotationManager.highlightsAt = highlightsAt;
+      reader.registerContentsInteraction({ document: doc, window: doc.defaultView });
+
+      const activated = vi.fn();
+      const surface = vi.fn();
+      reader.highlightActivated.subscribe(activated);
+      reader.surfaceInteracted.subscribe(surface);
+      const click = (target: Element) =>
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 20, clientY: 10 }));
+      return { doc, highlightsAt, activated, surface, click };
+    }
+
+    it('opens the highlight instead of toggling the chrome', async () => {
+      const hits = [{ identifier: CFI, anchor: null }];
+      const { doc, highlightsAt, activated, surface, click } = await wire(hits);
+
+      click(doc.querySelector('p')!);
+
+      expect(highlightsAt).toHaveBeenCalledWith(expect.anything(), 20, 10);
+      expect(activated).toHaveBeenCalledWith(hits);
+      expect(surface).not.toHaveBeenCalled();
+    });
+
+    it('leaves a click with no highlight under it to the chrome', async () => {
+      const { doc, activated, surface, click } = await wire([]);
+      click(doc.querySelector('p')!);
+      expect(activated).not.toHaveBeenCalled();
+      expect(surface).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets the book’s own link have its click', async () => {
+      const { doc, highlightsAt, activated, click } = await wire([{ identifier: CFI, anchor: null }]);
+      click(doc.querySelector('a')!);
+      expect(highlightsAt).not.toHaveBeenCalled();
+      expect(activated).not.toHaveBeenCalled();
+    });
+  });
+
   it('applies a grounded CFI received before the opening display settles', async () => {
     fixture = TestBed.createComponent(EpubReader);
     fixture.componentRef.setInput('bookId', 'book-1');

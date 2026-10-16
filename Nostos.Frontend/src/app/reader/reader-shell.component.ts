@@ -1590,9 +1590,9 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.flashTimer = null;
     }, 2400);
     setTimeout(() => {
-      const card = this.host.nativeElement.querySelector<HTMLElement>(
-        `.notes-panel [data-note-id="${CSS.escape(note.id)}"]`,
-      );
+      const card = Array.from(
+        this.host.nativeElement.querySelectorAll<HTMLElement>('.notes-panel [data-note-id]'),
+      ).find((candidate) => candidate.getAttribute('data-note-id') === note.id);
       card?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     }, 0);
   }
