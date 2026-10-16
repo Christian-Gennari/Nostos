@@ -42,7 +42,8 @@ import {
   noteHighlightColour,
 } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
-import { Note } from '../../core/dtos/note.dtos';
+import { Note, noteHasText } from '../../core/dtos/note.dtos';
+import type { HighlightHit } from '../highlight-hit';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService } from '../../core/services/theme.service';
 import {
@@ -257,6 +258,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   commitFailed = output<void>();
   /** Neutral PDF surface click asks the shared shell to reveal or hide chrome. */
   surfaceInteracted = output<void>();
+  /** A click or tap landed on saved highlights; the shell opens the one to show. */
+  highlightActivated = output<HighlightHit[]>();
+  /** The mouse is over a saved highlight, which shows the pointer cursor. */
+  readonly overHighlight = signal(false);
+  private hoverFrame = 0;
+  private hoverPoint: { target: EventTarget | null; x: number; y: number } | null = null;
 
   /** The book's catalogue language, for choosing a voice. A PDF rarely says its own. */
   language = input<string | null>(null);
@@ -1137,6 +1144,17 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       }, 0);
     }
     const selectedText = liveSelection ?? this.assistantSelection() ?? pending?.selectedText;
+
+    // A saved highlight takes the tap before paging or chrome. A selection,
+    // live or offered, still comes first.
+    if (!selectedText) {
+      const hits = this.highlightsAtPoint(event.target, event.clientX, event.clientY);
+      if (hits.length > 0) {
+        this.highlightActivated.emit(hits);
+        return;
+      }
+    }
+
     const target = event.currentTarget as HTMLElement | null;
     const width = target?.clientWidth ?? window.innerWidth;
     const coarsePointer =
@@ -1154,6 +1172,47 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     if (action === 'next') this.next();
     else if (action === 'previous') this.previous();
     else if (action === 'toggle-chrome') this.surfaceInteracted.emit();
+  }
+
+  /** Follows the mouse to show the pointer over a highlight, once per frame at most. */
+  onSurfacePointerMove(event: PointerEvent): void {
+    if (event.pointerType !== 'mouse') return;
+    this.hoverPoint = event.buttons === 0 ? { target: event.target, x: event.clientX, y: event.clientY } : null;
+    if (this.hoverFrame) return;
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = 0;
+      const point = this.hoverPoint;
+      const over =
+        !!point &&
+        !this.pendingHighlight &&
+        this.highlightsAtPoint(point.target, point.x, point.y, false).length > 0;
+      if (over !== this.overHighlight()) this.overHighlight.set(over);
+    });
+  }
+
+  onSurfacePointerLeave(): void {
+    this.hoverPoint = null;
+    if (this.overHighlight()) this.overHighlight.set(false);
+  }
+
+  /** The saved highlights under a viewport point, on the page the point is over. */
+  private highlightsAtPoint(
+    target: EventTarget | null,
+    x: number,
+    y: number,
+    measure = true,
+  ): HighlightHit[] {
+    const page = (target as Element | null)?.closest?.('.page[data-page-number]');
+    const pageNumber = Number(page?.getAttribute('data-page-number'));
+    const textLayer = page?.querySelector<HTMLElement>('.textLayer');
+    if (!textLayer || !Number.isInteger(pageNumber)) return [];
+
+    // A mark still being saved has a temporary id and nothing to open yet.
+    const saved = this.savedHighlights.filter(
+      (h) => h.pageNumber === pageNumber && !!h.id && !h.id.startsWith('temp-'),
+    );
+    if (saved.length === 0) return [];
+    return this.highlightService.hitTest(textLayer, saved, x, y, measure);
   }
 
   onSurfaceTouchStart(event: TouchEvent): void {
@@ -1308,6 +1367,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
                 pageNumber: range.pageNumber,
                 rects: range.rects || [],
                 colour: noteHighlightColour(n),
+                noted: noteHasText(n),
               } as PageHighlight;
             } catch {
               return null;
@@ -1326,6 +1386,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const highlight = this.savedHighlights.find((h) => h.id === note.id);
     if (!highlight) return;
     highlight.colour = colour;
+    highlight.noted = noteHasText(note);
     this.repaintPage(highlight.pageNumber);
   }
 
@@ -1355,6 +1416,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       pageNumber: p.pageNumber,
       rects: p.rects,
       colour,
+      noted: !!content.trim(),
     };
     this.savedHighlights.push(newHighlight);
     this.repaintPage(p.pageNumber);
@@ -1519,6 +1581,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   ngOnDestroy() {
     this.readAloud.end();
+    if (this.hoverFrame) cancelAnimationFrame(this.hoverFrame);
     ++this.sourceHighlightGeneration;
     clearTimeout(this.touchSelectionTimer);
     this.clearSearch();

@@ -16,6 +16,7 @@ import {
   formatAudioTime,
   importedNoteLocation,
   noteAudioSeconds,
+  noteHasText,
   noteNavigationTarget,
 } from '../core/dtos/note.dtos';
 import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
@@ -24,9 +25,12 @@ import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HIGHLIGHT_COLOURS,
   HighlightColour,
+  noteHighlightColour,
   readHighlightColour,
   writeHighlightColour,
 } from './highlight-colours';
+import type { HighlightHit } from './highlight-hit';
+import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 
 // Components
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
@@ -68,6 +72,15 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
   const cut = flat.slice(0, max);
   const space = cut.lastIndexOf(' ');
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/** Viewport placement of a menu anchored at text; see `ReaderShell.menuPlacement`. */
+type MenuPlacement = { left: number; width: number; top: number | null; bottom: number | null };
+
+/** A note's creation time for ordering; an unreadable date sorts first. */
+function createdAtOf(note: Note): number {
+  const time = Date.parse(note.createdAt);
+  return Number.isFinite(time) ? time : 0;
 }
 
 import { BrowserVoice } from './read-aloud/browser-voice';
@@ -145,6 +158,7 @@ function readAloudFallbackNotice(code: string | null): string {
     TextareaDirective,
     ReadAloudBarComponent,
     SegmentedComponent,
+    NoteFormatPipe,
   ],
   providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
@@ -182,6 +196,14 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.progressState()?.label;
       untracked(() => {
         if (this.selectionAnchor()) this.selectionAnchor.set(null);
+        // The highlight card is about a passage that has just left the page.
+        // A note being written for it is kept, docked; otherwise it closes.
+        const card = this.highlightCard();
+        if (card && this.highlightNoteEditing()) {
+          if (card.anchor) this.highlightCard.set({ ...card, anchor: null });
+        } else if (card) {
+          this.closeHighlightCard();
+        }
       });
     });
 
@@ -256,10 +278,11 @@ export class ReaderShell implements OnInit, OnDestroy {
    * collapsed menu nor the note editor covers the selection, and it is clamped
    * horizontally to the viewport.
    */
-  selectionMenuPlacement = computed<
-    { left: number; width: number; top: number | null; bottom: number | null } | null
-  >(() => {
-    const anchor = this.selectionAnchor();
+  selectionMenuPlacement = computed<MenuPlacement | null>(() =>
+    this.menuPlacement(this.selectionAnchor()),
+  );
+
+  private menuPlacement(anchor: SelectionAnchor | null): MenuPlacement | null {
     if (!anchor || this.dockedLayout()) return null;
     if (typeof window === 'undefined') return null;
 
@@ -279,7 +302,44 @@ export class ReaderShell implements OnInit, OnDestroy {
       return { left, width, top: Math.min(anchor.bottom + gap, vh - minVisible), bottom: null };
     }
     return { left, width, top: null, bottom: Math.min(vh - anchor.top + gap, vh - minVisible) };
+  }
+
+  // ------------------------------------------------------------------
+  // Highlight card: a saved highlight, opened from the page
+  // ------------------------------------------------------------------
+
+  /**
+   * The saved highlight a click or tap opened, and where it sits on screen.
+   * Desktop anchors the card at the mark like the selection menu; phones and
+   * touch-first devices dock it at the bottom, clear of the page.
+   */
+  readonly highlightCard = signal<{ noteId: string; anchor: SelectionAnchor | null } | null>(null);
+  readonly highlightNoteEditing = signal(false);
+  readonly highlightNoteDraft = signal('');
+  readonly highlightNoteSaving = signal(false);
+
+  /** The opened highlight's note, kept current with the notes list; null closes the card. */
+  readonly activeHighlight = computed<Note | null>(() => {
+    const card = this.highlightCard();
+    if (!card || this.pendingSelectionText() !== null) return null;
+    return this.dbNotes().find((note) => note.id === card.noteId) ?? null;
   });
+  readonly activeHighlightHasNote = computed(() => {
+    const note = this.activeHighlight();
+    return !!note && noteHasText(note);
+  });
+  readonly activeHighlightPen = computed<HighlightColour>(() =>
+    noteHighlightColour(this.activeHighlight() ?? {}),
+  );
+  readonly activeHighlightPreview = computed(() =>
+    selectionPreview(this.activeHighlight()?.selectedText ?? null),
+  );
+  readonly highlightCardPlacement = computed<MenuPlacement | null>(() =>
+    this.activeHighlight() ? this.menuPlacement(this.highlightCard()?.anchor ?? null) : null,
+  );
+  /** The note-list card just pointed at from the highlight card. */
+  readonly flashedNoteId = signal<string | null>(null);
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Template-ref query (not type query): the epub child is stubbed in specs,
   // and a type query would resolve to null against the stub.
@@ -840,11 +900,18 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly pagerShown = computed(
     () =>
       this.chromeShown()
-      && !(this.pendingSelectionText() !== null && !this.selectionMenuPlacement()),
+      && !(this.pendingSelectionText() !== null && !this.selectionMenuPlacement())
+      && !(this.activeHighlight() !== null && !this.highlightCardPlacement()),
   );
 
   handleSurfaceInteraction(): void {
     if (!this.immersiveReader()) return;
+
+    // A tap away from an open highlight card closes it, and does nothing else.
+    if (this.highlightCard()) {
+      if (!this.highlightNoteEditing() && !this.highlightNoteSaving()) this.closeHighlightCard();
+      return;
+    }
 
     // Selection UI and open tools own the gesture until they are explicitly
     // dismissed; a page tap must never make controls disappear under the user.
@@ -931,7 +998,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     // contextual menu is open. This survives focus moving into Ask Nostos,
     // which otherwise collapses a native PDF selection before the turn is sent.
     this.unregisterSelectionAssistantContext = this.assistantContext.register(
-      () => ({ selectedText: this.pendingSelectionText() }),
+      () => ({
+        selectedText: this.pendingSelectionText() ?? this.activeHighlight()?.selectedText ?? null,
+      }),
       { explicit: true },
     );
     this.loadTopics();
@@ -951,6 +1020,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.unregisterSelectionAssistantContext?.();
     this.unregisterSelectionAssistantContext = null;
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
+    if (this.flashTimer) clearTimeout(this.flashTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
     this.veryNarrowQuery?.removeEventListener?.('change', this.onVeryNarrowChange);
     this.phoneQuery?.removeEventListener?.('change', this.onPhoneChange);
@@ -987,6 +1057,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.book.set(null);
     this.dbNotes.set([]);
     this.pendingSelectionText.set(null);
+    this.closeHighlightCard();
     this.highlightSaving.set(false);
     this.quickNoteSaving.set(false);
     this.quickNotePinnedLocation.set(null);
@@ -1324,6 +1395,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   handleSelectionCaptured(text: string) {
+    // A new selection is the reader's next move; the card it began from closes.
+    this.closeHighlightCard();
     // A touch selection is offered again each time its handles settle; that
     // must not throw away a note already being typed for it.
     const replacing = this.pendingSelectionText() !== null;
@@ -1362,6 +1435,166 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.selectionAnchor.set(null);
     this.noteDraftOpen.set(false);
     this.noteDraft.set('');
+  }
+
+  /**
+   * A click or tap landed on saved highlights. Overlapping marks open the
+   * newest, the one drawn on top. Tapping the open highlight again closes it.
+   * A pending selection owns the page until it is saved or dropped.
+   */
+  handleHighlightActivated(hits: HighlightHit[]): void {
+    if (this.pendingSelectionText() !== null || this.highlightSaving()) return;
+    if (this.highlightNoteEditing() || this.highlightNoteSaving()) return;
+
+    const byId = this.fileType() === 'pdf';
+    let best: { note: Note; anchor: HighlightHit['anchor'] } | null = null;
+    for (const hit of hits) {
+      const note = this.dbNotes().find((candidate) =>
+        byId ? candidate.id === hit.identifier : candidate.cfiRange === hit.identifier,
+      );
+      if (!note) continue;
+      if (!best || createdAtOf(note) > createdAtOf(best.note)) best = { note, anchor: hit.anchor };
+    }
+    if (!best) return;
+
+    if (this.highlightCard()?.noteId === best.note.id) {
+      this.closeHighlightCard();
+      return;
+    }
+
+    this.typoOpen.set(false);
+    this.highlightNoteEditing.set(false);
+    this.highlightNoteDraft.set('');
+    this.highlightCard.set({ noteId: best.note.id, anchor: best.anchor });
+
+    // Desktop: focus moves into the card so Escape and the keyboard reach it.
+    // A phone keeps focus where it was, as the docked selection bar does.
+    if (!this.highlightCardPlacement()) return;
+    setTimeout(() => {
+      this.host.nativeElement
+        .querySelector<HTMLElement>('.highlight-card [data-autofocus]')
+        ?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  closeHighlightCard(): void {
+    this.highlightCard.set(null);
+    this.highlightNoteEditing.set(false);
+    this.highlightNoteDraft.set('');
+    this.highlightNoteSaving.set(false);
+  }
+
+  /** "Add note" / "Edit note": the note opens for writing in the card itself. */
+  editHighlightNote(): void {
+    const note = this.activeHighlight();
+    if (!note) return;
+    this.highlightNoteDraft.set(note.content ?? '');
+    this.highlightNoteEditing.set(true);
+    setTimeout(() => {
+      const input = this.host.nativeElement.querySelector<HTMLTextAreaElement>('.highlight-card-input');
+      input?.focus({ preventScroll: true });
+      input?.setSelectionRange(input.value.length, input.value.length);
+    }, 0);
+  }
+
+  cancelHighlightNoteEdit(): void {
+    if (this.highlightNoteSaving()) return;
+    this.highlightNoteEditing.set(false);
+    this.highlightNoteDraft.set('');
+  }
+
+  /** True when Save would change the note: adding, editing or clearing it. */
+  readonly highlightNoteChanged = computed(
+    () => this.highlightNoteDraft().trim() !== (this.activeHighlight()?.content ?? '').trim(),
+  );
+
+  /**
+   * Saves the note on the opened highlight. Clearing the text keeps the
+   * highlight and drops only its note. The passage and pen are left as they are.
+   */
+  saveHighlightNote(): void {
+    const note = this.activeHighlight();
+    if (!note || this.highlightNoteSaving() || !this.highlightNoteChanged()) return;
+    const content = this.highlightNoteDraft().trim();
+    this.highlightNoteSaving.set(true);
+
+    this.notesService.update(note.id, { content }).subscribe({
+      next: (updated) => {
+        this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
+        // The dotted rule under the mark follows whether it now has a note.
+        this.activeReader()?.recolourHighlight?.(updated, noteHighlightColour(updated));
+        this.highlightNoteSaving.set(false);
+        this.highlightNoteEditing.set(false);
+        this.highlightNoteDraft.set('');
+        this.showSaveFeedback(content ? 'Note saved' : 'Note removed');
+        this.loadTopics();
+      },
+      error: () => {
+        // The draft stays exactly as typed so a retry is one click.
+        this.highlightNoteSaving.set(false);
+        this.toast.error('Could not save the note.');
+      },
+    });
+  }
+
+  onHighlightNoteKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      this.saveHighlightNote();
+    }
+  }
+
+  /** A pen dot in the card recolours the highlight straight away. */
+  recolourActiveHighlight(colour: HighlightColour): void {
+    const note = this.activeHighlight();
+    if (!note || colour === this.activeHighlightPen()) return;
+    this.onUpdateNote({ id: note.id, content: note.content ?? '', highlightColour: colour });
+  }
+
+  copyActiveHighlight(): void {
+    const text = this.activeHighlight()?.selectedText;
+    if (!text) return;
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clipboard) {
+      this.toast.error('Copying is not available in this browser.');
+      return;
+    }
+    clipboard.writeText(text).then(
+      () => this.toast.success('Passage copied.'),
+      () => this.toast.error('Could not copy the passage.'),
+    );
+  }
+
+  /** The highlight stays open behind Ask Nostos and is its context. */
+  askNostosAboutHighlight(): void {
+    if (!this.activeHighlight()) return;
+    this.assistant.requestSurfaceOpen();
+  }
+
+  deleteActiveHighlight(): void {
+    const note = this.activeHighlight();
+    if (note) this.onDeleteNote(note.id);
+  }
+
+  /** Opens Notes & Highlights at this highlight's card, briefly marked. */
+  showActiveHighlightInNotes(): void {
+    const note = this.activeHighlight();
+    if (!note) return;
+    this.closeHighlightCard();
+    if (!this.notesOpen()) this.toggleNotes();
+
+    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.flashedNoteId.set(note.id);
+    this.flashTimer = setTimeout(() => {
+      this.flashedNoteId.set(null);
+      this.flashTimer = null;
+    }, 2400);
+    setTimeout(() => {
+      const card = this.host.nativeElement.querySelector<HTMLElement>(
+        `.notes-panel [data-note-id="${CSS.escape(note.id)}"]`,
+      );
+      card?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    }, 0);
   }
 
   toggleToc() {
@@ -1477,9 +1710,13 @@ export class ReaderShell implements OnInit, OnDestroy {
         next: (updated) => {
           // Update local state so we see the change immediately without reload
           this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
-          // A changed pen is redrawn on the page now, not at the next open.
-          if (event.highlightColour) {
-            this.activeReader()?.recolourHighlight?.(updated, event.highlightColour);
+          // A changed pen, or a note added to or cleared from a highlight, is
+          // redrawn on the page now, not at the next open.
+          if (updated.cfiRange) {
+            this.activeReader()?.recolourHighlight?.(
+              updated,
+              event.highlightColour ?? noteHighlightColour(updated),
+            );
           }
         },
       });
@@ -1501,6 +1738,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
     this.notesService.delete(noteId).subscribe({
       next: () => {
+        if (this.highlightCard()?.noteId === noteId) this.closeHighlightCard();
         if (this.fileType() === 'epub' && noteToDelete?.cfiRange)
           this.activeReader()?.removeHighlight(noteToDelete.cfiRange);
         if (this.fileType() === 'pdf') this.activeReader()?.removeHighlight(noteId);
@@ -1704,6 +1942,14 @@ export class ReaderShell implements OnInit, OnDestroy {
       // PDF uses the docked form, but the keyboard contract is identical.
       if (this.pendingSelectionText() !== null && !this.highlightSaving()) {
         this.discardHighlight();
+        event.preventDefault();
+        return;
+      }
+      // The highlight card is the same kind of layer: Escape leaves the note
+      // being written first, then the card.
+      if (this.highlightCard() && !this.highlightNoteSaving()) {
+        if (this.highlightNoteEditing()) this.cancelHighlightNoteEdit();
+        else this.closeHighlightCard();
         event.preventDefault();
         return;
       }

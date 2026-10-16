@@ -21,6 +21,14 @@ export interface Note {
 }
 
 /**
+ * Whether a highlight carries a note of its own, beyond the passage it marks.
+ * A plain highlight is saved with empty content.
+ */
+export function noteHasText(note: Pick<Note, 'content'>): boolean {
+  return !!note.content?.trim();
+}
+
+/**
  * Resolve the location the active reader can consume for a saved note.
  *
  * cfiRange remains first because it is the established reader-navigation

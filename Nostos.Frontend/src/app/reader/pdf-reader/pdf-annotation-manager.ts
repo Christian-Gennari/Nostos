@@ -6,6 +6,7 @@ import {
   highlightFillRef,
   highlightFillVar,
 } from '../highlight-colours';
+import { HighlightHit, RectLike, anchorAroundHit, rectContains } from '../highlight-hit';
 
 export interface HighlightRect {
   left: number;
@@ -19,6 +20,8 @@ export interface PageHighlight {
   rects: HighlightRect[];
   id?: string;
   colour?: HighlightColour;
+  /** The highlight carries a note; a dotted rule under it says so. */
+  noted?: boolean;
 }
 
 export type PdfHighlightCapture =
@@ -82,7 +85,54 @@ export class PdfAnnotationManager {
       });
 
       highlightLayer.appendChild(group);
+
+      // Outside the group, so the rule is drawn at full strength rather than
+      // at the wash's opacity.
+      if (h.noted) {
+        group.classList.add('has-note');
+        h.rects.forEach((rect) => {
+          const rule = document.createElement('div');
+          rule.className = 'highlight-note-rule';
+          rule.style.left = `${rect.left * 100}%`;
+          rule.style.top = `${(rect.top + rect.height) * 100}%`;
+          rule.style.width = `${rect.width * 100}%`;
+          highlightLayer.appendChild(rule);
+        });
+      }
     });
+  }
+
+  /**
+   * The saved highlights under a viewport point on one page. The marks are
+   * drawn under `pointer-events: none` so text can still be selected through
+   * them, which means they never receive the click themselves: the point is
+   * tested against their stored rectangles instead. Each hit carries the box to
+   * open the highlight card at; `measure: false` skips it for hover.
+   */
+  hitTest(
+    textLayerDiv: HTMLElement,
+    highlights: PageHighlight[],
+    x: number,
+    y: number,
+    measure = true,
+  ): HighlightHit[] {
+    const page = textLayerDiv.getBoundingClientRect();
+    if (!page || page.width <= 0 || page.height <= 0) return [];
+
+    const hits: HighlightHit[] = [];
+    for (const highlight of highlights) {
+      if (!highlight.id) continue;
+      const rects: RectLike[] = highlight.rects.map((rect) => ({
+        left: page.left + rect.left * page.width,
+        top: page.top + rect.top * page.height,
+        right: page.left + (rect.left + rect.width) * page.width,
+        bottom: page.top + (rect.top + rect.height) * page.height,
+      }));
+      const hit = rects.find((rect) => rect.right > rect.left && rectContains(rect, x, y));
+      if (!hit) continue;
+      hits.push({ identifier: highlight.id, anchor: measure ? anchorAroundHit(rects, hit) : null });
+    }
+    return hits;
   }
 
 
