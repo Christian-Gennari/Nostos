@@ -428,7 +428,11 @@ export class ReaderShell implements OnInit, OnDestroy {
   );
 
   readonly hasMoreTools = computed(
-    () => this.moreHasReadingTools() || this.canSwitchEdition() || !!this.feedbackUrl(),
+    () =>
+      this.moreHasReadingTools() ||
+      this.canSwitchEdition() ||
+      !!this.feedbackUrl() ||
+      this.canMarkPassageHere(),
   );
 
   /**
@@ -1279,12 +1283,16 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /** The reader in use can mark passages. */
   readonly canMarkPassage = computed(() => !!this.activeReader()?.passageMarkFromSelection);
+  /** ...and can mark one where it stands, with nothing selected (PDF page, audio time). */
+  readonly canMarkPassageHere = computed(() => !!this.activeReader()?.passageMarkHere);
 
   /** The passage viewer, opened from this reader's notes, turns this book. */
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
     openInBook: (passage: Passage) => {
       this.notesOpen.set(false);
-      this.activeReader()?.goTo(passage.start);
+      // A PDF turns to a page number; a CFI or a time stays a string.
+      const page = passage.anchorKind === 'pdf_page' ? Number(passage.start) : NaN;
+      this.activeReader()?.goTo(Number.isInteger(page) && page > 0 ? page : passage.start);
     },
   };
 
@@ -1294,11 +1302,21 @@ export class ReaderShell implements OnInit, OnDestroy {
    * with the passage between them, whichever came first.
    */
   markPassage(): void {
-    const bookId = this.book()?.id;
-    const reader = this.activeReader();
-    const mark = reader?.passageMarkFromSelection?.() ?? null;
-    if (!bookId || !mark) return;
+    const mark = this.activeReader()?.passageMarkFromSelection?.() ?? null;
+    if (!mark) return;
     this.discardHighlight();
+    this.takePassageMark(mark);
+  }
+
+  /** "Mark passage here" from More: the page or time the reader is at. */
+  markPassageHere(): void {
+    const mark = this.activeReader()?.passageMarkHere?.() ?? null;
+    if (mark) this.takePassageMark(mark);
+  }
+
+  private takePassageMark(mark: PassageMark): void {
+    const bookId = this.book()?.id;
+    if (!bookId) return;
 
     const first = this.passageMark();
     if (!first || first.format !== mark.format) {

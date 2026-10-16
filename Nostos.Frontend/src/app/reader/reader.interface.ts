@@ -82,6 +82,8 @@ export interface IReader {
   // Passages (issue #1014): two marks, in either order, and what lies between.
   /** The selection on offer as one end of a passage. */
   passageMarkFromSelection?(): PassageMark | null;
+  /** Where the reader is now (the page on screen, the playing time) as one end. */
+  passageMarkHere?(): PassageMark | null;
   /** The passage between two marks of this reader, in book order. */
   buildPassage?(a: PassageMark, b: PassageMark): Promise<PassageDraft | null>;
 

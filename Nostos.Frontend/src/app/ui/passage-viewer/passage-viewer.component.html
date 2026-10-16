@@ -42,7 +42,36 @@
       <p class="pv-status" role="alert">This passage could not be opened.</p>
       }
       @default {
-        @if (body()) {
+        @if (isPdf()) {
+        @if (page() === 0 && pdfNote()) {
+        <p class="pv-pdf-note" data-testid="passage-viewer-note">{{ pdfNote() }}</p>
+        }
+        <div
+          class="pv-frame pv-pdf"
+          #frame
+          data-testid="passage-viewer-frame"
+          (pointerdown)="onPointerDown($event)"
+          (pointerup)="onPointerUp($event)"
+        >
+          <!-- The sheet carries the shadow; only the page pixels are inverted. -->
+          <div class="pv-pdf-sheet" [class.is-ready]="pdfStatus() === 'ready'">
+            <canvas
+              #pdfCanvas
+              class="pv-pdf-page"
+              [class.is-ready]="pdfStatus() === 'ready'"
+              [class.is-inverted]="pdfInverted()"
+              role="img"
+              [attr.aria-label]="'Page ' + (pdfFirst() + page())"
+              data-testid="passage-viewer-pdf-page"
+            ></canvas>
+          </div>
+          @if (pdfStatus() === 'loading') {
+          <p class="pv-status pv-pdf-status" role="status">Opening the pages…</p>
+          } @else if (pdfStatus() === 'error') {
+          <p class="pv-status pv-pdf-status" role="alert">These pages could not be opened. Open the passage in the book.</p>
+          }
+        </div>
+        } @else if (body()) {
         <div
           class="pv-frame"
           #frame
@@ -113,7 +142,7 @@
           (click)="previous()"
         ></button>
         <span class="pv-page-label" aria-live="polite" data-testid="passage-viewer-page">
-          Page {{ page() + 1 }} of {{ pageCount() }}
+          Page {{ page() + 1 }} of {{ pageCount() }}@if (isPdf()) {<span class="pv-page-source"> · p. {{ pdfFirst() + page() }}</span>}
         </span>
         <button
           appIconButton

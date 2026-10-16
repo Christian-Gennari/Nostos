@@ -125,6 +125,17 @@
         data-testid="read-aloud-start"
       >{{ readAloud.active() ? 'Stop reading aloud' : 'Read aloud' }}</button>
       }
+      @if (canMarkPassageHere()) {
+      <!-- A passage end where the reader stands (issue #1018): the page on
+           screen, or the time playing. A scanned PDF has nothing to select. -->
+      <button
+        nostosMenuItem
+        icon="scroll"
+        [hint]="passageMark() ? 'Ends the passage started earlier' : 'Its other end can come later'"
+        (triggered)="fromMoreMenu(markPassageHere)"
+        data-testid="reader-mark-passage-here"
+      >{{ passageMark() ? 'Complete passage here' : 'Mark passage here' }}</button>
+      }
       @if (canSwitchEdition()) {
       <!-- Continue in another edition of the same work, present only when one
            exists and can be opened. It names where it leads. -->
