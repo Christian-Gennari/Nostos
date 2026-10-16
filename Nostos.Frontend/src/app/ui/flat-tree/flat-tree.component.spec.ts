@@ -168,4 +168,43 @@ describe('FlatTreeComponent', () => {
 
     expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
   });
+
+  describe('while a row is being renamed', () => {
+    let input: HTMLInputElement;
+    let selected: ReturnType<typeof vi.fn<(node: unknown) => void>>;
+    let saved: ReturnType<typeof vi.fn<(rename: unknown) => void>>;
+
+    beforeEach(() => {
+      selected = vi.fn<(node: unknown) => void>();
+      saved = vi.fn<(rename: unknown) => void>();
+      component.nodeSelected.subscribe((node) => selected(node));
+      component.nodeRenameSaved.subscribe((rename) => saved(rename));
+      fixture.componentRef.setInput('editingId', 'a');
+      fixture.detectChanges();
+      input = fixture.nativeElement.querySelector('.inline-rename-input');
+    });
+
+    const press = (key: string) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      return event;
+    };
+
+    it('lets Space type a space instead of selecting the row', () => {
+      expect(press(' ').defaultPrevented).toBe(false);
+      expect(selected).not.toHaveBeenCalled();
+    });
+
+    it('saves on Enter without also selecting the row', () => {
+      input.value = 'New name';
+      press('Enter');
+      expect(saved).toHaveBeenCalledWith({ id: 'a', newName: 'New name' });
+      expect(selected).not.toHaveBeenCalled();
+    });
+
+    it('leaves the arrow keys to the caret', () => {
+      expect(press('ArrowRight').defaultPrevented).toBe(false);
+      expect(press('ArrowLeft').defaultPrevented).toBe(false);
+    });
+  });
 });

@@ -228,6 +228,11 @@ export class FlatTreeComponent {
   // ── Keyboard Navigation ──────────────────────────────────────
 
   onKeydown(event: KeyboardEvent, node: FlatTreeNode): void {
+    // Only keys aimed at the row itself. Keys typed into the inline rename
+    // field bubble up here too: Space used to be swallowed (a name could not
+    // contain one), Enter selected the row on top of saving the rename, and
+    // the arrow keys folded folders while moving the caret.
+    if (event.target !== event.currentTarget) return;
     switch (event.key) {
       case 'Enter':
       case ' ':
