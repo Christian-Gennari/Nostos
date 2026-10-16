@@ -189,6 +189,11 @@ app-sidebar-collections.no-transition {
   align-items: center;
 }
 
+/* The phone's way into the command palette; desktop has Ctrl/Cmd+K. */
+.search-everything {
+  display: none;
+}
+
 .search-icon {
   /* Absolutely placed, not a flex sibling: in the flow its 18px box pushed the
      visible input 9px right of the container's centre, so the box on screen was
@@ -1242,6 +1247,14 @@ app-sidebar-collections.no-transition {
     width: 100%;
     max-width: 100%; /* Full width on mobile */
     order: 2;
+  }
+
+  .search-bar-container > .search-everything {
+    display: inline-flex;
+    flex: 0 0 var(--control-h-touch);
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
+    margin-left: 8px;
   }
 
   /* The search field takes the touch rung like every other field. It was

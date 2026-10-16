@@ -1,120 +1,317 @@
-/* Command palette: a top-anchored quick-search card, not a centred dialog —
-   it must read as a launcher, not a question. Tokens only, so it follows
-   light/dark without its own palette. */
+/* Command palette: a top-anchored launcher card on desktop, a full-height
+   sheet on a phone. It reads as a launcher, not a question, so it is anchored
+   high rather than centred. Tokens only, so it follows light and dark. */
 .palette-backdrop {
   position: fixed;
   inset: 0;
+  z-index: var(--layer-system);
   background: var(--modal-scrim);
-  z-index: 200;
+  -webkit-backdrop-filter: blur(var(--modal-scrim-blur));
+  backdrop-filter: blur(var(--modal-scrim-blur));
+  animation: palette-fade var(--motion-fast) var(--ease-out) both;
 }
 
 .palette {
   position: fixed;
   top: 12vh;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(36rem, calc(100vw - 2rem));
-  max-height: 60vh;
+  right: 0;
+  left: 0;
+  z-index: calc(var(--layer-system) + 1);
   display: flex;
   flex-direction: column;
-  background: var(--bg-surface);
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: min(70vh, 36rem);
+  margin-inline: auto;
+  overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-dialog);
+  background: var(--bg-surface);
   box-shadow: var(--shadow-glass-lg);
-  z-index: 201;
-  overflow: hidden;
+  color: var(--color-text-main);
+  font-family: 'Hanken Grotesk', sans-serif;
+  transform-origin: top center;
+  animation: palette-reveal var(--motion-base) var(--ease-out) both;
 }
 
+@keyframes palette-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes palette-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+}
+
+/* ------------------------------
+   Search row
+------------------------------ */
 .palette-input-row {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0 1.125rem;
   border-bottom: 1px solid var(--border-color);
 }
 
 .palette-input-icon {
-  flex-shrink: 0;
+  flex: none;
   color: var(--color-text-light);
 }
 
 .palette-input {
   flex: 1;
+  min-width: 0;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--color-text-main);
-  font-size: 1rem;
+  font-family: inherit;
+  font-size: 1.05rem;
+}
+
+.palette-input::placeholder {
+  color: var(--color-text-light);
 }
 
 .palette-loading {
-  flex-shrink: 0;
+  flex: none;
 }
 
+/* Desktop dismisses with Escape or the backdrop; Cancel is the phone's way out. */
+.palette-cancel {
+  display: none;
+}
 
+/* ------------------------------
+   Results
+------------------------------ */
 .palette-results {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0.375rem;
+  overscroll-behavior: contain;
+  padding: 0.25rem 0.5rem 0.5rem;
+}
+
+.palette-section + .palette-section {
+  margin-top: 0.25rem;
+}
+
+.palette-heading {
+  padding: 0.75rem 0.625rem 0.375rem;
+  color: var(--color-text-light);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .palette-item {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  width: 100%;
-  padding: 0.5rem 0.625rem;
-  border: 0;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.625rem;
   border-radius: var(--radius-popover-item);
-  background: transparent;
   color: var(--color-text-main);
   cursor: pointer;
-  text-align: left;
-  font-size: 0.875rem;
+  transition: background-color var(--motion-fast) ease;
 }
 
-.palette-item nostos-icon {
-  flex-shrink: 0;
-  color: var(--color-text-light);
-}
-
+/* The same soft pill the dock uses for its selected item. */
 .palette-item.active {
-  background: var(--bg-hover);
+  background: var(--dock-pill);
 }
 
-.palette-item-label {
+.palette-glyph {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--dock-field);
+  color: var(--color-text-muted);
+}
+
+.palette-item-ask .palette-glyph {
+  color: var(--color-brand-accent);
+}
+
+/* A book's cover in place of the glyph tile: same row height, book-shaped. */
+.palette-cover {
+  flex: none;
+  width: 1.375rem;
+  height: 2rem;
+  margin: 0 0.1875rem;
+  border-radius: 3px;
+  object-fit: cover;
+  box-shadow: var(--cover-shadow);
+}
+
+.palette-item-text {
+  display: flex;
   flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.palette-item-label,
+.palette-item-sub {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.palette-item-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.palette-item-label q {
+  quotes: '“' '”';
+  font-weight: 600;
+}
+
 .palette-item-sub {
-  flex-shrink: 0;
-  font-size: 0.75rem;
   color: var(--color-text-light);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.palette-item-enter {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-text-light);
+  opacity: 0;
+  transition: opacity var(--motion-fast) ease;
+}
+
+.palette-item.active .palette-item-enter {
+  opacity: 1;
 }
 
 .palette-empty {
   margin: 0;
-  padding: 1.25rem;
-  text-align: center;
-  font-size: 0.875rem;
+  padding: 2rem 1.25rem;
   color: var(--color-text-light);
+  font-size: 0.875rem;
+  text-align: center;
 }
 
+/* ------------------------------
+   Keyboard hints
+------------------------------ */
 .palette-hint {
   display: flex;
-  gap: 1rem;
-  padding: 0.5rem 1rem;
+  flex: none;
+  gap: 1.125rem;
+  padding: 0.5rem 1.125rem;
   border-top: 1px solid var(--border-color);
-  font-size: 0.75rem;
   color: var(--color-text-light);
+  font-size: 0.72rem;
+}
+
+.palette-hint-toggle {
+  margin-left: auto;
 }
 
 .palette-hint kbd {
-  padding: 0.0625rem 0.375rem;
+  display: inline-block;
+  min-width: 1.1rem;
+  margin-right: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-surface-alt);
   font-family: inherit;
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.palette-hint kbd + kbd {
+  margin-left: -0.125rem;
+}
+
+/* Keyboard hints mean nothing to a finger. */
+@media (hover: none) {
+  .palette-hint {
+    display: none;
+  }
+}
+
+/* ------------------------------
+   Phone: a full-height sheet
+------------------------------ */
+@media (max-width: 768px) {
+  .palette {
+    top: 0;
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    animation: palette-fade var(--motion-fast) var(--ease-out) both;
+  }
+
+  .palette-input-row {
+    gap: 0.625rem;
+    min-height: 3.75rem;
+    padding: env(safe-area-inset-top, 0px) 0.5rem 0 1rem;
+  }
+
+  .palette-input {
+    /* 16px or more keeps iOS from zooming the page on focus. */
+    font-size: 1rem;
+  }
+
+  .palette-cancel {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    min-height: var(--control-h-touch);
+    padding: 0 0.625rem;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-main);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .palette-results {
+    padding: 0.25rem 0.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .palette-item {
+    min-height: 3.25rem;
+  }
+
+  .palette-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette,
+  .palette-backdrop {
+    animation: none;
+  }
+
+  .palette-item,
+  .palette-item-enter {
+    transition: none;
+  }
 }

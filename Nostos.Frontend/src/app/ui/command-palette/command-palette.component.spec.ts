@@ -1,40 +1,75 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
-import { CommandPalette } from './command-palette.component';
+import { CommandPalette, noteExcerpt } from './command-palette.component';
+import { CommandPaletteService } from './command-palette.service';
+import { RecentItemsService } from './recent-items.service';
 import { BooksService } from '../../core/services/books.service';
 import { CollectionsService } from '../../core/services/collections.service';
 import { HighlightImportService } from '../../core/services/highlight-import.service';
+import { NotesService } from '../../core/services/notes.service';
+import { TopicsService } from '../../core/services/topics.service';
+import { WritingsService } from '../../core/services/writings.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
+import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
+import { AssistantService } from '../assistant/assistant.service';
+import { AssistantStatusService } from '../assistant/assistant-status.service';
 
-describe('CommandPalette (Cmd/Ctrl+K)', () => {
+describe('CommandPalette', () => {
   let fixture: ComponentFixture<CommandPalette>;
   let component: CommandPalette;
   let router: Router;
 
-  const booksList = vi.fn(() => of({ items: [], totalCount: 0 }));
-  const collectionsList = vi.fn(() =>
-    of([
-      { id: 'c1', name: 'Classics', parentId: null },
-      { id: 'c2', name: 'Sci-Fi', parentId: null },
-    ]),
-  );
-
+  const booksList = vi.fn();
+  const notesSearch = vi.fn();
+  const collectionsList = vi.fn();
+  const topicsList = vi.fn();
+  const writingsList = vi.fn();
+  const writingsCreate = vi.fn();
   const openHighlightImport = vi.fn();
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     localStorage.clear();
-    openHighlightImport.mockClear();
-    booksList.mockClear();
-    collectionsList.mockClear();
+    for (const mock of [booksList, notesSearch, collectionsList, topicsList, writingsList, writingsCreate, openHighlightImport]) {
+      mock.mockReset();
+    }
+    booksList.mockReturnValue(of({ items: [], totalCount: 0 }));
+    notesSearch.mockReturnValue(of([]));
+    collectionsList.mockReturnValue(
+      of([
+        { id: 'c1', name: 'Classics', parentId: null },
+        { id: 'c2', name: 'Sci-Fi', parentId: null },
+      ]),
+    );
+    topicsList.mockReturnValue(
+      of([
+        { id: 't1', name: 'Stoicism', usageCount: 3 },
+        { id: 't2', name: 'Attention', usageCount: 1 },
+      ]),
+    );
+    writingsList.mockReturnValue(
+      of([
+        { id: 'w1', name: 'Essay on attention', type: 'Document', updatedAt: '' },
+        { id: 'f1', name: 'Attention folder', type: 'Folder', updatedAt: '' },
+      ]),
+    );
 
     await TestBed.configureTestingModule({
       imports: [CommandPalette],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         provideRouter([]),
-        { provide: BooksService, useValue: { list: booksList } },
+        { provide: BooksService, useValue: { list: booksList, get: vi.fn() } },
+        { provide: NotesService, useValue: { search: notesSearch } },
         { provide: CollectionsService, useValue: { list: collectionsList } },
+        { provide: TopicsService, useValue: { list: topicsList, get: vi.fn() } },
+        { provide: WritingsService, useValue: { list: writingsList, create: writingsCreate, get: vi.fn() } },
         { provide: HighlightImportService, useValue: { open: openHighlightImport } },
       ],
     }).compileComponents();
@@ -47,94 +82,295 @@ describe('CommandPalette (Cmd/Ctrl+K)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     localStorage.clear();
   });
 
-  it('starts closed and opens on toggle, loading collections once', () => {
-    expect(component.isOpen()).toBe(false);
-
+  function openPalette(): void {
     component.open();
-    expect(component.isOpen()).toBe(true);
-    expect(collectionsList).toHaveBeenCalledTimes(1);
-
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="palette-input"]')).toBeTruthy();
-  });
+  }
 
-  it('toggles on Cmd+K / Ctrl+K (with or without Shift) and closes on Escape', () => {
+  function type(query: string): void {
+    component.onQueryChange(query);
+    vi.advanceTimersByTime(250);
+    fixture.detectChanges();
+  }
+
+  function enableAssistant(): void {
+    TestBed.inject(LibraryPreferencesService).assistantEnabled.set(true);
+    TestBed.inject(AssistantStatusService).available.set(true);
+  }
+
+  const titles = () => component.sections().map((s) => s.title);
+  const entry = (kind: string) => component.entries().find((e) => e.kind === kind)!;
+
+  it('toggles on Cmd/Ctrl+K, with or without Shift', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
     expect(component.isOpen()).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
+    expect(component.isOpen()).toBe(false);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true }));
+    expect(component.isOpen()).toBe(true);
+  });
+
+  it('opens through the service, the way phone controls do, and loads its lists', () => {
+    TestBed.inject(CommandPaletteService).open();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="palette-input"]')).toBeTruthy();
+    expect(collectionsList).toHaveBeenCalledTimes(1);
+    expect(topicsList).toHaveBeenCalledTimes(1);
+    expect(writingsList).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses on Escape and returns focus to where it was', () => {
+    const before = document.createElement('button');
+    document.body.appendChild(before);
+    before.focus();
+
+    openPalette();
+    vi.advanceTimersByTime(1);
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('[data-testid="palette-input"]'));
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(component.isOpen()).toBe(false);
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
-    expect(component.isOpen()).toBe(true);
-    component.close();
-
-    // Shift+K also toggles: plain Ctrl+K collides with the browser's own
-    // search in some setups.
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true }));
-    expect(component.isOpen()).toBe(true);
-    component.close();
+    expect(document.activeElement).toBe(before);
+    before.remove();
   });
 
-  it('lists go-to actions and filters them by query', () => {
-    component.open();
-    expect(component.entries().filter((e) => e.kind === 'action').length).toBe(5);
+  describe('with nothing typed', () => {
+    it('offers quick actions and destinations, without a Recent section yet', () => {
+      openPalette();
+      expect(titles()).toEqual(['Quick actions', 'Go to']);
+      expect(component.sections()[0].entries.map((e) => e.id)).toEqual([
+        'add-book',
+        'new-document',
+        'import-highlights',
+        'toggle-theme',
+      ]);
+    });
 
-    component.onQueryChange('studio');
-    const actions = component.entries().filter((e) => e.kind === 'action');
-    expect(actions.map((a) => a.label)).toEqual(['Go to Writing Studio']);
+    it('adds Capture a thought only while Ask Nostos is on', () => {
+      enableAssistant();
+      openPalette();
+      expect(component.sections()[0].entries.map((e) => e.id)).toContain('capture');
+    });
+
+    it('leads with the places opened most recently', () => {
+      TestBed.inject(RecentItemsService).record({ kind: 'topic', id: 't1', label: 'Stoicism', sub: '3 notes' });
+      openPalette();
+
+      expect(titles()).toEqual(['Recent', 'Quick actions', 'Go to']);
+      expect(component.sections()[0].entries[0]).toMatchObject({ kind: 'topic', label: 'Stoicism' });
+    });
   });
 
-  it('opens the highlight import dialog in place, without navigating', () => {
-    component.open();
-    component.onQueryChange('kobo');
-    const [action] = component.entries().filter((e) => e.kind === 'action');
+  describe('searching', () => {
+    beforeEach(() => {
+      booksList.mockReturnValue(
+        of({ items: [{ id: 'b1', title: 'Attention Merchants', author: 'Tim Wu', coverUrl: '/covers/b1.jpg' }], totalCount: 1 }),
+      );
+      notesSearch.mockReturnValue(
+        of([
+          {
+            id: 'n1',
+            bookId: 'b2',
+            bookTitle: 'Dune',
+            content: 'Fear is the mind-killer. [[Attention]]',
+            selectedText: null,
+            snippet: null,
+            topicNames: ['Attention'],
+            createdAt: '',
+          },
+        ]),
+      );
+    });
 
-    component.run(action);
+    it('groups results into sections in a fixed order', () => {
+      enableAssistant();
+      openPalette();
+      type('attention');
 
-    expect(openHighlightImport).toHaveBeenCalledTimes(1);
-    expect(router.navigate).not.toHaveBeenCalled();
-    expect(component.isOpen()).toBe(false);
+      expect(titles()).toEqual(['Books', 'Topics', 'Notes', 'Documents', 'Ask Nostos']);
+      expect(booksList).toHaveBeenCalledWith({ search: 'attention', page: 1, pageSize: 5 });
+      expect(notesSearch).toHaveBeenCalledWith('attention', 4);
+      // Topics and documents are matched here, by name; folders are not documents.
+      expect(entry('topic')).toMatchObject({ id: 't2', sub: '1 note' });
+      expect(component.entries().filter((e) => e.kind === 'document').map((e) => e.id)).toEqual(['w1']);
+      expect(entry('note').label).toBe('Fear is the mind-killer. Attention');
+      expect(entry('book').coverUrl).toBe('/covers/b1.jpg');
+    });
+
+    it('shows a book cover in place of the glyph', () => {
+      openPalette();
+      type('attention');
+      const book = fixture.nativeElement.querySelector('[data-testid="palette-item-book"] img');
+      expect(book?.getAttribute('src')).toBe('/covers/b1.jpg');
+    });
+
+    it('matches actions by their keywords as well as their label', () => {
+      openPalette();
+      type('kobo');
+      const actions = component.sections().find((s) => s.id === 'actions')!;
+      expect(actions.entries.map((e) => e.id)).toEqual(['import-highlights']);
+    });
+
+    it('says nothing matched, with no Ask row while Ask Nostos is off', () => {
+      booksList.mockReturnValue(of({ items: [], totalCount: 0 }));
+      notesSearch.mockReturnValue(of([]));
+      openPalette();
+      type('zzzz');
+
+      expect(component.entries()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('.palette-empty').textContent).toContain('Nothing matches');
+    });
+
+    it('keeps a section when the other search fails', () => {
+      notesSearch.mockReturnValue(throwError(() => new Error('notes search failed')));
+      booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'Attention', author: null }], totalCount: 1 }));
+      openPalette();
+      type('attention');
+      expect(titles()).toContain('Books');
+    });
   });
 
-  it('filters collections client-side and navigates with the filter set', () => {
-    component.open();
-    // open() loads the sidebar list through the mocked service (synchronous of()).
-    component.onQueryChange('sci');
+  describe('running an entry', () => {
+    beforeEach(() => {
+      enableAssistant();
+      booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'Attention', author: 'A' }], totalCount: 1 }));
+      notesSearch.mockReturnValue(
+        of([{ id: 'n1', bookId: 'b1', bookTitle: 'A', content: 'x', selectedText: null, snippet: 'attention', topicNames: [], createdAt: '' }]),
+      );
+      openPalette();
+      type('attention');
+    });
 
-    const cols = component.entries().filter((e) => e.kind === 'collection');
-    expect(cols.map((c) => c.label)).toEqual(['Sci-Fi']);
+    it('opens a book and remembers it', () => {
+      component.run(entry('book'));
+      expect(router.navigate).toHaveBeenCalledWith(['/library', 'b1']);
+      expect(TestBed.inject(RecentItemsService).items()[0]).toMatchObject({ kind: 'book', id: 'b1' });
+      expect(component.isOpen()).toBe(false);
+    });
 
-    component.run(cols[0]);
-    expect(component.isOpen()).toBe(false);
-    expect(router.navigate).toHaveBeenCalledWith(['/library']);
-    // The library filter carries the collection, so the landing page shows it.
-    expect(TestBed.inject(LibraryFilterService).collectionId()).toBe('c2');
+    it('deep-links a topic, a note and a document', () => {
+      component.run(entry('topic'));
+      expect(router.navigate).toHaveBeenCalledWith(['/second-brain'], { queryParams: { topicId: 't2' } });
+
+      component.run(entry('note'));
+      expect(router.navigate).toHaveBeenCalledWith(['/second-brain'], { queryParams: { noteId: 'n1' } });
+
+      component.run(entry('document'));
+      expect(router.navigate).toHaveBeenCalledWith(['/studio'], { queryParams: { writingId: 'w1' } });
+    });
+
+    it('turns the query into an Ask Nostos draft', () => {
+      const assistant = TestBed.inject(AssistantService);
+      const surface = vi.spyOn(assistant, 'requestSurfaceOpen');
+
+      component.run(entry('ask'));
+
+      expect(assistant.draft()).toBe('attention');
+      expect(surface).toHaveBeenCalledTimes(1);
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('sends Add a book to the Library as an intent', () => {
+      type('add');
+      component.run(component.entries().find((e) => e.id === 'add-book')!);
+      expect(router.navigate).toHaveBeenCalledWith(['/library'], { queryParams: { add: 'book' } });
+    });
+
+    it('creates an untitled document and opens it, without a name prompt', () => {
+      writingsCreate.mockReturnValue(of({ id: 'w9', name: 'Untitled document', type: 'Document' }));
+      type('new doc');
+      component.run(component.entries().find((e) => e.id === 'new-document')!);
+
+      expect(writingsCreate).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: null });
+      expect(router.navigate).toHaveBeenCalledWith(['/studio'], { queryParams: { writingId: 'w9' } });
+    });
+
+    it('switches the theme in place', () => {
+      const theme = TestBed.inject(ThemeService);
+      theme.setTheme('light');
+      type('dark');
+      const toggle = component.entries().find((e) => e.id === 'toggle-theme')!;
+      // The label names the theme it switches TO.
+      expect(toggle.label).toBe('Switch to dark theme');
+      component.run(toggle);
+      expect(theme.theme()).toBe('dark');
+      theme.setTheme('light');
+    });
+
+    it('opens the highlight import dialog in place', () => {
+      type('kobo');
+      component.run(entry('action'));
+      expect(openHighlightImport).toHaveBeenCalledTimes(1);
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('filters the Library by a collection', () => {
+      type('sci');
+      component.run(entry('collection'));
+      expect(router.navigate).toHaveBeenCalledWith(['/library']);
+      expect(TestBed.inject(LibraryFilterService).collectionId()).toBe('c2');
+    });
   });
 
-  it('runs a book entry into its detail page and moves with arrows + Enter', () => {
-    component.open();
-    component.books.set([
-      { id: 'b1', title: 'Dune', author: 'Frank Herbert' } as never,
-      { id: 'b2', title: 'Dune Messiah', author: 'Frank Herbert' } as never,
-    ]);
-    fixture.detectChanges();
+  describe('as a combobox', () => {
+    it('points the input at the highlighted option as the arrows move it', () => {
+      openPalette();
+      const input = fixture.nativeElement.querySelector('[data-testid="palette-input"]') as HTMLInputElement;
 
-    const items = fixture.nativeElement.querySelectorAll('[data-testid="palette-item-book"]');
-    expect(items.length).toBe(2);
+      expect(input.getAttribute('role')).toBe('combobox');
+      expect(input.getAttribute('aria-controls')).toBe('palette-listbox');
+      expect(input.getAttribute('aria-activedescendant')).toBe('palette-option-0');
 
-    component.moveActive(1);
-    expect(component.activeIndex()).toBe(1);
-    component.moveActive(1);
-    // Wraps within the full entry list (books + collections + actions).
-    expect(component.activeIndex()).toBe(2);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+      fixture.detectChanges();
+      expect(input.getAttribute('aria-activedescendant')).toBe('palette-option-1');
+      const active = fixture.nativeElement.querySelector('#palette-option-1');
+      expect(active.getAttribute('aria-selected')).toBe('true');
 
-    component.activeIndex.set(0);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    expect(router.navigate).toHaveBeenCalledWith(['/library', 'b1']);
-    expect(component.isOpen()).toBe(false);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
+      fixture.detectChanges();
+      expect(component.activeIndex()).toBe(component.entries().length - 1);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+      expect(component.activeIndex()).toBe(0);
+    });
+
+    it('labels each section group by its heading', () => {
+      openPalette();
+      const group = fixture.nativeElement.querySelector('[role="group"]') as HTMLElement;
+      const heading = fixture.nativeElement.querySelector(`#${group.getAttribute('aria-labelledby')}`);
+      expect(heading.textContent.trim()).toBe('Quick actions');
+    });
+
+    it('runs the highlighted option on Enter', () => {
+      openPalette();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'End' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(router.navigate).toHaveBeenCalledWith(['/settings']);
+    });
+  });
+});
+
+describe('noteExcerpt', () => {
+  const hit = (over: object) =>
+    ({ id: 'n', bookId: 'b', bookTitle: null, content: '', selectedText: null, snippet: null, topicNames: [], createdAt: '', ...over }) as never;
+
+  it('prefers the server snippet, unwraps topic links and collapses whitespace', () => {
+    expect(noteExcerpt(hit({ snippet: 'a  [[Stoicism]]\nb', content: 'ignored' }))).toBe('a Stoicism b');
+  });
+
+  it('caps a long note at one line', () => {
+    const text = 'x'.repeat(200);
+    expect(noteExcerpt(hit({ content: text })).length).toBe(118);
+  });
+
+  it('never returns an empty label', () => {
+    expect(noteExcerpt(hit({}))).toBe('Untitled note');
   });
 });

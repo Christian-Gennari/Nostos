@@ -11,7 +11,7 @@ import {
   ViewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BooksService, type BookListOptions } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { Collection } from '../core/dtos/collection.dtos';
@@ -43,6 +43,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/vi
 import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
 import { ProgressComponent } from '../ui/progress/progress.component';
+import { CommandPaletteService } from '../ui/command-palette/command-palette.service';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -268,7 +269,25 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  readonly palette = inject(CommandPaletteService);
+
   constructor() {
+    // "Add a book" from anywhere (the command palette) lands here as
+    // ?add=book. Open the dialog, then drop the parameter so a reload or Back
+    // does not open it again.
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      if (params.get('add') !== 'book') return;
+      this.openAddModal();
+      this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { add: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    });
+
     // Phones scroll the document itself. Reserve the styled scrollbar gutter for
     // as long as the library is mounted so a filter that returns a short or empty
     // result set cannot make the whole page jump sideways by 8px.
