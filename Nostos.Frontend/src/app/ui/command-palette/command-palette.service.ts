@@ -6,9 +6,9 @@ import { DOCUMENT, DestroyRef, Injectable, inject, signal } from '@angular/core'
  * The palette component is deferred: it loads the first time it opens, so the
  * initial bundle does not carry its template and styles. That means the
  * shortcut cannot live on the component, which does not exist yet; it lives
- * here, started once by the app root. Phones have no keyboard chord, so their
- * visible controls (the Library's search-everything button, the More sheet)
- * call open() directly.
+ * here, started once by the app root. Phones have no keyboard chord, so a
+ * visible control calls open() directly: the More sheet's item where the dock
+ * has one, otherwise the Library's search-everything button.
  */
 @Injectable({ providedIn: 'root' })
 export class CommandPaletteService {

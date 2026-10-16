@@ -44,6 +44,7 @@ import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { CommandPaletteService } from '../ui/command-palette/command-palette.service';
+import { FeedbackLinkService } from '../core/services/feedback-link.service';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -285,6 +286,8 @@ export class Library implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   readonly palette = inject(CommandPaletteService);
+  /** Set when the dock's More sheet exists, which carries Search everything. */
+  readonly feedbackUrl = inject(FeedbackLinkService).url;
 
   constructor() {
     // "Add a book" from anywhere (the command palette) lands here as

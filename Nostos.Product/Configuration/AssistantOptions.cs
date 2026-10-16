@@ -44,11 +44,11 @@ public sealed class AssistantOptions
     /// Model id sent verbatim. It must call tools: capture, reading the
     /// library and proposing topics all run through tool calls, and a model
     /// that ignores them answers as though it had done the work.
-    /// <c>gemini/gemini-3.5-flash-lite</c> is verified calling tools through the
-    /// gateway (finish_reason <c>tool_calls</c>, 15 tools offered, ~2.1k prompt
-    /// tokens against the pool's ~6.8k of injected preamble).
+    /// Empty by default: model names differ per provider (<c>gpt-4o-mini</c>,
+    /// <c>openai/gpt-4o-mini</c>, <c>gemini/…</c>), so a built-in name only
+    /// suits one gateway and looked like a choice the owner had made.
     /// </summary>
-    public string Model { get; set; } = "gemini/gemini-3.5-flash-lite";
+    public string Model { get; set; } = string.Empty;
 
     /// <summary>Name of the environment variable holding the bearer token.</summary>
     public string ApiKeyEnvironmentVariable { get; set; } = "NOSTOS_ASSISTANT_TOKEN";

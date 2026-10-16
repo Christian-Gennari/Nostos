@@ -2403,8 +2403,8 @@ describe('SettingsComponent backup-only surface', () => {
     expect(inputValue('#ai-embedding-model')).toBe(aiProviderSettings.embedding!.model);
     expect(inputValue('#ai-embedding-api-key')).toBe('');
     expect(input('#ai-embedding-api-key').type).toBe('password');
-    expect(input('#ai-embedding-base-url').placeholder).toBe('https://ai-gateway.vercel.sh/v1');
-    expect(input('#ai-embedding-model').placeholder).toBe('e.g. alibaba/qwen3-embedding-0-6b');
+    expect(input('#ai-embedding-base-url').placeholder).toBe('https://api.openai.com/v1');
+    expect(input('#ai-embedding-model').placeholder).toBe('e.g. text-embedding-3-small');
     // No key is configured for this section, so there is nothing to clear.
     expect(buttonByText('ai-provider-embedding', 'Clear')).toBeNull();
   });

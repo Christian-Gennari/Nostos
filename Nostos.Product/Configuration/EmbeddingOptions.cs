@@ -24,8 +24,11 @@ public sealed class EmbeddingOptions
     /// </summary>
     public string BaseUrl { get; set; } = string.Empty;
 
-    /// <summary>Model id sent verbatim (Qwen3-Embedding-0.6B, 1024 dimensions).</summary>
-    public string Model { get; set; } = "alibaba/qwen3-embedding-0-6b";
+    /// <summary>
+    /// Model id sent verbatim. Empty by default: names differ per provider, and
+    /// changing the model rebuilds the index, so it should be a deliberate choice.
+    /// </summary>
+    public string Model { get; set; } = string.Empty;
 
     /// <summary>Name of the environment variable holding the bearer token.</summary>
     public string ApiKeyEnvironmentVariable { get; set; } = "NOSTOS_EMBEDDING_TOKEN";
