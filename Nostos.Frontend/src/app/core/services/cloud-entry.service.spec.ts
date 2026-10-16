@@ -131,6 +131,13 @@ describe('CloudEntryService', () => {
     expect(auth.loginUrl).toHaveBeenCalledWith('/start?signedOut=true', null, 'login');
   });
 
+  it('builds the post-sign-in login URL without prompt, signedOut marker or hash', () => {
+    history.replaceState({}, '', '/start?signedOut=true&offer=Pro-Annual#factor-one');
+
+    service.continueUrl();
+    expect(auth.loginUrl).toHaveBeenCalledWith('/start?offer=Pro-Annual', null);
+  });
+
   it('preserves a raw start offer through authentication without trusting it as checkout state', async () => {
     history.replaceState({}, '', '/start?offer=Pro-Annual');
     capabilities.get.mockReturnValue(of(cloudCapabilities));

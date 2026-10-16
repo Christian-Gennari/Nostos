@@ -13,9 +13,7 @@
         <p class="cloud-entry__eyebrow">Nostos Cloud</p>
         <h1>Come home to your reading.</h1>
         <p>Sign in or create an account to open your private Nostos library.</p>
-        <button appButton variant="primary" type="button" (click)="signIn()">
-          Sign in or create account
-        </button>
+        <app-cloud-sign-in />
       }
 
       @case ('subscription_required') {

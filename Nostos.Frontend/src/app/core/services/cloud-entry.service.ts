@@ -167,6 +167,21 @@ export class CloudEntryService {
       : this.auth.loginUrl(returnUrl, this.requestedOffer());
   }
 
+  /**
+   * Login URL for after the embedded sign-in form has created the provider
+   * session. It never forces a fresh provider prompt (that would show the
+   * hosted page again) and drops the `signedOut` marker, which has done its
+   * job by then. The hash is dropped too: the sign-in form may use it.
+   */
+  continueUrl(): string {
+    const location = globalThis.location;
+    const search = new URLSearchParams(location.search);
+    search.delete('signedOut');
+    const query = search.toString();
+    const returnUrl = `${location.pathname || '/'}${query ? `?${query}` : ''}`;
+    return this.auth.loginUrl(returnUrl, this.requestedOffer());
+  }
+
   showAccountDeletionPending(status: CloudAccountDeletionStatus): void {
     this.accountDeletionStatus.set(status);
     this.accountDeletionStatusFailed.set(false);

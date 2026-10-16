@@ -5,11 +5,18 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { CloudSignInComponent } from './cloud-sign-in.component';
 
 @Component({
   selector: 'app-cloud-entry',
   standalone: true,
-  imports: [LoadingIndicatorComponent, ButtonComponent, NostosIconComponent, DatePipe],
+  imports: [
+    LoadingIndicatorComponent,
+    ButtonComponent,
+    NostosIconComponent,
+    DatePipe,
+    CloudSignInComponent,
+  ],
   templateUrl: './cloud-entry.component.html',
   styleUrl: './cloud-entry.component.css',
 })
@@ -28,10 +35,6 @@ export class CloudEntryComponent {
 
   navigateTo(url: string): void {
     globalThis.location.assign(url);
-  }
-
-  signIn(): void {
-    this.navigateTo(this.entry.loginUrl());
   }
 
   async checkout(): Promise<void> {
