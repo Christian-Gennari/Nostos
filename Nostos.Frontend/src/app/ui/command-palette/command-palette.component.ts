@@ -108,6 +108,7 @@ export class CommandPalette {
   private launcher = inject(AssistantLauncherService);
   private recent = inject(RecentItemsService);
   private palette = inject(CommandPaletteService);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly isOpen = this.palette.isOpen;
   readonly query = signal('');
@@ -222,6 +223,20 @@ export class CommandPalette {
       if (!id || !container) return;
       container.querySelector<HTMLElement>(`#${id}`)?.scrollIntoView?.({ block: 'nearest' });
     });
+  }
+
+  /**
+   * The palette is modal: while it is open, focus stays in it. A page that
+   * moves focus on its own after a navigation (the Brain opening a deep-linked
+   * note, say) would otherwise take the keystrokes meant for the search field.
+   */
+  @HostListener('document:focusin', ['$event'])
+  onFocusIn(event: FocusEvent): void {
+    if (!this.isOpen()) return;
+    const target = event.target as Node | null;
+    const palette = this.host.nativeElement.querySelector('.palette');
+    if (!palette || (target && palette.contains(target))) return;
+    this.inputRef()?.nativeElement.focus();
   }
 
   /** Moves through the open palette. Cmd/Ctrl+K itself belongs to CommandPaletteService. */
