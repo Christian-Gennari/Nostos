@@ -1141,7 +1141,9 @@
         <button appButton variant="primary" size="sm" type="button"
           (click)="mode === 'review' ? review.openPicker() : browse.openPicker()">Link to topic</button>
         }
-        <button appButton variant="secondary" size="sm" type="button"
+        <!-- Quiet beside each of a topic's passages, where it repeats once per
+             note; outlined beside the primary action in the inspector. -->
+        <button appButton [variant]="mode === 'evidence' ? 'ghost' : 'secondary'" size="sm" type="button"
           (click)="openWritingHandoff([note.id])">
           <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
           Keep with writing…
