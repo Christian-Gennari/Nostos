@@ -28,6 +28,17 @@ public static class NotesEndpoints
             }
         );
 
+        // GET a passage in full (issue #1014). The note lists carry only its
+        // opening, so the passage viewer asks for the rest when it opens.
+        group.MapGet(
+            "/notes/{id:guid}/passage",
+            async (Guid id, INoteService notes, CancellationToken ct) =>
+            {
+                var passage = await notes.GetPassageAsync(id, ct);
+                return passage is null ? Results.NotFound() : Results.Ok(passage);
+            }
+        );
+
         // SEARCH notes by text (issue #158). The index could only ever match topic
         // NAMES, so a word living only in a note's body or quote was unreachable —
         // and 44 of this library's 63 notes belong to no topic at all, which no

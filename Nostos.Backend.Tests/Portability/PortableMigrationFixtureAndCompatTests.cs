@@ -180,6 +180,47 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
+    public async Task Archive_written_before_passages_imports_every_note_as_a_note()
+    {
+        // Passages (issue #1014) were appended to the note record without a
+        // data version bump, so an archive of the current version may have
+        // none of their keys. Each note must import as an ordinary note.
+        using var fixture = await CreateFixtureAsync(
+            "portable-format1-data2.nostos",
+            CurrentDataVersion);
+
+        var entries = ReadEntries(fixture.Bytes);
+
+        MutateJsonEntry(entries, DataPath, root =>
+        {
+            foreach (var note in root["notes"]!.AsArray())
+            {
+                var record = note!.AsObject();
+                record.Remove("kind").Should().BeTrue(
+                    "the current writer carries the kind, so the fixture has it to remove");
+                record.Remove("passageTitle");
+                record.Remove("passageEnd");
+                record.Remove("passageHtml");
+            }
+        });
+
+        RehashDataDescriptor(entries);
+
+        using var archive = new MemoryStream(BuildArchive(entries));
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        destination.Db.ChangeTracker.Clear();
+
+        var importedNote = await destination.Db.Notes.AsNoTracking().SingleAsync();
+        importedNote.Kind.Should().Be("note");
+        importedNote.PassageTitle.Should().BeNull();
+        importedNote.PassageHtml.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Archive_written_before_highlight_colours_imports_its_notes_with_no_pen()
     {
         // The pen (issue #861) was appended to the note record without a data

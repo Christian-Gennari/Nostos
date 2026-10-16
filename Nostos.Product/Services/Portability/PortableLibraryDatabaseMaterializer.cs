@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Library;
 using Nostos.Shared.Enums;
 
@@ -254,6 +255,10 @@ internal static class PortableLibraryDatabaseMaterializer
                 SourceAnchorValue = x.SourceAnchorValue,
                 AnchorVerified = x.AnchorVerified,
                 HighlightColour = x.HighlightColour,
+                Kind = x.Kind ?? NoteKinds.Note,
+                PassageTitle = x.PassageTitle,
+                PassageEnd = x.PassageEnd,
+                PassageHtml = x.PassageHtml,
             });
         db.Notes.AddRange(notes.Values);
 

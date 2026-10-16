@@ -61,6 +61,10 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
             note.SourceAnchorValue.Should().Be(expectedNote.SourceAnchorValue);
             note.AnchorVerified.Should().Be(expectedNote.AnchorVerified);
             note.HighlightColour.Should().Be(expectedNote.HighlightColour);
+            note.Kind.Should().Be(expectedNote.Kind ?? "note");
+            note.PassageTitle.Should().Be(expectedNote.PassageTitle);
+            note.PassageEnd.Should().Be(expectedNote.PassageEnd);
+            note.PassageHtml.Should().Be(expectedNote.PassageHtml);
             note.CreatedAt.Should().Be(expectedNote.CreatedAt);
 
             var expectedLink = fixture.Data.NoteImportBookLinks!.Single();

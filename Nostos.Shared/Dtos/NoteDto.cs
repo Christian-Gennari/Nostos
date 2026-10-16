@@ -22,7 +22,15 @@ public record NoteDto(
     bool AnchorVerified = false,
     // APPENDED (issue #861): the highlighter pen, by name (amber | sage | blue |
     // rose). Null = none recorded; a reader draws that in amber.
-    string? HighlightColour = null
+    string? HighlightColour = null,
+    // APPENDED (issue #1014): a passage — a stretch of the book saved to be
+    // read again. It starts at SourceAnchorValue and ends at PassageEnd; for a
+    // passage SelectedText is only its opening, and the full text comes from
+    // GET /api/notes/{id}/passage.
+    string Kind = "note",
+    string? PassageTitle = null,
+    string? PassageEnd = null,
+    int? PassageWordCount = null
 );
 
 public record CreateNoteDto(
@@ -39,15 +47,25 @@ public record CreateNoteDto(
     string? SourceAnchorValue = null,
     bool AnchorVerified = false,
     // APPENDED (issue #861): the pen a highlight is made with, by name.
-    string? HighlightColour = null
+    string? HighlightColour = null,
+    // APPENDED (issue #1014): a passage. Its start is the typed anchor, its end
+    // PassageEnd in the same terms; SelectedText is its plain text and
+    // PassageHtml the same text with its reading markup (EPUB only).
+    string Kind = "note",
+    string? PassageTitle = null,
+    string? PassageEnd = null,
+    string? PassageHtml = null
 );
 
 // HighlightColour APPENDED (issue #861). Null leaves the stored pen unchanged,
 // so a client that only edits text never clears a colour.
+// PassageTitle APPENDED (issue #1014): null leaves it unchanged. A passage's
+// text and ends are fixed when it is saved.
 public record UpdateNoteDto(
     string Content,
     string? SelectedText = null,
-    string? HighlightColour = null);
+    string? HighlightColour = null,
+    string? PassageTitle = null);
 
 public record NoteLocationDto(string? CfiRange);
 
@@ -76,7 +94,34 @@ public record NoteSearchHitDto(
     // Original text is fetched explicitly through /raw, not repeated in every row.
     string CaptureSource = "text",
     string ProcessingMode = "verbatim",
-    bool HasRawContent = false
+    bool HasRawContent = false,
+    // APPENDED (issue #1014): a passage. SelectedText is only its opening.
+    string Kind = "note",
+    string? PassageTitle = null,
+    string? PassageEnd = null,
+    int? PassageWordCount = null
+);
+
+/// <summary>
+/// One passage in full, for the passage viewer (issue #1014). The list DTOs
+/// carry only a passage's opening, so a page of notes never ships whole
+/// chapters; the viewer fetches this when it opens.
+/// </summary>
+public record PassageDto(
+    Guid Id,
+    Guid BookId,
+    string? BookTitle,
+    string Title,
+    // epub_cfi | pdf_page | audio_timestamp: the terms Start and End are in.
+    string AnchorKind,
+    string Start,
+    string End,
+    string? Html,
+    string? Text,
+    int WordCount,
+    string Content,
+    string? HighlightColour,
+    DateTime CreatedAt
 );
 
 /// <summary>

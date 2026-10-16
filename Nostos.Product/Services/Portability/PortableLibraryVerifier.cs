@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services;
 
 namespace Nostos.Backend.Services.Portability;
@@ -2220,6 +2221,22 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             nameof(PortableNote.HighlightColour),
             Ef(("NoteModel", nameof(NoteModel.HighlightColour))),
             (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.HighlightColour), context.Row.HighlightColour, context.Expected.HighlightColour)),
+        Entry<NoteContext>(
+            nameof(PortableNote.Kind),
+            Ef(("NoteModel", nameof(NoteModel.Kind))),
+            (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.Kind), context.Row.Kind, context.Expected.Kind ?? NoteKinds.Note)),
+        Entry<NoteContext>(
+            nameof(PortableNote.PassageTitle),
+            Ef(("NoteModel", nameof(NoteModel.PassageTitle))),
+            (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.PassageTitle), context.Row.PassageTitle, context.Expected.PassageTitle)),
+        Entry<NoteContext>(
+            nameof(PortableNote.PassageEnd),
+            Ef(("NoteModel", nameof(NoteModel.PassageEnd))),
+            (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.PassageEnd), context.Row.PassageEnd, context.Expected.PassageEnd)),
+        Entry<NoteContext>(
+            nameof(PortableNote.PassageHtml),
+            Ef(("NoteModel", nameof(NoteModel.PassageHtml))),
+            (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.PassageHtml), context.Row.PassageHtml, context.Expected.PassageHtml)),
     ];
 
     private static readonly IReadOnlyList<ComparisonEntry<TopicContext>> TopicComparisons =

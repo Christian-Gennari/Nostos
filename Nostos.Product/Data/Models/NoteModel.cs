@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Nostos.Backend.Services.Notes;
 
 namespace Nostos.Backend.Data.Models;
 
@@ -45,4 +46,24 @@ public class NoteModel
     public string? SourceAnchorValue { get; set; }
 
     public bool AnchorVerified { get; set; }
+
+    // A passage (issue #1014) is a very big highlight: a stretch of the book
+    // between two ends, saved to be read again on its own. note | passage.
+    // A passage starts at its typed anchor (SourceAnchorKind/Value: epub_cfi,
+    // pdf_page or audio_timestamp) and ends at PassageEnd, in the same terms.
+    // CfiRange stays null, so no reader paints it as a highlight.
+    [MaxLength(16)]
+    public string Kind { get; set; } = NoteKinds.Note;
+
+    [MaxLength(300)]
+    public string? PassageTitle { get; set; }
+
+    [MaxLength(1024)]
+    public string? PassageEnd { get; set; }
+
+    // The passage's text with its reading markup (sanitised to an allow-list on
+    // save), for the passage viewer. SelectedText holds the same text plain, so
+    // search and retrieval read a passage like any highlight. Null for a PDF or
+    // audio passage, whose viewer shows the pages or plays the clip instead.
+    public string? PassageHtml { get; set; }
 }

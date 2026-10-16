@@ -547,6 +547,8 @@ public class NostosDbContext : DbContext
             e.Property(n => n.CaptureSource).HasDefaultValue("text");
             e.Property(n => n.ProcessingMode).HasDefaultValue("verbatim");
             e.Property(n => n.SourceAnchorKind).HasDefaultValue("unknown");
+            // Every note that existed before passages (issue #1014) is a note.
+            e.Property(n => n.Kind).HasDefaultValue("note");
         });
 
         modelBuilder.Entity<CollectionModel>().HasIndex(c => c.ParentId);

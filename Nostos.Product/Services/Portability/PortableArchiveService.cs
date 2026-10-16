@@ -655,7 +655,11 @@ public sealed class PortableArchiveService(
                 x.SourceAnchorKind,
                 x.SourceAnchorValue,
                 x.AnchorVerified,
-                x.HighlightColour))
+                x.HighlightColour,
+                x.Kind,
+                x.PassageTitle,
+                x.PassageEnd,
+                x.PassageHtml))
             .ToList();
 
         var topics = (await _db.Topics

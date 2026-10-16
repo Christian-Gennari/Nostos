@@ -254,6 +254,11 @@ internal static class PortableArchiveTestSupport
             SelectedText = "selected passage",
             CfiRange = "epubcfi(/6/4!/4/2)",
             HighlightColour = "sage",
+            // Passage fields (issue #1014), so a round trip proves they travel.
+            Kind = "passage",
+            PassageTitle = "The Grand Inquisitor",
+            PassageEnd = "epubcfi(/6/8!/4/20/1:12)",
+            PassageHtml = "<p>selected <em>passage</em></p>",
             CaptureSource = "voice",
             ProcessingMode = "light_polish",
             SourceAnchorKind = "epub_cfi",
