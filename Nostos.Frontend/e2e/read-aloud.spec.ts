@@ -112,6 +112,14 @@ async function revealChrome(page: Page): Promise<void> {
   await expect(page.getByTestId('typo-toggle')).toBeVisible();
 }
 
+/** Read aloud lives in the header's More menu. */
+async function clickReadAloud(page: Page): Promise<void> {
+  if (!(await page.getByTestId('read-aloud-start').isVisible().catch(() => false))) {
+    await page.getByTestId('reader-more').click({ timeout: 2_000 });
+  }
+  await page.getByTestId('read-aloud-start').click({ timeout: 2_000 });
+}
+
 /**
  * Starts reading. The chrome can go back to rest between being revealed and
  * the click (it does so on its own just after a book opens), so the pair is
@@ -120,7 +128,7 @@ async function revealChrome(page: Page): Promise<void> {
 async function startReading(page: Page): Promise<void> {
   await expect(async () => {
     await revealChrome(page);
-    await page.getByTestId('read-aloud-start').click({ timeout: 2_000 });
+    await clickReadAloud(page);
   }).toPass({ timeout: 20_000 });
 }
 
@@ -157,14 +165,14 @@ test.describe('read aloud (EPUB)', () => {
     test(`desktop, ${theme}: reads through the chapter and into the next one`, async ({ page }) => {
       await openBook(page, theme, `${run}-${theme}`);
 
-      const start = page.getByTestId('read-aloud-start');
       await setSpeechDelay(page, 4000);
       await startReading(page);
 
       const bar = page.getByTestId('read-aloud-bar');
       await expect(bar).toBeVisible();
       await revealChrome(page);
-      await expect(start).toHaveAttribute('aria-pressed', 'true');
+      // More stays lit while it is reading, so the header says where Stop is.
+      await expect(page.getByTestId('reader-more')).toHaveClass(/\bactive\b/);
       // The sentence being spoken is marked on the page.
       await expect.poll(() => epubMarkCount(page, 'read-aloud')).toBe(1);
       expect((await spoken(page))[0]).toBe('Chapter 1');
@@ -615,7 +623,7 @@ async function startReadingPdf(page: Page): Promise<void> {
     if (!(await page.getByTestId('typo-toggle').isVisible().catch(() => false))) {
       await page.locator('.pdf-container').click({ position: { x: 30, y: 300 } });
     }
-    await page.getByTestId('read-aloud-start').click({ timeout: 2_000 });
+    await clickReadAloud(page);
   }).toPass({ timeout: 30_000 });
 }
 

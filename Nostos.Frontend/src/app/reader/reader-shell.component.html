@@ -37,6 +37,12 @@
       </div>
     </div>
 
+    <!-- Four tools, the same at every width (320px holds back + four 44px
+         tools beside a readable title). The two panels you keep open while
+         reading and the view settings get a button each; everything you reach
+         for once in a session — search, read aloud, another edition,
+         feedback — lives behind More. Before this the header grew a button
+         per feature and moved them into View settings below 480px. -->
     <div class="reader-header-tools">
       @if (!loadError() && fileType()) {
       <button
@@ -60,19 +66,6 @@
         [class.active]="notesOpen()"
       ></button>
       @if (fileType() === 'epub' || fileType() === 'pdf') {
-      <button
-        appIconButton
-        icon="magnifying-glass"
-        [glyphSize]="20"
-        (click)="toggleSearch()"
-        title="Search"
-        aria-label="Search in book"
-        [disabled]="!canSearch()"
-        [attr.aria-expanded]="searchPanelOpen()"
-        [class.active]="searchPanelOpen()"
-        data-testid="reader-search-toggle"
-      ></button>
-      } @if (fileType() === 'epub' || fileType() === 'pdf') {
       <!-- One view control for both formats: typography for a reflowable EPUB,
            page fits for a fixed-layout PDF. The PDF's zoom pair used to sit in
            the header, where six controls squeezed the title to about 60px at
@@ -90,61 +83,78 @@
         data-testid="typo-toggle"
       ></button>
       }
-      @if (showHeaderReadAloud()) {
-      <button
-        appIconButton
-        icon="speaker-high"
-        [glyphSize]="20"
-        (click)="toggleReadAloud()"
-        [title]="readAloud.active() ? 'Stop reading aloud' : 'Read aloud'"
-        [attr.aria-label]="readAloud.active() ? 'Stop reading aloud' : 'Read aloud'"
-        [attr.aria-pressed]="readAloud.active()"
-        [class.active]="readAloud.active()"
-        data-testid="read-aloud-start"
-      ></button>
-      }
       }
 
-      <!-- Continue in another edition of the same work. Present only when one
-           exists and can be opened. Its icon is where it leads. Below 360px on
-           a format with a View settings panel it joins that panel, like
-           Feedback, because five 44px tools do not fit a 320px header. -->
-      @if (showHeaderSwitch()) {
+      @if (hasMoreTools()) {
+      <!-- Lit while something it started is still running (read aloud, the
+           search bar), so the header says where to turn it off. -->
       <button
+        #moreTrigger
         appIconButton
-        [icon]="switchEditionIcon()"
+        icon="dots-three"
         [glyphSize]="20"
-        (click)="openSwitchEdition()"
-        title="Continue in another edition"
-        aria-label="Continue in another edition"
-        aria-haspopup="dialog"
-        data-testid="reader-switch-edition"
+        title="More"
+        aria-label="More reading tools"
+        [class.active]="moreOpen() || searchPanelOpen() || readAloud.active()"
+        [nostosMenuTriggerFor]="moreMenu"
+        (menuOpened)="moreOpen.set(true)"
+        (menuClosed)="moreOpen.set(false)"
+        data-testid="reader-more"
       ></button>
-      }
-
-      <!-- A quiet utility beside the reading tools: Cloud only, and available
-           even when the book fails to load, which is exactly when a problem is
-           worth reporting. The Reader is a separate shell, so it owns this
-           entry instead of the workspace dock. Below 360px on a format with a
-           View settings panel it moves into that panel (see .typo-feedback),
-           because five 44px tools do not fit a 320px header. -->
-      @if (showHeaderFeedback()) {
-      @if (feedbackUrl(); as feedbackHref) {
-      <a
-        class="icon-btn reader-feedback"
-        [href]="feedbackHref"
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Send feedback"
-        aria-label="Send feedback"
-        data-testid="reader-feedback"
-      >
-        <nostos-icon name="paper-plane-tilt" [size]="20"></nostos-icon>
-      </a>
-      }
       }
     </div>
   </header>
+
+  <ng-template #moreMenu>
+    <nostos-menu class="reader-more-menu" aria-label="More reading tools" data-testid="reader-more-menu">
+      @if (moreHasReadingTools()) {
+      <button
+        nostosMenuItem
+        icon="magnifying-glass"
+        [disabled]="!canSearch()"
+        [hint]="canSearch() ? null : 'Available once the book has opened'"
+        (triggered)="fromMoreMenu(openSearch)"
+        data-testid="reader-search-toggle"
+      >Search in book</button>
+      }
+      @if (readAloudOffered()) {
+      <button
+        nostosMenuItem
+        [icon]="readAloud.active() ? 'stop' : 'speaker-high'"
+        (triggered)="fromMoreMenu(toggleReadAloud)"
+        data-testid="read-aloud-start"
+      >{{ readAloud.active() ? 'Stop reading aloud' : 'Read aloud' }}</button>
+      }
+      @if (canSwitchEdition()) {
+      <!-- Continue in another edition of the same work, present only when one
+           exists and can be opened. It names where it leads. -->
+      @if (moreHasReadingTools()) {
+      <hr nostosMenuSeparator />
+      }
+      <button
+        nostosMenuItem
+        [icon]="switchEditionIcon()"
+        hint="Picks up where you are"
+        aria-haspopup="dialog"
+        (triggered)="fromMoreMenu(openSwitchEdition)"
+        data-testid="reader-switch-edition"
+      >{{ switchEditionLabel() }}</button>
+      }
+      @if (feedbackUrl(); as feedbackHref) {
+      <!-- Cloud only, and offered even when the book fails to load, which is
+           exactly when a problem is worth reporting. -->
+      @if (moreHasReadingTools() || canSwitchEdition()) {
+      <hr nostosMenuSeparator />
+      }
+      <button
+        nostosMenuItem
+        icon="paper-plane-tilt"
+        (triggered)="openFeedback(feedbackHref)"
+        data-testid="reader-feedback"
+      >Send feedback</button>
+      }
+    </nostos-menu>
+  </ng-template>
 
   @if (searchPanelOpen()) {
   <section
@@ -814,36 +824,6 @@
          theme, so it is the same setting as Settings → Appearance and both
          readers follow it without reloading. Kept first and identical for EPUB
          and PDF; PDF "Page colours" below stays a separate page-pixel control. -->
-    @if (showPanelSwitch()) {
-    <button
-      appButton
-      type="button"
-      variant="ghost"
-      class="typo-switch"
-      (click)="openSwitchEdition()"
-      aria-haspopup="dialog"
-      data-testid="reader-switch-edition-panel"
-    >
-      <nostos-icon [name]="switchEditionIcon()" [size]="16"></nostos-icon>
-      <span class="typo-switch-label">Continue in another edition</span>
-      <nostos-icon name="caret-right" [size]="13"></nostos-icon>
-    </button>
-    }
-
-    @if (showPanelReadAloud()) {
-    <button
-      appButton
-      type="button"
-      variant="ghost"
-      class="typo-switch"
-      (click)="toggleReadAloud(); toggleTypo()"
-      data-testid="read-aloud-start-panel"
-    >
-      <nostos-icon name="speaker-high" [size]="16"></nostos-icon>
-      <span class="typo-switch-label">{{ readAloud.active() ? 'Stop reading aloud' : 'Read aloud' }}</span>
-    </button>
-    }
-
     <!-- Grouped by what a setting changes: the app, the page, the text. Each
          group has a titled section with a hairline above it, so a row reads as
          belonging to its group rather than to one flat list. -->
@@ -1037,27 +1017,6 @@
       />
     </div>
     </section>
-    }
-
-    @if (showPanelFeedback()) {
-    @if (feedbackUrl(); as feedbackHref) {
-    <a
-      class="typo-feedback"
-      [href]="feedbackHref"
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Send feedback"
-      data-testid="reader-feedback-panel"
-    >
-      <nostos-icon name="paper-plane-tilt" [size]="16"></nostos-icon>
-      <span class="typo-feedback-label">Send feedback</span>
-      <nostos-icon
-        class="typo-feedback-external"
-        name="arrow-square-out"
-        [size]="13"
-      ></nostos-icon>
-    </a>
-    }
     }
   </div>
   }

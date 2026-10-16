@@ -78,8 +78,28 @@ function textPdf(pageTexts: string[]): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
+/** Search is a More item; it is enabled once the reader can search. */
+async function openMore(page: Page): Promise<void> {
+  const more = page.getByTestId('reader-more');
+  if ((await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+  await expect(page.getByTestId('reader-more-menu')).toBeVisible();
+}
+
+async function revealChrome(page: Page): Promise<void> {
+  if (await page.getByTestId('typo-toggle').isVisible().catch(() => false)) return;
+  const viewport = page.viewportSize()!;
+  await page.mouse.click(viewport.width / 2, viewport.height / 2);
+  await expect(page.getByTestId('typo-toggle')).toBeVisible({ timeout: 2_000 });
+}
+
 async function waitForSearchReady(page: Page): Promise<void> {
-  await expect(page.getByTestId('reader-search-toggle')).toBeEnabled({ timeout: 45_000 });
+  await expect(async () => {
+    await revealChrome(page);
+    await openMore(page);
+    await expect(page.getByTestId('reader-search-toggle')).toBeEnabled({ timeout: 2_000 });
+  }).toPass({ timeout: 45_000 });
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('reader-more-menu')).toHaveCount(0);
 }
 
 test.describe('unified reader search', () => {
@@ -137,8 +157,8 @@ test.describe('unified reader search', () => {
     await waitForSearchReady(page);
 
     const toggle = page.getByTestId('reader-search-toggle');
-    await page.locator('.pdf-container').click({ position: { x: 160, y: 160 } });
-    await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
+    await revealChrome(page);
+    await openMore(page);
     await toggle.click();
     const panel = page.getByTestId('reader-search-panel');
     const input = panel.locator('.reader-search-input');
@@ -155,7 +175,8 @@ test.describe('unified reader search', () => {
 
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
-    await expect(toggle).toBeFocused();
+    // Focus returns to More, which is where search was opened from.
+    await expect(page.getByTestId('reader-more')).toBeFocused();
   });
 
   test('textless PDF never exposes an active search surface', async ({ page }) => {
@@ -177,7 +198,9 @@ test.describe('unified reader search', () => {
     const toggle = page.getByTestId('reader-search-toggle');
     await page.locator('.pdf-container').click({ position: { x: 160, y: 160 } });
     await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
+    await openMore(page);
     await expect(toggle).toBeDisabled();
+    await page.keyboard.press('Escape');
     await page.keyboard.press('Control+f');
     await expect(page.getByTestId('reader-search-panel')).toHaveCount(0);
   });

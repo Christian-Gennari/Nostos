@@ -73,6 +73,11 @@ const pdfBook = {
   lastLocation: null,
 };
 
+const pdfWithAudiobook = {
+  ...pdfBook,
+  otherEditions: [{ id: 'book-2', type: 'audiobook', progressPercent: 0, hasFile: true }],
+};
+
 const audioBook = {
   id: 'book-1',
   title: 'An audio book',
@@ -112,34 +117,18 @@ const selfHostedCapabilities: DeploymentCapabilities = {
 /**
  * The Reader is its own shell, so this spec renders the real ReaderShell. The
  * book request fails first (that state also renders the header), then the
- * format is set directly so the maximum PDF tool count is exercised without
- * loading a real document.
+ * format is set directly so the header is exercised without loading a real
+ * document.
+ *
+ * The contract: the header holds the same four tools at every width —
+ * Contents, Notes, View settings (EPUB/PDF) and More — and More holds the
+ * once-a-session tools: search, read aloud, another edition, feedback.
  */
-describe('ReaderShell feedback entry', () => {
+describe('ReaderShell header tools', () => {
   let capabilities: DeploymentCapabilities;
-  let viewportWidth: number;
-
-  function mockMatchMedia(): void {
-    Object.defineProperty(window, 'matchMedia', {
-      writable: true,
-      value: vi.fn().mockImplementation((query: string) => {
-        const max = /\(max-width:\s*(\d+)px\)/.exec(query);
-        return {
-          matches: max ? viewportWidth <= Number(max[1]) : false,
-          media: query,
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
-          dispatchEvent: vi.fn(),
-        };
-      }),
-    });
-  }
 
   beforeEach(async () => {
     capabilities = cloudCapabilities;
-    viewportWidth = 390;
 
     const paramMap$ = new BehaviorSubject(convertToParamMap({ id: 'book-1' }));
     const queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
@@ -195,84 +184,167 @@ describe('ReaderShell feedback entry', () => {
     await TestBed.inject(Router).navigateByUrl('/read/book-1');
   });
 
-  async function render(book: unknown = pdfBook): Promise<ComponentFixture<ReaderShell>> {
-    mockMatchMedia();
+  afterEach(() => {
+    document.querySelectorAll('.cdk-overlay-container').forEach((node) => node.remove());
+    vi.restoreAllMocks();
+  });
+
+  async function render(
+    book: unknown = pdfBook,
+    { loadError = null as string | null } = {},
+  ): Promise<ComponentFixture<ReaderShell>> {
     const fixture = TestBed.createComponent(ReaderShell);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // The header (and its feedback utility) renders before the book arrives;
-    // give the shell the format so the real tool count is exercised.
     fixture.componentInstance.book.set(book);
     fixture.componentInstance.loading.set(false);
-    fixture.componentInstance.loadError.set(null);
+    fixture.componentInstance.loadError.set(loadError);
     fixture.detectChanges();
     return fixture;
   }
 
-  function openViewSettings(fixture: ComponentFixture<ReaderShell>): void {
-    (fixture.nativeElement.querySelector('[data-testid="typo-toggle"]') as HTMLButtonElement).click();
-    fixture.detectChanges();
+  function headerTools(fixture: ComponentFixture<ReaderShell>): string[] {
+    return Array.from(
+      fixture.nativeElement.querySelectorAll('.reader-header-tools > button'),
+      (button) => (button as HTMLElement).getAttribute('aria-label') ?? '',
+    );
   }
 
-  it('renders the header entry with the reader origin on a wide Cloud shell', async () => {
-    const fixture = await render();
+  function moreButton(fixture: ComponentFixture<ReaderShell>): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="reader-more"]');
+  }
 
-    const link = fixture.nativeElement.querySelector(
-      '[data-testid="reader-feedback"]',
-    ) as HTMLAnchorElement;
-    expect(link).toBeTruthy();
-    expect(link.getAttribute('aria-label')).toBe('Send feedback');
-    expect(link.href).toBe('https://nostos.page/feedback?from=reader');
-    expect(link.target).toBe('_blank');
-    expect(link.rel).toBe('noopener noreferrer');
-    expect(link.closest('.reader-header-tools')).toBeTruthy();
+  /** Opens More and returns the labels of its items, in order. */
+  function openMore(fixture: ComponentFixture<ReaderShell>): string[] {
+    moreButton(fixture)!.click();
+    fixture.detectChanges();
+    return Array.from(
+      document.querySelectorAll('[data-testid="reader-more-menu"] .nostos-menu-item__label'),
+      (label) => label.textContent?.trim() ?? '',
+    );
+  }
 
-    openViewSettings(fixture);
-    expect(
-      fixture.nativeElement.querySelector('[data-testid="reader-feedback-panel"]'),
-    ).toBeNull();
+  function moreItem(testId: string): HTMLButtonElement | null {
+    return document.querySelector(`[data-testid="reader-more-menu"] [data-testid="${testId}"]`);
+  }
+
+  it('holds Contents, Notes, View settings and More for a PDF', async () => {
+    const fixture = await render(pdfWithAudiobook);
+
+    expect(headerTools(fixture)).toEqual([
+      'Table of Contents',
+      'Notes & Highlights',
+      'View settings',
+      'More reading tools',
+    ]);
+    // Nothing that used to sit in the header is still there.
+    for (const id of ['reader-search-toggle', 'read-aloud-start', 'reader-switch-edition', 'reader-feedback']) {
+      expect(fixture.nativeElement.querySelector(`[data-testid="${id}"]`)).toBeNull();
+    }
   });
 
-  it('moves the entry into View settings below 360px with the full PDF tool count', async () => {
-    viewportWidth = 320;
-    const fixture = await render();
+  it('puts search, the other edition and feedback in More, grouped', async () => {
+    const fixture = await render(pdfWithAudiobook);
 
-    expect(fixture.nativeElement.querySelectorAll('.reader-header-tools .icon-btn').length).toBe(4);
-    expect(fixture.nativeElement.querySelector('[data-testid="reader-feedback"]')).toBeNull();
-
-    openViewSettings(fixture);
-    const panelLink = fixture.nativeElement.querySelector(
-      '[data-testid="reader-feedback-panel"]',
-    ) as HTMLAnchorElement;
-    expect(panelLink).toBeTruthy();
-    expect(panelLink.href).toBe('https://nostos.page/feedback?from=reader');
-    expect(panelLink.target).toBe('_blank');
-    expect(panelLink.rel).toBe('noopener noreferrer');
+    expect(openMore(fixture)).toEqual([
+      'Search in book',
+      'Continue in the audiobook',
+      'Send feedback',
+    ]);
+    expect(document.querySelectorAll('[data-testid="reader-more-menu"] hr').length).toBe(2);
+    expect(moreItem('reader-switch-edition')?.textContent).toContain('Picks up where you are');
   });
 
-  it('keeps the header entry for audio, which has no View settings panel', async () => {
-    viewportWidth = 320;
+  it('keeps search visible but disabled until the reader can search', async () => {
+    const fixture = await render();
+    openMore(fixture);
+
+    const search = moreItem('reader-search-toggle')!;
+    expect(search.getAttribute('aria-disabled')).toBe('true');
+    expect(search.textContent).toContain('Available once the book has opened');
+  });
+
+  it('opens feedback in a new tab with the reader origin', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const fixture = await render();
+    openMore(fixture);
+
+    moreItem('reader-feedback')!.click();
+    fixture.detectChanges();
+
+    expect(open).toHaveBeenCalledWith(
+      'https://nostos.page/feedback?from=reader',
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('opens the edition dialog from More and closes the menu', async () => {
+    const fixture = await render(pdfWithAudiobook);
+    const shell = fixture.componentInstance;
+    openMore(fixture);
+
+    moreItem('reader-switch-edition')!.click();
+    // A PDF reads its page text before the dialog opens.
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(shell.switchEditionOpen()).toBe(true);
+    expect(shell.moreOpen()).toBe(false);
+  });
+
+  it('keeps chrome up while More is open, and a page tap only closes it', async () => {
+    const fixture = await render();
+    const shell = fixture.componentInstance;
+    openMore(fixture);
+
+    expect(shell.moreOpen()).toBe(true);
+    expect(shell.chromeShown()).toBe(true);
+
+    shell.handleSurfaceInteraction();
+    fixture.detectChanges();
+
+    expect(shell.moreOpen()).toBe(false);
+    expect(shell.chromeVisible()).toBe(false);
+  });
+
+  it('gives audio Contents, Notes and More, with no reading-only items', async () => {
     const fixture = await render(audioBook);
 
-    expect(
-      fixture.nativeElement.querySelector('[data-testid="reader-feedback"]'),
-    ).toBeTruthy();
-    expect(
-      fixture.nativeElement.querySelector('[data-testid="reader-feedback-panel"]'),
-    ).toBeNull();
+    expect(headerTools(fixture)).toEqual(['Table of Contents', 'Notes & Highlights', 'More reading tools']);
+    expect(openMore(fixture)).toEqual(['Send feedback']);
+    expect(document.querySelectorAll('[data-testid="reader-more-menu"] hr').length).toBe(0);
   });
 
-  it('omits both entries on SelfHosted at every width', async () => {
-    capabilities = selfHostedCapabilities;
-    viewportWidth = 320;
-    const fixture = await render();
+  it('still offers feedback when the book fails to load', async () => {
+    const fixture = await render(pdfBook, { loadError: 'Could not open' });
 
-    expect(fixture.nativeElement.querySelector('[data-testid="reader-feedback"]')).toBeNull();
-    openViewSettings(fixture);
-    expect(
-      fixture.nativeElement.querySelector('[data-testid="reader-feedback-panel"]'),
-    ).toBeNull();
+    expect(headerTools(fixture)).toEqual(['More reading tools']);
+    expect(openMore(fixture)).toEqual(['Send feedback']);
+  });
+
+  it('names the edition only when there is one to open', async () => {
+    const fixture = await render({
+      ...pdfBook,
+      otherEditions: [
+        { id: 'book-2', type: 'audiobook', progressPercent: 0, hasFile: true },
+        { id: 'book-3', type: 'audiobook', progressPercent: 0, hasFile: true },
+      ],
+    });
+
+    expect(openMore(fixture)).toContain('Continue in another edition');
+  });
+
+  it('omits feedback on SelfHosted, and More with it when nothing else is left', async () => {
+    capabilities = selfHostedCapabilities;
+    const pdf = await render();
+    expect(openMore(pdf)).toEqual(['Search in book']);
+    pdf.destroy();
+
+    const audio = await render(audioBook);
+    expect(headerTools(audio)).toEqual(['Table of Contents', 'Notes & Highlights']);
+    expect(moreButton(audio)).toBeNull();
   });
 });
