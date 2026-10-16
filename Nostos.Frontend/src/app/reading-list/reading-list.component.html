@@ -37,7 +37,7 @@
       />
       <button
         appButton
-        variant="primary"
+        [variant]="draftTitle.trim() ? 'primary' : 'secondary'"
         size="lg"
         type="submit"
         class="quick-add__submit"
@@ -65,8 +65,10 @@
         <div class="tier__head">
           <h2 id="next-up-heading">Next up</h2>
           <span class="tier__note">
-            @if (next().length > 0) {
+            @if (next().length > 1) {
               {{ next().length }} lined up, in the order you'll read them
+            } @else if (next().length === 1) {
+              The one you'll read next
             }
           </span>
         </div>
@@ -80,11 +82,18 @@
             @for (entry of next(); track entry.id; let first = $first; let last = $last) {
               <li class="shelf-card" [class.is-first]="first" [class.is-busy]="isBusy(entry)">
                 <div class="shelf-card__main">
-                  <div class="cover" aria-hidden="true">{{ entry.title }}</div>
+                  <div class="cover" [style.--cover-hue]="coverHue(entry)" aria-hidden="true">
+                    <span class="cover__title">{{ entry.title }}</span>
+                    @if (entry.author) {
+                      <span class="cover__author">{{ entry.author }}</span>
+                    }
+                  </div>
                   <div class="shelf-card__body">
                     <div class="shelf-card__top">
                       <span class="shelf-card__rank">{{ first ? 'Reading next' : 'Then' }}</span>
-                      <!-- Order lives beside the rank it changes. -->
+                      <!-- Order lives beside the rank it changes, and only
+                           once there is an order to change. -->
+                      @if (next().length > 1) {
                       <span class="entry-icons">
                         <button
                           type="button"
@@ -109,6 +118,7 @@
                           (click)="move(entry, 1)"
                         ></button>
                       </span>
+                      }
                     </div>
                     <h3 class="entry-title">{{ entry.title }}</h3>
                     @if (entry.author) {
@@ -213,8 +223,10 @@
         } @else {
           <ul class="someday">
             @for (entry of someday(); track entry.id) {
-              <li class="someday-row" [class.is-busy]="isBusy(entry)">
-                <div class="cover cover--small" aria-hidden="true"></div>
+              <li class="someday-row" [class.is-busy]="isBusy(entry)" [class.is-owned]="!!entry.ownedBookId">
+                <div class="cover cover--small" [style.--cover-hue]="coverHue(entry)" aria-hidden="true">
+                  {{ entry.title.charAt(0) }}
+                </div>
                 <div class="someday-row__book">
                   <h3 class="entry-title">{{ entry.title }}</h3>
                   @if (entry.author) {

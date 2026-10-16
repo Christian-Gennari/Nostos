@@ -102,6 +102,13 @@
   color: var(--color-text-light);
 }
 
+/* "Press Enter" means nothing to a thumb. */
+@media (pointer: coarse) {
+  .quick-add__hint {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------ tiers */
 
 .tier {
@@ -207,8 +214,6 @@
   align-self: flex-start;
 }
 
-.entry-add-why:hover,
-
 /* Three ranks of action, loudest first: a solid or outlined pill, a ghost
    pill, then bare glyphs. Nothing below the first rank carries a ground. */
 .entry-actions {
@@ -267,31 +272,78 @@
   opacity: 0.6;
 }
 
-/* A wish has no artwork, so its cover is the title set on paper. */
+/* A wish has no artwork, so its cover is the title set on a cloth binding.
+   Each title gets its own hue (coverHue), mixed into the image ground so it
+   stays a tint in both themes; the darker band on the left is the spine. */
 .cover {
+  /* Overridden per entry by the template's style binding. */
+  --cover-hue: 30;
+  --cover-cloth: color-mix(
+    in oklab,
+    hsl(var(--cover-hue) 45% 50%) 24%,
+    var(--surface-image-ground)
+  );
   flex: 0 0 5.25rem;
   height: 7.875rem;
   box-sizing: border-box;
-  padding: 0.6rem 0.4rem;
-  border-radius: var(--radius-sm);
-  background: var(--surface-image-ground);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.55rem 0.3rem 0.5rem 0.55rem;
+  border-radius: 2px var(--radius-sm) var(--radius-sm) 2px;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, hsl(var(--cover-hue) 45% 35%) 30%, transparent) 0 4px,
+      transparent 4px
+    ),
+    var(--cover-cloth);
   box-shadow: var(--cover-shadow);
-  font-family: 'Newsreader', serif;
-  font-size: 0.68rem;
-  line-height: 1.2;
-  color: var(--color-text-muted);
+  color: var(--color-text-main);
   overflow: hidden;
   /* A long single word hyphenates; it only breaks bare when it must. */
   hyphens: auto;
   overflow-wrap: break-word;
 }
 
+.cover__title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+  font-family: 'Newsreader', serif;
+  font-size: 0.66rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  /* Break between words, and inside one only when it cannot fit at all. */
+  hyphens: manual;
+  overflow-wrap: anywhere;
+}
+
+.cover__author {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 0.56rem;
+  line-height: 1.25;
+  hyphens: manual;
+  color: var(--color-text-muted);
+}
+
+/* At thumbnail size only the initial survives, set like a monogram. */
 .cover--small {
   flex-basis: 2.25rem;
   /* Also a width: in the Someday grid there is no flex basis to size it. */
   width: 2.25rem;
   height: 3.375rem;
-  padding: 0;
+  padding: 0 0 0 3px;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Newsreader', serif;
+  font-size: 1.05rem;
+  color: var(--color-text-muted);
 }
 
 /* ------------------------------------------------------------ next up */
@@ -330,6 +382,7 @@
 
 .shelf-card__top {
   display: flex;
+  min-height: 1.5rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
@@ -341,6 +394,11 @@
   font-size: var(--text-xs);
   font-weight: var(--fw-medium);
   color: var(--color-text-light);
+}
+
+/* The book being read next is marked on its edge as well as in its label. */
+.shelf-card.is-first {
+  border-color: color-mix(in oklab, var(--color-brand-accent) 45%, var(--border-color));
 }
 
 .shelf-card.is-first .shelf-card__rank {
@@ -397,32 +455,54 @@
   flex-wrap: nowrap;
 }
 
-/* Too narrow for four columns: each row stacks its parts instead. */
+/* Too narrow for four columns: the actions stay beside the title, where a
+   thumb finds them, and the reason runs underneath at the full width. */
 @media (max-width: 860px) {
   .someday {
     display: block;
   }
 
   .someday-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem 0.9rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'cover book actions'
+      'cover why why';
+    align-items: start;
+    gap: 0.45rem 0.8rem;
+    padding-inline: 0;
+  }
+
+  .someday-row .cover--small {
+    grid-area: cover;
   }
 
   .someday-row__book {
-    flex: 1 1 14rem;
+    grid-area: book;
+    align-self: center;
   }
 
   .someday-row__why {
-    flex: 1 1 100%;
+    grid-area: why;
   }
 
   .someday-row .entry-actions {
-    flex: 1 1 100%;
+    grid-area: actions;
+    gap: 0.1rem;
+  }
+
+  /* A book already in the library carries two buttons; they take a line. */
+  .someday-row.is-owned {
+    grid-template-areas:
+      'cover book book'
+      'cover why why'
+      'cover actions actions';
+  }
+
+  .someday-row.is-owned .entry-actions {
     justify-content: flex-start;
   }
 
-  .someday-row .entry-icons {
+  .someday-row.is-owned .entry-icons {
     margin-left: auto;
   }
 }
@@ -462,8 +542,4 @@
     flex: 1 1 100%;
   }
 
-  /* The small cover adds nothing beside a two-line title on a phone. */
-  .someday-row .cover--small {
-    display: none;
-  }
 }
