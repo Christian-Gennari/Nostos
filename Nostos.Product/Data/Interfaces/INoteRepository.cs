@@ -55,8 +55,10 @@ public interface INoteRepository
     Task<List<NoteModel>> GetWithoutTopicsAsync(int limit, int offset);
 
     /// <summary>A stable, bounded page across all notes, including notes without topics.</summary>
+    /// <paramref name="kind"/> narrows it to one kind of note (issue #1014: Brain's Passages filter).
     Task<(List<NoteModel> Items, int Total)> BrowseAsync(
-        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset);
+        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset,
+        string? kind = null);
 
     /// <summary>
     /// How many notes are linked to no topic right now. The unlinked-note review

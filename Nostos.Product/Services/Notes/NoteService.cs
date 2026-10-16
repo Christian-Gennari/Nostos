@@ -99,12 +99,14 @@ public sealed class NoteService : INoteService
 
     public async Task<NoteSearchPageDto> BrowseAsync(
         string? query, Guid? bookId, bool withoutTopics, bool oldestFirst,
-        int limit, int offset, CancellationToken ct = default)
+        int limit, int offset, CancellationToken ct = default, string? kind = null)
     {
         var take = Clamp(limit);
         var skip = Math.Max(offset, 0);
+        // An unknown kind matches nothing rather than everything.
+        var only = string.IsNullOrWhiteSpace(kind) ? null : NoteKinds.Normalize(kind) ?? "unknown";
         var (items, total) = await _notes.BrowseAsync(
-            query, bookId, withoutTopics, oldestFirst, take, skip);
+            query, bookId, withoutTopics, oldestFirst, take, skip, only);
         return new NoteSearchPageDto(items.Select(n => ByText(n, query?.Trim())).ToList(), total, skip, take);
     }
 
