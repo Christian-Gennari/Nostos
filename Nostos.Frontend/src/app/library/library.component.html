@@ -28,19 +28,23 @@
           [value]="searchQuery()"
           (input)="onSearch($event)"
         />
-        <!-- Phones have no Ctrl/Cmd+K: this is their way into the search that
-             covers everything, beside the field that filters only books. -->
-        <button
-          type="button"
-          appIconButton
-          icon="binoculars"
-          [glyphSize]="20"
-          class="search-everything"
-          (click)="palette.open()"
-          aria-label="Search everything"
-          title="Search everything"
-          data-testid="library-search-everything"
-        ></button>
+        <!-- Phones have no Ctrl/Cmd+K. Where the dock has a More sheet, its
+             Search everything item is the way in on every page, so a second
+             one here would only crowd the row. Without that sheet (no
+             feedback link, so the dock shows Settings) this is the way in. -->
+        @if (!feedbackUrl()) {
+          <button
+            type="button"
+            appIconButton
+            icon="binoculars"
+            [glyphSize]="20"
+            class="search-everything"
+            (click)="palette.open()"
+            aria-label="Search everything"
+            title="Search everything"
+            data-testid="library-search-everything"
+          ></button>
+        }
       </div>
 
       <div class="toolbar-right">

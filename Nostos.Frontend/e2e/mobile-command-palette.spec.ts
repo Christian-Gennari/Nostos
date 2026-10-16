@@ -1,5 +1,6 @@
 /**
- * The command palette on a phone: no Ctrl+K, so visible controls open it, and
+ * The command palette on a phone: no Ctrl+K, so a visible control opens it (the
+ * More sheet where the dock has one, else the Library's button), and
  * it is a full-height sheet with a Cancel button and no keyboard hints.
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -73,9 +74,12 @@ test('the Library opens a full-height palette sheet that Cancel closes', async (
   await expect(sheet).toHaveCount(0);
 });
 
-test('the More sheet has a way into search too', async ({ page }) => {
+test('with a More sheet, search has one way in, not two', async ({ page }) => {
   await mockCloud(page);
   await page.goto(`${loadFixture().baseUrl}/library`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('dock-more')).toBeVisible();
+  // The sheet's item reaches search from every page; the Library button stands down.
+  await expect(page.getByTestId('library-search-everything')).toHaveCount(0);
   await page.getByTestId('dock-more').tap();
   await page.getByTestId('utility-sheet-search').tap();
 
