@@ -261,7 +261,7 @@ describe('ExternalMediaSettingsComponent', () => {
     expect(text('external-media-setup')).toContain('- /your/books:/external/media:ro');
     expect(text('external-media-setup')).toContain('ExternalMedia__Root');
     expect(fixture.nativeElement.querySelector('[data-testid="external-media-setup"] a').href).toContain(
-      'docs/external-media.md',
+      'docs.nostos.page/configure/external-media/',
     );
     expect(fixture.nativeElement.querySelector('[data-testid="external-media-scan-row"]')).toBeNull();
     expect(api.scan).not.toHaveBeenCalled();

@@ -40,7 +40,7 @@ export const EXTERNAL_MEDIA_PROMISE =
   'Your original files stay where they are and are never modified or deleted by Nostos.';
 
 export const EXTERNAL_MEDIA_GUIDE_URL =
-  'https://github.com/Christian-Gennari/Nostos/blob/main/docs/external-media.md';
+  'https://docs.nostos.page/configure/external-media/';
 
 /**
  * Settings → This server → External media (issue #843, SelfHosted only).
