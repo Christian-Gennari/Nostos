@@ -22,12 +22,15 @@ export type DropdownSize = 'normal' | 'compact';
 export type DropdownAlignment = 'start' | 'end';
 /**
  * `field` is the form control; `subtle` is the low-chrome toolbar control;
+ * `icon` is a square toolbar button that shows only `triggerIcon` and names the
+ * choice through `ariaLabel` (the Library's sort on a phone, where the value
+ * would cost the row its room); the open list still shows the current value.
  * `pill` is a status capsule that opens a choice (a book's reading status):
  * a leading dot, the value and a caret, in the colours the call site sets
  * through `--dropdown-pill-bg`, `--dropdown-pill-bg-hover` and
  * `--dropdown-pill-ink`.
  */
-export type DropdownAppearance = 'field' | 'subtle' | 'pill';
+export type DropdownAppearance = 'field' | 'subtle' | 'pill' | 'icon';
 
 export interface DropdownOption {
   readonly value: string;
@@ -56,6 +59,7 @@ let nextDropdownId = 0;
     '[class.nostos-dropdown--compact]': "controlSize() === 'compact'",
     '[class.nostos-dropdown--subtle]': "appearance() === 'subtle'",
     '[class.nostos-dropdown--pill]': "appearance() === 'pill'",
+    '[class.nostos-dropdown--icon]': "appearance() === 'icon'",
     '[class.nostos-dropdown--full]': 'fullWidth()',
     '[class.nostos-dropdown--disabled]': 'disabled()',
   },
@@ -79,13 +83,17 @@ let nextDropdownId = 0;
       @if (appearance() === 'pill') {
         <span class="nostos-dropdown__dot" aria-hidden="true"></span>
       }
-      <span class="nostos-dropdown__value">{{ selectedOption()?.label ?? placeholder() }}</span>
-      <nostos-icon
-        class="nostos-dropdown__chevron"
-        name="caret-down"
-        [size]="12"
-        [class.nostos-dropdown__chevron--open]="open()"
-      />
+      @if (appearance() === 'icon') {
+        <nostos-icon class="nostos-dropdown__trigger-icon" [name]="triggerIcon()" [size]="20" />
+      } @else {
+        <span class="nostos-dropdown__value">{{ selectedOption()?.label ?? placeholder() }}</span>
+        <nostos-icon
+          class="nostos-dropdown__chevron"
+          name="caret-down"
+          [size]="12"
+          [class.nostos-dropdown__chevron--open]="open()"
+        />
+      }
     </button>
 
     <div
@@ -177,17 +185,42 @@ let nextDropdownId = 0;
         }
       }
 
-      /* Low-chrome toolbar controls still read as controls through their label,
-         caret and hover/focus behaviour, so they use the app hairline instead of
-         the stronger form-field boundary. The popup itself is unchanged. */
+      /* Low-chrome toolbar controls read as controls through their label,
+         caret and hover/focus behaviour, so they draw no outline at rest: a
+         toolbar of bordered boxes was the noise the breathable pass removed.
+         The hover fill and the focus border/halo still mark them. The popup
+         itself is unchanged. */
       :host(.nostos-dropdown--subtle) {
-        --dropdown-border: var(--border-color);
+        --dropdown-border: transparent;
         --dropdown-bg: transparent;
         --dropdown-compact-height: var(--control-h-field-compact);
         --dropdown-compact-padding: 0.4rem 0.7rem;
       }
 
       .nostos-dropdown__trigger:hover:not(:disabled) {
+        background: var(--bg-hover);
+      }
+
+      /* The icon button: a square on the field rung (the touch rung on touch,
+         from the rule above), with no outline at rest, like the icon buttons it
+         sits beside. */
+      :host(.nostos-dropdown--icon) .nostos-dropdown__trigger {
+        justify-content: center;
+        width: var(--control-h-field);
+        min-width: 0;
+        padding: 0;
+        border-color: transparent;
+        background: transparent;
+        color: var(--color-text-main);
+      }
+
+      @media (pointer: coarse), (hover: none) {
+        :host(.nostos-dropdown--icon) .nostos-dropdown__trigger {
+          width: var(--control-h-touch);
+        }
+      }
+
+      :host(.nostos-dropdown--icon) .nostos-dropdown__trigger[aria-expanded='true'] {
         background: var(--bg-hover);
       }
 
@@ -388,6 +421,8 @@ export class DropdownComponent {
   readonly controlSize = input<DropdownSize>('normal');
   readonly appearance = input<DropdownAppearance>('field');
   readonly align = input<DropdownAlignment>('start');
+  /** The glyph an `icon` appearance shows in place of the value. */
+  readonly triggerIcon = input<NostosIconName>('sliders-horizontal');
   readonly fullWidth = input(false);
   readonly disabled = input(false);
   readonly invalid = input(false);

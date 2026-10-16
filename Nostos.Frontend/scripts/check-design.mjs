@@ -282,8 +282,10 @@ for (const f of files) {
    the `#b91c1c` fallback the old `.audio-load-error` carried. */
 /* Lowered 60 -> 46 by the overlay-surface pass: the Book Detail cover actions
    were hand-built white/red pills with rgba() and #fff/#111 literals, and are now
-   appButton/appIconButton on the --cover-disc-* overlay material. */
-const LITERAL_COLOUR_BUDGET = 46;
+   appButton/appIconButton on the --cover-disc-* overlay material.
+   Lowered 46 -> 45 by the breathable library pass: the sidebar's selected row
+   lost its `rgba(0, 0, 0, 0.08)` contact shadow along with the filled pill. */
+const LITERAL_COLOUR_BUDGET = 45;
 
 {
   const ALLOW = [

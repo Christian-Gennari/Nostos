@@ -309,17 +309,23 @@ test('brain sidebar row matches the library sidebar row', async ({ browser }) =>
       `row height: brain ${brainRow!.height} vs library ${libRow!.height}`
     ).toBeLessThanOrEqual(2);
 
-    // The count badge is a deliberate 20px pill, not plain text.
-    expect(brainBadge!.height, 'badge height').toBe(20);
-    expect(brainBadge!.borderRadius, 'badge radius').toBe('999px');
-    expect(brainBadge!.fontSize, 'badge font size').toBe(libBadgeFontSize ?? '11.52px');
+    // The count is a plain number on the row, not a chip, in both rails: no
+    // ground behind it, the same 11.52px figure, and the same 20px line box so
+    // the slot it shares with the row actions keeps its geometry.
+    const brainCountGround = await page.evaluate(() => {
+      const el = document.querySelector('.index-item .count');
+      return el ? getComputedStyle(el).backgroundColor : null;
+    });
+    expect(brainCountGround, 'count has no chip ground').toBe('rgba(0, 0, 0, 0)');
+    expect(brainBadge!.height, 'count line box').toBe(20);
+    expect(brainBadge!.fontSize, 'count font size').toBe(libBadgeFontSize ?? '11.52px');
 
-    // The Library only renders a badge for a NON-ZERO count (a brand-new
-    // collection has none), so compare against its live badge when it has one
+    // The Library only renders a count for a NON-ZERO collection (a brand-new
+    // collection has none), so compare against its live one when it has one
     // rather than assuming it always renders.
     if (libBadge) {
-      expect(brainBadge!.height, 'badge height vs library').toBe(libBadge.height);
-      expect(brainBadge!.borderRadius, 'badge radius vs library').toBe(libBadge.borderRadius);
+      expect(brainBadge!.height, 'count height vs library').toBe(libBadge.height);
+      expect(brainBadge!.fontSize, 'count size vs library').toBe(libBadge.fontSize);
     }
 
     expect(libAction && brainAction && libActionBox && brainActionBox, 'row actions present').toBeTruthy();

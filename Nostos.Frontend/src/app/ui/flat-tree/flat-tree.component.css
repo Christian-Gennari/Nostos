@@ -575,3 +575,43 @@ input.inline-rename-input {
 .tree-row.is-renaming .node-actions {
   display: none;
 }
+
+/* ── QUIET APPEARANCE ─────────────────────────────────────
+   For a tree that sits on the page ground among other nav rows (the Library
+   sidebar). Selection is the soft tint those rows use rather than the filled
+   pill, and the count is a plain number rather than a chip. Everything else —
+   geometry, the action slot, the fade — is the default tree's. The fade's
+   ground follows each state, so the name still fades into what is behind it. */
+:host(.flat-tree--quiet) .tree-row:focus-within {
+  --row-ground: var(--bg-body);
+}
+
+:host(.flat-tree--quiet) .tree-row.active {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+  --row-ground: var(--bg-hover);
+}
+
+:host(.flat-tree--quiet) .count-badge,
+:host(.flat-tree--quiet) .tree-row.active .count-badge {
+  min-width: 0;
+  padding: 0 4px 0 0;
+  background: none;
+  color: var(--color-text-light);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+:host(.flat-tree--quiet) .tree-row.active .action-mini {
+  color: var(--color-text-muted);
+}
+
+:host(.flat-tree--quiet) .tree-row.active .action-mini:hover {
+  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  color: var(--color-text-main);
+}
+
+:host(.flat-tree--quiet) .tree-row.active .action-mini.danger:hover {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+}

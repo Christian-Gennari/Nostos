@@ -428,20 +428,16 @@
    while the pointer is over it. Declared after the hover rule and with the
    extra class, so it wins on both order and specificity.
 
-   The fill is `--selection-surface`, which owns the value in BOTH themes
-   (`#121316` obsidian with white ink in light, raised slate `#2a2d37` with
-   porcelain in dark). It used to be `--primary-fill`, which is the dark spruce
-   on dark and therefore read as a green pill; a global override repainted it,
-   and because Angular rewrites the three variant selectors below to add
-   `[_ngcontent]`, that override kept tying on specificity and only won by being
-   padded with an ancestor class (the fix in #94). Consuming the token removes
-   the race entirely — the component owns the state and there is no global rule
-   left to fight. */
+   The fill is the soft `--bg-hover` tint with the name in full ink, the same
+   quiet selection the Library sidebar's collections use (the flat tree's
+   `quiet` appearance): it says where you are without being the loudest block
+   on the screen. It was the filled `--selection-surface` pill; the two rails
+   moved off it together so they still match. */
 .index-item.active,
 .index-row-shell:hover .index-item.active,
 .index-row-shell:focus-within .index-item.active {
-  background: var(--selection-surface);
-  color: var(--selection-ink);
+  background: var(--bg-hover);
+  color: var(--color-text-main);
   font-weight: var(--fw-medium);
 }
 
@@ -535,37 +531,24 @@
   position: relative;
 }
 
-/* --- COUNT BADGE ------------------------------------------------------------
-   Metric-for-metric copy of the tree's `.count-badge`: a real 20px pill, not
-   plain text — it is part of the sidebar's language. */
+/* --- COUNT ------------------------------------------------------------------
+   Metric-for-metric copy of the quiet tree's `.count-badge`: a plain number on
+   the row, not a chip. It keeps the 20px line box so the slot it shares with
+   the row actions does not change. */
 .index-item .count {
-  min-width: 20px;
   height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--bg-hover);
+  padding: 0 4px 0 0;
+  background: none;
   color: var(--color-text-light);
   font-size: 0.72rem;
-  font-weight: 500;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   line-height: 1;
-  text-align: center;
   flex-shrink: 0;
-  transition:
-    opacity 0.15s,
-    background 0.15s,
-    color 0.15s;
-}
-
-/* Tracks the active row's fill, like the tree's badge on a selected
-   collection. Both come from `--selection-badge-bg` + `--on-primary` so the
-   Library sidebar's chip and this one cannot drift apart again — they were two
-   separate `color-mix` expressions that happened to agree. */
-.index-item.active .count {
-  background: var(--selection-badge-bg);
-  color: var(--on-primary);
+  transition: opacity 0.15s;
 }
 
 /* --- ROW ACTIONS -----------------------------------------------------------
@@ -665,10 +648,10 @@
     color 0.15s;
 }
 
-/* On the filled active row the actions sit ON the fill, so their own hover
-   ground has to derive from the pill's foreground, not the page's. */
+/* On the selected row the actions sit on the hover tint, so their own hover
+   ground is one step darker than it. */
 .index-item.active ~ .row-actions .row-action {
-  color: color-mix(in srgb, var(--on-primary) 82%, transparent);
+  color: var(--color-text-muted);
 }
 
 .row-action:hover {
@@ -677,8 +660,13 @@
 }
 
 .index-item.active ~ .row-actions .row-action:hover {
-  background: color-mix(in srgb, var(--on-primary) 20%, transparent);
-  color: var(--on-primary);
+  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  color: var(--color-text-main);
+}
+
+.index-item.active ~ .row-actions .row-action.danger:hover {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 }
 
 /* `--color-danger` rather than `--danger-ink`: on dark, --danger-ink is

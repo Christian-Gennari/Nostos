@@ -118,6 +118,15 @@ describe('SidebarCollections', () => {
     expect(component.filters.status()).toBe('all');
   });
 
+  it('hides the reading list count when the list is empty', () => {
+    fixture.detectChanges();
+    readingList.count.set(0);
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('a.nav-item[title="To Read"]') as HTMLAnchorElement;
+    expect(link.querySelector('.count-badge')).toBeNull();
+  });
+
   it('renders count badges from the counts fetch', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Philosophy');
@@ -342,7 +351,7 @@ describe('SidebarCollections', () => {
     }
 
     function statusButtons(): HTMLButtonElement[] {
-      // The first .nav-group is the status list (All Books … Unsorted).
+      // The first .nav-group is the status list (All Books … Finished).
       return Array.from(
         navGroups()[0].querySelectorAll('.nav-item') as NodeListOf<HTMLButtonElement>,
       );
@@ -371,18 +380,46 @@ describe('SidebarCollections', () => {
       return navButton(formatButtons(), label);
     }
 
-    it('renders exactly six status choices in the expected order', () => {
+    it('renders exactly five reading states in the expected order', () => {
       fixture.detectChanges();
 
       const labels = statusButtons().map((el) => el.textContent?.trim());
-      expect(labels).toEqual([
-        'All Books',
-        'Not Started',
-        'In Progress',
-        'Favorites',
-        'Finished',
-        'Unsorted',
-      ]);
+      expect(labels).toEqual(['All Books', 'Not Started', 'In Progress', 'Favorites', 'Finished']);
+    });
+
+    it('closes the Collections group with Unsorted, which still filters by status', () => {
+      fixture.detectChanges();
+
+      // Unsorted means "in no collection", so it is the last row of that group.
+      const collections = navGroups()[navGroups().length - 1];
+      const rows = Array.from(collections.querySelectorAll(':scope > .nav-item'));
+      const unsorted = rows[rows.length - 1] as HTMLButtonElement;
+      expect(unsorted.querySelector('.label')?.textContent?.trim()).toBe('Unsorted');
+
+      unsorted.click();
+      fixture.detectChanges();
+      expect(component.filters.status()).toBe('unsorted');
+      expect(unsorted.classList.contains('active')).toBe(true);
+    });
+
+    it('shows a count only when it is above zero', () => {
+      fixture.detectChanges();
+      component.statusCounts.set({
+        all: 3,
+        notStarted: 0,
+        reading: 0,
+        favorites: 1,
+        finished: 0,
+        unsorted: 0,
+      });
+      fixture.detectChanges();
+
+      const count = (label: string) =>
+        statusButton(label)?.querySelector('.count-badge')?.textContent?.trim() ?? null;
+      expect(count('All Books')).toBe('3');
+      expect(count('Favorites')).toBe('1');
+      expect(count('Not Started')).toBeNull();
+      expect(count('In Progress')).toBeNull();
     });
 
     it('does not show a "Reading" label or tooltip anywhere in the sidebar', () => {

@@ -46,7 +46,10 @@ a.nav-item {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg-sidebar);
+  /* The page ground, not a panel of its own: the rail is set off by one
+     hairline on its inner edge (the library column's border), as the book
+     page's Details rail is. */
+  background: var(--bg-body);
   animation: sidebar-enter var(--motion-base) var(--ease-out);
 }
 
@@ -103,13 +106,15 @@ a.nav-item {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  /* Groups are separated by more room than rows are, so the space itself
+     says where one group ends. */
+  gap: 1.75rem;
 }
 
 .nav-group {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 2px;
   width: 100%;
 }
 
@@ -159,14 +164,11 @@ a.nav-item {
 }
 
 .section-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  /* --color-text-muted, not --color-text-light: at 10.88px bold uppercase the
-     light tone measured 4.03:1 against the light sidebar (#76777B on #F3F3F4),
-     still below the 4.5:1 small-text floor. The muted tone holds 7.63:1 there and
-     6.65:1 on the dark rail. */
+  /* Sentence case at a readable size, like the book page's section labels,
+     instead of tracked capitals. --color-text-muted, not --color-text-light:
+     the light tone is below the 4.5:1 small-text floor on the page ground. */
+  font-size: 0.78rem;
+  font-weight: 500;
   color: var(--color-text-muted);
   padding: 0.6rem 0.75rem 0.25rem;
   margin-bottom: 0.15rem;
@@ -256,31 +258,22 @@ a.nav-item {
   outline-offset: -2px;
 }
 
-/* The ring is inset, so on the active row it cannot use the same colour as the
-   row underneath it. It used to borrow --on-primary (the light pill's
-   foreground); now the row is a selected surface, so `--selection-focus-ring`
-   owns the value — slate on light, one step lighter on dark, because the ring
-   has to read against a FILLED row rather than the page ground. */
+/* The selected row is only a tint now, so the standard ring reads on it; the
+   extra pixel of inset keeps the ring inside the tile on the collapsed rail. */
 .nav-item.active:focus-visible {
-  outline-color: var(--selection-focus-ring);
   outline-offset: -3px;
 }
 
+/* The selected row is the soft tint the hover uses, with the label in full
+   ink: it names where you are without becoming the loudest thing on the
+   screen. (It was the filled `--selection-surface` pill, which in light made a
+   black block at the top-left that answered the black Add button opposite.) */
 .nav-item.active {
-  color: var(--selection-ink);
+  color: var(--color-text-main);
 }
 
 .nav-item.active::before {
-  /* `--selection-surface`, not `--color-primary`: the pill is a SURFACE and it
-     is a SELECTION, so it follows the selection role — forest with white ink in
-     light, raised neutral slate with porcelain in dark. The ink role is a light
-     colour on dark and would make this a washed-out light pill; `--primary-fill`
-     is the dark spruce and reads as green against the slate sidebar. This token
-     is the single owner of the app's selection treatment, shared with the Brain
-     topic index, and consuming it here means no global dark override has to
-     out-specify this rule. */
-  background: var(--selection-surface);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--bg-hover);
 }
 
 /* Rail: the surface narrows to a 40px tile centred on the icon axis. It keeps
@@ -294,34 +287,17 @@ a.nav-item {
 }
 
 .nav-item .count-badge {
+  /* A plain number, not a chip: twelve chips down the rail were most of its
+     noise. Zero counts are not rendered at all (see the template). */
   margin-left: auto;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--bg-hover);
+  padding-right: 4px;
   color: var(--color-text-light);
+  /* The same number as the collections tree's count (and the Brain index's). */
   font-size: 0.72rem;
-  font-weight: 500;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
   flex-shrink: 0;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease;
-}
-
-.nav-item.active .count-badge {
-  /* Driven from the on-fill foreground so it tracks the active row's fill in
-     either theme, and the chip's own ground from `--selection-badge-bg` — the
-     same pair the Brain index's equivalent chip uses, so the two selected-row
-     badges cannot drift apart again. This was a hardcoded white chip, which
-     stayed pure white on the dark theme. */
-  background: var(--selection-badge-bg);
-  color: var(--on-primary);
 }
 
 /* Add Button Specifics */
@@ -431,7 +407,6 @@ input.sidebar-input {
      collapse button sits on the same centre line as the nav icons in both
      states and never travels. */
   padding: 0.75rem 1rem 0.75rem 4px;
-  border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;
 }

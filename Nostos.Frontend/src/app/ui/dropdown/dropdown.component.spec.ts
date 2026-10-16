@@ -68,6 +68,24 @@ describe('DropdownComponent', () => {
     expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
   });
 
+  it('shows only its glyph in the icon appearance, and keeps the value in the list', () => {
+    fixture.componentInstance.appearance.set('icon');
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement.querySelector('app-dropdown') as HTMLElement;
+    const trigger = host.querySelector('.nostos-dropdown__trigger') as HTMLButtonElement;
+
+    expect(host.classList.contains('nostos-dropdown--icon')).toBe(true);
+    expect(trigger.querySelector('.nostos-dropdown__trigger-icon')).not.toBeNull();
+    expect(trigger.querySelector('.nostos-dropdown__value')).toBeNull();
+    expect(trigger.textContent?.trim()).toBe('');
+    // The name comes from the label; the current value is still announced by the
+    // selected option once the list opens.
+    expect(trigger.getAttribute('aria-label')).toBe('Format');
+    const selected = host.querySelector('[role="option"][aria-selected="true"]');
+    expect(selected?.textContent).toContain('EPUB');
+  });
+
   it('opens, selects an option, and restores focus to the trigger', async () => {
     const trigger = fixture.nativeElement.querySelector(
       '.nostos-dropdown__trigger',

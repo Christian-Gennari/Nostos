@@ -44,12 +44,14 @@
       </div>
 
       <div class="toolbar-right">
-        <!-- Keep the mobile drawer opener in the same row as its neighbouring controls. -->
+        <!-- Phone only. Navigation anchors the row's left edge: the drawer opener
+             names the shelf on screen, and the page's actions group on the right
+             after the spacer. The name lives in the visible label; aria-label
+             keeps the action ("Open collections sidebar") for assistive tech. -->
         <button
           type="button"
-          appIconButton
-          icon="list"
-          [glyphSize]="20"
+          appButton
+          variant="ghost"
           class="floating-toggle"
           [class.hidden]="sidebarExpanded()"
           (click)="$event.stopPropagation(); toggleSidebar()"
@@ -57,7 +59,24 @@
           aria-controls="library-collections-sidebar"
           [attr.aria-label]="sidebarExpanded() ? 'Close collections sidebar' : 'Open collections sidebar'"
           title="Collections"
-        ></button>
+        >
+          <nostos-icon name="list" [size]="20"></nostos-icon>
+          <span class="scope-label" data-testid="library-scope-label">{{ scopeLabel() }}</span>
+          <nostos-icon name="caret-down" [size]="14" class="scope-caret"></nostos-icon>
+        </button>
+        <span class="toolbar-spacer" aria-hidden="true"></span>
+        <!-- Phone only: the same sort, as a square button; the open list shows
+             the current order. The labelled field below is the desktop control. -->
+        <app-dropdown
+          class="sort-select-phone"
+          appearance="icon"
+          triggerIcon="sliders-horizontal"
+          align="end"
+          ariaLabel="Sort books"
+          [options]="sortOptions"
+          [value]="activeSort()"
+          (valueChange)="setSort($event)"
+        />
         <div class="select-wrapper">
           <app-dropdown
             class="sort-select"
@@ -78,20 +97,27 @@
           (valueChange)="setViewMode($event)"
         />
 
-        <button appButton variant="primary" size="lg" class="library-add-button" (click)="openAddModal()">
+        <button appButton variant="primary" class="library-add-button" (click)="openAddModal()">
           <nostos-icon name="plus" [size]="18"></nostos-icon>
           <span class="btn-text">Add Book</span>
         </button>
       </div>
     </header>
 
-    <div class="filter-bar" [class.is-empty]="activeFilterChips().length === 0">
+    <!-- On a phone the toolbar already names the shelf, so the bar there shows
+         only a search chip; `scope-only` lets the phone rule fold it away. -->
+    <div
+      class="filter-bar"
+      [class.is-empty]="activeFilterChips().length === 0"
+      [class.scope-only]="!searchQuery().trim()"
+    >
       <div class="filter-bar-inner">
         <div class="active-filters" role="status" aria-label="Active filters">
           @for (chip of activeFilterChips(); track chip.key) {
           <button
             appChip
             class="filter-chip"
+            [class.filter-chip--scope]="chip.key !== 'search'"
             (click)="clearChip(chip.key)"
             [title]="'Clear ' + chip.label"
           >
