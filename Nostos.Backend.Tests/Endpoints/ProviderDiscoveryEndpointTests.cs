@@ -104,10 +104,14 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             ReplaceProviders(builder, TimeSpan.FromMilliseconds(60), good, hung));
         using var client = app.CreateClient();
 
+        // The hung provider never answers, so any finite guard proves the 60 ms
+        // provider timeout fired. The guard also covers the first request to a
+        // freshly built host, which took over 2 s while the whole suite shared
+        // the machine; 15 s keeps the proof without measuring the host.
         var response = await client
             .GetFromJsonAsync<ProviderDiscoverySearchResultDto>(
                 "/api/providers/search?query=classic")
-            .WaitAsync(TimeSpan.FromSeconds(2));
+            .WaitAsync(TimeSpan.FromSeconds(15));
 
         response.Should().NotBeNull();
         response!.Items.Should().ContainSingle();

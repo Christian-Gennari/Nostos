@@ -17,7 +17,13 @@ using Xunit;
 /// Always-on deterministic campaign: offline, scripted provider, real product
 /// path (HTTP stream route, real orchestrator/capabilities/retrieval). Must
 /// stay under 90 s and touch no network.
+///
+/// The 90 s budget is wall-clock time, so the campaign runs outside the
+/// parallel pool (<see cref="QualityBedTimingCollection"/>). Alone it takes
+/// about 27 s; sharing the host with the rest of the suite it measured
+/// 1 m 46 s and failed the budget although nothing in it had slowed down.
 /// </summary>
+[Collection(QualityBedTimingCollection.Name)]
 public sealed class QualityBedDeterministicTests
 {
     [Fact]
@@ -356,4 +362,15 @@ public sealed class QualityBedLiveWiringTests
         listener.Stop();
         return port;
     }
+}
+
+/// <summary>
+/// Runs <see cref="QualityBedDeterministicTests"/> on its own, after the
+/// parallel test classes, so its wall-clock budget measures the campaign and
+/// not how busy the host is.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class QualityBedTimingCollection
+{
+    public const string Name = "QualityBedTiming";
 }
