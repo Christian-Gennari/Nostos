@@ -25,12 +25,23 @@
 }
 
 .cloud-entry__brand {
+  display: block;
+  height: 40px;
+  width: auto;
   margin-bottom: 10px;
-  color: var(--color-text-main);
+}
+
+.cloud-entry__brand-tile {
+  fill: var(--brand-shape);
+}
+
+.cloud-entry__brand-arch {
+  fill: var(--brand-doorway);
+}
+
+.cloud-entry__brand-word {
+  fill: var(--color-text-main);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 1.3rem;
-  font-weight: var(--fw-medium);
-  letter-spacing: -0.04em;
 }
 
 .cloud-entry__eyebrow {
