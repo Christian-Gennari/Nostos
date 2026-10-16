@@ -24,5 +24,22 @@ internal static class LaterBookColumns
         // case: the current model writes it for every note these tests seed.
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Notes\" ADD COLUMN \"HighlightColour\" TEXT NULL");
+        await RestorePassageColumnsAsync(db);
+    }
+
+    /// <summary>
+    /// AddNotePassages (issue #1014): the passage columns the current model
+    /// reads and writes on every note.
+    /// </summary>
+    public static async Task RestorePassageColumnsAsync(NostosDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Notes\" ADD COLUMN \"Kind\" TEXT NOT NULL DEFAULT 'note'");
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Notes\" ADD COLUMN \"PassageTitle\" TEXT NULL");
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Notes\" ADD COLUMN \"PassageEnd\" TEXT NULL");
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Notes\" ADD COLUMN \"PassageHtml\" TEXT NULL");
     }
 }
