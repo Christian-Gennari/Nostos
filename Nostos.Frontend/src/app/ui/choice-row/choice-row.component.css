@@ -23,10 +23,15 @@ button.nostos-choice-row {
 }
 
 /* `--color-primary-dim`, not `--border-focus`: that token is an ink colour
-   doing border duty, and it made the edge read as a second selection state. */
-button.nostos-choice-row:hover:not(:disabled) {
-  border-color: var(--color-primary-dim);
-  background: var(--bg-hover);
+   doing border duty, and it made the edge read as a second selection state.
+   Pointer devices only: a touch browser keeps `:hover` on the last row tapped,
+   so the row under the finger that opened a dialog stayed outlined as if
+   chosen. Focus still shows through `:focus-visible` below. */
+@media (hover: hover) {
+  button.nostos-choice-row:hover:not(:disabled) {
+    border-color: var(--color-primary-dim);
+    background: var(--bg-hover);
+  }
 }
 
 button.nostos-choice-row:focus-visible {
