@@ -31,7 +31,8 @@ import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
 import { PdfReadAloud } from './pdf-read-aloud';
 import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
-import type { PageRect } from './pdf-read-aloud-text';
+import { buildPdfPageText, type PageRect } from './pdf-read-aloud-text';
+import { PassageDraft, PassageMark, closingOf, countWords, excerptOf } from '../passage/passage-mark';
 import {
   isDesktopMouseSelection,
   type SelectionAnchor,
@@ -149,6 +150,13 @@ export function sourcePassagePhrases(excerpt: string | null | undefined): string
 
   return [...new Set(phrases)];
 }
+
+/**
+ * The longest page range whose text is gathered for a PDF passage. Longer
+ * ranges are kept as pages alone: the viewer still shows them, but search does
+ * not read them.
+ */
+const PDF_PASSAGE_TEXT_PAGE_LIMIT = 400;
 
 @Component({
   selector: 'app-pdf-reader',
@@ -1467,6 +1475,115 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.pendingHighlight = null;
     if (old) this.repaintPage(old.pageNumber);
     this.highlightWarning.set(null);
+  }
+
+  // --- Passages (issue #1018): a PDF passage is a range of pages ---
+
+  /** The page the offered selection is on, as one end of a passage. */
+  passageMarkFromSelection(): PassageMark | null {
+    const pending = this.pendingHighlight;
+    if (!pending) return null;
+    return this.pageMark(pending.pageNumber, excerptOf(pending.selectedText));
+  }
+
+  /**
+   * The page on screen as one end of a passage. The only way to mark one in a
+   * scanned PDF, whose pages have no text to select.
+   */
+  passageMarkHere(): PassageMark | null {
+    return this.totalPages > 0 ? this.pageMark(this.currentPage, '') : null;
+  }
+
+  /**
+   * The pages between two marks, whichever came first, and their reading
+   * text where the PDF has a text layer (running heads and page numbers left
+   * out). A scanned range is kept as pages alone.
+   */
+  async buildPassage(a: PassageMark, b: PassageMark): Promise<PassageDraft | null> {
+    const doc = this.pdfDocRef;
+    if (a.format !== 'pdf' || b.format !== 'pdf' || !doc) return null;
+    const pages = [a.start, a.end, b.start, b.end].map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    if (pages.length !== 4) return null;
+    const first = Math.min(...pages);
+    const last = Math.max(...pages);
+
+    const blocks: string[] = [];
+    if (last - first < PDF_PASSAGE_TEXT_PAGE_LIMIT) {
+      // Read one page past each end too: a running head is recognised by
+      // standing on a neighbouring page, and the range's own first and last
+      // pages have one neighbour inside it at most.
+      const from = Math.max(1, first - 1);
+      const to = Math.min(this.totalPages || last, last + 1);
+      const read: Array<{ pageNumber: number; items: any[]; geometry: any } | null> = [];
+      for (let pageNumber = from; pageNumber <= to; pageNumber++) {
+        try {
+          const page = await doc.getPage(pageNumber);
+          const content = await page.getTextContent();
+          if (doc !== this.pdfDocRef) return null;
+          const viewport = page.getViewport({ scale: 1 });
+          read.push({
+            pageNumber,
+            items: Array.isArray(content?.items) ? content.items : [],
+            geometry: { width: viewport.width, height: viewport.height, transform: viewport.transform },
+          });
+        } catch {
+          // A page that cannot be read leaves only its place in the range.
+          read.push(null);
+        }
+      }
+      const margins = read.map((page) => (page ? buildPdfPageText(page.items, page.geometry).marginLines : []));
+      read.forEach((page, index) => {
+        if (!page || page.pageNumber < first || page.pageNumber > last) return;
+        const neighbours = [...(margins[index - 1] ?? []), ...(margins[index + 1] ?? [])];
+        const text = buildPdfPageText(page.items, page.geometry, neighbours).text.trim();
+        if (text) blocks.push(text);
+      });
+    }
+
+    const text = blocks.join('\n\n').trim() || null;
+    const range = first === last ? `Page ${this.pageName(first)}` : `Pages ${this.pageName(first)}–${this.pageName(last)}`;
+    return {
+      anchorKind: 'pdf_page',
+      start: String(first),
+      end: String(last),
+      title: this.chapterTitleAt(first) ?? range,
+      html: null,
+      text,
+      words: countWords(text),
+      opening: text ? excerptOf(text, 140) : range,
+      closing: text ? closingOf(text, 140) : range,
+    };
+  }
+
+  private pageMark(pageNumber: number, excerpt: string): PassageMark {
+    return {
+      format: 'pdf',
+      start: String(pageNumber),
+      end: String(pageNumber),
+      excerpt,
+      label: `p. ${this.pageName(pageNumber)}`,
+    };
+  }
+
+  /** The printed page name when the PDF has one, else the page number. */
+  private pageName(pageNumber: number): string {
+    return this.pageLabels()[pageNumber - 1] ?? String(pageNumber);
+  }
+
+  /** The deepest outline entry that starts on or before a page. */
+  private chapterTitleAt(pageNumber: number): string | null {
+    let best: { label: string; page: number } | null = null;
+    const visit = (items: TocItem[]) => {
+      for (const item of items) {
+        const page = Number(item.target);
+        if (Number.isInteger(page) && page <= pageNumber && (!best || page >= best.page)) {
+          best = { label: item.label, page };
+        }
+        visit(item.children ?? []);
+      }
+    };
+    visit(this.toc());
+    return (best as { label: string } | null)?.label.trim() || null;
   }
 
   private clearNativeSelection(): void {

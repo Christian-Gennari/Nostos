@@ -14,7 +14,8 @@ import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { NotesService } from '../../core/services/notes.service';
-import { Passage, passageReadingMinutes } from '../../core/dtos/note.dtos';
+import { ThemeService } from '../../core/services/theme.service';
+import { Passage, passageReadingMinutes, passageSizeLabel } from '../../core/dtos/note.dtos';
 import { libronFontFaceCss } from '../../reader/epub-reader/epub-typography';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { ButtonComponent } from '../button/button.component';
@@ -22,6 +23,8 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { PassageViewerService } from './passage-viewer.service';
 import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
+import { PdfDocument, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
+import { noteWikilinksToText } from '../pipes/note-format.pipe';
 
 type ViewerState = 'loading' | 'ready' | 'error';
 
@@ -55,6 +58,7 @@ export class PassageViewerComponent {
   private readonly router = inject(Router);
   private readonly zone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly theme = inject(ThemeService);
 
   readonly request = this.viewer.request;
   readonly state = signal<ViewerState>('loading');
@@ -71,11 +75,46 @@ export class PassageViewerComponent {
     return passage ? passageBodyHtml(passage) : '';
   });
 
+  /**
+   * A PDF passage (issue #1018) is read as its own pages, one to a screen:
+   * a PDF's layout is part of its text, and a scan has no other text.
+   */
+  readonly isPdf = computed(() => this.passage()?.anchorKind === 'pdf_page');
+  readonly pdfFirst = computed(() => Number(this.passage()?.start) || 1);
+  readonly pdfStatus = signal<'loading' | 'ready' | 'error'>('loading');
+  /**
+   * Pages as the PDF reader shows them: inverted in dark unless the reader
+   * chose printed colours for this book (its "Page colours" setting).
+   */
+  readonly pdfInverted = computed(() => {
+    const passage = this.passage();
+    if (!passage || this.theme.theme() !== 'dark') return false;
+    try {
+      const saved = localStorage.getItem(`nostos.pdf-invert.${passage.bookId}`);
+      return saved === null ? true : JSON.parse(saved) === true;
+    } catch {
+      return true;
+    }
+  });
+  /** The reader's note, shown above a PDF passage's first page. */
+  readonly pdfNote = computed(() => noteWikilinksToText(this.passage()?.content ?? '').trim());
+  /** The frame's size, so a page is drawn to fit it and redrawn when it changes. */
+  private readonly frameSize = signal({ width: 0, height: 0 });
+
   readonly subtitle = computed(() => {
     const passage = this.passage();
     if (!passage) return '';
     const parts = [passage.bookTitle?.trim() || 'Untitled book'];
-    if (passage.wordCount > 0) {
+    if (passage.anchorKind !== 'epub_cfi') {
+      parts.push(
+        passageSizeLabel({
+          kind: 'passage',
+          sourceAnchorKind: passage.anchorKind,
+          sourceAnchorValue: passage.start,
+          passageEnd: passage.end,
+        }),
+      );
+    } else if (passage.wordCount > 0) {
       parts.push(
         `${passage.wordCount.toLocaleString('en-US')} words`,
         `${passageReadingMinutes(passage.wordCount)} min`,
@@ -94,6 +133,13 @@ export class PassageViewerComponent {
 
   private readonly frame = viewChild<ElementRef<HTMLElement>>('frame');
   private readonly columns = viewChild<ElementRef<HTMLElement>>('columns');
+  private readonly pdfCanvas = viewChild<ElementRef<HTMLCanvasElement>>('pdfCanvas');
+
+  private pdfTask: PdfLoadingTask | null = null;
+  private pdfWorker: { terminate(): void } | null = null;
+  private pdfDoc: PdfDocument | null = null;
+  private readonly pdfDocReady = signal(0);
+  private pdfRender: { cancel(): void } | null = null;
 
   private load: Subscription | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -103,6 +149,7 @@ export class PassageViewerComponent {
     effect(() => {
       const request = this.request();
       this.load?.unsubscribe();
+      this.closePdf();
       this.passage.set(null);
       this.page.set(0);
       this.pageCount.set(1);
@@ -115,6 +162,7 @@ export class PassageViewerComponent {
         next: (passage) => {
           this.passage.set(passage);
           this.state.set('ready');
+          if (passage.anchorKind === 'pdf_page') this.openPdf(passage);
         },
         error: () => this.state.set('error'),
       });
@@ -132,9 +180,20 @@ export class PassageViewerComponent {
       document.fonts?.ready.then(() => this.zone.run(() => this.measure()));
     });
 
+    // Draw the PDF page on screen whenever the page, the frame or the document changes.
+    effect(() => {
+      const index = this.page();
+      const size = this.frameSize();
+      this.pdfDocReady();
+      const canvas = this.pdfCanvas()?.nativeElement;
+      if (!this.isPdf() || !canvas || !this.pdfDoc || size.width <= 0) return;
+      void this.drawPdfPage(canvas, this.pdfFirst() + index, size);
+    });
+
     this.destroyRef.onDestroy(() => {
       this.load?.unsubscribe();
       this.resizeObserver?.disconnect();
+      this.closePdf();
     });
   }
 
@@ -224,9 +283,91 @@ export class PassageViewerComponent {
     else this.previous();
   }
 
+  private openPdf(passage: Passage): void {
+    const first = Number(passage.start);
+    const last = Number(passage.end);
+    this.pageCount.set(Number.isInteger(first) && Number.isInteger(last) && last >= first ? last - first + 1 : 1);
+    this.pdfStatus.set('loading');
+    void (async () => {
+      try {
+        const pdfjs = await loadPdfJs();
+        if (this.passage()?.id !== passage.id) return;
+        const worker = createPdfWorker(pdfjs);
+        this.pdfWorker = worker;
+        const task = pdfjs.getDocument({
+          url: `/api/books/${passage.bookId}/file`,
+          withCredentials: true,
+          worker: worker.worker,
+        });
+        this.pdfTask = task;
+        const doc = await task.promise;
+        if (this.pdfTask !== task) {
+          void doc.destroy();
+          return;
+        }
+        this.pdfDoc = doc;
+        this.pdfStatus.set('ready');
+        this.pdfDocReady.update((n) => n + 1);
+      } catch (error) {
+        console.warn('Could not open the PDF for the passage:', error);
+        if (this.passage()?.id === passage.id) this.pdfStatus.set('error');
+      }
+    })();
+  }
+
+  private closePdf(): void {
+    this.pdfRender?.cancel();
+    this.pdfRender = null;
+    const task = this.pdfTask;
+    const worker = this.pdfWorker;
+    this.pdfTask = null;
+    this.pdfWorker = null;
+    this.pdfDoc = null;
+    void (task?.destroy() ?? Promise.resolve())
+      .catch(() => undefined)
+      .finally(() => worker?.terminate());
+  }
+
+  /** One PDF page, as large as the frame allows, sharp on a dense screen. */
+  private async drawPdfPage(
+    canvas: HTMLCanvasElement,
+    pageNumber: number,
+    size: { width: number; height: number },
+  ): Promise<void> {
+    const doc = this.pdfDoc;
+    if (!doc) return;
+    this.pdfRender?.cancel();
+    try {
+      const page = await doc.getPage(pageNumber);
+      if (doc !== this.pdfDoc) return;
+      const base = page.getViewport({ scale: 1 });
+      const fit = Math.min(size.width / base.width, size.height / base.height);
+      const ratio = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: fit * ratio });
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      canvas.style.width = `${Math.floor(base.width * fit)}px`;
+      canvas.style.height = `${Math.floor(base.height * fit)}px`;
+      const task = page.render({ canvasContext: context, viewport });
+      this.pdfRender = task;
+      await task.promise;
+    } catch (error) {
+      // A render cancelled by the next page turn is not a failure.
+      if ((error as { name?: string })?.name !== 'RenderingCancelledException') {
+        console.warn('Could not draw the PDF page:', error);
+      }
+    }
+  }
+
   /** Page count from the column strip's width; keeps the reader's place. */
   private measure(): void {
     const frame = this.frame()?.nativeElement;
+    if (frame && this.isPdf()) {
+      this.frameSize.set({ width: frame.clientWidth, height: frame.clientHeight });
+      return;
+    }
     const columns = this.columns()?.nativeElement;
     if (!frame || !columns) return;
 

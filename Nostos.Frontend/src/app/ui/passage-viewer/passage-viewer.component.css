@@ -196,6 +196,66 @@
   background: var(--text-selection-bg);
 }
 
+/* --- A PDF passage: its own pages (issue #1018) ---------------------------
+   A page is a sheet of paper in either theme, set in the middle of the frame
+   at the largest size that fits. */
+.pv-pdf {
+  display: grid;
+  place-items: center;
+}
+
+.pv-pdf-sheet {
+  display: flex;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 2px;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--motion-base, 220ms) var(--ease-out, ease-out);
+}
+
+.pv-pdf-sheet.is-ready {
+  opacity: 1;
+}
+
+/* pdf.js paints the sheet itself, white, so no fill is set here. */
+.pv-pdf-page {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* The PDF reader's dark page (issue #259): the same filter, so a page reads
+   the same in the viewer as in the book. */
+.pv-pdf-page.is-inverted {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+.pv-pdf-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.pv-pdf-note {
+  flex-shrink: 0;
+  margin: 0 0 0.9rem;
+  padding: 0.55rem 0.8rem;
+  border-left: 2px solid var(--color-accent);
+  background: var(--bg-surface-alt);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.pv-page-source {
+  color: var(--color-text-light);
+}
+
 /* --- Footer ------------------------------------------------------------- */
 
 .pv-foot {
