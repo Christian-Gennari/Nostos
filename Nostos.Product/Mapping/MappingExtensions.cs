@@ -496,12 +496,18 @@ public static class MappingExtensions
             BookId: model.Note.BookId,
             BookTitle: model.Note.Book?.Title,
             Content: model.Note.Content,
-            SelectedText: model.Note.SelectedText,
+            SelectedText: model.Note.IsPassage()
+                ? PassageText.Opening(model.Note.SelectedText)
+                : model.Note.SelectedText,
             CfiRange: model.Note.CfiRange,
             CreatedAt: model.Note.CreatedAt,
             AddedAt: model.AddedAt,
             SourceAnchorKind: model.Note.SourceAnchorKind,
             SourceAnchorValue: model.Note.SourceAnchorValue,
-            AnchorVerified: model.Note.AnchorVerified
+            AnchorVerified: model.Note.AnchorVerified,
+            Kind: model.Note.Kind,
+            PassageTitle: model.Note.PassageTitle,
+            PassageEnd: model.Note.PassageEnd,
+            PassageWordCount: model.Note.IsPassage() ? PassageText.WordCount(model.Note.SelectedText) : null
         );
 }

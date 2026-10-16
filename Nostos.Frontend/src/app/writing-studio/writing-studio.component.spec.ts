@@ -54,6 +54,7 @@ class NoteCardStub {
   @Input() showActions = true;
   @Input() showSource = false;
   @Input() showDate = true;
+  @Input() passageViewerOptions: unknown = null;
 }
 
 describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§5)', () => {

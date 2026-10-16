@@ -44,5 +44,10 @@ export interface WritingSourceDto {
   sourceAnchorKind?: string;
   sourceAnchorValue?: string | null;
   anchorVerified?: boolean;
+  /** A passage (issue #1014); `selectedText` is then only its opening. */
+  kind?: 'note' | 'passage';
+  passageTitle?: string | null;
+  passageEnd?: string | null;
+  passageWordCount?: number | null;
 }
 

@@ -26,7 +26,8 @@ import { NotesService } from '../core/services/notes.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { WritingDto, WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
-import { Note } from '../core/dtos/note.dtos';
+import { Note, Passage, isPassage } from '../core/dtos/note.dtos';
+import { PassageViewerRequest, PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import {
   MarkdownEditorComponent,
   MarkdownEditorTransientState,
@@ -145,6 +146,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private topicsService = inject(TopicsService);
   private booksService = inject(BooksService);
   private notesService = inject(NotesService);
+  private passageViewer = inject(PassageViewerService);
   private recent = inject(RecentItemsService);
   private route = inject(ActivatedRoute, { optional: true });
   private router = inject(Router, { optional: true });
@@ -224,6 +226,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
         sourceAnchorKind: s.sourceAnchorKind ?? undefined,
         sourceAnchorValue: s.sourceAnchorValue ?? undefined,
         anchorVerified: s.anchorVerified ?? undefined,
+        kind: s.kind,
+        passageTitle: s.passageTitle,
+        passageEnd: s.passageEnd,
+        passageWordCount: s.passageWordCount,
       }));
   });
 
@@ -1004,6 +1010,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
           selectedText: n.selectedText,
           createdAt: n.createdAt ?? '',
           bookTitle: n.bookTitle,
+          sourceAnchorKind: n.sourceAnchorKind,
+          sourceAnchorValue: n.sourceAnchorValue,
+          anchorVerified: n.anchorVerified,
+          highlightColour: n.highlightColour,
+          kind: n.kind,
+          passageTitle: n.passageTitle,
+          passageEnd: n.passageEnd,
+          passageWordCount: n.passageWordCount,
         }));
         this.selectedTopicNotes.set(mapped);
         this.topicNotesState.set('loaded');
@@ -1189,7 +1203,43 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   canInsertQuote(source: Note | null = this.inspectedSource()): boolean {
+    // A passage's list copy is only its opening; it is quoted from the viewer.
+    if (isPassage(source)) return false;
     return !!source && hasMeaningfulSelectedText(source) && !!sourceHumanLabel(source);
+  }
+
+  /** Whether the source is a passage, quoted by reading it (issue #1021). */
+  isPassageSource(source: Note | null = this.inspectedSource()): boolean {
+    return isPassage(source);
+  }
+
+  /**
+   * The passage viewer opened from Studio offers "Quote in writing": the
+   * words selected in it go into the draft as a quotation from the passage.
+   */
+  readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
+    quoteSelection: (text: string, passage: Passage) => void this.quotePassageSelection(text, passage),
+  };
+
+  readPassage(source: Note): void {
+    this.passageViewer.open(source.id, this.passageViewerOptions);
+  }
+
+  private async quotePassageSelection(text: string, passage: Passage): Promise<void> {
+    const markdown = buildQuoteMarkdown({
+      selectedText: text,
+      bookTitle: passage.bookTitle,
+      passageTitle: passage.title,
+    });
+    if (!markdown || !this.activeItem() || !this.markdownEditor) {
+      this.toast.error('Open a writing and place the cursor in the editor first');
+      return;
+    }
+    if (await this.markdownEditor.insertMarkdown(markdown)) {
+      this.toast.success('Quoted in your writing');
+    } else {
+      this.toast.error('The editor is not ready for insertion yet');
+    }
   }
 
   canInsertNote(source: Note | null = this.inspectedSource()): boolean {
@@ -1210,6 +1260,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   async insertReference(source: Note): Promise<void> {
     await this.insertSourceMarkdown(buildReferenceMarkdown(source));
+  }
+
+  /** The title a passage row leads with, or null for any other source. */
+  passageRowTitle(note: Note): string | null {
+    return isPassage(note) ? note.passageTitle?.trim() || 'Passage' : null;
   }
 
   private async insertSourceMarkdown(markdown: string | null): Promise<void> {

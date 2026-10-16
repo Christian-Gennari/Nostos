@@ -21,5 +21,10 @@ public record WritingSourceDto(
     DateTime AddedAt,
     string SourceAnchorKind,
     string? SourceAnchorValue,
-    bool AnchorVerified
+    bool AnchorVerified,
+    // APPENDED (issue #1014): a passage. SelectedText is then only its opening.
+    string Kind = "note",
+    string? PassageTitle = null,
+    string? PassageEnd = null,
+    int? PassageWordCount = null
 );

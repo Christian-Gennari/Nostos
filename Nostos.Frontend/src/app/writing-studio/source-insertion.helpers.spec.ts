@@ -95,3 +95,26 @@ describe('source insertion provenance (#493)', () => {
     expect(buildNoteMarkdown(source)).toContain('Literal _note_ text');
   });
 });
+
+describe('quoting from a passage (issue #1021)', () => {
+  it('names the passage in the attribution, never where it starts', () => {
+    expect(
+      buildQuoteMarkdown({
+        selectedText: 'Man prefers peace, and even death,\nto freedom of choice.',
+        bookTitle: 'The Brothers Karamazov',
+        passageTitle: 'The Grand Inquisitor',
+        sourceAnchorKind: 'pdf_page',
+        sourceAnchorValue: '241',
+        anchorVerified: true,
+      }),
+    ).toBe(
+      '> Man prefers peace, and even death,\n> to freedom of choice.\n> — *The Brothers Karamazov*, “The Grand Inquisitor”',
+    );
+  });
+
+  it('names the passage in a reference too', () => {
+    expect(buildReferenceMarkdown({ bookTitle: 'The Brothers Karamazov', passageTitle: 'The Grand Inquisitor' })).toBe(
+      '*See: The Brothers Karamazov, “The Grand Inquisitor”*',
+    );
+  });
+});

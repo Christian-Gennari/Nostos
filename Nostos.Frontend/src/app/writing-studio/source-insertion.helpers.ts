@@ -5,6 +5,8 @@ export interface SourceInsertionSource {
   sourceAnchorKind?: string | null;
   sourceAnchorValue?: string | null;
   anchorVerified?: boolean | null;
+  /** A passage's title (issue #1014): the passage is the locator. */
+  passageTitle?: string | null;
 }
 
 export interface HumanSourceLabel {
@@ -29,6 +31,11 @@ export function sourceHumanLabel(source: SourceInsertionSource): HumanSourceLabe
   if (!title) return null;
 
   let locator: string | null = null;
+  const passage = normalizeInlineText(source.passageTitle);
+  if (passage) {
+    // Quoted from a kept passage: name the passage, not where it starts.
+    return { title: escapeMarkdownInline(title), locator: `“${escapeMarkdownInline(passage)}”` };
+  }
   if (
     source.anchorVerified === true &&
     source.sourceAnchorKind?.trim().toLowerCase() === 'pdf_page'
