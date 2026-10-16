@@ -42,8 +42,10 @@ test.describe('Nostos UI v1 catalogue', () => {
         }
 
         await expect(page.locator('button.nostos-button--primary').first()).toBeVisible();
-        // 7 since the action menu example added its trigger (317c71ca).
-        await expect(page.locator('button.icon-btn')).toHaveCount(7);
+        // 7 since the action menu example added its trigger (317c71ca); 10 since
+        // the overlay-surface example added its three buttons on artwork
+        // (92d85f5d), which left this count stale on main.
+        await expect(page.locator('button.icon-btn')).toHaveCount(10);
         // 6, not 7: `feat(ui): add canonical dropdown primitive` replaced a native
         // `<select class="nostos-form-control">` with `<app-dropdown>`, so the
         // catalogue renders one fewer form control. The count was stale on main
@@ -53,10 +55,13 @@ test.describe('Nostos UI v1 catalogue', () => {
         await expect(page.locator('.nostos-chip')).toHaveCount(4);
         await expect(page.locator('.nostos-badge')).toHaveCount(4);
 
-        await expect(page.getByRole('button', { name: 'Saving…' })).toHaveAttribute(
-          'aria-busy',
-          'true',
-        );
+        // Two busy examples since the spinner pass added "Busy button" beside
+        // the disabled one in "State" (d0bec379); both must announce busy.
+        const saving = page.getByRole('button', { name: 'Saving…' });
+        await expect(saving).toHaveCount(2);
+        for (const button of await saving.all()) {
+          await expect(button).toHaveAttribute('aria-busy', 'true');
+        }
         await expect(page.locator('#catalogue-author')).toHaveAttribute('aria-invalid', 'true');
         await expect(page.getByLabel('Checked switch example', { exact: true })).toBeChecked();
         await expect(page.getByRole('button', { name: 'Selected', exact: true })).toHaveAttribute(
