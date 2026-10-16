@@ -30,7 +30,9 @@ import {
   Note,
   importedNoteLocation,
   isImportedAnchor,
+  noteHasText,
 } from '../../core/dtos/note.dtos';
+import type { HighlightHit } from '../highlight-hit';
 import {
   IReader,
   ReaderProgress,
@@ -269,6 +271,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   searchRequested = output<void>();
   /** Neutral reading-surface tap/click asks the shared shell to reveal or hide chrome. */
   surfaceInteracted = output<void>();
+  /** A click or tap landed on saved highlights; the shell opens the one to show. */
+  highlightActivated = output<HighlightHit[]>();
 
   private notesService = inject(NotesService);
   private booksService = inject(BooksService);
@@ -1881,6 +1885,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       }
       if (clickSuppression && now > clickSuppression.untilMs) clickSuppression = null;
 
+      // A saved highlight takes the tap before paging or chrome: opening what
+      // was written about a passage is why the reader touched it. A pending
+      // selection and the book's own links still come first.
+      if (!selectedText() && !isInteractiveTarget(event.target)) {
+        const hits = this.annotationManager?.highlightsAt(contents, event.clientX, event.clientY) ?? [];
+        if (hits.length > 0) {
+          this.highlightActivated.emit(hits);
+          return;
+        }
+      }
+
       const width = doc.defaultView?.innerWidth ?? doc.documentElement.clientWidth;
       const action = surfaceActionForPoint({
         target: event.target,
@@ -1944,13 +1959,36 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       clickSuppression = null;
     };
 
+    // A mouse over a saved highlight shows it can be opened. Painted marks are
+    // not elements and cannot carry a cursor of their own, so the hit-test
+    // follows the pointer, once per frame at most.
+    let hoverFrame = 0;
+    let hoverPoint: { x: number; y: number } | null = null;
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse') return;
+      hoverPoint = event.buttons === 0 ? { x: event.clientX, y: event.clientY } : null;
+      if (hoverFrame) return;
+      hoverFrame = requestAnimationFrame(() => {
+        hoverFrame = 0;
+        const point = hoverPoint;
+        const over =
+          !!point &&
+          !selectedText() &&
+          (this.annotationManager?.highlightsAt(contents, point.x, point.y, false).length ?? 0) > 0;
+        if (doc.body) doc.body.style.cursor = over ? 'pointer' : '';
+      });
+    };
+
     doc.addEventListener('click', onClick);
+    doc.addEventListener('pointermove', onPointerMove, { passive: true });
     doc.addEventListener('touchstart', onTouchStart, { passive: true });
     doc.addEventListener('touchend', onTouchEnd, { passive: true });
     doc.addEventListener('touchcancel', onTouchCancel, { passive: true });
 
     this.interactionDocuments.set(doc, () => {
       doc.removeEventListener('click', onClick);
+      doc.removeEventListener('pointermove', onPointerMove);
+      if (hoverFrame) cancelAnimationFrame(hoverFrame);
       doc.removeEventListener('touchstart', onTouchStart);
       doc.removeEventListener('touchend', onTouchEnd);
       doc.removeEventListener('touchcancel', onTouchCancel);
@@ -2194,7 +2232,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   recolourHighlight(note: Note, colour: HighlightColour): void {
-    if (note.cfiRange) this.annotationManager?.recolourHighlight(note.cfiRange, colour);
+    if (note.cfiRange) {
+      this.annotationManager?.recolourHighlight(note.cfiRange, colour, noteHasText(note));
+    }
   }
 
   commitHighlight(content = '', colour?: HighlightColour): void {

@@ -21,7 +21,7 @@ import { HIGHLIGHT_COLOURS, HighlightColour, resolveHighlightFill } from '../hig
 
 /** Which layer a mark belongs to: a saved or offered pen, or one of the reader's own marks. */
 export type TextMarkLayer =
-  | { kind: 'pen'; colour: HighlightColour }
+  | { kind: 'pen'; colour: HighlightColour; noted?: boolean }
   | { kind: 'search' }
   | { kind: 'landing' }
   | { kind: 'read-aloud' };
@@ -52,7 +52,8 @@ const NAME_PREFIX = 'nostos-mark-';
 
 /** The registry name of a layer, also the `::highlight()` argument. */
 export function textMarkName(layer: TextMarkLayer): string {
-  return layer.kind === 'pen' ? `${NAME_PREFIX}pen-${layer.colour}` : `${NAME_PREFIX}${layer.kind}`;
+  if (layer.kind !== 'pen') return `${NAME_PREFIX}${layer.kind}`;
+  return `${NAME_PREFIX}pen-${layer.colour}${layer.noted ? '-noted' : ''}`;
 }
 
 /** Later layers paint over earlier ones where they overlap: the reader's own marks stay visible on a highlight. */
@@ -108,9 +109,17 @@ export function textMarkCss(theme: Theme): string {
     `text-decoration-line:underline;text-decoration-color:${accent};` +
     'text-decoration-thickness:2px;text-underline-offset:0.18em;';
 
+  // A highlight that carries a note is the same pen with a dotted rule under
+  // it, so a reader can tell which marks have something to open.
+  const noteRule =
+    `text-decoration-line:underline;text-decoration-style:dotted;text-decoration-color:${accent};` +
+    'text-decoration-thickness:2px;text-underline-offset:0.22em;';
   const pens = HIGHLIGHT_COLOURS.map(({ id }) => {
-    const fill = resolveHighlightFill(id, PEN_FALLBACK[id]);
-    return `::highlight(${textMarkName({ kind: 'pen', colour: id })}){background-color:${withAlpha(fill, penAlpha)};}`;
+    const fill = `background-color:${withAlpha(resolveHighlightFill(id, PEN_FALLBACK[id]), penAlpha)};`;
+    return (
+      `::highlight(${textMarkName({ kind: 'pen', colour: id })}){${fill}}` +
+      `::highlight(${textMarkName({ kind: 'pen', colour: id, noted: true })}){${fill}${noteRule}}`
+    );
   }).join('');
 
   return (
@@ -235,7 +244,8 @@ export class EpubTextMarks {
   }
 }
 
-function sectionOf(cfi: string): number {
+/** The spine position a CFI points into; -1 when it cannot be parsed. */
+export function sectionOf(cfi: string): number {
   try {
     return new EpubCFI(cfi).spinePos;
   } catch {

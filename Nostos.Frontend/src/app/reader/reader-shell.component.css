@@ -647,6 +647,91 @@
   justify-content: flex-end;
 }
 
+/* --- Highlight card ----------------------------------------------------------
+   A saved highlight opened from the page: its passage, its note, its pen and
+   what can be done with it. Anchored, it is the selection menu's surface (the
+   same placement, floating-panel recipe and quote); docked, it is the
+   selection bar's. The quote rule is drawn in the highlight's own pen, as the
+   note card's is. */
+.highlight-card-note {
+  margin: 0;
+  max-height: min(40vh, 18rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--color-text-main);
+  font-size: 0.94rem;
+  line-height: 1.55;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.highlight-card-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+/* The pens lead; with none (while writing) the utilities keep to the right. */
+.highlight-card-utilities {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.highlight-card-delete:not(:disabled):hover {
+  color: var(--color-danger);
+}
+
+.highlight-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Docked, the card is a short sheet: the passage on one line, the note below
+   it scrolling on its own, and full-height touch targets. */
+.highlight-card-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0.75rem 1.25rem;
+}
+
+.highlight-card-docked .highlight-card-note {
+  max-height: 30vh;
+}
+
+.highlight-card-docked .highlight-card-tools {
+  min-height: 44px;
+}
+
+.highlight-card-docked .highlight-card-actions {
+  gap: 0.5rem;
+}
+
+.highlight-card-docked .highlight-card-actions .reader-confirm-action {
+  flex: 1 1 0;
+  min-height: var(--control-h-touch);
+}
+
+@media (max-width: 768px) {
+  .highlight-card-sheet {
+    padding: 0.625rem 0.75rem;
+  }
+}
+
+/* The note-list card the highlight card pointed at, picked out for a moment. */
+app-note-card.is-flashed {
+  display: block;
+  border-radius: var(--radius-md);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
 /* --- Page indicator (a #226 follow-up) -------------------------------------------
    The pager shows "12 / 162" with the number editable. It was TWO nested boxes:
    a filled grey pill wrapping the field, and the field carrying its own border.

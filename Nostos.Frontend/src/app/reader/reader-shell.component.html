@@ -239,9 +239,10 @@
         (selectionDismissed)="handleSelectionDismissed()"
         (commitFailed)="handleCommitFailed()"
         (surfaceInteracted)="handleSurfaceInteraction()"
+        (highlightActivated)="handleHighlightActivated($event)"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" (highlightActivated)="handleHighlightActivated($event)" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" (contentsRequested)="openContents()" />
       } @default {
@@ -414,6 +415,185 @@
       </div>
       }
       }
+      @if (activeHighlight(); as hl) {
+      <!-- A saved highlight opened from the page. The same body is placed the
+           two ways the selection actions are: anchored at the mark on a
+           fine-pointer desktop, docked at the bottom on phones. -->
+      <ng-template #highlightCardBody>
+        @let anchoredCard = !!highlightCardPlacement();
+        <blockquote
+          class="selection-quote highlight-card-quote"
+          [style.border-left-color]="'var(--highlight-' + activeHighlightPen() + ')'"
+        >
+          <p class="selected-text" [title]="activeHighlightPreview()">{{ activeHighlightPreview() }}</p>
+        </blockquote>
+
+        @if (highlightNoteEditing()) {
+          <div class="selection-note">
+            <label class="visually-hidden" for="highlight-card-input">Note for this highlight</label>
+            <textarea
+              appTextarea
+              controlSize="compact"
+              id="highlight-card-input"
+              class="highlight-card-input selection-note-input"
+              rows="3"
+              placeholder="Write a note…"
+              [value]="highlightNoteDraft()"
+              (input)="highlightNoteDraft.set($any($event.target).value)"
+              (keydown)="onHighlightNoteKeydown($event)"
+              [disabled]="highlightNoteSaving()"
+              data-testid="highlight-card-input"
+            ></textarea>
+          </div>
+        } @else if (activeHighlightHasNote()) {
+          <div
+            class="highlight-card-note"
+            [innerHTML]="hl.content | noteFormat : topicMap()"
+            data-testid="highlight-card-note"
+          ></div>
+        }
+
+        @if (!highlightNoteEditing()) {
+        <div class="highlight-card-tools">
+          <div class="hl-pens selection-pens" role="group" aria-label="Highlight colour">
+            @for (pen of highlightColours; track pen.id) {
+              <button
+                type="button"
+                class="hl-pen"
+                [style.background]="'var(--highlight-' + pen.id + ')'"
+                [class.is-active]="activeHighlightPen() === pen.id"
+                [attr.aria-pressed]="activeHighlightPen() === pen.id"
+                [attr.aria-label]="pen.label + ' highlighter'"
+                [attr.title]="pen.label"
+                [attr.data-testid]="'highlight-card-pen-' + pen.id"
+                (click)="recolourActiveHighlight(pen.id)"
+              ></button>
+            }
+          </div>
+          <div class="highlight-card-utilities">
+            <button
+              appIconButton
+              icon="copy"
+              type="button"
+              (click)="copyActiveHighlight()"
+              aria-label="Copy passage"
+              title="Copy passage"
+              data-testid="highlight-card-copy"
+            ></button>
+            @if (askNostosAvailable()) {
+              <button
+                appIconButton
+                icon="sparkle"
+                type="button"
+                (click)="askNostosAboutHighlight()"
+                aria-label="Ask Nostos about passage"
+                title="Ask Nostos about passage"
+                data-testid="highlight-card-ask-nostos"
+              ></button>
+            }
+            <button
+              appIconButton
+              icon="notebook"
+              type="button"
+              (click)="showActiveHighlightInNotes()"
+              aria-label="Show in Notes & Highlights"
+              title="Show in Notes & Highlights"
+              data-testid="highlight-card-show-in-notes"
+            ></button>
+            <button
+              appIconButton
+              icon="trash"
+              type="button"
+              class="highlight-card-delete"
+              (click)="deleteActiveHighlight()"
+              [disabled]="highlightNoteSaving()"
+              aria-label="Delete highlight"
+              title="Delete highlight"
+              data-testid="highlight-card-delete"
+            ></button>
+          </div>
+        </div>
+        }
+
+        <div class="highlight-card-actions">
+          @if (highlightNoteEditing()) {
+            <button
+              appButton
+              type="button"
+              [variant]="anchoredCard ? 'ghost' : 'secondary'"
+              class="reader-confirm-action"
+              (click)="cancelHighlightNoteEdit()"
+              [disabled]="highlightNoteSaving()"
+              data-testid="highlight-card-cancel"
+            >
+              Cancel
+            </button>
+            <button
+              appButton
+              type="button"
+              variant="primary"
+              class="reader-confirm-action"
+              (click)="saveHighlightNote()"
+              [disabled]="highlightNoteSaving() || !highlightNoteChanged()"
+              [busy]="highlightNoteSaving()"
+              data-testid="highlight-card-save"
+            >
+              <nostos-icon name="check" [size]="16"></nostos-icon>
+              {{ highlightNoteSaving() ? 'Saving…' : activeHighlightHasNote() && !highlightNoteDraft().trim() ? 'Remove note' : 'Save note' }}
+            </button>
+          } @else {
+            <button
+              appButton
+              type="button"
+              [variant]="anchoredCard ? 'ghost' : 'secondary'"
+              class="reader-confirm-action"
+              (click)="closeHighlightCard()"
+              data-testid="highlight-card-close"
+            >
+              Close
+            </button>
+            <button
+              appButton
+              type="button"
+              [variant]="activeHighlightHasNote() ? 'secondary' : 'primary'"
+              class="reader-confirm-action"
+              (click)="editHighlightNote()"
+              data-autofocus
+              data-testid="highlight-card-edit"
+            >
+              <nostos-icon [name]="activeHighlightHasNote() ? 'pencil-simple' : 'note'" [size]="16"></nostos-icon>
+              {{ activeHighlightHasNote() ? 'Edit note' : 'Add note' }}
+            </button>
+          }
+        </div>
+      </ng-template>
+
+      @if (highlightCardPlacement(); as place) {
+      <div
+        class="selection-menu highlight-card"
+        role="dialog"
+        aria-label="Highlight"
+        data-testid="highlight-card"
+        [style.left.px]="place.left"
+        [style.width.px]="place.width"
+        [style.top.px]="place.top"
+        [style.bottom.px]="place.bottom"
+      >
+        <ng-container [ngTemplateOutlet]="highlightCardBody"></ng-container>
+      </div>
+      } @else {
+      <div
+        class="highlight-confirmation highlight-card highlight-card-docked"
+        role="dialog"
+        aria-label="Highlight"
+        data-testid="highlight-card"
+      >
+        <div class="highlight-card-sheet">
+          <ng-container [ngTemplateOutlet]="highlightCardBody"></ng-container>
+        </div>
+      </div>
+      }
+      }
     </main>
 
     <aside class="toc-panel" [class.open]="tocOpen() && fileType() !== 'pdf'">
@@ -518,6 +698,8 @@
         @for (note of dbNotes(); track note.id) {
         <app-note-card
           [note]="note"
+          [attr.data-note-id]="note.id"
+          [class.is-flashed]="flashedNoteId() === note.id"
           [topicMap]="topicMap()"
           [showNavigation]="true"
           [audioTime]="noteAudioTime(note)"

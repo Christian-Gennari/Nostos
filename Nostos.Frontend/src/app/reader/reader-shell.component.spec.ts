@@ -79,6 +79,8 @@ class PdfReaderStub {
   selectionDismissed = output<void>();
   commitFailed = output<unknown>();
   surfaceInteracted = output<void>();
+  highlightActivated = output<unknown>();
+  recolourHighlight = vi.fn();
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('available');
   searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
@@ -123,6 +125,9 @@ class EpubReaderStub {
   exitRequested = output<void>();
   searchRequested = output<void>();
   surfaceInteracted = output<void>();
+  highlightActivated = output<unknown>();
+  recolourHighlight = vi.fn();
+  removeHighlight = vi.fn();
   loading = signal(false);
   searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
@@ -2645,5 +2650,318 @@ describe('selectionPreview (#657)', () => {
     expect(preview.endsWith('…')).toBe(true);
     expect(preview.length).toBeLessThanOrEqual(51);
     expect(preview.slice(0, -1).split(' ').every((w) => /^word\d+$/.test(w))).toBe(true);
+  });
+});
+
+describe('ReaderShell highlight card: a saved highlight opened from the page', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+  const anchor = { top: 200, bottom: 220, left: 300, right: 500 };
+  const CFI_OLD = 'epubcfi(/6/4!/4/2/1:0)';
+  const CFI_NEW = 'epubcfi(/6/4!/4/2/1:6)';
+
+  function note(overrides: Partial<Note>): Note {
+    return {
+      id: 'n-1',
+      bookId: 'book-hl',
+      content: '',
+      cfiRange: CFI_OLD,
+      selectedText: 'Sing, goddess, the anger of Achilles',
+      createdAt: '2026-01-01T00:00:00Z',
+      highlightColour: 'sage',
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    mockMatchMedia();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  });
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  async function openBook(fileName = 'iliad.epub', notes: Note[] = []) {
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-hl', fileName } as Book));
+    fixture = await configureReaderShell();
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const component = fixture.componentInstance;
+    component.dbNotes.set(notes);
+    render();
+    return component;
+  }
+
+  function epub(): EpubReaderStub {
+    return fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance;
+  }
+
+  function notesService() {
+    return TestBed.inject(NotesService) as unknown as {
+      update: ReturnType<typeof vi.fn>;
+      delete: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  function el(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  function activate(component: ReaderShell, ...identifiers: string[]) {
+    component.handleHighlightActivated(identifiers.map((identifier) => ({ identifier, anchor })));
+    render();
+  }
+
+  it('desktop: opens at the mark with the passage, its note, its pen and the actions', async () => {
+    const component = await openBook('iliad.epub', [note({ content: 'Rage as the first word.' })]);
+    component.dockedLayout.set(false);
+    activate(component, CFI_OLD);
+
+    const card = el('highlight-card')!;
+    expect(card).not.toBeNull();
+    expect(card.classList).toContain('selection-menu');
+    // Below the mark, never over it, like the selection menu.
+    expect(parseFloat(card.style.top)).toBeGreaterThan(anchor.bottom);
+    expect(card.textContent).toContain('Sing, goddess, the anger of Achilles');
+    expect(el('highlight-card-note')!.textContent).toContain('Rage as the first word.');
+    expect(el('highlight-card-pen-sage')!.getAttribute('aria-pressed')).toBe('true');
+    expect(el('highlight-card-edit')!.textContent).toContain('Edit note');
+    expect(el('highlight-card-copy')).not.toBeNull();
+    expect(el('highlight-card-ask-nostos')).not.toBeNull();
+    expect(el('highlight-card-show-in-notes')).not.toBeNull();
+    expect(el('highlight-card-delete')).not.toBeNull();
+
+    (el('highlight-card-close') as HTMLButtonElement).click();
+    render();
+    expect(el('highlight-card')).toBeNull();
+  });
+
+  it('opens the newest of overlapping highlights, and the same tap again closes it', async () => {
+    const component = await openBook('iliad.epub', [
+      note({ id: 'old', cfiRange: CFI_OLD, content: 'older', createdAt: '2026-01-01T00:00:00Z' }),
+      note({ id: 'new', cfiRange: CFI_NEW, content: 'newer', createdAt: '2026-03-01T00:00:00Z' }),
+    ]);
+    component.dockedLayout.set(false);
+    activate(component, CFI_OLD, CFI_NEW);
+
+    expect(component.highlightCard()?.noteId).toBe('new');
+    expect(el('highlight-card-note')!.textContent).toContain('newer');
+
+    activate(component, CFI_OLD, CFI_NEW);
+    expect(el('highlight-card')).toBeNull();
+  });
+
+  it('matches a PDF hit by note id, the identifier the PDF reader marks by', async () => {
+    const component = await openBook('iliad.pdf', [
+      note({ id: 'pdf-note', cfiRange: '{"pageNumber":3,"rects":[]}', content: 'margin' }),
+    ]);
+    component.dockedLayout.set(false);
+    activate(component, 'pdf-note');
+    expect(component.activeHighlight()?.id).toBe('pdf-note');
+  });
+
+  it('ignores a hit on a highlight it has no note for', async () => {
+    const component = await openBook('iliad.epub', []);
+    activate(component, CFI_OLD);
+    expect(component.highlightCard()).toBeNull();
+  });
+
+  it('a highlight with no note offers Add note, and saving it redraws the mark with its note rule', async () => {
+    const component = await openBook('iliad.epub', [note({ content: '' })]);
+    component.dockedLayout.set(false);
+    activate(component, CFI_OLD);
+    expect(el('highlight-card-note')).toBeNull();
+
+    const edit = el('highlight-card-edit') as HTMLButtonElement;
+    expect(edit.textContent).toContain('Add note');
+    edit.click();
+    render();
+
+    const saved = note({ content: 'Why rage?' });
+    notesService().update.mockReturnValue(of(saved));
+    const input = el('highlight-card-input') as HTMLTextAreaElement;
+    input.value = '  Why rage?  ';
+    input.dispatchEvent(new Event('input'));
+    render();
+    (el('highlight-card-save') as HTMLButtonElement).click();
+    render();
+
+    // Only the text is sent: the passage and the pen are left as stored.
+    expect(notesService().update).toHaveBeenCalledWith('n-1', { content: 'Why rage?' });
+    expect(epub().recolourHighlight).toHaveBeenCalledWith(saved, 'sage');
+    expect(component.dbNotes()[0].content).toBe('Why rage?');
+    expect(el('highlight-card-input')).toBeNull();
+    expect(el('highlight-card-note')!.textContent).toContain('Why rage?');
+  });
+
+  it('clearing the text removes the note and keeps the highlight', async () => {
+    const component = await openBook('iliad.epub', [note({ content: 'Old thought' })]);
+    component.dockedLayout.set(false);
+    activate(component, CFI_OLD);
+    component.editHighlightNote();
+    component.highlightNoteDraft.set('   ');
+    render();
+
+    expect(el('highlight-card-save')!.textContent).toContain('Remove note');
+    notesService().update.mockReturnValue(of(note({ content: '' })));
+    (el('highlight-card-save') as HTMLButtonElement).click();
+
+    expect(notesService().update).toHaveBeenCalledWith('n-1', { content: '' });
+    expect(notesService().delete).not.toHaveBeenCalled();
+  });
+
+  it('keeps the draft when the save fails', async () => {
+    const component = await openBook('iliad.epub', [note({ content: '' })]);
+    activate(component, CFI_OLD);
+    component.editHighlightNote();
+    component.highlightNoteDraft.set('Unsaved thought');
+    notesService().update.mockReturnValue(throwError(() => new Error('offline')));
+
+    component.saveHighlightNote();
+
+    expect(component.highlightNoteEditing()).toBe(true);
+    expect(component.highlightNoteDraft()).toBe('Unsaved thought');
+    expect(component.highlightNoteSaving()).toBe(false);
+  });
+
+  it('a pen dot recolours the highlight at once, keeping its note', async () => {
+    const component = await openBook('iliad.epub', [note({ content: 'kept' })]);
+    component.dockedLayout.set(false);
+    activate(component, CFI_OLD);
+    const recoloured = note({ content: 'kept', highlightColour: 'rose' });
+    notesService().update.mockReturnValue(of(recoloured));
+
+    (el('highlight-card-pen-rose') as HTMLButtonElement).click();
+
+    expect(notesService().update).toHaveBeenCalledWith(
+      'n-1',
+      expect.objectContaining({ content: 'kept', highlightColour: 'rose' }),
+    );
+    expect(epub().recolourHighlight).toHaveBeenCalledWith(recoloured, 'rose');
+  });
+
+  it('a pending selection owns the page: no card opens, and a new selection closes an open one', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    component.handleSelectionCaptured('another passage');
+    activate(component, CFI_OLD);
+    expect(component.highlightCard()).toBeNull();
+
+    component.discardHighlight();
+    activate(component, CFI_OLD);
+    expect(component.highlightCard()).not.toBeNull();
+    component.handleSelectionCaptured('another passage');
+    expect(component.highlightCard()).toBeNull();
+  });
+
+  it('a tap elsewhere on the page closes the card and does not toggle the chrome', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+    const chrome = component.chromeVisible();
+
+    component.handleSurfaceInteraction();
+
+    expect(component.highlightCard()).toBeNull();
+    expect(component.chromeVisible()).toBe(chrome);
+  });
+
+  it('a tap elsewhere leaves a note being written alone', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+    component.editHighlightNote();
+    component.handleSurfaceInteraction();
+    expect(component.highlightCard()).not.toBeNull();
+  });
+
+  it('Escape leaves the note being written first, then the card', async () => {
+    const component = await openBook('iliad.epub', [note({ content: 'x' })]);
+    activate(component, CFI_OLD);
+    component.editHighlightNote();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.highlightNoteEditing()).toBe(false);
+    expect(component.highlightCard()).not.toBeNull();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.highlightCard()).toBeNull();
+  });
+
+  it('a page turn closes the card, since its passage has left the page', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+    epub().progress.set({ label: 'Page 2', percentage: 2 });
+    render();
+    expect(component.highlightCard()).toBeNull();
+  });
+
+  it('phone: docks at the bottom in place of the pager', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    component.dockedLayout.set(true);
+    component.chromeVisible.set(true);
+    activate(component, CFI_OLD);
+
+    const card = el('highlight-card')!;
+    expect(card.classList).toContain('highlight-card-docked');
+    expect(card.classList).not.toContain('selection-menu');
+    expect(component.pagerShown()).toBe(false);
+  });
+
+  it('Delete asks first, and closes the card once the highlight is gone', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    component.dockedLayout.set(false);
+    activate(component, CFI_OLD);
+    notesService().delete.mockReturnValue(of(undefined));
+
+    (el('highlight-card-delete') as HTMLButtonElement).click();
+    render();
+    expect(component.pendingNoteDelete()).toBe('n-1');
+    expect(notesService().delete).not.toHaveBeenCalled();
+
+    component.confirmNoteDelete();
+    render();
+    expect(notesService().delete).toHaveBeenCalledWith('n-1');
+    expect(epub().removeHighlight).toHaveBeenCalledWith(CFI_OLD);
+    expect(el('highlight-card')).toBeNull();
+    expect(component.highlightCard()).toBeNull();
+  });
+
+  it('steps aside for a reader tool opened over the page, unless a note is being written', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+    component.toggleToc();
+    expect(component.highlightCard()).toBeNull();
+    component.toggleToc();
+
+    activate(component, CFI_OLD);
+    component.editHighlightNote();
+    component.toggleNotes();
+    expect(component.highlightCard()).not.toBeNull();
+  });
+
+  it('Show in notes opens Notes & Highlights at that note', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+
+    component.showActiveHighlightInNotes();
+    render();
+
+    expect(component.highlightCard()).toBeNull();
+    expect(component.notesOpen()).toBe(true);
+    expect(component.flashedNoteId()).toBe('n-1');
+    const card = fixture.nativeElement.querySelector('.notes-panel [data-note-id="n-1"]');
+    expect(card?.classList).toContain('is-flashed');
+  });
+
+  it('gives Ask Nostos the opened passage as its context', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+    const context = TestBed.inject(AssistantContextService);
+    expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+
+    component.askNostosAboutHighlight();
+    expect(TestBed.inject(AssistantService).requestSurfaceOpen).toHaveBeenCalled();
   });
 });

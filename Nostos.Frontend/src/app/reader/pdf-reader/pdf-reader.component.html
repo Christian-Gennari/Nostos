@@ -1,7 +1,10 @@
 <div
   class="pdf-container"
   [class.inverted]="pageInverted()"
+  [class.over-highlight]="overHighlight()"
   (pointerdown)="onSurfacePointerDown($event)"
+  (pointermove)="onSurfacePointerMove($event)"
+  (pointerleave)="onSurfacePointerLeave()"
   (mouseup)="onSurfaceMouseUp($event)"
   (click)="onSurfaceClick($event)"
   (touchstart)="onSurfaceTouchStart($event)"

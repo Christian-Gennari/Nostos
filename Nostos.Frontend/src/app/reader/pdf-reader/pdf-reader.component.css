@@ -108,6 +108,24 @@
   background-color: var(--hl-hover);
 }
 
+/* A highlight that carries a note: a dotted rule under each of its lines, the
+   same sign the EPUB reader draws, so a reader can see which marks open onto
+   something written. Drawn beside the group rather than in it, so it is not
+   washed out to the fill's opacity. */
+::ng-deep .highlight-note-rule {
+  position: absolute;
+  height: 0;
+  border-top: 2px dotted var(--color-accent);
+  pointer-events: none;
+}
+
+/* The page's text spans carry their own text cursor; over a highlight the
+   page says it can be opened (the hit-test lives in the reader). */
+.pdf-container.over-highlight ::ng-deep .textLayer,
+.pdf-container.over-highlight ::ng-deep .textLayer span {
+  cursor: pointer;
+}
+
 /* --- Read-aloud mark ---------------------------------------------------------
    The sentence being spoken: a wash behind the words and a rule under each
    line, the same idea as the EPUB reader's. A PDF page keeps its own paper
@@ -139,6 +157,12 @@
 .pdf-container.inverted ::ng-deep .read-aloud-mark-box {
   background-color: color-mix(in srgb, var(--bg-body) 24%, transparent);
   box-shadow: 0 2px 0 0 color-mix(in srgb, var(--bg-body) 80%, transparent);
+}
+
+/* The note rule is inverted with the text layer too: drawn in the dark page
+   colour, it comes out light on the dark page. */
+.pdf-container.inverted ::ng-deep .highlight-note-rule {
+  border-top-color: color-mix(in srgb, var(--bg-body) 80%, transparent);
 }
 
 /* --- UI Tweaks --- */

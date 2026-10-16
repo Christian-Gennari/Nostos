@@ -8,9 +8,16 @@ import {
   noteHighlightColour,
   resolveHighlightFill,
 } from '../highlight-colours';
-import { Note } from '../../core/dtos/note.dtos';
+import { Note, noteHasText } from '../../core/dtos/note.dtos';
 import type { Theme } from '../../core/services/theme.service';
-import { EpubTextMarks, TextMark, textMarksSupported } from './epub-text-marks';
+import { EpubTextMarks, TextMark, sectionOf, textMarksSupported } from './epub-text-marks';
+import {
+  HighlightHit,
+  RectLike,
+  anchorAroundHit,
+  offsetAnchor,
+  rectContains,
+} from '../highlight-hit';
 
 interface PendingEpubHighlight {
   cfiRange: string;
@@ -115,6 +122,17 @@ export class EpubAnnotationManager {
     : null;
   /** Saved highlights painted by textMarks, by location. */
   private readonly savedMarks = new Map<string, TextMark>();
+  /**
+   * Saved locations that carry a note. They are drawn with a dotted rule, and
+   * a recolour must keep it.
+   */
+  private readonly notedHighlights = new Set<string>();
+  /**
+   * Saved locations resolved to live DOM Ranges, per section document, for the
+   * hit-test. A Range follows the text through every reflow, so an entry stays
+   * true for as long as its document is on screen.
+   */
+  private readonly hitRanges = new WeakMap<Document, Map<string, Range | null>>();
   private searchMark: TextMark | null = null;
   private landingMark: TextMark | null = null;
   private readAloudMark: TextMark | null = null;
@@ -394,10 +412,12 @@ export class EpubAnnotationManager {
   }
 
   /** Adds a persisted highlight in the pen saved with it. */
-  private addPersistedHighlight(cfiRange: string, colour: HighlightColour): void {
+  private addPersistedHighlight(cfiRange: string, colour: HighlightColour, noted: boolean): void {
+    if (noted) this.notedHighlights.add(cfiRange);
+    else this.notedHighlights.delete(cfiRange);
     if (this.textMarks) {
       this.textMarks.remove(this.savedMarks.get(cfiRange));
-      this.savedMarks.set(cfiRange, this.textMarks.add(cfiRange, { kind: 'pen', colour }));
+      this.savedMarks.set(cfiRange, this.textMarks.add(cfiRange, { kind: 'pen', colour, noted }));
       return;
     }
     this.rendition.annotations.add('highlight', cfiRange, {}, undefined, undefined, {
@@ -639,7 +659,7 @@ export class EpubAnnotationManager {
             // Persisted: swap the temporary annotation for the permanent one,
             // then report success so the shell closes the bar.
             this.committing = false;
-            this.addPersistedHighlight(snapshot.cfiRange, colour);
+            this.addPersistedHighlight(snapshot.cfiRange, colour, !!content.trim());
             this.removeAnnotation(snapshot.temporaryAnnotation);
             this.textMarks?.remove(snapshot.temporaryMark);
             // A touch selection is still live; left in place it would be
@@ -711,24 +731,93 @@ export class EpubAnnotationManager {
   public restoreHighlights(notes: Note[]) {
     notes.forEach((note) => {
       if (note.cfiRange) {
-        this.addPersistedHighlight(note.cfiRange, noteHighlightColour(note));
+        this.addPersistedHighlight(note.cfiRange, noteHighlightColour(note), noteHasText(note));
         this.highlights.update((current) => [...current, note.cfiRange!]);
       }
     });
   }
 
   /**
-   * Redraw one saved highlight in another pen. The fill is baked into the
-   * epub.js SVG when a mark is drawn, so a recolour is a remove and a re-add;
-   * a location that was never drawn here is left alone.
+   * Redraw one saved highlight in another pen, or with or without its note
+   * rule. The fill is baked into the epub.js SVG when a mark is drawn, so a
+   * redraw is a remove and a re-add; a location that was never drawn here is
+   * left alone. `noted` omitted keeps the rule the mark already has.
    */
-  public recolourHighlight(cfiRange: string, colour: HighlightColour): void {
+  public recolourHighlight(
+    cfiRange: string,
+    colour: HighlightColour,
+    noted = this.notedHighlights.has(cfiRange),
+  ): void {
     if (!this.highlights().includes(cfiRange)) return;
     if (!this.textMarks) this.rendition.annotations.remove(cfiRange, 'highlight');
-    this.addPersistedHighlight(cfiRange, colour);
+    this.addPersistedHighlight(cfiRange, colour, noted);
+  }
+
+  /**
+   * The saved highlights under a point in one section's document, in that
+   * document's viewport coordinates. Hit-tested against the marks' own line
+   * boxes: a painted Highlight is not an element and receives no events, and
+   * epub.js's fallback overlay sits under the iframe. With `measure`, each hit
+   * carries the box to open the highlight card at, in the parent page's
+   * viewport; without it this is cheap enough to follow the mouse.
+   */
+  public highlightsAt(contents: Contents, x: number, y: number, measure = true): HighlightHit[] {
+    const section = contents.sectionIndex;
+    const hits: HighlightHit[] = [];
+    for (const cfi of new Set(this.highlights())) {
+      if (sectionOf(cfi) !== section) continue;
+      const range = this.hitRange(contents, cfi);
+      if (!range) continue;
+
+      let rects: RectLike[];
+      try {
+        rects = Array.from(range.getClientRects?.() ?? []);
+      } catch {
+        continue;
+      }
+      const hit = rects.find((rect) => rect.right > rect.left && rectContains(rect, x, y));
+      if (!hit) continue;
+
+      hits.push({ identifier: cfi, anchor: measure ? this.frameAnchor(contents, rects, hit) : null });
+    }
+    return hits;
+  }
+
+  private hitRange(contents: Contents, cfi: string): Range | null {
+    const doc = contents.document;
+    let cache = this.hitRanges.get(doc);
+    if (!cache) {
+      cache = new Map();
+      this.hitRanges.set(doc, cache);
+    }
+    if (!cache.has(cfi)) {
+      let range: Range | null = null;
+      try {
+        const resolved = contents.range(cfi);
+        range = resolved && !resolved.collapsed ? resolved : null;
+      } catch {
+        // A CFI this edition's markup cannot resolve cannot be hit either.
+      }
+      cache.set(cfi, range);
+    }
+    return cache.get(cfi) ?? null;
+  }
+
+  private frameAnchor(contents: Contents, rects: RectLike[], hit: RectLike) {
+    let dx = 0;
+    let dy = 0;
+    try {
+      const frame = contents.window.frameElement?.getBoundingClientRect();
+      dx = frame?.left ?? 0;
+      dy = frame?.top ?? 0;
+    } catch {
+      // A detached frame: the inner coordinates are the best measure there is.
+    }
+    return offsetAnchor(anchorAroundHit(rects, hit), dx, dy);
   }
 
   public removeHighlight(cfiRange: string) {
+    this.notedHighlights.delete(cfiRange);
     if (this.textMarks) {
       this.textMarks.remove(this.savedMarks.get(cfiRange));
       this.savedMarks.delete(cfiRange);
@@ -749,6 +838,7 @@ export class EpubAnnotationManager {
     this.clearReadAloudMark();
     this.textMarks?.clear();
     this.savedMarks.clear();
+    this.notedHighlights.clear();
 
     if (this.selectedHandler) {
       this.rendition.off('selected', this.selectedHandler);

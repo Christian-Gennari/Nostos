@@ -183,6 +183,74 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     expect(surface).toHaveBeenCalledTimes(1);
   });
 
+  describe('a click on a saved highlight', () => {
+    function page(pageNumber: number) {
+      const pageEl = document.createElement('div');
+      pageEl.className = 'page';
+      pageEl.setAttribute('data-page-number', String(pageNumber));
+      const layer = document.createElement('div');
+      layer.className = 'textLayer';
+      const span = document.createElement('span');
+      layer.appendChild(span);
+      pageEl.appendChild(layer);
+      return { layer, span };
+    }
+
+    function clickOn(component: PdfReader, target: Element) {
+      const container = document.createElement('div');
+      component.onSurfaceClick({
+        clientX: 150,
+        clientY: 110,
+        target,
+        currentTarget: container,
+      } as unknown as MouseEvent);
+    }
+
+    it('opens the saved highlight under the click instead of toggling the chrome', () => {
+      setupComponent();
+      const component = fixture.componentInstance;
+      const hits = [{ identifier: 'note-1', anchor: { top: 1, bottom: 2, left: 3, right: 4 } }];
+      const hitTest = vi.fn(() => hits);
+      (TestBed.inject(PdfAnnotationManager) as unknown as { hitTest: typeof hitTest }).hitTest = hitTest;
+      component.savedHighlights = [
+        { id: 'note-1', pageNumber: 2, rects: [{ left: 0.1, top: 0.1, width: 0.5, height: 0.03 }] },
+        { id: 'temp-1', pageNumber: 2, rects: [{ left: 0.1, top: 0.1, width: 0.5, height: 0.03 }] },
+        { id: 'note-9', pageNumber: 9, rects: [{ left: 0.1, top: 0.1, width: 0.5, height: 0.03 }] },
+      ];
+      const activated = vi.fn();
+      const surface = vi.fn();
+      component.highlightActivated.subscribe(activated);
+      component.surfaceInteracted.subscribe(surface);
+
+      const { layer, span } = page(2);
+      clickOn(component, span);
+
+      // Only this page's saved marks are tested; one still being saved is not.
+      expect(hitTest).toHaveBeenCalledWith(layer, [component.savedHighlights[0]], 150, 110, true);
+      expect(activated).toHaveBeenCalledWith(hits);
+      expect(surface).not.toHaveBeenCalled();
+    });
+
+    it('leaves a click beside every highlight, or off the pages, to the chrome', () => {
+      setupComponent();
+      const component = fixture.componentInstance;
+      (TestBed.inject(PdfAnnotationManager) as unknown as { hitTest: () => unknown[] }).hitTest = vi.fn(() => []);
+      component.savedHighlights = [
+        { id: 'note-1', pageNumber: 2, rects: [{ left: 0.1, top: 0.1, width: 0.5, height: 0.03 }] },
+      ];
+      const activated = vi.fn();
+      const surface = vi.fn();
+      component.highlightActivated.subscribe(activated);
+      component.surfaceInteracted.subscribe(surface);
+
+      clickOn(component, page(2).span);
+      clickOn(component, document.createElement('div'));
+
+      expect(activated).not.toHaveBeenCalled();
+      expect(surface).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('follows the light theme with the established surround and light library theme', () => {
     themeService.setTheme('light');
     setupComponent();
