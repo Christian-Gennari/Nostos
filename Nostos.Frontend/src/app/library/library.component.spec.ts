@@ -724,18 +724,13 @@ describe('Library', () => {
   });
 
   /**
-   * The lag guard's DOM contract. The list reuses the grid's `.format-badge`
-   * class, so a naive reading of the stylesheet suggests every row still gets a
-   * frosted glass surface. This asserts the EFFECTIVE markup the row-status work
-   * depends on: the badge is a static in-row element whose wrapper exists for
-   * every row, and the status cluster is a sibling that owns the toggles.
-   *
-   * (The rendered `backdrop-filter: none` and the composited-layer count are
-   * asserted in tools/verify-library-list.mjs — Vitest does not apply the
-   * component stylesheet, so claiming computed styles here would be a false
-   * pass.)
+   * The lag guard's DOM contract. The grid's `.format-badge` is a frosted glass
+   * capsule (a backdrop-filter layer per badge); the list used to reuse it and
+   * undo the blur row by row. The list now writes its format as plain text, so
+   * no row carries a `.format-badge` at all, and the status cluster is still a
+   * sibling that owns the toggles.
    */
-  it('renders the format badge as a static in-row element with the status cluster as a sibling', () => {
+  it('writes the list format as plain text, with the status cluster as a sibling', () => {
     component.rawBooks.set([
       {
         id: 'book-1',
@@ -757,15 +752,100 @@ describe('Library', () => {
     const row = fixture.nativeElement.querySelector('.table-row') as HTMLElement;
     expect(row).toBeTruthy();
 
-    // The badge must not be nested in the cover frame (where the grid's overlay
-    // lives) — in the list it belongs to the format column.
-    const badge = row.querySelector('.col.format .format-badge') as HTMLElement;
-    expect(badge).toBeTruthy();
-    expect(row.querySelector('.list-cover-frame .format-badge')).toBeNull();
+    const format = row.querySelector('.col.format .list-format') as HTMLElement;
+    expect(format).toBeTruthy();
+    expect(format.textContent?.trim()).toBe('EPUB');
+    expect(row.querySelector('.format-badge')).toBeNull();
 
     // Exactly one status cluster per row, holding exactly the two toggles.
     expect(row.querySelectorAll('.list-row-status')).toHaveLength(1);
     expect(row.querySelectorAll('.list-row-status button')).toHaveLength(2);
+  });
+
+  it('draws a grid card as cover, title and author, with its state after the author', () => {
+    component.viewMode.set('grid');
+    component.rawBooks.set([
+      {
+        id: 'book-1',
+        title: 'A Title',
+        author: 'An Author',
+        type: 'ebook',
+        coverUrl: null,
+        rating: 4,
+        isFavorite: true,
+        finishedAt: '2026-01-02T00:00:00Z',
+        progressPercent: 100,
+        createdAt: '2026-01-01T00:00:00Z',
+        otherEditions: [],
+      } as unknown as Book,
+    ]);
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('.book-card') as HTMLElement;
+    // Ratings live in the list and on the book page, not on the card.
+    expect(card.querySelector('app-star-rating')).toBeNull();
+    const author = card.querySelector('.meta-author') as HTMLElement;
+    expect(author.querySelector('.meta-author-name')?.textContent?.trim()).toBe('An Author');
+    const marks = Array.from(author.querySelectorAll('.meta-mark')).map((el) => el.getAttribute('aria-label'));
+    expect(marks).toEqual(['Finished', 'Favorite']);
+  });
+
+  it('leaves the author line bare for a book that is neither finished nor a favourite', () => {
+    component.viewMode.set('grid');
+    component.rawBooks.set([
+      {
+        id: 'book-1',
+        title: 'A Title',
+        author: 'An Author',
+        type: 'ebook',
+        coverUrl: null,
+        rating: 0,
+        isFavorite: false,
+        finishedAt: null,
+        progressPercent: 0,
+        createdAt: '2026-01-01T00:00:00Z',
+        otherEditions: [],
+      } as unknown as Book,
+    ]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('.book-card .meta-mark')).toHaveLength(0);
+  });
+
+  it('names list formats in words, keeping file types as acronyms', () => {
+    const book = (type: string, fileName: string | null = null) => ({ type, fileName }) as unknown as Book;
+    expect(component.listFormatLabel(book('audiobook'))).toBe('Audio');
+    expect(component.listFormatLabel(book('physical'))).toBe('Physical');
+    expect(component.listFormatLabel(book('ebook'))).toBe('EPUB');
+    expect(component.listFormatLabel(book('ebook', 'paper.pdf'))).toBe('PDF');
+  });
+
+  it('heads the list date column "Added" and leaves an unrated cell empty', () => {
+    component.rawBooks.set([
+      {
+        id: 'book-1',
+        title: 'A Title',
+        author: 'An Author',
+        type: 'ebook',
+        coverUrl: null,
+        rating: 0,
+        isFavorite: false,
+        finishedAt: null,
+        progressPercent: 0,
+        createdAt: '2026-01-01T00:00:00Z',
+        otherEditions: [],
+      } as unknown as Book,
+    ]);
+    component.setViewMode('list');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('#date-header')?.textContent?.trim()).toBe('Added');
+    const rating = fixture.nativeElement.querySelector('.table-row .col.rating') as HTMLElement;
+    expect(rating.textContent?.trim()).toBe('');
+    // The phone line under the title carries the author.
+    expect(
+      fixture.nativeElement.querySelector('.table-row .list-book-author')?.textContent?.trim(),
+    ).toBe('An Author');
   });
 
   it('renders importing status overlay when book status is Downloading or Transcoding', () => {

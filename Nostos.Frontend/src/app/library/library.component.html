@@ -181,7 +181,7 @@
           <div id="author-header">Author</div>
           <div id="rating-header">Rating</div>
           <div id="format-header">Format</div>
-          <div id="date-header">Date</div>
+          <div id="date-header">Added</div>
         </div>
 
         @for (book of books(); track book.id) {
@@ -202,6 +202,9 @@
               @if (book.subtitle) {
                 <span class="list-book-subtitle">{{ book.subtitle }}</span>
               }
+              <!-- Phones hide the Author column, so the row names the author
+                   under the title instead (desktop hides this line). -->
+              <span class="list-book-author">{{ book.author || 'Unknown' }}</span>
 
               <!-- Import state, in the row the book will keep. The bar sits inside
                    the existing row height (measured: 63px desktop / 79px mobile
@@ -291,38 +294,32 @@
               (ratingChange)="updateRating(book, $event)"
             >
             </app-star-rating>
-            } @else {
-            <span class="unrated-dash">—</span>
             }
           </div>
 
+          <!-- Plain text with its glyph, not an outlined capsule: a column of
+               fourteen bordered pills was the loudest thing in the list. -->
           <div class="col format">
-            <div class="format-cell-wrapper">
             @if (book.otherEditions && book.otherEditions.length > 0) {
-            <span class="format-badge micro-glyphs" [attr.title]="getWorkFormatsTooltip(book)">
+            <span class="list-format micro-glyphs" [attr.title]="getWorkFormatsTooltip(book)">
               @for (glyph of getWorkFormatGlyphs(book); track glyph.type) {
-                <nostos-icon [name]="glyph.icon" [size]="11"></nostos-icon>
+                <nostos-icon [name]="glyph.icon" [size]="13"></nostos-icon>
               }
             </span>
             } @else {
-            <span
-              class="format-badge single"
-              [class.audiobook]="book.type === 'audiobook'"
-              [attr.data-type]="book.type"
-            >
+            <span class="list-format" [attr.data-type]="book.type">
               @if (book.type === 'audiobook') {
-                <nostos-icon name="headphones" [size]="11"></nostos-icon>
+                <nostos-icon name="headphones" [size]="13"></nostos-icon>
               } @else if (getFormatLabel(book) === 'PDF') {
-                <nostos-icon name="file-text" [size]="11"></nostos-icon>
+                <nostos-icon name="file-text" [size]="13"></nostos-icon>
               } @else if (book.type === 'physical') {
-                <nostos-icon name="bookmark-simple" [size]="11"></nostos-icon>
+                <nostos-icon name="bookmark-simple" [size]="13"></nostos-icon>
               } @else {
-                <nostos-icon name="book-open" [size]="11"></nostos-icon>
+                <nostos-icon name="book-open" [size]="13"></nostos-icon>
               }
-              {{ getFormatLabel(book) }}
+              {{ listFormatLabel(book) }}
             </span>
             }
-            </div>
           </div>
 
           <div class="col date">
@@ -501,7 +498,17 @@
           </div>
 
           <div class="meta-title">{{ book.title }}</div>
-          <div class="meta-author">{{ book.author || 'Unknown' }}</div>
+          <!-- The book's own state rides on the author line, so the cover is
+               left to its art. The toggles on the cover appear on hover. -->
+          <div class="meta-author">
+            <span class="meta-author-name">{{ book.author || 'Unknown' }}</span>
+            @if (book.finishedAt) {
+            <nostos-icon name="check-circle" weight="fill" [size]="13" class="meta-mark meta-mark--finished" label="Finished"></nostos-icon>
+            }
+            @if (book.isFavorite) {
+            <nostos-icon name="heart" weight="fill" [size]="13" class="meta-mark meta-mark--favorite" label="Favorite"></nostos-icon>
+            }
+          </div>
 
           <!-- A failed import explains itself on the card, not in a `title`
                tooltip: no phone can show a tooltip, and "Failed" alone says
@@ -526,16 +533,6 @@
           }
           }
 
-          @if (book.rating > 0) {
-          <div class="meta-rating" (click)="$event.stopPropagation()">
-            <app-star-rating
-              [rating]="book.rating"
-              [size]="14"
-              (ratingChange)="updateRating(book, $event)"
-            >
-            </app-star-rating>
-          </div>
-          }
 
         </div>
 
