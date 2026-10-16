@@ -7,6 +7,7 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
+import { BadgeComponent } from '../../ui/badge/badge.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 
 /** One book in the current work, as the membership list needs it. */
@@ -50,7 +51,7 @@ export interface LinkCandidate extends LinkableBookDto {
 @Component({
   selector: 'app-editions-modal',
   standalone: true,
-  imports: [ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
+  imports: [BadgeComponent, ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
   templateUrl: './editions-modal.component.html',
   styleUrl: './editions-modal.component.css',
 })

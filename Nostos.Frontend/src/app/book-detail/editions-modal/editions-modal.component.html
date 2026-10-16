@@ -67,7 +67,7 @@
                  treatment (selection fill + Current badge) rather than a third
                  recipe of its own. -->
             @if (member.id === currentBookId()) {
-            <span class="manage-member-flag">Current</span>
+            <span appBadge class="manage-member-flag"><nostos-icon name="check" [size]="11" aria-hidden="true"></nostos-icon>Current</span>
             } @else {
             <button
               type="button"
