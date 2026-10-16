@@ -35,6 +35,13 @@ import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 // Components
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
+import {
+  MenuComponent,
+  MenuItemComponent,
+  MenuSeparatorDirective,
+  MenuTriggerDirective,
+} from '../ui/menu/menu.component';
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { ScrollModeType } from 'ngx-extended-pdf-viewer';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
@@ -159,6 +166,10 @@ function readAloudFallbackNotice(code: string | null): string {
     ReadAloudBarComponent,
     SegmentedComponent,
     NoteFormatPipe,
+    MenuComponent,
+    MenuItemComponent,
+    MenuSeparatorDirective,
+    MenuTriggerDirective,
   ],
   providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
@@ -219,8 +230,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     });
 
     this.dockQuery?.addEventListener?.('change', this.onDockQueryChange);
-    this.veryNarrowQuery?.addEventListener?.('change', this.onVeryNarrowChange);
-    this.phoneQuery?.addEventListener?.('change', this.onPhoneChange);
   }
 
   // ------------------------------------------------------------------
@@ -239,31 +248,6 @@ export class ReaderShell implements OnInit, OnDestroy {
   dockedLayout = signal(this.dockQuery?.matches ?? true);
   private readonly onDockQueryChange = (event: MediaQueryListEvent) =>
     this.dockedLayout.set(event.matches);
-
-  /**
-   * The narrowest supported phone width. A PDF header cannot hold five 44px
-   * tools here, so Feedback moves into the existing View settings panel rather
-   * than shrinking touch targets or adding another menu.
-   */
-  private readonly veryNarrowQuery: MediaQueryList | null =
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia('(max-width: 360px)')
-      : null;
-  readonly veryNarrow = signal(this.veryNarrowQuery?.matches ?? false);
-  private readonly onVeryNarrowChange = (event: MediaQueryListEvent) =>
-    this.veryNarrow.set(event.matches);
-
-  /**
-   * Phone widths. Six 44px tools squeeze the title to a few characters here, so
-   * when the switch-edition tool is present Feedback yields its header slot.
-   */
-  private readonly phoneQuery: MediaQueryList | null =
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia('(max-width: 480px)')
-      : null;
-  readonly phone = signal(this.phoneQuery?.matches ?? false);
-  private readonly onPhoneChange = (event: MediaQueryListEvent) =>
-    this.phone.set(event.matches);
 
   /** Where the captured selection sits; null docks the menu. */
   selectionAnchor = signal<SelectionAnchor | null>(null);
@@ -374,24 +358,13 @@ export class ReaderShell implements OnInit, OnDestroy {
    */
   readonly feedbackUrl = inject(FeedbackLinkService).url;
 
-  /** Formats whose View settings panel exists and can host the narrow entry. */
-  private readonly hasViewSettingsPanel = computed(
-    () => this.fileType() === 'epub' || this.fileType() === 'pdf',
-  );
-
   /**
-   * The header entry hides only where the View settings panel can take over.
-   * Audio keeps it at every width, because that format has no such panel and
-   * its three-tool header never overflows.
+   * Feedback opens in a new tab, from the More menu. It is offered even when
+   * the book failed to load, so it cannot depend on a reader being mounted.
    */
-  readonly showHeaderFeedback = computed(() => !this.showPanelFeedback());
-
-  /** The narrow replacement, a quiet link row inside the View settings panel. */
-  readonly showPanelFeedback = computed(
-    () =>
-      this.hasViewSettingsPanel() &&
-      (this.veryNarrow() || (this.phone() && (this.canSwitchEdition() || this.readAloudOffered()))),
-  );
+  openFeedback(href: string): void {
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
 
   // --- Continue in another edition ---
 
@@ -417,18 +390,45 @@ export class ReaderShell implements OnInit, OnDestroy {
     return audio === 0 ? 'book-open' : 'stack';
   });
 
+  /** The More menu names the edition it opens when there is just one. */
+  readonly switchEditionLabel = computed(() => {
+    if (this.switchableEditions().length === 1) {
+      if (this.switchEditionIcon() === 'headphones') return 'Continue in the audiobook';
+      if (this.switchEditionIcon() === 'book-open') return 'Continue in the ebook';
+    }
+    return 'Continue in another edition';
+  });
+
+  // --- More menu ---
+
   /**
-   * At 320px an EPUB/PDF header holds four tools, so this one joins the panel.
-   * On a phone it also yields to Read aloud, which is used far more often while
-   * reading: five tools is what a 390px header holds before the title goes.
+   * The header's fourth tool. It holds what is reached for once in a session,
+   * so the header stays four tools at every width instead of growing a button
+   * per feature.
    */
-  readonly showPanelSwitch = computed(
-    () =>
-      this.canSwitchEdition() &&
-      this.hasViewSettingsPanel() &&
-      (this.veryNarrow() || (this.phone() && this.readAloudOffered())),
+  @ViewChild('moreTrigger', { read: CdkMenuTrigger }) private moreTrigger?: CdkMenuTrigger;
+  @ViewChild('moreTrigger', { read: ElementRef }) private moreButton?: ElementRef<HTMLButtonElement>;
+  readonly moreOpen = signal(false);
+
+  /** Search and read aloud: the More items that need an open EPUB or PDF. */
+  readonly moreHasReadingTools = computed(
+    () => !this.loadError() && (this.fileType() === 'epub' || this.fileType() === 'pdf'),
   );
-  readonly showHeaderSwitch = computed(() => this.canSwitchEdition() && !this.showPanelSwitch());
+
+  readonly hasMoreTools = computed(
+    () => this.moreHasReadingTools() || this.canSwitchEdition() || !!this.feedbackUrl(),
+  );
+
+  /**
+   * Runs a More item from its trigger rather than from the item, which is gone
+   * once the menu closes: a panel it opens then returns focus to More. It runs
+   * inside the tap, which read aloud needs to start audio on a phone.
+   */
+  fromMoreMenu(action: () => unknown): void {
+    this.moreTrigger?.close();
+    this.moreButton?.nativeElement.focus();
+    void action.call(this);
+  }
 
   // --- Read aloud ---
 
@@ -446,9 +446,6 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.browserVoice !== null &&
       !(this.fileType() === 'pdf' && this.pdfReader?.textCapability() === 'unavailable'),
   );
-  /** At 320px the header has no room for it, so it joins the View settings panel. */
-  readonly showPanelReadAloud = computed(() => this.readAloudOffered() && this.veryNarrow());
-  readonly showHeaderReadAloud = computed(() => this.readAloudOffered() && !this.veryNarrow());
 
   // The server voice, when this host has one. It is asked for per book
   // language; null means not asked yet.
@@ -891,7 +888,8 @@ export class ReaderShell implements OnInit, OnDestroy {
       || this.searchPanelOpen()
       || this.typoOpen()
       || this.tocOpen()
-      || this.notesOpen(),
+      || this.notesOpen()
+      || this.moreOpen(),
   );
 
   /**
@@ -912,6 +910,13 @@ export class ReaderShell implements OnInit, OnDestroy {
     // A tap away from an open highlight card closes it, and does nothing else.
     if (this.highlightCard()) {
       if (!this.highlightNoteEditing() && !this.highlightNoteSaving()) this.closeHighlightCard();
+      return;
+    }
+
+    // A tap on the page dismisses an open More menu, and does nothing else.
+    // The CDK cannot hear a tap inside the EPUB's iframe.
+    if (this.moreOpen()) {
+      this.moreTrigger?.close();
       return;
     }
 
@@ -1024,8 +1029,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
-    this.veryNarrowQuery?.removeEventListener?.('change', this.onVeryNarrowChange);
-    this.phoneQuery?.removeEventListener?.('change', this.onPhoneChange);
   }
 
   private watchBookNavigation(): void {

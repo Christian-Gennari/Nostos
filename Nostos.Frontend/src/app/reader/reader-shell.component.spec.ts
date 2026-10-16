@@ -1224,6 +1224,19 @@ describe('ReaderShell toolbar contract', () => {
     fixture.detectChanges();
   }
 
+  afterEach(() => {
+    document.querySelectorAll('.cdk-overlay-container').forEach((node) => node.remove());
+  });
+
+  /** Opens the header's More menu (once) and returns one of its items. */
+  function openMoreItem(testId: string): HTMLButtonElement | null {
+    if (!fixture.componentInstance.moreOpen()) {
+      (fixture.nativeElement.querySelector('[data-testid="reader-more"]') as HTMLButtonElement).click();
+      render();
+    }
+    return document.querySelector(`[data-testid="reader-more-menu"] [data-testid="${testId}"]`);
+  }
+
   // The theme is app-wide (ThemeService owns data-theme on <html>). The shell
   // offers it inside View settings (#651) but never as a header button and
   // never as a reader-local data-theme.
@@ -1419,13 +1432,12 @@ describe('ReaderShell toolbar contract', () => {
     fixture = await configureReaderShell();
     render();
 
-    const searchBtn = fixture.debugElement
-      .queryAll(By.css('.reader-header button.icon-btn'))
-      .map((b) => b.nativeElement as HTMLButtonElement)
-      .find((b) => b.getAttribute('title') === 'Search');
+    const searchItem = openMoreItem('reader-search-toggle');
 
-    expect(searchBtn).toBeTruthy();
-    expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
+    expect(searchItem).toBeTruthy();
+    expect(searchItem!.textContent).toContain('Search in book');
+    // Search is a More item, not a header tool.
+    expect(fixture.nativeElement.querySelector('.reader-header [data-testid="reader-search-toggle"]')).toBeNull();
   });
 
   it('offers the same Search control for EPUB', async () => {
@@ -1434,13 +1446,12 @@ describe('ReaderShell toolbar contract', () => {
     fixture = await configureReaderShell();
     render();
 
-    const searchBtn = fixture.debugElement
-      .queryAll(By.css('.reader-header button.icon-btn'))
-      .map((b) => b.nativeElement as HTMLButtonElement)
-      .find((b) => b.getAttribute('title') === 'Search');
+    const searchItem = openMoreItem('reader-search-toggle');
 
-    expect(searchBtn).toBeTruthy();
-    expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
+    expect(searchItem).toBeTruthy();
+    expect(searchItem!.textContent).toContain('Search in book');
+    // Search is a More item, not a header tool.
+    expect(fixture.nativeElement.querySelector('.reader-header [data-testid="reader-search-toggle"]')).toBeNull();
   });
 
   it('clears the mounted reader search before a book switch drops activeReader', async () => {
@@ -1477,15 +1488,12 @@ describe('ReaderShell toolbar contract', () => {
     stub.searchAvailable.set(false);
     render();
 
-    const searchBtn = fixture.debugElement
-      .queryAll(By.css('.reader-header button.icon-btn'))
-      .map((b) => b.nativeElement as HTMLButtonElement)
-      .find((b) => b.getAttribute('title') === 'Search')!;
-    expect(searchBtn.disabled).toBe(true);
+    const searchItem = openMoreItem('reader-search-toggle')!;
+    expect(searchItem.getAttribute('aria-disabled')).toBe('true');
 
     stub.searchAvailable.set(true);
     render();
-    expect(searchBtn.disabled).toBe(false);
+    expect(searchItem.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('opens a Nostos-owned search panel and clears format search when closed', async () => {
@@ -1500,24 +1508,23 @@ describe('ReaderShell toolbar contract', () => {
     fixture.componentInstance.ready.set(true);
     render();
 
-    const searchBtn = fixture.debugElement
-      .queryAll(By.css('.reader-header button.icon-btn'))
-      .map((b) => b.nativeElement as HTMLButtonElement)
-      .find((b) => b.getAttribute('title') === 'Search')!;
-
-    expect(searchBtn.getAttribute('aria-expanded')).toBe('false');
-    searchBtn.click();
+    const more = fixture.nativeElement.querySelector('[data-testid="reader-more"]') as HTMLButtonElement;
+    openMoreItem('reader-search-toggle')!.click();
     render();
 
-    expect(searchBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(fixture.componentInstance.moreOpen()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="reader-search-panel"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('.reader-search-input')).not.toBeNull();
+    // More stays lit while the search bar it opened is up.
+    expect(more.classList).toContain('active');
 
-    searchBtn.click();
+    fixture.componentInstance.closeSearch();
     render();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(searchBtn.getAttribute('aria-expanded')).toBe('false');
     expect(fixture.nativeElement.querySelector('[data-testid="reader-search-panel"]')).toBeNull();
+    // Focus goes back to More, where search was opened from.
+    expect(document.activeElement).toBe(more);
     expect(stub.clearSearch).toHaveBeenCalled();
   });
 
