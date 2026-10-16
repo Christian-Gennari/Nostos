@@ -40,6 +40,7 @@
         class="nav-item"
         (click)="clearFilters()"
         [class.active]="!hasSelection()"
+        data-filter-kind="status"
         title="All Books"
       >
         <nostos-icon name="books" [size]="16" weight="light"></nostos-icon>
@@ -53,6 +54,7 @@
         class="nav-item"
         (click)="toggleStatus('notstarted')"
         [class.active]="filters.status() === 'notstarted'"
+        data-filter-kind="status"
         title="Not Started"
       >
         <nostos-icon name="circle-dashed" [size]="16" weight="light"></nostos-icon>
@@ -66,6 +68,7 @@
         class="nav-item"
         (click)="toggleStatus('reading')"
         [class.active]="filters.status() === 'reading'"
+        data-filter-kind="status"
         title="In Progress"
       >
         <nostos-icon name="book-open" [size]="16" weight="light"></nostos-icon>
@@ -79,6 +82,7 @@
         class="nav-item"
         (click)="toggleStatus('favorites')"
         [class.active]="filters.status() === 'favorites'"
+        data-filter-kind="status"
         title="Favorites"
       >
         <nostos-icon name="heart" [size]="16" weight="light"></nostos-icon>
@@ -92,6 +96,7 @@
         class="nav-item"
         (click)="toggleStatus('finished')"
         [class.active]="filters.status() === 'finished'"
+        data-filter-kind="status"
         title="Finished"
       >
         <nostos-icon name="check-circle" [size]="16" weight="light"></nostos-icon>
@@ -223,6 +228,7 @@
         class="nav-item"
         (click)="toggleStatus('unsorted')"
         [class.active]="filters.status() === 'unsorted'"
+        data-filter-kind="status"
         title="Unsorted"
       >
         <nostos-icon name="tray" [size]="16" weight="light"></nostos-icon>

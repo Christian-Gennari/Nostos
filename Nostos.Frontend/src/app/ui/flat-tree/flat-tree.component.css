@@ -615,3 +615,15 @@ input.inline-rename-input {
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 }
+
+/* An empty quiet tree is a plain line where the first row would be, not a
+   dashed box: nothing can be dropped on it, and a box around a sentence is
+   what the quiet sidebar removes. It starts where a row's label would. */
+:host(.flat-tree--quiet) .empty-state {
+  justify-content: flex-start;
+  min-height: 34px;
+  margin: 0;
+  padding: 0 12px;
+  border: none;
+  background: none;
+}

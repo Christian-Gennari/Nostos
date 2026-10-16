@@ -396,6 +396,12 @@ describe('SidebarCollections', () => {
       const unsorted = rows[rows.length - 1] as HTMLButtonElement;
       expect(unsorted.querySelector('.label')?.textContent?.trim()).toBe('Unsorted');
 
+      // Still one of the six status filters, wherever it sits.
+      const marked = Array.from(
+        fixture.nativeElement.querySelectorAll('[data-filter-kind="status"] .label') as NodeListOf<HTMLElement>,
+      ).map((el) => el.textContent?.trim());
+      expect(marked).toEqual(['All Books', 'Not Started', 'In Progress', 'Favorites', 'Finished', 'Unsorted']);
+
       unsorted.click();
       fixture.detectChanges();
       expect(component.filters.status()).toBe('unsorted');
