@@ -1410,6 +1410,28 @@ p {
   border: 0;
 }
 
+/* Screen-reader-only on a phone, visible above it. A page's own heading
+   ("Library", "Brain") restates the section the active bottom dock already
+   names, so below the dock breakpoint it is clipped out of view while staying
+   in the accessibility tree. Same recipe as `.visually-hidden`; it lives here,
+   beside the one definition, because a media query cannot reference another
+   selector's declarations. `!important` because it is applied to classes a
+   component also styles, and an encapsulated component rule (e.g. `margin: 0`
+   on `.library-title`) would otherwise outrank it. */
+@media (max-width: 768px) {
+  .visually-hidden-phone {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+}
+
 /* Decorative left-edge rail.
    A border-left or inset box-shadow follows the host's border radius, which
    bends the rail around rounded top/bottom corners. The rail is its own square

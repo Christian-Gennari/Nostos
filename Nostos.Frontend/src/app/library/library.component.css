@@ -1201,32 +1201,6 @@ app-sidebar-collections.no-transition {
     transform: translateY(-50%);
   }
 
-  /* On mobile, the active bottom dock already identifies the Library section.
-     Clip the heading out of visual rendering while preserving an accessible,
-     measurable box for screen readers and stability assertions. */
-  /* design-lang-allow: this reproduces the `.visually-hidden` recipe on purpose,
-     and it is the only such copy. The element carries a STATIC class and the clip
-     must apply only below this breakpoint; plain CSS cannot reference another
-     selector's declarations (`@extend` and mixins do not exist here). The
-     alternatives are worse: toggling the class from TypeScript by media query trades
-     a CSS constant for a JS breakpoint listener, and adding the utility class
-     unconditionally would hide the heading on desktop too.
-
-     This previously escaped the guard because that guard matched the selector NAME
-     rather than the recipe. The guard now compares bodies, so this is an explicit,
-     permitted exception rather than an unnoticed one. */
-  .library-title {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
   .active-filters {
     padding: 0 14px;
     margin: 0;

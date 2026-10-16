@@ -1292,6 +1292,10 @@ describe('SecondBrain', () => {
 
     const header = fixture.nativeElement.querySelector('.brain-header') as HTMLElement;
     expect(header.querySelector('.badge-count')).toBeNull();
+    // The bottom dock names Brain on a phone, so the identity block is clipped
+    // there but stays in the accessibility tree (heading and live region).
+    expect(header.querySelector('.brain-header-title')?.classList).toContain('visually-hidden-phone');
+    expect(header.querySelector('.brain-header-title h1')?.textContent?.trim()).toBe('Brain');
     expect(header.querySelector('.brain-header-purpose')?.textContent?.trim()).toBe(
       'Revisit what you noticed. See what connects.'
     );
