@@ -23,12 +23,61 @@ import {
   formatTimestamp,
 } from './assistant.service';
 import { AssistantVoiceService } from './assistant-voice.service';
+import type { AssistantContext } from './assistant-context.service';
 import { AssistantStatusService } from './assistant-status.service';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { AssistantChangesetCardComponent } from './changeset-card/assistant-changeset-card.component';
 import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
+
+/** A ready-made question offered while the conversation is empty. */
+export interface StarterPrompt {
+  id: string;
+  label: string;
+}
+
+/**
+ * Starter questions for the page the reader is on. They are questions the
+ * assistant can answer from the library (books, notes, topics), worded for the
+ * surface: about this book in the reader, about connections in the Brain.
+ */
+export function starterPrompts(context: AssistantContext): StarterPrompt[] {
+  const book = context.bookTitle?.trim();
+  switch (context.surface) {
+    case 'reader':
+      return [
+        ...(context.selectedText?.trim()
+          ? [{ id: 'explain-selection', label: 'Explain the passage I selected' }]
+          : []),
+        { id: 'reader-summary', label: book ? `Summarise what I have read of ${book} so far` : 'Summarise what I have read so far' },
+        { id: 'reader-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
+      ];
+    case 'book-detail':
+      return [
+        { id: 'book-about', label: book ? `What is ${book} about?` : 'What is this book about?' },
+        { id: 'book-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
+        { id: 'book-related', label: 'Which of my other books connect to this one?' },
+      ];
+    case 'second-brain':
+      return [
+        { id: 'brain-connections', label: 'What connects my topics?' },
+        { id: 'brain-recent', label: 'Summarise my most recent notes' },
+        { id: 'brain-gaps', label: 'Which topics have only one or two notes?' },
+      ];
+    case 'studio':
+      return [
+        { id: 'studio-sources', label: 'Which of my notes could support what I am writing?' },
+        { id: 'studio-recent', label: 'Summarise my most recent notes' },
+      ];
+    default:
+      return [
+        { id: 'library-next', label: 'What should I read next from my library?' },
+        { id: 'library-recent', label: 'What have I been reading lately?' },
+        { id: 'library-topics', label: 'Which topics come up most in my notes?' },
+      ];
+  }
+}
 
 /**
  * How close to the end of the transcript still counts as "reading the newest
@@ -307,11 +356,21 @@ export class AssistantComponent {
   /** Product-level voice preference; provider configuration stays server-side. */
   readonly voiceTranscriptionEnabled = this.preferences.assistantVoiceEnabled;
 
-  /** The compact header names the current book when the surface has one. */
+  /** The book the current surface is about, if any. */
   readonly currentBookTitle = computed(() => {
     const title = this.assistant.context().bookTitle?.trim();
     return title ? title : null;
   });
+
+  /**
+   * The composer names the book the question will be about. A source-location
+   * chip already names it (with the page), so the plain book label only shows
+   * when there is no such chip.
+   */
+  readonly readingLabel = computed(() => (this.assistant.anchorChip() ? null : this.currentBookTitle()));
+
+  /** Ready-made questions for an empty conversation, worded for this page. */
+  readonly starters = computed(() => starterPrompts(this.assistant.context()));
 
   /** Drives the quiet send affordance without making the template inspect text. */
   readonly hasDraft = computed(() => this.assistant.draft().trim().length > 0);
@@ -728,6 +787,14 @@ export class AssistantComponent {
     if (keyboard.shiftKey) return; // Shift+Enter is a newline.
     event.preventDefault();
     this.submitDraft();
+  }
+
+  /** Asks a starter question as if it had been typed and sent. */
+  runStarter(prompt: StarterPrompt): void {
+    if (this.assistant.sending()) return;
+    this.assistant.updateDraft(prompt.label);
+    this.submitDraft();
+    if (!this.isPhoneViewport()) setTimeout(() => this.composer()?.nativeElement.focus(), 0);
   }
 
   onSendClick(): void {

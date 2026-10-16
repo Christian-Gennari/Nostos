@@ -1001,7 +1001,9 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
   ['src/app/settings/settings.component.html', new Set(['settings-nav-item', 'theme-card'])],
   ['src/app/add-book-modal/add-book-modal.component.html', new Set(['tab-btn', 'source-choice', 'source-result', 'source-filter'])],
   ['src/app/ui/assistant/assistant.component.html',
-    new Set(['assistant-expand', 'suggestion-chip', 'anchor-chip-dismiss', 'voice-control', 'assistant-trigger'])],
+    // 'starter' rows send a ready-made question, like suggestion-chip applies a
+    // topic: full-width rows with a trailing go glyph, not ordinary buttons.
+    new Set(['assistant-expand', 'suggestion-chip', 'starter', 'anchor-chip-dismiss', 'voice-control', 'assistant-trigger'])],
   ['src/app/library/library.component.html',
     // 'toggle-opt' is gone from this ledger: the view toggle is
     // `nostos-view-toggle` now, so this template renders no raw toggle buttons.

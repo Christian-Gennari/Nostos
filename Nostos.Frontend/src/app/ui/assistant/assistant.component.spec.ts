@@ -4,7 +4,7 @@ import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 
-import { AssistantComponent } from './assistant.component';
+import { AssistantComponent, starterPrompts } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
@@ -137,6 +137,39 @@ function reviewChangeset(overrides: Partial<AssistantChangesetDto> = {}): Assist
     ...overrides,
   };
 }
+
+describe('starterPrompts', () => {
+  const ctx = (overrides: Partial<AssistantContext>): AssistantContext =>
+    ({ surface: 'other', route: '/', bookId: null, bookTitle: null, selectedText: null, ...overrides }) as AssistantContext;
+
+  it('asks about the open book in the reader, and about a selection when there is one', () => {
+    expect(starterPrompts(ctx({ surface: 'reader', bookTitle: 'Dune' })).map((p) => p.label)).toEqual([
+      'Summarise what I have read of Dune so far',
+      'What have I noted from Dune?',
+    ]);
+    expect(starterPrompts(ctx({ surface: 'reader', bookTitle: 'Dune', selectedText: 'Fear is the mind-killer' }))[0].label).toBe(
+      'Explain the passage I selected',
+    );
+  });
+
+  it('still reads naturally without a book title', () => {
+    expect(starterPrompts(ctx({ surface: 'book-detail' }))[0].label).toBe('What is this book about?');
+  });
+
+  it('falls back to library questions anywhere else', () => {
+    for (const surface of ['library', 'settings', 'home', 'other'] as const) {
+      expect(starterPrompts(ctx({ surface }))[0].id).toBe('library-next');
+    }
+  });
+
+  it('gives every surface at least two questions with unique ids', () => {
+    for (const surface of ['reader', 'book-detail', 'second-brain', 'studio', 'library'] as const) {
+      const prompts = starterPrompts(ctx({ surface }));
+      expect(prompts.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(prompts.map((p) => p.id)).size).toBe(prompts.length);
+    }
+  });
+});
 
 describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   let fixture: ComponentFixture<AssistantComponent>;
@@ -1089,6 +1122,73 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     ).not.toContain('Processing');
   });
 
+  describe('empty conversation', () => {
+    it('offers starter questions worded for the page', () => {
+      fake.set({ surface: 'second-brain', route: '/second-brain' });
+      assistant.open();
+      fixture.detectChanges();
+
+      const starters = Array.from<HTMLElement>(
+        fixture.nativeElement.querySelectorAll('[data-testid="assistant-starter"]'),
+      ).map((b) => b.textContent?.trim());
+      expect(starters).toEqual([
+        'What connects my topics?',
+        'Summarise my most recent notes',
+        'Which topics have only one or two notes?',
+      ]);
+    });
+
+    it('sends a starter as the question, and the starters give way to the conversation', () => {
+      fake.set({ surface: 'library', route: '/library' });
+      assistant.open();
+      fixture.detectChanges();
+
+      (fixture.nativeElement.querySelector('[data-testid="assistant-starter"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const request = http.expectOne('/api/assistant/turn/stream');
+      expect(request.request.body.message).toBe('What should I read next from my library?');
+      request.flush(turn({ reply: 'Try Middlemarch.' }));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')).toBeNull();
+    });
+  });
+
+  it('names the book in the composer, unless a source chip already does', () => {
+    fake.set({ surface: 'book-detail', route: '/library/b1', bookId: 'b1', bookTitle: 'Dune' });
+    assistant.open();
+    fixture.detectChanges();
+
+    const chip = fixture.nativeElement.querySelector('[data-testid="assistant-reading-chip"]');
+    expect(chip?.textContent?.trim()).toBe('Dune');
+    // The header no longer carries a second copy of the book name.
+    expect(fixture.nativeElement.querySelector('.assistant-header')?.textContent).not.toContain('Dune');
+
+    fake.set({
+      surface: 'reader',
+      route: '/read/b1',
+      bookId: 'b1',
+      bookTitle: 'Dune',
+      bookFormat: 'ebook',
+      anchor: { kind: 'pdf_page', value: '12', verified: true },
+    });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-reading-chip"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-anchor-chip"]')).toBeTruthy();
+  });
+
+  it('keeps the speaker names for screen readers while the layout tells them apart', () => {
+    assistant.open();
+    assistant.updateDraft('Who are you?');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'The Nostos assistant.' }));
+    fixture.detectChanges();
+
+    for (const id of ['assistant-entry-user-label', 'assistant-entry-assistant-label']) {
+      expect(fixture.nativeElement.querySelector(`[data-testid="${id}"]`).classList).toContain('visually-hidden');
+    }
+  });
+
   it('renders a speaker label for both sides of the transcript', () => {
     assistant.open();
     assistant.updateDraft('Who are you?');
@@ -1410,7 +1510,8 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       revealPending();
 
       const indicator = pending()!;
-      const hidden = indicator.querySelector('.visually-hidden');
+      // The speaker name is visually hidden too; the state text is in the activity row.
+      const hidden = indicator.querySelector('.pending-row .visually-hidden');
       expect(hidden).toBeTruthy();
       expect(hidden!.textContent?.trim()).toContain('Working');
       expect(indicator.getAttribute('role')).toBe('status');

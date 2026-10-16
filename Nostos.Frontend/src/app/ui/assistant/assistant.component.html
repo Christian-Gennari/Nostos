@@ -33,12 +33,6 @@
     </div>
 
     <div class="assistant-header-actions">
-      @if (currentBookTitle(); as bookTitle) {
-      <span class="assistant-context" [title]="bookTitle">
-        <nostos-icon name="book-open" [size]="13"></nostos-icon>
-        <span class="assistant-context-label">{{ bookTitle }}</span>
-      </span>
-      }
       <button
         appIconButton
         icon="plus"
@@ -82,8 +76,25 @@
     data-testid="assistant-body"
   >
     @if (assistant.entries().length === 0) {
-    <div class="assistant-empty">
-      <p>Ask about what you are reading, or capture a thought without leaving the page.</p>
+    <div class="assistant-empty" data-testid="assistant-empty">
+      <p class="assistant-empty-title">What would you like to know?</p>
+      <p class="assistant-empty-copy">Ask about your books and notes, or capture a thought without leaving the page.</p>
+      <div class="starter-list" role="list" aria-label="Suggested questions">
+        @for (starter of starters(); track starter.id) {
+        <div role="listitem">
+          <button
+            type="button"
+            class="starter"
+            (click)="runStarter(starter)"
+            [disabled]="assistant.sending()"
+            data-testid="assistant-starter"
+          >
+            <span class="starter-label">{{ starter.label }}</span>
+            <nostos-icon class="starter-go" name="arrow-right" [size]="14"></nostos-icon>
+          </button>
+        </div>
+        }
+      </div>
     </div>
     }
 
@@ -97,9 +108,11 @@
         [class.entry-error]="entry.kind === 'error'"
       >
         @if (entry.kind === 'user') {
-        <span class="entry-speaker" data-testid="assistant-entry-user-label">You</span>
+        <!-- Speakers are told apart by layout on screen; the names stay for
+             screen readers, which read the transcript as one stream. -->
+        <span class="entry-speaker visually-hidden" data-testid="assistant-entry-user-label">You</span>
         } @else if (entry.kind === 'assistant') {
-        <span class="entry-speaker" data-testid="assistant-entry-assistant-label">Nostos</span>
+        <span class="entry-speaker visually-hidden" data-testid="assistant-entry-assistant-label">Nostos</span>
         }
         @if (entry.kind === 'assistant') {
         <div
@@ -332,10 +345,10 @@
         aria-live="polite"
         data-testid="assistant-pending"
       >
-        <span class="entry-speaker">Nostos</span>
+        <span class="entry-speaker visually-hidden">Nostos</span>
         <div class="pending-row">
           @if (assistant.turnActivity(); as activity) {
-          <span class="turn-activity" data-testid="assistant-activity">{{ activity.message }}</span>
+          <span class="turn-activity shimmer" data-testid="assistant-activity">{{ activity.message }}</span>
           } @else {
           <span class="visually-hidden">Working</span>
           <span class="thinking-dots" aria-hidden="true">
@@ -413,7 +426,7 @@
     </div>
     }
 
-    <div class="composer-shell">
+    <div class="composer-shell" [class.has-draft]="hasDraft()">
       @if (assistant.anchorChip(); as chip) {
       <div class="composer-context-row">
         <div class="anchor-chip" data-testid="assistant-anchor-chip">
@@ -428,6 +441,13 @@
             <nostos-icon name="x" [size]="12"></nostos-icon>
           </button>
         </div>
+      </div>
+      } @else if (readingLabel(); as bookTitle) {
+      <div class="composer-context-row">
+        <span class="anchor-chip reading-chip" [title]="bookTitle" data-testid="assistant-reading-chip">
+          <nostos-icon name="book-open" [size]="12"></nostos-icon>
+          <span class="anchor-chip-label">{{ bookTitle }}</span>
+        </span>
       </div>
       }
 
