@@ -67,6 +67,34 @@ public sealed class WritingNotesEndpointTests : IClassFixture<LibraryEndpointFac
     }
 
     [Fact]
+    public async Task A_kept_passage_carries_its_title_and_size_and_only_its_opening()
+    {
+        // Issue #1014: Studio lists a passage by its title, never a whole chapter.
+        var (writingId, noteId, _, _) = await SeedGraphAsync();
+        var text = string.Join(' ', Enumerable.Repeat("Imagine, then, that it takes place in Spain.", 80));
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+            var note = await db.Notes.SingleAsync(n => n.Id == noteId);
+            note.Kind = "passage";
+            note.PassageTitle = "The Grand Inquisitor";
+            note.PassageEnd = "epubcfi(/6/14)";
+            note.SelectedText = text;
+            note.CfiRange = null;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await Client.PostAsJsonAsync($"/api/writings/{writingId}/notes", new AddWritingSourceDto(noteId));
+        var dto = (await response.Content.ReadFromJsonAsync<WritingSourceDto>())!;
+
+        dto.Kind.Should().Be("passage");
+        dto.PassageTitle.Should().Be("The Grand Inquisitor");
+        dto.PassageEnd.Should().Be("epubcfi(/6/14)");
+        dto.PassageWordCount.Should().Be(text.Split(' ').Length);
+        dto.SelectedText!.Length.Should().BeLessThan(text.Length);
+    }
+
+    [Fact]
     public async Task GetKeptNotes_EmptyWhenNone_Returns200WithEmptyArray()
     {
         var (writingId, _, _, _) = await SeedGraphAsync();

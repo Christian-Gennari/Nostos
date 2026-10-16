@@ -267,6 +267,7 @@
           class="inspected-source-card"
           [note]="source"
           [topicMap]="topicMap()"
+          [passageViewerOptions]="passageViewerOptions"
           [showActions]="false"
           [showSource]="false"
           [showDate]="false"
@@ -287,7 +288,23 @@
 
         <div class="source-insertion-actions" role="group" aria-label="Source actions">
           <div class="source-action-primary-row">
-            @if (canInsertQuote(source)) {
+            @if (isPassageSource(source)) {
+              <!-- A passage (issue #1021) is quoted by reading it: the viewer
+                   offers Quote in writing for the words selected there. -->
+              <button
+                appButton
+                variant="primary"
+                size="sm"
+                data-testid="studio-quote-from-passage"
+                [disabled]="!!sourceActionDisabledReason()"
+                [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+                [title]="sourceActionDisabledReason() || ''"
+                (click)="readPassage(source)"
+              >
+                <nostos-icon concept="passage" [size]="16"></nostos-icon>
+                Quote from passage
+              </button>
+            } @else if (canInsertQuote(source)) {
               <button
                 appButton
                 variant="primary"
@@ -650,6 +667,11 @@
     [attr.aria-label]="sourceRowLabel(note)"
     (click)="inspectSource(note)"
   >
+    @if (passageRowTitle(note); as title) {
+      <span class="reference-source-passage" data-testid="studio-passage-row">
+        <nostos-icon concept="passage" [size]="14"></nostos-icon>{{ title }}
+      </span>
+    }
     @if (hasQuotePreview(note)) {
       <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
     } @else {
