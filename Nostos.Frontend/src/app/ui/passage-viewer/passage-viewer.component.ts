@@ -6,6 +6,7 @@ import {
   NgZone,
   computed,
   effect,
+  untracked,
   inject,
   signal,
   viewChild,
@@ -15,13 +16,15 @@ import { Subscription } from 'rxjs';
 
 import { NotesService } from '../../core/services/notes.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { Passage, passageReadingMinutes, passageSizeLabel } from '../../core/dtos/note.dtos';
+import { BooksService } from '../../core/services/books.service';
+import { ClipPlayer } from './clip-player';
+import { Passage, formatAudioTime, passageReadingMinutes, passageSizeLabel } from '../../core/dtos/note.dtos';
 import { libronFontFaceCss } from '../../reader/epub-reader/epub-typography';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { ButtonComponent } from '../button/button.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
-import { PassageViewerService } from './passage-viewer.service';
+import { PassageViewerRequest, PassageViewerService } from './passage-viewer.service';
 import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
 import { PdfDocument, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
 import { noteWikilinksToText } from '../pipes/note-format.pipe';
@@ -59,6 +62,7 @@ export class PassageViewerComponent {
   private readonly zone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
   private readonly theme = inject(ThemeService);
+  private readonly books = inject(BooksService);
 
   readonly request = this.viewer.request;
   readonly state = signal<ViewerState>('loading');
@@ -96,6 +100,13 @@ export class PassageViewerComponent {
       return true;
     }
   });
+  /** An audiobook passage (issue #1019) is a clip, played here within its bounds. */
+  readonly isAudio = computed(() => this.passage()?.anchorKind === 'audio_timestamp');
+  readonly clip = signal<ClipPlayer | null>(null);
+  readonly clipFailed = signal(false);
+  readonly formatTime = formatAudioTime;
+  private clipLoad: Subscription | null = null;
+
   /** The reader's note, shown above a PDF passage's first page. */
   readonly pdfNote = computed(() => noteWikilinksToText(this.passage()?.content ?? '').trim());
   /** The frame's size, so a page is drawn to fit it and redrawn when it changes. */
@@ -148,24 +159,9 @@ export class PassageViewerComponent {
   constructor() {
     effect(() => {
       const request = this.request();
-      this.load?.unsubscribe();
-      this.closePdf();
-      this.passage.set(null);
-      this.page.set(0);
-      this.pageCount.set(1);
-      this.selection.set('');
-      if (!request) return;
-
-      ensureLibron();
-      this.state.set('loading');
-      this.load = this.notes.getPassage(request.noteId).subscribe({
-        next: (passage) => {
-          this.passage.set(passage);
-          this.state.set('ready');
-          if (passage.anchorKind === 'pdf_page') this.openPdf(passage);
-        },
-        error: () => this.state.set('error'),
-      });
+      // Only a new request reopens the viewer; what opening it reads and
+      // writes (the clip, the PDF) must not re-run it.
+      untracked(() => this.open(request));
     });
 
     // Measure once the text is on the page, and whenever the frame resizes.
@@ -194,6 +190,30 @@ export class PassageViewerComponent {
       this.load?.unsubscribe();
       this.resizeObserver?.disconnect();
       this.closePdf();
+      this.closeClip();
+    });
+  }
+
+  private open(request: PassageViewerRequest | null): void {
+    this.load?.unsubscribe();
+    this.closePdf();
+    this.closeClip();
+    this.passage.set(null);
+    this.page.set(0);
+    this.pageCount.set(1);
+    this.selection.set('');
+    if (!request) return;
+
+    ensureLibron();
+    this.state.set('loading');
+    this.load = this.notes.getPassage(request.noteId).subscribe({
+      next: (passage) => {
+        this.passage.set(passage);
+        this.state.set('ready');
+        if (passage.anchorKind === 'pdf_page') this.openPdf(passage);
+        if (passage.anchorKind === 'audio_timestamp') this.openClip(passage);
+      },
+      error: () => this.state.set('error'),
     });
   }
 
@@ -250,6 +270,21 @@ export class PassageViewerComponent {
     if (!this.request() || this.state() !== 'ready') return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+    const clip = this.clip();
+    if (clip) {
+      // A clip: space plays and pauses, the arrows skip 15 seconds.
+      if (event.key === ' ' && !target?.closest('button')) {
+        event.preventDefault();
+        clip.toggle();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        clip.skip(15);
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        clip.skip(-15);
+      }
+      return;
+    }
     if (event.key === 'ArrowRight' || event.key === 'PageDown' || (event.key === ' ' && !event.shiftKey)) {
       event.preventDefault();
       this.next();
@@ -281,6 +316,38 @@ export class PassageViewerComponent {
     if (window.getSelection()?.isCollapsed === false) return;
     if (dx < 0) this.next();
     else this.previous();
+  }
+
+  private openClip(passage: Passage): void {
+    const start = Number(passage.start);
+    const end = Number(passage.end);
+    this.clipFailed.set(false);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      this.clipFailed.set(true);
+      return;
+    }
+    // The tracks of a multi-track book come with the book.
+    this.clipLoad = this.books.get(passage.bookId).subscribe({
+      next: (book) => {
+        if (this.passage()?.id !== passage.id) return;
+        this.clip.set(new ClipPlayer({ id: book.id, tracks: book.tracks }, start, end));
+      },
+      error: () => this.clipFailed.set(true),
+    });
+  }
+
+  private closeClip(): void {
+    this.clipLoad?.unsubscribe();
+    this.clipLoad = null;
+    this.clip()?.destroy();
+    this.clip.set(null);
+  }
+
+  /** The scrubber, as seconds into the clip. */
+  seekClip(event: Event): void {
+    const clip = this.clip();
+    const value = Number((event.target as HTMLInputElement).value);
+    if (clip && Number.isFinite(value)) clip.seek(clip.start + value);
   }
 
   private openPdf(passage: Passage): void {

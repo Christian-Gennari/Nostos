@@ -12,6 +12,14 @@
   height: var(--modal-max-height);
 }
 
+:host ::ng-deep .passage-viewer-card.is-clip {
+  height: auto;
+}
+
+:host ::ng-deep .passage-viewer-card.is-clip .pv-body {
+  padding-block: 2rem 1.75rem;
+}
+
 :host ::ng-deep .passage-viewer-card .modal-scroll {
   display: flex;
   flex-direction: column;
@@ -254,6 +262,102 @@
 
 .pv-page-source {
   color: var(--color-text-light);
+}
+
+/* --- An audiobook clip (issue #1019) -------------------------------------- */
+.pv-clip {
+  margin: auto;
+  width: min(30rem, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.9rem;
+  text-align: center;
+}
+
+.pv-clip-time {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-main);
+}
+
+.pv-clip-elapsed {
+  font-size: 2.4rem;
+  font-weight: 400;
+}
+
+.pv-clip-of {
+  margin-left: 0.4rem;
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+}
+
+.pv-clip-scrubber {
+  /* Set inline from the position: how much of the clip has played. */
+  --pv-clip-progress: 0%;
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--pv-clip-progress),
+    var(--border-color) var(--pv-clip-progress)
+  );
+  cursor: pointer;
+}
+
+.pv-clip-scrubber::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-round);
+  background: var(--color-text-main);
+}
+
+.pv-clip-scrubber::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--color-text-main);
+}
+
+.pv-clip-scrubber:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+}
+
+.pv-clip-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+button.pv-clip-play {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: var(--radius-round);
+  background: var(--color-text-main);
+  color: var(--bg-surface);
+}
+
+button.pv-clip-play:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.pv-clip-range {
+  margin: 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-light);
+}
+
+.pv-progress.is-hidden {
+  visibility: hidden;
 }
 
 /* --- Footer ------------------------------------------------------------- */

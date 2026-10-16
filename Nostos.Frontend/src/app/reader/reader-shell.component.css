@@ -1700,6 +1700,32 @@ button.passage-pill-action {
   margin-top: 0.5rem;
 }
 
+.passage-sheet-nudges {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.passage-sheet-nudge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.passage-sheet-nudge-label {
+  flex: 1;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.passage-sheet-nudge-label strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-main);
+}
+
 .passage-sheet-actions {
   display: flex;
   justify-content: flex-end;

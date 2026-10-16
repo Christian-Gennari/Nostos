@@ -2,8 +2,8 @@
 <app-modal-shell
   [isOpen]="true"
   variant="sheet"
-  cardClass="passage-viewer-card"
-  [maxWidth]="'720px'"
+  [cardClass]="isAudio() ? 'passage-viewer-card is-clip' : 'passage-viewer-card'"
+  [maxWidth]="isAudio() ? '560px' : '720px'"
   [maxHeight]="'min(940px, calc(100dvh - 2.5rem))'"
   [layer]="130"
   [trapFocus]="true"
@@ -42,7 +42,57 @@
       <p class="pv-status" role="alert">This passage could not be opened.</p>
       }
       @default {
-        @if (isPdf()) {
+        @if (isAudio()) {
+        <!-- A clip (issue #1019): its bounds are the whole of this player. -->
+        <div class="pv-clip" data-testid="passage-viewer-clip">
+          @if (pdfNote()) {
+          <p class="pv-pdf-note">{{ pdfNote() }}</p>
+          }
+          @if (clip(); as c) {
+          <p class="pv-clip-time" aria-live="off" data-testid="passage-viewer-clip-time">
+            <span class="pv-clip-elapsed">{{ formatTime(c.position() - c.start) }}</span>
+            <span class="pv-clip-of">/ {{ formatTime(c.length) }}</span>
+          </p>
+          <label class="visually-hidden" for="pv-clip-scrubber">Position in the clip</label>
+          <input
+            id="pv-clip-scrubber"
+            class="pv-clip-scrubber"
+            type="range"
+            min="0"
+            step="1"
+            [max]="c.length"
+            [value]="c.position() - c.start"
+            [style.--pv-clip-progress]="((c.position() - c.start) / c.length) * 100 + '%'"
+            (input)="seekClip($event)"
+            data-testid="passage-viewer-clip-scrubber"
+          />
+          <div class="pv-clip-controls">
+            <button appIconButton icon="arrow-counter-clockwise" type="button" aria-label="Back 15 seconds" title="Back 15 seconds" (click)="c.skip(-15)"></button>
+            <button
+              appIconButton
+              class="pv-clip-play"
+              [icon]="c.playing() ? 'pause' : 'play'"
+              [glyphSize]="24"
+              type="button"
+              [disabled]="!c.ready()"
+              [attr.aria-label]="c.playing() ? 'Pause clip' : 'Play clip'"
+              [title]="c.playing() ? 'Pause' : 'Play'"
+              data-testid="passage-viewer-clip-play"
+              (click)="c.toggle()"
+            ></button>
+            <button appIconButton icon="arrow-clockwise" type="button" aria-label="Forward 15 seconds" title="Forward 15 seconds" (click)="c.skip(15)"></button>
+          </div>
+          <p class="pv-clip-range">From {{ formatTime(c.start) }} to {{ formatTime(c.end) }} in the book</p>
+          @if (c.failed()) {
+          <p class="pv-status" role="alert">The audio could not be loaded. Open the clip in the book.</p>
+          }
+          } @else if (clipFailed()) {
+          <p class="pv-status" role="alert">This clip could not be opened.</p>
+          } @else {
+          <p class="pv-status" role="status">Opening the clip…</p>
+          }
+        </div>
+        } @else if (isPdf()) {
         @if (page() === 0 && pdfNote()) {
         <p class="pv-pdf-note" data-testid="passage-viewer-note">{{ pdfNote() }}</p>
         }
@@ -98,7 +148,7 @@
   </div>
 
   <footer class="pv-foot" shellActions>
-    <div class="pv-progress" aria-hidden="true">
+    <div class="pv-progress" aria-hidden="true" [class.is-hidden]="isAudio()">
       <span class="pv-progress-fill" [style.width.%]="progress()"></span>
     </div>
     <div class="pv-foot-row">
@@ -130,6 +180,7 @@
       </button>
       }
 
+      @if (!isAudio()) {
       <div class="pv-pager" role="group" aria-label="Pages">
         <button
           appIconButton
@@ -155,6 +206,7 @@
           (click)="next()"
         ></button>
       </div>
+      }
     </div>
   </footer>
 </app-modal-shell>

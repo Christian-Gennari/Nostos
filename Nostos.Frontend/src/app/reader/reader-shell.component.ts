@@ -60,7 +60,7 @@ import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigat
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
-import { Passage, passageReadingMinutes } from '../core/dtos/note.dtos';
+import { Passage, passageReadingMinutes, passageSizeLabel } from '../core/dtos/note.dtos';
 import { PassageViewerRequest } from '../ui/passage-viewer/passage-viewer.service';
 import {
   PassageDraft,
@@ -1280,6 +1280,38 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly passageNote = signal('');
   private passageBuildSeq = 0;
   readonly readingMinutes = passageReadingMinutes;
+  readonly formatAudioTime = formatAudioTime;
+
+  /** The draft's size as its card will show it: words, pages or a time range. */
+  readonly passageDraftSize = computed(() => {
+    const draft = this.passageDraft();
+    return draft
+      ? passageSizeLabel({
+          kind: 'passage',
+          sourceAnchorKind: draft.anchorKind,
+          sourceAnchorValue: draft.start,
+          passageEnd: draft.end,
+          passageWordCount: draft.words,
+        })
+      : '';
+  });
+
+  /** A clip's ends move by 15 seconds on the save sheet, never past each other. */
+  nudgePassage(which: 'start' | 'end', delta: number): void {
+    const draft = this.passageDraft();
+    if (!draft || draft.anchorKind !== 'audio_timestamp') return;
+    let start = Number(draft.start);
+    let end = Number(draft.end);
+    if (which === 'start') start = Math.min(end - 1, Math.max(0, start + delta));
+    else end = Math.min(draft.limit ?? Infinity, Math.max(start + 1, end + delta));
+    this.passageDraft.set({
+      ...draft,
+      start: String(start),
+      end: String(end),
+      opening: formatAudioTime(start),
+      closing: formatAudioTime(end),
+    });
+  }
 
   /** The reader in use can mark passages. */
   readonly canMarkPassage = computed(() => !!this.activeReader()?.passageMarkFromSelection);

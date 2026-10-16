@@ -1106,9 +1106,7 @@
     <div class="passage-sheet-heading">
       <h2 id="passage-sheet-title" class="passage-sheet-title">Save passage</h2>
       @if (passageDraft(); as draft) {
-      <p class="passage-sheet-meta" data-testid="passage-sheet-size">
-        {{ draft.words.toLocaleString('en-US') }} words · {{ readingMinutes(draft.words) }} min
-      </p>
+      <p class="passage-sheet-meta" data-testid="passage-sheet-size">{{ passageDraftSize() }}</p>
       }
     </div>
     <button
@@ -1142,12 +1140,28 @@
       data-testid="passage-sheet-title-input"
     />
 
+    @if (draft.anchorKind === 'audio_timestamp') {
+    <!-- A clip's ends are set by ear, so each moves by 15 seconds here. -->
+    <div class="passage-sheet-nudges" data-testid="passage-sheet-nudges">
+      <div class="passage-sheet-nudge">
+        <span class="passage-sheet-nudge-label">Starts at <strong>{{ formatAudioTime(+draft.start) }}</strong></span>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('start', -15)" aria-label="Start 15 seconds earlier">−15s</button>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('start', 15)" aria-label="Start 15 seconds later">+15s</button>
+      </div>
+      <div class="passage-sheet-nudge">
+        <span class="passage-sheet-nudge-label">Ends at <strong>{{ formatAudioTime(+draft.end) }}</strong></span>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('end', -15)" aria-label="End 15 seconds earlier">−15s</button>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('end', 15)" aria-label="End 15 seconds later" data-testid="passage-sheet-end-later">+15s</button>
+      </div>
+    </div>
+    } @else {
     <div class="passage-sheet-excerpt" data-testid="passage-sheet-excerpt">
       <p class="passage-sheet-opening">{{ draft.opening }}</p>
       @if (draft.closing !== draft.opening) {
       <p class="passage-sheet-closing">{{ draft.closing }}</p>
       }
     </div>
+    }
 
     <label class="passage-sheet-label" for="passage-sheet-note">Note <span class="passage-sheet-optional">(optional)</span></label>
     <textarea

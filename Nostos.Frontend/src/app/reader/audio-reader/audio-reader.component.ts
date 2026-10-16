@@ -33,6 +33,9 @@ import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-in
 import { ButtonComponent } from '../../ui/button/button.component';
 import { ChipComponent } from '../../ui/chip/chip.component';
 import { SegmentedComponent } from '../../ui/segmented/segmented.component';
+import { PassageDraft, PassageMark } from '../passage/passage-mark';
+import { formatAudioTime } from '../../core/dtos/note.dtos';
+import { PASSAGE_CLIP_PLAY_EVENT } from '../../ui/passage-viewer/clip-player';
 
 @Component({
   selector: 'app-audio-reader',
@@ -775,6 +778,66 @@ export class AudioReader implements OnDestroy, IReader {
 
   commitHighlight(): void {
     // No-op: Audio reader does not support highlights
+  }
+
+  // --- Passages (issue #1019): a clip between two times ---
+
+  /** A clip started playing in the passage viewer: the book makes way. */
+  @HostListener('window:' + PASSAGE_CLIP_PLAY_EVENT)
+  onPassageClipPlay(): void {
+    if (this.player?.playing()) this.player.pause();
+  }
+
+  /** The time playing now, as one end of a clip. */
+  passageMarkHere(): PassageMark | null {
+    if (this.duration() <= 0) return null;
+    const time = Math.round(this.currentTime() * 10) / 10;
+    return {
+      format: 'audio',
+      start: String(time),
+      end: String(time),
+      excerpt: '',
+      label: this.currentChapter() ?? formatAudioTime(time),
+    };
+  }
+
+  /**
+   * The clip between two marks, whichever came first. Null when they are the
+   * same moment: a clip needs a length.
+   */
+  async buildPassage(a: PassageMark, b: PassageMark): Promise<PassageDraft | null> {
+    if (a.format !== 'audio' || b.format !== 'audio') return null;
+    const times = [a.start, a.end, b.start, b.end].map(Number).filter(Number.isFinite);
+    if (times.length !== 4) return null;
+    const start = Math.max(0, Math.min(...times));
+    const end = Math.min(this.duration() || Infinity, Math.max(...times));
+    if (end - start < 1) return null;
+    return {
+      anchorKind: 'audio_timestamp',
+      start: String(start),
+      end: String(end),
+      title: this.chapterTitleAt(start) ?? `Clip at ${formatAudioTime(start)}`,
+      html: null,
+      text: null,
+      words: 0,
+      opening: formatAudioTime(start),
+      closing: formatAudioTime(end),
+      limit: this.duration() || undefined,
+    };
+  }
+
+  /** The chapter a time falls in. */
+  private chapterTitleAt(seconds: number): string | null {
+    let best: { label: string; at: number } | null = null;
+    const visit = (items: TocItem[]) => {
+      for (const item of items) {
+        const at = Number(item.target);
+        if (Number.isFinite(at) && at <= seconds + 0.5 && (!best || at >= best.at)) best = { label: item.label, at };
+        visit(item.children ?? []);
+      }
+    };
+    visit(this.toc());
+    return (best as { label: string } | null)?.label.trim() || null;
   }
 
   discardHighlight(): void {

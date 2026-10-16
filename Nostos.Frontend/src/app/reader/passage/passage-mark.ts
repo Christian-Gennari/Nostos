@@ -33,6 +33,8 @@ export interface PassageDraft {
   /** The first and last words, shown on the save sheet. */
   opening: string;
   closing: string;
+  /** How far an end may be moved on the save sheet: an audiobook's length. */
+  limit?: number;
 }
 
 const STORAGE_PREFIX = 'nostos.reader.passageMark.';
