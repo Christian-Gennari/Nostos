@@ -180,21 +180,17 @@
   white-space: nowrap;
 }
 
-/* `.card-status-pill.current`, verbatim — the page's own words for this state, in
-   the page's own pill. It sits in the row's trailing slot, where the Unlink button
+/* The shared `appBadge` in the selection role, as `.card-status-pill.current` on
+   the page — the same pill for the same state. It sits in the row's trailing slot, where the Unlink button
    sits on a member row: the slot has to be one or the other, or the title's
    truncation point moves from row to row. */
-.manage-member-flag {
+.manage-member-flag.nostos-badge {
   flex-shrink: 0;
-  padding: 0 4px;
-  border-radius: var(--radius-sm);
+  gap: 4px;
+  padding-left: 6px;
   background: var(--selection-badge-bg);
   color: var(--selection-ink);
-  font-size: 0.65rem;
-  font-weight: var(--fw-medium);
-  /* The page's pill inherits its meta line's `normal` leading and lands at 13px
-     (measured); this one inherits the row's, so the value is stated. */
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
 /* Per-row metadata, in `.card-meta-line`'s type recipe (0.72rem, muted, plain

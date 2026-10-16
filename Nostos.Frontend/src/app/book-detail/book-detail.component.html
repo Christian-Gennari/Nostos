@@ -566,9 +566,9 @@
                       <span class="card-progress">Not started</span>
                       }
                       @if (store.book()?.finishedAt) {
-                      <span class="card-status-pill finished">Finished</span>
+                      <span appBadge tone="success" class="card-status-pill finished">Finished</span>
                       }
-                      <span class="card-status-pill current">Current</span>
+                      <span appBadge class="card-status-pill current"><nostos-icon name="check" [size]="11" aria-hidden="true"></nostos-icon>Current</span>
                     </span>
                   </span>
                 </div>
@@ -600,7 +600,7 @@
                       <span class="card-progress">Not started</span>
                       }
                       @if (edition.finishedAt) {
-                      <span class="card-status-pill finished">Finished</span>
+                      <span appBadge tone="success" class="card-status-pill finished">Finished</span>
                       }
                     </span>
                   </span>
