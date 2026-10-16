@@ -115,8 +115,8 @@ const AI_PROVIDER_COPY = {
   embeddingToggle: 'Enable passage embeddings',
   embeddingToggleHelp:
     'Send book passages to the embedding endpoint to build a semantic index of your library. Ask Nostos keeps using keyword search whenever this is off or the endpoint is unavailable.',
-  endpointPlaceholderEmbedding: 'https://ai-gateway.vercel.sh/v1',
-  modelPlaceholderEmbedding: 'e.g. alibaba/qwen3-embedding-0-6b',
+  endpointPlaceholderEmbedding: 'https://api.openai.com/v1',
+  modelPlaceholderEmbedding: 'e.g. text-embedding-3-small',
   endpoint: 'Endpoint',
   endpointPlaceholder: 'https://api.openai.com/v1',
   endpointHelp: 'Base URL, including /v1.',
