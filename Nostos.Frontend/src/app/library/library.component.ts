@@ -251,6 +251,19 @@ export class Library implements OnInit, OnDestroy {
     return chips;
   });
 
+  /**
+   * The shelf on screen, named beside the phone's drawer opener: the active
+   * reading state, format and collection (search is not a shelf), or "All
+   * Books" when none is set.
+   */
+  scopeLabel = computed(
+    () =>
+      this.activeFilterChips()
+        .filter((chip) => chip.key !== 'search')
+        .map((chip) => chip.label)
+        .join(' · ') || 'All Books',
+  );
+
   clearChip(key: string): void {
     switch (key) {
       case 'status':

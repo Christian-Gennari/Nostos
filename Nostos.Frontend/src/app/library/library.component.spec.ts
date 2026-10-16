@@ -554,6 +554,43 @@ describe('Library', () => {
     expect(toggles.every((toggle) => !toggle.classList.contains('nostos-button'))).toBe(true);
   });
 
+  it('names the shelf beside the phone drawer opener, ignoring the search', () => {
+    fixture.detectChanges();
+    const label = () =>
+      (fixture.nativeElement.querySelector('[data-testid="library-scope-label"]') as HTMLElement)
+        .textContent?.trim();
+
+    expect(label()).toBe('All Books');
+
+    component.filters.toggleStatus('favorites');
+    component.filters.toggleCollection('c1');
+    component.searchQuery.set('stoic');
+    fixture.detectChanges();
+
+    expect(component.scopeLabel()).not.toContain('stoic');
+    expect(label()).toBe(component.scopeLabel());
+    expect(label()).toContain('Favorites');
+    expect(label()).toContain(' · ');
+    // Every chip but the search one is a shelf chip, which phones hide because
+    // the label above already names it.
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll('.filter-chip') as NodeListOf<HTMLElement>,
+    );
+    expect(chips.filter((chip) => !chip.classList.contains('filter-chip--scope'))).toHaveLength(1);
+    expect(
+      (fixture.nativeElement.querySelector('.filter-bar') as HTMLElement).classList.contains('scope-only'),
+    ).toBe(false);
+  });
+
+  it('offers the same sort on phones as an icon dropdown', () => {
+    fixture.detectChanges();
+    const phone = fixture.nativeElement.querySelector('.sort-select-phone') as HTMLElement;
+
+    expect(phone.tagName).toBe('APP-DROPDOWN');
+    expect(phone.classList.contains('nostos-dropdown--icon')).toBe(true);
+    expect(phone.querySelector('.nostos-dropdown__trigger')?.getAttribute('aria-label')).toBe('Sort books');
+  });
+
   it('updates the active sort and persists it through the preferences service', () => {
     const preferences = TestBed.inject(LibraryPreferencesService);
 

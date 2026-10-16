@@ -1,6 +1,6 @@
 {
   "artifact": "library-filters-desktop.png",
-  "capturedAt": "2026-10-16T07:11:27.037Z",
+  "capturedAt": "2026-10-16T10:34:09.018Z",
   "name": "library-filters-desktop",
   "surface": "library",
   "viewport": {
@@ -36,10 +36,10 @@
     {
       "id": "library-toolbar-stability",
       "pass": true,
-      "message": "title \"Library\": search x 517.5 -> 517.5 (Δ0px), search width Δ0px, title box x Δ0px, title box height Δ0px, results client width Δ0px, search centre 757.5 vs toolbar content centre 866 (Δ108.5px), gap to controls 32px, gap to title 32px (stable)",
+      "message": "title \"Library\": search x 522.5 -> 522.5 (Δ0px), search width Δ0px, title box x Δ0px, title box height Δ0px, results client width Δ0px, search centre 762.5 vs toolbar content centre 866 (Δ103.5px), gap to controls 32px, gap to title 32px (stable)",
       "metrics": {
-        "searchX": 517.5,
-        "searchXAfter": 517.5,
+        "searchX": 522.5,
+        "searchXAfter": 522.5,
         "dSearchX": 0,
         "searchWidth": 480,
         "dSearchW": 0,
@@ -49,9 +49,9 @@
         "dTitleH": 0,
         "scrollClientWidth": 1132,
         "dScrollW": 0,
-        "searchCenterX": 757.5,
+        "searchCenterX": 762.5,
         "toolbarCenterX": 866,
-        "dCenterX": 108.5,
+        "dCenterX": 103.5,
         "gapToControls": 32,
         "gapToTitle": 32
       }

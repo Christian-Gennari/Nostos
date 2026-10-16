@@ -21,7 +21,9 @@
   display: flex;
   width: 100%;
   height: 100%;
-  background-color: var(--bg-surface);
+  /* The page ground, as on the book page: the shelf and the sidebar sit on
+     one paper, and the toolbar's glass (the same colour) merges into it. */
+  background-color: var(--bg-body);
   position: relative; /* Needed for absolute positioning context on mobile */
 }
 
@@ -40,11 +42,9 @@ app-sidebar-collections {
       flex-basis var(--motion-slow) var(--ease-standard);
   }
 
-  /* Must match `--bg-sidebar`, not `--bg-surface-alt`: the panel inside paints
-     `--bg-sidebar`, and in light the two tokens happen to share a value
-     (#F3F3F4) so the mismatch is invisible. In dark they diverge and the
-     collapsed rail would show a lighter band behind the panel. */
-  background-color: var(--bg-sidebar);
+  /* Must match the panel inside (`--bg-body`, the page ground), or the
+     collapsed rail shows a different band behind the panel. */
+  background-color: var(--bg-body);
   /* clip (not hidden/auto): no scroll container is created, so the rail can
      never be scrolled sideways to reveal the collapsed labels. */
   overflow: clip;
@@ -85,7 +85,9 @@ app-sidebar-collections.no-transition {
 /* The mobile Collections opener must never occupy a desktop toolbar slot.
    Target the native appIconButton host explicitly: its global .icon-btn rule
    also sets display, so a bare .floating-toggle can lose the cascade. */
-.toolbar-right > button.floating-toggle {
+.toolbar-right > button.floating-toggle,
+.toolbar-right > .toolbar-spacer,
+.toolbar-right > .sort-select-phone {
   display: none;
 }
 .toolbar {
@@ -98,8 +100,11 @@ app-sidebar-collections.no-transition {
   -webkit-backdrop-filter: var(--glass-blur);
   z-index: 5;
   padding: 1.5rem 3rem;
+  /* No standing rule: at rest the toolbar is the top of the page. The hairline
+     arrives once books scroll under the glass (see the scroll-driven rule
+     below); browsers without scroll timelines keep it, as before. */
   border-bottom: 1px solid var(--glass-border);
-  margin-bottom: 2rem;
+  margin-bottom: 0;
   /* Single row: heading left, controls right, search in the middle track.
      Both side tracks are at least their content wide and otherwise share the
      leftover space equally, so the search stays centred whenever there is room
@@ -114,6 +119,28 @@ app-sidebar-collections.no-transition {
   grid-template-rows: 2.4rem;
   align-items: center;
   column-gap: 2rem;
+}
+
+@supports (animation-timeline: scroll()) {
+  .toolbar {
+    border-bottom-color: transparent;
+    animation: library-toolbar-edge linear both;
+    animation-timeline: scroll();
+    animation-range: 0 24px;
+  }
+}
+
+@keyframes library-toolbar-edge {
+  to {
+    border-bottom-color: var(--glass-border);
+  }
+}
+
+/* The first row starts one deliberate step under the toolbar. The global
+   container's 2rem top padding stacked on the toolbar's old 2rem margin, with
+   a hairline between them: 64px of band that read as a gap, not as room. */
+.library-right-side > .container {
+  padding-top: 0.5rem;
 }
 
 /* --- STATIC HEADING ---
@@ -139,7 +166,7 @@ app-sidebar-collections.no-transition {
 }
 
 .filter-bar:not(.is-empty) {
-  margin: -1rem 0 1.5rem;
+  margin: 0.25rem 0 0.75rem;
 }
 
 .filter-bar-inner {
@@ -1215,7 +1242,19 @@ app-sidebar-collections.no-transition {
   /* Same rule as desktop: the spacing belongs on the bar, outside the clipped
      inner box. */
   .filter-bar:not(.is-empty) {
-    margin: -0.5rem 0 1rem;
+    margin: 0.25rem 0 0.75rem;
+  }
+
+  /* The phone gutter is the toolbar's, so the shelf lines up with the search
+     field above it. */
+  .library-right-side > .container {
+    padding: 0.75rem 1rem 2rem;
+  }
+
+  /* The toolbar names the shelf here, so only a search earns a chip. */
+  .filter-bar.scope-only,
+  .filter-chip--scope {
+    display: none;
   }
 
   .search-bar-container {
@@ -1250,19 +1289,39 @@ app-sidebar-collections.no-transition {
     line-height: normal;
   }
 
+  /* Navigation on the left (the drawer opener, which names the shelf), the
+     page's actions on the right after a spacer: sort, view, add. The row used
+     to pack every control against the right edge with the opener among them,
+     which gave the row no reading order. */
   .toolbar-right {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
+    justify-content: flex-start;
+    gap: 4px;
     order: 1;
     width: 100%;
     box-sizing: border-box;
   }
 
-  .toolbar-right .select-wrapper {
-    flex: 1;
-    min-width: 0;
+  .toolbar-right > .toolbar-spacer {
+    display: block;
+    flex: 1 1 0;
+    min-width: 8px;
+  }
+
+  /* The labelled sort field is the desktop control; the phone gets the same
+     dropdown as a square button (`.sort-select-phone`). */
+  .toolbar-right > .select-wrapper {
+    display: none;
+  }
+
+  .toolbar-right > .sort-select-phone {
+    display: inline-block;
+    flex: none;
+  }
+
+  .toolbar-right > nostos-view-toggle {
+    margin: 0 4px;
   }
 
   /* The sidebar opener is a real member of the toolbar flex row, not a fixed
@@ -1271,27 +1330,43 @@ app-sidebar-collections.no-transition {
      view toggle and the Add button are sized to it here. (They were 38px, and
      once the dropdown became 44px and the toggle 50px the row had four
      heights.) Match the desktop hide selector so this mobile rule overrides it. */
+  /* The opener is a ghost button carrying the shelf's name, on the touch
+     rung. It may shrink (the name ellipsizes) but never below its glyph, and
+     its own left inset is pulled into the gutter so the glyph — not the
+     button's padding — lines up with the search field below. */
   .toolbar-right > button.floating-toggle {
     position: relative;
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    flex: 0 0 var(--control-h-touch);
-    width: var(--control-h-touch);
+    gap: 8px;
+    flex: 0 1 auto;
+    min-width: var(--control-h-touch);
     height: var(--control-h-touch);
-    padding: 0;
-    margin: 0;
-    appearance: none;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-action);
-    background: var(--bg-surface);
+    padding: 0 10px 0 6px;
+    margin: 0 0 0 -6px;
+    border: 0;
+    background: none;
     color: var(--color-text-main);
+    font-size: 1.05rem;
+    font-weight: var(--fw-semibold);
     cursor: pointer;
     touch-action: manipulation;
     transition:
       background-color var(--transition-fast),
       transform var(--transition-fast);
+  }
+
+  .scope-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scope-caret {
+    flex: none;
+    color: var(--color-text-light);
   }
 
   .floating-toggle::after {

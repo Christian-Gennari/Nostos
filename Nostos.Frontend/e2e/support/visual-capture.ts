@@ -508,7 +508,9 @@ export async function checkLibraryNoProgressCombobox(page: Page): Promise<Geomet
  * the sidebar/drawer is expanded.
  */
 export async function libraryFilterLabels(page: Page): Promise<string[]> {
-  const labels = page.locator('.sidebar-panel nav.sidebar .nav-group').first().locator('span.label');
+  // The six status filters are marked, not positional: five open the sidebar
+  // and Unsorted closes the Collections group (it means "in no collection").
+  const labels = page.locator('.sidebar-panel nav.sidebar [data-filter-kind="status"] span.label');
   await labels.first().waitFor({ timeout: 15_000 });
   return (await labels.allTextContents()).map((t) => t.trim());
 }

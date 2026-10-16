@@ -27,6 +27,7 @@ export interface DropIndicator {
   templateUrl: './flat-tree.component.html',
   styleUrls: ['./flat-tree.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.flat-tree--quiet]': "appearance() === 'quiet'" },
 })
 export class FlatTreeComponent {
   private readonly elRef = inject(ElementRef);
@@ -36,6 +37,13 @@ export class FlatTreeComponent {
   readonly treatAllAsFolders = input(false);
   readonly editingId = input<string | null>(null);
   readonly emptyLabel = input('Nothing here yet');
+  /**
+   * `filled` marks the selected row with the solid primary pill (Studio's file
+   * tree). `quiet` is for a tree sitting on the page ground beside other nav
+   * rows (the Library's collections): the selected row takes the soft hover
+   * tint, and counts are plain numbers rather than chips.
+   */
+  readonly appearance = input<'filled' | 'quiet'>('filled');
 
   readonly nodeSelected = output<TreeItem>();
   readonly nodeMoved = output<{ item: TreeItem; newParentId: string | null }>();
