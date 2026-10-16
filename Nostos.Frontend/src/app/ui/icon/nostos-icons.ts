@@ -84,6 +84,7 @@ import uploadSimpleLight from '@phosphor-icons/core/light/upload-simple-light.sv
 import alignCenterVertical from '@phosphor-icons/core/regular/align-center-vertical.svg';
 import archive from '@phosphor-icons/core/regular/archive.svg';
 import arrowClockwise from '@phosphor-icons/core/regular/arrow-clockwise.svg';
+import arrowElbowDownLeft from '@phosphor-icons/core/regular/arrow-elbow-down-left.svg';
 import arrowCounterClockwise from '@phosphor-icons/core/regular/arrow-counter-clockwise.svg';
 import arrowLeft from '@phosphor-icons/core/regular/arrow-left.svg';
 import arrowLineLeft from '@phosphor-icons/core/regular/arrow-line-left.svg';
@@ -115,6 +116,9 @@ import check from '@phosphor-icons/core/regular/check.svg';
 import circleDashed from '@phosphor-icons/core/regular/circle-dashed.svg';
 import circleNotch from '@phosphor-icons/core/regular/circle-notch.svg';
 import clock from '@phosphor-icons/core/regular/clock.svg';
+import clockCounterClockwise from '@phosphor-icons/core/regular/clock-counter-clockwise.svg';
+import binoculars from '@phosphor-icons/core/regular/binoculars.svg';
+import filePlus from '@phosphor-icons/core/regular/file-plus.svg';
 import copy from '@phosphor-icons/core/regular/copy.svg';
 import cornersIn from '@phosphor-icons/core/regular/corners-in.svg';
 import cornersOut from '@phosphor-icons/core/regular/corners-out.svg';
@@ -211,6 +215,7 @@ export const NOSTOS_ICONS = {
   'archive': { regular: archive, light: archiveLight, },
   'arrow-clockwise': { regular: arrowClockwise, },
   'arrow-counter-clockwise': { regular: arrowCounterClockwise, },
+  'arrow-elbow-down-left': { regular: arrowElbowDownLeft, },
   'arrow-left': { regular: arrowLeft, },
   'arrow-line-left': { regular: arrowLineLeft, thin: arrowLineLeftThin, },
   'arrow-line-right': { regular: arrowLineRight, thin: arrowLineRightThin, },
@@ -220,6 +225,7 @@ export const NOSTOS_ICONS = {
   'arrows-clockwise': { regular: arrowsClockwise, },
   'arrows-in': { regular: arrowsIn, },
   'arrows-out': { regular: arrowsOut, },
+  'binoculars': { regular: binoculars, },
   'book': { regular: book, thin: bookThin, light: bookLight, },
   'book-open': { regular: bookOpen, thin: bookOpenThin, light: bookOpenLight, },
   'bookmark-simple': { regular: bookmarkSimple, fill: bookmarkSimpleFill, },
@@ -236,12 +242,14 @@ export const NOSTOS_ICONS = {
   'circle-dashed': { regular: circleDashed, light: circleDashedLight, },
   'circle-notch': { regular: circleNotch, },
   'clock': { regular: clock, },
+  'clock-counter-clockwise': { regular: clockCounterClockwise, },
   'copy': { regular: copy, },
   'corners-in': { regular: cornersIn, thin: cornersInThin, },
   'corners-out': { regular: cornersOut, thin: cornersOutThin, },
   'crosshair': { regular: crosshair, },
   'dots-three': { regular: dotsThree, light: dotsThreeLight, },
   'download-simple': { regular: downloadSimple, },
+  'file-plus': { regular: filePlus, },
   'file-text': { regular: fileText, light: fileTextLight, },
   'folder': { regular: folder, light: folderLight, },
   'folder-open': { regular: folderOpen, light: folderOpenLight, },

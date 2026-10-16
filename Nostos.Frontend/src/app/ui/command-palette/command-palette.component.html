@@ -1,67 +1,97 @@
 @if (isOpen()) {
-<div class="palette-backdrop" (click)="close()"></div>
+<div class="palette-backdrop" (click)="dismiss()" aria-hidden="true"></div>
 <div
   class="palette"
   role="dialog"
   aria-modal="true"
-  aria-label="Quick search"
+  aria-label="Search Nostos"
+  data-testid="command-palette"
 >
   <div class="palette-input-row">
-    <nostos-icon name="magnifying-glass" [size]="16" class="palette-input-icon"></nostos-icon>
+    <nostos-icon name="magnifying-glass" [size]="18" class="palette-input-icon"></nostos-icon>
     <input
       #paletteInput
       class="palette-input"
       type="text"
-      placeholder="Search books, collections, actions…"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-expanded="true"
+      aria-controls="palette-listbox"
+      [attr.aria-activedescendant]="activeId()"
+      placeholder="Search everything…"
       autocomplete="off"
       spellcheck="false"
+      enterkeyhint="go"
       [value]="query()"
       (input)="onQueryChange(paletteInput.value)"
-      aria-label="Search books, collections and actions"
+      aria-label="Search Nostos"
       data-testid="palette-input"
     />
     @if (searching()) {
     <nostos-loading-indicator class="palette-loading" decorative size="sm" />
     }
+    <button type="button" class="palette-cancel" (click)="dismiss()" data-testid="palette-cancel">
+      Cancel
+    </button>
   </div>
 
-  <div class="palette-results" role="listbox" aria-label="Results">
-    @for (entry of entries(); track entry.kind + ':' + entry.id; let i = $index) {
-    <button
-      class="palette-item"
-      [class.active]="i === activeIndex()"
-      role="option"
-      [attr.aria-selected]="i === activeIndex()"
-      (click)="run(entry)"
-      (mouseenter)="activeIndex.set(i)"
-      [attr.data-testid]="'palette-item-' + entry.kind"
-    >
-      @if (entry.kind === 'book') {
-      <nostos-icon name="book" [size]="15"></nostos-icon>
-      } @else if (entry.kind === 'collection') {
-      <nostos-icon name="folder" [size]="15"></nostos-icon>
-      } @else {
-      <nostos-icon name="arrow-right" [size]="15"></nostos-icon>
+  <div class="palette-results" #results id="palette-listbox" role="listbox" aria-label="Results">
+    @for (section of sections(); track section.id) {
+    <div class="palette-section" role="group" [attr.aria-labelledby]="'palette-heading-' + section.id">
+      <div class="palette-heading" [id]="'palette-heading-' + section.id" role="presentation">
+        {{ section.title }}
+      </div>
+      @for (entry of section.entries; track entry.kind + ':' + entry.id; let j = $index) {
+      <div
+        class="palette-item"
+        [class.palette-item-ask]="entry.kind === 'ask'"
+        [class.active]="section.start + j === activeIndex()"
+        role="option"
+        [id]="optionId(section.start + j)"
+        [attr.aria-selected]="section.start + j === activeIndex()"
+        (click)="run(entry)"
+        (pointermove)="onPointerMove(section.start + j)"
+        [attr.data-testid]="'palette-item-' + entry.kind"
+      >
+        @if (entry.coverUrl) {
+        <img class="palette-cover" [src]="entry.coverUrl" alt="" loading="lazy" decoding="async" />
+        } @else {
+        <span class="palette-glyph" aria-hidden="true">
+          <nostos-icon [name]="entry.icon" [size]="16"></nostos-icon>
+        </span>
+        }
+        <span class="palette-item-text">
+          @if (entry.kind === 'ask') {
+          <span class="palette-item-label">Ask Nostos: <q>{{ entry.label }}</q></span>
+          } @else {
+          <span class="palette-item-label">{{ entry.label }}</span>
+          }
+          @if (entry.kind !== 'ask') {
+          <span class="palette-item-sub">{{ entry.sub }}</span>
+          }
+        </span>
+        <span class="palette-item-enter" aria-hidden="true">
+          <nostos-icon name="arrow-elbow-down-left" [size]="14"></nostos-icon>
+        </span>
+      </div>
       }
-      <span class="palette-item-label">{{ entry.label }}</span>
-      <span class="palette-item-sub">{{ entry.sub }}</span>
-    </button>
+    </div>
     } @empty {
-    <p class="palette-empty">
-      @if (query().trim()) {
-      No matches for “{{ query().trim() }}”.
+    <p class="palette-empty" role="status">
+      @if (searching()) {
+      Searching…
       } @else {
-      Type to search your library.
+      Nothing matches “{{ query().trim() }}”.
       }
     </p>
     }
   </div>
 
-  <div class="palette-hint">
-    <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-    <span><kbd>↵</kbd> open</span>
-    <span><kbd>esc</kbd> close</span>
-    <span><kbd>ctrl/⌘ K</kbd> toggle</span>
+  <div class="palette-hint" aria-hidden="true">
+    <span><kbd>↑</kbd><kbd>↓</kbd> to move</span>
+    <span><kbd>↵</kbd> to open</span>
+    <span><kbd>esc</kbd> to close</span>
+    <span class="palette-hint-toggle"><kbd>{{ shortcutLabel }}</kbd> anywhere</span>
   </div>
 </div>
 }

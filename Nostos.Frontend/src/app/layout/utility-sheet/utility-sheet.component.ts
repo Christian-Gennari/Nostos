@@ -16,6 +16,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 
 import { FeedbackLinkService } from '../../core/services/feedback-link.service';
+import { CommandPaletteService } from '../../ui/command-palette/command-palette.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { UtilitySheetService } from './utility-sheet.service';
 
@@ -72,6 +73,16 @@ import { UtilitySheetService } from './utility-sheet.service';
             ></nostos-icon>
           </a>
         }
+
+        <button
+          type="button"
+          class="utility-sheet-item"
+          (click)="openSearch()"
+          data-testid="utility-sheet-search"
+        >
+          <nostos-icon name="binoculars" [size]="18" weight="light"></nostos-icon>
+          <span class="utility-sheet-label">Search everything</span>
+        </button>
 
         <a
           class="utility-sheet-item"
@@ -171,6 +182,17 @@ import { UtilitySheetService } from './utility-sheet.service';
         transition: background-color var(--motion-fast) ease;
       }
 
+      /* The Search row is a button among links; it must paint the same. */
+      button.utility-sheet-item {
+        width: 100%;
+        border: 0;
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
       .utility-sheet-item:hover {
         background: var(--bg-hover);
       }
@@ -204,6 +226,7 @@ import { UtilitySheetService } from './utility-sheet.service';
 export class UtilitySheetComponent implements OnDestroy {
   readonly sheet = inject(UtilitySheetService);
   readonly feedbackUrl = inject(FeedbackLinkService).url;
+  private readonly palette = inject(CommandPaletteService);
   readonly rendered = signal(false);
   readonly sheetRight = signal(12);
   private readonly host = inject(ElementRef<HTMLElement>);
@@ -255,6 +278,12 @@ export class UtilitySheetComponent implements OnDestroy {
         takeUntilDestroyed(),
       )
       .subscribe(() => this.sheet.close());
+  }
+
+  /** Hands over to the command palette, which owns focus from here. */
+  openSearch(): void {
+    this.sheet.close();
+    this.palette.open();
   }
 
   ngOnDestroy(): void {

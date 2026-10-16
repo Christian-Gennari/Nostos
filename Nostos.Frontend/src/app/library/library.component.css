@@ -189,6 +189,12 @@ app-sidebar-collections.no-transition {
   align-items: center;
 }
 
+/* The phone's way into the command palette; desktop has Ctrl/Cmd+K. Scoped
+   to its container so it outranks the icon button's own display rule. */
+.search-bar-container > .search-everything {
+  display: none;
+}
+
 .search-icon {
   /* Absolutely placed, not a flex sibling: in the flow its 18px box pushed the
      visible input 9px right of the container's centre, so the box on screen was
@@ -1216,6 +1222,21 @@ app-sidebar-collections.no-transition {
     width: 100%;
     max-width: 100%; /* Full width on mobile */
     order: 2;
+  }
+
+  /* Dressed like the collections opener above it: the same bordered touch
+     square, so the toolbar reads as one set of controls. */
+  .search-bar-container > .search-everything {
+    display: inline-flex;
+    flex: 0 0 var(--control-h-touch);
+    box-sizing: border-box;
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
+    margin-left: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-action);
+    background: var(--bg-surface);
+    color: var(--color-text-main);
   }
 
   /* The search field takes the touch rung like every other field. It was

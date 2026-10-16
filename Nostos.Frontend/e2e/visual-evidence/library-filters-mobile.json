@@ -1,6 +1,6 @@
 {
   "artifact": "library-filters-mobile.png",
-  "capturedAt": "2026-09-12T17:59:10.404Z",
+  "capturedAt": "2026-10-16T07:11:50.516Z",
   "name": "library-filters-mobile",
   "surface": "library",
   "viewport": {
@@ -12,11 +12,9 @@
     {
       "id": "library-no-progress-combobox",
       "pass": true,
-      "message": "no progress combobox in toolbar (sort-only selects: sort-select ng-untouched ng-pristine ng-valid [Last Read, Recently Added, Title (A-Z), Highest Rated]; progress control is a <absent> menu)",
+      "message": "no progress combobox in toolbar (sort-only select; progress control is a <absent> menu)",
       "metrics": {
-        "found": [
-          "sort-select ng-untouched ng-pristine ng-valid [Last Read, Recently Added, Title (A-Z), Highest Rated]"
-        ],
+        "found": [],
         "triggerTag": "<absent>"
       }
     },
@@ -43,7 +41,7 @@
         "searchX": 14,
         "searchXAfter": 14,
         "dSearchX": 0,
-        "searchWidth": 354,
+        "searchWidth": 302,
         "dSearchW": 0,
         "titleX": 13,
         "dTitleX": 0,
@@ -51,9 +49,11 @@
         "dTitleH": 0,
         "scrollClientWidth": 382,
         "dScrollW": 0,
-        "searchCenterX": 191,
+        "searchCenterX": 165,
         "toolbarCenterX": 191,
-        "dCenterX": 0
+        "dCenterX": 26,
+        "gapToControls": -354,
+        "gapToTitle": 0
       }
     }
   ],

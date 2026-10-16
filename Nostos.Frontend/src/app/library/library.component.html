@@ -28,6 +28,19 @@
           [value]="searchQuery()"
           (input)="onSearch($event)"
         />
+        <!-- Phones have no Ctrl/Cmd+K: this is their way into the search that
+             covers everything, beside the field that filters only books. -->
+        <button
+          type="button"
+          appIconButton
+          icon="binoculars"
+          [glyphSize]="20"
+          class="search-everything"
+          (click)="palette.open()"
+          aria-label="Search everything"
+          title="Search everything"
+          data-testid="library-search-everything"
+        ></button>
       </div>
 
       <div class="toolbar-right">
