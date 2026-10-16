@@ -694,6 +694,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     const opening = !this.typoOpen();
     if (opening) {
       this.closeSearch(false);
+      this.dismissHighlightCardForTool();
       this.rememberOverlayFocus();
       this.tocOpen.set(false);
       this.notesOpen.set(false);
@@ -726,6 +727,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   openSearch(): void {
     if (!this.canSearch()) return;
     if (!this.searchPanelOpen()) {
+      this.dismissHighlightCardForTool();
       this.rememberOverlayFocus();
       this.tocOpen.set(false);
       this.notesOpen.set(false);
@@ -1293,6 +1295,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     const opening = !this.notesOpen();
     if (opening) {
       this.closeSearch(false);
+      this.dismissHighlightCardForTool();
       this.rememberOverlayFocus();
       this.tocOpen.set(false);
       this.typoOpen.set(false);
@@ -1468,13 +1471,27 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.highlightCard.set({ noteId: best.note.id, anchor: best.anchor });
 
     // Desktop: focus moves into the card so Escape and the keyboard reach it.
-    // A phone keeps focus where it was, as the docked selection bar does.
-    if (!this.highlightCardPlacement()) return;
+    // A phone keeps focus where it was, as the docked selection bar does, and
+    // a save notice still showing would sit on the docked card's actions.
+    if (!this.highlightCardPlacement()) {
+      this.clearSaveFeedback();
+      return;
+    }
     setTimeout(() => {
       this.host.nativeElement
         .querySelector<HTMLElement>('.highlight-card [data-autofocus]')
         ?.focus({ preventScroll: true });
     }, 0);
+  }
+
+  /**
+   * A reader tool opened over the page: the card steps aside for it, unless a
+   * note is being written in it, which is never thrown away unasked.
+   */
+  private dismissHighlightCardForTool(): void {
+    if (this.highlightCard() && !this.highlightNoteEditing() && !this.highlightNoteSaving()) {
+      this.closeHighlightCard();
+    }
   }
 
   closeHighlightCard(): void {
@@ -1526,7 +1543,9 @@ export class ReaderShell implements OnInit, OnDestroy {
         this.highlightNoteSaving.set(false);
         this.highlightNoteEditing.set(false);
         this.highlightNoteDraft.set('');
-        this.showSaveFeedback(content ? 'Note saved' : 'Note removed');
+        // Docked, the card shows the saved note in the notice's place; a
+        // notice there would cover the card's own actions.
+        if (this.highlightCardPlacement()) this.showSaveFeedback(content ? 'Note saved' : 'Note removed');
         this.loadTopics();
       },
       error: () => {
@@ -1606,6 +1625,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     }
 
     this.closeSearch(false);
+    this.dismissHighlightCardForTool();
     this.rememberOverlayFocus();
     this.notesOpen.set(false);
     this.typoOpen.set(false);
@@ -1878,6 +1898,12 @@ export class ReaderShell implements OnInit, OnDestroy {
     const target = this.overlayReturnFocus;
     this.overlayReturnFocus = null;
     if (target?.isConnected) setTimeout(() => target.focus(), 0);
+  }
+
+  private clearSaveFeedback(): void {
+    if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
+    this.saveFeedbackTimer = null;
+    this.saveFeedback.set(null);
   }
 
   private showSaveFeedback(message: string): void {

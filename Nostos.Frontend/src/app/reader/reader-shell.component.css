@@ -686,10 +686,9 @@
 }
 
 .highlight-card-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
-}
-
-.selection-menu.highlight-card .highlight-card-actions {
   gap: 6px;
 }
 
@@ -710,8 +709,13 @@
   min-height: 44px;
 }
 
+.highlight-card-docked .highlight-card-actions {
+  gap: 0.5rem;
+}
+
 .highlight-card-docked .highlight-card-actions .reader-confirm-action {
   flex: 1 1 0;
+  min-height: var(--control-h-touch);
 }
 
 @media (max-width: 768px) {

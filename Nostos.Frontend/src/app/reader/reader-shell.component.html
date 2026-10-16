@@ -453,8 +453,8 @@
           ></div>
         }
 
+        @if (!highlightNoteEditing()) {
         <div class="highlight-card-tools">
-          @if (!highlightNoteEditing()) {
           <div class="hl-pens selection-pens" role="group" aria-label="Highlight colour">
             @for (pen of highlightColours; track pen.id) {
               <button
@@ -470,7 +470,6 @@
               ></button>
             }
           </div>
-          }
           <div class="highlight-card-utilities">
             <button
               appIconButton
@@ -514,8 +513,9 @@
             ></button>
           </div>
         </div>
+        }
 
-        <div class="confirmation-actions highlight-card-actions">
+        <div class="highlight-card-actions">
           @if (highlightNoteEditing()) {
             <button
               appButton
@@ -548,7 +548,6 @@
               [variant]="anchoredCard ? 'ghost' : 'secondary'"
               class="reader-confirm-action"
               (click)="closeHighlightCard()"
-              data-autofocus
               data-testid="highlight-card-close"
             >
               Close
@@ -559,6 +558,7 @@
               [variant]="activeHighlightHasNote() ? 'secondary' : 'primary'"
               class="reader-confirm-action"
               (click)="editHighlightNote()"
+              data-autofocus
               data-testid="highlight-card-edit"
             >
               <nostos-icon [name]="activeHighlightHasNote() ? 'pencil-simple' : 'note'" [size]="16"></nostos-icon>

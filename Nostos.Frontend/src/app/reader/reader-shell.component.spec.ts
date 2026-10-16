@@ -2928,6 +2928,19 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     expect(component.highlightCard()).toBeNull();
   });
 
+  it('steps aside for a reader tool opened over the page, unless a note is being written', async () => {
+    const component = await openBook('iliad.epub', [note({})]);
+    activate(component, CFI_OLD);
+    component.toggleToc();
+    expect(component.highlightCard()).toBeNull();
+    component.toggleToc();
+
+    activate(component, CFI_OLD);
+    component.editHighlightNote();
+    component.toggleNotes();
+    expect(component.highlightCard()).not.toBeNull();
+  });
+
   it('Show in notes opens Notes & Highlights at that note', async () => {
     const component = await openBook('iliad.epub', [note({})]);
     activate(component, CFI_OLD);
