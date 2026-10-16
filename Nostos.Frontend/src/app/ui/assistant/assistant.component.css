@@ -280,7 +280,7 @@
 }
 
 .assistant-empty-copy {
-  max-width: 36ch;
+  max-width: 46ch;
   color: var(--color-text-muted);
   font-size: 0.82rem;
   line-height: 1.5;
@@ -1124,6 +1124,11 @@
 
   .composer-hint {
     display: none;
+  }
+
+  /* Starters are tapped on a phone: the touch rung, not the desktop 40px. */
+  .starter {
+    min-height: var(--control-h-touch);
   }
 
   .composer-footer {
