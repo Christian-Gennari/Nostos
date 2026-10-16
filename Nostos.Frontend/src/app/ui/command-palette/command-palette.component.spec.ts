@@ -142,6 +142,24 @@ describe('CommandPalette', () => {
     before.remove();
   });
 
+  it('keeps focus while open, even when the page moves it', () => {
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    openPalette();
+    vi.advanceTimersByTime(1);
+    const input = fixture.nativeElement.querySelector('[data-testid="palette-input"]');
+
+    elsewhere.focus();
+    expect(document.activeElement).toBe(input);
+
+    // Closed, the page may move focus freely again.
+    component.close();
+    fixture.detectChanges();
+    elsewhere.focus();
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+
   describe('with nothing typed', () => {
     it('offers quick actions and destinations, without a Recent section yet', () => {
       openPalette();
