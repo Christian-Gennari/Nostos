@@ -44,7 +44,7 @@ interface PendingWorkAction {
 
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
-import { EditionsModal, WorkMember } from './editions-modal/editions-modal.component';
+import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
@@ -527,7 +527,17 @@ export class BookDetail implements OnInit, OnDestroy {
     return [current, ...others];
   });
 
-  readonly linkCandidates = computed(() => this.store.linkCandidates());
+  /**
+   * Candidates with their format named. A work of several editions has no one
+   * format, so it keeps its "N editions" count instead.
+   */
+  readonly linkCandidates = computed<LinkCandidate[]>(() =>
+    this.store.linkCandidates().map((candidate) => {
+      if (!candidate.type || (candidate.editionCount ?? 1) > 1) return candidate;
+      const format = this.buildEditionLabel(candidate.type, candidate.fileName);
+      return { ...candidate, format, formatIcon: this.getEditionConcept(candidate.type, format) };
+    }),
+  );
 
   /** Open the membership modal, loading candidates for the picker. */
   openEditions(): void {

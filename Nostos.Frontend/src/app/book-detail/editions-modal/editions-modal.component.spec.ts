@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { EditionsModal, WorkMember } from './editions-modal.component';
+import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal.component';
 import { LinkableBookDto } from '../../core/dtos/book.dtos';
 
 /**
@@ -27,7 +27,7 @@ describe('EditionsModal', () => {
   type InputValues = {
     isOpen: boolean;
     members: WorkMember[];
-    candidates: LinkableBookDto[];
+    candidates: LinkCandidate[];
     currentBookId: string | null;
     bookTitle: string;
     busy: boolean;
@@ -184,6 +184,20 @@ describe('EditionsModal', () => {
       fixture.nativeElement.querySelectorAll('.manage-member-format'),
     ).map((el) => el.textContent?.trim());
     expect(formats).toEqual(['EPUB', 'Audiobook']);
+  });
+
+  it('names a single-edition candidate\'s format, and leaves a multi-edition work its count', async () => {
+    await setup({
+      candidates: [
+        { id: 'c1', title: 'Meditations', author: 'Marcus Aurelius', editionCount: 1, format: 'Audiobook', formatIcon: 'audiobook' },
+        { id: 'c2', title: 'Justice', author: 'Michael J. Sandel', editionCount: 2 },
+      ],
+    });
+
+    const rows = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('.manage-link-candidate'));
+    expect(rows[0].querySelector('.manage-member-format')?.textContent?.trim()).toBe('Audiobook');
+    expect(rows[1].querySelector('.manage-member-format')).toBeNull();
+    expect(rows[1].querySelector('.manage-link-group-flag')?.textContent?.trim()).toBe('2 editions');
   });
 
   it('will not close while a mutation is in flight', async () => {
