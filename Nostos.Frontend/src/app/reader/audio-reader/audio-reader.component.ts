@@ -178,6 +178,10 @@ export class AudioReader implements OnDestroy, IReader {
   private static readonly RATE_STEP = 0.05;
   private static readonly RATE_MIN = 0.5;
   private static readonly RATE_MAX = 3;
+  /** A reported position under this many seconds, while the reader knows better, is a lost one. */
+  private static readonly LOST_POSITION_MAX = 1;
+  /** Only a real place in the book is protected; the first seconds have nothing to lose. */
+  private static readonly LOST_POSITION_MIN_KNOWN = 5;
 
   private progressSubject = new Subject<{ timestamp: number; percent: number }>();
   private progressSubscription!: Subscription;
@@ -351,7 +355,46 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   togglePlay() {
-    this.player?.playing() ? this.player.pause() : this.player?.play();
+    this.player?.playing() ? this.player.pause() : this.play();
+  }
+
+  /** Every play request goes through here, so a lost position is restored before sound starts. */
+  private play() {
+    if (!this.player) return;
+    this.recoverLostPosition();
+    this.player.play();
+  }
+
+  /**
+   * The player's own position in book seconds, or null when it has none to give.
+   * Howler's getter returns the Howl itself (not a number) when it cannot answer.
+   */
+  private readPlayerPosition(): number | null {
+    const position = this.player?.seek();
+    return typeof position === 'number' && Number.isFinite(position) && position >= 0 ? position : null;
+  }
+
+  /**
+   * A phone can drop a paused media element while the tab is in the background
+   * and hand it back at 0:00. Adopting that position — on return to the tab, on
+   * the next tick, or on play from the lock screen — once overwrote a listener's
+   * saved place 60% into a book. The reader's own position is the truth: a jump
+   * to the start that nobody asked for is the player losing its place, so the
+   * player is put back instead. A user's seek to 0 goes through goToTime, which
+   * moves the reader's position first, so it is never mistaken for a loss.
+   * Returns the position the reader should show.
+   */
+  private recoverLostPosition(): number | null {
+    const actual = this.readPlayerPosition();
+    const known = this.currentTime();
+    const lost =
+      (actual === null || actual < AudioReader.LOST_POSITION_MAX) &&
+      known > AudioReader.LOST_POSITION_MIN_KNOWN &&
+      // Past the end the player legitimately starts over from the beginning.
+      known < this.duration() - 1;
+    if (!lost) return actual;
+    this.player?.seek(known);
+    return known;
   }
 
   /**
@@ -381,7 +424,7 @@ export class AudioReader implements OnDestroy, IReader {
 
   skip(seconds: number) {
     if (!this.player) return;
-    const current = this.player.seek() as number;
+    const current = this.readPlayerPosition() ?? this.currentTime();
     const newTime = Math.max(0, Math.min(current + seconds, this.duration()));
     this.goToTime(newTime);
   }
@@ -654,8 +697,9 @@ export class AudioReader implements OnDestroy, IReader {
   startProgressTracking() {
     this.stopProgressTracking();
     this.progressTimer = setInterval(() => {
-      const seek = (this.player?.seek() as number) || 0;
-      this.currentTime.set(seek);
+      const position = this.recoverLostPosition();
+      if (position === null) return;
+      this.currentTime.set(position);
       this.updateProgressState();
     }, 1000);
   }
@@ -746,10 +790,10 @@ export class AudioReader implements OnDestroy, IReader {
       return;
     }
 
-    const actualTime = this.player.seek() as number;
+    const actualTime = this.recoverLostPosition();
     const actuallyPlaying = this.player.playing();
 
-    this.currentTime.set(actualTime);
+    if (actualTime !== null) this.currentTime.set(actualTime);
     this.isPlaying.set(actuallyPlaying);
     this.updateProgressState();
 
@@ -762,7 +806,7 @@ export class AudioReader implements OnDestroy, IReader {
 
   private saveProgressImmediately() {
     if (!this.player || !this.isInitialized) return;
-    const seek = this.player.seek() as number;
+    const seek = this.readPlayerPosition() ?? 0;
     if (seek > 0) {
       this.booksService.updateProgress(
         this.bookId(),
@@ -804,7 +848,7 @@ export class AudioReader implements OnDestroy, IReader {
 
     // Register action handlers so notification controls sync back to our component
     navigator.mediaSession.setActionHandler('play', () => {
-      this.player?.play();
+      this.play();
     });
 
     navigator.mediaSession.setActionHandler('pause', () => {
