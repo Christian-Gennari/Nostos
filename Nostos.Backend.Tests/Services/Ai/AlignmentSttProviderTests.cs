@@ -212,11 +212,11 @@ public sealed class AlignmentSttProviderTests
             MaxUploadBytes = 26_214_400,
         };
 
-        var multipart = new NineRouterSttProvider(
+        var multipart = new OpenAiCompatibleSttProvider(
             factory,
             options,
             resolver,
-            NullLogger<NineRouterSttProvider>.Instance);
+            NullLogger<OpenAiCompatibleSttProvider>.Instance);
 
         var json = new JsonBase64SttProvider(
             factory,

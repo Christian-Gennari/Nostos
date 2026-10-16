@@ -128,8 +128,8 @@ Current host-owned composition and adapters include, among others:
 - `Providers/Acquisition/AcquisitionJobManager.cs`;
 - `Providers/Acquisition/SelfHostedAcquisitionWorkingRootProvider.cs`;
 - `Services/Ai/AiProviderSettingsService.cs`;
-- `Services/Ai/NineRouterLlmProvider.cs`;
-- `Services/Ai/NineRouterSttProvider.cs`;
+- `Services/Ai/OpenAiCompatibleLlmProvider.cs`;
+- `Services/Ai/OpenAiCompatibleSttProvider.cs`;
 - `Services/Ai/OpenAiCompatibleEmbeddingProvider.cs`;
 - local backup settings/services;
 - `Services/BookText/SelfHostedBookTextStorage.cs`;

@@ -7,7 +7,7 @@ using Nostos.Backend.Configuration;
 namespace Nostos.Backend.Services.Ai;
 
 /// <summary>
-/// Speech-to-text against the 9Router gateway's OpenAI-compatible transcription
+/// Speech-to-text against any OpenAI-compatible transcription
 /// route (<c>POST {BaseUrl}/v1/audio/transcriptions</c>).
 ///
 /// One provider, one call. The credential and endpoint are read at call time
@@ -21,14 +21,14 @@ namespace Nostos.Backend.Services.Ai;
 /// Failures are translated into <see cref="SttException"/> with a stable code.
 /// There is no retry loop anywhere here; a failed call is a failed call.
 /// </summary>
-public sealed class NineRouterSttProvider(
+public sealed class OpenAiCompatibleSttProvider(
     IHttpClientFactory httpClientFactory,
     SpeechOptions options,
     IAiProviderConfigResolver config,
-    ILogger<NineRouterSttProvider> logger) : ISTtProvider
+    ILogger<OpenAiCompatibleSttProvider> logger) : ISTtProvider
 {
     /// <summary>Name of the registered <see cref="IHttpClientFactory"/> client.</summary>
-    public const string HttpClientName = "stt-ninerouter";
+    public const string HttpClientName = "stt-openai-compatible";
 
     private const string TranscriptionsPath = "v1/audio/transcriptions";
 
@@ -184,10 +184,25 @@ public sealed class NineRouterSttProvider(
         }
     }
 
-    private static Uri BuildUri(string baseUrl)
+    private static Uri BuildUri(string baseUrl) => new(TranscriptionUrl(baseUrl));
+
+    /// <summary>
+    /// The transcription route for an endpoint written with or without its API
+    /// version. Settings asks for the base URL "including /v1", as it does for
+    /// the reading assistant, so <c>https://api.openai.com/v1</c> and
+    /// <c>https://api.openai.com</c> must both reach
+    /// <c>/v1/audio/transcriptions</c> rather than <c>/v1/v1/…</c>.
+    /// </summary>
+    public static string TranscriptionUrl(string baseUrl)
     {
-        var trimmed = baseUrl.TrimEnd('/');
-        return new Uri($"{trimmed}/{TranscriptionsPath}");
+        var trimmed = baseUrl.Trim().TrimEnd('/');
+        var lastSegment = trimmed[(trimmed.LastIndexOf('/') + 1)..];
+        var versioned = lastSegment.Length >= 2
+            && (lastSegment[0] == 'v' || lastSegment[0] == 'V')
+            && lastSegment[1..].All(char.IsAsciiDigit);
+        return versioned
+            ? $"{trimmed}/audio/transcriptions"
+            : $"{trimmed}/{TranscriptionsPath}";
     }
 
     private static SttResult ParseResponse(string body)

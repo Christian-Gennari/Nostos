@@ -13,7 +13,7 @@ namespace Nostos.Backend.Tests.Services.Ai;
 /// <summary>
 /// A scriptable <see cref="ILlmProvider"/> for every test on the bridge path.
 ///
-/// The real 9Router free pool is NEVER called by a test — each call spends
+/// A real provider is NEVER called by a test — each call spends
 /// pool quota and must remain measurable. This fake records the exact request it
 /// was handed, so the orchestrator tests can assert the tool surface, the
 /// conversation, and the iteration ceiling without touching a network.
@@ -136,13 +136,13 @@ public sealed class FakeLlmProviderTests
 }
 
 /// <summary>
-/// Unit coverage for <see cref="NineRouterLlmProvider"/> against a canned HTTP
+/// Unit coverage for <see cref="OpenAiCompatibleLlmProvider"/> against a canned HTTP
 /// response — the transport is stubbed, so no real API is called and no quota is
 /// spent. This is where the measured gateway quirks (explicit
 /// <c>stream:false</c>, the verbatim free-pool id, empty-content/<c>length</c> as
 /// data) are pinned.
 /// </summary>
-public sealed class NineRouterLlmProviderTests
+public sealed class OpenAiCompatibleLlmProviderTests
 {
     private const string Model =
         "free_frontier_pooled_gemini_gemini_3.8_flash__kr_claude_sonnet_4.5__openrouter_nex_agi_nex_n2.5_pro_free__kgw_nex_agi_nex_n2.5_pro_free__openrouter_inclusionai_ling_3.0_flash_vl_free";
@@ -347,11 +347,11 @@ public sealed class NineRouterLlmProviderTests
         ApiKey: apiKey,
         KeyFromServerEnv: apiKey is not null);
 
-    private static NineRouterLlmProvider CreateProvider(
+    private static OpenAiCompatibleLlmProvider CreateProvider(
         StubHttpMessageHandler handler,
         string? apiKey = TokenValue) =>
         new(
             new StubHttpClientFactory(handler, new Uri("http://omenhub:20128")),
             new StubAiProviderConfigResolver { Llm = TestConfig(apiKey) },
-            NullLogger<NineRouterLlmProvider>.Instance);
+            NullLogger<OpenAiCompatibleLlmProvider>.Instance);
 }

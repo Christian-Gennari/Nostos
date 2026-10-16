@@ -244,7 +244,7 @@ public sealed class QualityBedFixtureTests : IDisposable
 
 /// <summary>
 /// Proves live-mode wiring without spending money: the REAL
-/// NineRouterLlmProvider talks to a local stub OpenAI-compatible server, one
+/// OpenAiCompatibleLlmProvider talks to a local stub OpenAI-compatible server, one
 /// scripted turn flows through the stream route, and metrics land in
 /// results.json. Always on, fully offline.
 /// </summary>

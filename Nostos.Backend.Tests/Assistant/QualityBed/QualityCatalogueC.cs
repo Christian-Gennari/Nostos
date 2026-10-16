@@ -284,7 +284,7 @@ internal static partial class QualityCatalogue
                 C15FailureTurn(
                     "Summarize the rope entries (the gateway is unreachable).",
                     // The product wraps an unreachable gateway as a provider
-                    // failure with the transport detail (NineRouterLlmProvider:
+                    // failure with the transport detail (OpenAiCompatibleLlmProvider:
                     // HttpRequestException -> ProviderFailure); the bed
                     // injects the wrapped shape directly.
                     QualityScript.Throw(LlmException.ProviderFailure(

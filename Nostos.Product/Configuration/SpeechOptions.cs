@@ -17,8 +17,8 @@ public sealed class SpeechOptions
     /// <summary>Master switch. When false the endpoint is a typed no-op.</summary>
     public bool Enabled { get; set; } = false;
 
-    /// <summary>Base URL of the OpenAI-compatible gateway (no trailing /v1).</summary>
-    public string BaseUrl { get; set; } = "http://omenhub:20128";
+    /// <summary>Base URL of the OpenAI-compatible server, with or without /v1.</summary>
+    public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>
     /// Model id sent verbatim. The <c>groq/</c> prefix is mandatory: a bare

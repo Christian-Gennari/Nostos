@@ -5,7 +5,7 @@
 // (POST /api/assistant/turn/stream) so time-to-first-activity and
 // time-to-first-answer are measurable from the NDJSON events in both modes.
 // Deterministic mode swaps ILlmProvider for the scripted provider; live mode
-// keeps the real NineRouterLlmProvider and only meters it.
+// keeps the real OpenAiCompatibleLlmProvider and only meters it.
 namespace Nostos.Backend.Tests.Assistant.QualityBed;
 
 using System.Net.Http.Json;
@@ -161,10 +161,10 @@ internal sealed class QualityBedHost : IDisposable
                 // services; the decorator only observes (never alters) calls.
                 services.RemoveAll<ILlmProvider>();
                 services.AddSingleton<ILlmProvider>(provider => new MeteredLlmProvider(
-                    new NineRouterLlmProvider(
+                    new OpenAiCompatibleLlmProvider(
                         provider.GetRequiredService<IHttpClientFactory>(),
                         provider.GetRequiredService<IAiProviderConfigResolver>(),
-                        provider.GetRequiredService<ILogger<NineRouterLlmProvider>>()),
+                        provider.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>()),
                     sink,
                     model));
                 // Production-posture control, transport boundary only: every
@@ -175,7 +175,7 @@ internal sealed class QualityBedHost : IDisposable
                 {
                     var effort = reasoningEffort.Trim();
                     services
-                        .AddHttpClient(NineRouterLlmProvider.HttpClientName)
+                        .AddHttpClient(OpenAiCompatibleLlmProvider.HttpClientName)
                         .AddHttpMessageHandler(() => new QualityReasoningEffortHandler(effort));
                 }
             });

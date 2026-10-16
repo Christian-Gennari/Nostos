@@ -5,19 +5,20 @@ using System.Text;
 namespace Nostos.Backend.Services.Ai;
 
 /// <summary>
-/// Chat-with-tools against the 9Router gateway's OpenAI-compatible
-/// <c>POST {BaseUrl}/chat/completions</c> route.
+/// Chat-with-tools against any OpenAI-compatible
+/// <c>POST {BaseUrl}/chat/completions</c> route (OpenAI, Ollama, LM Studio,
+/// vLLM, or a gateway in front of several providers).
 ///
 /// SelfHosted keeps its existing BYOK configuration and error behavior. The
 /// wire-format work is shared with other OpenAI-compatible transports so tool
 /// serialization and usage parsing cannot drift between providers.
 /// </summary>
-public sealed class NineRouterLlmProvider(
+public sealed class OpenAiCompatibleLlmProvider(
     IHttpClientFactory httpClientFactory,
     IAiProviderConfigResolver config,
-    ILogger<NineRouterLlmProvider> logger) : ILlmProvider
+    ILogger<OpenAiCompatibleLlmProvider> logger) : ILlmProvider
 {
-    public const string HttpClientName = "assistant-ninerouter";
+    public const string HttpClientName = "assistant-openai-compatible";
 
     private const int MaxTokensCeiling = 8192;
 

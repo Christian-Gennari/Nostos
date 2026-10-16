@@ -217,7 +217,7 @@ Scenario notes from the raw turns:
 Recorded configuration (Nostos-Cloud `main`, unmodified): `openai/gpt-6-luna`, thinking `none`,
 via Vercel AI Gateway (`ai-gateway.vercel.sh/v1`); list price $0.10 / $0.50 per M tokens.
 
-The harness drives the **product's own provider path** (`NineRouterLlmProvider` +
+The harness drives the **product's own provider path** (`OpenAiCompatibleLlmProvider` +
 `OpenAiCompatibleChatCompletions` transport, max-token ceiling 8192) with `reasoning_effort`
 matched to the production posture (`NOSTOS_QG_REASONING_EFFORT=none`); with that in place the
 harness sent 0 thinking tokens across the whole baseline, i.e. the request shape matches what the
