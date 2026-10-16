@@ -842,10 +842,36 @@ export class WritingStudio implements OnInit, AfterViewInit {
     });
   }
 
+  /** A document made by New, opened once its name has been settled in the tree. */
+  private openAfterRenameId: string | null = null;
+
+  /**
+   * New document / New folder: create it under a placeholder name and put its
+   * row straight into inline rename, instead of a browser prompt(). A new
+   * document opens once the rename is saved or dismissed; opening it while
+   * the rename field is up would move focus away and cancel the rename.
+   */
   createItem(type: 'Folder' | 'Document') {
-    const name = prompt(`Enter ${type} Name:`);
-    if (!name) return;
-    this.writingsService.create({ name, type, parentId: null }).subscribe(() => this.loadTree());
+    const name = type === 'Document' ? 'Untitled document' : 'Untitled folder';
+    this.writingsService.create({ name, type, parentId: null }).subscribe({
+      next: (created) => {
+        this.openAfterRenameId = type === 'Document' ? created.id : null;
+        // The file list may be a closed drawer on a compact layout; the rename
+        // field has to be on screen to be typed into.
+        if (this.isCompact()) this.showFileSidebar.set(true);
+        this.editingId.set(created.id);
+        this.loadTree();
+      },
+      error: () => this.toast.error(`Could not create a ${type === 'Document' ? 'document' : 'folder'}`),
+    });
+  }
+
+  /** Opens the document New just made, once its rename is over either way. */
+  private openCreatedDocument(id: string): void {
+    if (this.openAfterRenameId !== id) return;
+    this.openAfterRenameId = null;
+    this.handoffOpenGeneration++;
+    this.openWritingDocument(id, false);
   }
 
   startRename(node: any) {
@@ -857,6 +883,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.cancelRename();
       return;
     }
+    // Opened after the save lands, so the editor title shows the new name.
 
     this.writingsService.update(id, { name: newName }).subscribe(() => {
       this.loadTree();
@@ -865,11 +892,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
       if (this.activeItem()?.id === id) {
         this.editorTitle.set(newName);
       }
+      this.openCreatedDocument(id);
     });
   }
 
   cancelRename() {
+    const id = this.editingId();
     this.editingId.set(null);
+    if (id) this.openCreatedDocument(id);
   }
 
   /** Writing id awaiting delete confirmation (asked through ConfirmModal). */

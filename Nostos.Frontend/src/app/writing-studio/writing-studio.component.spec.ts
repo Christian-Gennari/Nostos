@@ -837,6 +837,80 @@ describe('WritingStudio delete (no window.confirm)', () => {
     expect(component.pendingDelete()).toBeNull();
   });
 
+  describe('New document / New folder', () => {
+    type Mocked = {
+      create: ReturnType<typeof vi.fn>;
+      get: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
+    let writings: Mocked;
+    const promptSpy = vi.fn();
+
+    beforeEach(() => {
+      writings = TestBed.inject(WritingsService) as unknown as Mocked;
+      writings.get.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', content: '', updatedAt: '' }));
+      vi.stubGlobal('prompt', promptSpy);
+      promptSpy.mockClear();
+    });
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('creates an untitled document and puts it into inline rename, without a prompt', () => {
+      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
+
+      component.createItem('Document');
+
+      expect(promptSpy).not.toHaveBeenCalled();
+      expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: null });
+      expect(component.editingId()).toBe('new-1');
+      // Not opened yet: opening would take focus from the rename field.
+      expect(writings.get).not.toHaveBeenCalled();
+    });
+
+    it('opens the new document once its name is saved', () => {
+      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
+      component.createItem('Document');
+
+      component.saveRename('new-1', 'Chapter one');
+
+      expect(writings.update).toHaveBeenCalledWith('new-1', { name: 'Chapter one' });
+      expect(writings.get).toHaveBeenCalledWith('new-1');
+      expect(component.editingId()).toBeNull();
+    });
+
+    it('opens it under the placeholder name when the rename is dismissed', () => {
+      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
+      component.createItem('Document');
+
+      component.cancelRename();
+
+      expect(writings.get).toHaveBeenCalledWith('new-1');
+      // Only once: a later rename of the same row does not reopen it.
+      component.editingId.set('new-1');
+      component.cancelRename();
+      expect(writings.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('renames a new folder in place and opens nothing', () => {
+      writings.create.mockReturnValue(of({ id: 'f-1', name: 'Untitled folder', type: 'Folder' }));
+
+      component.createItem('Folder');
+      expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled folder', type: 'Folder', parentId: null });
+      expect(component.editingId()).toBe('f-1');
+
+      component.cancelRename();
+      expect(writings.get).not.toHaveBeenCalled();
+    });
+
+    it('says so when the item cannot be created', () => {
+      writings.create.mockReturnValue(throwError(() => new Error('offline')));
+      component.createItem('Document');
+
+      expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith('Could not create a document');
+      expect(component.editingId()).toBeNull();
+    });
+  });
+
   it('cancelling performs nothing', () => {
     const writings = TestBed.inject(WritingsService) as unknown as {
       delete: ReturnType<typeof vi.fn>;
