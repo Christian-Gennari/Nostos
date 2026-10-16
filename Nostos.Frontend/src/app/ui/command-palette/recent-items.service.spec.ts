@@ -58,6 +58,22 @@ describe('RecentItemsService', () => {
     expect(recent.items().map((i) => i.id)).toEqual(['b5', 'b9', 'b8', 'b7', 'b6', 'b4', 'b3', 'b2']);
   });
 
+  it('follows a rename in place, and forgets on request', () => {
+    const recent = create();
+    recent.record(item('b1'));
+    recent.record(item('b2'));
+
+    recent.relabel('book', 'b1', 'Renamed');
+    expect(recent.items().map((i) => [i.id, i.label])).toEqual([
+      ['b2', 'b2'],
+      ['b1', 'Renamed'],
+    ]);
+
+    recent.forget('book', 'b2');
+    expect(recent.items().map((i) => i.id)).toEqual(['b1']);
+    expect(JSON.parse(localStorage.getItem('nostos.palette.recent')!)).toHaveLength(1);
+  });
+
   it('survives a reload through localStorage, and ignores a corrupt entry', () => {
     localStorage.setItem(
       'nostos.palette.recent',

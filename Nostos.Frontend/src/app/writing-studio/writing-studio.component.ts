@@ -23,6 +23,7 @@ import { ToastService } from '../core/services/toast.service';
 import { TopicsService, TopicDto, NoteContextDto } from '../core/services/topics.service';
 import { BooksService, Book as BookDto } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
+import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { WritingDto, WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 import { Note } from '../core/dtos/note.dtos';
@@ -144,6 +145,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private topicsService = inject(TopicsService);
   private booksService = inject(BooksService);
   private notesService = inject(NotesService);
+  private recent = inject(RecentItemsService);
   private route = inject(ActivatedRoute, { optional: true });
   private router = inject(Router, { optional: true });
 
@@ -797,6 +799,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
         }
         if (this.activeItem()?.id !== contentDto.id) this.editorWordCount.set(null);
         this.activeItem.set(contentDto);
+        // Opening from the file tree does not change the URL, so the command
+        // palette's Recent list would never see it; tell it directly.
+        this.recent.record({ kind: 'document', id: contentDto.id, label: contentDto.name, sub: 'Document' });
         this.editorTitle.set(contentDto.name);
         this.editorText.set(contentDto.content);
         this.inspectedSource.set(null);
@@ -861,6 +866,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.writingsService.update(id, { name: newName }).subscribe(() => {
       this.loadTree();
       this.editingId.set(null);
+      this.recent.relabel('document', id, newName);
 
       if (this.activeItem()?.id === id) {
         this.editorTitle.set(newName);

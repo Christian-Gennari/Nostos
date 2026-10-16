@@ -143,3 +143,14 @@ test('with Ask Nostos on, the query becomes a question', async ({ page }) => {
   await expect(page.getByTestId('assistant-panel')).toBeVisible();
   await expect(page.getByTestId('assistant-composer')).toHaveValue(`what connects ${word}`);
 });
+
+test('a prefix narrows the search to one kind, and matches are marked', async ({ page }) => {
+  await openPalette(page);
+  await page.keyboard.type(`#${word}`);
+  await expect(headings(page)).toHaveText(['Topics']);
+  await expect(page.getByTestId('palette-item-topic').locator('mark')).toHaveText(word);
+
+  await page.getByTestId('palette-input').fill('> theme');
+  await expect(headings(page)).toHaveText(['Actions']);
+  await expect(page.locator('.palette-item')).toHaveCount(1);
+});

@@ -45,10 +45,46 @@ export type PaletteEntryKind =
   | 'action'
   | 'ask';
 
+/** A run of a label, marked when it is the part the query matched. */
+export interface LabelPart {
+  text: string;
+  hit: boolean;
+}
+
+/** What the query is restricted to: everything, or one kind via a prefix. */
+export type PaletteScope = 'all' | 'actions' | 'topics' | 'books';
+
+const SCOPE_PREFIXES: Record<string, PaletteScope> = { '>': 'actions', '#': 'topics', '@': 'books' };
+
+/** Splits a typed query into its scope prefix (if any) and the words to match. */
+export function parseQuery(raw: string): { scope: PaletteScope; term: string } {
+  const trimmed = raw.trim();
+  const scope = SCOPE_PREFIXES[trimmed.charAt(0)];
+  return scope ? { scope, term: trimmed.slice(1).trim() } : { scope: 'all', term: trimmed };
+}
+
+/** Cuts a label into runs so every case-insensitive occurrence of the term can be marked. */
+export function highlightParts(text: string, term: string): LabelPart[] {
+  const needle = term.trim().toLowerCase();
+  if (!needle) return [{ text, hit: false }];
+  const parts: LabelPart[] = [];
+  const haystack = text.toLowerCase();
+  let from = 0;
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, from)) {
+    if (at > from) parts.push({ text: text.slice(from, at), hit: false });
+    parts.push({ text: text.slice(at, at + needle.length), hit: true });
+    from = at + needle.length;
+  }
+  if (from < text.length) parts.push({ text: text.slice(from), hit: false });
+  return parts;
+}
+
 export interface PaletteEntry {
   kind: PaletteEntryKind;
   id: string;
   label: string;
+  /** The label cut into runs with the matched text marked; absent means unmarked. */
+  labelParts?: LabelPart[];
   sub: string;
   icon: NostosIconName;
   /** A book's cover thumbnail; the icon stands in when there is none. */
@@ -68,7 +104,7 @@ interface IndexedSection extends PaletteSection {
   start: number;
 }
 
-const LIMITS = { books: 5, topics: 4, notes: 4, documents: 4, collections: 4 };
+const LIMITS = { books: 5, topics: 4, notes: 4, documents: 4, collections: 4, scoped: 8 };
 
 interface ServerResults {
   books: Book[];
@@ -113,7 +149,6 @@ export class CommandPalette {
   readonly query = signal('');
   readonly searching = signal(false);
   readonly activeIndex = signal(0);
-  readonly shortcutLabel = this.launcher.shortcutLabel.replace('J', 'K');
 
   private readonly inputRef = viewChild<ElementRef<HTMLInputElement>>('paletteInput');
   private readonly resultsRef = viewChild<ElementRef<HTMLElement>>('results');
@@ -156,17 +191,32 @@ export class CommandPalette {
     { kind: 'action', id: 'go-settings', label: 'Settings', sub: 'Library, assistant, backups and appearance', icon: 'gear-six', keywords: 'go preferences' },
   ];
 
+  readonly parsed = computed(() => parseQuery(this.query()));
+
   readonly sections = computed<IndexedSection[]>(() => {
-    const q = this.query().trim().toLowerCase();
-    const raw = q ? this.searchSections(q) : this.emptySections();
+    const { scope, term } = this.parsed();
+    const q = term.toLowerCase();
+    const raw =
+      scope !== 'all' ? this.scopedSections(scope, q) : q ? this.searchSections(q) : this.emptySections();
     let start = 0;
     return raw
       .filter((section) => section.entries.length > 0)
       .map((section) => {
-        const indexed = { ...section, start };
-        start += section.entries.length;
+        const entries = section.entries.map((entry) =>
+          entry.kind === 'ask' ? entry : { ...entry, labelParts: highlightParts(entry.label, term) },
+        );
+        const indexed = { ...section, entries, start };
+        start += entries.length;
         return indexed;
       });
+  });
+
+  /** What the empty state says, so a scoped search that finds nothing says what it looked for. */
+  readonly emptyMessage = computed(() => {
+    const { scope, term } = this.parsed();
+    const kind = scope === 'actions' ? 'actions' : scope === 'topics' ? 'topics' : scope === 'books' ? 'books' : null;
+    if (!term) return kind ? `No ${kind} yet.` : '';
+    return kind ? `No ${kind} match “${term}”.` : `Nothing matches “${term}”.`;
   });
 
   readonly entries = computed<PaletteEntry[]>(() => this.sections().flatMap((s) => s.entries));
@@ -186,19 +236,24 @@ export class CommandPalette {
       .pipe(
         debounceTime(200),
         switchMap((raw) => {
-          const q = raw.trim();
-          if (!q) {
+          const { scope, term: q } = parseQuery(raw);
+          // Topics and actions are matched here; only books and notes go to the server.
+          const wantsBooks = scope === 'all' || scope === 'books';
+          const wantsNotes = scope === 'all';
+          if (!q || (!wantsBooks && !wantsNotes)) {
             this.searching.set(false);
             return of(NO_SERVER_RESULTS);
           }
           this.searching.set(true);
           return forkJoin({
-            books: this.booksService
-              .list({ search: q, page: 1, pageSize: LIMITS.books })
-              .pipe(map((res) => res.items ?? []), catchError(() => of([] as Book[]))),
-            notes: this.notesService
-              .search(q, LIMITS.notes)
-              .pipe(catchError(() => of([] as NoteSearchHit[]))),
+            books: wantsBooks
+              ? this.booksService
+                  .list({ search: q, page: 1, pageSize: LIMITS.books })
+                  .pipe(map((res) => res.items ?? []), catchError(() => of([] as Book[])))
+              : of([] as Book[]),
+            notes: wantsNotes
+              ? this.notesService.search(q, LIMITS.notes).pipe(catchError(() => of([] as NoteSearchHit[])))
+              : of([] as NoteSearchHit[]),
           });
         }),
         takeUntilDestroyed(),
@@ -270,6 +325,8 @@ export class CommandPalette {
   onQueryChange(value: string): void {
     this.query.set(value);
     this.activeIndex.set(0);
+    // Results stay until the next answer arrives, so typing does not make the
+    // Books and Notes sections blink; an emptied query clears them at once.
     if (!value.trim()) this.server.set(NO_SERVER_RESULTS);
     this.searchSubject.next(value);
   }
@@ -312,7 +369,7 @@ export class CommandPalette {
         this.router.navigate(['/library']);
         return;
       case 'ask':
-        this.assistant.updateDraft(this.query().trim());
+        this.assistant.updateDraft(this.parsed().term);
         this.assistant.requestSurfaceOpen();
         return;
       case 'action':
@@ -375,15 +432,40 @@ export class CommandPalette {
     // Small lists are fetched fresh on every open, so a topic or document made
     // since the last open is findable; each failure only empties its section.
     this.loadList(this.collectionsService.list(), this.collections);
-    this.loadList(this.topicsService.list(), this.topics);
+    this.loadList(this.topicsService.list(), this.topics, (topics) =>
+      this.pruneRecent('topic', new Set(topics.map((t) => t.id))),
+    );
     this.loadList(
       this.writingsService.list().pipe(map((all) => all.filter((w) => w.type === 'Document'))),
       this.documents,
+      (docs) => this.pruneRecent('document', new Set(docs.map((d) => d.id))),
     );
   }
 
-  private loadList<T>(source: Observable<T[]>, target: { set(value: T[]): void }): void {
-    source.pipe(catchError(() => of([] as T[]))).subscribe((items) => target.set(items ?? []));
+  /**
+   * Fetches a short list into its section. A failure only empties that
+   * section; `onLoaded` runs on success alone, because an empty list from a
+   * failed request says nothing about what exists.
+   */
+  private loadList<T>(
+    source: Observable<T[]>,
+    target: { set(value: T[]): void },
+    onLoaded?: (items: T[]) => void,
+  ): void {
+    source.subscribe({
+      next: (items) => {
+        target.set(items ?? []);
+        onLoaded?.(items ?? []);
+      },
+      error: () => target.set([]),
+    });
+  }
+
+  /** Drops recent topics or documents that have since been deleted. */
+  private pruneRecent(kind: 'topic' | 'document', existing: Set<string>): void {
+    for (const item of this.recent.items()) {
+      if (item.kind === kind && !existing.has(item.id)) this.recent.forget(kind, item.id);
+    }
   }
 
   private emptySections(): PaletteSection[] {
@@ -394,20 +476,48 @@ export class CommandPalette {
     ];
   }
 
+  /** A prefixed query: one kind of thing, listed in full when nothing follows the prefix. */
+  private scopedSections(scope: PaletteScope, q: string): PaletteSection[] {
+    switch (scope) {
+      case 'actions':
+        return [
+          {
+            id: 'actions',
+            title: 'Actions',
+            entries: [...this.actions(), ...this.destinations].filter(
+              (a) => !q || `${a.label} ${a.sub} ${a.keywords ?? ''}`.toLowerCase().includes(q),
+            ),
+          },
+        ];
+      case 'topics': {
+        const topics = this.topics()
+          .filter((t) => !q || t.name.toLowerCase().includes(q))
+          .sort((a, b) => b.usageCount - a.usageCount)
+          .slice(0, LIMITS.scoped);
+        return [{ id: 'topics', title: 'Topics', entries: topics.map(topicEntry) }];
+      }
+      case 'books':
+        return q
+          ? [{ id: 'books', title: 'Books', entries: this.server().books.slice(0, LIMITS.books).map(bookEntry) }]
+          : [
+              {
+                id: 'recent-books',
+                title: 'Recent books',
+                entries: this.recent.items().filter((i) => i.kind === 'book').map(recentEntry),
+              },
+            ];
+      default:
+        return [];
+    }
+  }
+
   private searchSections(q: string): PaletteSection[] {
     const { books, notes } = this.server();
     const sections: PaletteSection[] = [
       {
         id: 'books',
         title: 'Books',
-        entries: books.slice(0, LIMITS.books).map((b) => ({
-          kind: 'book' as const,
-          id: b.id,
-          label: b.title,
-          sub: b.author || 'Unknown author',
-          icon: 'book' as const,
-          coverUrl: b.coverUrl,
-        })),
+        entries: books.slice(0, LIMITS.books).map(bookEntry),
       },
       {
         id: 'topics',
@@ -415,7 +525,7 @@ export class CommandPalette {
         entries: this.topics()
           .filter((t) => t.name.toLowerCase().includes(q))
           .slice(0, LIMITS.topics)
-          .map((t) => ({ kind: 'topic' as const, id: t.id, label: t.name, sub: notesLabel(t.usageCount), icon: 'hash' as const })),
+          .map(topicEntry),
       },
       {
         id: 'notes',
@@ -423,7 +533,7 @@ export class CommandPalette {
         entries: notes.slice(0, LIMITS.notes).map((n) => ({
           kind: 'note' as const,
           id: n.id,
-          label: noteExcerpt(n),
+          label: noteExcerpt(n, q),
           sub: n.bookTitle ?? 'Note',
           icon: 'note' as const,
         })),
@@ -456,11 +566,19 @@ export class CommandPalette {
       sections.push({
         id: 'ask',
         title: 'Ask Nostos',
-        entries: [{ kind: 'ask', id: 'ask', label: this.query().trim(), sub: 'Ask Nostos', icon: 'sparkle' }],
+        entries: [{ kind: 'ask', id: 'ask', label: this.parsed().term, sub: 'Ask Nostos', icon: 'sparkle' }],
       });
     }
     return sections;
   }
+}
+
+function bookEntry(b: Book): PaletteEntry {
+  return { kind: 'book', id: b.id, label: b.title, sub: b.author || 'Unknown author', icon: 'book', coverUrl: b.coverUrl };
+}
+
+function topicEntry(t: TopicDto): PaletteEntry {
+  return { kind: 'topic', id: t.id, label: t.name, sub: notesLabel(t.usageCount), icon: 'hash' };
 }
 
 function recentEntry(item: RecentItem): PaletteEntry {
@@ -468,14 +586,30 @@ function recentEntry(item: RecentItem): PaletteEntry {
   return { kind: item.kind, id: item.id, label: item.label, sub: item.sub, icon };
 }
 
-/** One readable line of a note: the server's snippet, else its opening words. */
-export function noteExcerpt(hit: NoteSearchHit): string {
-  const text = (hit.snippet || hit.content || hit.selectedText || '')
+const EXCERPT_MAX = 120;
+/** How much of the note to keep before the match when the match sits deep in it. */
+const EXCERPT_LEAD = 32;
+
+/**
+ * One readable line of a note: the server's snippet, else its opening words.
+ * When the matched word sits beyond the first line's worth of text, the line
+ * starts shortly before it, so the row shows why the note matched.
+ */
+export function noteExcerpt(hit: NoteSearchHit, term = ''): string {
+  let text = (hit.snippet || hit.content || hit.selectedText || '')
     // Topic links at the end are tags, not prose: drop them. Links inside a
     // sentence are words in it: keep the word, lose the brackets.
     .replace(/(\s*\[\[[^\]]+\]\])+\s*$/, '')
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
-  return text.length > 120 ? `${text.slice(0, 117)}…` : text || 'Untitled note';
+  if (!text) return 'Untitled note';
+
+  const at = term ? text.toLowerCase().indexOf(term.toLowerCase()) : -1;
+  if (at > EXCERPT_LEAD + 16) {
+    // Start at a word boundary a little before the match.
+    const from = text.lastIndexOf(' ', at - EXCERPT_LEAD) + 1;
+    text = `…${text.slice(from)}`;
+  }
+  return text.length > EXCERPT_MAX ? `${text.slice(0, EXCERPT_MAX - 3)}…` : text;
 }

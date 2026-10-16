@@ -64,7 +64,7 @@
           @if (entry.kind === 'ask') {
           <span class="palette-item-label">Ask Nostos: <q>{{ entry.label }}</q></span>
           } @else {
-          <span class="palette-item-label">{{ entry.label }}</span>
+          <span class="palette-item-label">@for (part of entry.labelParts ?? [{ text: entry.label, hit: false }]; track $index) {@if (part.hit) {<mark>{{ part.text }}</mark>} @else {<span>{{ part.text }}</span>}}</span>
           }
           @if (entry.kind !== 'ask') {
           <span class="palette-item-sub">{{ entry.sub }}</span>
@@ -81,7 +81,7 @@
       @if (searching()) {
       Searching…
       } @else {
-      Nothing matches “{{ query().trim() }}”.
+      {{ emptyMessage() }}
       }
     </p>
     }
@@ -91,7 +91,11 @@
     <span><kbd>↑</kbd><kbd>↓</kbd> to move</span>
     <span><kbd>↵</kbd> to open</span>
     <span><kbd>esc</kbd> to close</span>
-    <span class="palette-hint-toggle"><kbd>{{ shortcutLabel }}</kbd> anywhere</span>
+    <span class="palette-hint-scopes">
+      <span><kbd>&gt;</kbd> actions</span>
+      <span><kbd>#</kbd> topics</span>
+      <span><kbd>&#64;</kbd> books</span>
+    </span>
   </div>
 </div>
 }
