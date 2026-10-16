@@ -214,6 +214,25 @@ public sealed class PassageEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     [Fact]
+    public async Task Browsing_by_kind_lists_only_passages()
+    {
+        var book = await CreateBookAsync();
+        var passage = await CreatePassageAsync(book.Id, LongText);
+        var note = await Client.PostAsJsonAsync($"/api/books/{book.Id}/notes", new { content = "a thought" });
+        note.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var passages = await Client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?bookId={book.Id}&kind=passage");
+        passages!.TotalCount.Should().Be(1);
+        passages.Items.Single().Id.Should().Be(passage.Id);
+
+        var all = await Client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?bookId={book.Id}");
+        all!.TotalCount.Should().Be(2);
+
+        var unknown = await Client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?bookId={book.Id}&kind=chapter");
+        unknown!.TotalCount.Should().Be(0);
+    }
+
+    [Fact]
     public void Sanitising_keeps_reading_structure_and_drops_everything_else()
     {
         PassageText.Sanitize(

@@ -42,6 +42,8 @@ export class BrainNoteBrowse {
   readonly bookId = signal<string | null>(null);
   readonly bookTitle = signal('');
   readonly withoutTopics = signal(false);
+  /** Only passages: the extracts kept to be read again (issue #1014). */
+  readonly passagesOnly = signal(false);
   readonly oldestFirst = signal(false);
 
   readonly loading = signal(false);
@@ -91,6 +93,12 @@ export class BrainNoteBrowse {
   setWithoutTopics(value: boolean): void {
     if (this.hasUnsavedEdit()) return;
     this.withoutTopics.set(value);
+    this.reload();
+  }
+
+  setPassagesOnly(value: boolean): void {
+    if (this.hasUnsavedEdit()) return;
+    this.passagesOnly.set(value);
     this.reload();
   }
 
@@ -209,6 +217,7 @@ export class BrainNoteBrowse {
       bookId: this.bookId() ?? undefined,
       withoutTopics: this.withoutTopics(),
       oldestFirst: this.oldestFirst(),
+      kind: this.passagesOnly() ? 'passage' : undefined,
       limit: REVIEW_PAGE_SIZE,
       offset,
     }).subscribe({

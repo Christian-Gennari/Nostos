@@ -1479,6 +1479,10 @@ export class SecondBrain implements AfterViewChecked {
       sourceAnchorValue: note.sourceAnchorValue,
       anchorVerified: note.anchorVerified,
       highlightColour: note.highlightColour,
+      kind: note.kind,
+      passageTitle: note.passageTitle,
+      passageEnd: note.passageEnd,
+      passageWordCount: note.passageWordCount,
     };
   }
 
@@ -1499,6 +1503,10 @@ export class SecondBrain implements AfterViewChecked {
       sourceAnchorKind: note.sourceAnchorKind,
       sourceAnchorValue: note.sourceAnchorValue,
       anchorVerified: note.anchorVerified,
+      kind: note.kind,
+      passageTitle: note.passageTitle,
+      passageEnd: note.passageEnd,
+      passageWordCount: note.passageWordCount,
     };
   }
 
@@ -1580,6 +1588,7 @@ export class SecondBrain implements AfterViewChecked {
     content: string;
     selectedText?: string;
     highlightColour?: string;
+    passageTitle?: string;
   }): void {
     const topicId = this.selectedId();
     const detail = this.selectedDetail();
@@ -1594,8 +1603,9 @@ export class SecondBrain implements AfterViewChecked {
           ? {
               ...note,
               content: event.content,
-              selectedText: event.selectedText,
+              selectedText: event.selectedText ?? note.selectedText,
               highlightColour: event.highlightColour ?? note.highlightColour,
+              passageTitle: event.passageTitle ?? note.passageTitle,
             }
           : note
       ),
@@ -1607,6 +1617,7 @@ export class SecondBrain implements AfterViewChecked {
         content: event.content,
         selectedText: event.selectedText,
         highlightColour: event.highlightColour,
+        passageTitle: event.passageTitle,
       })
       .subscribe({
         next: (updated) => {
@@ -1722,6 +1733,13 @@ export class SecondBrain implements AfterViewChecked {
       bookTitle: updated.bookTitle ?? previous.bookTitle,
       createdAt: updated.createdAt || previous.createdAt,
       highlightColour: updated.highlightColour ?? previous.highlightColour,
+      sourceAnchorKind: updated.sourceAnchorKind ?? previous.sourceAnchorKind,
+      sourceAnchorValue: updated.sourceAnchorValue ?? previous.sourceAnchorValue,
+      anchorVerified: updated.anchorVerified ?? previous.anchorVerified,
+      kind: (updated.kind as NoteContextDto['kind']) ?? previous.kind,
+      passageTitle: updated.passageTitle ?? previous.passageTitle,
+      passageEnd: updated.passageEnd ?? previous.passageEnd,
+      passageWordCount: updated.passageWordCount ?? previous.passageWordCount,
     };
   }
 

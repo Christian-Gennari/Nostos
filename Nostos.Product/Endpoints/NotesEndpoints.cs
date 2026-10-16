@@ -53,9 +53,9 @@ public static class NotesEndpoints
         group.MapGet(
             "/notes",
             async (INoteService notes, string? query, Guid? bookId, bool? withoutTopics,
-                bool? oldestFirst, int? limit, int? offset) =>
+                bool? oldestFirst, int? limit, int? offset, string? kind) =>
                 Results.Ok(await notes.BrowseAsync(query, bookId, withoutTopics ?? false,
-                    oldestFirst ?? false, limit ?? 25, offset ?? 0))
+                    oldestFirst ?? false, limit ?? 25, offset ?? 0, kind: kind))
         );
 
         // Notes linked to no topic, so they can be read at all.

@@ -132,10 +132,12 @@ public class NoteRepository : INoteRepository
     }
 
     public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(
-        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset)
+        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset,
+        string? kind = null)
     {
         var notes = _db.Notes.AsNoTracking().AsQueryable();
         if (bookId.HasValue) notes = notes.Where(n => n.BookId == bookId.Value);
+        if (!string.IsNullOrEmpty(kind)) notes = notes.Where(n => n.Kind == kind);
         if (withoutTopics) notes = notes.Where(n => !n.NoteTopics.Any());
         var term = query?.Trim();
         if (!string.IsNullOrEmpty(term))

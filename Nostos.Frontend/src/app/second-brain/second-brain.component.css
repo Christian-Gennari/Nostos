@@ -2134,6 +2134,35 @@
   -webkit-box-orient: vertical;
 }
 
+/* A passage row (issue #1014) leads with its title; its opening drops back
+   to the quiet second line a book name would take. */
+.note-row-passage {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-row-passage nostos-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.note-row-passage + .note-row-snippet {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.note-row-item.active .note-row-passage { color: var(--selection-ink); }
+
 .note-row-book {
   overflow: hidden;
   color: var(--color-text-muted);

@@ -329,6 +329,20 @@ describe('NoteCard passage (issue #1014)', () => {
     expect(el.querySelector('.note-meta-placeholder')).toBeNull();
   });
 
+  it('names its link into the book "Open in book", not a second passage', () => {
+    fixture.componentInstance.showSource = true;
+    fixture.componentInstance.note = { ...fixture.componentInstance.note, bookTitle: 'The Brothers Karamazov' };
+    fixture.componentInstance.sourceNavigation = {
+      commands: ['/read', 'book-1'],
+      queryParams: { sourceCfi: 'epubcfi(/6/80!/4/2/1:0)' },
+      label: 'Return to passage',
+    };
+    fixture.detectChanges();
+    const link = fixture.nativeElement.querySelector('.source-badge') as HTMLAnchorElement;
+    expect(link.textContent).toContain('Open in book');
+    expect(link.getAttribute('aria-label')).toBe('Open in book: The Brothers Karamazov');
+  });
+
   it('opens the passage viewer with the options its host gave it', () => {
     const openInBook = vi.fn();
     fixture.componentInstance.passageViewerOptions = { openInBook };

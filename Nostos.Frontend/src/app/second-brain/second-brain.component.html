@@ -141,6 +141,14 @@
             (click)="browse.setWithoutTopics(!browse.withoutTopics())">
             Without topics
           </button>
+          <!-- Passages (issue #1014): the long extracts, a commonplace book. -->
+          <button appChip type="button"
+            data-testid="brain-passages-filter"
+            [attr.aria-pressed]="browse.passagesOnly()"
+            (click)="browse.setPassagesOnly(!browse.passagesOnly())">
+            <nostos-icon concept="passage" [size]="14" />
+            Passages
+          </button>
           <app-dropdown
             class="brain-note-order"
             controlSize="compact"
@@ -159,9 +167,9 @@
       </div>
       <div class="brain-section-header browse-section-header">
         <div class="brain-section-heading">
-          <h2 class="brain-section-title">{{ browse.withoutTopics() ? 'Without topics' : 'All notes' }}</h2>
+          <h2 class="brain-section-title">{{ browse.passagesOnly() ? 'Passages' : browse.withoutTopics() ? 'Without topics' : 'All notes' }}</h2>
           @if (browse.loaded()) {
-          <span class="brain-section-count">{{ browse.total() }} {{ browse.total() === 1 ? 'note' : 'notes' }}</span>
+          <span class="brain-section-count">{{ browse.total() }} {{ browse.passagesOnly() ? (browse.total() === 1 ? 'passage' : 'passages') : (browse.total() === 1 ? 'note' : 'notes') }}</span>
           }
         </div>
         @if (browse.withoutTopics() && browse.loaded() && browse.total() > 0) {
@@ -180,14 +188,20 @@
           <div class="empty-index-state" role="alert"><p>Notes could not be loaded.</p>
             <button appButton variant="secondary" size="sm" type="button" (click)="browse.loadPage()">Retry</button></div>
         } @else if (browse.loaded() && browse.total() === 0) {
-          <div class="empty-index-state" role="status"><p>{{ browse.query() ? 'No notes match this search.' : browse.withoutTopics() ? 'No notes without topics.' : 'Your notes will appear here as you read.' }}</p></div>
+          <div class="empty-index-state" role="status"><p>{{ browse.query() ? 'No notes match this search.' : browse.passagesOnly() ? 'No passages yet. In a book, select where one starts and choose Mark passage.' : browse.withoutTopics() ? 'No notes without topics.' : 'Your notes will appear here as you read.' }}</p></div>
         } @else {
           @for (row of browse.notes(); track row.id) {
           <div class="note-row-shell" role="listitem"><button type="button" class="note-row-item"
             [class.active]="panelNote()?.id === row.id"
             [attr.aria-pressed]="panelNote()?.id === row.id"
             (click)="openNotePanel(row)">
-            <span class="note-row-main"><span class="note-row-snippet">{{ row.snippet || row.content || row.selectedText }}</span>
+            <span class="note-row-main">
+              @if (row.kind === 'passage') {
+              <span class="note-row-passage" data-testid="brain-passage-row">
+                <nostos-icon concept="passage" [size]="14" />{{ row.passageTitle || 'Passage' }}
+              </span>
+              }
+              <span class="note-row-snippet">{{ row.snippet || row.content || row.selectedText }}</span>
               <span class="note-row-book">{{ row.bookTitle || 'Unknown source' }}</span></span>
           </button></div>
           }

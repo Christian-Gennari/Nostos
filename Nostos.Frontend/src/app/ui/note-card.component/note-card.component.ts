@@ -119,6 +119,15 @@ export class NoteCardComponent {
     return passageSizeLabel(this.note);
   }
 
+  /**
+   * What the source link says. A kept passage is read in the viewer, so its
+   * link into the book is "Open in book", never a second "passage".
+   */
+  get sourceLabel(): string {
+    if (this.isPassageNote) return 'Open in book';
+    return this.sourceNavigation?.label ?? (this.note.cfiRange ? 'Return to passage' : 'Open book');
+  }
+
   readPassage(event?: Event): void {
     event?.stopPropagation();
     this.passageViewer.open(this.note.id, this.passageViewerOptions ?? {});

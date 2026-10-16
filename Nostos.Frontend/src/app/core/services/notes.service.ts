@@ -79,6 +79,8 @@ export class NotesService {
     bookId?: string;
     withoutTopics?: boolean;
     oldestFirst?: boolean;
+    /** Only notes of this kind (issue #1014: Brain's Passages filter). */
+    kind?: 'note' | 'passage';
     limit?: number;
     offset?: number;
   } = {}): Observable<NoteSearchPage> {
@@ -90,6 +92,7 @@ export class NotesService {
     if (options.bookId) params['bookId'] = options.bookId;
     if (options.withoutTopics) params['withoutTopics'] = true;
     if (options.oldestFirst) params['oldestFirst'] = true;
+    if (options.kind) params['kind'] = options.kind;
     return this.http.get<NoteSearchPage>('/api/notes', { params });
   }
 

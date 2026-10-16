@@ -151,7 +151,7 @@
           [routerLink]="sourceNavigation?.commands ?? ['/library', note.bookId]"
           [queryParams]="sourceNavigation ? sourceNavigation.queryParams : { cfi: note.cfiRange }"
           (click)="$event.stopPropagation()"
-          [attr.aria-label]="((sourceNavigation?.label ?? (note.cfiRange ? 'Return to passage' : 'Open book')) === 'Return to passage' ? 'Return to passage in ' : 'Open book: ') + note.bookTitle"
+          [attr.aria-label]="sourceLabel === 'Return to passage' ? 'Return to passage in ' + note.bookTitle : sourceLabel + ': ' + note.bookTitle"
           [title]="note.bookTitle"
         >
           @if (layout !== 'passage') {
@@ -161,7 +161,7 @@
           </span>
           }
           <span class="source-nav-label">
-            {{ sourceNavigation?.label ?? (note.cfiRange ? 'Return to passage' : 'Open book') }}
+            {{ sourceLabel }}
             <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
           </span>
         </a>
