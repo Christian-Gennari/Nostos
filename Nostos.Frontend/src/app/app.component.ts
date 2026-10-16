@@ -9,6 +9,8 @@ import {
 } from '@angular/router';
 import { ToastContainerComponent } from './ui/toast-container/toast-container.component';
 import { CommandPalette } from './ui/command-palette/command-palette.component';
+import { CommandPaletteService } from './ui/command-palette/command-palette.service';
+import { RecentItemsService } from './ui/command-palette/recent-items.service';
 import { HighlightImportModal } from './ui/highlight-import-modal/highlight-import-modal.component';
 import { AssistantComponent } from './ui/assistant/assistant.component';
 import { SwUpdateService } from './core/services/sw-update.service';
@@ -41,6 +43,8 @@ export class App {
   readonly cloudEntry = inject(CloudEntryService);
   /** Root-scoped cutover state; the overlay blocks the app while it runs. */
   readonly activation = inject(LibraryActivationController);
+  /** Opens the deferred command palette; see app.component.html. */
+  readonly palette = inject(CommandPaletteService);
 
   constructor() {
     // Applies the persisted theme immediately. `index.html` already set the
@@ -55,6 +59,10 @@ export class App {
     // Host browser integrations also run on entry/recovery screens. They
     // never participate in product readiness or entitlement decisions.
     inject(HostedBrowserIntegrationService).start();
+    // Cmd/Ctrl+K and the palette's Recent list both work before the palette
+    // itself has loaded (it is deferred until first opened).
+    this.palette.start();
+    inject(RecentItemsService).watch(this.router);
     void this.cloudEntry.initialize();
 
     effect(() => {

@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ElementRef,
   HostListener,
   afterRenderEffect,
@@ -175,7 +176,11 @@ export class CommandPalette {
   );
 
   constructor() {
+    // The app root starts this at boot so visits are recorded before the
+    // palette has ever loaded; the call here keeps the component whole on its own.
     this.recent.watch(this.router);
+    this.palette.setDismissHandler(() => this.dismiss());
+    inject(DestroyRef).onDestroy(() => this.palette.setDismissHandler(null));
 
     this.searchSubject
       .pipe(
@@ -219,16 +224,9 @@ export class CommandPalette {
     });
   }
 
+  /** Moves through the open palette. Cmd/Ctrl+K itself belongs to CommandPaletteService. */
   @HostListener('document:keydown', ['$event'])
   onKeydown(event: KeyboardEvent): void {
-    // Both plain K and Shift+K: plain Cmd/Ctrl+K collides with the browser's
-    // own search in some setups, so either chord toggles the palette.
-    const mod = event.metaKey || event.ctrlKey;
-    if (mod && !event.altKey && event.key.toLowerCase() === 'k') {
-      event.preventDefault();
-      this.toggle();
-      return;
-    }
     if (!this.isOpen()) return;
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -250,11 +248,6 @@ export class CommandPalette {
       const entry = this.entries()[this.activeIndex()];
       if (entry) this.run(entry);
     }
-  }
-
-  toggle(): void {
-    if (this.isOpen()) this.dismiss();
-    else this.open();
   }
 
   open(): void {

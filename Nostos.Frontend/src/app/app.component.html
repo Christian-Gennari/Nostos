@@ -2,7 +2,12 @@
 @if (cloudEntry.productReady()) {
   <router-outlet />
   <app-toast-container />
-  <app-command-palette />
+  <!-- Loaded on first open (or when the browser is idle), so the initial
+       bundle does not carry the palette; CommandPaletteService owns the
+       shortcut until then. -->
+  @defer (when palette.isOpen(); prefetch on idle) {
+    <app-command-palette />
+  }
   <app-highlight-import-modal />
   <app-assistant />
 } @else {

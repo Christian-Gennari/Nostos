@@ -74,6 +74,8 @@ describe('CommandPalette', () => {
       ],
     }).compileComponents();
 
+    // The app root starts the shortcut; the deferred component does not own it.
+    TestBed.inject(CommandPaletteService).start();
     fixture = TestBed.createComponent(CommandPalette);
     component = fixture.componentInstance;
     router = TestBed.inject(Router);
