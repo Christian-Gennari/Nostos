@@ -131,13 +131,13 @@ builder.Services.AddScoped<Nostos.Backend.Services.Portability.Migration.IMigrat
     Nostos.Backend.Services.Portability.Migration.FilePortableImportStagingCleanup>();
 
 // --- SPEECH-TO-TEXT (issue #262 §2/§3) ---
-builder.Services.AddHttpClient(NineRouterSttProvider.HttpClientName, client =>
+builder.Services.AddHttpClient(OpenAiCompatibleSttProvider.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
 });
-builder.Services.AddSingleton<NineRouterSttProvider>();
+builder.Services.AddSingleton<OpenAiCompatibleSttProvider>();
 builder.Services.AddSingleton<ISTtProvider>(
-    sp => sp.GetRequiredService<NineRouterSttProvider>());
+    sp => sp.GetRequiredService<OpenAiCompatibleSttProvider>());
 
 // --- READ ALOUD: the server voice ---
 // Off until the owner connects a speech server (ReadAloud:Enabled + BaseUrl).
@@ -169,11 +169,11 @@ builder.Services.AddSingleton<AlignmentSttProvider>();
 builder.Services.AddScoped<IAlignmentTranscriber, SettingsAlignmentTranscriber>();
 
 // --- ASSISTANT LLM BRIDGE (issue #261 §3, §7) ---
-builder.Services.AddHttpClient(NineRouterLlmProvider.HttpClientName, client =>
+builder.Services.AddHttpClient(OpenAiCompatibleLlmProvider.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(Math.Max(1, assistantOptions.RequestTimeoutSeconds));
 });
-builder.Services.AddSingleton<ILlmProvider, NineRouterLlmProvider>();
+builder.Services.AddSingleton<ILlmProvider, OpenAiCompatibleLlmProvider>();
 
 builder.Services.AddSingleton<IAiAccessPolicy, AllowAllAiAccessPolicy>();
 builder.Services.AddSingleton<IAiUsageAccountingService>(NoOpAiUsageAccountingService.Instance);

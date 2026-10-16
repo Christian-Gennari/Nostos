@@ -16,7 +16,7 @@ namespace Nostos.Backend.Configuration;
 /// nothing can be shipped to the Angular client.
 ///
 /// The default <see cref="Model"/> must be a model that ACTUALLY CALLS TOOLS.
-/// The 9Router free pool that used to sit here silently ignored the tool
+/// The pooled free model that used to sit here silently ignored the tool
 /// definitions: measured against the gateway, the identical request returned
 /// <c>finish_reason: "stop"</c> with zero tool calls, so every capture, search
 /// and suggestion the assistant described had in fact not run. Do not put a
@@ -38,7 +38,7 @@ public sealed class AssistantOptions
     /// Base URL of the OpenAI-compatible gateway, INCLUDING the <c>/v1</c>
     /// suffix. The provider appends <c>chat/completions</c> to it.
     /// </summary>
-    public string BaseUrl { get; set; } = "http://omenhub:20128/v1";
+    public string BaseUrl { get; set; } = string.Empty;
 
     /// <summary>
     /// Model id sent verbatim. It must call tools: capture, reading the

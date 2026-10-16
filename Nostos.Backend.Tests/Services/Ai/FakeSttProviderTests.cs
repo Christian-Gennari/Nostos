@@ -105,12 +105,12 @@ public sealed class FakeSttProviderTests
 }
 
 /// <summary>
-/// Unit coverage for <see cref="NineRouterSttProvider"/> against a canned HTTP
+/// Unit coverage for <see cref="OpenAiCompatibleSttProvider"/> against a canned HTTP
 /// response — the transport is stubbed, so no real API is called and no quota
 /// is spent. This is where the request contract (exact model id, bearer token)
 /// and the response/error mapping are pinned.
 /// </summary>
-public sealed class NineRouterSttProviderTests
+public sealed class OpenAiCompatibleSttProviderTests
 {
     private const string Model = "groq/whisper-large-v3-turbo";
     private const string TokenVariable = "NOSTOS_STT_TEST_TOKEN";
@@ -324,11 +324,11 @@ public sealed class NineRouterSttProviderTests
     public async Task Cancellation_mid_call_surfaces_as_a_cancellation_not_a_hang()
     {
         var handler = new BlockingHandler();
-        var provider = new NineRouterSttProvider(
+        var provider = new OpenAiCompatibleSttProvider(
             new SingleHandlerHttpClientFactory(handler),
             TestOptions(),
             new StubAiProviderConfigResolver { Stt = TestConfig(TokenValue) },
-            NullLogger<NineRouterSttProvider>.Instance);
+            NullLogger<OpenAiCompatibleSttProvider>.Instance);
 
         Environment.SetEnvironmentVariable(TokenVariable, TokenValue);
         try
@@ -369,14 +369,14 @@ public sealed class NineRouterSttProviderTests
         ApiKey: apiKey,
         KeyFromServerEnv: apiKey is not null);
 
-    private static NineRouterSttProvider CreateProvider(
+    private static OpenAiCompatibleSttProvider CreateProvider(
         StubHttpMessageHandler handler,
         string? apiKey = TokenValue) =>
         new(
             new StubHttpClientFactory(handler, new Uri("http://omenhub:20128")),
             TestOptions(),
             new StubAiProviderConfigResolver { Stt = TestConfig(apiKey) },
-            NullLogger<NineRouterSttProvider>.Instance);
+            NullLogger<OpenAiCompatibleSttProvider>.Instance);
 
     /// <summary>A handler that parks until the caller's token is cancelled.</summary>
     private sealed class BlockingHandler : HttpMessageHandler

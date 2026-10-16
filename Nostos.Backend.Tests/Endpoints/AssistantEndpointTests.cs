@@ -20,7 +20,7 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// <summary>
 /// Full-host coverage for the assistant bridge routes (issue #261 §3, §7).
 ///
-/// Every turn test runs against <see cref="FakeLlmProvider"/>; the real 9Router
+/// Every turn test runs against <see cref="FakeLlmProvider"/>; the real provider
 /// free pool is never called here. The only tests that exercise the real
 /// provider are the "unconfigured" ones, and those never reach the network.
 /// </summary>

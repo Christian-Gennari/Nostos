@@ -7,7 +7,7 @@ namespace Nostos.Backend.Services.Ai;
 
 /// <summary>
 /// SelfHosted BYOK embeddings against any OpenAI-compatible
-/// <c>POST {BaseUrl}/embeddings</c> route (Vercel AI Gateway, OpenAI, 9Router,
+/// <c>POST {BaseUrl}/embeddings</c> route (Vercel AI Gateway, OpenAI,
 /// Ollama, vLLM, …).
 ///
 /// The endpoint, model and credential are read at call time from the EFFECTIVE

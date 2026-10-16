@@ -7,7 +7,7 @@
 // coordinate a blocked provider call with POST /turn/cancel.
 //
 // MeteredLlmProvider wraps ANY ILlmProvider (scripted or the real
-// NineRouterLlmProvider) and records per upstream call: model id,
+// OpenAiCompatibleLlmProvider) and records per upstream call: model id,
 // started/finished timestamps, prompt/completion/thinking tokens, finish
 // reason, requested tool-call names (name only), and error/exception type.
 // It never records prompts, replies, arguments, or key material.

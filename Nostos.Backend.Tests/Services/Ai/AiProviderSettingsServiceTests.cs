@@ -344,6 +344,24 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
         result.Error.Should().Contain("not with audio");
     }
 
+    [Theory]
+    [InlineData("https://stt.example.test/v1")]
+    [InlineData("https://stt.example.test/v1/")]
+    [InlineData("https://stt.example.test")]
+    public async Task Stt_test_accepts_the_endpoint_with_or_without_v1(string baseUrl)
+    {
+        var handler = new StubHttpMessageHandler();
+        handler.Register("/v1/audio/transcriptions", _ =>
+            Json("""{"text":"","language":"en","duration":1.0}"""));
+
+        var service = CreateService(handler);
+        var result = await service.TestAsync(
+            new AiProviderTestRequest("stt", baseUrl, "whisper-1", "test-key"));
+
+        result.Ok.Should().BeTrue(result.Error);
+        handler.RecordedRequestPaths.Should().Equal("/v1/audio/transcriptions");
+    }
+
     [Fact]
     public async Task Stt_test_uploads_a_generated_wav()
     {

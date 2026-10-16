@@ -395,7 +395,7 @@ public sealed class AiProviderSettingsService(
             AlignmentTranscriptionApiStyles.JsonBase64 =>
                 JsonBase64SttProvider.HttpClientName,
             AlignmentTranscriptionApiStyles.OpenAiMultipart =>
-                NineRouterSttProvider.HttpClientName,
+                OpenAiCompatibleSttProvider.HttpClientName,
             _ => HttpClientName,
         };
 
@@ -576,11 +576,11 @@ public sealed class AiProviderSettingsService(
                 case AlignmentTranscriptionApiStyles.OpenAiMultipart:
                     // This is the same provider implementation used by the
                     // alignment dispatcher for multipart calls.
-                    var multipart = new NineRouterSttProvider(
+                    var multipart = new OpenAiCompatibleSttProvider(
                         httpClientFactory,
                         speechOptions,
                         this,
-                        NullLogger<NineRouterSttProvider>.Instance);
+                        NullLogger<OpenAiCompatibleSttProvider>.Instance);
 
                     result = await multipart.TranscribeWithConfigAsync(
                         audio,
@@ -687,7 +687,7 @@ public sealed class AiProviderSettingsService(
 
         var (ok, _, error) = await SendAsync(
             HttpMethod.Post,
-            Combine(baseUrl, "v1/audio/transcriptions"),
+            OpenAiCompatibleSttProvider.TranscriptionUrl(baseUrl),
             apiKey,
             form,
             ct);

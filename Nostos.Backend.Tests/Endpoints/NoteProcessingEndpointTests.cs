@@ -17,7 +17,7 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// Full-host HTTP coverage for the note post-processing routes (issue #262 §7,
 /// §8): reprocess, raw-transcript read, and restore.
 ///
-/// The real 9Router free pool is NEVER called here. The host swaps the provider
+/// A real provider is NEVER called here. The host swaps the provider
 /// for <see cref="FakeLlmProvider"/>, so the real <c>ThoughtProcessor</c> runs
 /// over a scripted bridge — the same seam production uses, with no network.
 /// </summary>

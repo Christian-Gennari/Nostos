@@ -37,7 +37,7 @@ public sealed class FakeThoughtProcessor : IThoughtProcessor
 
 /// <summary>
 /// Unit coverage for <see cref="ThoughtProcessor"/> against the scriptable
-/// <see cref="FakeLlmProvider"/>. The real 9Router free pool is never called
+/// <see cref="FakeLlmProvider"/>. A real provider is never called
 /// here; nothing in this suite spends pool quota.
 ///
 /// The "clarify invents nothing" property is a prompt-and-pipeline property:

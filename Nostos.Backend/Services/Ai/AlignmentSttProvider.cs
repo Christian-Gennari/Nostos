@@ -9,7 +9,7 @@ namespace Nostos.Backend.Services.Ai;
 /// </summary>
 public sealed class AlignmentSttProvider(
     IAiProviderConfigResolver config,
-    NineRouterSttProvider multipartProvider,
+    OpenAiCompatibleSttProvider multipartProvider,
     JsonBase64SttProvider jsonProvider) : ISTtProvider
 {
     public async Task<SttResult> TranscribeAsync(

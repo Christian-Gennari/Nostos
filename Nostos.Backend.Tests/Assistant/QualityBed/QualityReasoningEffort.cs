@@ -2,14 +2,14 @@
 //
 // The managed production deployment runs with a thinking level of `none`,
 // sent as the OpenAI-compatible `reasoning_effort` request parameter. The
-// self-hosted product provider (NineRouterLlmProvider) never sends that
+// self-hosted product provider (OpenAiCompatibleLlmProvider) never sends that
 // parameter, so the live bed can opt into a production-equivalent posture
 // via NOSTOS_QG_REASONING_EFFORT. Unset/empty keeps the default: the request
 // is byte-for-byte what the product sends.
 //
 // The control lives at the transport boundary: this DelegatingHandler is
 // registered additively on the product's named HttpClient
-// (NineRouterLlmProvider.HttpClientName) inside QualityBedHost.CreateLive,
+// (OpenAiCompatibleLlmProvider.HttpClientName) inside QualityBedHost.CreateLive,
 // only when the env value is set. Product code is untouched; the
 // deterministic path never registers the handler.
 namespace Nostos.Backend.Tests.Assistant.QualityBed;
