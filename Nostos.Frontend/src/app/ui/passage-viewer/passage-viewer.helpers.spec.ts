@@ -10,6 +10,12 @@ describe('passage viewer helpers (issue #1014)', () => {
     );
   });
 
+  it('shows a topic link in the note as its words, not its markup', () => {
+    expect(passageBodyHtml({ html: '<p>x</p>', text: 'x', content: 'About [[Freedom]] and [[Grace|grace]].' })).toBe(
+      '<aside class="pv-note">About Freedom and grace.</aside><p>x</p>',
+    );
+  });
+
   it('sets plain text as escaped paragraphs when there is no markup', () => {
     expect(passageBodyHtml({ html: null, text: 'One  line\nwraps.\n\nTwo & <b>', content: '' })).toBe(
       '<p>One line wraps.</p><p>Two &amp; &lt;b&gt;</p>',

@@ -1,4 +1,5 @@
 import { Passage } from '../../core/dtos/note.dtos';
+import { noteWikilinksToText } from '../pipes/note-format.pipe';
 
 /**
  * The passage as markup for the viewer: its saved reading markup when there is
@@ -9,8 +10,9 @@ import { Passage } from '../../core/dtos/note.dtos';
 export function passageBodyHtml(passage: Pick<Passage, 'html' | 'text' | 'content'>): string {
   const body = passageTextHtml(passage);
   if (!body) return '';
-  // The reader's note opens the first page and turns away with it.
-  const note = passage.content?.trim();
+  // The reader's note opens the first page and turns away with it, its topic
+  // links read as the words they show in a card.
+  const note = noteWikilinksToText(passage.content ?? '').trim();
   return note ? `<aside class="pv-note">${escapeHtml(note)}</aside>${body}` : body;
 }
 
