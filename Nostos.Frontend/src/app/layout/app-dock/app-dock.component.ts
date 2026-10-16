@@ -120,43 +120,25 @@ function isNarrowViewport(): boolean {
         </a>
 
         @if (isNarrow()) {
-          @if (feedbackUrl()) {
-            <button
-              type="button"
-              class="dock-item"
-              [class.dock-item-open]="sheet.open()"
-              (click)="sheet.toggle()"
-              aria-haspopup="dialog"
-              aria-controls="mobile-more-sheet"
-              [attr.aria-expanded]="sheet.open()"
-              title="More"
-              data-testid="dock-more"
-            >
-              <span class="dock-icon">
-                <nostos-icon name="dots-three" [size]="20"></nostos-icon>
-              </span>
-              <span class="label">More</span>
-            </button>
-          } @else {
-            <a
-              routerLink="/settings"
-              (click)="handleDockClick('/settings', $event)"
-              routerLinkActive="active"
-              #settingsNarrowRla="routerLinkActive"
-              [class.pending]="pendingDestination() === '/settings'"
-              class="dock-item"
-              title="Settings"
-            >
-              <span class="dock-icon">
-                <nostos-icon
-                  name="gear-six"
-                  [size]="20"
-                  [weight]="isSelected('/settings', settingsNarrowRla.isActive) ? 'fill' : 'regular'"
-                ></nostos-icon>
-              </span>
-              <span class="label">Settings</span>
-            </a>
-          }
+          <!-- One More on every phone, whatever the deployment: the sheet holds
+               Search everything and Settings, and Send feedback where there is a
+               link, so SelfHosted and Cloud read the same. -->
+          <button
+            type="button"
+            class="dock-item"
+            [class.dock-item-open]="sheet.open()"
+            (click)="sheet.toggle()"
+            aria-haspopup="dialog"
+            aria-controls="mobile-more-sheet"
+            [attr.aria-expanded]="sheet.open()"
+            title="More"
+            data-testid="dock-more"
+          >
+            <span class="dock-icon">
+              <nostos-icon name="dots-three" [size]="20"></nostos-icon>
+            </span>
+            <span class="label">More</span>
+          </button>
         } @else {
           @if (launcher.available()) {
             <span class="dock-divider" aria-hidden="true"></span>

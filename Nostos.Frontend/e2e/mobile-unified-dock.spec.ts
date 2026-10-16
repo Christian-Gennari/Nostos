@@ -40,7 +40,7 @@ test('Ask Nostos takes the centre of a five-slot rail that still fits', async ({
       };
     }),
   );
-  expect(items.map((item) => item.label)).toEqual(['Library', 'Brain', 'Ask', 'Studio', 'Settings']);
+  expect(items.map((item) => item.label)).toEqual(['Library', 'Brain', 'Ask', 'Studio', 'More']);
   for (const item of items) {
     expect(item.width, `${item.label} tap width`).toBeGreaterThanOrEqual(MIN_TAP_TARGET);
     expect(item.height, `${item.label} tap height`).toBeGreaterThanOrEqual(MIN_TAP_TARGET);
