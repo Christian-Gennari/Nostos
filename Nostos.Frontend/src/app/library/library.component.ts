@@ -731,6 +731,18 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * The list's plain-text format: words in sentence case ("Audio", "Physical")
+   * and file types as the acronyms they are ("EPUB", "PDF"). The grid's badge
+   * keeps `getFormatLabel`, which it sets in capitals.
+   */
+  listFormatLabel(book: Book): string {
+    const label = this.getFormatLabel(book);
+    return label === 'AUDIO' || label === 'PHYSICAL'
+      ? label.charAt(0) + label.slice(1).toLowerCase()
+      : label;
+  }
+
   getFormatLabel(book: Book | EditionSummaryDto): string {
     const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
     if (extension) {

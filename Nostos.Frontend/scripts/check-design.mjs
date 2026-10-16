@@ -284,8 +284,10 @@ for (const f of files) {
    were hand-built white/red pills with rgba() and #fff/#111 literals, and are now
    appButton/appIconButton on the --cover-disc-* overlay material.
    Lowered 46 -> 45 by the breathable library pass: the sidebar's selected row
-   lost its `rgba(0, 0, 0, 0.08)` contact shadow along with the filled pill. */
-const LITERAL_COLOUR_BUDGET = 45;
+   lost its `rgba(0, 0, 0, 0.08)` contact shadow along with the filled pill.
+   Lowered 45 -> 43 by its grid/list half: the list's thumbnail shadow and its
+   restyled format capsule (each with an rgba literal) are gone. */
+const LITERAL_COLOUR_BUDGET = 43;
 
 {
   const ALLOW = [
