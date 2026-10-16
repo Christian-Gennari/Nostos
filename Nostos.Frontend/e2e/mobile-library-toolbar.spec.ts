@@ -76,12 +76,11 @@ test('mobile header reads navigation left, actions right, on one touch rung', as
   expect(boxes.collections!.x).toBeGreaterThanOrEqual(8);
 
   // The actions group at the right edge, in order: sort, view, add. The add
-  // button ends on the search row's right edge (the binoculars button).
+  // button ends on the search field's right edge.
   expect(boxes.sort!.x).toBeGreaterThan(boxes.label!.x + boxes.label!.width);
   expect(boxes.view!.x).toBeGreaterThan(boxes.sort!.x + boxes.sort!.width - 1);
   expect(boxes.add!.x).toBeGreaterThan(boxes.view!.x + boxes.view!.width - 1);
-  const everything = await page.locator('[data-testid="library-search-everything"]').boundingBox();
-  expect(Math.abs(boxes.add!.x + boxes.add!.width - (everything!.x + everything!.width))).toBeLessThanOrEqual(1);
+  expect(Math.abs(boxes.add!.x + boxes.add!.width - (boxes.search!.x + boxes.search!.width))).toBeLessThanOrEqual(1);
 
   // One height for the row's buttons and dropdown, and it is the touch rung:
   // 44px. The view toggle is the exception by design: its options are 44px,

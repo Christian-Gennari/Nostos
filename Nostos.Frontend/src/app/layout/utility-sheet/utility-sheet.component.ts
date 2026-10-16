@@ -22,8 +22,9 @@ import { UtilitySheetService } from './utility-sheet.service';
 
 /**
  * The narrow-viewport More surface: a compact first-level utility menu that
- * keeps Feedback and Settings one tap below the dock without spending a fifth
- * dock slot or adding another floating control.
+ * keeps Search everything and Settings (and Feedback, where the deployment has
+ * a link) one tap below the dock without spending a fifth dock slot or adding
+ * another floating control. Every deployment gets it, so phones look alike.
  *
  * It deliberately sits on the shell's existing layer ladder — backdrop under
  * drawer, both under the assistant — so an open Ask Nostos surface always keeps

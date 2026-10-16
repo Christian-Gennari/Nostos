@@ -245,7 +245,7 @@ describe('UtilitySheetComponent', () => {
     expect(query('[data-testid="utility-sheet"]')).toBeNull();
   });
 
-  it('shows only Settings when the deployment has no feedback destination', async () => {
+  it('keeps Search everything and Settings when the deployment has no feedback destination', async () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       providers: [
@@ -266,6 +266,9 @@ describe('UtilitySheetComponent', () => {
     expect(
       selfHostedFixture.nativeElement.querySelector('[data-testid="utility-sheet-feedback"]'),
     ).toBeNull();
+    expect(
+      selfHostedFixture.nativeElement.querySelector('[data-testid="utility-sheet-search"]'),
+    ).toBeTruthy();
     expect(
       selfHostedFixture.nativeElement.querySelector('[data-testid="utility-sheet-settings"]'),
     ).toBeTruthy();

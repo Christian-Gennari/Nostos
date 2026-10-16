@@ -227,7 +227,7 @@ describe('AppDockComponent', () => {
     expect(iconOf('Library')).toContain(firstPath(NOSTOS_ICONS.books.regular));
   });
 
-  it('replaces the Settings slot with More on a narrow Cloud shell', () => {
+  it('puts More in the Settings slot on a narrow Cloud shell', () => {
     const fixture = render(390);
 
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeTruthy();
@@ -242,15 +242,15 @@ describe('AppDockComponent', () => {
     expect(more.classList).not.toContain('dock-item-open');
   });
 
-  it('keeps Settings as a direct dock destination on a narrow SelfHosted shell', () => {
+  it('gives a narrow SelfHosted shell the same More slot, with no feedback link', () => {
     capabilities = selfHostedCapabilities;
     const fixture = render(390);
 
-    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeTruthy();
     const labels = Array.from<Element>(
       fixture.nativeElement.querySelectorAll('.dock-item .label'),
     ).map((label) => label.textContent?.trim());
-    expect(labels).toEqual(['Library', 'Brain', 'Studio', 'Settings']);
+    expect(labels).toEqual(['Library', 'Brain', 'Studio', 'More']);
   });
 
   it('opens and closes the More sheet from the dock trigger', () => {
@@ -276,7 +276,7 @@ describe('AppDockComponent', () => {
     expect(sheet.open()).toBe(false);
   });
 
-  it('adopts the Cloud utility when capabilities resolve late', () => {
+  it('shows More before capabilities resolve and keeps it after', () => {
     const pending = new Subject<DeploymentCapabilities>();
     TestBed.overrideProvider(DeploymentCapabilitiesService, {
       useValue: { get: () => pending.asObservable() },
@@ -284,13 +284,13 @@ describe('AppDockComponent', () => {
 
     const fixture = render(390);
 
-    // Before the answer, the shipped SelfHosted shape stands (no guessed URL).
-    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
+    // More does not wait on the answer: the dock does not shift when it lands.
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeTruthy();
     const labels = () =>
       Array.from<Element>(fixture.nativeElement.querySelectorAll('.dock-item .label')).map(
         (label) => label.textContent?.trim(),
       );
-    expect(labels()).toEqual(['Library', 'Brain', 'Studio', 'Settings']);
+    expect(labels()).toEqual(['Library', 'Brain', 'Studio', 'More']);
 
     pending.next(cloudCapabilities);
     fixture.detectChanges();
