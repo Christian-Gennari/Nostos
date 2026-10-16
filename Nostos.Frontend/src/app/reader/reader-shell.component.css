@@ -1533,3 +1533,177 @@ app-note-card.is-flashed {
     grid-column: 2;
   }
 }
+
+/* --- Passages (issue #1014) ----------------------------------------------
+   One end marked: a quiet one-line pill that waits, across page turns and
+   chapters, for the other end. It floats where the read-aloud bar and the save
+   notice do: over the foot of the page, clear of the pager. */
+.passage-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  z-index: 56;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100% - 1.5rem);
+  padding: 0.25rem 0.3rem 0.25rem 0.35rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  box-shadow: var(--shadow-sm);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.reader-layout.immersive .passage-pill {
+  bottom: calc(64px + 0.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.passage-pill-glyph {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-muted);
+}
+
+.passage-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.passage-pill-text strong {
+  font-weight: 600;
+}
+
+.passage-pill-hint {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 560px) {
+  .passage-pill-hint {
+    display: none;
+  }
+}
+
+/* appButton sm; a pill's actions are rounded like the pill. */
+button.passage-pill-action {
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+}
+
+.passage-pill-cancel {
+  flex-shrink: 0;
+}
+
+/* The mark button reads as the step it completes once one end is marked. */
+.selection-passage.is-completing {
+  color: var(--color-text-main);
+  background: var(--color-accent-bg);
+}
+
+/* The save sheet. */
+.passage-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.passage-sheet-glyph {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-action);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-muted);
+}
+
+.passage-sheet-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.passage-sheet-title {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--color-text-main);
+}
+
+.passage-sheet-meta {
+  margin: 0.1rem 0 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.passage-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1.1rem 1.25rem 1.25rem;
+}
+
+.passage-sheet-status {
+  margin: 1.5rem auto;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.passage-sheet-label {
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+
+.passage-sheet-optional {
+  font-weight: 400;
+  color: var(--color-text-light);
+}
+
+.passage-sheet-input {
+  margin-bottom: 0.6rem;
+}
+
+.passage-sheet-excerpt {
+  margin: 0 0 0.75rem;
+  padding: 0.15rem 0 0.15rem 1rem;
+  border-left: 3px solid var(--color-accent);
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--color-text-main);
+}
+
+.passage-sheet-excerpt p {
+  margin: 0;
+}
+
+.passage-sheet-excerpt .passage-sheet-closing {
+  margin-top: 0.5rem;
+}
+
+.passage-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}

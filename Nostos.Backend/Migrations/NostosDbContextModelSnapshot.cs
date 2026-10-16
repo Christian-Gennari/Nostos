@@ -974,6 +974,24 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("note");
+
+                    b.Property<string>("PassageEnd")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PassageHtml")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PassageTitle")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProcessingMode")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

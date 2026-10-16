@@ -18,6 +18,78 @@ export interface Note {
    * when none was recorded; `noteHighlightColour` resolves what to draw.
    */
   highlightColour?: string | null;
+  /** `note` or `passage` (issue #1014); absent on older payloads, meaning note. */
+  kind?: NoteKind;
+  /** A passage's title. */
+  passageTitle?: string | null;
+  /** Where a passage ends, in the same terms as its start anchor. */
+  passageEnd?: string | null;
+  /** A passage's length in words; for a passage `selectedText` is only its opening. */
+  passageWordCount?: number | null;
+}
+
+export type NoteKind = 'note' | 'passage';
+
+/** The fields that make a note a passage, shared by every note shape. */
+export interface PassageFields {
+  kind?: NoteKind | string;
+  passageTitle?: string | null;
+  passageEnd?: string | null;
+  passageWordCount?: number | null;
+}
+
+/**
+ * A passage in full, for the passage viewer (issue #1014). Start and end are
+ * in the terms `anchorKind` names: CFIs, page numbers or seconds.
+ */
+export interface Passage {
+  id: string;
+  bookId: string;
+  bookTitle: string | null;
+  title: string;
+  anchorKind: 'epub_cfi' | 'pdf_page' | 'audio_timestamp' | string;
+  start: string;
+  end: string;
+  html: string | null;
+  text: string | null;
+  wordCount: number;
+  content: string;
+  highlightColour: string | null;
+  createdAt: string;
+}
+
+/** Whether a note is a passage: a stretch of the book saved to be read again. */
+export function isPassage(note: PassageFields | null | undefined): boolean {
+  return note?.kind === 'passage';
+}
+
+/** Minutes a passage takes to read, at an unhurried 250 words a minute. */
+export function passageReadingMinutes(words: number): number {
+  return Math.max(1, Math.round(words / 250));
+}
+
+/** "6,800 words · 27 min", or the page range of a PDF passage, or a clip's length. */
+export function passageSizeLabel(
+  note: PassageFields & { sourceAnchorKind?: string; sourceAnchorValue?: string | null },
+): string {
+  const kind = note.sourceAnchorKind?.toLowerCase();
+  if (kind === 'pdf_page') {
+    const first = Number(note.sourceAnchorValue);
+    const last = Number(note.passageEnd);
+    if (Number.isInteger(first) && Number.isInteger(last)) {
+      return first === last ? `Page ${first}` : `Pages ${first}–${last}`;
+    }
+  }
+  if (kind === 'audio_timestamp') {
+    const from = Number(note.sourceAnchorValue);
+    const to = Number(note.passageEnd);
+    if (Number.isFinite(from) && Number.isFinite(to) && to > from) {
+      return `${formatAudioTime(from)}–${formatAudioTime(to)} · ${formatAudioTime(to - from)}`;
+    }
+  }
+  const words = note.passageWordCount ?? 0;
+  if (words <= 0) return 'Passage';
+  return `${words.toLocaleString('en-US')} words · ${passageReadingMinutes(words)} min`;
 }
 
 /**
@@ -146,6 +218,11 @@ export interface CreateNoteDto {
   sourceAnchorKind?: string;
   sourceAnchorValue?: string;
   anchorVerified?: boolean;
+  /** A passage (issue #1014): start in the anchor, end here, text in selectedText. */
+  kind?: NoteKind;
+  passageTitle?: string;
+  passageEnd?: string;
+  passageHtml?: string;
 }
 
 export interface UpdateNoteDto {
@@ -153,6 +230,8 @@ export interface UpdateNoteDto {
   selectedText?: string; // <--- ADDED
   /** Omitted leaves the stored pen as it is. */
   highlightColour?: string;
+  /** A passage's title; omitted leaves it as it is. */
+  passageTitle?: string;
 }
 
 /**
@@ -176,6 +255,10 @@ export interface NoteSearchHit {
   captureSource?: string;
   processingMode?: string;
   hasRawContent?: boolean;
+  kind?: NoteKind;
+  passageTitle?: string | null;
+  passageEnd?: string | null;
+  passageWordCount?: number | null;
 }
 
 export interface NoteRawTranscript {

@@ -425,3 +425,128 @@ button.expand-btn {
     min-height: 44px;
   }
 }
+
+/* --- Passage (issue #1014) ------------------------------------------------
+   A kept passage is a very big highlight. Its card leads with a title to know
+   it by and its size, then its opening, set like a quotation but cut short:
+   the passage is read in the passage viewer, never unfolded in a list. */
+.passage-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.passage-glyph {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-action);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-muted);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.passage-head:hover .passage-glyph,
+.passage-head:focus-visible .passage-glyph {
+  background: var(--color-accent-bg);
+  color: var(--color-text-main);
+}
+
+.passage-head:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.passage-heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.passage-title {
+  font-family: 'Newsreader', serif;
+  font-size: 1.12rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+  color: var(--color-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.passage-head:hover .passage-title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.passage-size {
+  margin-top: 0.1rem;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-light);
+}
+
+/* The opening: four lines of it, fading into the rest. */
+.is-kept-passage .quote-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 1.02rem;
+  white-space: normal;
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}
+
+.passage-read {
+  display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.passage-read:hover {
+  background: var(--bg-hover);
+  border-color: var(--control-border-hover, var(--border-color));
+}
+
+.passage-read:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.edit-passage-title {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.passage-read + .note-actions {
+  margin-left: 0.4rem;
+}

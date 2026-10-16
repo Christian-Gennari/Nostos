@@ -47,6 +47,28 @@ public static class NoteErrorCodes
     // A highlight colour is one of the four pen names; anything else is refused
     // rather than stored and silently drawn as the default.
     public const string InvalidHighlightColour = "invalid_highlight_colour";
+
+    // A passage needs a title and both ends in its book's own terms; one that
+    // is incomplete, or too large to be a passage, is refused (issue #1014).
+    public const string InvalidPassage = "invalid_passage";
+}
+
+/// <summary>
+/// What kind of thing a note is (issue #1014). A passage is a very big
+/// highlight, read again in the passage viewer rather than drawn in the book.
+/// </summary>
+public static class NoteKinds
+{
+    public const string Note = "note";
+    public const string Passage = "passage";
+
+    /// <summary>The canonical kind, or null for an unknown one.</summary>
+    public static string? Normalize(string? value)
+    {
+        var name = value?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(name)) return Note;
+        return name is Note or Passage ? name : null;
+    }
 }
 
 /// <summary>

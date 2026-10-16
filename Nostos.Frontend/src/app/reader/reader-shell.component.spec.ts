@@ -192,6 +192,7 @@ class NoteCardStub {
   topicMap = input<unknown>(null);
   showNavigation = input(false);
   audioTime = input<number | null>(null);
+  passageViewerOptions = input<unknown>(null);
   update = output<unknown>();
   delete = output<unknown>();
   cardClick = output<unknown>();

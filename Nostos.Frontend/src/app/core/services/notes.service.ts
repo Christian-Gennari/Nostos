@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Note, CreateNoteDto, NoteSearchHit, NoteSearchPage, NoteRawTranscript, UpdateNoteDto } from '../dtos/note.dtos';
+import { Note, CreateNoteDto, NoteSearchHit, NoteSearchPage, NoteRawTranscript, Passage, UpdateNoteDto } from '../dtos/note.dtos';
 
 /**
  * The assistant's capture payload (issue #261 §4). Appended: it extends the
@@ -32,6 +32,11 @@ export class NotesService {
 
   get(id: string): Observable<NoteSearchHit> {
     return this.http.get<NoteSearchHit>(`/api/notes/${id}`);
+  }
+
+  /** A passage in full (issue #1014); the lists carry only its opening. */
+  getPassage(id: string): Observable<Passage> {
+    return this.http.get<Passage>(`/api/notes/${id}/passage`);
   }
 
   create(bookId: string, dto: CreateNoteDto): Observable<Note> {

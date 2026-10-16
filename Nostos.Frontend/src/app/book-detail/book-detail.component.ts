@@ -447,8 +447,9 @@ export class BookDetail implements OnInit, OnDestroy {
     content: string;
     selectedText?: string;
     highlightColour?: string;
+    passageTitle?: string;
   }): void {
-    this.store.updateNote(event.id, event.content, event.selectedText, event.highlightColour);
+    this.store.updateNote(event.id, event.content, event.selectedText, event.highlightColour, event.passageTitle);
   }
 
   onDeleteNote(id: string): void {

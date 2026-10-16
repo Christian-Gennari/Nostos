@@ -2,6 +2,7 @@ using Nostos.Backend.Services;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Mapping;
@@ -201,7 +202,8 @@ public static class MappingExtensions
             BookId: model.BookId,
             Content: model.Content,
             CfiRange: model.CfiRange,
-            SelectedText: model.SelectedText,
+            // A passage travels as its opening; the viewer fetches the rest.
+            SelectedText: model.IsPassage() ? PassageText.Opening(model.SelectedText) : model.SelectedText,
             CreatedAt: model.CreatedAt,
             BookTitle: model.Book?.Title,
             // Capture provenance (issue #260 §2, §4). These are distinct from
@@ -212,8 +214,30 @@ public static class MappingExtensions
             SourceAnchorKind: model.SourceAnchorKind,
             SourceAnchorValue: model.SourceAnchorValue,
             AnchorVerified: model.AnchorVerified,
-            HighlightColour: model.HighlightColour
+            HighlightColour: model.HighlightColour,
+            Kind: model.Kind,
+            PassageTitle: model.PassageTitle,
+            PassageEnd: model.PassageEnd,
+            PassageWordCount: model.IsPassage() ? PassageText.WordCount(model.SelectedText) : null
         );
+
+    public static bool IsPassage(this NoteModel model) => model.Kind == NoteKinds.Passage;
+
+    public static PassageDto ToPassageDto(this NoteModel model) =>
+        new(
+            Id: model.Id,
+            BookId: model.BookId,
+            BookTitle: model.Book?.Title,
+            Title: model.PassageTitle ?? string.Empty,
+            AnchorKind: model.SourceAnchorKind,
+            Start: model.SourceAnchorValue ?? string.Empty,
+            End: model.PassageEnd ?? string.Empty,
+            Html: model.PassageHtml,
+            Text: model.SelectedText,
+            WordCount: PassageText.WordCount(model.SelectedText),
+            Content: model.Content,
+            HighlightColour: model.HighlightColour,
+            CreatedAt: model.CreatedAt);
 
     public static CollectionDto ToDto(this CollectionModel model) =>
         new CollectionDto(model.Id, model.Name, model.ParentId);
@@ -314,6 +338,10 @@ public static class MappingExtensions
             SourceAnchorValue = dto.SourceAnchorValue,
             AnchorVerified = dto.AnchorVerified,
             HighlightColour = dto.HighlightColour,
+            Kind = dto.Kind,
+            PassageTitle = dto.PassageTitle,
+            PassageEnd = dto.PassageEnd,
+            PassageHtml = dto.PassageHtml,
         };
 
     public static CollectionModel ToModel(this CreateCollectionDto dto) =>
@@ -442,10 +470,17 @@ public static class MappingExtensions
     public static void Apply(this NoteModel model, UpdateNoteDto dto)
     {
         model.Content = dto.Content;
-        // Update SelectedText if provided in the DTO
-        if (dto.SelectedText != null)
+        // Update SelectedText if provided in the DTO. A passage's text is fixed
+        // when it is saved: the lists carry only its opening, and an edit that
+        // sent that back must not cut the passage down to it.
+        if (dto.SelectedText != null && !model.IsPassage())
         {
             model.SelectedText = dto.SelectedText;
+        }
+
+        if (dto.PassageTitle != null && model.IsPassage())
+        {
+            model.PassageTitle = dto.PassageTitle.Trim();
         }
 
         // Null means "not sent": editing a note's text must not clear its pen.

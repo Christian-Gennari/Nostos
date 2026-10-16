@@ -270,6 +270,36 @@
       <div class="reader-save-feedback" role="status" aria-live="polite">{{ saveFeedback() }}</div>
       }
 
+      @if (passageMark(); as mark) {
+      @if (pendingSelectionText() === null) {
+      <!-- A passage with one end marked (issue #1014): it waits here, across
+           page turns, chapters and visits, until the other end is marked. -->
+      <div class="passage-pill" role="status" data-testid="passage-pill">
+        <span class="passage-pill-glyph" aria-hidden="true">
+          <nostos-icon concept="passage" [size]="14"></nostos-icon>
+        </span>
+        <span class="passage-pill-text">
+          <strong>Passage started</strong>
+          <span class="passage-pill-hint"> · select its other end</span>
+        </span>
+        <button appButton variant="secondary" size="sm" type="button" class="passage-pill-action" (click)="goToPassageMark()" data-testid="passage-pill-go">
+          Go to mark
+        </button>
+        <button
+          appIconButton
+          icon="x"
+          size="xxs"
+          type="button"
+          class="passage-pill-cancel"
+          aria-label="Cancel passage"
+          title="Cancel passage"
+          data-testid="passage-pill-cancel"
+          (click)="cancelPassageMark()"
+        ></button>
+      </div>
+      }
+      }
+
       @if (pendingSelectionText() !== null) {
       <!-- One set of selection actions (#650), placed two ways. A fine-pointer
            desktop anchors it at the marked text; phones and touch-first
@@ -310,6 +340,22 @@
             title="Copy passage"
             data-testid="selection-copy"
           ></button>
+          @if (canMarkPassage()) {
+            <!-- One end of a passage (issue #1014); the second mark, anywhere
+                 in the book and in either order, opens the save sheet. -->
+            <button
+              appIconButton
+              icon="scroll"
+              type="button"
+              class="selection-passage"
+              [class.is-completing]="!!passageMark()"
+              (click)="markPassage()"
+              [disabled]="highlightSaving()"
+              [attr.aria-label]="passageMark() ? 'Complete passage here' : 'Mark passage'"
+              [title]="passageMark() ? 'Complete passage here' : 'Mark passage'"
+              data-testid="selection-mark-passage"
+            ></button>
+          }
           @if (askNostosAvailable()) {
             <button
               appIconButton
@@ -713,6 +759,7 @@
           [topicMap]="topicMap()"
           [showNavigation]="true"
           [audioTime]="noteAudioTime(note)"
+          [passageViewerOptions]="passageViewerOptions"
           (update)="onUpdateNote($event)"
           (delete)="onDeleteNote($event)"
           (cardClick)="onJumpToNote(note)"
@@ -1029,3 +1076,94 @@
   [visibleExcerpt]="switchVisibleExcerpt()"
   (closed)="switchEditionOpen.set(false)"
 />
+
+<!-- Save a passage (issue #1014): both ends are marked; title it and keep it. -->
+<app-modal-shell
+  [isOpen]="passageSheetOpen()"
+  variant="sheet"
+  cardClass="passage-sheet-card"
+  [maxWidth]="'560px'"
+  [layer]="120"
+  [busy]="passageSaving()"
+  [trapFocus]="true"
+  ariaLabelledBy="passage-sheet-title"
+  [style.--modal-head-padding]="'1.1rem 1.25rem 0.85rem'"
+  (closed)="closePassageSheet()"
+>
+  <header class="passage-sheet-head" shellHeader>
+    <span class="passage-sheet-glyph" aria-hidden="true"><nostos-icon concept="passage" [size]="18"></nostos-icon></span>
+    <div class="passage-sheet-heading">
+      <h2 id="passage-sheet-title" class="passage-sheet-title">Save passage</h2>
+      @if (passageDraft(); as draft) {
+      <p class="passage-sheet-meta" data-testid="passage-sheet-size">
+        {{ draft.words.toLocaleString('en-US') }} words · {{ readingMinutes(draft.words) }} min
+      </p>
+      }
+    </div>
+    <button
+      appIconButton
+      icon="x"
+      type="button"
+      aria-label="Close"
+      title="Close"
+      [disabled]="passageSaving()"
+      (click)="closePassageSheet()"
+    ></button>
+  </header>
+
+  <div class="passage-sheet-body">
+    @if (passageBuilding()) {
+    <p class="passage-sheet-status" role="status">Gathering the passage…</p>
+    } @else if (passageBuildFailed()) {
+    <p class="passage-sheet-status" role="alert" data-testid="passage-sheet-error">
+      The passage between those two marks could not be read. Mark both ends again.
+    </p>
+    } @else if (passageDraft(); as draft) {
+    <label class="passage-sheet-label" for="passage-sheet-title-input">Title</label>
+    <input
+      appInput
+      id="passage-sheet-title-input"
+      class="passage-sheet-input"
+      maxlength="300"
+      [value]="passageTitle()"
+      (input)="passageTitle.set($any($event.target).value)"
+      (keydown.enter)="savePassage()"
+      data-testid="passage-sheet-title-input"
+    />
+
+    <div class="passage-sheet-excerpt" data-testid="passage-sheet-excerpt">
+      <p class="passage-sheet-opening">{{ draft.opening }}</p>
+      @if (draft.closing !== draft.opening) {
+      <p class="passage-sheet-closing">{{ draft.closing }}</p>
+      }
+    </div>
+
+    <label class="passage-sheet-label" for="passage-sheet-note">Note <span class="passage-sheet-optional">(optional)</span></label>
+    <textarea
+      appTextarea
+      id="passage-sheet-note"
+      rows="3"
+      placeholder="Why keep this passage?"
+      [value]="passageNote()"
+      (input)="passageNote.set($any($event.target).value)"
+      data-testid="passage-sheet-note"
+    ></textarea>
+    }
+  </div>
+
+  <div class="passage-sheet-actions" shellActions>
+    <button appButton variant="ghost" type="button" [disabled]="passageSaving()" (click)="closePassageSheet()">Cancel</button>
+    <button
+      appButton
+      variant="primary"
+      type="button"
+      [disabled]="!passageDraft() || !passageTitle().trim() || passageSaving()"
+      [busy]="passageSaving()"
+      data-testid="passage-sheet-save"
+      (click)="savePassage()"
+    >
+      <nostos-icon concept="passage" [size]="16"></nostos-icon>
+      {{ passageSaving() ? 'Saving…' : 'Save passage' }}
+    </button>
+  </div>
+</app-modal-shell>

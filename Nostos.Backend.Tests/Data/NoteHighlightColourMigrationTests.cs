@@ -109,6 +109,8 @@ public sealed class NoteHighlightColourMigrationTests : IDisposable
         {
             await db.GetService<IMigrator>().MigrateAsync(migrationId);
             (await db.Database.GetPendingMigrationsAsync()).Should().NotContain(migrationId);
+            // The current model also reads the later passage columns.
+            await LaterBookColumns.RestorePassageColumnsAsync(db);
         }
 
         await using (var db = new NostosDbContext(options))

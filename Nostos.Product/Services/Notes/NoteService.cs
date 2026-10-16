@@ -238,15 +238,47 @@ public sealed class NoteService : INoteService
             return NoteCommandResult<NoteDto>.Fail(
                 NoteErrorCodes.BookNotFound, $"Book {bookId} not found.");
 
-        if (string.IsNullOrWhiteSpace(dto.Content) && string.IsNullOrWhiteSpace(dto.SelectedText))
+        var kind = NoteKinds.Normalize(dto.Kind);
+        if (kind is null)
+            return InvalidPassage($"Kind must be one of: {NoteKinds.Note}, {NoteKinds.Passage}.");
+
+        if (kind == NoteKinds.Passage)
+        {
+            var passageError = ValidatePassage(dto);
+            if (passageError is not null)
+                return InvalidPassage(passageError);
+        }
+        else if (string.IsNullOrWhiteSpace(dto.Content) && string.IsNullOrWhiteSpace(dto.SelectedText))
+        {
             return NoteCommandResult<NoteDto>.Fail(
                 NoteErrorCodes.EmptyNote, "Note must have content or selected text.");
+        }
 
         if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
             return InvalidHighlightColour();
 
         var model = dto.ToModel(bookId);
         model.HighlightColour = colour;
+        model.Kind = kind;
+        if (kind == NoteKinds.Passage)
+        {
+            model.PassageTitle = dto.PassageTitle!.Trim();
+            model.PassageEnd = dto.PassageEnd!.Trim();
+            model.SourceAnchorValue = dto.SourceAnchorValue!.Trim();
+            model.PassageHtml = string.IsNullOrWhiteSpace(dto.PassageHtml)
+                ? null
+                : PassageText.Sanitize(dto.PassageHtml);
+            // Its two ends were taken from the open book, not inferred.
+            model.AnchorVerified = true;
+            // Never a highlight in the book: the passage viewer reads it.
+            model.CfiRange = null;
+        }
+        else
+        {
+            model.PassageTitle = null;
+            model.PassageEnd = null;
+            model.PassageHtml = null;
+        }
 
         // Between the raw transcript and the stored note (issue #262 §7): a
         // non-verbatim mode rewrites Content from the raw capture, which is kept
@@ -345,6 +377,13 @@ public sealed class NoteService : INoteService
         if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
             return InvalidHighlightColour();
 
+        if (existing.IsPassage() && dto.PassageTitle is not null)
+        {
+            var title = dto.PassageTitle.Trim();
+            if (title.Length == 0 || title.Length > PassageTitleMaxLength)
+                return InvalidPassage($"A passage title is 1 to {PassageTitleMaxLength} characters.");
+        }
+
         existing.Apply(dto with { HighlightColour = colour });
 
         // Re-process topics (the processor clears old links then re-adds).
@@ -365,6 +404,69 @@ public sealed class NoteService : INoteService
         if (string.IsNullOrWhiteSpace(value)) return true;
         colour = NoteHighlightColours.Normalize(value);
         return colour is not null;
+    }
+
+    private const int PassageTitleMaxLength = 300;
+    private const int PassageAnchorMaxLength = 1024;
+
+    // The terms a passage's two ends can be given in, one per reader.
+    private static readonly HashSet<string> PassageAnchorKinds =
+        new(StringComparer.Ordinal) { "epub_cfi", "pdf_page", "audio_timestamp" };
+
+    /// <summary>Why a passage cannot be saved, or null when it can.</summary>
+    private static string? ValidatePassage(CreateNoteDto dto)
+    {
+        var title = dto.PassageTitle?.Trim();
+        if (string.IsNullOrEmpty(title) || title.Length > PassageTitleMaxLength)
+            return $"A passage title is 1 to {PassageTitleMaxLength} characters.";
+
+        if (!PassageAnchorKinds.Contains(dto.SourceAnchorKind))
+            return $"A passage's ends are given as one of: {string.Join(", ", PassageAnchorKinds)}.";
+
+        var start = dto.SourceAnchorValue?.Trim();
+        var end = dto.PassageEnd?.Trim();
+        if (string.IsNullOrEmpty(start) || string.IsNullOrEmpty(end)
+            || start.Length > PassageAnchorMaxLength || end.Length > PassageAnchorMaxLength)
+            return "A passage needs both ends.";
+
+        if (dto.SourceAnchorKind == "pdf_page")
+        {
+            if (!int.TryParse(start, out var first) || !int.TryParse(end, out var last)
+                || first < 1 || last < first)
+                return "A PDF passage is a range of pages, first to last.";
+        }
+        else if (dto.SourceAnchorKind == "audio_timestamp")
+        {
+            if (!double.TryParse(start, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var from)
+                || !double.TryParse(end, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var to)
+                || from < 0 || to <= from)
+                return "An audio passage runs from an earlier time to a later one.";
+        }
+        else if (string.IsNullOrWhiteSpace(dto.SelectedText))
+        {
+            return "An EPUB passage carries its text.";
+        }
+
+        if (dto.SelectedText is { Length: > PassageText.MaxTextLength }
+            || dto.PassageHtml is { Length: > PassageText.MaxHtmlLength })
+            return "That is too long to save as one passage.";
+
+        return null;
+    }
+
+    private static NoteCommandResult<NoteDto> InvalidPassage(string message) =>
+        NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.InvalidPassage, message);
+
+    public async Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default)
+    {
+        var note = await _db.Notes
+            .AsNoTracking()
+            .Include(n => n.Book)
+            .FirstOrDefaultAsync(n => n.Id == noteId, ct);
+
+        return note is null || !note.IsPassage() ? null : note.ToPassageDto();
     }
 
     private static NoteCommandResult<NoteDto> InvalidHighlightColour() =>
@@ -671,7 +773,9 @@ public sealed class NoteService : INoteService
         n.BookId,
         n.Book?.Title,
         n.Content,
-        n.SelectedText,
+        // A passage travels as its opening; the snippet still finds the match
+        // anywhere in it.
+        n.IsPassage() ? PassageText.Opening(n.SelectedText) : n.SelectedText,
         Snippet(n.Content, n.SelectedText, term),
         n.NoteTopics
             .Where(nc => nc.Topic != null)
@@ -685,7 +789,11 @@ public sealed class NoteService : INoteService
         n.AnchorVerified,
         n.CaptureSource,
         n.ProcessingMode,
-        !string.IsNullOrWhiteSpace(n.RawContent));
+        !string.IsNullOrWhiteSpace(n.RawContent),
+        n.Kind,
+        n.PassageTitle,
+        n.PassageEnd,
+        n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null);
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here

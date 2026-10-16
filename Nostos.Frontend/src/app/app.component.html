@@ -9,6 +9,11 @@
     <app-command-palette />
   }
   <app-highlight-import-modal />
+  <!-- The passage viewer (issue #1014), opened from any note list through
+       PassageViewerService. Loaded on first open. -->
+  @defer (when passageViewer.request(); prefetch on idle) {
+    <app-passage-viewer />
+  }
   <app-assistant />
 } @else {
   <app-cloud-entry />

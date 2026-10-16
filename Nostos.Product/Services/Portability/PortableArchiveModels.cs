@@ -176,7 +176,13 @@ internal sealed record PortableNote(
     // The highlighter pen (issue #861). Appended and optional, with no data
     // version bump: an archive written before it reads as "no pen recorded",
     // which is drawn in the default pen exactly as it was before export.
-    string? HighlightColour = null);
+    string? HighlightColour = null,
+    // A passage (issue #1014). Appended and optional, with no data version
+    // bump: an archive written before passages reads every note as a note.
+    string? Kind = null,
+    string? PassageTitle = null,
+    string? PassageEnd = null,
+    string? PassageHtml = null);
 
 internal sealed record PortableTopic(
     Guid Id,

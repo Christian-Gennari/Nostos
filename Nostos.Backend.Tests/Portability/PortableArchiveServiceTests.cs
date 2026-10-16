@@ -121,6 +121,10 @@ public sealed class PortableArchiveServiceTests
             .AsNoTracking()
             .SingleAsync(x => x.Id == ids.NoteId);
         note.RawContent.Should().Be("raw thought");
+        note.Kind.Should().Be("passage", "a passage stays a passage through export and import");
+        note.PassageTitle.Should().Be("The Grand Inquisitor");
+        note.PassageEnd.Should().Be("epubcfi(/6/8!/4/20/1:12)");
+        note.PassageHtml.Should().Be("<p>selected <em>passage</em></p>");
         note.ProcessingMode.Should().Be("light_polish");
         note.SourceAnchorKind.Should().Be("epub_cfi");
         note.AnchorVerified.Should().BeTrue();

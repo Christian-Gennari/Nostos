@@ -3,6 +3,7 @@ import { Signal } from '@angular/core';
 import { ImportedNoteLocation, Note } from '../core/dtos/note.dtos';
 import { HighlightColour } from './highlight-colours';
 import { ReaderReadAloud } from './read-aloud/read-aloud.types';
+import { PassageDraft, PassageMark } from './passage/passage-mark';
 
 export interface TocItem {
   label: string;
@@ -77,6 +78,12 @@ export interface IReader {
    */
   commitHighlight(content?: string, colour?: HighlightColour): void;
   discardHighlight(): void;
+
+  // Passages (issue #1014): two marks, in either order, and what lies between.
+  /** The selection on offer as one end of a passage. */
+  passageMarkFromSelection?(): PassageMark | null;
+  /** The passage between two marks of this reader, in book order. */
+  buildPassage?(a: PassageMark, b: PassageMark): Promise<PassageDraft | null>;
 
   /** Present on a reader whose text can be read aloud. */
   readAloud?: ReaderReadAloud;

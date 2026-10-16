@@ -205,6 +205,12 @@ public sealed class PortableCompletenessInventoryTests
                     // The highlighter pen (issue #861): a restore that dropped
                     // it would turn every colour-coded highlight amber.
                     "HighlightColour",
+                    // Passages (issue #1014): without these a restored passage
+                    // would come back as a note with only its plain text.
+                    "Kind",
+                    "PassageTitle",
+                    "PassageEnd",
+                    "PassageHtml",
                 ],
                 excludedNavigations:
                 [

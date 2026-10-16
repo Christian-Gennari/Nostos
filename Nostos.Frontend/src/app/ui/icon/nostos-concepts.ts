@@ -40,6 +40,8 @@ export const NOSTOS_CONCEPTS = {
   /** Reading-room artefacts and annotations. */
   quote: 'quotes',
   note: 'note',
+  /** A passage (issue #1014): a long stretch of a book kept to read again. */
+  passage: 'scroll',
 
   /** The writing studio's AI suggestion surface. */
   aiSuggestion: 'sparkle',

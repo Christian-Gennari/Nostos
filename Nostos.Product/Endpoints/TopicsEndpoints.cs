@@ -1,5 +1,6 @@
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Mapping;
+using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -64,8 +65,17 @@ public static class TopicsEndpoints
                         nc.Note.SourceAnchorKind,
                         nc.Note.SourceAnchorValue,
                         nc.Note.AnchorVerified,
-                        nc.Note.HighlightColour
-                    ))
+                        nc.Note.HighlightColour,
+                        nc.Note.Kind,
+                        nc.Note.PassageTitle,
+                        nc.Note.PassageEnd,
+                        nc.Note.IsPassage() ? PassageText.WordCount(nc.Note.SelectedText) : null
+                    ) with
+                    {
+                        SelectedText = nc.Note.IsPassage()
+                            ? PassageText.Opening(nc.Note.SelectedText)
+                            : nc.Note.SelectedText,
+                    })
                     .ToList();
 
                 return Results.Ok(new TopicDetailDto(topic.Id, topic.Topic, notes));

@@ -12,6 +12,8 @@ public interface INoteService
 {
     Task<IReadOnlyList<NoteDto>> GetByBookAsync(Guid bookId, CancellationToken ct = default);
     Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default);
+    /// <summary>A passage in full for the passage viewer; null when the note is not one.</summary>
+    Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default);
     Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default);
     Task<NoteSearchPageDto> BrowseAsync(
         string? query, Guid? bookId, bool withoutTopics, bool oldestFirst,

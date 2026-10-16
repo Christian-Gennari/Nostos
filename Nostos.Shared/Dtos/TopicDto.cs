@@ -29,7 +29,12 @@ public record NoteContextDto(
     string? SourceAnchorValue = null,
     bool AnchorVerified = false,
     // APPENDED (issue #861): the note's highlighter pen, by name.
-    string? HighlightColour = null
+    string? HighlightColour = null,
+    // APPENDED (issue #1014): a passage. SelectedText is only its opening.
+    string Kind = "note",
+    string? PassageTitle = null,
+    string? PassageEnd = null,
+    int? PassageWordCount = null
 );
 
 // For the whole-brain knowledge graph
