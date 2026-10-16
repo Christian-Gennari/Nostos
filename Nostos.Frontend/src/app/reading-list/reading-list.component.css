@@ -130,16 +130,15 @@
   color: var(--color-text-light);
 }
 
+/* An empty shelf is a sentence on the page, not a dashed box: nothing can be
+   dropped here, so an outline only promised a target that does not exist. */
 .tier__empty,
 .reading-list__empty {
   margin: 0;
-  padding: 1.75rem 1.25rem;
-  border: 1px dashed var(--control-border);
-  border-radius: var(--radius-surface);
+  padding: 1rem 0;
   font-family: 'Newsreader', serif;
   font-style: italic;
   font-size: 1rem;
-  text-align: center;
   color: var(--color-text-muted);
 }
 

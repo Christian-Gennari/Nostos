@@ -388,7 +388,15 @@
      the Notes list, a collection in the sidebar. A row takes the action's
      corner: the Library sidebar drew its nav items at 8px and the collection
      tree directly under them at 6px, and the Brain's index at 6px. A row
-     inside a popover is a popover item, not this. */
+     inside a popover is a popover item, not this.
+
+     WHEN TO DRAW A SURFACE AT ALL: only around something you operate (a form,
+     a group of settings, an inline picker, a card in a set you scan). Text you
+     read (a synopsis, a review, an open note, a passage, an empty-state
+     sentence) sits on the page with a section label and space, and a hairline
+     where two runs of it meet. Do not put a bordered row inside a surface, and
+     do not repeat an outlined button once per item in a list: the second edge
+     is what made the book page read as a stack of cards (see #996). */
   --radius-surface: 10px;
   --radius-row: var(--radius-action);
 

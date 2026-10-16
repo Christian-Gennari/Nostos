@@ -190,14 +190,15 @@
   margin-bottom: 0;
 }
 
+/* The title heads its card by weight and position; no rule under it. The rows
+   below keep their separators, so a rule here only doubled the first one. */
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 15px 0 13px;
+  padding: 15px 0 4px;
   background: transparent;
-  border-bottom: 1px solid var(--border-light);
 }
 
 .card-header-copy {

@@ -1008,12 +1008,18 @@
   line-height: 1.45;
 }
 
+/* Aligned with the heading above it, not centred under it: with the note out
+   of its card, a centred column left the text starting 5rem in from the title
+   it belongs to. */
 .note-inspector-content {
   width: min(100%, 44rem);
-  margin: 0 auto;
+  margin: 0;
 }
 
-.note-inspector-card {
+/* Doubled with `.note-card` so it outweighs the card grid's 150px floor, which
+   is declared later in this file and used to win. Inside a padded card the
+   floor was hidden; on the page it left a gap under a short note. */
+.note-card.note-inspector-card {
   min-height: 0;
   margin: 0;
 }
@@ -1484,6 +1490,18 @@
   background: var(--bg-surface);
   border-color: var(--color-primary-dim);
   box-shadow: var(--shadow-sm);
+}
+
+/* The open note in the Notes and review inspectors is the page's subject, set
+   on the page like a topic's passages, not in a card. The card surface above
+   stays for notes shown as a set. */
+:host ::ng-deep .note-inspector-card app-note-card .note-card-container,
+:host ::ng-deep .note-inspector-card app-note-card .note-card-container:hover {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 :host ::ng-deep .reading-column .note-footer {
