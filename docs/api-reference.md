@@ -350,7 +350,7 @@ Delete a note and its topic links.
 
 ### E-reader highlight import — `/api/notes/imports`
 
-Settings → Library & data → E-reader highlights opens the review dialog. Select
+Settings → Library → E-reader highlights opens the review dialog. Select
 one Kobo `KoboReader.sqlite` or several KOReader `metadata.*.lua` sidecars. The
 server detects the format from the contents. Kobo files are read-only, with a
 256 MB upload limit; KOReader sidecars have a 2 MB limit.
