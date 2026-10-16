@@ -283,6 +283,25 @@ describe('ReadingList', () => {
     expect(later.disabled).toBe(true);
   });
 
+  it('offers no order to change while the shelf holds one book', async () => {
+    await create([entry({ id: 'only', nextPosition: 0 }), entry({ id: 'later' })]);
+
+    const card = host().querySelector('.shelf-card')!;
+    expect(card.querySelector('button[title="Earlier"]')).toBeNull();
+    expect(card.querySelector('button[title="Later"]')).toBeNull();
+    expect(text()).toContain("The one you'll read next");
+    expect(text()).not.toContain("in the order you'll read them");
+  });
+
+  it('gives the same title the same cover every time', async () => {
+    await create([entry({ id: 'a', title: 'Stoner', nextPosition: 0 })]);
+
+    const hue = component.coverHue(list.next()[0]);
+    expect(component.coverHue(entry({ id: 'other', title: 'Stoner' }))).toBe(hue);
+    const cover = host().querySelector('.shelf-card .cover') as HTMLElement;
+    expect(cover.style.getPropertyValue('--cover-hue')).toBe(String(hue));
+  });
+
   it('asks before removing, and removes only on confirm', async () => {
     await create([entry({ id: 'a', title: 'Pedro Páramo' })]);
 
