@@ -178,6 +178,17 @@
   line-height: 1.3;
 }
 
+.palette-item-label mark {
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: var(--color-brand-accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 .palette-item-label q {
   quotes: '“' '”';
   font-weight: 600;
@@ -222,7 +233,9 @@
   font-size: 0.72rem;
 }
 
-.palette-hint-toggle {
+.palette-hint-scopes {
+  display: flex;
+  gap: 0.875rem;
   margin-left: auto;
 }
 

@@ -49,23 +49,26 @@ export class RecentItemsService {
   /** Records an item whose label is already known (the palette's own results). */
   record(item: RecentItem): void {
     const rest = this._items().filter((i) => !(i.kind === item.kind && i.id === item.id));
-    const next = [item, ...rest].slice(0, MAX_ITEMS);
+    this.persist([item, ...rest].slice(0, MAX_ITEMS));
+  }
+
+  /** Follows a rename without moving the item up the list. */
+  relabel(kind: RecentKind, id: string, label: string): void {
+    if (!this._items().some((i) => i.kind === kind && i.id === id && i.label !== label)) return;
+    this.persist(this._items().map((i) => (i.kind === kind && i.id === id ? { ...i, label } : i)));
+  }
+
+  /** Drops an item that no longer opens (deleted since it was recorded). */
+  forget(kind: RecentKind, id: string): void {
+    this.persist(this._items().filter((i) => !(i.kind === kind && i.id === id)));
+  }
+
+  private persist(next: RecentItem[]): void {
     this._items.set(next);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // Private mode / storage disabled: the list still works for this session.
-    }
-  }
-
-  /** Drops an item that no longer opens (deleted since it was recorded). */
-  forget(kind: RecentKind, id: string): void {
-    const next = this._items().filter((i) => !(i.kind === kind && i.id === id));
-    this._items.set(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // See record().
     }
   }
 

@@ -4,7 +4,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import { CommandPalette, noteExcerpt } from './command-palette.component';
+import { CommandPalette, highlightParts, noteExcerpt, parseQuery } from './command-palette.component';
 import { CommandPaletteService } from './command-palette.service';
 import { RecentItemsService } from './recent-items.service';
 import { BooksService } from '../../core/services/books.service';
@@ -256,6 +256,86 @@ describe('CommandPalette', () => {
     });
   });
 
+  describe('with a scope prefix', () => {
+    it('> lists only actions, matched by the words after it', () => {
+      enableAssistant();
+      openPalette();
+      type('>');
+      expect(titles()).toEqual(['Actions']);
+      expect(component.entries().length).toBe(9);
+
+      type('> theme');
+      expect(component.entries().map((e) => e.id)).toEqual(['toggle-theme']);
+      // Scoped searches never become a question.
+      expect(component.entries().some((e) => e.kind === 'ask')).toBe(false);
+      expect(booksList).not.toHaveBeenCalled();
+      expect(notesSearch).not.toHaveBeenCalled();
+    });
+
+    it('# lists topics, the most used first, without asking the server', () => {
+      openPalette();
+      type('#');
+      expect(component.entries().map((e) => e.label)).toEqual(['Stoicism', 'Attention']);
+
+      type('#att');
+      expect(component.entries().map((e) => e.label)).toEqual(['Attention']);
+      expect(notesSearch).not.toHaveBeenCalled();
+      expect(booksList).not.toHaveBeenCalled();
+    });
+
+    it('@ searches books only, and lists recent books before anything is typed', () => {
+      TestBed.inject(RecentItemsService).record({ kind: 'book', id: 'b7', label: 'Dune', sub: 'Frank Herbert' });
+      TestBed.inject(RecentItemsService).record({ kind: 'topic', id: 't1', label: 'Stoicism', sub: '3 notes' });
+      openPalette();
+      type('@');
+      expect(titles()).toEqual(['Recent books']);
+      expect(component.entries().map((e) => e.id)).toEqual(['b7']);
+
+      booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'Dune Messiah', author: 'Frank Herbert' }], totalCount: 1 }));
+      type('@dune');
+      expect(booksList).toHaveBeenCalledWith({ search: 'dune', page: 1, pageSize: 5 });
+      expect(notesSearch).not.toHaveBeenCalled();
+      expect(titles()).toEqual(['Books']);
+    });
+
+    it('says which kind it looked for when nothing matches', () => {
+      openPalette();
+      type('#zzz');
+      expect(fixture.nativeElement.querySelector('.palette-empty').textContent.trim()).toBe('No topics match “zzz”.');
+    });
+  });
+
+  it('marks the matched words in each label', () => {
+    openPalette();
+    type('stoic');
+    const marks = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="palette-item-topic"] mark'));
+    expect(marks.map((m) => m.textContent)).toEqual(['Stoic']);
+    expect(fixture.nativeElement.querySelector('[data-testid="palette-item-topic"] .palette-item-label').textContent).toBe(
+      'Stoicism',
+    );
+  });
+
+  describe('Recent upkeep', () => {
+    it('forgets topics and documents that no longer exist', () => {
+      const recent = TestBed.inject(RecentItemsService);
+      recent.record({ kind: 'topic', id: 'gone', label: 'Deleted topic', sub: '' });
+      recent.record({ kind: 'document', id: 'w1', label: 'Essay on attention', sub: 'Document' });
+      recent.record({ kind: 'book', id: 'b1', label: 'Kept', sub: '' });
+
+      openPalette();
+      expect(recent.items().map((i) => i.id)).toEqual(['b1', 'w1']);
+    });
+
+    it('forgets nothing when a list fails to load', () => {
+      topicsList.mockReturnValue(throwError(() => new Error('offline')));
+      const recent = TestBed.inject(RecentItemsService);
+      recent.record({ kind: 'topic', id: 't1', label: 'Stoicism', sub: '' });
+
+      openPalette();
+      expect(recent.items().map((i) => i.id)).toEqual(['t1']);
+    });
+  });
+
   describe('running an entry', () => {
     beforeEach(() => {
       enableAssistant();
@@ -377,6 +457,35 @@ describe('CommandPalette', () => {
   });
 });
 
+describe('parseQuery', () => {
+  it('reads a scope prefix and the words after it', () => {
+    expect(parseQuery('> theme')).toEqual({ scope: 'actions', term: 'theme' });
+    expect(parseQuery('#sto')).toEqual({ scope: 'topics', term: 'sto' });
+    expect(parseQuery('  @ dune ')).toEqual({ scope: 'books', term: 'dune' });
+    expect(parseQuery('#')).toEqual({ scope: 'topics', term: '' });
+  });
+
+  it('treats anything else as a search across everything', () => {
+    expect(parseQuery(' rome ')).toEqual({ scope: 'all', term: 'rome' });
+    expect(parseQuery('c#')).toEqual({ scope: 'all', term: 'c#' });
+  });
+});
+
+describe('highlightParts', () => {
+  it('marks every case-insensitive occurrence and keeps the original casing', () => {
+    expect(highlightParts('Rome and rome', 'ROME')).toEqual([
+      { text: 'Rome', hit: true },
+      { text: ' and ', hit: false },
+      { text: 'rome', hit: true },
+    ]);
+  });
+
+  it('leaves a label whole when there is no term or no match', () => {
+    expect(highlightParts('Dune', '')).toEqual([{ text: 'Dune', hit: false }]);
+    expect(highlightParts('Dune', 'x')).toEqual([{ text: 'Dune', hit: false }]);
+  });
+});
+
 describe('noteExcerpt', () => {
   const hit = (over: object) =>
     ({ id: 'n', bookId: 'b', bookTitle: null, content: '', selectedText: null, snippet: null, topicNames: [], createdAt: '', ...over }) as never;
@@ -398,5 +507,17 @@ describe('noteExcerpt', () => {
 
   it('never returns an empty label', () => {
     expect(noteExcerpt(hit({}))).toBe('Untitled note');
+  });
+
+  it('starts shortly before a match that sits deep in the note', () => {
+    const content = `${'Opening words that carry no match at all, '.repeat(4)}then the lantern appears here.`;
+    const line = noteExcerpt(hit({ content }), 'lantern');
+    expect(line.startsWith('…')).toBe(true);
+    expect(line).toContain('lantern');
+    expect(line.length).toBeLessThanOrEqual(120);
+  });
+
+  it('keeps the start when the match is already in view', () => {
+    expect(noteExcerpt(hit({ content: 'The lantern by the door.' }), 'lantern')).toBe('The lantern by the door.');
   });
 });

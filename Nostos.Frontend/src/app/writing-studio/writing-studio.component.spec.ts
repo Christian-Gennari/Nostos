@@ -5,6 +5,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
 import { WritingStudio } from './writing-studio.component';
+import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
 import { TopicsService } from '../core/services/topics.service';
@@ -493,6 +494,16 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
   });
 
   // --- Exit restores focus ---
+  it('records a document opened from the file tree in the palette Recent list', () => {
+    component.handleItemSelected({ id: 'doc-1', name: 'Sample', type: 'Document', updatedAt: '' });
+
+    const recent = TestBed.inject(RecentItemsService);
+    expect(recent.items()[0]).toEqual({ kind: 'document', id: 'doc-1', label: 'Sample', sub: 'Document' });
+
+    component.saveRename('doc-1', 'Renamed');
+    expect(recent.items()[0].label).toBe('Renamed');
+  });
+
   it('restores focus to the element that opened zen after exit', () => {
     openDocument();
 
