@@ -478,7 +478,9 @@ function recentEntry(item: RecentItem): PaletteEntry {
 /** One readable line of a note: the server's snippet, else its opening words. */
 export function noteExcerpt(hit: NoteSearchHit): string {
   const text = (hit.snippet || hit.content || hit.selectedText || '')
-    // Topic links read as noise in a one-line preview.
+    // Topic links at the end are tags, not prose: drop them. Links inside a
+    // sentence are words in it: keep the word, lose the brackets.
+    .replace(/(\s*\[\[[^\]]+\]\])+\s*$/, '')
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();

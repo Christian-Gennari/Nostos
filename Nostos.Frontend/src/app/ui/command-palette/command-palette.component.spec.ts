@@ -199,7 +199,7 @@ describe('CommandPalette', () => {
       // Topics and documents are matched here, by name; folders are not documents.
       expect(entry('topic')).toMatchObject({ id: 't2', sub: '1 note' });
       expect(component.entries().filter((e) => e.kind === 'document').map((e) => e.id)).toEqual(['w1']);
-      expect(entry('note').label).toBe('Fear is the mind-killer. Attention');
+      expect(entry('note').label).toBe('Fear is the mind-killer.');
       expect(entry('book').coverUrl).toBe('/covers/b1.jpg');
     });
 
@@ -361,8 +361,14 @@ describe('noteExcerpt', () => {
   const hit = (over: object) =>
     ({ id: 'n', bookId: 'b', bookTitle: null, content: '', selectedText: null, snippet: null, topicNames: [], createdAt: '', ...over }) as never;
 
-  it('prefers the server snippet, unwraps topic links and collapses whitespace', () => {
+  it('prefers the server snippet, unwraps inline topic links and collapses whitespace', () => {
     expect(noteExcerpt(hit({ snippet: 'a  [[Stoicism]]\nb', content: 'ignored' }))).toBe('a Stoicism b');
+  });
+
+  it('drops the trailing topic tags', () => {
+    expect(noteExcerpt(hit({ content: 'What stands in the way becomes the way. [[Stoicism]] [[Obstacles]]' }))).toBe(
+      'What stands in the way becomes the way.',
+    );
   });
 
   it('caps a long note at one line', () => {

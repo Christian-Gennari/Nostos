@@ -235,8 +235,11 @@ test('Cloud More is compact, anchored to its trigger, and closes accessibly', as
 
   const panel = (await menu.boundingBox()) as Box;
   const trigger = (await more.boundingBox()) as Box;
-  expect(panel.width, 'two utilities should use a compact panel').toBeLessThanOrEqual(240);
-  expect(panel.height, 'the panel should fit the two actions closely').toBeLessThanOrEqual(132);
+  // Feedback, Search everything and Settings: three 44px rows plus the
+  // panel's own padding.
+  await expect(page.getByTestId('utility-sheet-search')).toBeVisible();
+  expect(panel.width, 'three utilities should use a compact panel').toBeLessThanOrEqual(240);
+  expect(panel.height, 'the panel should fit the three actions closely').toBeLessThanOrEqual(176);
   expect(
     Math.abs(panel.x + panel.width - trigger.x - trigger.width),
     'the panel edge should align with the More trigger',
