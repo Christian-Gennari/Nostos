@@ -303,6 +303,129 @@ describe('MarkdownEditorComponent', () => {
     fetchSpy.mockRestore();
   });
 
+  describe('the / menu (#1043)', () => {
+    const typeText = (text: string) => {
+      const editor = (component as unknown as { editor: import('@tiptap/core').Editor }).editor;
+      for (const ch of text) editor.commands.insertContent(ch);
+    };
+
+    it('opens on an empty line and turns "/h2" into a heading', async () => {
+      await create('Intro.');
+      (component as any).editor.commands.focus('end');
+      (component as any).editor.commands.enter();
+      typeText('/h2');
+      expect(component.blockMenu()?.items[0].action).toBe('h2');
+      component.runBlockAction('h2');
+      typeText('Section');
+      expect(component.currentMarkdown()).toBe('Intro.\n\n## Section');
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('does not open in the middle of a sentence', async () => {
+      await create('and');
+      (component as any).editor.commands.focus('end');
+      typeText('/or');
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('inserts a divider and a table that save as Markdown', async () => {
+      await create('');
+      (component as any).editor.commands.focus('end');
+      typeText('/div');
+      component.runBlockAction('divider');
+      expect(component.currentMarkdown()).toContain('* * *');
+      (component as any).editor.commands.focus('end');
+      typeText('/table');
+      component.runBlockAction('table');
+      expect(component.currentMarkdown()).toMatch(/\|\s*\|\s*\|/);
+    });
+
+    it('asks for an address for an image, then inserts it', async () => {
+      await create('');
+      (component as any).editor.commands.focus('end');
+      typeText('/img');
+      component.runBlockAction('image');
+      expect(component.blockMenuImage()).toBe(true);
+      component.blockMenuImageUrl.set('https://example.com/a.png');
+      component.applyBlockImage();
+      expect(component.currentMarkdown()).toBe('![](https://example.com/a.png)');
+    });
+
+    it('keeps the image target on the "/img" line when text before it changes', async () => {
+      await create('First.');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      editor.commands.focus('end');
+      editor.commands.enter();
+      typeText('/img');
+      component.runBlockAction('image');
+      // Text added above while the address field is up shifts every position.
+      editor.commands.insertContentAt(1, 'Very ');
+      component.blockMenuImageUrl.set('https://example.com/a.png');
+      component.applyBlockImage();
+      expect(component.currentMarkdown()).toBe('Very First.\n\n![](https://example.com/a.png)');
+    });
+
+    it('drops the image step when the writer goes back to the page', async () => {
+      await create('');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      editor.commands.focus('end');
+      typeText('/img');
+      component.runBlockAction('image');
+      expect(component.blockMenuImage()).toBe(true);
+      editor.emit('focus', { editor, event: new FocusEvent('focus'), transaction: editor.state.tr });
+      expect(component.blockMenuImage()).toBe(false);
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('does not open inside a list item', async () => {
+      await create('- one');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      editor.commands.focus('end');
+      editor.commands.enter();
+      typeText('/bul');
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('does not open inside a table cell', async () => {
+      await create('| a | b |\n| --- | --- |\n|  |  |');
+      const cellEditor = (component as any).editor as import('@tiptap/core').Editor;
+      let cellPos = -1;
+      cellEditor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'tableCell' && cellPos < 0) cellPos = pos + 2;
+      });
+      cellEditor.commands.focus(cellPos);
+      typeText('/table');
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('goes back to the best match when the query changes', async () => {
+      await create('');
+      (component as any).editor.commands.focus('end');
+      typeText('/h');
+      component.blockMenuActive.set(2);
+      typeText('e');
+      expect(component.blockMenuActive()).toBe(0);
+    });
+
+    it('opens above the line when the page has no room below', async () => {
+      await create('');
+      component.blockMenu.set({ items: [], rect: { top: window.innerHeight - 30, bottom: window.innerHeight - 10, left: 40, right: 60 } });
+      const placement = component.blockMenuPlacement()!;
+      expect(placement.top).toBeNull();
+      expect(placement.bottom).toBe(36);
+    });
+
+    it('hands over to the @ palette for a source', async () => {
+      await create('');
+      const states: unknown[] = [];
+      component.sourceSuggestion.subscribe((st) => states.push(st));
+      (component as any).editor.commands.focus('end');
+      typeText('/source');
+      component.runBlockAction('source');
+      expect(states.at(-1)).toEqual(expect.objectContaining({ query: '' }));
+    });
+  });
+
   it('emits the final Markdown when it is torn down', async () => {
     await create('Last words.');
     emitted = [];

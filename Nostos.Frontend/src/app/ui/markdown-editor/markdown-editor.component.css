@@ -387,6 +387,88 @@ app-markdown-editor .editor-url-input:focus-visible {
   font-display: swap;
 }
 
+/* --- The / menu (issue #1043) ------------------------------------------ */
+
+app-markdown-editor .block-menu {
+  position: fixed;
+  z-index: 45;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 24px));
+  max-height: min(360px, 55vh);
+  overflow-y: auto;
+  padding: 4px;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+app-markdown-editor .block-menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+app-markdown-editor .block-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+app-markdown-editor .block-menu-item.active {
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .block-menu-hint {
+  color: var(--manuscript-ink-faint);
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.74rem;
+}
+
+app-markdown-editor .block-menu-empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--manuscript-ink-soft);
+  font-size: 0.86rem;
+}
+
+app-markdown-editor .block-menu-image {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+app-markdown-editor .block-menu-image-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+app-markdown-editor .block-menu-image-row .editor-url-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+app-markdown-editor .block-menu-image-label {
+  color: var(--manuscript-ink-soft);
+  font-size: 0.78rem;
+}
+
+@media (pointer: coarse) {
+  app-markdown-editor .block-menu-item {
+    min-height: 44px;
+  }
+}
+
 /* --- The page ------------------------------------------------------------ */
 
 app-markdown-editor .manuscript-scroll {

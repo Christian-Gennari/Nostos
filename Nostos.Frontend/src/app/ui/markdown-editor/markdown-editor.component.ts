@@ -5,6 +5,7 @@ import {
   OnDestroy,
   ViewChild,
   ViewEncapsulation,
+  computed,
   effect,
   input,
   output,
@@ -23,6 +24,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
 import { TypewriterSounds, soundForInput } from './typewriter-sounds';
+import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
 import { exitSuggestion } from '@tiptap/suggestion';
 
 export interface MarkdownEditorTransientState {
@@ -112,6 +114,36 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   /** True until the editor exists, so the empty page never flashes a caret. */
   readonly editorStarting = signal(true);
+
+  /** The `/` menu while open (issue #1043). */
+  readonly blockMenu = signal<{ items: BlockMenuItem[]; rect: SourceSuggestionState['rect'] } | null>(null);
+  readonly blockMenuActive = signal(0);
+  /** The menu's second step for Image: the address field. */
+  readonly blockMenuImage = signal(false);
+  readonly blockMenuImageUrl = signal('');
+  private blockMenuRange: Range | null = null;
+  private blockMenuQuery = '';
+  /**
+   * The "/query" an image will replace, kept while focus is in the address
+   * field and mapped through every change so it never points at other text.
+   */
+  private blockImageRange: Range | null = null;
+  @ViewChild('blockImageInput') private blockImageInput?: ElementRef<HTMLInputElement>;
+  /** Unique per editor, so the address field's label finds its own input. */
+  readonly blockImageInputId = `block-image-url-${++blockImageInputs}`;
+  /** Where the menu sits: under the line, or above it when the page has no room below. */
+  readonly blockMenuPlacement = computed(() => {
+    const rect = this.blockMenu()?.rect;
+    if (!rect) return null;
+    const viewport = typeof window === 'undefined' ? 800 : window.innerHeight;
+    const below = viewport - rect.bottom - 12;
+    const above = rect.top - 12;
+    const cap = Math.min(360, viewport * 0.55);
+    if (below < Math.min(cap, 240) && above > below) {
+      return { top: null, bottom: viewport - rect.top + 6, left: rect.left, maxHeight: Math.min(cap, above) };
+    }
+    return { top: rect.bottom + 6, bottom: null, left: rect.left, maxHeight: Math.min(cap, below) };
+  });
 
   /** Selection-bubble state, refreshed on every transaction. */
   readonly activeBlock = signal<BlockKind>('paragraph');
@@ -245,6 +277,22 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
             return !editor.isActive('codeBlock') && !editor.isActive('image');
           },
         }),
+        BlockMenu.configure({
+          onChange: (state) => {
+            this.blockMenuRange = state?.range ?? null;
+            if (!state) {
+              // The address step keeps the menu up while its field has focus.
+              if (!this.blockMenuImage()) this.blockMenu.set(null);
+              return;
+            }
+            const items = filterBlockMenu(state.query);
+            // A new query starts again from its best match.
+            if (!this.blockMenu() || state.query !== this.blockMenuQuery) this.blockMenuActive.set(0);
+            this.blockMenuQuery = state.query;
+            this.blockMenu.set({ items, rect: state.rect ? plainRect(state.rect) : null });
+          },
+          onKeyDown: (event) => this.blockMenuKey(event),
+        }),
         SourceSuggestion.configure({
           onChange: (state) => {
             if (!state) this.dropShortcutAt();
@@ -275,7 +323,18 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         this.followCaret();
       },
       onSelectionUpdate: () => this.followCaret(),
-      onTransaction: () => this.refreshToolbar(),
+      onTransaction: ({ transaction }) => {
+        if (this.blockImageRange && transaction.docChanged) {
+          const { from, to } = this.blockImageRange;
+          const mapped = { from: transaction.mapping.map(from, 1), to: transaction.mapping.map(to, -1) };
+          this.blockImageRange = mapped.from < mapped.to ? mapped : null;
+        }
+        this.refreshToolbar();
+      },
+      // Back on the page, the image address step is abandoned.
+      onFocus: () => {
+        if (this.blockMenuImage()) this.cancelBlockImage(false);
+      },
     });
 
     this.lastExternalMarkdownApplied ??= markdown;
@@ -284,6 +343,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     dom.addEventListener('keydown', this.onSoundKeydown);
     dom.addEventListener('keyup', this.onSoundKeyup);
     dom.addEventListener('beforeinput', this.onSoundInput);
+    this.scroller.nativeElement.addEventListener('scroll', this.followBlockMenu, { passive: true });
     this.editorStarting.set(false);
     this.refreshToolbar();
     this.emitWordCount();
@@ -302,6 +362,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       dom.removeEventListener('keydown', this.onSoundKeydown);
       dom.removeEventListener('keyup', this.onSoundKeyup);
       dom.removeEventListener('beforeinput', this.onSoundInput);
+      this.scroller.nativeElement.removeEventListener('scroll', this.followBlockMenu);
       // The last keystrokes may still be inside the debounce window upstream.
       this.emitMarkdown();
       this.editor.destroy();
@@ -507,6 +568,130 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   }
 
   // ------------------------------------------------------------------
+  // The / menu (issue #1043)
+  // ------------------------------------------------------------------
+
+  private blockMenuKey(event: KeyboardEvent): boolean {
+    const menu = this.blockMenu();
+    // While the address field is up, its keys are its own, not the list's.
+    if (!menu || menu.items.length === 0 || this.blockMenuImage()) return false;
+    const count = menu.items.length;
+    if (event.key === 'ArrowDown') {
+      this.blockMenuActive.update((i) => (i + 1) % count);
+      return true;
+    }
+    if (event.key === 'ArrowUp') {
+      this.blockMenuActive.update((i) => (i - 1 + count) % count);
+      return true;
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      this.runBlockAction(menu.items[this.blockMenuActive()].action);
+      return true;
+    }
+    return false;
+  }
+
+  /** Replaces the "/query" with the chosen block. */
+  runBlockAction(action: BlockMenuAction): void {
+    const editor = this.editor;
+    const range = this.blockMenuRange;
+    if (!editor || !range) return;
+    if (action === 'image') {
+      // A second step in the same menu: the address of the image.
+      this.blockImageRange = range;
+      this.blockMenuImage.set(true);
+      this.blockMenuImageUrl.set('');
+      setTimeout(() => this.blockImageInput?.nativeElement.focus());
+      return;
+    }
+    const chain = editor.chain().focus().deleteRange(range);
+    switch (action) {
+      case 'h1':
+        chain.setHeading({ level: 1 });
+        break;
+      case 'h2':
+        chain.setHeading({ level: 2 });
+        break;
+      case 'h3':
+        chain.setHeading({ level: 3 });
+        break;
+      case 'blockquote':
+        chain.setBlockquote();
+        break;
+      case 'bulletList':
+        chain.toggleBulletList();
+        break;
+      case 'orderedList':
+        chain.toggleOrderedList();
+        break;
+      case 'divider':
+        chain.setHorizontalRule();
+        break;
+      case 'codeBlock':
+        chain.setCodeBlock();
+        break;
+      case 'table':
+        chain.insertTable({ rows: 3, cols: 2, withHeaderRow: true });
+        break;
+      case 'source':
+        // Hands over to the @ palette on the same line.
+        chain.insertContent('@');
+        break;
+    }
+    chain.run();
+    this.closeBlockMenu();
+  }
+
+  applyBlockImage(): void {
+    const editor = this.editor;
+    const range = this.blockImageRange;
+    this.blockImageRange = null;
+    const url = this.blockMenuImageUrl().trim();
+    this.blockMenuImage.set(false);
+    if (editor && url) {
+      // Replace the "/query" if it is still there; otherwise insert at the caret.
+      const intact = range && editor.state.doc.textBetween(range.from, range.to).startsWith('/');
+      const chain = editor.chain().focus();
+      // The caret may have moved since (an insert from the Studio): the image
+      // goes on the emptied line, not wherever the caret is now.
+      if (intact) chain.deleteRange(range).setTextSelection(range.from);
+      chain.setImage({ src: url }).run();
+    } else {
+      editor?.commands.focus();
+    }
+    this.closeBlockMenu();
+  }
+
+  cancelBlockImage(refocus = true): void {
+    this.blockImageRange = null;
+    this.blockMenuImage.set(false);
+    this.closeBlockMenu();
+    if (refocus) this.editor?.commands.focus();
+  }
+
+  /** Keeps the menu on its line while the page scrolls under it (typewriter mode included). */
+  private readonly followBlockMenu = () => {
+    const menu = this.blockMenu();
+    const range = this.blockImageRange ?? this.blockMenuRange;
+    const view = this.editor?.view;
+    if (!menu || !range || !view) return;
+    try {
+      const at = view.coordsAtPos(range.from);
+      this.blockMenu.set({ ...menu, rect: { top: at.top, bottom: at.bottom, left: at.left, right: at.right } });
+    } catch {
+      // The range has left the document; the next update closes the menu.
+    }
+  };
+
+  private closeBlockMenu(): void {
+    this.blockMenu.set(null);
+    this.blockMenuActive.set(0);
+    if (this.editor && !this.editor.isDestroyed && this.blockMenuRange) {
+      exitSuggestion(this.editor.view, BLOCK_MENU_KEY);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Formatting (the selection bubble and keyboard)
   // ------------------------------------------------------------------
 
@@ -682,8 +867,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     if (!this.sounds() || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
     const sound = event.key === 'Enter' ? 'return' : event.key === 'Backspace' ? 'backspace' : null;
     if (!sound) return;
-    // Enter picking a source from the @ list changes no text: no carriage.
-    if (sound === 'return' && this.suggestionRange) return;
+    // Enter picking from the @ palette or the / menu changes no text: no carriage.
+    if (sound === 'return' && (this.suggestionRange || this.blockMenu())) return;
     this.soundPlayer().play(sound, this.soundVolume());
     this.keydownSoundAt = performance.now();
   };
@@ -822,6 +1007,8 @@ function selectionBookmark(value: unknown): { from: number; to: number } | null 
   if (!Number.isInteger(from) || !Number.isInteger(to)) return null;
   return { from, to };
 }
+
+let blockImageInputs = 0;
 
 function plainRect(rect: DOMRect): SourceSuggestionState['rect'] {
   return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };

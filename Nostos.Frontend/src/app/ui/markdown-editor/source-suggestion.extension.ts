@@ -19,9 +19,27 @@ export const SOURCE_SUGGESTION_PREFIXES = [' ', ' ', '(', '[', '"', '“', '‘
 const MAX_QUERY_LENGTH = 80;
 const MAX_QUERY_WORDS = 8;
 
-export interface SourceSuggestionHandlers {
+/** What a typed trigger (`@`, `/`) reports to its owner as the query changes. */
+export interface SuggestionReport {
   onChange: (state: { query: string; range: Range; rect: DOMRect | null } | null) => void;
   onKeyDown: (event: KeyboardEvent) => boolean;
+}
+
+/** The shared `render` for a trigger that only reports; its owner draws the list. */
+export function reportingRender(options: SuggestionReport) {
+  return () => {
+    const report = (props: SuggestionProps) =>
+      options.onChange({ query: props.query, range: props.range, rect: props.clientRect?.() ?? null });
+    return {
+      onStart: report,
+      onUpdate: report,
+      onExit: () => options.onChange(null),
+      onKeyDown: ({ event }: SuggestionKeyDownProps) => options.onKeyDown(event),
+    };
+  };
+}
+
+export interface SourceSuggestionHandlers extends SuggestionReport {
   onOpenShortcut: () => boolean;
 }
 
@@ -66,16 +84,7 @@ export const SourceSuggestion = Extension.create<SourceSuggestionHandlers>({
           if ($from.parent.type.spec.code) return false;
           return isPaletteQuery(state.doc.textBetween(range.from + 1, range.to, ' ', ' '));
         },
-        render: () => {
-          const report = (props: SuggestionProps) =>
-            options.onChange({ query: props.query, range: props.range, rect: props.clientRect?.() ?? null });
-          return {
-            onStart: report,
-            onUpdate: report,
-            onExit: () => options.onChange(null),
-            onKeyDown: ({ event }: SuggestionKeyDownProps) => options.onKeyDown(event),
-          };
-        },
+        render: reportingRender(options),
       }),
     ];
   },
