@@ -7,6 +7,7 @@ import { apiGet, apiPost, loadFixture } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import type { Note } from '../src/app/core/dtos/note.dtos';
 import type { WritingContentDto, WritingSourceDto } from '../src/app/core/dtos/writing.dtos';
+import { STUDIO_PAGE_SELECTOR, studioPage, waitForStudioEditor } from './support/studio-editor';
 
 const screenshotDir =
   process.env.STUDIO_REFERENCE_SCREENSHOT_DIR ?? '/tmp/nostos-studio-reference-after';
@@ -62,7 +63,7 @@ function captureAfter(page: Page, filename: string): Promise<Buffer> {
 }
 
 async function typeAndRemoveProbe(page: Page, marker: string): Promise<void> {
-  const editorBody = page.frameLocator('.tox-edit-area iframe').locator('body');
+  const editorBody = studioPage(page);
   await editorBody.waitFor({ state: 'visible' });
   const before = await editorBody.evaluate((element) => element.textContent ?? '');
   await editorBody.click();
@@ -83,8 +84,8 @@ async function openWriting(page: Page, viewport = { width: 1440, height: 900 }):
   await page.goto(baseUrl + '/studio?writingId=' + writingId, {
     waitUntil: 'domcontentloaded',
   });
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
-  await expect(page.frameLocator('.tox-edit-area iframe').locator('body')).toContainText(
+  await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
+  await expect(studioPage(page)).toContainText(
     'The Quiet Practice of Paying Attention',
     { timeout: 45_000 },
   );
@@ -111,10 +112,12 @@ async function ensureReferenceDrawerOpen(page: Page): Promise<void> {
 }
 
 async function expectDarkEditor(page: Page): Promise<void> {
-  const editorDocument = page.frameLocator('.tox-edit-area iframe').locator('html');
-  await expect(editorDocument).toHaveAttribute('data-theme', 'dark');
+  // The page lives in the app's DOM (#1037), so it takes the dark sheet from
+  // the document's own theme; there is no iframe to keep in sync.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const sheet = page.locator('app-markdown-editor .manuscript-scroll');
   await expect
-    .poll(() => editorDocument.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .poll(() => sheet.evaluate((element) => getComputedStyle(element).backgroundColor))
     .toBe('rgb(18, 19, 24)');
 }
 
@@ -340,9 +343,9 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await page.goto(baseUrl + '/studio?writingId=' + longWritingId, {
     waitUntil: 'domcontentloaded',
   });
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+  await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
   await expect(page.locator('.header-doc-title')).toHaveText(longWritingTitle);
-  const longEditorBody = page.frameLocator('.tox-edit-area iframe').locator('body');
+  const longEditorBody = studioPage(page);
   await expect(longEditorBody).toContainText('Passage 36', { timeout: 45_000 });
   const longEditorLength = await longEditorBody.evaluate((element) => (element.textContent ?? '').length);
   expect(longEditorLength).toBeGreaterThan(13_000);
@@ -613,7 +616,7 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await captureAfter(page, 'reference-source-long-quote-desktop-1024x768-light.png');
 
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+  await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
   await expect(page.locator('.kept-sources-content .reference-source-row')).toHaveCount(1);
   const keptRow = page.locator('.kept-sources-content .reference-source-row-main');
   await keptRow.focus();
@@ -635,7 +638,7 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
     baseUrl,
     '/api/writings/' + writingId,
   );
-  const editorBody = page.frameLocator('.tox-edit-area iframe').locator('body');
+  const editorBody = studioPage(page);
   await editorBody.click();
   await page.keyboard.press('Control+End');
   await page.locator('.files-toggle').click();
@@ -750,10 +753,8 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   expect(narrowRowGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
   await captureAfter(page, 'reference-for-writing-forty-laptop-1280x720-light.png');
 
-  // Every dark capture starts Studio after setting the persisted theme, so the
-  // editor iframe gets its theme during TinyMCE initialization as well as in
-  // the shell. Changing only the outer document attribute leaves the iframe in
-  // its prior theme and is not a valid product journey.
+  // Every dark capture starts Studio after setting the persisted theme, as a
+  // person returning to a dark Studio would.
   const darkContext = await browser.newContext({
     viewport: { width: 1280, height: 720 },
   });
@@ -1058,29 +1059,19 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   expect(touchTargetFailures, 'Reference coarse-pointer controls meet 44px').toEqual([]);
 });
 
-test('source insertion stays unavailable through editor startup failure, then inserts and autosaves after retry', async ({ browser }) => {
+test('a quote inserted from the Reference rail lands at the caret and autosaves', async ({ browser }) => {
+  // TinyMCE used to load as a separate script that could fail on its own; this
+  // test held and aborted that request. TipTap ships inside the Studio chunk
+  // (#1037), so the journey that remains is the insertion and its save.
   const context = await browser.newContext({ serviceWorkers: 'block' });
   const page = await context.newPage();
-  const disposition = { value: 'hold' as 'hold' | 'abort' | 'continue' };
-  let releaseTinyMce!: () => void;
-  let signalTinyMceRequest!: () => void;
-  const tinyMceRequested = new Promise<void>((resolve) => { signalTinyMceRequest = resolve; });
-  const tinyMceGate = new Promise<void>((resolve) => { releaseTinyMce = resolve; });
   const writing = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
   const initialContent = writing.content ?? '';
 
-  await page.route('**/tinymce/tinymce.min.js', async (route) => {
-    if (disposition.value === 'hold') {
-      signalTinyMceRequest();
-      await tinyMceGate;
-    }
-    if (disposition.value === 'abort') return route.abort();
-    return route.continue();
-  });
   await page.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(baseUrl + '/studio?writingId=' + writingId, { waitUntil: 'domcontentloaded' });
-  await tinyMceRequested;
+  const editorBody = await waitForStudioEditor(page);
   await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
   await page.getByRole('tab', { name: 'Library' }).click();
   await page.locator('.library-tabs').getByRole('tab', { name: 'Books' }).click();
@@ -1091,39 +1082,10 @@ test('source insertion stays unavailable through editor startup failure, then in
     .first();
   await quoteRow.click();
   const insertQuote = page.getByRole('button', { name: 'Insert quote', exact: true });
-  await expect(insertQuote).toBeDisabled();
-  await expect(page.locator('#source-action-disabled-reason')).toContainText(
-    'The editor is not ready for insertion yet',
-  );
-  await page.screenshot({ path: '/tmp/809-studio-insert-editor-loading-1440x900-light.png', animations: 'disabled' });
-
-  disposition.value = 'abort';
-  releaseTinyMce();
-  await expect(page.locator('textarea.editor-starting')).toHaveCount(0, { timeout: 15_000 });
-  await expect(insertQuote).toBeDisabled();
-  await expect(page.locator('#source-action-disabled-reason')).toContainText(
-    'The editor is not ready for insertion yet',
-  );
-  await page.screenshot({ path: '/tmp/809-studio-insert-editor-error-1440x900-light.png', animations: 'disabled' });
-
-  disposition.value = 'continue';
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
-  await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
-  await page.getByRole('tab', { name: 'Library' }).click();
-  await page.locator('.library-tabs').getByRole('tab', { name: 'Books' }).click();
-  await page.locator('.list-item').filter({ hasText: mainBookTitle }).click();
-  const retriedQuoteRow = page
-    .locator('.reference-note-list .reference-source-row-main')
-    .filter({ hasText: longQuote.slice(0, 32) })
-    .first();
-  await retriedQuoteRow.click();
-  const retryInsert = page.getByRole('button', { name: 'Insert quote', exact: true });
-  await expect(retryInsert).toBeEnabled();
-  const editorBody = page.frameLocator('.tox-edit-area iframe').locator('body');
+  await expect(insertQuote).toBeEnabled();
   await editorBody.click();
   await page.keyboard.press('Control+End');
-  await retryInsert.click();
+  await insertQuote.click();
   const insertedQuote = editorBody.locator('blockquote').last();
   await expect(insertedQuote).toContainText(longQuote);
   // Wait for the autosave of THIS insertion. The writing is shared with the
@@ -1134,12 +1096,10 @@ test('source insertion stays unavailable through editor startup failure, then in
     .not.toBe(initialContent);
   const persisted = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
   expect(persisted.content).toContain(longQuote);
-  await page.screenshot({ path: '/tmp/809-studio-insert-recovered-1440x900-light.png', animations: 'disabled' });
   await page.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+  await waitForStudioEditor(page);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.frameLocator('.tox-edit-area iframe').locator('body')).toContainText(longQuote);
-  await page.screenshot({ path: '/tmp/809-studio-insert-recovered-1440x900-dark.png', animations: 'disabled' });
+  await expect(studioPage(page)).toContainText(longQuote);
   await context.close();
 });

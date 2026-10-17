@@ -7,7 +7,8 @@
  * Each guard maps to a defect measured at 390x844 on the real build:
  *
  *  - The editor's formatting toolbar wrapped to FOUR rows (124px of the writing
- *    surface) because the Oxide skin's `flex-wrap: wrap` beat TinyMCE's
+ *    surface) because the Oxide skin's `flex-wrap: wrap` beat TinyMCE's (the
+ *    editor is TipTap since #1037; the single-row contract still holds)
  *    `toolbar_mode: 'sliding'`, which only engages while the toolbar is a
  *    single row. The sliding overflow button therefore never rendered and every
  *    control stayed in the document.
@@ -26,6 +27,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { apiPost, loadFixture } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import { cleanupBrain, seedBrain, type BrainSeed } from './support/brain-fixture';
+import { STUDIO_PAGE_SELECTOR } from './support/studio-editor';
 
 const MIN_TAP_TARGET = 44; // CSS px, Apple HIG / Material minimum
 
@@ -95,8 +97,7 @@ async function openStudioDocument(page: Page, title: string): Promise<void> {
   const row = page.locator('.file-list .tree-row', { hasText: title }).first();
   await row.waitFor({ timeout: 30_000 });
   await row.click();
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(600); // let TinyMCE finish laying the toolbar out
+  await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
 }
 
 test('the editor formatting toolbar occupies a single row on a phone', async ({ page }) => {
@@ -105,23 +106,17 @@ test('the editor formatting toolbar occupies a single row on a phone', async ({ 
   await openStudioDocument(page, title);
 
   const tops = await page
-    .locator('.tox-toolbar__primary .tox-toolbar__group')
+    .locator('app-markdown-editor .editor-toolbar-row > *')
     .evaluateAll((els) =>
       els
         .filter((el) => el.getBoundingClientRect().width > 0)
-        .map((el) => Math.round(el.getBoundingClientRect().top)),
+        .map((el) => Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2)),
     );
-  expect(tops.length, 'the toolbar must render at least one group').toBeGreaterThan(0);
-
-  const rows = new Set(tops);
-  expect(
-    rows.size,
-    `the formatting toolbar must be a single row, found ${rows.size} ` +
-      `(the Oxide skin's flex-wrap defeated toolbar_mode: sliding)`,
-  ).toBe(1);
+  expect(tops.length, 'the toolbar must render its controls').toBeGreaterThan(0);
+  expect(new Set(tops).size, 'the formatting toolbar must be a single row').toBe(1);
 
   const height = await page
-    .locator('.tox-toolbar__primary')
+    .locator('app-markdown-editor .editor-toolbar-row')
     .evaluate((el) => Math.round(el.getBoundingClientRect().height));
   expect(height, 'a single toolbar row must not exceed ~60px').toBeLessThanOrEqual(60);
 });
@@ -131,11 +126,8 @@ test('every editor toolbar button meets the 44px touch contract', async ({ page 
   await seedDocument(title);
   await openStudioDocument(page, title);
 
-  // Both rows: __primary is what is visible at rest, __overflow is where the
-  // sliding mode parks the remaining controls. Most formatting tools live in
-  // the overflow on a phone, so it must meet the same contract.
   const slivers = await page
-    .locator('.tox-toolbar__primary .tox-tbtn, .tox-toolbar__overflow .tox-tbtn')
+    .locator('app-markdown-editor .editor-toolbar-row button')
     .evaluateAll((els) =>
       els
         .filter((el) => el.getBoundingClientRect().width > 0)
@@ -150,29 +142,20 @@ test('every editor toolbar button meets the 44px touch contract', async ({ page 
   expect(slivers, `toolbar buttons under 44px: ${JSON.stringify(slivers)}`).toEqual([]);
 });
 
-test('the sliding overflow control reveals the collapsed formatting buttons', async ({ page }) => {
+test('the toolbar scrolls sideways to reach every formatting control', async ({ page }) => {
   const title = `MobilePolishOverflow-${Date.now()}`;
   await seedDocument(title);
   await openStudioDocument(page, title);
 
-  const overflow = page.locator('.tox-toolbar__primary .tox-tbtn[aria-label*="additional"]');
-  await expect(
-    overflow,
-    'a single toolbar row must give TinyMCE an overflow chevron to slide into',
-  ).toBeVisible();
-  await overflow.click();
-  await page.waitForTimeout(400);
-
-  // The collapsed controls must actually be reachable, not merely listed.
-  const revealed = page.locator('.tox-toolbar__overflow--open .tox-tbtn');
-  await expect(revealed.first(), 'the overflow row must open').toBeVisible();
-  const count = await revealed.count();
-  expect(count, 'the overflow must expose the collapsed formatting controls').toBeGreaterThan(0);
-
-  const overflowHeight = await page
-    .locator('.tox-toolbar__overflow--open')
-    .evaluate((el) => Math.round(el.getBoundingClientRect().height));
-  expect(overflowHeight, 'the overflow row must not be a zero-height stub').toBeGreaterThan(20);
+  // The row never wraps; controls past the edge are reached by scrolling it.
+  const row = page.locator('app-markdown-editor .editor-toolbar-row');
+  const last = row.locator('button').last();
+  await last.scrollIntoViewIfNeeded();
+  await expect(last, 'the last formatting control must be reachable').toBeInViewport();
+  const pageOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(pageOverflow, 'the toolbar must scroll inside itself, not widen the page').toBeLessThanOrEqual(1);
 });
 
 test('the studio document tree exposes 44px expand chevrons', async ({ page }) => {

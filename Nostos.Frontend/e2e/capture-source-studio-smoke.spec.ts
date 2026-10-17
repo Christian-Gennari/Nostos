@@ -8,6 +8,7 @@ import type {
   WritingContentDto,
   WritingSourceDto,
 } from '../src/app/core/dtos/writing.dtos';
+import { studioPage, STUDIO_PAGE_SELECTOR } from './support/studio-editor';
 
 test('captured source survives Brain → Keep with writing → Studio on the real backend', async ({
   page,
@@ -195,11 +196,9 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
     expect(persistedWriting.content).toBe(writingContent);
 
     await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
-    await expect(page.locator('.tox-tinymce')).toBeVisible();
+    await expect(page.locator(STUDIO_PAGE_SELECTOR)).toBeVisible();
 
-    const editorBody = page
-      .frameLocator('.tox-edit-area__iframe')
-      .locator('body');
+    const editorBody = studioPage(page);
     await expect(editorBody).toContainText('Existing customer writing');
     await expect(editorBody).toContainText(
       'Customer prose must survive the source handoff and a full Studio reload.',
@@ -240,11 +239,9 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
       new RegExp(`/studio\\?writingId=${writing.id}$`),
     );
     await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
-    await expect(page.locator('.tox-tinymce')).toBeVisible();
+    await expect(page.locator(STUDIO_PAGE_SELECTOR)).toBeVisible();
 
-    const reloadedEditorBody = page
-      .frameLocator('.tox-edit-area__iframe')
-      .locator('body');
+    const reloadedEditorBody = studioPage(page);
     await expect(reloadedEditorBody).toContainText('Existing customer writing');
     await expect(reloadedEditorBody).toContainText(
       'Customer prose must survive the source handoff and a full Studio reload.',

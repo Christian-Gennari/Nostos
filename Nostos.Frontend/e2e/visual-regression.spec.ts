@@ -63,6 +63,7 @@ import {
   type CaptureMeta,
   type GeometryCheck,
 } from './support/visual-capture';
+import { STUDIO_PAGE_SELECTOR } from './support/studio-editor';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -150,8 +151,8 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
         .locator('.file-list .tree-row', { hasText: DOC_TITLE })
         .waitFor({ timeout: 30_000 });
       await page.locator('.file-list .tree-row', { hasText: DOC_TITLE }).click();
-      await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
-      await page.waitForTimeout(800); // let TinyMCE layout settle
+      await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
+      await page.waitForTimeout(800); // let the editor's fonts and layout settle
       await expect(page.locator('.editor-header .zen-toggle')).toBeVisible();
 
       const png = await capturePng(page, 'studio-document-desktop');
@@ -179,7 +180,7 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
       await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
       await page.locator('.file-list .tree-row', { hasText: DOC_TITLE }).waitFor({ timeout: 30_000 });
       await page.locator('.file-list .tree-row', { hasText: DOC_TITLE }).click();
-      await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+      await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
       await page.locator('.editor-header .zen-toggle').click();
       await page.locator('.zen-exit').waitFor({ timeout: 15_000 });
       await page.waitForTimeout(400);
@@ -215,7 +216,7 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
       }
       await expect(fileSidebar).toHaveClass(/\bopen\b/, { timeout: 15_000 });
       await fileRow.click();
-      await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+      await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
       // Selecting a document closes the mobile sidebar; the zen toggle lives in
       // the (now visible) editor header.
       await page.locator('.editor-header .zen-toggle').click();

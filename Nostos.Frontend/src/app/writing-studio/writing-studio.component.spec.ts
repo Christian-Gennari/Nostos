@@ -17,8 +17,8 @@ import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.c
 import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
 import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 
-// Heavy editor / UI children are stubbed out: MarkdownEditor boots TinyMCE
-// (not available under vitest), and the tree/note cards pull in drag-drop and
+// Heavy editor / UI children are stubbed out: MarkdownEditor boots a real
+// TipTap editor (covered by its own spec), and the tree/note cards pull in drag-drop and
 // unrelated pipes. Same pattern as reader-shell.component.spec.ts.
 @Component({ selector: 'app-markdown-editor', standalone: true, template: '' })
 class MarkdownEditorStub {
@@ -644,13 +644,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(css).toContain('box-shadow: none');
   });
 
-  it('lets .tox-tinymce fill the seamless surface without borders', () => {
+  it('hides the editor toolbar in zen so only the page remains', () => {
     const css = componentCss();
 
-    expect(css).toContain('border: 0 !important');
-    expect(css).toContain('border-radius: 0 !important');
-    expect(css).toContain('box-shadow: none !important');
-    expect(css).toContain('height: 100% !important');
+    const zenToolbar = css.slice(css.indexOf('body.nostos-zen'));
+    expect(zenToolbar).toContain('.editor-toolbar');
+    expect(zenToolbar).toContain('display: none !important');
   });
 
   it('gives the stage safe padding: dock clearance reserves room for the floating dock', () => {
@@ -690,7 +689,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(wrapperBlock).toContain('padding-bottom: var(--studio-dock-clearance)');
     expect(wrapperBlock).not.toContain('padding-bottom: 8rem');
 
-    // The count now reserves a line outside TinyMCE and leaves the shared dock
+    // The count now reserves a line outside the editor and leaves the shared dock
     // clearance below it instead of floating over manuscript text.
     expect(css).toContain('.editor-footer');
     expect(css).toContain('margin: 0 2.5rem var(--studio-dock-clearance)');
@@ -714,8 +713,6 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(mobileBlock).toContain('width: 100%');
     expect(mobileBlock).toContain('border-radius: 0');
     expect(mobileBlock).toContain('box-shadow: none');
-    // The tinyMCE surface must follow the edge-to-edge frame.
-    expect(mobileBlock).toContain('border-radius: 0 !important');
   });
 });
 

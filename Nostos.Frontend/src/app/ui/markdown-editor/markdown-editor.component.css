@@ -1,0 +1,429 @@
+/* The Studio page (issue #1037). Encapsulation is off because ProseMirror
+   renders the page's nodes itself; every rule is scoped under
+   `app-markdown-editor`. Colours come from the --manuscript-* token set in
+   styles.css, which Studio themes override. */
+
+app-markdown-editor {
+  /* Shared desktop manuscript measure. 820px keeps a readable column while
+     using the desk; narrow viewports own their own geometry below. */
+  --manuscript-measure: 820px;
+  --manuscript-gutter: clamp(20px, 4%, 40px);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  background: var(--manuscript-paper);
+}
+
+/* --- Toolbar: one quiet, shallow strip --------------------------------- */
+
+app-markdown-editor .editor-toolbar {
+  flex: 0 0 auto;
+  background: var(--editor-ui-bg, var(--bg-surface));
+  border-bottom: 1px solid var(--border-color);
+}
+
+app-markdown-editor .editor-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  max-width: var(--manuscript-measure);
+  min-height: 44px;
+  margin-inline: auto;
+  padding: 4px var(--manuscript-gutter);
+  padding-inline-start: calc(var(--manuscript-gutter) - 8px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+app-markdown-editor .editor-toolbar-row::-webkit-scrollbar {
+  display: none;
+}
+
+app-markdown-editor .editor-toolbar-sep {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 8px 4px;
+  background: var(--border-color);
+}
+
+app-markdown-editor .editor-block-select {
+  flex: 0 0 auto;
+  min-width: 118px;
+}
+
+app-markdown-editor .editor-mark-btn {
+  flex: 0 0 auto;
+  height: 32px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+app-markdown-editor .editor-mark-btn {
+  min-width: 32px;
+  padding: 0 6px;
+}
+
+app-markdown-editor .editor-mark-bold {
+  font-weight: 700;
+}
+
+app-markdown-editor .editor-mark-italic {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1rem;
+  font-style: italic;
+}
+
+app-markdown-editor .editor-mark-btn:hover {
+  color: var(--color-text-main);
+  background: var(--bg-hover);
+}
+
+app-markdown-editor .editor-mark-btn.active {
+  color: var(--color-text-main);
+  background: var(--color-accent-bg);
+}
+
+app-markdown-editor .editor-mark-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+app-markdown-editor .editor-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  max-width: var(--manuscript-measure);
+  margin-inline: auto;
+  padding: 0 var(--manuscript-gutter) 8px;
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-size: 0.86rem;
+}
+
+app-markdown-editor .editor-url-label {
+  color: var(--color-text-muted);
+}
+
+app-markdown-editor .editor-url-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--color-text-main);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+  font: inherit;
+}
+
+app-markdown-editor .editor-url-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+app-markdown-editor .editor-url-apply,
+app-markdown-editor .editor-url-cancel {
+  height: 32px;
+  padding: 0 12px;
+  color: var(--color-text-main);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+  font: inherit;
+  cursor: pointer;
+}
+
+app-markdown-editor .editor-url-apply {
+  color: var(--bg-surface);
+  background: var(--color-text-main);
+  border-color: var(--color-text-main);
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  /* 44px targets put the 16px glyph 14px inside its button, not 8px; keep the
+     first glyph on the manuscript's text edge. */
+  app-markdown-editor .editor-toolbar-row {
+    padding-inline-start: calc(var(--manuscript-gutter) - 14px);
+  }
+
+  app-markdown-editor .editor-toolbar-row > button,
+  app-markdown-editor .editor-mark-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+/* --- The page ------------------------------------------------------------ */
+
+app-markdown-editor .manuscript-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--manuscript-paper);
+  scrollbar-width: thin;
+  scrollbar-color: var(--manuscript-rule-strong) transparent;
+}
+
+app-markdown-editor .nostos-manuscript {
+  min-height: 100%;
+}
+
+/* No flash of an empty, caretless page before the editor exists. */
+app-markdown-editor .nostos-manuscript.editor-starting {
+  visibility: hidden;
+}
+
+app-markdown-editor .nostos-manuscript-body {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--manuscript-measure);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(2rem, 4vw, 3.5rem) var(--manuscript-gutter) 7rem;
+
+  color: var(--manuscript-ink);
+  font-family: Newsreader, Georgia, 'Times New Roman', serif;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.8;
+
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  outline: none;
+  caret-color: var(--manuscript-ink);
+}
+
+/* Typewriter mode needs real scroll runway above and below the manuscript.
+   Without it the first and last lines can never reach the 45% target. */
+app-markdown-editor .manuscript-scroll.typewriter .nostos-manuscript-body {
+  padding-top: 45vh;
+  padding-bottom: 55vh;
+}
+
+app-markdown-editor .nostos-manuscript-body ::selection {
+  color: var(--manuscript-ink);
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .nostos-manuscript-body p {
+  margin: 0 0 1.35em;
+}
+
+app-markdown-editor .nostos-manuscript-body p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--manuscript-placeholder);
+  font-style: italic;
+  pointer-events: none;
+}
+
+app-markdown-editor .nostos-manuscript-body h1,
+app-markdown-editor .nostos-manuscript-body h2,
+app-markdown-editor .nostos-manuscript-body h3 {
+  color: var(--manuscript-ink);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+app-markdown-editor .nostos-manuscript-body h1 {
+  margin: 0 0 1.25em;
+  font-size: 2rem;
+  line-height: 1.18;
+}
+
+app-markdown-editor .nostos-manuscript-body h2 {
+  margin: 2.4em 0 0.75em;
+  font-size: 1.42rem;
+  line-height: 1.25;
+}
+
+app-markdown-editor .nostos-manuscript-body h3 {
+  margin: 2em 0 0.65em;
+  font-size: 1.08rem;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+}
+
+app-markdown-editor .nostos-manuscript-body h1 + h2,
+app-markdown-editor .nostos-manuscript-body h2 + h3 {
+  margin-top: 1.2em;
+}
+
+app-markdown-editor .nostos-manuscript-body strong {
+  color: var(--manuscript-ink-strong);
+  font-weight: 600;
+}
+
+app-markdown-editor .nostos-manuscript-body a {
+  color: var(--manuscript-link);
+  text-decoration-line: underline;
+  text-decoration-color: var(--manuscript-link-rule);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+app-markdown-editor .nostos-manuscript-body a:hover {
+  color: var(--manuscript-link-hover);
+  text-decoration-color: currentColor;
+}
+
+app-markdown-editor .nostos-manuscript-body blockquote {
+  margin: 2.1rem 0;
+  padding: 0.15rem 0 0.15rem 1.25rem;
+  color: var(--manuscript-ink-soft);
+  border-left: 2px solid var(--manuscript-quote-rule);
+  font-size: 1.03em;
+  font-style: italic;
+  line-height: 1.75;
+}
+
+app-markdown-editor .nostos-manuscript-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+app-markdown-editor .nostos-manuscript-body ul,
+app-markdown-editor .nostos-manuscript-body ol {
+  margin: 0 0 1.4em;
+  padding-left: 1.6em;
+}
+
+app-markdown-editor .nostos-manuscript-body li {
+  margin: 0.3em 0;
+  padding-left: 0.18em;
+}
+
+app-markdown-editor .nostos-manuscript-body li p {
+  margin: 0;
+}
+
+app-markdown-editor .nostos-manuscript-body li::marker {
+  color: var(--manuscript-ink-faint);
+}
+
+app-markdown-editor .nostos-manuscript-body code {
+  padding: 0.12em 0.34em;
+  color: var(--manuscript-code-ink);
+  background: var(--manuscript-code-bg);
+  border: 1px solid var(--manuscript-rule);
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.84em;
+}
+
+app-markdown-editor .nostos-manuscript-body pre {
+  margin: 1.8rem 0;
+  padding: 1.15rem 1.25rem;
+  overflow-x: auto;
+  color: var(--manuscript-code-ink);
+  background: var(--manuscript-code-bg);
+  border: 1px solid var(--manuscript-rule);
+  border-radius: 6px;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+app-markdown-editor .nostos-manuscript-body pre code {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+app-markdown-editor .nostos-manuscript-body hr {
+  width: 32%;
+  margin: 3.25rem auto;
+  border: 0;
+  border-top: 1px solid var(--manuscript-rule-strong);
+}
+
+app-markdown-editor .nostos-manuscript-body table {
+  width: 100%;
+  margin: 2rem 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  color: var(--manuscript-ink);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+app-markdown-editor .nostos-manuscript-body th,
+app-markdown-editor .nostos-manuscript-body td {
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--manuscript-rule);
+}
+
+app-markdown-editor .nostos-manuscript-body th {
+  color: var(--manuscript-ink-soft);
+  background: var(--manuscript-table-head-bg);
+  border-top: 1px solid var(--manuscript-rule-strong);
+  border-bottom-color: var(--manuscript-rule-strong);
+  font-weight: 600;
+}
+
+app-markdown-editor .nostos-manuscript-body th p,
+app-markdown-editor .nostos-manuscript-body td p {
+  margin: 0;
+}
+
+app-markdown-editor .nostos-manuscript-body tr:last-child td {
+  border-bottom-color: var(--manuscript-rule-strong);
+}
+
+app-markdown-editor .nostos-manuscript-body .selectedCell {
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .nostos-manuscript-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 2rem auto;
+  border-radius: 3px;
+}
+
+app-markdown-editor .nostos-manuscript-body img.ProseMirror-selectednode {
+  outline: 2px solid var(--manuscript-link);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  app-markdown-editor .nostos-manuscript-body {
+    padding: 2rem 1.25rem 6rem;
+    font-size: 17px;
+    line-height: 1.72;
+  }
+
+  app-markdown-editor .nostos-manuscript-body h1 {
+    font-size: 1.7rem;
+  }
+
+  app-markdown-editor .nostos-manuscript-body h2 {
+    font-size: 1.3rem;
+  }
+}
