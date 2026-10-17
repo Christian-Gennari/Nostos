@@ -539,11 +539,14 @@
 
 /*
  * The manuscript sheet: app-markdown-editor fills the desk space seamlessly.
- * The reading measure (max-width: 820px) is owned inside the iframe body, so
+ * The reading measure (max-width: 820px) is owned by the editor's page body, so
  * the scrollbar naturally hugs the viewport edge rather than floating beside prose.
  */
 .editor-wrapper app-markdown-editor {
-  display: block;
+  /* A column: the toolbar on top and the page's own scroller filling the
+     rest, so the page scrolls inside the sheet instead of growing past it. */
+  display: flex;
+  flex-direction: column;
   position: relative;
 
   flex: 1 1 auto;
@@ -556,20 +559,6 @@
   border: none;
   border-radius: 0;
   box-shadow: none;
-}
-
-/*
- * TinyMCE fills the seamless surface.
- */
-:host ::ng-deep app-markdown-editor .tox-tinymce {
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
-
-  border: 0 !important;
-  border-radius: 0 !important;
-  overflow: hidden !important;
-  box-shadow: none !important;
 }
 
 /* --- Desk telemetry (grounded typography) ---
@@ -778,10 +767,6 @@
     border-radius: 0;
     box-shadow: none;
   }
-
-  :host ::ng-deep app-markdown-editor .tox-tinymce {
-    border-radius: 0 !important;
-  }
 }
 
 /* --- ZEN (FOCUS) MODE — issue #49 --- */
@@ -815,17 +800,9 @@
   display: none;
 }
 
-/* TinyMCE internal chrome (menubar, formatting toolbar, statusbar, quickbars
-   popups) is hidden in zen. Editing stays available via keyboard shortcuts.
-   The paper — border, radius, shadow — stays. */
-:host-context(body.nostos-zen) ::ng-deep app-markdown-editor .tox-editor-header,
-:host-context(body.nostos-zen) ::ng-deep app-markdown-editor .tox-menubar,
-:host-context(body.nostos-zen) ::ng-deep app-markdown-editor .tox-toolbar-overlord,
-:host-context(body.nostos-zen) ::ng-deep app-markdown-editor .tox-statusbar {
-  display: none !important;
-}
-
-:host-context(body.nostos-zen) ::ng-deep .tox .tox-pop {
+/* The editor's formatting toolbar is hidden in zen. Editing stays available
+   via keyboard shortcuts and Markdown input rules. */
+:host-context(body.nostos-zen) ::ng-deep app-markdown-editor .editor-toolbar {
   display: none !important;
 }
 

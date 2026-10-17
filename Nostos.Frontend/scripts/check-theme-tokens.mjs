@@ -12,8 +12,8 @@
  *   1. styles.css — the light `:root` set vs the `:root[data-theme='dark']`
  *      set. Fails on any colour token with no counterpart.
  *   2. Theme modules outside styles.css — a `.ts` component that injects its own
- *      document (currently the TinyMCE editor content in `markdown-editor`)
- *      declares its own light and dark blocks. Those were previously invisible
+ *      document (formerly the TinyMCE editor content in `markdown-editor`; none
+ *      today) declares its own light and dark blocks. Those were previously invisible
  *      to this script, so a token added to only one of their two blocks would
  *      silently keep the light value on dark and nothing would catch it.
  *
@@ -168,7 +168,8 @@ function collectTs(dir, found = []) {
 
 const moduleFailures = [];
 const modulesSeen = [];
-for (const tsFile of collectTs(srcRoot)) {
+const scannedTs = collectTs(srcRoot);
+for (const tsFile of scannedTs) {
   const source = readFileSync(tsFile, 'utf8');
   for (const { name, body } of inlineStyleModules(source)) {
     const ml = tokenSetInBlock(body, /:root\s*\{/);
@@ -184,14 +185,16 @@ for (const tsFile of collectTs(srcRoot)) {
   }
 }
 
-// Non-vacuity. The editor content module is the one known theme module; if the
-// scan stops finding it (renamed constant, refactored away, or a mis-rooted
-// walk) this guard would silently pass by finding nothing to check.
-const KNOWN_THEME_MODULE = 'NOSTOS_EDITOR_CONTENT_CSS';
-if (!modulesSeen.includes(KNOWN_THEME_MODULE)) {
-  console.error(`\n✖ theme-module scan did not find ${KNOWN_THEME_MODULE}.`);
-  console.error(`  Found: ${modulesSeen.length ? modulesSeen.join(', ') : '(none)'}`);
-  console.error('  The scan is mis-rooted or the module was renamed — this guard would pass vacuously.\n');
+// Non-vacuity. The TinyMCE content document (NOSTOS_EDITOR_CONTENT_CSS) was the
+// one known theme module; since issue #1037 the editor renders in the app's own
+// DOM and reads styles.css tokens, so no module is expected. The walk itself
+// must still be proven rooted, or a mis-rooted scan would pass by finding
+// nothing: it has to reach the editor component that used to hold the module.
+const KNOWN_SCANNED_FILE = 'app/ui/markdown-editor/markdown-editor.component.ts';
+if (!scannedTs.some((f) => f.endsWith(KNOWN_SCANNED_FILE))) {
+  console.error(`\n✖ theme-module scan never reached ${KNOWN_SCANNED_FILE}.`);
+  console.error(`  Scanned ${scannedTs.length} .ts file(s) under ${srcRoot}.`);
+  console.error('  The scan is mis-rooted — this guard would pass vacuously.\n');
   process.exit(1);
 }
 
