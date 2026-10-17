@@ -303,6 +303,65 @@ describe('MarkdownEditorComponent', () => {
     fetchSpy.mockRestore();
   });
 
+  describe('the / menu (#1043)', () => {
+    const typeText = (text: string) => {
+      const editor = (component as unknown as { editor: import('@tiptap/core').Editor }).editor;
+      for (const ch of text) editor.commands.insertContent(ch);
+    };
+
+    it('opens on an empty line and turns "/h2" into a heading', async () => {
+      await create('Intro.');
+      (component as any).editor.commands.focus('end');
+      (component as any).editor.commands.enter();
+      typeText('/h2');
+      expect(component.blockMenu()?.items[0].action).toBe('h2');
+      component.runBlockAction('h2');
+      typeText('Section');
+      expect(component.currentMarkdown()).toBe('Intro.\n\n## Section');
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('does not open in the middle of a sentence', async () => {
+      await create('and');
+      (component as any).editor.commands.focus('end');
+      typeText('/or');
+      expect(component.blockMenu()).toBeNull();
+    });
+
+    it('inserts a divider and a table that save as Markdown', async () => {
+      await create('');
+      (component as any).editor.commands.focus('end');
+      typeText('/div');
+      component.runBlockAction('divider');
+      expect(component.currentMarkdown()).toContain('* * *');
+      (component as any).editor.commands.focus('end');
+      typeText('/table');
+      component.runBlockAction('table');
+      expect(component.currentMarkdown()).toMatch(/\|\s*\|\s*\|/);
+    });
+
+    it('asks for an address for an image, then inserts it', async () => {
+      await create('');
+      (component as any).editor.commands.focus('end');
+      typeText('/img');
+      component.runBlockAction('image');
+      expect(component.blockMenuImage()).toBe(true);
+      component.blockMenuImageUrl.set('https://example.com/a.png');
+      component.applyBlockImage();
+      expect(component.currentMarkdown()).toBe('![](https://example.com/a.png)');
+    });
+
+    it('hands over to the @ palette for a source', async () => {
+      await create('');
+      const states: unknown[] = [];
+      component.sourceSuggestion.subscribe((st) => states.push(st));
+      (component as any).editor.commands.focus('end');
+      typeText('/source');
+      component.runBlockAction('source');
+      expect(states.at(-1)).toEqual(expect.objectContaining({ query: '' }));
+    });
+  });
+
   it('emits the final Markdown when it is torn down', async () => {
     await create('Last words.');
     emitted = [];
