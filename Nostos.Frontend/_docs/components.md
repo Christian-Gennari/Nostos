@@ -87,14 +87,14 @@ Master-detail topic explorer. Features:
 
 ### WritingStudio (`/studio`)
 
-Three-panel writing environment. Features:
+Page-first writing environment. Features:
 
-- **Left sidebar:** File tree (FlatTreeComponent) with folders/documents
-- **Center:** TinyMCE editor with auto-save (2s debounce, markdown round-trip)
-- **Right sidebar:** Context panel with two tabs:
-  - **Topics:** Browse topics → see linked notes → click to insert quote
-  - **Books:** Browse books → see notes → click to insert quote
-- **Mobile responsive** — sidebars collapse to overlays
+- **Center:** the page (`MarkdownEditorComponent`, TipTap) with auto-save; opens on a blank page that becomes a writing on its first words
+- **`@` source palette** (`source-palette/`): find notes, quotes and passages by text, book or author and insert them at the caret; passages open for picking sentences
+- **`/` menu:** blocks from an empty line (headings, lists, divider, image, table, code, source)
+- **Files** (Alt+M) and **Reference** (Alt+R) slide over the page; Reference can be pinned on wide screens
+- **Page settings** (Ctrl+,, `page-settings/`): Studio theme, typeface, size, spacing, width, spell check, typewriter mode and sounds, stored per device
+- **Shortcut sheet:** Ctrl+/
 
 ### ReaderShell (`/read/:id`)
 
