@@ -116,6 +116,10 @@ public sealed class NoteService : INoteService
         CancellationToken ct = default) =>
         SearchAsync(query, limit, bookIds: null, ct);
 
+    // Above the planner's phrase weight (4): every word present beats the exact
+    // phrase being absent, and the phrase is rare in a short "@" query anyway.
+    private const int AllTermsWeight = 5;
+
     public async Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,
         int limit,
@@ -132,9 +136,22 @@ public sealed class NoteService : INoteService
         var candidateLimit = Math.Clamp(take * 3, 20, 60);
         var fused = new Dictionary<Guid, NoteFusionCandidate>();
 
-        foreach (var variant in variants)
+        // Several words: a note holding every one of them, across its text and
+        // its book's title and author, outranks one that shares only a single
+        // word (issue #1038). "schopenhauer will" names an author and a subject.
+        var tokens = variants
+            .Where(variant => variant.Kind == LexicalQueryVariantKind.Token)
+            .Select(variant => variant.Text)
+            .ToList();
+        var searches = variants
+            .Select(variant => (variant.Text, variant.Weight, Terms: (IReadOnlyList<string>)[variant.Text]))
+            .ToList();
+        if (tokens.Count >= 2)
+            searches.Insert(0, (string.Join(' ', tokens), AllTermsWeight, tokens));
+
+        foreach (var variant in searches)
         {
-            var hits = await _notes.SearchByTextAsync(variant.Text, candidateLimit, bookIds);
+            var hits = await _notes.SearchByAllTermsAsync(variant.Terms, candidateLimit, bookIds);
             for (var rank = 0; rank < hits.Count; rank++)
             {
                 var note = hits[rank];
@@ -162,8 +179,12 @@ public sealed class NoteService : INoteService
             }
         }
 
+        // With several words, a word found in the note itself says more than one
+        // found only in its book's title: "schopenhauer will" is about the will,
+        // not about every note from "The World as Will and Representation".
         return fused.Values
             .OrderByDescending(candidate => candidate.MatchedVariants)
+            .ThenByDescending(candidate => tokens.Count >= 2 ? OwnTextMatches(candidate.Note, tokens) : 0)
             .ThenByDescending(candidate => candidate.Score)
             .ThenByDescending(candidate => candidate.Note.CreatedAt)
             .ThenBy(candidate => candidate.Note.Id)
@@ -758,6 +779,12 @@ public sealed class NoteService : INoteService
         JsonSerializer.Deserialize<NoteCommandResult<NoteDto>>(json, ReceiptJson)
         ?? throw new InvalidOperationException("Stored note command receipt is invalid.");
 
+    private static int OwnTextMatches(NoteModel note, IReadOnlyList<string> tokens) =>
+        tokens.Count(token =>
+            note.Content.Contains(token, StringComparison.OrdinalIgnoreCase)
+            || (note.SelectedText?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (note.PassageTitle?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false));
+
     private static int SpecificityWeight(
         string term,
         IReadOnlyList<LexicalQueryVariant> variants) =>
@@ -795,7 +822,8 @@ public sealed class NoteService : INoteService
         n.Kind,
         n.PassageTitle,
         n.PassageEnd,
-        n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null);
+        n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null,
+        n.Book?.Author);
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here

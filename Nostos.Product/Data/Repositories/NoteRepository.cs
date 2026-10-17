@@ -84,18 +84,32 @@ public class NoteRepository : INoteRepository
         await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
         await transaction.CommitAsync();
     }
-    public async Task<List<NoteModel>> SearchByTextAsync(
+    public Task<List<NoteModel>> SearchByTextAsync(
         string query,
+        int limit,
+        IReadOnlyCollection<Guid>? bookIds = null) =>
+        SearchByAllTermsAsync([query], limit, bookIds);
+
+    /// <summary>
+    /// Notes where EVERY term appears in at least one of the fields a person
+    /// would describe a note by: its text, its quotation, its passage title, or
+    /// its book's title or author (issue #1038). One term is the plain phrase
+    /// search; several let "schopenhauer will" find his notes about the will
+    /// although no single field holds both words.
+    /// </summary>
+    public async Task<List<NoteModel>> SearchByAllTermsAsync(
+        IReadOnlyList<string> terms,
         int limit,
         IReadOnlyCollection<Guid>? bookIds = null)
     {
-        var term = query.Trim();
-        if (term.Length == 0 || bookIds is { Count: 0 }) return [];
+        var patterns = terms
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Select(t => $"%{Escape(t.ToLowerInvariant())}%")
+            .Distinct()
+            .ToList();
+        if (patterns.Count == 0 || bookIds is { Count: 0 }) return [];
 
-        // EF.Functions.Like keeps this a single query against the three text
-        // columns a note really has. SQLite's LIKE is case-insensitive for ASCII,
-        // which is the behaviour a search box should have.
-        var pattern = $"%{Escape(term)}%";
         var notes = _db
             .Notes.Include(n => n.Book)
             .Include(n => n.NoteTopics)
@@ -105,12 +119,21 @@ public class NoteRepository : INoteRepository
         if (bookIds is { Count: > 0 })
             notes = notes.Where(n => bookIds.Contains(n.BookId));
 
+        // Both sides are lower-cased rather than trusting the provider's LIKE:
+        // SQLite's LIKE ignores ASCII case, but PostgreSQL's (Nostos Cloud) does
+        // not, so "schopenhauer" never found "Schopenhauer" there.
+        foreach (var pattern in patterns)
+        {
+            notes = notes.Where(n =>
+                EF.Functions.Like(n.Content.ToLower(), pattern, "\\")
+                || (n.SelectedText != null && EF.Functions.Like(n.SelectedText.ToLower(), pattern, "\\"))
+                || (n.PassageTitle != null && EF.Functions.Like(n.PassageTitle.ToLower(), pattern, "\\"))
+                || (n.Book != null && n.Book.Title != null && EF.Functions.Like(n.Book.Title.ToLower(), pattern, "\\"))
+                || (n.Book != null && n.Book.Author != null && EF.Functions.Like(n.Book.Author.ToLower(), pattern, "\\"))
+            );
+        }
+
         return await notes
-            .Where(n =>
-                EF.Functions.Like(n.Content, pattern, "\\")
-                || (n.SelectedText != null && EF.Functions.Like(n.SelectedText, pattern, "\\"))
-                || (n.Book != null && n.Book.Title != null && EF.Functions.Like(n.Book.Title, pattern, "\\"))
-            )
             .OrderByDescending(n => n.CreatedAt)
             .Take(limit)
             .ToListAsync();

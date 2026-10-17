@@ -35,6 +35,16 @@ public interface INoteRepository
         IReadOnlyCollection<Guid>? bookIds = null);
 
     /// <summary>
+    /// Notes in which every term appears in at least one searchable field
+    /// (text, quotation, passage title, book title or author), case-insensitively
+    /// on every provider. Newest first; the caller caps the row count.
+    /// </summary>
+    Task<List<NoteModel>> SearchByAllTermsAsync(
+        IReadOnlyList<string> terms,
+        int limit,
+        IReadOnlyCollection<Guid>? bookIds = null);
+
+    /// <summary>
     /// The stored exactly-once receipt for a capture key pair, or null when the
     /// pair has not been seen. Read before a capture so a replay can return the
     /// stored result without touching the notes table (issue #260 §3).
