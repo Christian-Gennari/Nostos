@@ -2,6 +2,7 @@ import { signal } from '@angular/core';
 import { ReadAloudSegment, ReaderReadAloud } from '../read-aloud/read-aloud.types';
 import { SentenceSpan, splitReadAloudSentences } from '../read-aloud/read-aloud-sentences';
 import {
+  MarginLine,
   PageRect,
   PdfPageGeometry,
   PdfPageText,
@@ -37,6 +38,10 @@ interface LoadedPage {
 
 /** Pages kept in memory: the one being read and its neighbours. */
 const KEEP_PAGES = 4;
+/** Margin lines kept, by page: enough for the pages two either side of a few pages. */
+const KEEP_MARGINS = 12;
+/** Fewer sentences than this left on the page, and the next page is read ahead. */
+const READ_AHEAD = 3;
 
 /**
  * The read-aloud cursor of a PDF: a page and a sentence on it.
@@ -50,6 +55,8 @@ export class PdfReadAloud implements ReaderReadAloud {
   readonly userMoved = this.moved.asReadonly();
 
   private readonly pages = new Map<number, LoadedPage | null>();
+  private readonly loading = new Map<number, Promise<LoadedPage | null>>();
+  private readonly margins = new Map<number, Promise<MarginLine[]>>();
   private page = 0;
   private spans: SentenceSpan[] = [];
   private pageText: PdfPageText | null = null;
@@ -77,6 +84,8 @@ export class PdfReadAloud implements ReaderReadAloud {
     this.running = true;
     this.carried = false;
     this.pages.clear();
+    this.loading.clear();
+    this.margins.clear();
     return this.fromPage(this.host.currentPage(), 1, 0);
   }
 
@@ -99,8 +108,44 @@ export class PdfReadAloud implements ReaderReadAloud {
     return this.fromPage(this.page - 1, -1, 0);
   }
 
+  /**
+   * The sentences after this one, as they will be said, so the voice can
+   * fetch them ahead. They carry on over the page break when the next page is
+   * already read, and a sentence split by the break is given whole.
+   */
   upcoming(count: number): string[] {
-    return this.spans.slice(this.index + 1, this.index + 1 + count).map((span) => span.text);
+    const texts: string[] = [];
+    let pageNumber = this.page;
+    let spans = this.spans;
+    let index = this.index;
+    let skipFirst = this.carried;
+
+    while (texts.length < count && pageNumber > 0) {
+      index++;
+      if (index >= spans.length) {
+        // As `fromPage` will go: the next page with something left to read,
+        // as far as the pages already read reach.
+        const start = pageNumber + 1;
+        let found = false;
+        for (let number = start; number <= this.host.pageCount(); number++) {
+          if (!this.pages.has(number)) break;
+          const loaded = this.pages.get(number);
+          const skip = number === start && skipFirst ? 1 : 0;
+          if (loaded && loaded.spans.length > skip) {
+            pageNumber = number;
+            spans = loaded.spans;
+            index = skip;
+            found = true;
+            break;
+          }
+        }
+        if (!found) break;
+      }
+      const spoken = this.spokenAt(spans, index, this.pages.get(pageNumber + 1));
+      texts.push(spoken.text);
+      skipFirst = spoken.carried;
+    }
+    return texts;
   }
 
   end(): void {
@@ -111,6 +156,8 @@ export class PdfReadAloud implements ReaderReadAloud {
     this.index = -1;
     this.carried = false;
     this.pages.clear();
+    this.loading.clear();
+    this.margins.clear();
     this.host.clearMark();
   }
 
@@ -150,42 +197,68 @@ export class PdfReadAloud implements ReaderReadAloud {
 
     this.host.showMark(this.page, rectsForPdfSpan(this.pageText, span.start, span.length));
 
-    let text = span.text;
-    this.carried = false;
-
-    // The page ends mid-sentence: say the rest, from the next page, with it.
+    const pageNumber = this.page;
     const isLast = this.index === this.spans.length - 1;
-    if (isLast && !endsSentence(text) && this.page < this.host.pageCount()) {
-      const next = await this.load(this.page + 1);
+    // The page ends mid-sentence: the rest, from the next page, is said with it.
+    if (isLast && !endsSentence(span.text) && pageNumber < this.host.pageCount()) {
+      await this.load(pageNumber + 1);
       if (!this.running) return null;
-      const continuation = next?.spans[0]?.text;
-      if (continuation && /^[\p{Ll}\p{N}"“‘'(]/u.test(continuation)) {
-        text = joinAcrossBreak(text, continuation);
-        this.carried = true;
-      }
+    } else if (this.index >= this.spans.length - READ_AHEAD) {
+      // Read the next page now, so its first sentences can be fetched ahead
+      // and there is no pause when the page turns.
+      void this.load(pageNumber + 1).catch(() => undefined);
     }
 
-    return { text };
+    const spoken = this.spokenAt(this.spans, this.index, this.pages.get(pageNumber + 1));
+    this.carried = spoken.carried;
+    return { text: spoken.text };
   }
 
-  private async load(pageNumber: number): Promise<LoadedPage | null> {
-    if (pageNumber < 1 || pageNumber > this.host.pageCount()) return null;
-    if (this.pages.has(pageNumber)) return this.pages.get(pageNumber) ?? null;
+  /** What is said for the sentence at `index`: with the next page's start when the page breaks it. */
+  private spokenAt(
+    spans: readonly SentenceSpan[],
+    index: number,
+    next: LoadedPage | null | undefined,
+  ): { text: string; carried: boolean } {
+    const text = spans[index].text;
+    if (index !== spans.length - 1 || endsSentence(text)) return { text, carried: false };
 
+    const continuation = next?.spans[0]?.text;
+    if (continuation && /^[\p{Ll}\p{N}"“‘'(]/u.test(continuation)) {
+      return { text: joinAcrossBreak(text, continuation), carried: true };
+    }
+    return { text, carried: false };
+  }
+
+  private load(pageNumber: number): Promise<LoadedPage | null> {
+    if (pageNumber < 1 || pageNumber > this.host.pageCount()) return Promise.resolve(null);
+    if (this.pages.has(pageNumber)) return Promise.resolve(this.pages.get(pageNumber) ?? null);
+
+    // Reading ahead and reading on may ask for the same page at once.
+    const known = this.loading.get(pageNumber);
+    if (known) return known;
+    const pending: Promise<LoadedPage | null> = this.read(pageNumber).finally(() => {
+      if (this.loading.get(pageNumber) === pending) this.loading.delete(pageNumber);
+    });
+    this.loading.set(pageNumber, pending);
+    return pending;
+  }
+
+  private async read(pageNumber: number): Promise<LoadedPage | null> {
     const content = await this.host.loadPage(pageNumber);
     let loaded: LoadedPage | null = null;
 
     if (content) {
-      // A margin line that also stands on the page before (or after) is a
-      // running header: it is found by comparing the two.
-      const neighbourNumber = pageNumber > 1 ? pageNumber - 1 : pageNumber + 1;
-      const neighbour =
-        neighbourNumber <= this.host.pageCount() ? await this.host.loadPage(neighbourNumber) : null;
-      const neighbourMargins = neighbour
-        ? buildPdfPageText(neighbour.items, neighbour.geometry).marginLines
-        : [];
-
-      const text = buildPdfPageText(content.items, content.geometry, neighbourMargins);
+      // A margin line that also stands on a page nearby is a running header.
+      // Left and right pages often carry different ones, so the pages two
+      // away are compared as well as the pages either side.
+      const nearby = await Promise.all(
+        [pageNumber - 2, pageNumber - 1, pageNumber + 1, pageNumber + 2].map((number) =>
+          this.marginsOf(number),
+        ),
+      );
+      const text = buildPdfPageText(content.items, content.geometry, nearby.flat());
+      this.margins.set(pageNumber, Promise.resolve(text.marginLines));
       loaded = { text, spans: splitReadAloudSentences(text.text, this.host.language()) };
     }
 
@@ -195,6 +268,24 @@ export class PdfReadAloud implements ReaderReadAloud {
       this.pages.delete(oldest);
     }
     return loaded;
+  }
+
+  private marginsOf(pageNumber: number): Promise<MarginLine[]> {
+    if (pageNumber < 1 || pageNumber > this.host.pageCount()) return Promise.resolve([]);
+    let margins = this.margins.get(pageNumber);
+    if (!margins) {
+      margins = this.host
+        .loadPage(pageNumber)
+        .then((content) =>
+          content ? buildPdfPageText(content.items, content.geometry).marginLines : [],
+        )
+        .catch(() => []);
+      this.margins.set(pageNumber, margins);
+      while (this.margins.size > KEEP_MARGINS) {
+        this.margins.delete(this.margins.keys().next().value as number);
+      }
+    }
+    return margins;
   }
 }
 
