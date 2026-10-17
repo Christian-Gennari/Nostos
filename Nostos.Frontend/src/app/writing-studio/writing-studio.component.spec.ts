@@ -152,12 +152,6 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     component.topics.set([{ id: 'topic-1', name: 'Memory', usageCount: 3 } as any]);
     fixture.detectChanges();
 
-    const browseFiles = fixture.nativeElement.querySelector(
-      '.empty-browse-files',
-    ) as HTMLButtonElement;
-    expect(browseFiles.classList.contains('nostos-button')).toBe(true);
-    expect(browseFiles.classList.contains('nostos-button--secondary')).toBe(true);
-
     const newDocument = fixture.nativeElement.querySelector(
       '.files-new-document',
     ) as HTMLButtonElement;
@@ -269,30 +263,30 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(mobile).toContain('transform: translateX(100%)');
   });
 
-  // --- Placement: no telemetry or zen control without an active document ---
-  it('shows no zen control and no telemetry without an active document', () => {
-    expect(zenToggle()).toBeNull();
-    expect(zenExit()).toBeNull();
-    expect(deskTelemetry()).toBeNull();
-    expect(fixture.nativeElement.querySelector('.editor-header')).toBeTruthy();
+  // --- The page first (issue #1040) ---
+  it('opens on a blank page with the rails closed and no empty state', () => {
+    expect(component.blankPage()).toBe(true);
+    expect(component.activeItem()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.empty-state')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-markdown-editor')).toBeTruthy();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(false);
     expect(fixture.nativeElement.querySelector('.files-toggle')?.getAttribute('aria-label')).toBe(
-      'Hide files',
+      'Show files',
     );
     expect(
       fixture.nativeElement.querySelector('.reference-toggle')?.getAttribute('aria-label'),
-    ).toBe('Hide reference');
-    expect(fixture.nativeElement.querySelector('.empty-new-document')?.textContent).toContain(
-      'New document',
-    );
+    ).toBe('Show reference');
+    expect(fixture.nativeElement.querySelector('.header-doc-title')?.textContent?.trim()).toBe('New page');
     const newInFiles = fixture.nativeElement.querySelector('.files-new-document') as HTMLButtonElement;
     expect(newInFiles.textContent?.trim()).toBe('New');
     expect(newInFiles.getAttribute('aria-label')).toBe('New document');
-    // No duplicate desktop hide buttons: the editor header owns both rail toggles.
-    expect(fixture.nativeElement.querySelector('.files-rail-collapse')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.reference-rail-collapse')).toBeNull();
+    // Both rails are slide-overs, so each carries its own close control.
+    expect(fixture.nativeElement.querySelector('.files-rail-collapse')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.reference-rail-collapse')).toBeTruthy();
   });
 
-  it('toggles desktop rails independently and persists each preference', () => {
+  it('slides the rails over the page, and pins Reference beside it when asked', () => {
     const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
     const referenceToggle = fixture.nativeElement.querySelector(
       '.reference-toggle',
@@ -300,31 +294,82 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
     filesToggle.click();
     fixture.detectChanges();
-    expect(component.showFileSidebar()).toBe(false);
-    expect(component.showBrainSidebar()).toBe(true);
-    expect(localStorage.getItem('nostos.studio.filesRailOpen')).toBe('0');
+    expect(component.showFileSidebar()).toBe(true);
+    expect(component.drawerOpen()).toBe(true);
+    expect(fixture.nativeElement.querySelector('.backdrop.visible')).toBeTruthy();
 
+    // One slide-over at a time.
     referenceToggle.click();
     fixture.detectChanges();
     expect(component.showFileSidebar()).toBe(false);
-    expect(component.showBrainSidebar()).toBe(false);
-    expect(localStorage.getItem('nostos.studio.referenceRailOpen')).toBe('0');
+    expect(component.showBrainSidebar()).toBe(true);
 
-    component.enterZen();
-    component.exitZen();
-    expect(component.showFileSidebar()).toBe(false);
+    component.toggleReferencePin();
+    fixture.detectChanges();
+    expect(component.referencePinned()).toBe(true);
+    expect(localStorage.getItem('nostos.studio.referencePinned')).toBe('1');
+    expect(component.showBrainSidebar()).toBe(true);
+    expect(component.drawerOpen()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.studio-layout.drawer-reference')).toBeNull();
+
+    // Opening Files leaves a pinned Reference where it is.
+    filesToggle.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(true);
+    expect(component.showBrainSidebar()).toBe(true);
+
+    component.toggleReferencePin();
+    expect(localStorage.getItem('nostos.studio.referencePinned')).toBe('0');
     expect(component.showBrainSidebar()).toBe(false);
   });
 
-  it('keeps compact drawers mutually exclusive and offers Browse files when empty', () => {
+  it('closes an open slide-over with Esc before anything else', () => {
+    component.toggleFilesRail();
+    fixture.detectChanges();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.showFileSidebar()).toBe(false);
+  });
+
+  it('fades the chrome while typing and brings it back on Esc', () => {
+    component.onEditorChange('Some words');
+    fixture.detectChanges();
+    expect(component.isTyping()).toBe(true);
+    expect(document.body.classList.contains('nostos-studio-typing')).toBe(true);
+    expect(fixture.nativeElement.querySelector('.studio-layout.is-typing')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.isTyping()).toBe(false);
+    expect(document.body.classList.contains('nostos-studio-typing')).toBe(false);
+  });
+
+  it('cycles words, characters and reading time in the stat corner', () => {
+    openDocument();
+    component.editorWordCount.set(476);
+    component.editorCharacterCount.set(2600);
+    expect(component.statText()).toBe('476 words');
+    component.cycleStat();
+    expect(component.statText()).toBe('2600 characters');
+    component.cycleStat();
+    expect(component.statText()).toBe('2 min read');
+    component.cycleStat();
+    expect(component.statText()).toBe('476 words');
+  });
+
+  it('opens the Files and Reference rails with Alt+M and Alt+R, and the sheet with Ctrl+/', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'µ', code: 'KeyM', altKey: true }));
+    expect(component.showFileSidebar()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '®', code: 'KeyR', altKey: true }));
+    expect(component.showBrainSidebar()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="shortcut-sheet"]')).toBeTruthy();
+  });
+
+  it('keeps compact drawers mutually exclusive', () => {
     component.isCompact.set(true);
     component.showFileSidebar.set(false);
     component.showBrainSidebar.set(false);
     fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('.empty-browse-files')?.textContent).toContain(
-      'Browse files',
-    );
 
     const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
     const referenceToggle = fixture.nativeElement.querySelector(
@@ -872,40 +917,32 @@ describe('WritingStudio delete (no window.confirm)', () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it('creates an untitled document and puts it into inline rename, without a prompt', () => {
-      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
-
+    it('New gives a blank page and creates nothing until there are words', () => {
       component.createItem('Document');
 
       expect(promptSpy).not.toHaveBeenCalled();
+      expect(writings.create).not.toHaveBeenCalled();
+      expect(component.blankPage()).toBe(true);
+      expect(component.activeItem()).toBeNull();
+    });
+
+    it('creates the writing with its first words and names it from its first line', () => {
+      writings.create.mockReturnValue(
+        of({ id: 'new-1', name: 'Untitled document', type: 'Document', updatedAt: '' }),
+      );
+      component.createItem('Document');
+
+      component.onEditorChange('# Morning pages\n\nThe first words.');
+
       expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: null });
-      expect(component.editingId()).toBe('new-1');
-      // Not opened yet: opening would take focus from the rename field.
-      expect(writings.get).not.toHaveBeenCalled();
-    });
+      expect(component.activeItem()?.id).toBe('new-1');
+      expect(component.blankPage()).toBe(false);
+      expect(component.editorTitle()).toBe('Morning pages');
+      expect(localStorage.getItem('nostos.studio.lastWritingId')).toBe('new-1');
 
-    it('opens the new document once its name is saved', () => {
-      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
-      component.createItem('Document');
-
-      component.saveRename('new-1', 'Chapter one');
-
-      expect(writings.update).toHaveBeenCalledWith('new-1', { name: 'Chapter one' });
-      expect(writings.get).toHaveBeenCalledWith('new-1');
-      expect(component.editingId()).toBeNull();
-    });
-
-    it('opens it under the placeholder name when the rename is dismissed', () => {
-      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
-      component.createItem('Document');
-
-      component.cancelRename();
-
-      expect(writings.get).toHaveBeenCalledWith('new-1');
-      // Only once: a later rename of the same row does not reopen it.
-      component.editingId.set('new-1');
-      component.cancelRename();
-      expect(writings.get).toHaveBeenCalledTimes(1);
+      // Only once, however fast the next words come.
+      component.onEditorChange('# Morning pages\n\nThe first words. More.');
+      expect(writings.create).toHaveBeenCalledTimes(1);
     });
 
     it('renames a new folder in place and opens nothing', () => {
@@ -922,6 +959,7 @@ describe('WritingStudio delete (no window.confirm)', () => {
     it('says so when the item cannot be created', () => {
       writings.create.mockReturnValue(throwError(() => new Error('offline')));
       component.createItem('Document');
+      component.onEditorChange('Words');
 
       expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith('Could not create a document');
       expect(component.editingId()).toBeNull();
@@ -2074,7 +2112,11 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
   async function createWithParams(
     params: Record<string, string> = {},
     historyState: Record<string, unknown> = {},
+    lastWritingId: string | null = null,
   ) {
+    // The Studio reopens the last writing; each case starts with none unless given.
+    localStorage.clear();
+    if (lastWritingId) localStorage.setItem('nostos.studio.lastWritingId', lastWritingId);
     const query = new URLSearchParams(params).toString();
     window.history.replaceState(historyState, '', `/studio${query ? `?${query}` : ''}`);
     queryParams = new BehaviorSubject(convertToParamMap(params));
@@ -2167,12 +2209,21 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
     expect(toastService.error).toHaveBeenCalledWith('That writing is unavailable');
   });
 
-  it('keeps ordinary /studio behavior unchanged without writingId', async () => {
+  it('opens a blank page on /studio with no writingId and no writing to return to', async () => {
     await createWithParams();
 
     expect(writingsService.get).not.toHaveBeenCalled();
     expect(component.activeItem()).toBeNull();
+    expect(component.blankPage()).toBe(true);
     expect(component.referenceMode()).toBe('writing');
+  });
+
+  it('reopens the last writing on /studio with no writingId', async () => {
+    await createWithParams({}, {}, doc.id);
+
+    expect(writingsService.get).toHaveBeenCalledWith(doc.id);
+    expect(component.activeItem()?.id).toBe(doc.id);
+    expect(component.blankPage()).toBe(false);
   });
 
   it('lands a mobile handoff in the editor with both drawers closed', async () => {

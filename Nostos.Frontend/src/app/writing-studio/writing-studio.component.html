@@ -2,17 +2,21 @@
   class="studio-layout"
   [class.files-collapsed]="!showFileSidebar()"
   [class.reference-collapsed]="!showBrainSidebar()"
+  [class.drawer-files]="isDrawer('files')"
+  [class.drawer-reference]="isDrawer('reference')"
+  [class.is-typing]="isTyping()"
 >
   <div
     class="backdrop"
-    [class.visible]="isCompact() && (showFileSidebar() || showBrainSidebar())"
+    [class.visible]="drawerOpen()"
     (click)="closeSidebars()"
   ></div>
 
   <aside
     class="sidebar-left"
     [class.open]="showFileSidebar()"
-    [style.width.px]="!isCompact() && showFileSidebar() ? leftSidebarWidth() : null"
+    [attr.aria-hidden]="!showFileSidebar()"
+    [attr.inert]="showFileSidebar() ? null : ''"
   >
     <div class="sidebar-header">
       <div class="sidebar-title-row">
@@ -23,7 +27,7 @@
             New
           </button>
           <button appIconButton size="xs" icon="folder-plus" [glyphSize]="16" weight="thin" (click)="createItem('Folder')" title="New folder" aria-label="New folder"></button>
-          @if (isCompact()) {
+          @if (isDrawer('files')) {
           <button
             appIconButton
             size="xs"
@@ -75,7 +79,7 @@
       <button
         appIconButton
         class="header-rail-toggle files-toggle"
-        icon="folder-open"
+        icon="list"
         [glyphSize]="18"
         weight="thin"
         [class.active]="showFileSidebar()"
@@ -95,7 +99,9 @@
           </span>
         </div>
       } @else {
-        <div class="header-doc-meta header-doc-meta-empty" aria-hidden="true"></div>
+        <div class="header-doc-meta">
+          <span class="header-doc-title header-doc-title-blank">{{ editorTitle() || 'New page' }}</span>
+        </div>
       }
 
       <div class="doc-actions">
@@ -114,7 +120,7 @@
           [attr.aria-pressed]="showBrainSidebar()"
         ></button>
 
-        @if (activeItem()) {
+        @if (activeItem() || blankPage()) {
           <button
             appIconButton
             class="typewriter-toggle"
@@ -145,7 +151,7 @@
       </div>
     </div>
 
-    @if (activeItem()) {
+    @if (activeItem() || blankPage()) {
       <div class="editor-wrapper">
         <app-markdown-editor
           #editor
@@ -153,8 +159,9 @@
           [typewriter]="typewriter()"
           [sourceSuggestionKeyDown]="paletteKeyHandler"
           [sourceSuggestionActiveId]="sourcePalette.activeId()"
-          (contentChange)="editorText.set($event)"
+          (contentChange)="onEditorChange($event)"
           (wordCountChange)="editorWordCount.set($event)"
+          (characterCountChange)="editorCharacterCount.set($event)"
           (sourceSuggestion)="onSourceSuggestion($event)"
         ></app-markdown-editor>
         <app-source-palette
@@ -167,32 +174,41 @@
         />
       </div>
       <div class="editor-footer">
-        <div class="editor-desk-telemetry" aria-live="polite">
-          <span class="word-count-num">{{ displayWordCount() }}</span> {{ displayWordCount() === 1 ? 'word' : 'words' }}
-        </div>
-      </div>
-    } @else {
-      <div class="empty-state">
-        <div class="icon-circle">
-          <nostos-icon
-            name="file-text"
-            [size]="28" weight="light"></nostos-icon>
-        </div>
-        <h2>Open a document to begin writing</h2>
-        <p class="empty-subtext">Choose one from Files, or start a new document.</p>
-        <button appButton variant="primary" class="empty-new-document" (click)="createItem('Document')">New document</button>
-        @if (isCompact()) {
-          <button appButton variant="secondary" class="empty-browse-files" (click)="openFilesDrawer()">Browse files</button>
-        }
+        <button
+          type="button"
+          class="editor-desk-telemetry"
+          aria-live="polite"
+          title="Words, characters, reading time"
+          (click)="cycleStat()"
+        >{{ statText() }}</button>
       </div>
     }
   </main>
 
-  <aside class="sidebar-right" [class.open]="showBrainSidebar()">
+  <aside
+    class="sidebar-right"
+    [class.open]="showBrainSidebar()"
+    [attr.aria-hidden]="!showBrainSidebar()"
+    [attr.inert]="showBrainSidebar() ? null : ''"
+  >
     <div class="sidebar-header compact">
       <div class="sidebar-title-row">
         <h2>Reference</h2>
-        @if (isCompact()) {
+        @if (!isCompact()) {
+        <button
+          appIconButton
+          size="xs"
+          class="reference-pin"
+          icon="sidebar-simple"
+          [glyphSize]="16"
+          weight="thin"
+          (click)="toggleReferencePin()"
+          [title]="referencePinned() ? 'Let Reference slide over the page' : 'Pin Reference beside the page'"
+          [attr.aria-label]="referencePinned() ? 'Unpin Reference' : 'Pin Reference beside the page'"
+          [attr.aria-pressed]="referencePinned()"
+        ></button>
+        }
+        @if (isDrawer('reference')) {
         <button
           appIconButton
           size="xs"
@@ -664,6 +680,29 @@
     (cancel)="cancelDeleteItem()"
   >
   </app-confirm-modal>
+
+  @if (shortcutsOpen()) {
+    <div class="shortcut-sheet-backdrop" (click)="shortcutsOpen.set(false)"></div>
+    <section class="shortcut-sheet" role="dialog" aria-modal="false" aria-labelledby="shortcut-sheet-title" data-testid="shortcut-sheet">
+      <header class="shortcut-sheet-header">
+        <h2 id="shortcut-sheet-title">Keyboard shortcuts</h2>
+        <button appIconButton icon="x" [glyphSize]="16" aria-label="Close shortcuts" title="Close (Esc)" (click)="shortcutsOpen.set(false)"></button>
+      </header>
+      <dl class="shortcut-list">
+        <div><dt><kbd>&#64;</kbd></dt><dd>Find a source and put it on the page</dd></div>
+        <div><dt><kbd>Ctrl</kbd> <kbd>'</kbd></dt><dd>Open the source palette</dd></div>
+        <div><dt><kbd>Alt</kbd> <kbd>M</kbd></dt><dd>Files</dd></div>
+        <div><dt><kbd>Alt</kbd> <kbd>R</kbd></dt><dd>Reference</dd></div>
+        <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd> · <kbd>Ctrl</kbd> <kbd>I</kbd></dt><dd>Bold · italic</dd></div>
+        <div><dt><kbd>#</kbd> <kbd>##</kbd> <kbd>###</kbd> then space</dt><dd>Headings</dd></div>
+        <div><dt><kbd>&gt;</kbd> then space</dt><dd>Quote</dd></div>
+        <div><dt><kbd>-</kbd> or <kbd>1.</kbd> then space</dt><dd>List</dd></div>
+        <div><dt><kbd>Ctrl</kbd> <kbd>Z</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Undo · redo</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Close what is open; show the controls again</dd></div>
+        <div><dt><kbd>Ctrl</kbd> <kbd>/</kbd></dt><dd>This sheet</dd></div>
+      </dl>
+    </section>
+  }
 </div>
 
 <!-- Shared pieces of the Reference panel. A source row and a detail header

@@ -1841,6 +1841,30 @@ body.nostos-zen app-assistant {
   display: none;
 }
 
+/* While words are going onto the Studio page, the floating dock and the
+   assistant trigger fade with the rest of the chrome (issue #1040); a pointer
+   movement or Esc brings them back. Global for the same reason as zen above. */
+body.nostos-studio-typing app-app-dock,
+body.nostos-studio-typing app-assistant {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 600ms ease;
+}
+
+app-app-dock,
+app-assistant {
+  transition: opacity 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.nostos-studio-typing app-app-dock,
+  body.nostos-studio-typing app-assistant,
+  app-app-dock,
+  app-assistant {
+    transition: none;
+  }
+}
+
 /* ------------------------------
    LIBRARY: toolbar search/control collision
 ------------------------------ */

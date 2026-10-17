@@ -17,8 +17,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Typography from '@tiptap/extension-typography';
 import Image from '@tiptap/extension-image';
 import { TableKit } from '@tiptap/extension-table';
+import BubbleMenu from '@tiptap/extension-bubble-menu';
 
-import { DropdownComponent, DropdownOption } from '../dropdown/dropdown.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
@@ -64,7 +64,7 @@ type BlockKind = 'paragraph' | 'h1' | 'h2' | 'h3' | 'blockquote' | 'codeBlock';
 @Component({
   selector: 'app-markdown-editor',
   standalone: true,
-  imports: [DropdownComponent, IconButtonComponent],
+  imports: [IconButtonComponent],
   templateUrl: './markdown-editor.component.html',
   styleUrl: './markdown-editor.component.css',
   // ProseMirror renders the page's nodes itself, so emulated encapsulation
@@ -76,6 +76,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   initialContent = input<string>('');
   contentChange = output<string>();
   wordCountChange = output<number>();
+  /** Characters on the page, spaces included, for the Studio's stat corner. */
+  characterCountChange = output<number>();
   /**
    * Typewriter mode: keep the caret line near 45% of the page by scrolling on
    * caret activity. Owned by the studio (toggle + persistence); the editor
@@ -92,6 +94,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   @ViewChild('mount', { static: true }) private mount!: ElementRef<HTMLElement>;
   @ViewChild('scroller', { static: true }) private scroller!: ElementRef<HTMLElement>;
   @ViewChild('urlInput') private urlInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('bubble', { static: true }) private bubble!: ElementRef<HTMLElement>;
 
   /** The editor's contenteditable element, once it exists. */
   private readonly editorDom = signal<HTMLElement | null>(null);
@@ -99,16 +102,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   /** True until the editor exists, so the empty page never flashes a caret. */
   readonly editorStarting = signal(true);
 
-  readonly blockOptions: readonly DropdownOption[] = [
-    { value: 'paragraph', label: 'Paragraph' },
-    { value: 'h1', label: 'Heading 1' },
-    { value: 'h2', label: 'Heading 2' },
-    { value: 'h3', label: 'Heading 3' },
-    { value: 'blockquote', label: 'Quote' },
-    { value: 'codeBlock', label: 'Code' },
-  ];
-
-  /** Toolbar state, refreshed on every transaction. */
+  /** Selection-bubble state, refreshed on every transaction. */
   readonly activeBlock = signal<BlockKind>('paragraph');
   readonly isBold = signal(false);
   readonly isItalic = signal(false);
@@ -162,6 +156,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     // it really differs, so a save echo never moves the caret.
     effect(() => {
       const markdown = this.initialContent();
+    // The bubble plugin attaches its element when a selection appears and
+    // removes it when it goes; rendered in place it would sit on the page as
+    // a bar. Angular keeps updating its bindings while it is detached.
+    this.bubble.nativeElement.remove();
       const editor = this.editor;
       if (
         editor &&
@@ -195,6 +193,26 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         // Writings saved under TinyMCE can hold pasted images as data URIs.
         Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),
+        BubbleMenu.configure({
+          element: this.bubble.nativeElement,
+          // Fixed to the viewport, following the page's own scroller: inside
+          // that scroller an absolutely placed bubble resolved against the
+          // wrong offset parent and landed in the corner, under the header.
+          options: {
+            strategy: 'fixed',
+            placement: coarsePointer() ? 'bottom' : 'top',
+            offset: 8,
+            flip: true,
+            shift: { padding: 8 },
+            scrollTarget: this.scroller.nativeElement,
+          },
+          // Never over an open @ query, an image or a code block.
+          shouldShow: ({ editor, from, to, element }) => {
+            if (element.contains(document.activeElement)) return true;
+            if (from === to || !editor.isFocused || this.suggestionRange) return false;
+            return !editor.isActive('codeBlock') && !editor.isActive('image');
+          },
+        }),
         SourceSuggestion.configure({
           onChange: (state) => {
             if (!state) this.dropShortcutAt();
@@ -240,6 +258,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.destroyed = true;
     this.pendingTransientRestore?.resolve(false);
     this.pendingTransientRestore = null;
+    this.bubble?.nativeElement.remove();
     if (this.editor) {
       // The last keystrokes may still be inside the debounce window upstream.
       this.emitMarkdown();
@@ -446,7 +465,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   }
 
   // ------------------------------------------------------------------
-  // Toolbar
+  // Formatting (the selection bubble and keyboard)
   // ------------------------------------------------------------------
 
   undo(): void {
@@ -455,6 +474,11 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   redo(): void {
     this.editor?.chain().focus().redo().run();
+  }
+
+  /** A block style from the bubble: applying the active one again undoes it. */
+  toggleBlock(kind: BlockKind): void {
+    this.setBlock(this.activeBlock() === kind ? 'paragraph' : kind);
   }
 
   setBlock(kind: string): void {
@@ -647,6 +671,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     if (!editor) return;
     const text = editor.state.doc.textBetween(0, editor.state.doc.content.size, ' ', ' ');
     this.wordCountChange.emit(countWords(text));
+    this.characterCountChange.emit(text.length);
   }
 
   /**
@@ -719,4 +744,8 @@ function selectionBookmark(value: unknown): { from: number; to: number } | null 
 
 function plainRect(rect: DOMRect): SourceSuggestionState['rect'] {
   return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+}
+
+function coarsePointer(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 }
