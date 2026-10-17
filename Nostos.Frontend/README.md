@@ -1,59 +1,38 @@
-# NostosFrontend
+# Nostos frontend
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.0.0.
+The Angular 21 app shared by SelfHosted Nostos and Nostos Cloud: the library, readers, Brain, Writing Studio, Ask Nostos and Settings. For what Nostos is and how to run the whole product, see the [root README](../README.md).
 
-## Development server
+## Run it
 
-To start a local development server, run:
+From the repository root, `npm start` runs the backend and this app together. The dev server is at http://localhost:4200 and proxies `/api` and `/opds` to the backend on port 5099 (`src/proxy.conf.json`).
 
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+To run only the frontend against a backend that is already running:
 
 ```bash
-ng generate component component-name
+npm install
+npm start          # ng serve
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+## Checks
 
 ```bash
-ng generate --help
+npm run check      # CSS integrity, theme-token graph, design rules (fast, always run)
+npm test           # unit tests (run it bare; see AGENTS.md)
+npm run build      # production build
 ```
 
-## Building
-
-To build the project run:
+## See a change without deploying it
 
 ```bash
-ng build
+npm run build
+npm run preview -- shots --out <dir> --paths /library,/settings            # SelfHosted
+npm run preview -- shots --out <dir> --paths /settings --cloud             # Cloud (simulated)
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+## Conventions
 
-## Running unit tests
+- Standalone components and Signals.
+- One icon path: `<nostos-icon>` and `appIconButton`, backed by Phosphor. Never import an icon package directly.
+- Colour tokens live in `src/styles.css`; every `:root` colour needs its dark-theme counterpart.
 
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+The working rules for this repository, including branches, verification and visual evidence, are in [AGENTS.md](../AGENTS.md).
