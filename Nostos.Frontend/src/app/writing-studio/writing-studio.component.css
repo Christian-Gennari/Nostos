@@ -980,6 +980,7 @@
 
 .editor-header .header-rail-toggle.active,
 .editor-header .typewriter-toggle.active,
+.editor-header .page-settings-toggle.active,
 .editor-header .zen-toggle.active {
   color: var(--color-text-main);
   background: var(--bg-hover);
@@ -1642,6 +1643,7 @@
 
 .editor-header .header-rail-toggle,
 .editor-header .typewriter-toggle,
+.editor-header .page-settings-toggle,
 .editor-header .zen-toggle,
 .editor-header .touch-undo,
 .header-doc-meta {
@@ -1651,6 +1653,7 @@
 
 .editor-header:hover .header-rail-toggle,
 .editor-header:hover .typewriter-toggle,
+.editor-header:hover .page-settings-toggle,
 .editor-header:hover .zen-toggle,
 .editor-header:hover .header-doc-meta,
 .editor-header :focus-visible {

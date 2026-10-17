@@ -284,6 +284,17 @@ describe('MarkdownEditorComponent', () => {
     });
   });
 
+  it('keeps spell checking off through a redraw once the setting is off', async () => {
+    await create('Text.');
+    expect(page().getAttribute('spellcheck')).toBe('true');
+    fixture.componentRef.setInput('spellcheck', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(page().getAttribute('spellcheck')).toBe('false');
+    await component.insertMarkdown('More.');
+    expect(page().getAttribute('spellcheck')).toBe('false');
+  });
+
   it('emits the final Markdown when it is torn down', async () => {
     await create('Last words.');
     emitted = [];

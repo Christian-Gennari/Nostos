@@ -1,0 +1,115 @@
+<section class="page-settings" role="dialog" aria-modal="false" aria-labelledby="page-settings-title" data-testid="page-settings">
+  <header class="page-settings-header">
+    <h2 id="page-settings-title">Page</h2>
+    <button appIconButton icon="x" [glyphSize]="16" aria-label="Close page settings" title="Close (Esc)" (click)="closed.emit()"></button>
+  </header>
+
+  <div class="page-settings-body">
+    <fieldset class="ps-group">
+      <legend>Theme</legend>
+      <div class="ps-themes" role="radiogroup" aria-label="Studio theme">
+        @for (theme of themes; track theme.value; let i = $index) {
+          <button
+            type="button"
+            role="radio"
+            class="ps-theme"
+            [class.active]="prefs.theme() === theme.value"
+            [attr.aria-checked]="prefs.theme() === theme.value"
+            [attr.tabindex]="prefs.theme() === theme.value ? 0 : -1"
+            [attr.data-theme-option]="theme.value"
+            (click)="setTheme(theme.value)"
+            (keydown)="themeKey($event, i)"
+          >
+            <!-- Only the swatch takes its theme's tokens; the label stays readable. -->
+            <span class="ps-theme-swatch" [class]="'ps-theme-swatch studio-theme-' + theme.value" aria-hidden="true">Aa</span>
+            <span class="ps-theme-label">{{ theme.label }}</span>
+          </button>
+        }
+      </div>
+    </fieldset>
+
+    <div class="ps-group">
+      <label class="ps-label" for="ps-font">Typeface</label>
+      <app-dropdown
+        controlId="ps-font"
+        ariaLabel="Typeface"
+        [fullWidth]="true"
+        [options]="fontOptions"
+        [value]="prefs.preferences().font"
+        (valueChange)="prefs.update({ font: $event })"
+      />
+    </div>
+
+    <div class="ps-group">
+      <div class="ps-row">
+        <label class="ps-label" for="ps-size">Size</label>
+        <span class="ps-value">{{ prefs.preferences().fontSize }} px</span>
+      </div>
+      <input
+        id="ps-size"
+        class="ps-range"
+        type="range"
+        [min]="fontSize.min"
+        [max]="fontSize.max"
+        [step]="fontSize.step"
+        [value]="prefs.preferences().fontSize"
+        (input)="prefs.update({ fontSize: numberFrom($event) })"
+      />
+    </div>
+
+    <div class="ps-group">
+      <div class="ps-row">
+        <label class="ps-label" for="ps-spacing">Line spacing</label>
+        <span class="ps-value">{{ prefs.preferences().lineSpacing.toFixed(1) }}</span>
+      </div>
+      <input
+        id="ps-spacing"
+        class="ps-range"
+        type="range"
+        [min]="lineSpacing.min"
+        [max]="lineSpacing.max"
+        [step]="lineSpacing.step"
+        [value]="prefs.preferences().lineSpacing"
+        (input)="prefs.update({ lineSpacing: numberFrom($event) })"
+      />
+    </div>
+
+    <div class="ps-group">
+      <div class="ps-row">
+        <label class="ps-label" for="ps-width">Line length</label>
+        <span class="ps-value">{{ textWidthLabel() }}</span>
+      </div>
+      <input
+        id="ps-width"
+        class="ps-range"
+        type="range"
+        [min]="textWidth.min"
+        [max]="textWidth.max"
+        [step]="textWidth.step"
+        [value]="prefs.preferences().textWidth ?? standardWidth"
+        (input)="prefs.update({ textWidth: numberFrom($event) })"
+      />
+      @if (prefs.preferences().textWidth !== null) {
+        <button type="button" class="ps-link" (click)="prefs.update({ textWidth: null })">Back to standard</button>
+      }
+    </div>
+
+    <div class="ps-group ps-toggles">
+      <div class="ps-toggle">
+        <span aria-hidden="true">Spell check</span>
+        <label appSwitch>
+          <input type="checkbox" aria-label="Spell check" [checked]="prefs.preferences().spellCheck" (change)="prefs.update({ spellCheck: checkedFrom($event) })" />
+        </label>
+      </div>
+      <div class="ps-toggle">
+        <span aria-hidden="true">Keep the line in the middle</span>
+        <label appSwitch>
+          <input type="checkbox" aria-label="Keep the line in the middle (typewriter scrolling)" [checked]="prefs.preferences().typewriter" (change)="prefs.update({ typewriter: checkedFrom($event) })" />
+        </label>
+      </div>
+      <ng-content select="[pageSettingsExtra]" />
+    </div>
+
+    <button type="button" class="ps-link ps-reset" (click)="prefs.reset()">Reset the page to its standard look</button>
+  </div>
+</section>

@@ -84,6 +84,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * only follows while this is true.
    */
   typewriter = input<boolean>(false);
+  /** Browser spell checking on the page (a page setting, #1041). */
+  spellcheck = input<boolean>(true);
   /** The `@` query while one is open, and null when it closes. */
   sourceSuggestion = output<SourceSuggestionState | null>();
   /** Keys pressed while an `@` query is open go here first; true consumes one. */
@@ -129,6 +131,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
+    // Spell check is one of the view's attributes, so ProseMirror itself keeps
+    // it on every redraw; a transaction asks it to read the setting again.
+    effect(() => {
+      this.spellcheck();
+      const editor = this.editor;
+      if (editor && !editor.isDestroyed && this.editorDom()) {
+        editor.view.dispatch(editor.state.tr.setMeta('nostosSpellcheck', true).setMeta('addToHistory', false));
+      }
+    });
+
     // The page is the palette's combobox: it owns focus, and the list is
     // announced through these while an `@` query is open.
     effect(() => {
@@ -228,13 +240,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       ],
       content: markdownToHtml(markdown),
       editorProps: {
-        attributes: {
+        attributes: () => ({
           class: 'nostos-manuscript-body',
-          spellcheck: 'true',
+          spellcheck: String(this.spellcheck()),
           'aria-label': 'Document',
           'aria-multiline': 'true',
           role: 'textbox',
-        },
+        }),
         handlePaste: (_view, event) => this.pasteMarkdown(event),
       },
       onUpdate: () => {

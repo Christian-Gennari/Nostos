@@ -5,6 +5,7 @@
   [class.drawer-files]="isDrawer('files')"
   [class.drawer-reference]="isDrawer('reference')"
   [class.is-typing]="isTyping()"
+  [ngClass]="themeClass()"
 >
   <div
     class="backdrop"
@@ -124,16 +125,16 @@
         @if (activeItem() || blankPage()) {
           <button
             appIconButton
-            class="typewriter-toggle"
-            [class.active]="typewriter()"
-            icon="align-center-vertical"
+            class="page-settings-toggle"
+            icon="text-aa"
             [glyphSize]="18"
             weight="thin"
-            [pressed]="typewriter()"
-            (click)="toggleTypewriter()"
-            title="Typewriter: keep the current line centred"
-            aria-label="Toggle typewriter mode"
-            [attr.aria-pressed]="typewriter()"
+            [class.active]="pageSettingsOpen()"
+            [pressed]="pageSettingsOpen()"
+            (click)="togglePageSettings()"
+            title="Page: theme, typeface and spacing (Ctrl+,)"
+            aria-label="Page settings"
+            [attr.aria-expanded]="pageSettingsOpen()"
           ></button>
 
           <button
@@ -158,6 +159,11 @@
           #editor
           [initialContent]="editorText()"
           [typewriter]="typewriter()"
+          [spellcheck]="pagePrefs.preferences().spellCheck"
+          [style.--manuscript-font]="pagePrefs.fontStack()"
+          [style.--manuscript-font-size]="pagePrefs.preferences().fontSize + 'px'"
+          [style.--manuscript-leading]="pagePrefs.preferences().lineSpacing"
+          [style.--manuscript-text-measure]="textMeasure()"
           [sourceSuggestionKeyDown]="paletteKeyHandler"
           [sourceSuggestionActiveId]="sourcePalette.activeId()"
           (contentChange)="onEditorChange($event)"
@@ -682,6 +688,10 @@
   >
   </app-confirm-modal>
 
+  @if (pageSettingsOpen()) {
+    <app-studio-page-settings (closed)="pageSettingsOpen.set(false)" />
+  }
+
   @if (shortcutsOpen()) {
     <div class="shortcut-sheet-backdrop" (click)="shortcutsOpen.set(false)"></div>
     <section class="shortcut-sheet" role="dialog" aria-modal="false" aria-labelledby="shortcut-sheet-title" data-testid="shortcut-sheet">
@@ -700,6 +710,7 @@
         <div><dt><kbd>-</kbd> or <kbd>1.</kbd> then space</dt><dd>List</dd></div>
         <div><dt><kbd>Ctrl</kbd> <kbd>Z</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Undo · redo</dd></div>
         <div><dt><kbd>Esc</kbd></dt><dd>Close what is open; show the controls again</dd></div>
+        <div><dt><kbd>Ctrl</kbd> <kbd>,</kbd></dt><dd>Page settings: theme, typeface, spacing</dd></div>
         <div><dt><kbd>Ctrl</kbd> <kbd>/</kbd></dt><dd>This sheet</dd></div>
       </dl>
     </section>
