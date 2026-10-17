@@ -295,6 +295,14 @@ describe('MarkdownEditorComponent', () => {
     expect(page().getAttribute('spellcheck')).toBe('false');
   });
 
+  it('fetches no sound samples while typewriter sounds are off', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await create('Text.');
+    page().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'a', bubbles: true }));
+    expect(fetchSpy.mock.calls.filter(([u]) => String(u).includes('/audio/typewriter/'))).toEqual([]);
+    fetchSpy.mockRestore();
+  });
+
   it('emits the final Markdown when it is torn down', async () => {
     await create('Last words.');
     emitted = [];

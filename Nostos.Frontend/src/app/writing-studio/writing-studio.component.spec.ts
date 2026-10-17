@@ -27,6 +27,8 @@ class MarkdownEditorStub {
   readonly initialContent = input<string>('');
   readonly typewriter = input<boolean>(false);
   readonly spellcheck = input<boolean>(true);
+  readonly sounds = input<boolean>(false);
+  readonly soundVolume = input<number>(0.6);
   readonly contentChange = output<string>();
   readonly wordCountChange = output<number>();
   readonly insertMarkdown = vi.fn(async (_markdown: string) => true);
