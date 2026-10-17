@@ -1,6 +1,6 @@
 # Writing Studio, end to end (epic #1036)
 
-The final journey on `feature/studio-writing-room` at 37c69c15 plus docs (#1056). It ran in Chromium against a
+The final journey on `feature/studio-writing-room` at 37c69c15 (all eight sub-issues; the docs-only #1056 merged afterwards). It ran in Chromium against a
 fresh synthetic library: Schopenhauer's *The World as Will and Representation*
 and *Studies in Pessimism*, plus Nietzsche's *Thus Spoke Zarathustra*, all public domain.
 `journey.cjs` is the script. Run it as `node journey.cjs <Nostos.Frontend> <frontend url> <api url> <out dir> 1440x900:light`.
