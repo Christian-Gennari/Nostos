@@ -1,0 +1,176 @@
+/* The page settings panel (issue #1041): beside the page, never over it
+   with a veil, so changes are judged on the writing itself. */
+
+:host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 35;
+  width: min(340px, 100vw);
+  display: block;
+}
+
+.page-settings {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  color: var(--color-text-main);
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-color);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+.page-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem 0.5rem 1.25rem;
+}
+
+.page-settings-header h2 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+
+.page-settings-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  /* The floating dock sits over the bottom of the panel; the last control
+     must scroll clear of it. */
+  padding: 0.25rem 1.25rem calc(1.5rem + 96px);
+}
+
+.ps-group {
+  margin: 0 0 1.25rem;
+  padding: 0;
+  border: 0;
+}
+
+.ps-group legend,
+.ps-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: var(--fw-semibold, 600);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ps-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.ps-value {
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+/* Each swatch carries its own theme's token set, so it shows the real paper
+   and ink. */
+.ps-theme {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  color: var(--color-text-main);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ps-theme-swatch {
+  display: grid;
+  place-items: center;
+  height: 44px;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-sm, 4px);
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.15rem;
+}
+
+.ps-theme-label {
+  font-size: 0.74rem;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ps-theme.active {
+  border-color: var(--focus-ring);
+}
+
+.ps-theme:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.ps-range {
+  width: 100%;
+  min-height: 32px;
+  accent-color: var(--focus-ring);
+}
+
+.ps-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ps-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 32px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.ps-link {
+  padding: 0.25rem 0;
+  color: var(--color-text-muted);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+
+.ps-reset {
+  margin-top: 0.5rem;
+}
+
+@media (pointer: coarse) {
+  .ps-range,
+  .ps-toggle {
+    min-height: 44px;
+  }
+
+  .ps-link {
+    min-height: 44px;
+  }
+}

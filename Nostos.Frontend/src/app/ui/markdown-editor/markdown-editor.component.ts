@@ -84,6 +84,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * only follows while this is true.
    */
   typewriter = input<boolean>(false);
+  /** Browser spell checking on the page (a page setting, #1041). */
+  spellcheck = input<boolean>(true);
   /** The `@` query while one is open, and null when it closes. */
   sourceSuggestion = output<SourceSuggestionState | null>();
   /** Keys pressed while an `@` query is open go here first; true consumes one. */
@@ -129,6 +131,11 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
+    effect(() => {
+      const on = this.spellcheck();
+      this.editorDom()?.setAttribute('spellcheck', String(on));
+    });
+
     // The page is the palette's combobox: it owns focus, and the list is
     // announced through these while an `@` query is open.
     effect(() => {

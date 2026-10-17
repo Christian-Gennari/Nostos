@@ -35,6 +35,8 @@ import {
 } from '../ui/markdown-editor/markdown-editor.component';
 import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
 import { PaletteChoice } from './source-palette/source-palette.helpers';
+import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
+import { StudioPreferencesService } from './page-settings/studio-preferences.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -60,8 +62,6 @@ import {
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
 
-/** localStorage flag for typewriter mode in the studio. */
-const TYPEWRITER_KEY = 'nostos.typewriter';
 /** Whether Reference sits beside the page on a wide screen (issue #1040). */
 const STUDIO_REFERENCE_PIN_KEY = 'nostos.studio.referencePinned';
 /** The writing the Studio opens on next time. */
@@ -145,13 +145,6 @@ function writeCarets(carets: RememberedCaret[]): void {
   writeStudioValue(STUDIO_CARETS_KEY, JSON.stringify(carets.slice(0, STUDIO_CARETS_MAX)));
 }
 
-function readTypewriter(): boolean {
-  try {
-    return localStorage.getItem(TYPEWRITER_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 @Component({
   selector: 'app-writing-studio',
@@ -165,6 +158,7 @@ function readTypewriter(): boolean {
     NoteCardComponent,
     MarkdownEditorComponent,
     SourcePaletteComponent,
+    StudioPageSettingsComponent,
     IconButtonComponent,
     ButtonComponent,
     InputDirective,
@@ -305,17 +299,31 @@ export class WritingStudio implements OnInit, AfterViewInit {
   // Zen (focus) mode — issue #49. Session-only: never persisted.
   isZen = signal(false);
 
-  /** Typewriter mode: keep the caret line centered. Persisted across visits. */
-  typewriter = signal(readTypewriter());
+  /** The page's own settings (issue #1041): theme, type, measure, behaviour. */
+  readonly pagePrefs = inject(StudioPreferencesService);
+  pageSettingsOpen = signal(false);
+
+  /** Typewriter mode: keep the caret line centered. A page setting now. */
+  readonly typewriter = computed(() => this.pagePrefs.preferences().typewriter);
 
   toggleTypewriter(): void {
-    const next = !this.typewriter();
-    try {
-      localStorage.setItem(TYPEWRITER_KEY, next ? '1' : '0');
-    } catch {
-      // Toggle still applies for the session even if it won't persist.
-    }
-    this.typewriter.set(next);
+    this.pagePrefs.update({ typewriter: !this.typewriter() });
+  }
+
+  /** The Studio theme's class, or none when the page matches the app. */
+  readonly themeClass = computed(() => {
+    const theme = this.pagePrefs.theme();
+    return theme === 'match' ? '' : `studio-theme-${theme}`;
+  });
+
+  /** A chosen line length, in characters of the page's own face. */
+  readonly textMeasure = computed(() => {
+    const width = this.pagePrefs.preferences().textWidth;
+    return width === null ? null : `calc(${width}ch + 2 * var(--manuscript-gutter))`;
+  });
+
+  togglePageSettings(): void {
+    this.pageSettingsOpen.update((open) => !open);
   }
 
   filesRailLabel(): string {
@@ -524,15 +532,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
       if (compact === this.isCompact()) return;
 
+      // The file list is a slide-over in both modes, so crossing the
+      // breakpoint leaves it as it is (a first layout can report a narrow
+      // viewport and then widen; that must not shut a drawer just opened).
+      // Only a pinned Reference column changes kind: it closes on a compact
+      // screen and comes back beside the page on a wide one.
+      const referenceWasColumn = !this.isCompact() && this.referencePinned() && this.showBrainSidebar();
       this.isCompact.set(compact);
       if (compact) {
-        this.captureCompactDrawerCaret();
-        this.showFileSidebar.set(false);
-        this.showBrainSidebar.set(false);
+        if (referenceWasColumn) this.showBrainSidebar.set(false);
       } else {
         this.compactDrawerCaret = null;
-        this.showFileSidebar.set(false);
-        this.showBrainSidebar.set(this.referencePinned());
+        if (this.referencePinned()) this.showBrainSidebar.set(true);
       }
     };
 
@@ -791,6 +802,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
       event.preventDefault();
       return;
     }
+    if (this.pageSettingsOpen()) {
+      this.pageSettingsOpen.set(false);
+      event.preventDefault();
+      return;
+    }
     if (this.isZen()) {
       this.exitZen();
       return;
@@ -819,6 +835,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
       event.preventDefault();
       if (event.code === 'KeyM') this.toggleFilesRail();
       else this.toggleReferenceRail();
+      return true;
+    }
+    if (mod && !event.altKey && event.key === ',') {
+      event.preventDefault();
+      this.togglePageSettings();
       return true;
     }
     const target = event.target as HTMLElement | null;

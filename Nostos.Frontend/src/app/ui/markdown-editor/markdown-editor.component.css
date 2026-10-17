@@ -8,6 +8,12 @@ app-markdown-editor {
      using the desk; narrow viewports own their own geometry below. */
   --manuscript-measure: 820px;
   --manuscript-gutter: clamp(20px, 4%, 40px);
+  /* The standard page. The Studio's page settings (#1041) override these as
+     inline styles on this element. */
+  --manuscript-font: Newsreader, Georgia, 'Times New Roman', serif;
+  --manuscript-font-size: 18px;
+  --manuscript-leading: 1.8;
+  --manuscript-text-measure: var(--manuscript-measure);
 
   display: flex;
   flex-direction: column;
@@ -128,6 +134,259 @@ app-markdown-editor .editor-url-input:focus-visible {
   }
 }
 
+/* --- Page typefaces (issue #1041) --------------------------------------
+   Self-hosted under /fonts/studio/ (see its README for sources and licences).
+   A browser downloads a face only when text is set in it, so declaring them
+   all costs nothing until one is chosen. */
+
+@font-face {
+  font-family: 'Studio EB Garamond';
+  src: url('/fonts/studio/eb-garamond/eb-garamond-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio EB Garamond';
+  src: url('/fonts/studio/eb-garamond/eb-garamond-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio EB Garamond';
+  src: url('/fonts/studio/eb-garamond/eb-garamond-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio PT Serif';
+  src: url('/fonts/studio/pt-serif/pt-serif-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio PT Serif';
+  src: url('/fonts/studio/pt-serif/pt-serif-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio PT Serif';
+  src: url('/fonts/studio/pt-serif/pt-serif-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Libre Baskerville';
+  src: url('/fonts/studio/libre-baskerville/libre-baskerville-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Libre Baskerville';
+  src: url('/fonts/studio/libre-baskerville/libre-baskerville-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Libre Baskerville';
+  src: url('/fonts/studio/libre-baskerville/libre-baskerville-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Crimson Pro';
+  src: url('/fonts/studio/crimson-pro/crimson-pro-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Crimson Pro';
+  src: url('/fonts/studio/crimson-pro/crimson-pro-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Crimson Pro';
+  src: url('/fonts/studio/crimson-pro/crimson-pro-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Literata';
+  src: url('/fonts/studio/literata/literata-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Literata';
+  src: url('/fonts/studio/literata/literata-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Literata';
+  src: url('/fonts/studio/literata/literata-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Source Serif 4';
+  src: url('/fonts/studio/source-serif-4/source-serif-4-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Source Serif 4';
+  src: url('/fonts/studio/source-serif-4/source-serif-4-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Source Serif 4';
+  src: url('/fonts/studio/source-serif-4/source-serif-4-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Lora';
+  src: url('/fonts/studio/lora/lora-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Lora';
+  src: url('/fonts/studio/lora/lora-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Lora';
+  src: url('/fonts/studio/lora/lora-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Alegreya';
+  src: url('/fonts/studio/alegreya/alegreya-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Alegreya';
+  src: url('/fonts/studio/alegreya/alegreya-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Alegreya';
+  src: url('/fonts/studio/alegreya/alegreya-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Inter';
+  src: url('/fonts/studio/inter/inter-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Inter';
+  src: url('/fonts/studio/inter/inter-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Inter';
+  src: url('/fonts/studio/inter/inter-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Special Elite';
+  src: url('/fonts/studio/special-elite/special-elite-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio OpenDyslexic';
+  src: url('/fonts/studio/opendyslexic/opendyslexic-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio OpenDyslexic';
+  src: url('/fonts/studio/opendyslexic/opendyslexic-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio OpenDyslexic';
+  src: url('/fonts/studio/opendyslexic/opendyslexic-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* --- The page ------------------------------------------------------------ */
 
 app-markdown-editor .manuscript-scroll {
@@ -151,16 +410,19 @@ app-markdown-editor .nostos-manuscript.editor-starting {
 app-markdown-editor .nostos-manuscript-body {
   box-sizing: border-box;
   width: 100%;
-  max-width: var(--manuscript-measure);
+  /* A chosen line length is in characters of the page's own face. */
+  max-width: var(--manuscript-text-measure);
   min-height: 100%;
   margin: 0 auto;
   padding: clamp(2rem, 4vw, 3.5rem) var(--manuscript-gutter) 7rem;
 
   color: var(--manuscript-ink);
-  font-family: Newsreader, Georgia, 'Times New Roman', serif;
-  font-size: 18px;
+  /* The page settings (#1041) set these on the Studio; the fallbacks are the
+     standard page. */
+  font-family: var(--manuscript-font);
+  font-size: var(--manuscript-font-size);
   font-weight: 400;
-  line-height: 1.8;
+  line-height: var(--manuscript-leading);
 
   text-rendering: optimizeLegibility;
   font-kerning: normal;
@@ -378,8 +640,8 @@ app-markdown-editor .nostos-manuscript-body img.ProseMirror-selectednode {
 @media (max-width: 640px) {
   app-markdown-editor .nostos-manuscript-body {
     padding: 2rem 1.25rem 6rem;
-    font-size: 17px;
-    line-height: 1.72;
+    font-size: calc(var(--manuscript-font-size) - 1px);
+    line-height: calc(var(--manuscript-leading) - 0.08);
   }
 
   app-markdown-editor .nostos-manuscript-body h1 {

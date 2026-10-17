@@ -5,6 +5,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
 import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
+import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -25,6 +26,7 @@ import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 class MarkdownEditorStub {
   readonly initialContent = input<string>('');
   readonly typewriter = input<boolean>(false);
+  readonly spellcheck = input<boolean>(true);
   readonly contentChange = output<string>();
   readonly wordCountChange = output<number>();
   readonly insertMarkdown = vi.fn(async (_markdown: string) => true);
@@ -385,6 +387,27 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }));
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="shortcut-sheet"]')).toBeTruthy();
+  });
+
+  it('keeps an open file drawer open when the window crosses the compact breakpoint', () => {
+    const setWidth = (width: number) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+      window.dispatchEvent(new Event('resize'));
+    };
+    const original = window.innerWidth;
+    try {
+      setWidth(1440);
+      component.toggleFilesRail();
+      expect(component.showFileSidebar()).toBe(true);
+      setWidth(600);
+      expect(component.isCompact()).toBe(true);
+      expect(component.showFileSidebar()).toBe(true);
+      setWidth(1440);
+      expect(component.isCompact()).toBe(false);
+      expect(component.showFileSidebar()).toBe(true);
+    } finally {
+      setWidth(original);
+    }
   });
 
   it('keeps compact drawers mutually exclusive', () => {
@@ -831,19 +854,21 @@ describe('WritingStudio typewriter mode', () => {
     fixture.detectChanges();
   });
 
-  it('starts off and toggles with persistence', () => {
+  it('starts off and toggles with persistence in the page settings', () => {
     expect(component.typewriter()).toBe(false);
 
     component.toggleTypewriter();
     expect(component.typewriter()).toBe(true);
-    expect(localStorage.getItem('nostos.typewriter')).toBe('1');
+    TestBed.tick();
+    expect(JSON.parse(localStorage.getItem('nostos.studio.preferences')!).typewriter).toBe(true);
 
     component.toggleTypewriter();
     expect(component.typewriter()).toBe(false);
-    expect(localStorage.getItem('nostos.typewriter')).toBe('0');
+    TestBed.tick();
+    expect(JSON.parse(localStorage.getItem('nostos.studio.preferences')!).typewriter).toBe(false);
   });
 
-  it('renders the toggle in the document actions once a document is open', () => {
+  it('lives in the page settings, opened from the header or Ctrl+,', () => {
     component.activeItem.set({
       id: 'doc-1',
       name: 'Sample',
@@ -853,14 +878,33 @@ describe('WritingStudio typewriter mode', () => {
     component.editorText.set('hello');
     fixture.detectChanges();
 
-    const toggle = fixture.nativeElement.querySelector('.typewriter-toggle');
-    expect(toggle).toBeTruthy();
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(fixture.nativeElement.querySelector('.typewriter-toggle')).toBeNull();
+    const settingsToggle = fixture.nativeElement.querySelector('.page-settings-toggle') as HTMLButtonElement;
+    expect(settingsToggle).toBeTruthy();
+    settingsToggle.click();
+    fixture.detectChanges();
 
-    toggle.click();
+    const centred = fixture.nativeElement.querySelector(
+      '[data-testid="page-settings"] input[aria-label^="Keep the line in the middle"]',
+    ) as HTMLInputElement;
+    expect(centred.checked).toBe(false);
+    centred.click();
     fixture.detectChanges();
     expect(component.typewriter()).toBe(true);
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="page-settings"]')).toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="page-settings"]')).toBeTruthy();
+  });
+
+  it('carries over typewriter centring set before it moved into the page settings', () => {
+    localStorage.clear();
+    localStorage.setItem('nostos.typewriter', '1');
+    expect(normalizeStudioPreferences(null, true).typewriter).toBe(true);
   });
 });
 

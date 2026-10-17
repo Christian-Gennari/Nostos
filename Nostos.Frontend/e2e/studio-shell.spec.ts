@@ -552,7 +552,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         const header = await compactPage.evaluate(() => {
           const header = document.querySelector('.editor-header')!;
           const buttons = Array.from(
-            header.querySelectorAll('.files-toggle, .reference-toggle, .typewriter-toggle, .zen-toggle'),
+            header.querySelectorAll('.files-toggle, .reference-toggle, .page-settings-toggle, .zen-toggle'),
           ).map((button) => {
             const rect = button.getBoundingClientRect();
             return {
