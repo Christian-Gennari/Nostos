@@ -290,6 +290,9 @@ public static class NostosProductComposition
 
         services.AddSingleton<IThoughtProcessor, ThoughtProcessor>();
         services.AddSingleton<AssistantChangesetStore>();
+        // SelfHosted has one library per process. A multi-tenant host registers
+        // its own owner so changesets are kept and bounded per account.
+        services.TryAddScoped<IAssistantOwner>(_ => SingleAssistantOwner.Instance);
         services.AddScoped<AssistantChangesetCoordinator>();
         services.AddSingleton<AssistantContinuationStore>();
         services.AddSingleton<AssistantTurnExecutionRegistry>();
