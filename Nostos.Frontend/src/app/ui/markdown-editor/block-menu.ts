@@ -1,6 +1,8 @@
-import { Extension, Range } from '@tiptap/core';
+import { Extension } from '@tiptap/core';
 import { PluginKey } from '@tiptap/pm/state';
-import Suggestion, { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
+import Suggestion from '@tiptap/suggestion';
+
+import { reportingRender, SuggestionReport } from './source-suggestion.extension';
 
 /**
  * The `/` menu (issue #1043): with the toolbar gone, the rarer blocks (a
@@ -23,7 +25,7 @@ export type BlockMenuAction =
 export interface BlockMenuItem {
   action: BlockMenuAction;
   label: string;
-  /** The Markdown shortcut that does the same, so the menu teaches it. */
+  /** How the block is written in Markdown, so the menu teaches the syntax. */
   hint: string;
   keywords: string;
 }
@@ -59,12 +61,7 @@ export function filterBlockMenu(query: string): BlockMenuItem[] {
 
 export const BLOCK_MENU_KEY = new PluginKey('nostosBlockMenu');
 
-export interface BlockMenuHandlers {
-  onChange: (state: { query: string; range: Range; rect: DOMRect | null } | null) => void;
-  onKeyDown: (event: KeyboardEvent) => boolean;
-}
-
-export const BlockMenu = Extension.create<BlockMenuHandlers>({
+export const BlockMenu = Extension.create<SuggestionReport>({
   name: 'nostosBlockMenu',
   // Ahead of StarterKit's keymaps, like the @ palette: Enter picks an item.
   priority: 1000,
@@ -83,23 +80,16 @@ export const BlockMenu = Extension.create<BlockMenuHandlers>({
         startOfLine: true,
         allowSpaces: false,
         allowedPrefixes: null,
-        // Only a paragraph holding nothing but the "/query" itself.
+        // Only a top-level paragraph holding nothing but the "/query" itself:
+        // inside a list item the list commands would undo the list, and a
+        // table cell cannot hold a heading, a table or code in GFM.
         allow: ({ state, range }) => {
           const $from = state.doc.resolve(range.from);
           const parent = $from.parent;
-          if (parent.type.name !== 'paragraph') return false;
+          if ($from.depth !== 1 || parent.type.name !== 'paragraph') return false;
           return parent.textContent === state.doc.textBetween(range.from, range.to);
         },
-        render: () => {
-          const report = (props: SuggestionProps) =>
-            options.onChange({ query: props.query, range: props.range, rect: props.clientRect?.() ?? null });
-          return {
-            onStart: report,
-            onUpdate: report,
-            onExit: () => options.onChange(null),
-            onKeyDown: ({ event }: SuggestionKeyDownProps) => options.onKeyDown(event),
-          };
-        },
+        render: reportingRender(options),
       }),
     ];
   },

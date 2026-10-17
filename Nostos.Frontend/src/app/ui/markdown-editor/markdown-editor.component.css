@@ -447,6 +447,17 @@ app-markdown-editor .block-menu-image {
   padding: 8px;
 }
 
+app-markdown-editor .block-menu-image-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+app-markdown-editor .block-menu-image-row .editor-url-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 app-markdown-editor .block-menu-image-label {
   color: var(--manuscript-ink-soft);
   font-size: 0.78rem;
