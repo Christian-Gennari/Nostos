@@ -106,6 +106,38 @@ describe('PdfReadAloud', () => {
     await expect(readAloud.step(1)).resolves.toEqual({ text: 'The second page has another one.' });
   });
 
+  it('does not read running headers that differ between left and right pages', async () => {
+    const { readAloud } = setup(
+      [
+        page(['The first page has one sentence.'], '212 THE MAGIC MOUNTAIN'),
+        page(['The second page has another one.'], 'SNOW 213'),
+        page(['The third page has a third one.'], '214 THE MAGIC MOUNTAIN'),
+        page(['The fourth page has the last one.'], 'SNOW 215'),
+      ],
+      3,
+    );
+
+    await expect(readAloud.begin()).resolves.toEqual({ text: 'The third page has a third one.' });
+  });
+
+  it('offers the next page’s sentences to fetch ahead before the page turns', async () => {
+    const { readAloud } = setup([
+      page(['A complete opening sentence stands here.', 'This one starts on the first page and']),
+      page(['ends on the second, as sentences do.', 'Then a fresh sentence begins again.', 'And one more after that.']),
+    ]);
+    await readAloud.begin();
+    // Reading the next page ahead is not awaited by the cursor.
+    await new Promise((resolve) => setTimeout(resolve));
+
+    // What is offered is what will be said: the sentence split by the break whole, and its end not again.
+    expect(readAloud.upcoming(2)).toEqual([
+      'This one starts on the first page and ends on the second, as sentences do.',
+      'Then a fresh sentence begins again.',
+    ]);
+    await readAloud.step(1);
+    expect(readAloud.upcoming(2)).toEqual(['Then a fresh sentence begins again.', 'And one more after that.']);
+  });
+
   it('goes back into the previous page at its last sentence', async () => {
     const { readAloud, calls } = setup(
       [page(['One sentence on the first page.', 'And a second one right after it.']), page(['The second page starts here.'])],
