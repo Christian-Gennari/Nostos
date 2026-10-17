@@ -40,6 +40,8 @@ class MarkdownEditorStub {
   readonly clearSourceQuery = vi.fn(() => true);
   readonly closeSourceQuery = vi.fn();
   readonly insertBlockMarkdown = vi.fn((_markdown: string) => true);
+  readonly focus = vi.fn();
+  readonly undo = vi.fn();
 }
 
 @Component({ selector: 'app-flat-tree', standalone: true, template: '' })
