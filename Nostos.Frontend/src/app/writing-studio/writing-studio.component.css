@@ -596,6 +596,14 @@
   opacity: 0;
 }
 
+/* On touch it is a control like any other: a 44px target. */
+@media (pointer: coarse) {
+  .editor-desk-telemetry {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

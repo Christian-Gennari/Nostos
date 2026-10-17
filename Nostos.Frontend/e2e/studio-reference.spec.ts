@@ -7,7 +7,13 @@ import { apiGet, apiPost, loadFixture } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import type { Note } from '../src/app/core/dtos/note.dtos';
 import type { WritingContentDto, WritingSourceDto } from '../src/app/core/dtos/writing.dtos';
-import { STUDIO_PAGE_SELECTOR, studioPage, waitForStudioEditor } from './support/studio-editor';
+import { STUDIO_PAGE_SELECTOR, pinReferenceRail, studioPage, waitForStudioEditor } from './support/studio-editor';
+
+// These journeys work with sources in view: Reference pinned beside the page
+// (#1040), as a writer who prefers that would set it.
+test.beforeEach(async ({ context }) => {
+  await pinReferenceRail(context);
+});
 
 const screenshotDir =
   process.env.STUDIO_REFERENCE_SCREENSHOT_DIR ?? '/tmp/nostos-studio-reference-after';
@@ -329,7 +335,11 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
     baseUrl,
     '/api/writings/' + writingId,
   );
-  const manuscriptWordCount = page.locator('.editor-desk-telemetry .word-count-num');
+  // The stat corner reads "N words" (#1040); the number is what is measured.
+  const statCorner = page.locator('.editor-desk-telemetry');
+  const manuscriptWordCount = {
+    textContent: async () => ((await statCorner.textContent()) ?? '').match(/\d+/)?.[0] ?? '',
+  };
   await expect
     .poll(async () => Number(await manuscriptWordCount.textContent()))
     .toBeGreaterThan(340);
@@ -641,7 +651,7 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   const editorBody = studioPage(page);
   await editorBody.click();
   await page.keyboard.press('Control+End');
-  await page.locator('.files-toggle').click();
+  // The file list is a closed slide-over at rest (#1040); nothing to hide.
   await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('.sidebar-left')).toBeHidden();
   await page.getByRole('button', { name: 'Insert quote', exact: true }).click();
@@ -760,6 +770,7 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   });
   const darkPage = await darkContext.newPage();
   await darkPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
+  await pinReferenceRail(darkPage);
   await openWriting(darkPage, { width: 1280, height: 720 });
   await expectDarkEditor(darkPage);
   await expect(darkPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
@@ -825,6 +836,7 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   });
   const touchPage = await touchContext.newPage();
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
+  await pinReferenceRail(touchPage);
   await openWriting(touchPage, { width: 390, height: 844 });
   const referenceToggle = touchPage.locator('.reference-toggle');
   await referenceToggle.click();
@@ -1064,6 +1076,7 @@ test('a quote inserted from the Reference rail lands at the caret and autosaves'
   // test held and aborted that request. TipTap ships inside the Studio chunk
   // (#1037), so the journey that remains is the insertion and its save.
   const context = await browser.newContext({ serviceWorkers: 'block' });
+  await pinReferenceRail(context);
   const page = await context.newPage();
   const writing = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
   const initialContent = writing.content ?? '';

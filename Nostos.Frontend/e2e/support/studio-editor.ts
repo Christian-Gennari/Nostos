@@ -16,3 +16,18 @@ export async function waitForStudioEditor(page: Page, timeout = 45_000): Promise
   await editor.waitFor({ timeout });
   return editor;
 }
+
+/**
+ * Pin the Reference rail beside the page (issue #1040). The page-first Studio
+ * opens with Reference as a closed slide-over; specs written for working with
+ * sources in view use the same preference a writer would set.
+ */
+export async function pinReferenceRail(target: Pick<Page, 'addInitScript'>): Promise<void> {
+  await target.addInitScript(() => localStorage.setItem('nostos.studio.referencePinned', '1'));
+}
+
+/** Open the file list slide-over if it is closed. */
+export async function openFilesRail(page: Page): Promise<void> {
+  const toggle = page.locator('.files-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+}
