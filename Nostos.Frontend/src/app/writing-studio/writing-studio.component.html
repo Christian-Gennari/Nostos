@@ -125,6 +125,7 @@
         @if (activeItem() || blankPage()) {
           <button
             appIconButton
+            #pageSettingsButton
             class="page-settings-toggle"
             icon="text-aa"
             [glyphSize]="18"
@@ -691,7 +692,7 @@
   </app-confirm-modal>
 
   @if (pageSettingsOpen()) {
-    <app-studio-page-settings (closed)="pageSettingsOpen.set(false)" />
+    <app-studio-page-settings [anchor]="pageSettingsButton?.nativeElement ?? null" (closed)="closePageSettings()" />
   }
 
   @if (shortcutsOpen()) {

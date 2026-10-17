@@ -4,6 +4,8 @@ import {
   DEFAULT_STUDIO_PREFERENCES,
   STUDIO_PREFERENCES_KEY,
   StudioPreferencesService,
+  nearestLineSpacing,
+  nearestTextWidth,
   normalizeStudioPreferences,
 } from './studio-preferences.service';
 
@@ -66,6 +68,22 @@ describe('Studio page preferences (issue #1041)', () => {
     localStorage.setItem('nostos.typewriter', '1');
     expect(TestBed.inject(StudioPreferencesService).preferences().typewriter).toBe(true);
     expect(localStorage.getItem('nostos.typewriter')).toBeNull();
+  });
+
+  it('moves the retired Dark and Black themes to following the app (#1060)', () => {
+    expect(normalizeStudioPreferences({ theme: 'dark' }).theme).toBe('match');
+    expect(normalizeStudioPreferences({ theme: 'black' }).theme).toBe('match');
+    expect(normalizeStudioPreferences({ theme: 'mist' }).theme).toBe('mist');
+  });
+
+  it('reads any stored spacing and width as the nearest preset (#1060)', () => {
+    expect(nearestLineSpacing(1.2)).toBe(1.5);
+    expect(nearestLineSpacing(1.8)).toBe(1.8);
+    expect(nearestLineSpacing(2.4)).toBe(2.2);
+    expect(nearestTextWidth(null)).toBeNull();
+    expect(nearestTextWidth(40)).toBe(66);
+    expect(nearestTextWidth(84)).toBeNull();
+    expect(nearestTextWidth(96)).toBe(100);
   });
 
   it('survives corrupt storage', () => {

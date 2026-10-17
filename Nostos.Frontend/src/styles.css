@@ -1910,6 +1910,9 @@ app-assistant {
   --focus-ring: #c9953e;
   --editor-ui-bg: #24201a;
   --overlay-light: rgba(0, 0, 0, 0.45);
+  --control-active-fill: #3b342b;
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 /* Mist (cool grey) */
 .studio-theme-mist {
@@ -1945,76 +1948,9 @@ app-assistant {
   --focus-ring: #8494b0;
   --editor-ui-bg: #25282e;
   --overlay-light: rgba(0, 0, 0, 0.45);
-}
-/* Dark (neutral) */
-.studio-theme-dark {
-  color-scheme: dark;
-  --manuscript-paper: #1e1e1e;
-  --manuscript-ink: #dddddd;
-  --manuscript-ink-strong: #eeeeee;
-  --manuscript-ink-soft: #a8a8a8;
-  --manuscript-ink-faint: #8c8c8c;
-  --manuscript-rule: #333333;
-  --manuscript-rule-strong: #444444;
-  --manuscript-link: #88aacc;
-  --manuscript-link-hover: #a8c4e0;
-  --manuscript-link-rule: rgba(136, 170, 204, 0.45);
-  --manuscript-selection: rgba(136, 170, 204, 0.22);
-  --manuscript-quote-rule: #88aacc;
-  --manuscript-code-bg: #252525;
-  --manuscript-code-ink: #dddddd;
-  --manuscript-table-head-bg: #252525;
-  --manuscript-placeholder: #8c8c8c;
-
-  --bg-surface: #1e1e1e;
-  --bg-sidebar: #252525;
-  --bg-body: #141414;
-  --bg-hover: #2e2e2e;
-  --bg-input: #1e1e1e;
-  --color-text-main: #dddddd;
-  --color-text-muted: #a8a8a8;
-  --color-text-light: #8c8c8c;
-  --border-color: #333333;
-  --border-light: #2e2e2e;
-  --color-accent-bg: rgba(136, 170, 204, 0.14);
-  --focus-ring: #88aacc;
-  --editor-ui-bg: #252525;
-  --overlay-light: rgba(0, 0, 0, 0.45);
-}
-/* Black (true black, low glare) */
-.studio-theme-black {
-  color-scheme: dark;
-  --manuscript-paper: #000000;
-  --manuscript-ink: #aaaaaa;
-  --manuscript-ink-strong: #cccccc;
-  --manuscript-ink-soft: #909090;
-  --manuscript-ink-faint: #808080;
-  --manuscript-rule: #222222;
-  --manuscript-rule-strong: #333333;
-  --manuscript-link: #888888;
-  --manuscript-link-hover: #aaaaaa;
-  --manuscript-link-rule: rgba(170, 170, 170, 0.40);
-  --manuscript-selection: rgba(170, 170, 170, 0.18);
-  --manuscript-quote-rule: #444444;
-  --manuscript-code-bg: #111111;
-  --manuscript-code-ink: #aaaaaa;
-  --manuscript-table-head-bg: #111111;
-  --manuscript-placeholder: #808080;
-
-  --bg-surface: #000000;
-  --bg-sidebar: #111111;
-  --bg-body: #000000;
-  --bg-hover: #1a1a1a;
-  --bg-input: #000000;
-  --color-text-main: #aaaaaa;
-  --color-text-muted: #909090;
-  --color-text-light: #808080;
-  --border-color: #222222;
-  --border-light: #1a1a1a;
-  --color-accent-bg: rgba(170, 170, 170, 0.12);
-  --focus-ring: #aaaaaa;
-  --editor-ui-bg: #111111;
-  --overlay-light: rgba(0, 0, 0, 0.55);
+  --control-active-fill: #383c45;
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 /* Sepia (warm paper) */
 .studio-theme-sepia {
@@ -2050,6 +1986,9 @@ app-assistant {
   --focus-ring: #715b3f;
   --editor-ui-bg: #f0e8d0;
   --overlay-light: rgba(95, 75, 50, 0.20);
+  --control-active-fill: var(--bg-surface);
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
 }
 /* Paper (white, ink blue accents) */
 .studio-theme-paper {
@@ -2085,6 +2024,11 @@ app-assistant {
   --focus-ring: #1e3a5f;
   --editor-ui-bg: #f5f6f7;
   --overlay-light: rgba(26, 26, 26, 0.18);
+  /* Segmented thumbs and other selected controls: re-resolved here, since
+     the app's values were resolved against its own surface. */
+  --control-active-fill: var(--bg-surface);
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
 }
 
 /* ------------------------------

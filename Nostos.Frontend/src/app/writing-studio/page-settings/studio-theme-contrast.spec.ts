@@ -33,7 +33,7 @@ function contrast(a: string, b: string): number {
 }
 
 describe('Studio themes meet WCAG AA (issue #1041)', () => {
-  const themes = STUDIO_THEMES.map((t) => t.value).filter((t) => t !== 'match');
+  const themes = STUDIO_THEMES.map((t) => t.value);
 
   for (const theme of themes) {
     it(`${theme}: body text and muted UI text are readable on the page and the rails`, () => {
