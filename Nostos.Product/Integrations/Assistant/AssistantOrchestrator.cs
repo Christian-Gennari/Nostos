@@ -41,10 +41,12 @@ public sealed class AssistantOrchestrator(
     ILibraryService library,
     AssistantOptions options,
     ILogger<AssistantOrchestrator> logger,
-    IAiUsageAccountingService? usageAccounting = null)
+    IAiUsageAccountingService? usageAccounting = null,
+    TimeProvider? timeProvider = null)
 {
     private readonly IAiUsageAccountingService _usageAccounting =
         usageAccounting ?? NoOpAiUsageAccountingService.Instance;
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly AssistantConversationBuilder _conversation =
         new(registry, new AssistantContextPacker(options));
     private readonly AssistantCapturePolicy _capturePolicy = new(library);
@@ -210,7 +212,7 @@ public sealed class AssistantOrchestrator(
                 ct);
         }
 
-        var executionMeter = new AssistantExecutionMeter();
+        var executionMeter = new AssistantExecutionMeter(_time);
         AiUsageLease? usageLease = null;
         var toolLoopDetector = new AssistantToolLoopDetector();
         var stopReason = AssistantTurnStopReason.SafetyCeiling;
@@ -291,6 +293,7 @@ public sealed class AssistantOrchestrator(
                 break;
             }
 
+            CancellationTokenSource? deadlineTimer = null;
             CancellationTokenSource? turnDeadline = null;
             var upstreamCancellation = ct;
             if (options.MaxTurnElapsedMilliseconds > 0)
@@ -304,8 +307,10 @@ public sealed class AssistantOrchestrator(
                     break;
                 }
 
-                turnDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                turnDeadline.CancelAfter(TimeSpan.FromMilliseconds(remainingMilliseconds));
+                deadlineTimer = new CancellationTokenSource(
+                    TimeSpan.FromMilliseconds(remainingMilliseconds),
+                    _time);
+                turnDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct, deadlineTimer.Token);
                 upstreamCancellation = turnDeadline.Token;
             }
 
@@ -343,6 +348,7 @@ public sealed class AssistantOrchestrator(
             finally
             {
                 turnDeadline?.Dispose();
+                deadlineTimer?.Dispose();
             }
 
             executionMeter.RecordCompletion(completion);

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Nostos.Backend.Services.Ai;
 
 namespace Nostos.Backend.Integrations.Assistant;
@@ -52,7 +51,9 @@ public readonly record struct AssistantExecutionUsage(
 /// </summary>
 public sealed class AssistantExecutionMeter
 {
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly TimeProvider _time;
+    private readonly long _started;
+    private long? _finished;
 
     private int _upstreamCalls;
     private int _completedCalls;
@@ -65,6 +66,12 @@ public sealed class AssistantExecutionMeter
     private bool _outputTokensComplete = true;
     private bool _thinkingTokensComplete = true;
     private string? _providerFinishReason;
+
+    public AssistantExecutionMeter(TimeProvider? timeProvider = null)
+    {
+        _time = timeProvider ?? TimeProvider.System;
+        _started = _time.GetTimestamp();
+    }
 
     public void RecordUpstreamRequest() => _upstreamCalls++;
 
@@ -104,12 +111,12 @@ public sealed class AssistantExecutionMeter
             promptTokens is not null && outputTokens is not null
                 ? checked(promptTokens.Value + outputTokens.Value)
                 : null,
-            (long)_clock.Elapsed.TotalMilliseconds);
+            (long)_time.GetElapsedTime(_started, _finished ?? _time.GetTimestamp()).TotalMilliseconds);
     }
 
     public AssistantExecutionMetrics Finish(AssistantTurnStopReason stopReason)
     {
-        _clock.Stop();
+        _finished ??= _time.GetTimestamp();
         var usage = Snapshot();
 
         return new AssistantExecutionMetrics(
