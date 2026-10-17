@@ -65,22 +65,45 @@ describe('typewriter sounds (issue #1042)', () => {
       expect(fetches).toEqual([]);
     });
 
-    it('loads the eight CC0 samples once, and plays after they arrive', async () => {
+    it('fetches the eight CC0 samples without an audio context, and plays after a key', async () => {
       const sounds = new TypewriterSounds(() => 0.5);
-      sounds.preload();
-      await new Promise((r) => setTimeout(r));
+      await sounds.prefetch();
+      expect(contexts).toBe(0);
       expect(fetches.length).toBe(8);
       expect(fetches.every((u) => u.startsWith('/audio/typewriter/') && u.endsWith('.mp3'))).toBe(true);
 
+      sounds.play('key', 0.6, 97); // first key: the context starts, samples decode
+      await new Promise((r) => setTimeout(r));
       sounds.play('key', 0.6, 97);
       expect(started).toBe(1);
-      sounds.preload();
+      await sounds.prefetch();
       expect(fetches.length).toBe(8);
+    });
+
+    it('tries a sample that failed to load again on a later key', async () => {
+      let fail = true;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+          fetches.push(url);
+          return fail
+            ? Promise.reject(new Error('offline'))
+            : Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
+        }),
+      );
+      const sounds = new TypewriterSounds();
+      sounds.play('key', 0.6, 97);
+      await new Promise((r) => setTimeout(r, 10));
+      fail = false;
+      sounds.play('key', 0.6, 97);
+      await new Promise((r) => setTimeout(r, 10));
+      sounds.play('key', 0.6, 97);
+      expect(started).toBe(1);
     });
 
     it('makes one sound for keys closer together than a carriage could strike', async () => {
       const sounds = new TypewriterSounds();
-      sounds.preload();
+      sounds.play('key', 0.6, 1); // starts the context and the decoding
       await new Promise((r) => setTimeout(r));
       sounds.play('key', 0.6, 97);
       sounds.play('key', 0.6, 98);

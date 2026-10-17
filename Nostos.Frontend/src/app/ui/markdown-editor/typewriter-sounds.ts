@@ -17,8 +17,11 @@ type AudioContextCtor = typeof AudioContext;
 
 export class TypewriterSounds {
   private context: AudioContext | null = null;
-  private readonly buffers = new Map<string, AudioBuffer | null>();
-  private loading: Promise<void> | null = null;
+  private readonly buffers = new Map<string, AudioBuffer>();
+  /** The encoded samples, fetched ahead without needing an AudioContext. */
+  private readonly files = new Map<string, ArrayBuffer>();
+  private fetching: Promise<void> | null = null;
+  private decoding: Promise<void> | null = null;
   private lastPlayed = 0;
   private readonly onVisibility = () => {
     if (!this.context) return;
@@ -35,15 +38,16 @@ export class TypewriterSounds {
   play(sound: TypewriterSound, volume: number, charCode = 0): void {
     const now = performance.now();
     if (now - this.lastPlayed < THROTTLE_MS) return;
-    this.lastPlayed = now;
 
     const context = this.ensureContext();
     if (!context) return;
-    void this.ensureLoaded(context);
+    void this.ensureDecoded(context);
 
     const name = sound === 'key' ? KEY_SAMPLES[Math.abs(charCode) % KEY_SAMPLES.length] : sound;
     const buffer = this.buffers.get(name);
     if (!buffer) return;
+    // Only a sound that plays starts the throttle window.
+    this.lastPlayed = now;
 
     const source = context.createBufferSource();
     source.buffer = buffer;
@@ -58,10 +62,23 @@ export class TypewriterSounds {
     source.start();
   }
 
-  /** Loads the samples ahead of the first key once sounds are turned on. */
-  preload(): void {
-    const context = this.ensureContext();
-    if (context) void this.ensureLoaded(context);
+  /**
+   * Fetches the samples ahead of the first key once sounds are turned on. No
+   * AudioContext is made here: browsers expect one to start with a gesture.
+   */
+  prefetch(): Promise<void> {
+    this.fetching ??= Promise.all(
+      ALL_SAMPLES.filter((name) => !this.files.has(name)).map(async (name) => {
+        try {
+          const response = await fetch(`${BASE}${name}.mp3`);
+          if (!response.ok) throw new Error(String(response.status));
+          this.files.set(name, await response.arrayBuffer());
+        } catch {
+          // Missing for now; tried again on the next key (see ensureDecoded).
+        }
+      }),
+    ).then(() => undefined);
+    return this.fetching;
   }
 
   /** Releases the audio context and stops listening for page visibility. */
@@ -93,20 +110,30 @@ export class TypewriterSounds {
     return this.context;
   }
 
-  private ensureLoaded(context: AudioContext): Promise<void> {
-    this.loading ??= Promise.all(
-      ALL_SAMPLES.map(async (name) => {
-        try {
-          const response = await fetch(`${BASE}${name}.mp3`);
-          if (!response.ok) throw new Error(String(response.status));
-          this.buffers.set(name, await context.decodeAudioData(await response.arrayBuffer()));
-        } catch {
-          // A missing sample is silence, never an error on the page.
-          this.buffers.set(name, null);
+  /** Decodes what has been fetched; a sample that failed is fetched again later. */
+  private ensureDecoded(context: AudioContext): Promise<void> {
+    if (this.decoding) return this.decoding;
+    this.decoding = this.prefetch()
+      .then(() =>
+        Promise.all(
+          [...this.files].filter(([name]) => !this.buffers.has(name)).map(async ([name, data]) => {
+            try {
+              // decodeAudioData detaches its input; decode a copy so a retry can.
+              this.buffers.set(name, await context.decodeAudioData(data.slice(0)));
+            } catch {
+              this.files.delete(name);
+            }
+          }),
+        ),
+      )
+      .then(() => {
+        // Anything still missing (offline, a bad file) is retried on a later key.
+        if (this.buffers.size < ALL_SAMPLES.length) {
+          this.fetching = null;
+          this.decoding = null;
         }
-      }),
-    ).then(() => undefined);
-    return this.loading;
+      });
+    return this.decoding;
   }
 }
 

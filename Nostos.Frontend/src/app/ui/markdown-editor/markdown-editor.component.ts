@@ -140,11 +140,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
-    // Turning sounds on fetches the samples; nothing is loaded before that.
+    // Turning sounds on fetches the samples (nothing is loaded before that);
+    // turning them off releases the audio context.
     effect(() => {
-      if (!this.sounds()) return;
-      this.typewriterSounds ??= new TypewriterSounds();
-      this.typewriterSounds.preload();
+      if (this.sounds()) {
+        void this.soundPlayer().prefetch();
+      } else if (this.typewriterSounds) {
+        this.typewriterSounds.dispose();
+        this.typewriterSounds = null;
+      }
     });
 
     // Spell check is one of the view's attributes, so ProseMirror itself keeps
@@ -278,6 +282,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.editorDom.set(this.editor.view.dom as HTMLElement);
     const dom = this.editor.view.dom as HTMLElement;
     dom.addEventListener('keydown', this.onSoundKeydown);
+    dom.addEventListener('keyup', this.onSoundKeyup);
     dom.addEventListener('beforeinput', this.onSoundInput);
     this.editorStarting.set(false);
     this.refreshToolbar();
@@ -295,6 +300,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     if (this.editor) {
       const dom = this.editor.view.dom as HTMLElement;
       dom.removeEventListener('keydown', this.onSoundKeydown);
+      dom.removeEventListener('keyup', this.onSoundKeyup);
       dom.removeEventListener('beforeinput', this.onSoundInput);
       // The last keystrokes may still be inside the debounce window upstream.
       this.emitMarkdown();
@@ -660,6 +666,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   /** When a keydown last made the sound itself, so its beforeinput does not again. */
   private keydownSoundAt = 0;
 
+  private soundPlayer(): TypewriterSounds {
+    this.typewriterSounds ??= new TypewriterSounds();
+    return this.typewriterSounds;
+  }
+
+  private readonly onSoundKeyup = () => {
+    this.keyRepeating = false;
+  };
+
   private readonly onSoundKeydown = (event: KeyboardEvent) => {
     this.keyRepeating = event.repeat;
     // ProseMirror takes Enter and Backspace on keydown and cancels them, so no
@@ -667,8 +682,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     if (!this.sounds() || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
     const sound = event.key === 'Enter' ? 'return' : event.key === 'Backspace' ? 'backspace' : null;
     if (!sound) return;
-    this.typewriterSounds ??= new TypewriterSounds();
-    this.typewriterSounds.play(sound, this.soundVolume());
+    // Enter picking a source from the @ list changes no text: no carriage.
+    if (sound === 'return' && this.suggestionRange) return;
+    this.soundPlayer().play(sound, this.soundVolume());
     this.keydownSoundAt = performance.now();
   };
 
@@ -683,8 +699,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const sound = soundForInput(event.inputType, event.data);
     if (!sound) return;
     if ((sound === 'return' || sound === 'backspace') && performance.now() - this.keydownSoundAt < 100) return;
-    this.typewriterSounds ??= new TypewriterSounds();
-    this.typewriterSounds.play(sound, this.soundVolume(), event.data?.charCodeAt(0) ?? 0);
+    this.soundPlayer().play(sound, this.soundVolume(), event.data?.charCodeAt(0) ?? 0);
   };
 
   private emitMarkdown(): void {
