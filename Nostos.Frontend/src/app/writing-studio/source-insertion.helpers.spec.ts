@@ -21,7 +21,7 @@ describe('source insertion provenance (#493)', () => {
 
   it('builds multiline quote markdown line-by-line with visible PDF provenance', () => {
     expect(buildQuoteMarkdown(pdfSource)).toBe(
-      '> Justice is harmony.\n> It orders the soul.\n> — *The Republic*, p. 42',
+      '> Justice is harmony.\n> It orders the soul.\n>\n> — *The Republic*, p. 42',
     );
   });
 
@@ -90,7 +90,7 @@ describe('source insertion provenance (#493)', () => {
     };
 
     expect(buildQuoteMarkdown(source)).toBe(
-      '> Literal *source* text\n> — *Book \\*One\\* \\_Revised\\_*',
+      '> Literal *source* text\n>\n> — *Book \\*One\\* \\_Revised\\_*',
     );
     expect(buildNoteMarkdown(source)).toContain('Literal _note_ text');
   });
@@ -108,13 +108,68 @@ describe('quoting from a passage (issue #1021)', () => {
         anchorVerified: true,
       }),
     ).toBe(
-      '> Man prefers peace, and even death,\n> to freedom of choice.\n> — *The Brothers Karamazov*, “The Grand Inquisitor”',
+      '> Man prefers peace, and even death,\n> to freedom of choice.\n>\n> — *The Brothers Karamazov*, “The Grand Inquisitor”',
     );
   });
 
   it('names the passage in a reference too', () => {
     expect(buildReferenceMarkdown({ bookTitle: 'The Brothers Karamazov', passageTitle: 'The Grand Inquisitor' })).toBe(
       '*See: The Brothers Karamazov, “The Grand Inquisitor”*',
+    );
+  });
+});
+
+describe('naming the author (issue #1044)', () => {
+  const source = {
+    bookTitle: 'The World as Will and Representation',
+    bookAuthor: 'Arthur Schopenhauer',
+    selectedText: 'The world is my representation.',
+    content: 'The opening line.',
+    sourceAnchorKind: 'pdf_page',
+    sourceAnchorValue: '3',
+    anchorVerified: true,
+  };
+
+  it('puts the author before the title in a quote', () => {
+    expect(buildQuoteMarkdown(source)).toBe(
+      '> The world is my representation.\n>\n> — Arthur Schopenhauer, *The World as Will and Representation*, p. 3',
+    );
+  });
+
+  it('names the author in a note and a reference', () => {
+    expect(buildNoteMarkdown(source)).toBe(
+      'The opening line.\n\n*Source: Arthur Schopenhauer, The World as Will and Representation, p. 3*',
+    );
+    expect(buildReferenceMarkdown(source)).toBe(
+      '*See: Arthur Schopenhauer, The World as Will and Representation, p. 3*',
+    );
+  });
+
+  it('keeps today\'s form when no author is known', () => {
+    expect(buildReferenceMarkdown({ ...source, bookAuthor: '  ' })).toBe(
+      '*See: The World as Will and Representation, p. 3*',
+    );
+    expect(buildReferenceMarkdown({ ...source, bookAuthor: null })).toBe(
+      '*See: The World as Will and Representation, p. 3*',
+    );
+  });
+
+  it('escapes Markdown characters in an author name', () => {
+    expect(buildReferenceMarkdown({ bookTitle: 'Poems', bookAuthor: 'e_e *cummings*' })).toBe(
+      '*See: e\\_e \\*cummings\\*, Poems*',
+    );
+  });
+
+  it('names the author when quoting a passage too', () => {
+    expect(
+      buildQuoteMarkdown({
+        selectedText: 'Time is that in which all things pass away.',
+        bookTitle: 'Studies in Pessimism',
+        bookAuthor: 'Arthur Schopenhauer',
+        passageTitle: 'On the Vanity of Existence',
+      }),
+    ).toBe(
+      '> Time is that in which all things pass away.\n>\n> — Arthur Schopenhauer, *Studies in Pessimism*, “On the Vanity of Existence”',
     );
   });
 });
