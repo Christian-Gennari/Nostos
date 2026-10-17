@@ -22,6 +22,7 @@ import BubbleMenu from '@tiptap/extension-bubble-menu';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
+import { TypewriterSounds, soundForInput } from './typewriter-sounds';
 import { exitSuggestion } from '@tiptap/suggestion';
 
 export interface MarkdownEditorTransientState {
@@ -86,6 +87,14 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   typewriter = input<boolean>(false);
   /** Browser spell checking on the page (a page setting, #1041). */
   spellcheck = input<boolean>(true);
+  /** Typewriter sounds on keystrokes (a page setting, #1042). */
+  sounds = input<boolean>(false);
+  /** 0–1. */
+  soundVolume = input<number>(0.6);
+
+  private typewriterSounds: TypewriterSounds | null = null;
+  /** Whether the key behind the coming edit is auto-repeating (no sound). */
+  private keyRepeating = false;
   /** The `@` query while one is open, and null when it closes. */
   sourceSuggestion = output<SourceSuggestionState | null>();
   /** Keys pressed while an `@` query is open go here first; true consumes one. */
@@ -131,6 +140,17 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
+    // Turning sounds on fetches the samples (nothing is loaded before that);
+    // turning them off releases the audio context.
+    effect(() => {
+      if (this.sounds()) {
+        void this.soundPlayer().prefetch();
+      } else if (this.typewriterSounds) {
+        this.typewriterSounds.dispose();
+        this.typewriterSounds = null;
+      }
+    });
+
     // Spell check is one of the view's attributes, so ProseMirror itself keeps
     // it on every redraw; a transaction asks it to read the setting again.
     effect(() => {
@@ -260,6 +280,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
     this.lastExternalMarkdownApplied ??= markdown;
     this.editorDom.set(this.editor.view.dom as HTMLElement);
+    const dom = this.editor.view.dom as HTMLElement;
+    dom.addEventListener('keydown', this.onSoundKeydown);
+    dom.addEventListener('keyup', this.onSoundKeyup);
+    dom.addEventListener('beforeinput', this.onSoundInput);
     this.editorStarting.set(false);
     this.refreshToolbar();
     this.emitWordCount();
@@ -271,7 +295,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.pendingTransientRestore?.resolve(false);
     this.pendingTransientRestore = null;
     this.bubble?.nativeElement.remove();
+    this.typewriterSounds?.dispose();
+    this.typewriterSounds = null;
     if (this.editor) {
+      const dom = this.editor.view.dom as HTMLElement;
+      dom.removeEventListener('keydown', this.onSoundKeydown);
+      dom.removeEventListener('keyup', this.onSoundKeyup);
+      dom.removeEventListener('beforeinput', this.onSoundInput);
       // The last keystrokes may still be inside the debounce window upstream.
       this.emitMarkdown();
       this.editor.destroy();
@@ -632,6 +662,45 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     }
     chain.setTextSelection(after + 1).scrollIntoView().run();
   }
+
+  /** When a keydown last made the sound itself, so its beforeinput does not again. */
+  private keydownSoundAt = 0;
+
+  private soundPlayer(): TypewriterSounds {
+    this.typewriterSounds ??= new TypewriterSounds();
+    return this.typewriterSounds;
+  }
+
+  private readonly onSoundKeyup = () => {
+    this.keyRepeating = false;
+  };
+
+  private readonly onSoundKeydown = (event: KeyboardEvent) => {
+    this.keyRepeating = event.repeat;
+    // ProseMirror takes Enter and Backspace on keydown and cancels them, so no
+    // beforeinput follows on a hardware keyboard: their sounds start here.
+    if (!this.sounds() || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+    const sound = event.key === 'Enter' ? 'return' : event.key === 'Backspace' ? 'backspace' : null;
+    if (!sound) return;
+    // Enter picking a source from the @ list changes no text: no carriage.
+    if (sound === 'return' && this.suggestionRange) return;
+    this.soundPlayer().play(sound, this.soundVolume());
+    this.keydownSoundAt = performance.now();
+  };
+
+  /**
+   * Sounds follow what the keyboard did to the text (beforeinput), not key
+   * codes: Android soft keyboards report every key as "Unidentified". Edits
+   * the Studio makes itself (an inserted quote) fire no beforeinput, and an
+   * IME composition in progress makes no sound until it is committed.
+   */
+  private readonly onSoundInput = (event: InputEvent) => {
+    if (!this.sounds() || event.isComposing || this.keyRepeating) return;
+    const sound = soundForInput(event.inputType, event.data);
+    if (!sound) return;
+    if ((sound === 'return' || sound === 'backspace') && performance.now() - this.keydownSoundAt < 100) return;
+    this.soundPlayer().play(sound, this.soundVolume(), event.data?.charCodeAt(0) ?? 0);
+  };
 
   private emitMarkdown(): void {
     if (!this.editor) return;
