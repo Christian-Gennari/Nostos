@@ -191,6 +191,90 @@ describe('MarkdownEditorComponent', () => {
     expect(emitted.at(-1)).toBe('[https://example.com](https://example.com)');
   });
 
+  describe('the @ source query (#1039)', () => {
+    function typeText(text: string) {
+      const editor = (component as unknown as { editor: import('@tiptap/core').Editor }).editor;
+      for (const ch of text) editor.commands.insertContent(ch);
+    }
+
+    it('reports the query typed after @ and when it closes', async () => {
+      await create('Some prose.');
+      const states: unknown[] = [];
+      component.sourceSuggestion.subscribe((s) => states.push(s));
+      (component as any).editor.commands.focus('end');
+      typeText(' @schop');
+      expect(states.at(-1)).toEqual(expect.objectContaining({ query: 'schop' }));
+      (component as any).editor.commands.insertContent('  ');
+      expect(states.at(-1)).toBeNull();
+    });
+
+    it('does not open inside a word, so an email address stays prose', async () => {
+      await create('Mail');
+      const states: unknown[] = [];
+      component.sourceSuggestion.subscribe((s) => states.push(s));
+      (component as any).editor.commands.focus('end');
+      typeText(' me at reader@example');
+      expect(states.filter(Boolean)).toEqual([]);
+    });
+
+    it('puts a block quote after the paragraph, never inside the sentence', async () => {
+      await create('First paragraph. Second paragraph follows.');
+      (component as any).editor.commands.focus('end');
+      typeText(' See @schop');
+      expect(component.replaceSourceQuery('> A quote.\n>\n> — Author, *Book*', 'block')).toBe(true);
+      const md = component.currentMarkdown();
+      expect(md).toContain('First paragraph. Second paragraph follows. See');
+      expect(md).not.toContain('@schop');
+      expect(md).toMatch(/follows\. See\s*\n\n> A quote\./);
+    });
+
+    it('puts a reference inline, and the next words are not italic', async () => {
+      await create('As');
+      (component as any).editor.commands.focus('end');
+      typeText(' @tal');
+      expect(component.replaceSourceQuery('*See: Author, Book*', 'inline')).toBe(true);
+      typeText(' is right.');
+      expect(component.currentMarkdown()).toBe('As _See: Author, Book_ is right.');
+    });
+
+    it('opens with the shortcut and takes its @ (and its space) back when closed empty', async () => {
+      await create('Word');
+      (component as any).editor.commands.focus('end');
+      expect(component.openSourceQuery()).toBe(true);
+      expect(component.currentMarkdown()).toBe('Word @');
+      component.closeSourceQuery();
+      await Promise.resolve();
+      expect(component.currentMarkdown()).toBe('Word');
+    });
+
+    it('never replaces selected text with the shortcut', async () => {
+      await create('Keep this sentence.');
+      (component as any).editor.commands.selectAll();
+      component.openSourceQuery();
+      expect(component.currentMarkdown()).toContain('Keep this sentence.');
+      expect(component.currentMarkdown()).toContain('@');
+    });
+
+    it('adds no space after opening punctuation', async () => {
+      await create('(');
+      (component as any).editor.commands.focus('end');
+      component.openSourceQuery();
+      expect(component.currentMarkdown()).toBe('(@');
+    });
+
+    it('puts a block after a selected image instead of failing', async () => {
+      await create('![dot](https://example.com/a.png)\n\nAfter.');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      let imagePos = -1;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'image' && imagePos < 0) imagePos = pos;
+      });
+      editor.commands.setNodeSelection(imagePos);
+      expect(component.insertBlockMarkdown('> Quoted.')).toBe(true);
+      expect(component.currentMarkdown()).toMatch(/a\.png\)\n\n> Quoted\./);
+    });
+  });
+
   it('emits the final Markdown when it is torn down', async () => {
     await create('Last words.');
     emitted = [];

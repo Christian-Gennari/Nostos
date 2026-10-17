@@ -14,6 +14,7 @@ import { NotesService } from '../core/services/notes.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.component';
+import { PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
 import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 
@@ -32,6 +33,13 @@ class MarkdownEditorStub {
     scrollY: 240,
   }));
   readonly restoreTransientState = vi.fn(async (_state: unknown, _expectedMarkdown: string) => true);
+  readonly sourceSuggestionKeyDown = input<((event: KeyboardEvent) => boolean) | null>(null);
+  readonly sourceSuggestionActiveId = input<string | null>(null);
+  readonly sourceSuggestion = output<unknown>();
+  readonly replaceSourceQuery = vi.fn((_markdown: string, _placement: 'block' | 'inline') => true);
+  readonly clearSourceQuery = vi.fn(() => true);
+  readonly closeSourceQuery = vi.fn();
+  readonly insertBlockMarkdown = vi.fn((_markdown: string) => true);
 }
 
 @Component({ selector: 'app-flat-tree', standalone: true, template: '' })
@@ -1674,6 +1682,93 @@ describe('WritingStudio kept sources (#491)', () => {
         fixture.nativeElement.querySelectorAll('.source-more-actions button'),
       ).map((button) => (button as Element).textContent?.trim()),
     ).toEqual(['Insert as reference']);
+  });
+
+  describe('the @ source palette (#1039)', () => {
+    const paletteQuote = {
+      id: 'note-gamma',
+      bookId: 'book-3',
+      kind: 'note' as const,
+      bookTitle: 'The World as Will and Representation',
+      bookAuthor: 'Arthur Schopenhauer',
+      selectedText: 'The world is my representation.',
+      content: 'Opening line',
+      sourceAnchorKind: 'pdf_page',
+      sourceAnchorValue: '3',
+      anchorVerified: true,
+      passageTitle: null,
+      lead: 'The world is my representation.',
+      note: 'Opening line',
+      kept: false,
+    };
+
+    beforeEach(() => {
+      component.activeItem.set(sampleDoc1);
+      component.editorText.set(sampleDoc1.content);
+      fixture.detectChanges();
+    });
+
+    it('opens while an @ query is typed and closes with it', () => {
+      component.onSourceSuggestion({ query: 'schop', rect: { top: 10, bottom: 30, left: 40, right: 50 } });
+      expect(component.paletteQuery()).toBe('schop');
+      component.onSourceSuggestion(null);
+      expect(component.paletteQuery()).toBeNull();
+    });
+
+    it('replaces the @ query with a quote that names the author, and keeps the source', () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      component.insertFromPalette({ source: paletteQuote, mode: 'quote' });
+
+      expect(editor.replaceSourceQuery).toHaveBeenCalledWith(
+        '> The world is my representation.\n>\n> — Arthur Schopenhauer, *The World as Will and Representation*, p. 3',
+        'block',
+      );
+      expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'note-gamma');
+    });
+
+    it('puts a reference inline, in place of the query', () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      component.insertFromPalette({ source: paletteQuote, mode: 'reference' });
+
+      expect(editor.replaceSourceQuery).toHaveBeenCalledWith(
+        '*See: Arthur Schopenhauer, The World as Will and Representation, p. 3*',
+        'inline',
+      );
+    });
+
+    it('opens a passage in the viewer instead of inserting it whole', () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      const viewer = TestBed.inject(PassageViewerService);
+      const open = vi.spyOn(viewer, 'open').mockImplementation(() => undefined);
+      const passage = { ...paletteQuote, id: 'passage-1', kind: 'passage' as const, passageTitle: 'On the Vanity of Existence' };
+
+      component.insertFromPalette({ source: passage, mode: 'quote' });
+
+      expect(editor.clearSourceQuery).toHaveBeenCalled();
+      expect(editor.replaceSourceQuery).not.toHaveBeenCalled();
+      expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
+
+      const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => void };
+      expect(writingsService.addSource).not.toHaveBeenCalledWith('doc-1', 'passage-1');
+      options.quoteSelection('Time is that in which all things pass away.', {
+        id: 'passage-1',
+        bookTitle: 'Studies in Pessimism',
+        bookAuthor: 'Arthur Schopenhauer',
+        title: 'On the Vanity of Existence',
+      });
+      expect(editor.insertBlockMarkdown).toHaveBeenCalledWith(
+        '> Time is that in which all things pass away.\n>\n> — Arthur Schopenhauer, *Studies in Pessimism*, “On the Vanity of Existence”',
+      );
+      // Kept only once something was quoted from it.
+      expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
+    });
+
+    it('sends "Browse Reference" to the searched Books list', () => {
+      component.browseFromPalette('schopenhaur');
+      expect(component.referenceMode()).toBe('library');
+      expect(component.activeSidebarTab()).toBe('notes');
+      expect(component.bookQuery()).toBe('schopenhaur');
+    });
   });
 
   it('delegates deliberate insertion to the editor boundary without concatenating editorText', async () => {

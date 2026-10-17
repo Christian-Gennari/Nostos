@@ -151,9 +151,20 @@
           #editor
           [initialContent]="editorText()"
           [typewriter]="typewriter()"
+          [sourceSuggestionKeyDown]="paletteKeyHandler"
+          [sourceSuggestionActiveId]="sourcePalette.activeId()"
           (contentChange)="editorText.set($event)"
           (wordCountChange)="editorWordCount.set($event)"
+          (sourceSuggestion)="onSourceSuggestion($event)"
         ></app-markdown-editor>
+        <app-source-palette
+          #sourcePalette
+          [query]="paletteQuery()"
+          [anchor]="paletteAnchor()"
+          [keptSources]="keptSources()"
+          (choose)="insertFromPalette($event)"
+          (browse)="browseFromPalette($event)"
+        />
       </div>
       <div class="editor-footer">
         <div class="editor-desk-telemetry" aria-live="polite">
