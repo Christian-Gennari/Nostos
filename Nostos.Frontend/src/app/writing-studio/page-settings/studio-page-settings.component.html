@@ -1,0 +1,118 @@
+<section class="page-settings" role="dialog" aria-modal="false" aria-label="Page settings" data-testid="page-settings">
+  @if (view() === 'fonts') {
+    <header class="ps-subhead">
+      <button appIconButton icon="caret-left" [glyphSize]="16" aria-label="Back to page settings" title="Back" (click)="backToMain()"></button>
+      <h2 class="ps-subhead-title">Typeface</h2>
+    </header>
+    <div class="ps-fonts" role="radiogroup" aria-label="Typeface">
+      @for (entry of fontGroups; track entry.group) {
+        <p class="ps-font-group" aria-hidden="true">{{ entry.group }}</p>
+        @for (font of entry.fonts; track font.value) {
+          <!-- Arrows try a face on the page; Enter or a click keeps it and goes back. -->
+          <button
+            type="button"
+            role="radio"
+            class="ps-font"
+            [attr.aria-checked]="font.value === prefs.preferences().font"
+            [attr.tabindex]="font.value === prefs.font().value ? 0 : -1"
+            [attr.data-font-option]="font.value"
+            [style.font-family]="font.stack"
+            (click)="pickFont(font)"
+            (keydown)="fontKey($event, font)"
+          >{{ font.label }}</button>
+        }
+      }
+    </div>
+  } @else {
+    <div class="ps-themes" role="radiogroup" aria-label="Page theme">
+      @for (theme of themes; track theme.value; let i = $index) {
+        <button
+          type="button"
+          role="radio"
+          class="ps-theme"
+          [attr.aria-checked]="prefs.theme() === theme.value"
+          [attr.tabindex]="prefs.theme() === theme.value || (following() && i === 0) ? 0 : -1"
+          [attr.data-theme-option]="theme.value"
+          (click)="setTheme(theme.value)"
+          (keydown)="themeKey($event, i)"
+        >
+          <!-- Only the swatch takes its theme's tokens; the label stays readable. -->
+          <span [class]="'ps-swatch studio-theme-' + theme.value" aria-hidden="true">Aa</span>
+          <span class="ps-theme-label">{{ theme.label }}</span>
+        </button>
+      }
+    </div>
+    <label class="ps-follow">
+      <input type="checkbox" [checked]="following()" (change)="setFollow(checkedFrom($event))" />
+      Follow the app's light and dark
+    </label>
+
+    <div class="ps-rule" aria-hidden="true"></div>
+
+    <button type="button" class="ps-typeface" (click)="openFonts()">
+      <span class="ps-label">Typeface</span>
+      <span class="ps-typeface-name" [style.font-family]="prefs.font().stack">{{ prefs.font().label }}</span>
+      <span class="ps-chevron" aria-hidden="true">›</span>
+    </button>
+
+    <div class="ps-row">
+      <span class="ps-label" id="ps-size-label">Size</span>
+      <div class="ps-steps" role="group" aria-labelledby="ps-size-label">
+        <button appButton size="sm" type="button" class="ps-step" aria-label="Smaller text" title="Smaller"
+          [disabled]="prefs.preferences().fontSize <= sizeRange.min" (click)="stepSize(-1)">A−</button>
+        <span class="ps-step-value" aria-live="polite">{{ prefs.preferences().fontSize }}</span>
+        <button appButton size="sm" type="button" class="ps-step" aria-label="Larger text" title="Larger"
+          [disabled]="prefs.preferences().fontSize >= sizeRange.max" (click)="stepSize(1)">A+</button>
+      </div>
+    </div>
+
+    <div class="ps-row ps-row-stacked">
+      <span class="ps-label" id="ps-spacing-label">Spacing</span>
+      <nostos-segmented fill aria-labelledby="ps-spacing-label" data-testid="ps-spacing"
+        [options]="spacingOptions" [value]="spacing()" (valueChange)="prefs.update({ lineSpacing: $event })" />
+    </div>
+
+    <div class="ps-row ps-row-stacked">
+      <span class="ps-label" id="ps-width-label">Line length</span>
+      <nostos-segmented fill aria-labelledby="ps-width-label" data-testid="ps-width"
+        [options]="widthOptions" [value]="width()" (valueChange)="setWidth($event)" />
+    </div>
+
+    <div class="ps-rule" aria-hidden="true"></div>
+
+    <div class="ps-toggles">
+      <div class="ps-toggle">
+        <span aria-hidden="true">Keep the line centred</span>
+        <label appSwitch>
+          <input type="checkbox" aria-label="Keep the line centred (typewriter scrolling)" [checked]="prefs.preferences().typewriter" (change)="prefs.update({ typewriter: checkedFrom($event) })" />
+        </label>
+      </div>
+      <div class="ps-toggle">
+        <span aria-hidden="true">Typewriter sounds</span>
+        <label appSwitch>
+          <input type="checkbox" aria-label="Typewriter sounds" [checked]="prefs.preferences().sounds" (change)="prefs.update({ sounds: checkedFrom($event) })" />
+        </label>
+      </div>
+      @if (prefs.preferences().sounds) {
+        <input
+          class="ps-volume"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          aria-label="Typewriter sound volume"
+          [value]="prefs.preferences().soundVolume"
+          (input)="prefs.update({ soundVolume: numberFrom($event) })"
+        />
+      }
+      <div class="ps-toggle">
+        <span aria-hidden="true">Spell check</span>
+        <label appSwitch>
+          <input type="checkbox" aria-label="Spell check" [checked]="prefs.preferences().spellCheck" (change)="prefs.update({ spellCheck: checkedFrom($event) })" />
+        </label>
+      </div>
+    </div>
+
+    <button appButton variant="link" size="sm" type="button" class="ps-reset" (click)="prefs.reset()">Reset to the standard page</button>
+  }
+</section>

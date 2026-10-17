@@ -1,0 +1,233 @@
+/* The @ source palette (issue #1039): a small list at the caret, never a
+   modal. It reads the Studio's manuscript and chrome tokens so it sits on the
+   page's own paper. */
+
+:host {
+  display: contents;
+}
+
+.source-palette {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 24px));
+  max-height: min(420px, 60vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+.source-palette.is-sheet {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-height: min(55vh, 420px);
+}
+
+.sp-heading {
+  padding: 10px 14px 4px;
+  color: var(--manuscript-ink-faint);
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.sp-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.sp-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 6px 8px 10px;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+
+.sp-row.active {
+  background: var(--manuscript-selection);
+}
+
+.sp-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sp-lead {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--manuscript-ink);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.sp-lead.is-quote {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 0.98rem;
+  font-style: italic;
+}
+
+/* The active row shows the whole quotation, so a long one can be read before
+   it goes in. A passage shows more of its opening, not all of it: its
+   sentences are chosen in the viewer. */
+.sp-row.active .sp-lead {
+  -webkit-line-clamp: 12;
+}
+
+.sp-row.active[data-kind='passage'] .sp-lead {
+  -webkit-line-clamp: 4;
+}
+
+.sp-note {
+  color: var(--manuscript-ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.sp-byline {
+  color: var(--manuscript-ink-faint);
+  font-size: 0.76rem;
+}
+
+.sp-kept {
+  margin-left: 2px;
+}
+
+.sp-passage {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.sp-kind {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  color: var(--manuscript-ink-soft);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+.sp-passage-title {
+  color: var(--manuscript-ink);
+  font-family: Newsreader, Georgia, serif;
+  font-size: 0.98rem;
+  font-weight: 500;
+}
+
+/* Matched words: underlined, not painted, so the quotation stays readable. */
+.sp-match {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--manuscript-link-rule);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.18em;
+}
+
+/* The row's other insert options: always reachable on touch, a hover hint
+   with a mouse. */
+.sp-more {
+  flex: 0 0 auto;
+  opacity: 0;
+}
+
+.sp-row.active .sp-more,
+.sp-more:focus-visible {
+  opacity: 1;
+}
+
+.sp-more-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.sp-more-action,
+.sp-browse {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--manuscript-ink);
+  background: transparent;
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-sm, 4px);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.sp-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  color: var(--manuscript-ink-soft);
+  font-size: 0.86rem;
+}
+
+.sp-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 7px 12px;
+  color: var(--manuscript-ink-faint);
+  border-top: 1px solid var(--manuscript-rule);
+  font-size: 0.72rem;
+}
+
+.sp-hint kbd {
+  font: inherit;
+  font-weight: 600;
+}
+
+.sp-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (pointer: coarse), (max-width: 640px) {
+  .sp-row {
+    min-height: 44px;
+  }
+
+  .sp-more {
+    opacity: 1;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sp-more-action,
+  .sp-browse {
+    min-height: 44px;
+  }
+
+  /* No physical keyboard to press them with. */
+  .sp-hint {
+    display: none;
+  }
+}

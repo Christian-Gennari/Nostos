@@ -272,6 +272,28 @@
   --color-highlight: #b7e4cf;
   --color-highlight-hover: #a3d9c2;
 
+  /* ── Manuscript (the Studio page) ──
+     The page the writer types on. These are the values the TinyMCE iframe used
+     to carry in its own stylesheet (issue #1037); now the editor lives in the
+     app's DOM and reads them like any other surface. Studio themes (#1041)
+     override this set on the Studio alone. */
+  --manuscript-paper: #ffffff;
+  --manuscript-ink: #121316;
+  --manuscript-ink-strong: #211f1c;
+  --manuscript-ink-soft: #4A4D54;
+  --manuscript-ink-faint: #94979E;
+  --manuscript-rule: #E5E7EB;
+  --manuscript-rule-strong: #C7C6CB;
+  --manuscript-link: #526d87;
+  --manuscript-link-hover: #394f65;
+  --manuscript-link-rule: rgba(82, 109, 135, 0.42);
+  --manuscript-selection: rgba(104, 126, 148, 0.24);
+  --manuscript-quote-rule: #94979E;
+  --manuscript-code-bg: #F3F3F4;
+  --manuscript-code-ink: #4A4D54;
+  --manuscript-table-head-bg: #faf9f7;
+  --manuscript-placeholder: #a39c93;
+
   /* ── Borders ── */
   --border-color: #E5E7EB;
   /* ── Control boundary (checkboxes, and anything else whose edge is the only
@@ -935,6 +957,24 @@
   --color-info-border: #4A6A94;
   --color-info-bg: #1A2433;
 
+  /* ── Manuscript (the Studio page), dark sheet ── */
+  --manuscript-paper: #121318;
+  --manuscript-ink: #f0f1f4;
+  --manuscript-ink-strong: #f0f1f4;
+  --manuscript-ink-soft: #c4c7d0;
+  --manuscript-ink-faint: #8b909f;
+  --manuscript-rule: #2a2d37;
+  --manuscript-rule-strong: #3a3f4d;
+  --manuscript-link: #a9cfc2;
+  --manuscript-link-hover: #c4ebde;
+  --manuscript-link-rule: rgba(169, 207, 194, 0.42);
+  --manuscript-selection: rgba(169, 207, 194, 0.25);
+  --manuscript-quote-rule: #44495a;
+  --manuscript-code-bg: #0d0e11;
+  --manuscript-code-ink: #f0f1f4;
+  --manuscript-table-head-bg: #181a20;
+  --manuscript-placeholder: #8b909f;
+
   /* ── Borders / scrollbar ──
      The palette's "Architectural Rules" #2a2d37. The hairline is the only
      structural device this palette allows (no floating cards), and it gets
@@ -1306,13 +1346,10 @@
   --shadow-glass-lg: 0 16px 36px -8px rgba(18, 19, 22, 0.14), 0 4px 10px rgba(0, 0, 0, 0.04);
   --shadow-glow: 0 6px 20px -4px rgba(91, 94, 102, 0.30);
 
-  /* ── Editor chrome tokens (TinyMCE bridge) ──
-     The --editor-ui-* tokens are the stable contract between Nostos and the
-     TinyMCE override layer (component ::ng-deep rules + src/tinymce-nostos.css
-     portal rules). The skin stays 'oxide'; these tokens repaint the chrome
-     through plain CSS inheritance. Single light token graph: :root is the
-     only owner, so body-appended TinyMCE portals always inherit the same
-     light values. `--editor-ui-bg-active` was removed: no reader. */
+  /* ── Editor chrome tokens ──
+     The --editor-ui-* tokens colour the Studio editor's chrome (its toolbar)
+     and follow the theme through plain CSS inheritance. They began as the
+     TinyMCE bridge; the editor is TipTap now (issue #1037). */
   --editor-ui-bg: var(--bg-surface);
   --editor-ui-bg-hover: #F3F3F4;
   --editor-ui-text: var(--color-text-main);
@@ -1802,6 +1839,196 @@ body.nostos-zen app-app-dock {
    page while the writer is in focus mode. */
 body.nostos-zen app-assistant {
   display: none;
+}
+
+/* While words are going onto the Studio page, the floating dock and the
+   assistant trigger fade with the rest of the chrome (issue #1040); a pointer
+   movement or Esc brings them back. Global for the same reason as zen above. */
+body.nostos-studio-typing app-app-dock,
+body.nostos-studio-typing app-assistant {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 600ms ease;
+}
+
+app-app-dock,
+app-assistant {
+  transition: opacity 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.nostos-studio-typing app-app-dock,
+  body.nostos-studio-typing app-assistant,
+  app-app-dock,
+  app-assistant {
+    transition: none;
+  }
+}
+
+
+/* ------------------------------
+   STUDIO THEMES (issue #1041)
+------------------------------ */
+/* Token sets for the Studio page, independent of the app theme for now. A
+   theme class on the Studio layout overrides the manuscript tokens and the
+   core surface tokens its rails, palette and bubble read, so the whole Studio
+   takes the theme while the dock keeps the app's. Each set is complete on its
+   own, so the same blocks can later become app-wide themes unchanged.
+   Palettes ported from Scriptorium; muted and link inks were raised where
+   needed to keep WCAG AA (4.5:1) on both paper and rail surfaces. */
+/* Writer's Study (warm ink on a dark desk) */
+.studio-theme-study {
+  color-scheme: dark;
+  --manuscript-paper: #1a1814;
+  --manuscript-ink: #e4d5bf;
+  --manuscript-ink-strong: #f1e6d3;
+  --manuscript-ink-soft: #bcae96;
+  --manuscript-ink-faint: #958a75;
+  --manuscript-rule: #3a342c;
+  --manuscript-rule-strong: #4a4238;
+  --manuscript-link: #c9953e;
+  --manuscript-link-hover: #e0b061;
+  --manuscript-link-rule: rgba(201, 149, 62, 0.45);
+  --manuscript-selection: rgba(201, 149, 62, 0.22);
+  --manuscript-quote-rule: #c9953e;
+  --manuscript-code-bg: #24201a;
+  --manuscript-code-ink: #e4d5bf;
+  --manuscript-table-head-bg: #24201a;
+  --manuscript-placeholder: #958a75;
+
+  --bg-surface: #1a1814;
+  --bg-sidebar: #24201a;
+  --bg-body: #0f0e0c;
+  --bg-hover: #2d2822;
+  --bg-input: #1a1814;
+  --color-text-main: #e4d5bf;
+  --color-text-muted: #bcae96;
+  --color-text-light: #958a75;
+  --border-color: #3a342c;
+  --border-light: #2d2822;
+  --color-accent-bg: rgba(201, 149, 62, 0.14);
+  --focus-ring: #c9953e;
+  --editor-ui-bg: #24201a;
+  --overlay-light: rgba(0, 0, 0, 0.45);
+  --control-active-fill: #3b342b;
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+/* Mist (cool grey) */
+.studio-theme-mist {
+  color-scheme: dark;
+  --manuscript-paper: #1e2026;
+  --manuscript-ink: #c8ccd4;
+  --manuscript-ink-strong: #dde0e6;
+  --manuscript-ink-soft: #a9adb6;
+  --manuscript-ink-faint: #8a8f99;
+  --manuscript-rule: #33363d;
+  --manuscript-rule-strong: #42464f;
+  --manuscript-link: #8494b0;
+  --manuscript-link-hover: #a4b2cb;
+  --manuscript-link-rule: rgba(132, 148, 176, 0.45);
+  --manuscript-selection: rgba(122, 139, 168, 0.24);
+  --manuscript-quote-rule: #7a8ba8;
+  --manuscript-code-bg: #25282e;
+  --manuscript-code-ink: #c8ccd4;
+  --manuscript-table-head-bg: #25282e;
+  --manuscript-placeholder: #8a8f99;
+
+  --bg-surface: #1e2026;
+  --bg-sidebar: #25282e;
+  --bg-body: #16181c;
+  --bg-hover: #2d3037;
+  --bg-input: #1e2026;
+  --color-text-main: #c8ccd4;
+  --color-text-muted: #a9adb6;
+  --color-text-light: #8a8f99;
+  --border-color: #33363d;
+  --border-light: #2d3037;
+  --color-accent-bg: rgba(122, 139, 168, 0.16);
+  --focus-ring: #8494b0;
+  --editor-ui-bg: #25282e;
+  --overlay-light: rgba(0, 0, 0, 0.45);
+  --control-active-fill: #383c45;
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+/* Sepia (warm paper) */
+.studio-theme-sepia {
+  color-scheme: light;
+  --manuscript-paper: #fbf3e0;
+  --manuscript-ink: #5f4b32;
+  --manuscript-ink-strong: #4a3a26;
+  --manuscript-ink-soft: #6f5b40;
+  --manuscript-ink-faint: #715f44;
+  --manuscript-rule: #d8c8a8;
+  --manuscript-rule-strong: #c4b08a;
+  --manuscript-link: #715b3f;
+  --manuscript-link-hover: #4a3a26;
+  --manuscript-link-rule: rgba(113, 91, 63, 0.40);
+  --manuscript-selection: rgba(139, 115, 85, 0.18);
+  --manuscript-quote-rule: #b09a74;
+  --manuscript-code-bg: #f0e8d0;
+  --manuscript-code-ink: #5f4b32;
+  --manuscript-table-head-bg: #f0e8d0;
+  --manuscript-placeholder: #715f44;
+
+  --bg-surface: #fbf3e0;
+  --bg-sidebar: #f0e8d0;
+  --bg-body: #e8dcc8;
+  --bg-hover: #e8dcc8;
+  --bg-input: #fbf3e0;
+  --color-text-main: #5f4b32;
+  --color-text-muted: #6f5b40;
+  --color-text-light: #715f44;
+  --border-color: #d8c8a8;
+  --border-light: #e8dcc8;
+  --color-accent-bg: rgba(139, 115, 85, 0.14);
+  --focus-ring: #715b3f;
+  --editor-ui-bg: #f0e8d0;
+  --overlay-light: rgba(95, 75, 50, 0.20);
+  --control-active-fill: var(--bg-surface);
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
+}
+/* Paper (white, ink blue accents) */
+.studio-theme-paper {
+  color-scheme: light;
+  --manuscript-paper: #ffffff;
+  --manuscript-ink: #1a1a1a;
+  --manuscript-ink-strong: #000000;
+  --manuscript-ink-soft: #4a4a4a;
+  --manuscript-ink-faint: #6b6b6b;
+  --manuscript-rule: #d4d6d8;
+  --manuscript-rule-strong: #b8bbbe;
+  --manuscript-link: #1e3a5f;
+  --manuscript-link-hover: #10243d;
+  --manuscript-link-rule: rgba(30, 58, 95, 0.40);
+  --manuscript-selection: rgba(30, 58, 95, 0.14);
+  --manuscript-quote-rule: #1e3a5f;
+  --manuscript-code-bg: #f5f6f7;
+  --manuscript-code-ink: #1a1a1a;
+  --manuscript-table-head-bg: #f5f6f7;
+  --manuscript-placeholder: #6b6b6b;
+
+  --bg-surface: #ffffff;
+  --bg-sidebar: #f5f6f7;
+  --bg-body: #f0f1f2;
+  --bg-hover: #ebedef;
+  --bg-input: #ffffff;
+  --color-text-main: #1a1a1a;
+  --color-text-muted: #4a4a4a;
+  --color-text-light: #6b6b6b;
+  --border-color: #d4d6d8;
+  --border-light: #ebedef;
+  --color-accent-bg: rgba(30, 58, 95, 0.10);
+  --focus-ring: #1e3a5f;
+  --editor-ui-bg: #f5f6f7;
+  --overlay-light: rgba(26, 26, 26, 0.18);
+  /* Segmented thumbs and other selected controls: re-resolved here, since
+     the app's values were resolved against its own surface. */
+  --control-active-fill: var(--bg-surface);
+  --control-active-ink: var(--color-text-main);
+  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
 }
 
 /* ------------------------------

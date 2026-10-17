@@ -1,0 +1,88 @@
+<!-- Formatting appears only where text is selected (issue #1040): the page
+     itself carries no toolbar. -->
+<div class="editor-bubble" #bubble role="toolbar" aria-label="Formatting" data-testid="editor-bubble">
+  @if (urlPrompt(); as kind) {
+    <form class="editor-bubble-url" (submit)="$event.preventDefault(); applyUrl()">
+      <input
+        #urlInput
+        class="editor-url-input"
+        type="url"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Link address"
+        placeholder="https://… (empty removes the link)"
+        [value]="urlValue()"
+        (input)="urlValue.set($any($event.target).value)"
+        (keydown.escape)="cancelUrl()"
+      />
+      <button type="submit" class="editor-bubble-btn editor-url-apply">Apply</button>
+    </form>
+  } @else {
+    <button type="button" class="editor-bubble-btn editor-mark-bold" title="Bold (Ctrl+B)" aria-label="Bold" [class.active]="isBold()" [attr.aria-pressed]="isBold()" (mousedown)="$event.preventDefault()" (click)="toggleBold()">B</button>
+    <button type="button" class="editor-bubble-btn editor-mark-italic" title="Italic (Ctrl+I)" aria-label="Italic" [class.active]="isItalic()" [attr.aria-pressed]="isItalic()" (mousedown)="$event.preventDefault()" (click)="toggleItalic()">I</button>
+    <span class="editor-bubble-sep" aria-hidden="true"></span>
+    <button type="button" class="editor-bubble-btn" title="Heading (Ctrl+Alt+2)" aria-label="Heading 2" [class.active]="activeBlock() === 'h2'" [attr.aria-pressed]="activeBlock() === 'h2'" (mousedown)="$event.preventDefault()" (click)="toggleBlock('h2')">H2</button>
+    <button type="button" class="editor-bubble-btn" title="Subheading (Ctrl+Alt+3)" aria-label="Heading 3" [class.active]="activeBlock() === 'h3'" [attr.aria-pressed]="activeBlock() === 'h3'" (mousedown)="$event.preventDefault()" (click)="toggleBlock('h3')">H3</button>
+    <button type="button" class="editor-bubble-btn editor-mark-quote" title="Quote (Ctrl+Shift+B)" aria-label="Quote" [class.active]="activeBlock() === 'blockquote'" [attr.aria-pressed]="activeBlock() === 'blockquote'" (mousedown)="$event.preventDefault()" (click)="toggleBlock('blockquote')">“</button>
+    <span class="editor-bubble-sep" aria-hidden="true"></span>
+    <button appIconButton icon="link-simple" [glyphSize]="16" weight="thin" class="editor-bubble-link" title="Link" aria-label="Link" [pressed]="isLink()" (mousedown)="$event.preventDefault()" (click)="openUrlPrompt('link')"></button>
+  }
+</div>
+
+@if (blockMenu(); as menu) {
+  <div
+    class="block-menu"
+    data-testid="block-menu"
+    [style.top.px]="blockMenuPlacement()?.top ?? null"
+    [style.bottom.px]="blockMenuPlacement()?.bottom ?? null"
+    [style.left.px]="blockMenuPlacement()?.left ?? null"
+    [style.max-height.px]="blockMenuPlacement()?.maxHeight ?? null"
+  >
+    @if (blockMenuImage()) {
+      <form class="block-menu-image" (submit)="$event.preventDefault(); applyBlockImage()">
+        <label class="block-menu-image-label" [attr.for]="blockImageInputId">Image address</label>
+        <!-- type=text: a relative address (/images/cover.jpg) is a fine image too,
+             and type=url would refuse it silently. -->
+        <div class="block-menu-image-row">
+          <input
+            #blockImageInput
+            [id]="blockImageInputId"
+            class="editor-url-input"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="https://…/image.jpg"
+            [value]="blockMenuImageUrl()"
+            (input)="blockMenuImageUrl.set($any($event.target).value)"
+            (keydown.escape)="cancelBlockImage()"
+          />
+          <button type="submit" class="editor-bubble-btn editor-url-apply">Insert</button>
+        </div>
+      </form>
+    } @else if (menu.items.length) {
+      <ul class="block-menu-list" role="listbox" aria-label="Insert a block">
+        @for (item of menu.items; track item.action; let i = $index) {
+          <li
+            class="block-menu-item"
+            role="option"
+            [attr.aria-selected]="i === blockMenuActive()"
+            [class.active]="i === blockMenuActive()"
+            (mousedown)="$event.preventDefault()"
+            (mouseenter)="blockMenuActive.set(i)"
+            (click)="runBlockAction(item.action)"
+          >
+            <span class="block-menu-label">{{ item.label }}</span>
+            <kbd class="block-menu-hint">{{ item.hint }}</kbd>
+          </li>
+        }
+      </ul>
+    } @else {
+      <p class="block-menu-empty">No block matches.</p>
+    }
+  </div>
+}
+
+<div class="manuscript-scroll" #scroller>
+  <div class="nostos-manuscript" [class.editor-starting]="editorStarting()" #mount></div>
+</div>

@@ -10,6 +10,13 @@ import { apiDelete } from './support/brain-fixture';
 import { apiGet, apiPost, loadFixture, newRunId } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import type { WritingContentDto } from '../src/app/core/dtos/writing.dtos';
+import { pinReferenceRail, studioPage, STUDIO_PAGE_SELECTOR } from './support/studio-editor';
+
+// These journeys work with sources in view: Reference pinned beside the page
+// (#1040), as a writer who prefers that would set it.
+test.beforeEach(async ({ context }) => {
+  await pinReferenceRail(context);
+});
 
 test.use({ serviceWorkers: 'block' });
 
@@ -66,8 +73,8 @@ test.afterEach(async () => {
 async function openWriting(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/studio?writingId=${writingId}`, { waitUntil: 'domcontentloaded' });
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
-  await expect(page.frameLocator('.tox-edit-area iframe').locator('body')).toContainText('The Inquisitor says it plainly', {
+  await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
+  await expect(studioPage(page)).toContainText('The Inquisitor says it plainly', {
     timeout: 45_000,
   });
   const toggle = page.locator('.reference-toggle');
@@ -78,7 +85,7 @@ test('a kept passage is quoted by selecting words in the passage viewer', async 
   await openWriting(page);
 
   // Put the cursor at the end of the draft, where the quotation will go.
-  const editor = page.frameLocator('.tox-edit-area iframe').locator('body');
+  const editor = studioPage(page);
   await editor.click();
   await page.keyboard.press('Control+End');
 

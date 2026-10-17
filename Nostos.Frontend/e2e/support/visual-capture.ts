@@ -403,8 +403,8 @@ export async function checkAudioComposition(page: Page): Promise<GeometryCheck> 
 
 /**
  * Zen: every piece of chrome the protocol says must disappear has
- * display:none (sidebars, document header/action strip, status row, TinyMCE
- * menubar/formatting toolbar).
+ * display:none (sidebars, document header/action strip, status row, and the
+ * editor's formatting toolbar).
  */
 export async function checkZenChromeHidden(page: Page): Promise<GeometryCheck> {
   const selectors = [
@@ -412,8 +412,7 @@ export async function checkZenChromeHidden(page: Page): Promise<GeometryCheck> {
     '.sidebar-right',
     '.editor-header',
     '.editor-status',
-    '.tox-menubar',
-    '.tox-toolbar-overlord',
+    'app-markdown-editor .editor-toolbar',
   ];
   const displays = await page.evaluate((sels) => {
     const out: Record<string, string> = {};

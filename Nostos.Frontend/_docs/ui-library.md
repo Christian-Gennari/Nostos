@@ -507,7 +507,7 @@ Dropdown overlay rendered by `TopicInputComponent` and `NoteCardComponent`. Read
 **Selector:** `app-markdown-editor`  
 **File:** `src/app/ui/markdown-editor/`
 
-WYSIWYG editor wrapping TinyMCE with markdown round-trip.
+The Studio's page: a TipTap editor that loads and saves Markdown.
 
 | Input            | Type                  | Description              |
 | ---------------- | --------------------- | ------------------------ |
@@ -519,9 +519,11 @@ WYSIWYG editor wrapping TinyMCE with markdown round-trip.
 
 ### Implementation
 
-- Content is converted from markdown to HTML (`marked.parse()`) on load
-- On every keystroke, HTML is converted back to markdown (`TurndownService`) and emitted
-- Typography: Lora (serif) for body, Inter (sans-serif) for headings
+- Markdown is converted to HTML with `marked` on load and back with Turndown + GFM tables on change (`markdown-conversion.ts`)
+- Formatting comes from a selection bubble, the `/` menu (`block-menu.ts`) and Markdown shortcuts; there is no toolbar
+- `@` reports a query to the host (`source-suggestion.extension.ts`); the Studio draws the palette and inserts the result
+- Optional typewriter sounds (`typewriter-sounds.ts`, CC0 samples in `public/audio/typewriter/`)
+- Page typography comes from `--manuscript-*` tokens, set by the Studio's page settings
 
 ---
 

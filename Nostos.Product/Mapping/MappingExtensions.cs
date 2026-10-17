@@ -218,7 +218,8 @@ public static class MappingExtensions
             Kind: model.Kind,
             PassageTitle: model.PassageTitle,
             PassageEnd: model.PassageEnd,
-            PassageWordCount: model.IsPassage() ? PassageText.WordCount(model.SelectedText) : null
+            PassageWordCount: model.IsPassage() ? PassageText.WordCount(model.SelectedText) : null,
+            BookAuthor: model.Book?.Author
         );
 
     public static bool IsPassage(this NoteModel model) => model.Kind == NoteKinds.Passage;
@@ -237,7 +238,8 @@ public static class MappingExtensions
             WordCount: PassageText.WordCount(model.SelectedText),
             Content: model.Content,
             HighlightColour: model.HighlightColour,
-            CreatedAt: model.CreatedAt);
+            CreatedAt: model.CreatedAt,
+            BookAuthor: model.Book?.Author);
 
     public static CollectionDto ToDto(this CollectionModel model) =>
         new CollectionDto(model.Id, model.Name, model.ParentId);
@@ -508,6 +510,7 @@ public static class MappingExtensions
             Kind: model.Note.Kind,
             PassageTitle: model.Note.PassageTitle,
             PassageEnd: model.Note.PassageEnd,
-            PassageWordCount: model.Note.IsPassage() ? PassageText.WordCount(model.Note.SelectedText) : null
+            PassageWordCount: model.Note.IsPassage() ? PassageText.WordCount(model.Note.SelectedText) : null,
+            BookAuthor: model.Note.Book?.Author
         );
 }

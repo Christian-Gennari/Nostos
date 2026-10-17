@@ -1030,7 +1030,10 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
     new Set(['manage-member-action', 'manage-link-candidate'])],
   ['src/app/reader/reader-shell.component.html',
     new Set(['hl-pen', 'typo-opt', 'typo-step'])],
-  ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item'])],
+  ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item',
+    // The stat corner (#1040) is low-opacity text that cycles words, characters
+    // and reading time on click: a readout, not an ordinary button.
+    'editor-desk-telemetry'])],
   ['src/app/ui/confirm-modal/confirm-modal.component.html', new Set()],
 ]);
 

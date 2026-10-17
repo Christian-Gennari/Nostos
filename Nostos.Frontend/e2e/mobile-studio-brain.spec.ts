@@ -7,7 +7,8 @@
  * Each guard maps to a defect measured at 390x844 on the real build:
  *
  *  - The editor's formatting toolbar wrapped to FOUR rows (124px of the writing
- *    surface) because the Oxide skin's `flex-wrap: wrap` beat TinyMCE's
+ *    surface) because the Oxide skin's `flex-wrap: wrap` beat TinyMCE's (the
+ *    editor is TipTap since #1037; the single-row contract still holds)
  *    `toolbar_mode: 'sliding'`, which only engages while the toolbar is a
  *    single row. The sliding overflow button therefore never rendered and every
  *    control stayed in the document.
@@ -26,6 +27,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { apiPost, loadFixture } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import { cleanupBrain, seedBrain, type BrainSeed } from './support/brain-fixture';
+import { STUDIO_PAGE_SELECTOR, openFilesRail } from './support/studio-editor';
 
 const MIN_TAP_TARGET = 44; // CSS px, Apple HIG / Material minimum
 
@@ -95,84 +97,45 @@ async function openStudioDocument(page: Page, title: string): Promise<void> {
   const row = page.locator('.file-list .tree-row', { hasText: title }).first();
   await row.waitFor({ timeout: 30_000 });
   await row.click();
-  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(600); // let TinyMCE finish laying the toolbar out
+  await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
 }
 
-test('the editor formatting toolbar occupies a single row on a phone', async ({ page }) => {
+test('the page carries no toolbar; formatting appears over a selection', async ({ page }) => {
   const title = `MobilePolishRow-${Date.now()}`;
   await seedDocument(title);
   await openStudioDocument(page, title);
 
-  const tops = await page
-    .locator('.tox-toolbar__primary .tox-toolbar__group')
-    .evaluateAll((els) =>
-      els
-        .filter((el) => el.getBoundingClientRect().width > 0)
-        .map((el) => Math.round(el.getBoundingClientRect().top)),
-    );
-  expect(tops.length, 'the toolbar must render at least one group').toBeGreaterThan(0);
+  await expect(page.locator('app-markdown-editor .editor-toolbar')).toHaveCount(0);
+  await expect(page.getByTestId('editor-bubble')).toHaveCount(0);
 
-  const rows = new Set(tops);
-  expect(
-    rows.size,
-    `the formatting toolbar must be a single row, found ${rows.size} ` +
-      `(the Oxide skin's flex-wrap defeated toolbar_mode: sliding)`,
-  ).toBe(1);
-
-  const height = await page
-    .locator('.tox-toolbar__primary')
-    .evaluate((el) => Math.round(el.getBoundingClientRect().height));
-  expect(height, 'a single toolbar row must not exceed ~60px').toBeLessThanOrEqual(60);
+  const firstParagraph = page.locator(`${STUDIO_PAGE_SELECTOR} p`).first();
+  await firstParagraph.dblclick({ position: { x: 20, y: 8 } });
+  const bubble = page.getByTestId('editor-bubble');
+  await expect(bubble).toBeVisible();
+  const box = await bubble.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });
 
-test('every editor toolbar button meets the 44px touch contract', async ({ page }) => {
+test('every selection bubble button meets the 44px touch contract', async ({ page }) => {
   const title = `MobilePolishTargets-${Date.now()}`;
   await seedDocument(title);
   await openStudioDocument(page, title);
 
-  // Both rows: __primary is what is visible at rest, __overflow is where the
-  // sliding mode parks the remaining controls. Most formatting tools live in
-  // the overflow on a phone, so it must meet the same contract.
-  const slivers = await page
-    .locator('.tox-toolbar__primary .tox-tbtn, .tox-toolbar__overflow .tox-tbtn')
-    .evaluateAll((els) =>
-      els
-        .filter((el) => el.getBoundingClientRect().width > 0)
-        .map((el) => ({
-          label: el.getAttribute('aria-label') ?? '?',
-          width: Math.round(el.getBoundingClientRect().width),
-          height: Math.round(el.getBoundingClientRect().height),
-        }))
-        .filter((b) => b.width < 44 || b.height < 44),
-    );
-
-  expect(slivers, `toolbar buttons under 44px: ${JSON.stringify(slivers)}`).toEqual([]);
-});
-
-test('the sliding overflow control reveals the collapsed formatting buttons', async ({ page }) => {
-  const title = `MobilePolishOverflow-${Date.now()}`;
-  await seedDocument(title);
-  await openStudioDocument(page, title);
-
-  const overflow = page.locator('.tox-toolbar__primary .tox-tbtn[aria-label*="additional"]');
-  await expect(
-    overflow,
-    'a single toolbar row must give TinyMCE an overflow chevron to slide into',
-  ).toBeVisible();
-  await overflow.click();
-  await page.waitForTimeout(400);
-
-  // The collapsed controls must actually be reachable, not merely listed.
-  const revealed = page.locator('.tox-toolbar__overflow--open .tox-tbtn');
-  await expect(revealed.first(), 'the overflow row must open').toBeVisible();
-  const count = await revealed.count();
-  expect(count, 'the overflow must expose the collapsed formatting controls').toBeGreaterThan(0);
-
-  const overflowHeight = await page
-    .locator('.tox-toolbar__overflow--open')
-    .evaluate((el) => Math.round(el.getBoundingClientRect().height));
-  expect(overflowHeight, 'the overflow row must not be a zero-height stub').toBeGreaterThan(20);
+  await page.locator(`${STUDIO_PAGE_SELECTOR} p`).first().dblclick({ position: { x: 20, y: 8 } });
+  const bubble = page.getByTestId('editor-bubble');
+  await expect(bubble).toBeVisible();
+  const slivers = await bubble.locator('button').evaluateAll((els) =>
+    els
+      .filter((el) => el.getBoundingClientRect().width > 0)
+      .map((el) => ({
+        label: el.getAttribute('aria-label') ?? '?',
+        width: Math.round(el.getBoundingClientRect().width),
+        height: Math.round(el.getBoundingClientRect().height),
+      }))
+      .filter((b) => b.width < 44 || b.height < 44),
+  );
+  expect(slivers, `bubble buttons under 44px: ${JSON.stringify(slivers)}`).toEqual([]);
 });
 
 test('the studio document tree exposes 44px expand chevrons', async ({ page }) => {
@@ -180,10 +143,7 @@ test('the studio document tree exposes 44px expand chevrons', async ({ page }) =
   // the folder row gets the expand control.
   const parentId = await seedNestedFolder();
   await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
-  const openSidebar = page.getByRole('button', { name: 'Open Sidebar' });
-  if (await openSidebar.isVisible().catch(() => false)) {
-    await openSidebar.click();
-  }
+  await openFilesRail(page);
 
   const chevron = page.locator(`.file-list .tree-row[data-node-id="${parentId}"] .toggle-btn`);
   await expect(chevron).toBeVisible({ timeout: 30_000 });

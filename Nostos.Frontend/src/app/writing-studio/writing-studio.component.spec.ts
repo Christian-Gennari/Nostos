@@ -4,7 +4,8 @@ import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
-import { WritingStudio } from './writing-studio.component';
+import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
+import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -14,16 +15,20 @@ import { NotesService } from '../core/services/notes.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.component';
+import { PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
 import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 
-// Heavy editor / UI children are stubbed out: MarkdownEditor boots TinyMCE
-// (not available under vitest), and the tree/note cards pull in drag-drop and
+// Heavy editor / UI children are stubbed out: MarkdownEditor boots a real
+// TipTap editor (covered by its own spec), and the tree/note cards pull in drag-drop and
 // unrelated pipes. Same pattern as reader-shell.component.spec.ts.
 @Component({ selector: 'app-markdown-editor', standalone: true, template: '' })
 class MarkdownEditorStub {
   readonly initialContent = input<string>('');
   readonly typewriter = input<boolean>(false);
+  readonly spellcheck = input<boolean>(true);
+  readonly sounds = input<boolean>(false);
+  readonly soundVolume = input<number>(0.6);
   readonly contentChange = output<string>();
   readonly wordCountChange = output<number>();
   readonly insertMarkdown = vi.fn(async (_markdown: string) => true);
@@ -32,6 +37,15 @@ class MarkdownEditorStub {
     scrollY: 240,
   }));
   readonly restoreTransientState = vi.fn(async (_state: unknown, _expectedMarkdown: string) => true);
+  readonly sourceSuggestionKeyDown = input<((event: KeyboardEvent) => boolean) | null>(null);
+  readonly sourceSuggestionActiveId = input<string | null>(null);
+  readonly sourceSuggestion = output<unknown>();
+  readonly replaceSourceQuery = vi.fn((_markdown: string, _placement: 'block' | 'inline') => true);
+  readonly clearSourceQuery = vi.fn(() => true);
+  readonly closeSourceQuery = vi.fn();
+  readonly insertBlockMarkdown = vi.fn((_markdown: string) => true);
+  readonly focus = vi.fn();
+  readonly undo = vi.fn();
 }
 
 @Component({ selector: 'app-flat-tree', standalone: true, template: '' })
@@ -144,12 +158,6 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     component.topics.set([{ id: 'topic-1', name: 'Memory', usageCount: 3 } as any]);
     fixture.detectChanges();
 
-    const browseFiles = fixture.nativeElement.querySelector(
-      '.empty-browse-files',
-    ) as HTMLButtonElement;
-    expect(browseFiles.classList.contains('nostos-button')).toBe(true);
-    expect(browseFiles.classList.contains('nostos-button--secondary')).toBe(true);
-
     const newDocument = fixture.nativeElement.querySelector(
       '.files-new-document',
     ) as HTMLButtonElement;
@@ -230,26 +238,6 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(back.classList.contains('nostos-button--sm')).toBe(true);
   });
 
-  it('exposes a keyboard-accessible desktop resize separator for the file sidebar', () => {
-    component.isCompact.set(false);
-    component.showFileSidebar.set(true);
-    component.leftSidebarWidth.set(280);
-    fixture.detectChanges();
-
-    const separator = fixture.nativeElement.querySelector('.sidebar-resizer') as HTMLElement;
-    expect(separator).toBeTruthy();
-    expect(separator.getAttribute('role')).toBe('separator');
-    expect(separator.getAttribute('aria-orientation')).toBe('vertical');
-    expect(separator.getAttribute('aria-valuenow')).toBe('280');
-
-    separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    fixture.detectChanges();
-
-    expect(component.leftSidebarWidth()).toBe(296);
-    expect(localStorage.getItem('nostos.studio.leftSidebarWidth')).toBe('296');
-    expect(separator.getAttribute('aria-valuenow')).toBe('296');
-  });
-
   it('does not run the shared transform entry animation on Studio sidebars', () => {
     const css = componentCss();
 
@@ -261,30 +249,30 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(mobile).toContain('transform: translateX(100%)');
   });
 
-  // --- Placement: no telemetry or zen control without an active document ---
-  it('shows no zen control and no telemetry without an active document', () => {
-    expect(zenToggle()).toBeNull();
-    expect(zenExit()).toBeNull();
-    expect(deskTelemetry()).toBeNull();
-    expect(fixture.nativeElement.querySelector('.editor-header')).toBeTruthy();
+  // --- The page first (issue #1040) ---
+  it('opens on a blank page with the rails closed and no empty state', () => {
+    expect(component.blankPage()).toBe(true);
+    expect(component.activeItem()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.empty-state')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-markdown-editor')).toBeTruthy();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(false);
     expect(fixture.nativeElement.querySelector('.files-toggle')?.getAttribute('aria-label')).toBe(
-      'Hide files',
+      'Show files',
     );
     expect(
       fixture.nativeElement.querySelector('.reference-toggle')?.getAttribute('aria-label'),
-    ).toBe('Hide reference');
-    expect(fixture.nativeElement.querySelector('.empty-new-document')?.textContent).toContain(
-      'New document',
-    );
+    ).toBe('Show reference');
+    expect(fixture.nativeElement.querySelector('.header-doc-title')?.textContent?.trim()).toBe('New page');
     const newInFiles = fixture.nativeElement.querySelector('.files-new-document') as HTMLButtonElement;
     expect(newInFiles.textContent?.trim()).toBe('New');
     expect(newInFiles.getAttribute('aria-label')).toBe('New document');
-    // No duplicate desktop hide buttons: the editor header owns both rail toggles.
-    expect(fixture.nativeElement.querySelector('.files-rail-collapse')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.reference-rail-collapse')).toBeNull();
+    // Both rails are slide-overs, so each carries its own close control.
+    expect(fixture.nativeElement.querySelector('.files-rail-collapse')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.reference-rail-collapse')).toBeTruthy();
   });
 
-  it('toggles desktop rails independently and persists each preference', () => {
+  it('slides the rails over the page, and pins Reference beside it when asked', () => {
     const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
     const referenceToggle = fixture.nativeElement.querySelector(
       '.reference-toggle',
@@ -292,31 +280,143 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
     filesToggle.click();
     fixture.detectChanges();
-    expect(component.showFileSidebar()).toBe(false);
-    expect(component.showBrainSidebar()).toBe(true);
-    expect(localStorage.getItem('nostos.studio.filesRailOpen')).toBe('0');
+    expect(component.showFileSidebar()).toBe(true);
+    expect(component.drawerOpen()).toBe(true);
+    expect(fixture.nativeElement.querySelector('.backdrop.visible')).toBeTruthy();
 
+    // One slide-over at a time.
     referenceToggle.click();
     fixture.detectChanges();
     expect(component.showFileSidebar()).toBe(false);
-    expect(component.showBrainSidebar()).toBe(false);
-    expect(localStorage.getItem('nostos.studio.referenceRailOpen')).toBe('0');
+    expect(component.showBrainSidebar()).toBe(true);
 
-    component.enterZen();
-    component.exitZen();
-    expect(component.showFileSidebar()).toBe(false);
+    component.toggleReferencePin();
+    fixture.detectChanges();
+    expect(component.referencePinned()).toBe(true);
+    expect(localStorage.getItem('nostos.studio.referencePinned')).toBe('1');
+    expect(component.showBrainSidebar()).toBe(true);
+    expect(component.drawerOpen()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.studio-layout.drawer-reference')).toBeNull();
+
+    // Opening Files leaves a pinned Reference where it is.
+    filesToggle.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(true);
+    expect(component.showBrainSidebar()).toBe(true);
+
+    component.toggleReferencePin();
+    expect(localStorage.getItem('nostos.studio.referencePinned')).toBe('0');
     expect(component.showBrainSidebar()).toBe(false);
   });
 
-  it('keeps compact drawers mutually exclusive and offers Browse files when empty', () => {
+  it('closes an open slide-over with Esc before anything else', () => {
+    component.toggleFilesRail();
+    fixture.detectChanges();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.showFileSidebar()).toBe(false);
+  });
+
+  it('fades the chrome while typing and brings it back on Esc', () => {
+    component.onEditorChange('Some words');
+    fixture.detectChanges();
+    expect(component.isTyping()).toBe(true);
+    expect(document.body.classList.contains('nostos-studio-typing')).toBe(true);
+    expect(fixture.nativeElement.querySelector('.studio-layout.is-typing')).toBeTruthy();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(component.isTyping()).toBe(false);
+    expect(document.body.classList.contains('nostos-studio-typing')).toBe(false);
+  });
+
+  it('saves a blank page left while its writing was being created', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as {
+      create: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
+    const created = new Subject<{ id: string; name: string; type: string; updatedAt: string }>();
+    writings.create.mockReturnValue(created);
+    writings.update.mockReturnValue(of({}));
+
+    component.startBlankPage();
+    component.onEditorChange('# Left behind\n\nWords that must not be lost.');
+    component.startBlankPage(); // New again, before the create answered
+    created.next({ id: 'left-1', name: 'Untitled document', type: 'Document', updatedAt: '' });
+
+    expect(writings.update).toHaveBeenCalledWith('left-1', {
+      name: 'Left behind',
+      content: '# Left behind\n\nWords that must not be lost.',
+    });
+    expect(component.activeItem()).toBeNull();
+    expect(component.blankPage()).toBe(true);
+  });
+
+  it('asks the server once, not per keystroke, when creating fails', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as { create: ReturnType<typeof vi.fn> };
+    writings.create.mockReturnValue(throwError(() => new Error('offline')));
+    component.startBlankPage();
+    component.onEditorChange('a');
+    component.onEditorChange('ab');
+    component.onEditorChange('abc');
+    expect(writings.create).toHaveBeenCalledTimes(1);
+    expect(TestBed.inject(ToastService).error).toHaveBeenCalledTimes(1);
+  });
+
+  it('names a writing from its first line with words in it', () => {
+    expect(titleFromMarkdown('# Morning pages\n\nText')).toBe('Morning pages');
+    expect(titleFromMarkdown('#\n\n> *A* quoted opening')).toBe('A quoted opening');
+    expect(titleFromMarkdown('---\n\n')).toBe('');
+    expect(titleFromMarkdown('x'.repeat(30) + ' ' + 'y'.repeat(70)).endsWith('…')).toBe(true);
+  });
+
+  it('cycles words, characters and reading time in the stat corner', () => {
+    openDocument();
+    component.editorWordCount.set(476);
+    component.editorCharacterCount.set(2600);
+    expect(component.statText()).toBe('476 words');
+    component.cycleStat();
+    expect(component.statText()).toBe('2600 characters');
+    component.cycleStat();
+    expect(component.statText()).toBe('2 min read');
+    component.cycleStat();
+    expect(component.statText()).toBe('476 words');
+  });
+
+  it('opens the Files and Reference rails with Alt+M and Alt+R, and the sheet with Ctrl+/', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'µ', code: 'KeyM', altKey: true }));
+    expect(component.showFileSidebar()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '®', code: 'KeyR', altKey: true }));
+    expect(component.showBrainSidebar()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="shortcut-sheet"]')).toBeTruthy();
+  });
+
+  it('keeps an open file drawer open when the window crosses the compact breakpoint', () => {
+    const setWidth = (width: number) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+      window.dispatchEvent(new Event('resize'));
+    };
+    const original = window.innerWidth;
+    try {
+      setWidth(1440);
+      component.toggleFilesRail();
+      expect(component.showFileSidebar()).toBe(true);
+      setWidth(600);
+      expect(component.isCompact()).toBe(true);
+      expect(component.showFileSidebar()).toBe(true);
+      setWidth(1440);
+      expect(component.isCompact()).toBe(false);
+      expect(component.showFileSidebar()).toBe(true);
+    } finally {
+      setWidth(original);
+    }
+  });
+
+  it('keeps compact drawers mutually exclusive', () => {
     component.isCompact.set(true);
     component.showFileSidebar.set(false);
     component.showBrainSidebar.set(false);
     fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('.empty-browse-files')?.textContent).toContain(
-      'Browse files',
-    );
 
     const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
     const referenceToggle = fixture.nativeElement.querySelector(
@@ -644,13 +744,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(css).toContain('box-shadow: none');
   });
 
-  it('lets .tox-tinymce fill the seamless surface without borders', () => {
+  it('hides the editor toolbar in zen so only the page remains', () => {
     const css = componentCss();
 
-    expect(css).toContain('border: 0 !important');
-    expect(css).toContain('border-radius: 0 !important');
-    expect(css).toContain('box-shadow: none !important');
-    expect(css).toContain('height: 100% !important');
+    const zenToolbar = css.slice(css.indexOf('body.nostos-zen'));
+    expect(zenToolbar).toContain('.editor-toolbar');
+    expect(zenToolbar).toContain('display: none !important');
   });
 
   it('gives the stage safe padding: dock clearance reserves room for the floating dock', () => {
@@ -690,7 +789,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(wrapperBlock).toContain('padding-bottom: var(--studio-dock-clearance)');
     expect(wrapperBlock).not.toContain('padding-bottom: 8rem');
 
-    // The count now reserves a line outside TinyMCE and leaves the shared dock
+    // The count now reserves a line outside the editor and leaves the shared dock
     // clearance below it instead of floating over manuscript text.
     expect(css).toContain('.editor-footer');
     expect(css).toContain('margin: 0 2.5rem var(--studio-dock-clearance)');
@@ -714,8 +813,6 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(mobileBlock).toContain('width: 100%');
     expect(mobileBlock).toContain('border-radius: 0');
     expect(mobileBlock).toContain('box-shadow: none');
-    // The tinyMCE surface must follow the edge-to-edge frame.
-    expect(mobileBlock).toContain('border-radius: 0 !important');
   });
 });
 
@@ -759,19 +856,41 @@ describe('WritingStudio typewriter mode', () => {
     fixture.detectChanges();
   });
 
-  it('starts off and toggles with persistence', () => {
+  it('starts off and toggles with persistence in the page settings', async () => {
     expect(component.typewriter()).toBe(false);
+    const saved = async () => {
+      TestBed.tick();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return JSON.parse(localStorage.getItem('nostos.studio.preferences')!).typewriter;
+    };
 
     component.toggleTypewriter();
     expect(component.typewriter()).toBe(true);
-    expect(localStorage.getItem('nostos.typewriter')).toBe('1');
+    expect(await saved()).toBe(true);
 
     component.toggleTypewriter();
     expect(component.typewriter()).toBe(false);
-    expect(localStorage.getItem('nostos.typewriter')).toBe('0');
+    expect(await saved()).toBe(false);
   });
 
-  it('renders the toggle in the document actions once a document is open', () => {
+  it('leaves the panel open when Esc was meant for a list inside it', () => {
+    component.togglePageSettings();
+    fixture.detectChanges();
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    expect(component.pageSettingsOpen()).toBe(true);
+  });
+
+  it('closes an open slide-over when the page settings open', () => {
+    component.toggleFilesRail();
+    expect(component.showFileSidebar()).toBe(true);
+    component.togglePageSettings();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.pageSettingsOpen()).toBe(true);
+  });
+
+  it('lives in the page settings, opened from the header or Ctrl+,', () => {
     component.activeItem.set({
       id: 'doc-1',
       name: 'Sample',
@@ -781,14 +900,31 @@ describe('WritingStudio typewriter mode', () => {
     component.editorText.set('hello');
     fixture.detectChanges();
 
-    const toggle = fixture.nativeElement.querySelector('.typewriter-toggle');
-    expect(toggle).toBeTruthy();
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(fixture.nativeElement.querySelector('.typewriter-toggle')).toBeNull();
+    const settingsToggle = fixture.nativeElement.querySelector('.page-settings-toggle') as HTMLButtonElement;
+    expect(settingsToggle).toBeTruthy();
+    settingsToggle.click();
+    fixture.detectChanges();
 
-    toggle.click();
+    const centred = fixture.nativeElement.querySelector(
+      '[data-testid="page-settings"] input[aria-label^="Keep the line centred"]',
+    ) as HTMLInputElement;
+    expect(centred.checked).toBe(false);
+    centred.click();
     fixture.detectChanges();
     expect(component.typewriter()).toBe(true);
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="page-settings"]')).toBeNull();
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="page-settings"]')).toBeTruthy();
+  });
+
+  it('carries over typewriter centring set before it moved into the page settings', () => {
+    expect(normalizeStudioPreferences(null, true).typewriter).toBe(true);
   });
 });
 
@@ -867,40 +1003,32 @@ describe('WritingStudio delete (no window.confirm)', () => {
 
     afterEach(() => vi.unstubAllGlobals());
 
-    it('creates an untitled document and puts it into inline rename, without a prompt', () => {
-      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
-
+    it('New gives a blank page and creates nothing until there are words', () => {
       component.createItem('Document');
 
       expect(promptSpy).not.toHaveBeenCalled();
+      expect(writings.create).not.toHaveBeenCalled();
+      expect(component.blankPage()).toBe(true);
+      expect(component.activeItem()).toBeNull();
+    });
+
+    it('creates the writing with its first words and names it from its first line', () => {
+      writings.create.mockReturnValue(
+        of({ id: 'new-1', name: 'Untitled document', type: 'Document', updatedAt: '' }),
+      );
+      component.createItem('Document');
+
+      component.onEditorChange('# Morning pages\n\nThe first words.');
+
       expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: null });
-      expect(component.editingId()).toBe('new-1');
-      // Not opened yet: opening would take focus from the rename field.
-      expect(writings.get).not.toHaveBeenCalled();
-    });
+      expect(component.activeItem()?.id).toBe('new-1');
+      expect(component.blankPage()).toBe(false);
+      expect(component.editorTitle()).toBe('Morning pages');
+      expect(localStorage.getItem('nostos.studio.lastWritingId')).toBe('new-1');
 
-    it('opens the new document once its name is saved', () => {
-      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
-      component.createItem('Document');
-
-      component.saveRename('new-1', 'Chapter one');
-
-      expect(writings.update).toHaveBeenCalledWith('new-1', { name: 'Chapter one' });
-      expect(writings.get).toHaveBeenCalledWith('new-1');
-      expect(component.editingId()).toBeNull();
-    });
-
-    it('opens it under the placeholder name when the rename is dismissed', () => {
-      writings.create.mockReturnValue(of({ id: 'new-1', name: 'Untitled document', type: 'Document' }));
-      component.createItem('Document');
-
-      component.cancelRename();
-
-      expect(writings.get).toHaveBeenCalledWith('new-1');
-      // Only once: a later rename of the same row does not reopen it.
-      component.editingId.set('new-1');
-      component.cancelRename();
-      expect(writings.get).toHaveBeenCalledTimes(1);
+      // Only once, however fast the next words come.
+      component.onEditorChange('# Morning pages\n\nThe first words. More.');
+      expect(writings.create).toHaveBeenCalledTimes(1);
     });
 
     it('renames a new folder in place and opens nothing', () => {
@@ -917,8 +1045,11 @@ describe('WritingStudio delete (no window.confirm)', () => {
     it('says so when the item cannot be created', () => {
       writings.create.mockReturnValue(throwError(() => new Error('offline')));
       component.createItem('Document');
+      component.onEditorChange('Words');
 
-      expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith('Could not create a document');
+      expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
+        'Could not create a document. Your words are still on the page.',
+      );
       expect(component.editingId()).toBeNull();
     });
   });
@@ -1679,6 +1810,93 @@ describe('WritingStudio kept sources (#491)', () => {
     ).toEqual(['Insert as reference']);
   });
 
+  describe('the @ source palette (#1039)', () => {
+    const paletteQuote = {
+      id: 'note-gamma',
+      bookId: 'book-3',
+      kind: 'note' as const,
+      bookTitle: 'The World as Will and Representation',
+      bookAuthor: 'Arthur Schopenhauer',
+      selectedText: 'The world is my representation.',
+      content: 'Opening line',
+      sourceAnchorKind: 'pdf_page',
+      sourceAnchorValue: '3',
+      anchorVerified: true,
+      passageTitle: null,
+      lead: 'The world is my representation.',
+      note: 'Opening line',
+      kept: false,
+    };
+
+    beforeEach(() => {
+      component.activeItem.set(sampleDoc1);
+      component.editorText.set(sampleDoc1.content);
+      fixture.detectChanges();
+    });
+
+    it('opens while an @ query is typed and closes with it', () => {
+      component.onSourceSuggestion({ query: 'schop', rect: { top: 10, bottom: 30, left: 40, right: 50 } });
+      expect(component.paletteQuery()).toBe('schop');
+      component.onSourceSuggestion(null);
+      expect(component.paletteQuery()).toBeNull();
+    });
+
+    it('replaces the @ query with a quote that names the author, and keeps the source', () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      component.insertFromPalette({ source: paletteQuote, mode: 'quote' });
+
+      expect(editor.replaceSourceQuery).toHaveBeenCalledWith(
+        '> The world is my representation.\n>\n> — Arthur Schopenhauer, *The World as Will and Representation*, p. 3',
+        'block',
+      );
+      expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'note-gamma');
+    });
+
+    it('puts a reference inline, in place of the query', () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      component.insertFromPalette({ source: paletteQuote, mode: 'reference' });
+
+      expect(editor.replaceSourceQuery).toHaveBeenCalledWith(
+        '*See: Arthur Schopenhauer, The World as Will and Representation, p. 3*',
+        'inline',
+      );
+    });
+
+    it('opens a passage in the viewer instead of inserting it whole', () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      const viewer = TestBed.inject(PassageViewerService);
+      const open = vi.spyOn(viewer, 'open').mockImplementation(() => undefined);
+      const passage = { ...paletteQuote, id: 'passage-1', kind: 'passage' as const, passageTitle: 'On the Vanity of Existence' };
+
+      component.insertFromPalette({ source: passage, mode: 'quote' });
+
+      expect(editor.clearSourceQuery).toHaveBeenCalled();
+      expect(editor.replaceSourceQuery).not.toHaveBeenCalled();
+      expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
+
+      const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => void };
+      expect(writingsService.addSource).not.toHaveBeenCalledWith('doc-1', 'passage-1');
+      options.quoteSelection('Time is that in which all things pass away.', {
+        id: 'passage-1',
+        bookTitle: 'Studies in Pessimism',
+        bookAuthor: 'Arthur Schopenhauer',
+        title: 'On the Vanity of Existence',
+      });
+      expect(editor.insertBlockMarkdown).toHaveBeenCalledWith(
+        '> Time is that in which all things pass away.\n>\n> — Arthur Schopenhauer, *Studies in Pessimism*, “On the Vanity of Existence”',
+      );
+      // Kept only once something was quoted from it.
+      expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
+    });
+
+    it('sends "Browse Reference" to the searched Books list', () => {
+      component.browseFromPalette('schopenhaur');
+      expect(component.referenceMode()).toBe('library');
+      expect(component.activeSidebarTab()).toBe('notes');
+      expect(component.bookQuery()).toBe('schopenhaur');
+    });
+  });
+
   it('delegates deliberate insertion to the editor boundary without concatenating editorText', async () => {
     component.activeItem.set(sampleDoc1);
     component.editorText.set(sampleDoc1.content);
@@ -1690,7 +1908,7 @@ describe('WritingStudio kept sources (#491)', () => {
     await component.insertQuote(sourceBeta as any);
 
     expect(editor.insertMarkdown).toHaveBeenCalledWith(
-      '> Beta excerpt\n> — *Book Beta*, p. 42',
+      '> Beta excerpt\n>\n> — *Book Beta*, p. 42',
     );
     expect(component.editorText()).toBe(sampleDoc1.content);
   });
@@ -1982,7 +2200,11 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
   async function createWithParams(
     params: Record<string, string> = {},
     historyState: Record<string, unknown> = {},
+    lastWritingId: string | null = null,
   ) {
+    // The Studio reopens the last writing; each case starts with none unless given.
+    localStorage.clear();
+    if (lastWritingId) localStorage.setItem('nostos.studio.lastWritingId', lastWritingId);
     const query = new URLSearchParams(params).toString();
     window.history.replaceState(historyState, '', `/studio${query ? `?${query}` : ''}`);
     queryParams = new BehaviorSubject(convertToParamMap(params));
@@ -2075,12 +2297,21 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
     expect(toastService.error).toHaveBeenCalledWith('That writing is unavailable');
   });
 
-  it('keeps ordinary /studio behavior unchanged without writingId', async () => {
+  it('opens a blank page on /studio with no writingId and no writing to return to', async () => {
     await createWithParams();
 
     expect(writingsService.get).not.toHaveBeenCalled();
     expect(component.activeItem()).toBeNull();
+    expect(component.blankPage()).toBe(true);
     expect(component.referenceMode()).toBe('writing');
+  });
+
+  it('reopens the last writing on /studio with no writingId', async () => {
+    await createWithParams({}, {}, doc.id);
+
+    expect(writingsService.get).toHaveBeenCalledWith(doc.id);
+    expect(component.activeItem()?.id).toBe(doc.id);
+    expect(component.blankPage()).toBe(false);
   });
 
   it('lands a mobile handoff in the editor with both drawers closed', async () => {
