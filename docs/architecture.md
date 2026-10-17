@@ -69,7 +69,7 @@ Nostos.sln
 | **Epub Reader**        | epub.js                 | 0.3.93     |
 | **PDF Reader**         | ngx-extended-pdf-viewer | 25.6+      |
 | **Audio Player**       | Howler.js               | 2.2.4      |
-| **Text Editor**        | TinyMCE                 | 8.2+       |
+| **Text Editor**        | TipTap                  | 3.31       |
 | **Markdown**           | marked + Turndown       | 17.0 / 7.2 |
 | **Drag & Drop**        | @angular/cdk            | 21+        |
 | **Backend Framework**  | ASP.NET Core            | 10.0       |
