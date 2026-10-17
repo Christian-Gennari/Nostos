@@ -155,6 +155,42 @@ describe('MarkdownEditorComponent', () => {
     expect(emitted.at(-1)).toBe('[link me](https://example.com)');
   });
 
+  it('does not undo back into the previous document after switching', async () => {
+    await create('First document.');
+    await component.insertMarkdown('Typed in the first.');
+
+    fixture.componentRef.setInput('initialContent', 'Second document.');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    emitted = [];
+    component.undo();
+
+    expect(page().textContent).toContain('Second document.');
+    expect(page().textContent).not.toContain('First document.');
+    expect(emitted.every((md) => !md.includes('First document.'))).toBe(true);
+  });
+
+  it('keeps deeper headings a writing already has', async () => {
+    await create('#### Fourth level\n\nText.');
+    expect(page().querySelector('h4')?.textContent).toBe('Fourth level');
+    expect(component.currentMarkdown()).toContain('#### Fourth level');
+  });
+
+  it('keeps an inline data-URI image a writing already has', async () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    await create(`![dot](${png})`);
+    expect(page().querySelector('img')?.getAttribute('src')).toBe(png);
+    expect(component.currentMarkdown()).toContain(png);
+  });
+
+  it('inserts the URL as linked text when nothing is selected', async () => {
+    await create('');
+    component.openUrlPrompt('link');
+    component.urlValue.set('https://example.com');
+    component.applyUrl();
+    expect(emitted.at(-1)).toBe('[https://example.com](https://example.com)');
+  });
+
   it('emits the final Markdown when it is torn down', async () => {
     await create('Last words.');
     emitted = [];

@@ -10,7 +10,8 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { Editor } from '@tiptap/core';
+import { Editor, createDocument } from '@tiptap/core';
+import { EditorState } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Typography from '@tiptap/extension-typography';
@@ -76,6 +77,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('mount', { static: true }) private mount!: ElementRef<HTMLElement>;
   @ViewChild('scroller', { static: true }) private scroller!: ElementRef<HTMLElement>;
+  @ViewChild('urlInput') private urlInput?: ElementRef<HTMLInputElement>;
 
   /** True until the editor exists, so the empty page never flashes a caret. */
   readonly editorStarting = signal(true);
@@ -104,7 +106,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   readonly urlValue = signal('');
 
   private editor: Editor | null = null;
-  private pendingMarkdown: string | null = null;
+  /** The last Markdown this editor emitted, so a save echo costs nothing. */
+  private lastEmittedMarkdown: string | null = null;
   private destroyed = false;
   private lastExternalMarkdownApplied: string | null = null;
   private pendingTransientRestore: PendingTransientRestore | null = null;
@@ -112,7 +115,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   constructor() {
     effect(() => {
       const on = this.typewriter();
-      this.scroller?.nativeElement.classList.toggle('typewriter', on);
+      this.toggleTypewriterLayout(on);
       if (on) queueMicrotask(() => this.followCaret());
     });
 
@@ -121,11 +124,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     effect(() => {
       const markdown = this.initialContent();
       const editor = this.editor;
-      if (!editor) {
-        this.pendingMarkdown = markdown;
-      } else if (htmlToMarkdown(editor.getHTML()).trim() !== markdown.trim()) {
-        editor.commands.setContent(markdownToHtml(markdown), { emitUpdate: false });
-        this.emitWordCount();
+      if (
+        editor &&
+        markdown !== this.lastEmittedMarkdown &&
+        htmlToMarkdown(editor.getHTML()).trim() !== markdown.trim()
+      ) {
+        this.replaceDocument(editor, markdown);
       }
       this.lastExternalMarkdownApplied = markdown;
       this.tryApplyTransientRestore();
@@ -134,21 +138,23 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     if (this.destroyed) return;
-    const markdown = this.pendingMarkdown ?? this.initialContent();
-    this.pendingMarkdown = null;
+    const markdown = this.initialContent();
 
     this.editor = new Editor({
       element: this.mount.nativeElement,
       extensions: [
         StarterKit.configure({
-          heading: { levels: [1, 2, 3] },
+          // The toolbar offers H1-H3, but a writing may already hold deeper
+          // headings; the schema keeps them rather than flattening them.
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
           // Markdown cannot keep underline; offering it lost it on every save.
           underline: false,
           link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
         }),
         Placeholder.configure({ placeholder: 'Start writing…' }),
         Typography,
-        Image,
+        // Writings saved under TinyMCE can hold pasted images as data URIs.
+        Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),
       ],
       content: markdownToHtml(markdown),
@@ -203,8 +209,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const editor = this.editor;
     if (!snippet || !editor || editor.isDestroyed) return false;
 
+    // onUpdate emits the resulting document.
     editor.chain().focus().insertContent(markdownToHtml(snippet)).run();
-    this.emitMarkdown();
     return true;
   }
 
@@ -356,6 +362,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const current = kind === 'link' ? (this.editor?.getAttributes('link')['href'] ?? '') : '';
     this.urlValue.set(current);
     this.urlPrompt.set(kind);
+    // The field is created by this change; focus it once it exists, or the
+    // next keystrokes would land in (and overwrite) the selected text.
+    setTimeout(() => this.urlInput?.nativeElement.focus());
   }
 
   applyUrl(): void {
@@ -369,8 +378,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       if (url) chain.setImage({ src: url }).run();
       return;
     }
-    if (url) chain.extendMarkRange('link').setLink({ href: url }).run();
-    else chain.extendMarkRange('link').unsetLink().run();
+    if (!url) {
+      chain.extendMarkRange('link').unsetLink().run();
+    } else if (this.editor!.state.selection.empty && !this.editor!.isActive('link')) {
+      // Nothing selected: the URL itself becomes the linked text.
+      chain
+        .insertContent({ type: 'text', text: url, marks: [{ type: 'link', attrs: { href: url } }] })
+        .run();
+    } else {
+      chain.extendMarkRange('link').setLink({ href: url }).run();
+    }
   }
 
   cancelUrl(): void {
@@ -409,7 +426,47 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   private emitMarkdown(): void {
     if (!this.editor) return;
-    this.contentChange.emit(htmlToMarkdown(this.editor.getHTML()));
+    const markdown = htmlToMarkdown(this.editor.getHTML());
+    this.lastEmittedMarkdown = markdown;
+    this.contentChange.emit(markdown);
+  }
+
+  /**
+   * Another document opens: a new editor state, not a transaction. A
+   * transaction would sit in the undo history, so Ctrl+Z after switching put
+   * the previous writing back on the page and autosaved it into this one.
+   */
+  private replaceDocument(editor: Editor, markdown: string): void {
+    const doc = createDocument(markdownToHtml(markdown), editor.schema);
+    editor.view.updateState(EditorState.create({ doc, plugins: editor.state.plugins }));
+    this.lastEmittedMarkdown = null;
+    this.refreshToolbar();
+    this.emitWordCount();
+  }
+
+  /**
+   * Typewriter mode adds scroll runway above the page. Keep the caret where it
+   * is on screen while the runway appears or goes, so the toggle never jumps.
+   */
+  private toggleTypewriterLayout(on: boolean): void {
+    const scroller = this.scroller?.nativeElement;
+    if (!scroller) return;
+    const before = this.caretTop();
+    scroller.classList.toggle('typewriter', on);
+    const after = this.caretTop();
+    if (before !== null && after !== null && after !== before) {
+      scroller.scrollBy?.({ top: after - before });
+    }
+  }
+
+  private caretTop(): number | null {
+    const editor = this.editor;
+    if (!editor || editor.isDestroyed) return null;
+    try {
+      return editor.view.coordsAtPos(editor.state.selection.head).top;
+    } catch {
+      return null;
+    }
   }
 
   private emitWordCount(): void {
@@ -428,9 +485,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const data = event.clipboardData;
     if (!data || !this.editor) return false;
     if (data.types.includes('text/html')) return false;
+    // Inside a code block, pasted text is code, never structure.
+    if (this.editor.state.selection.$from.parent.type.spec.code) return false;
     const text = data.getData('text/plain');
     if (!looksLikeMarkdown(text)) return false;
-    this.editor.chain().focus().insertContent(markdownToHtml(text)).run();
+    // Line breaks the person pasted stay line breaks.
+    this.editor.chain().focus().insertContent(markdownToHtml(text, { breaks: true })).run();
     return true;
   }
 

@@ -13,8 +13,8 @@ import { marked } from 'marked';
  * longer offers underline at all, because Markdown has no way to keep it.
  */
 
-export function markdownToHtml(markdown: string): string {
-  return marked.parse(markdown ?? '', { async: false, gfm: true }) as string;
+export function markdownToHtml(markdown: string, options: { breaks?: boolean } = {}): string {
+  return marked.parse(markdown ?? '', { async: false, gfm: true, breaks: options.breaks ?? false }) as string;
 }
 
 let sharedTurndown: TurndownService | null = null;

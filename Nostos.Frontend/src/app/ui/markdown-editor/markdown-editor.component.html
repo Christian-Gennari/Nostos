@@ -36,7 +36,7 @@
         [value]="urlValue()"
         (input)="urlValue.set($any($event.target).value)"
         (keydown.escape)="cancelUrl()"
-        autofocus
+        #urlInput
       />
       <button type="submit" class="editor-url-apply">{{ kind === 'link' ? 'Apply' : 'Insert' }}</button>
       <button type="button" class="editor-url-cancel" (click)="cancelUrl()">Cancel</button>
