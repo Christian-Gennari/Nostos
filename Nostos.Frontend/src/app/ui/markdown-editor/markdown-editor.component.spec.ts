@@ -237,14 +237,41 @@ describe('MarkdownEditorComponent', () => {
       expect(component.currentMarkdown()).toBe('As _See: Author, Book_ is right.');
     });
 
-    it('opens with the shortcut and takes its @ back when closed empty', async () => {
+    it('opens with the shortcut and takes its @ (and its space) back when closed empty', async () => {
       await create('Word');
       (component as any).editor.commands.focus('end');
       expect(component.openSourceQuery()).toBe(true);
       expect(component.currentMarkdown()).toBe('Word @');
       component.closeSourceQuery();
       await Promise.resolve();
-      expect(component.currentMarkdown().trim()).toBe('Word');
+      expect(component.currentMarkdown()).toBe('Word');
+    });
+
+    it('never replaces selected text with the shortcut', async () => {
+      await create('Keep this sentence.');
+      (component as any).editor.commands.selectAll();
+      component.openSourceQuery();
+      expect(component.currentMarkdown()).toContain('Keep this sentence.');
+      expect(component.currentMarkdown()).toContain('@');
+    });
+
+    it('adds no space after opening punctuation', async () => {
+      await create('(');
+      (component as any).editor.commands.focus('end');
+      component.openSourceQuery();
+      expect(component.currentMarkdown()).toBe('(@');
+    });
+
+    it('puts a block after a selected image instead of failing', async () => {
+      await create('![dot](https://example.com/a.png)\n\nAfter.');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      let imagePos = -1;
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'image' && imagePos < 0) imagePos = pos;
+      });
+      editor.commands.setNodeSelection(imagePos);
+      expect(component.insertBlockMarkdown('> Quoted.')).toBe(true);
+      expect(component.currentMarkdown()).toMatch(/a\.png\)\n\n> Quoted\./);
     });
   });
 

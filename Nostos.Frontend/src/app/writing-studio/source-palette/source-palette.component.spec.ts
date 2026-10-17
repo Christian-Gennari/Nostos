@@ -1,7 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
+import { Subject } from 'rxjs';
+
 import { BooksService } from '../../core/services/books.service';
+import { CloudAuthService } from '../../core/services/cloud-auth.service';
 import { NotesService } from '../../core/services/notes.service';
 import { SourcePaletteComponent } from './source-palette.component';
 import { PaletteChoice } from './source-palette.helpers';
@@ -47,6 +50,7 @@ describe('SourcePaletteComponent (issue #1039)', () => {
       imports: [SourcePaletteComponent],
       providers: [
         { provide: NotesService, useValue: { search } },
+        { provide: CloudAuthService, useValue: { sessionChanges$: new Subject() } },
         {
           provide: BooksService,
           useValue: { list: vi.fn(() => of({ items: [{ title: 'Parerga', author: 'Arthur Schopenhauer' }] })) },
@@ -129,6 +133,50 @@ describe('SourcePaletteComponent (issue #1039)', () => {
     expect(fixture.nativeElement.textContent).toContain('No sources match “zzz unknown”');
     (fixture.nativeElement.querySelector('.sp-browse') as HTMLButtonElement).click();
     expect(browsed).toBe('zzz unknown');
+  });
+
+  it('waits for the answer to the query on the page before Enter picks', async () => {
+    fixture.componentRef.setInput('keptSources', [
+      { id: 'k', bookId: 'b', bookTitle: 'Book', content: 'Kept', selectedText: 'Kept quote', createdAt: '', addedAt: '' },
+    ]);
+    await typeQuery('');
+    fixture.componentRef.setInput('query', 'schopenhauer');
+    fixture.detectChanges();
+    // Still debouncing: the kept list is on screen, but it is not the answer.
+    expect(component.handleKey(key('Enter'))).toBe(true);
+    expect(chosen).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(chosen.map((c) => c.source.id)).toEqual(['q']);
+  });
+
+  it('drops an answer that arrives after the query was deleted back to @', async () => {
+    const late = new Subject<typeof hits>();
+    search.mockReturnValue(late);
+    fixture.componentRef.setInput('keptSources', [
+      { id: 'k', bookId: 'b', bookTitle: 'Book', content: 'Kept', selectedText: 'Kept quote', createdAt: '', addedAt: '' },
+    ]);
+    await typeQuery('kant');
+    await typeQuery('');
+    late.next(hits);
+    expect(component.items().map((i) => i.id)).toEqual(['k']);
+  });
+
+  it('keeps the highlighted row when the kept list changes under an open query', async () => {
+    await typeQuery('schopenhauer');
+    component.handleKey(key('ArrowDown'));
+    const calls = search.mock.calls.length;
+    fixture.componentRef.setInput('keptSources', [
+      { id: 'q', bookId: 'b', bookTitle: 'Book', content: '', selectedText: 'x', createdAt: '', addedAt: '' },
+    ]);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(component.active()).toBe(1);
+    expect(search.mock.calls.length).toBe(calls);
+  });
+
+  it('lets Tab leave the page instead of swallowing it', async () => {
+    await typeQuery('schopenhauer');
+    expect(component.handleKey(key('Tab'))).toBe(false);
   });
 
   it('inserts a note with no quotation as a note even on Enter', async () => {

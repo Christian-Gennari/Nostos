@@ -8,12 +8,14 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, catchError, debounceTime, map, of, switchMap } from 'rxjs';
 
 import { WritingSourceDto } from '../../core/dtos/writing.dtos';
 import { BooksService } from '../../core/services/books.service';
+import { CloudAuthService } from '../../core/services/cloud-auth.service';
 import { NotesService } from '../../core/services/notes.service';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
@@ -28,6 +30,7 @@ import {
   queryWords,
   rankSources,
   readRecentSources,
+  rememberRecentSource,
   sourceByline,
   vocabularyOf,
 } from './source-palette.helpers';
@@ -100,36 +103,55 @@ export class SourcePaletteComponent {
   readonly position = computed(() => this.place(this.anchor()));
 
   private vocabulary: Set<string> | null = null;
+  private vocabularyLoading = false;
   private readonly search$ = new Subject<string>();
+  /** Enter pressed while results were still coming: the mode to pick with. */
+  private pendingPick: PaletteInsertMode | null = null;
+  /** Recents belong to the signed-in account; self-hosted is one 'local' reader. */
+  private recentScope = 'local';
 
   constructor() {
     const destroyRef = inject(DestroyRef);
 
+    inject(CloudAuthService)
+      .sessionChanges$.pipe(takeUntilDestroyed(destroyRef))
+      .subscribe((session) => (this.recentScope = session.accountId ?? 'signed-out'));
+
     this.search$
       .pipe(
         debounceTime(120),
-        switchMap((query) =>
-          this.notes.search(query, SEARCH_LIMIT).pipe(
-            switchMap((hits) => {
-              if (hits.length > 0 || !this.vocabulary) return of({ query, hits });
-              // Nothing matched as typed: try the nearest author or title
-              // spelling ("schopenhaur" -> "schopenhauer") before giving up.
-              const corrected = correctQuery(query, this.vocabulary);
-              return corrected === query
-                ? of({ query, hits })
-                : this.notes.search(corrected, SEARCH_LIMIT).pipe(map((h) => ({ query: corrected, hits: h })));
-            }),
-            catchError(() => of({ query, hits: [] })),
-          ),
+        switchMap((raw) =>
+          raw === ''
+            ? of({ raw, query: raw, hits: [] })
+            : this.notes.search(raw, SEARCH_LIMIT).pipe(
+                switchMap((hits) => {
+                  if (hits.length > 0 || !this.vocabulary) return of({ raw, query: raw, hits });
+                  // Nothing matched as typed: try the nearest author or title
+                  // spelling ("schopenhaur" -> "schopenhauer") before giving up.
+                  const corrected = correctQuery(raw, this.vocabulary);
+                  return corrected === raw
+                    ? of({ raw, query: raw, hits })
+                    : this.notes
+                        .search(corrected, SEARCH_LIMIT)
+                        .pipe(map((h) => ({ raw, query: corrected, hits: h })));
+                }),
+                catchError(() => of({ raw, query: raw, hits: [] })),
+              ),
         ),
         takeUntilDestroyed(destroyRef),
       )
-      .subscribe(({ query, hits }) => {
-        if (this.query() === null) return;
+      .subscribe(({ raw, query, hits }) => {
+        // An answer to a query no longer on the page (typed on past, or
+        // deleted back to a bare @) is dropped, never shown.
+        if (raw === '' || (this.query() ?? '').trim() !== raw) return;
         const kept = new Set(this.keptSources().map((s) => s.id));
         this.answered.set(query);
         this.setItems(rankSources(hits.map((h) => fromSearchHit(h, kept)), queryWords(query)));
         this.loading.set(false);
+        const pending = this.pendingPick;
+        this.pendingPick = null;
+        const first = this.items()[0];
+        if (pending && first) this.pick(first, pending);
       });
 
     effect(() => {
@@ -138,18 +160,24 @@ export class SourcePaletteComponent {
         this.items.set([]);
         this.moreFor.set(null);
         this.loading.set(false);
+        this.pendingPick = null;
+        this.search$.next('');
         return;
       }
-      this.ensureVocabulary();
-      const trimmed = query.trim();
-      if (!trimmed) {
-        this.answered.set('');
-        this.loading.set(false);
-        this.setItems(this.emptyQueryItems());
-        return;
-      }
-      this.loading.set(true);
-      this.search$.next(trimmed);
+      untracked(() => {
+        this.ensureVocabulary();
+        const trimmed = query.trim();
+        if (!trimmed) {
+          // Cancels any search still in flight for a longer query.
+          this.search$.next('');
+          this.answered.set('');
+          this.loading.set(false);
+          this.setItems(this.emptyQueryItems());
+          return;
+        }
+        this.loading.set(true);
+        this.search$.next(trimmed);
+      });
     });
   }
 
@@ -170,18 +198,21 @@ export class SourcePaletteComponent {
         this.setActive((this.active() - 1 + count) % count);
         return true;
       case 'Enter': {
-        const item = this.items()[this.active()];
-        if (!item) return this.loading();
         const mode: PaletteInsertMode = event.shiftKey
           ? 'note'
           : event.metaKey || event.ctrlKey
             ? 'reference'
             : 'quote';
+        // The list on screen may answer an earlier query: wait for this one.
+        if (this.loading()) {
+          this.pendingPick = mode;
+          return true;
+        }
+        const item = this.items()[this.active()];
+        if (!item) return false;
         this.pick(item, mode);
         return true;
       }
-      case 'Tab':
-        return count > 0;
       default:
         return false;
     }
@@ -192,6 +223,11 @@ export class SourcePaletteComponent {
     const effective = mode === 'quote' && item.kind === 'note' && !item.note && !item.selectedText?.trim() ? 'note' : mode;
     this.moreFor.set(null);
     this.choose.emit({ source: item, mode: effective });
+  }
+
+  /** Records a source as recently used, for this account. */
+  remember(source: PaletteSource): void {
+    rememberRecentSource(source, this.recentScope);
   }
 
   browseReference(): void {
@@ -228,19 +264,23 @@ export class SourcePaletteComponent {
   private emptyQueryItems(): PaletteSource[] {
     const kept = this.keptSources().map(fromKeptSource);
     const keptIds = new Set(kept.map((s) => s.id));
-    const recent = readRecentSources().filter((s) => !keptIds.has(s.id));
+    const recent = readRecentSources(this.recentScope).filter((s) => !keptIds.has(s.id));
     return [...kept, ...recent].slice(0, VISIBLE_ROWS * 2);
   }
 
   /** Author and title words, loaded once, for spelling correction. */
   private ensureVocabulary(): void {
-    if (this.vocabulary) return;
-    this.vocabulary = new Set();
+    if (this.vocabulary || this.vocabularyLoading) return;
+    this.vocabularyLoading = true;
+    // The most recent 500 books: enough to correct the authors a writer is
+    // working with without paging the whole library on every Studio visit.
     this.books.list({ page: 1, pageSize: 500 }).subscribe({
       next: (page) => {
         this.vocabulary = vocabularyOf(page.items.flatMap((b) => [b.title, b.author]));
+        this.vocabularyLoading = false;
       },
-      error: () => undefined,
+      // A failed load is tried again on the next query.
+      error: () => (this.vocabularyLoading = false),
     });
   }
 

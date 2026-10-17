@@ -209,10 +209,14 @@ export function vocabularyOf(texts: readonly (string | null | undefined)[]): Set
 const RECENT_KEY = 'nostos.studio.recentSources';
 const RECENT_MAX = 8;
 
-/** Sources recently put on a page, newest first; per browser, a convenience. */
-export function readRecentSources(): PaletteSource[] {
+/**
+ * Sources recently put on a page, newest first; per browser, a convenience.
+ * Kept per account (`scope`), so on a shared browser one person's quotations
+ * never appear in another's palette.
+ */
+export function readRecentSources(scope = 'local'): PaletteSource[] {
   try {
-    const raw = localStorage.getItem(RECENT_KEY);
+    const raw = localStorage.getItem(`${RECENT_KEY}:${scope}`);
     const parsed = raw ? (JSON.parse(raw) as unknown) : [];
     return Array.isArray(parsed)
       ? (parsed.filter((s) => s && typeof s.id === 'string' && typeof s.lead === 'string') as PaletteSource[])
@@ -222,10 +226,13 @@ export function readRecentSources(): PaletteSource[] {
   }
 }
 
-export function rememberRecentSource(source: PaletteSource): void {
+export function rememberRecentSource(source: PaletteSource, scope = 'local'): void {
   try {
-    const rest = readRecentSources().filter((s) => s.id !== source.id);
-    localStorage.setItem(RECENT_KEY, JSON.stringify([{ ...source, kept: false }, ...rest].slice(0, RECENT_MAX)));
+    const rest = readRecentSources(scope).filter((s) => s.id !== source.id);
+    localStorage.setItem(
+      `${RECENT_KEY}:${scope}`,
+      JSON.stringify([{ ...source, kept: false }, ...rest].slice(0, RECENT_MAX)),
+    );
   } catch {
     // Recents are a convenience; a full or blocked storage just skips them.
   }

@@ -11,7 +11,7 @@ import {
   signal,
 } from '@angular/core';
 import { Editor, Range, createDocument } from '@tiptap/core';
-import { EditorState } from '@tiptap/pm/state';
+import { EditorState, TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Typography from '@tiptap/extension-typography';
@@ -21,7 +21,7 @@ import { TableKit } from '@tiptap/extension-table';
 import { DropdownComponent, DropdownOption } from '../dropdown/dropdown.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
-import { SOURCE_SUGGESTION_KEY, SourceSuggestion } from './source-suggestion.extension';
+import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
 import { exitSuggestion } from '@tiptap/suggestion';
 
 export interface MarkdownEditorTransientState {
@@ -130,8 +130,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   /** The text of the open `@` query (the `@` included), or null. */
   private suggestionRange: Range | null = null;
   private suggestionQuery = '';
-  /** Whether the open query began with the shortcut, which typed its `@`. */
-  private suggestionFromShortcut = false;
+  /** How many characters the shortcut typed (`@` or ` @`), or 0. */
+  private shortcutInserted = 0;
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
@@ -277,7 +277,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const snippet = markdown.trim();
     if (!editor || editor.isDestroyed || !range || !snippet) return false;
 
-    this.suggestionFromShortcut = false;
+    this.shortcutInserted = 0;
     editor.chain().focus().deleteRange(range).run();
     this.suggestionRange = null;
     if (placement === 'inline') {
@@ -305,7 +305,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const editor = this.editor;
     const range = this.suggestionRange;
     if (!editor || editor.isDestroyed || !range) return false;
-    this.suggestionFromShortcut = false;
+    this.shortcutInserted = 0;
     editor.chain().deleteRange(range).run();
     this.suggestionRange = null;
     return true;
@@ -323,12 +323,19 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   openSourceQuery(): boolean {
     const editor = this.editor;
     if (!editor || editor.isDestroyed) return false;
-    const { $from } = editor.state.selection;
-    if ($from.parent.type.spec.code) return false;
-    const before = $from.parent.textBetween(0, $from.parentOffset, ' ', ' ');
-    const needsSpace = before.length > 0 && !/\s$/.test(before);
-    editor.chain().focus().insertContent(needsSpace ? ' @' : '@').run();
-    this.suggestionFromShortcut = true;
+    const { selection } = editor.state;
+    if (selection.$from.parent.type.spec.code) return false;
+    // Never replace a selection: the query starts after it, in the nearest
+    // text (a whole-document selection ends outside any paragraph).
+    const end = TextSelection.near(editor.state.doc.resolve(selection.to), -1);
+    const $at = end.$to;
+    if (!$at.parent.isTextblock) return false;
+    const before = $at.parent.textBetween(0, $at.parentOffset, ' ', ' ');
+    const last = before.slice(-1);
+    const needsSpace = last !== '' && !/\s/.test(last) && !SOURCE_SUGGESTION_PREFIXES.includes(last);
+    const text = needsSpace ? ' @' : '@';
+    editor.chain().focus().setTextSelection($at.pos).insertContent(text).run();
+    this.shortcutInserted = text.length;
     return true;
   }
 
@@ -337,15 +344,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * no stray `@`: the shortcut typed it, so closing takes it back.
    */
   private dropShortcutAt(): void {
-    const fromShortcut = this.suggestionFromShortcut;
-    this.suggestionFromShortcut = false;
+    const inserted = this.shortcutInserted;
+    this.shortcutInserted = 0;
     const editor = this.editor;
     const range = this.suggestionRange;
-    if (!fromShortcut || !editor || !range || this.suggestionQuery !== '') return;
-    if (editor.state.doc.textBetween(range.from, range.to) !== '@') return;
+    if (!inserted || !editor || !range || this.suggestionQuery !== '') return;
+    const from = range.to - inserted;
+    const typed = inserted === 2 ? ' @' : '@';
     queueMicrotask(() => {
-      if (editor.isDestroyed || editor.state.doc.textBetween(range.from, range.to) !== '@') return;
-      editor.chain().deleteRange(range).run();
+      if (editor.isDestroyed || editor.state.doc.textBetween(from, range.to) !== typed) return;
+      editor.chain().deleteRange({ from, to: range.to }).run();
     });
   }
 
@@ -566,19 +574,21 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    */
   private insertBlockAtCaret(html: string): void {
     const editor = this.editor!;
-    const { $from } = editor.state.selection;
-    const depth = Math.max(1, Math.min($from.depth, 1));
-    const block = $from.node(depth);
-    const start = $from.before(depth);
-    const end = $from.after(depth);
-    const empty = block.type.name === 'paragraph' && block.content.size === 0;
-    editor
-      .chain()
-      .focus()
-      .insertContentAt(empty ? { from: start, to: end } : end, html, { updateSelection: true })
-      .run();
+    const { selection } = editor.state;
+    const { $from } = selection;
+    let target: number | { from: number; to: number };
+    if ($from.depth === 0) {
+      // A whole top-level node is selected (an image, a rule): go after it.
+      target = selection.to;
+    } else {
+      const block = $from.node(1);
+      const empty = block.type.name === 'paragraph' && block.content.size === 0;
+      target = empty ? { from: $from.before(1), to: $from.after(1) } : $from.after(1);
+    }
+    editor.chain().focus().insertContentAt(target, html, { updateSelection: true }).run();
 
-    const after = editor.state.selection.$from.after(1);
+    const $end = editor.state.selection.$from;
+    const after = $end.depth >= 1 ? $end.after(1) : editor.state.selection.to;
     const next = editor.state.doc.resolve(after).nodeAfter;
     const chain = editor.chain().focus();
     if (!(next?.type.name === 'paragraph' && next.content.size === 0)) {

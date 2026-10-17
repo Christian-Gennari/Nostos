@@ -1749,7 +1749,9 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
 
       const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => void };
+      expect(writingsService.addSource).not.toHaveBeenCalledWith('doc-1', 'passage-1');
       options.quoteSelection('Time is that in which all things pass away.', {
+        id: 'passage-1',
         bookTitle: 'Studies in Pessimism',
         bookAuthor: 'Arthur Schopenhauer',
         title: 'On the Vanity of Existence',
@@ -1757,6 +1759,8 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(editor.insertBlockMarkdown).toHaveBeenCalledWith(
         '> Time is that in which all things pass away.\n>\n> — Arthur Schopenhauer, *Studies in Pessimism*, “On the Vanity of Existence”',
       );
+      // Kept only once something was quoted from it.
+      expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
     });
 
     it('sends "Browse Reference" to the searched Books list', () => {

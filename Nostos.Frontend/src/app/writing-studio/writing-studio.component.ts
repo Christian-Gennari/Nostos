@@ -34,7 +34,7 @@ import {
   SourceSuggestionState,
 } from '../ui/markdown-editor/markdown-editor.component';
 import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
-import { PaletteChoice, rememberRecentSource } from './source-palette/source-palette.helpers';
+import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -793,8 +793,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!editor || !this.activeItem()) return;
 
     if (source.kind === 'passage' && mode === 'quote') {
+      // Kept and remembered only once something is quoted from it.
       editor.clearSourceQuery();
+      this.palettePassageSource = source;
       this.passageViewer.open(source.id, this.palettePassageOptions);
+      return;
     } else {
       const markdown =
         mode === 'reference'
@@ -808,8 +811,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
       }
     }
     this.keepNote(source.id);
-    rememberRecentSource(source);
+    this.sourcePalette?.remember(source);
   }
+
+  private palettePassageSource: PaletteChoice['source'] | null = null;
 
   /** "Browse Reference" from an empty palette: the Books list, searched. */
   browseFromPalette(query: string): void {
@@ -831,6 +836,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
       });
       if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown)) {
         this.toast.success('Quoted in your writing');
+        this.keepNote(passage.id);
+        const source = this.palettePassageSource;
+        if (source?.id === passage.id) this.sourcePalette?.remember(source);
       } else {
         this.toast.error('The editor is not ready for insertion yet');
       }
