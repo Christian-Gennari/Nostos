@@ -116,6 +116,10 @@ public sealed class NoteService : INoteService
         CancellationToken ct = default) =>
         SearchAsync(query, limit, bookIds: null, ct);
 
+    // Above the planner's phrase weight (4): every word present beats the exact
+    // phrase being absent, and the phrase is rare in a short "@" query anyway.
+    private const int AllTermsWeight = 5;
+
     public async Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,
         int limit,
@@ -132,9 +136,25 @@ public sealed class NoteService : INoteService
         var candidateLimit = Math.Clamp(take * 3, 20, 60);
         var fused = new Dictionary<Guid, NoteFusionCandidate>();
 
-        foreach (var variant in variants)
+        // Several words: a note holding every one of them, across its text and
+        // its book's title and author, outranks one that shares only a single
+        // word (issue #1038). "schopenhauer will" names an author and a subject.
+        var tokens = variants
+            .Where(variant => variant.Kind == LexicalQueryVariantKind.Token)
+            .Select(variant => variant.Text)
+            .ToList();
+        var searches = variants
+            .Select(variant => (variant.Text, variant.Weight, Terms: (IReadOnlyList<string>)[variant.Text]))
+            .ToList();
+        if (tokens.Count >= 2)
+            searches.Insert(0, (string.Join(' ', tokens), AllTermsWeight, tokens));
+
+        var matchedAllTerms = new HashSet<Guid>();
+        foreach (var variant in searches)
         {
-            var hits = await _notes.SearchByTextAsync(variant.Text, candidateLimit, bookIds);
+            var hits = await _notes.SearchByAllTermsAsync(variant.Terms, candidateLimit, bookIds);
+            if (variant.Weight == AllTermsWeight)
+                matchedAllTerms.UnionWith(hits.Select(note => note.Id));
             for (var rank = 0; rank < hits.Count; rank++)
             {
                 var note = hits[rank];
@@ -162,13 +182,21 @@ public sealed class NoteService : INoteService
             }
         }
 
+        // With several words: a note holding every word comes first, and among
+        // those a word found in the note itself says more than one found only in
+        // its book's title. "schopenhauer will" is about the will, not about
+        // every note from "The World as Will and Representation".
+        // Single-word queries keep their existing order exactly.
+        var multiWord = tokens.Count >= 2;
         return fused.Values
-            .OrderByDescending(candidate => candidate.MatchedVariants)
+            .OrderByDescending(candidate => multiWord && matchedAllTerms.Contains(candidate.Note.Id))
+            .ThenByDescending(candidate => multiWord ? OwnTextMatches(candidate.Note, tokens) : 0)
+            .ThenByDescending(candidate => candidate.MatchedVariants)
             .ThenByDescending(candidate => candidate.Score)
             .ThenByDescending(candidate => candidate.Note.CreatedAt)
             .ThenBy(candidate => candidate.Note.Id)
             .Take(take)
-            .Select(candidate => ByText(candidate.Note, candidate.SnippetTerm))
+            .Select(candidate => ByText(candidate.Note, SnippetTermFor(candidate, tokens)))
             .ToList();
     }
 
@@ -758,6 +786,27 @@ public sealed class NoteService : INoteService
         JsonSerializer.Deserialize<NoteCommandResult<NoteDto>>(json, ReceiptJson)
         ?? throw new InvalidOperationException("Stored note command receipt is invalid.");
 
+    /// <summary>
+    /// The all-words search records the whole query as its term, which rarely
+    /// occurs verbatim when its words matched different fields. Centre the
+    /// snippet on a word the note's own text really contains instead.
+    /// </summary>
+    private static string? SnippetTermFor(NoteFusionCandidate candidate, IReadOnlyList<string> tokens)
+    {
+        bool InText(string term) =>
+            candidate.Note.Content.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || (candidate.Note.SelectedText?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false);
+
+        if (candidate.SnippetTerm is { } term && InText(term)) return term;
+        return tokens.FirstOrDefault(InText) ?? candidate.SnippetTerm;
+    }
+
+    private static int OwnTextMatches(NoteModel note, IReadOnlyList<string> tokens) =>
+        tokens.Count(token =>
+            note.Content.Contains(token, StringComparison.OrdinalIgnoreCase)
+            || (note.SelectedText?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (note.PassageTitle?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false));
+
     private static int SpecificityWeight(
         string term,
         IReadOnlyList<LexicalQueryVariant> variants) =>
@@ -795,7 +844,8 @@ public sealed class NoteService : INoteService
         n.Kind,
         n.PassageTitle,
         n.PassageEnd,
-        n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null);
+        n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null,
+        n.Book?.Author);
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here
