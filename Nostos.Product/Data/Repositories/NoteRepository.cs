@@ -102,13 +102,8 @@ public class NoteRepository : INoteRepository
         int limit,
         IReadOnlyCollection<Guid>? bookIds = null)
     {
-        var patterns = terms
-            .Select(t => t.Trim())
-            .Where(t => t.Length > 0)
-            .Select(t => $"%{Escape(t.ToLowerInvariant())}%")
-            .Distinct()
-            .ToList();
-        if (patterns.Count == 0 || bookIds is { Count: 0 }) return [];
+        var cleaned = terms.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct().ToList();
+        if (cleaned.Count == 0 || bookIds is { Count: 0 }) return [];
 
         var notes = _db
             .Notes.Include(n => n.Book)
@@ -119,19 +114,8 @@ public class NoteRepository : INoteRepository
         if (bookIds is { Count: > 0 })
             notes = notes.Where(n => bookIds.Contains(n.BookId));
 
-        // Both sides are lower-cased rather than trusting the provider's LIKE:
-        // SQLite's LIKE ignores ASCII case, but PostgreSQL's (Nostos Cloud) does
-        // not, so "schopenhauer" never found "Schopenhauer" there.
-        foreach (var pattern in patterns)
-        {
-            notes = notes.Where(n =>
-                EF.Functions.Like(n.Content.ToLower(), pattern, "\\")
-                || (n.SelectedText != null && EF.Functions.Like(n.SelectedText.ToLower(), pattern, "\\"))
-                || (n.PassageTitle != null && EF.Functions.Like(n.PassageTitle.ToLower(), pattern, "\\"))
-                || (n.Book != null && n.Book.Title != null && EF.Functions.Like(n.Book.Title.ToLower(), pattern, "\\"))
-                || (n.Book != null && n.Book.Author != null && EF.Functions.Like(n.Book.Author.ToLower(), pattern, "\\"))
-            );
-        }
+        foreach (var term in cleaned)
+            notes = WhereAnyFieldContains(notes, term);
 
         return await notes
             .OrderByDescending(n => n.CreatedAt)
@@ -165,11 +149,7 @@ public class NoteRepository : INoteRepository
         var term = query?.Trim();
         if (!string.IsNullOrEmpty(term))
         {
-            var pattern = $"%{Escape(term)}%";
-            notes = notes.Where(n =>
-                EF.Functions.Like(n.Content, pattern, "\\")
-                || (n.SelectedText != null && EF.Functions.Like(n.SelectedText, pattern, "\\"))
-                || (n.Book != null && EF.Functions.Like(n.Book.Title, pattern, "\\")));
+            notes = WhereAnyFieldContains(notes, term);
         }
 
         var total = await notes.CountAsync();
@@ -224,6 +204,38 @@ public class NoteRepository : INoteRepository
     /// `%` and `_` are wildcards inside LIKE, and `\` is the escape character
     /// passed above, so a user searching for "100%" must not match everything.
     /// </summary>
+    /// <summary>
+    /// Notes where <paramref name="term"/> appears in a field a person would
+    /// describe the note by: its text, its quotation, its passage title, or its
+    /// book's title or author (issue #1038). Search and Browse share this so the
+    /// two boxes never disagree.
+    ///
+    /// Each field is tried as typed and lower-cased. SQLite's LIKE ignores ASCII
+    /// case but its lower() leaves "Å" alone, so the as-typed form keeps "Åsa"
+    /// finding "Åsa"; PostgreSQL's LIKE is case-sensitive, so the lower-cased
+    /// form is what lets "schopenhauer" find "Schopenhauer" on Cloud.
+    /// </summary>
+    private static IQueryable<NoteModel> WhereAnyFieldContains(IQueryable<NoteModel> notes, string term)
+    {
+        var typed = $"%{Escape(term)}%";
+        var lower = $"%{Escape(term.ToLowerInvariant())}%";
+        return notes.Where(n =>
+            EF.Functions.Like(n.Content, typed, "\\")
+            || EF.Functions.Like(n.Content.ToLower(), lower, "\\")
+            || (n.SelectedText != null
+                && (EF.Functions.Like(n.SelectedText, typed, "\\")
+                    || EF.Functions.Like(n.SelectedText.ToLower(), lower, "\\")))
+            || (n.PassageTitle != null
+                && (EF.Functions.Like(n.PassageTitle, typed, "\\")
+                    || EF.Functions.Like(n.PassageTitle.ToLower(), lower, "\\")))
+            || (n.Book != null && n.Book.Title != null
+                && (EF.Functions.Like(n.Book.Title, typed, "\\")
+                    || EF.Functions.Like(n.Book.Title.ToLower(), lower, "\\")))
+            || (n.Book != null && n.Book.Author != null
+                && (EF.Functions.Like(n.Book.Author, typed, "\\")
+                    || EF.Functions.Like(n.Book.Author.ToLower(), lower, "\\"))));
+    }
+
     private static string Escape(string value) =>
         value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 

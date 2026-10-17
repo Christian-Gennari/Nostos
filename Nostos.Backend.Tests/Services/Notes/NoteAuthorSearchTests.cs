@@ -88,6 +88,51 @@ public sealed class NoteAuthorSearchTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task A_non_ascii_capital_typed_as_stored_still_matches()
+    {
+        // SQLite's lower() leaves "Å" alone, so lower-casing both sides alone
+        // would lose "Åsa", which plain LIKE always found.
+        using var h = CreateHarness();
+        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Dagbok", Author = "Åsa Öberg" };
+        h.Db.Books.Add(book);
+        var note = new NoteModel { Id = Guid.NewGuid(), BookId = book.Id, Content = "Om Ärlighet.", CreatedAt = DateTime.UtcNow };
+        h.Db.Notes.Add(note);
+        await h.Db.SaveChangesAsync();
+        var repo = new NoteRepository(h.Db);
+
+        (await repo.SearchByAllTermsAsync(["Åsa"], 50)).Should().ContainSingle().Which.Id.Should().Be(note.Id);
+        (await repo.SearchByAllTermsAsync(["Ärlighet"], 50)).Should().ContainSingle();
+        (await repo.BrowseAsync("Öberg", null, false, false, 50, 0)).Total.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Browse_filters_by_author_like_search_does()
+    {
+        using var h = CreateHarness();
+        await AuthorSearchSeed.SeedAsync(h.Db);
+
+        var (items, total) = await new NoteRepository(h.Db).BrowseAsync("schopenhauer", null, false, false, 50, 0);
+
+        total.Should().Be(3);
+        items.Should().OnlyContain(n => n.Book!.Author == "Arthur Schopenhauer");
+    }
+
+    [Fact]
+    public async Task The_snippet_centres_on_a_word_the_note_itself_holds()
+    {
+        using var h = CreateHarness();
+        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Parerga", Author = "Arthur Schopenhauer" };
+        h.Db.Books.Add(book);
+        var longText = new string('x', 200) + " the will to live " + new string('y', 200);
+        h.Db.Notes.Add(new NoteModel { Id = Guid.NewGuid(), BookId = book.Id, Content = longText, CreatedAt = DateTime.UtcNow });
+        await h.Db.SaveChangesAsync();
+
+        var hit = (await h.Service.SearchAsync("schopenhauer will", 50)).Single();
+
+        hit.Snippet.Should().Contain("will to live");
+    }
+
+    [Fact]
     public async Task A_passage_is_found_by_its_title()
     {
         using var h = CreateHarness();

@@ -149,9 +149,12 @@ public sealed class NoteService : INoteService
         if (tokens.Count >= 2)
             searches.Insert(0, (string.Join(' ', tokens), AllTermsWeight, tokens));
 
+        var matchedAllTerms = new HashSet<Guid>();
         foreach (var variant in searches)
         {
             var hits = await _notes.SearchByAllTermsAsync(variant.Terms, candidateLimit, bookIds);
+            if (variant.Weight == AllTermsWeight)
+                matchedAllTerms.UnionWith(hits.Select(note => note.Id));
             for (var rank = 0; rank < hits.Count; rank++)
             {
                 var note = hits[rank];
@@ -179,17 +182,21 @@ public sealed class NoteService : INoteService
             }
         }
 
-        // With several words, a word found in the note itself says more than one
-        // found only in its book's title: "schopenhauer will" is about the will,
-        // not about every note from "The World as Will and Representation".
+        // With several words: a note holding every word comes first, and among
+        // those a word found in the note itself says more than one found only in
+        // its book's title. "schopenhauer will" is about the will, not about
+        // every note from "The World as Will and Representation".
+        // Single-word queries keep their existing order exactly.
+        var multiWord = tokens.Count >= 2;
         return fused.Values
-            .OrderByDescending(candidate => candidate.MatchedVariants)
-            .ThenByDescending(candidate => tokens.Count >= 2 ? OwnTextMatches(candidate.Note, tokens) : 0)
+            .OrderByDescending(candidate => multiWord && matchedAllTerms.Contains(candidate.Note.Id))
+            .ThenByDescending(candidate => multiWord ? OwnTextMatches(candidate.Note, tokens) : 0)
+            .ThenByDescending(candidate => candidate.MatchedVariants)
             .ThenByDescending(candidate => candidate.Score)
             .ThenByDescending(candidate => candidate.Note.CreatedAt)
             .ThenBy(candidate => candidate.Note.Id)
             .Take(take)
-            .Select(candidate => ByText(candidate.Note, candidate.SnippetTerm))
+            .Select(candidate => ByText(candidate.Note, SnippetTermFor(candidate, tokens)))
             .ToList();
     }
 
@@ -778,6 +785,21 @@ public sealed class NoteService : INoteService
     private static NoteCommandResult<NoteDto> Deserialize(string json) =>
         JsonSerializer.Deserialize<NoteCommandResult<NoteDto>>(json, ReceiptJson)
         ?? throw new InvalidOperationException("Stored note command receipt is invalid.");
+
+    /// <summary>
+    /// The all-words search records the whole query as its term, which rarely
+    /// occurs verbatim when its words matched different fields. Centre the
+    /// snippet on a word the note's own text really contains instead.
+    /// </summary>
+    private static string? SnippetTermFor(NoteFusionCandidate candidate, IReadOnlyList<string> tokens)
+    {
+        bool InText(string term) =>
+            candidate.Note.Content.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || (candidate.Note.SelectedText?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false);
+
+        if (candidate.SnippetTerm is { } term && InText(term)) return term;
+        return tokens.FirstOrDefault(InText) ?? candidate.SnippetTerm;
+    }
 
     private static int OwnTextMatches(NoteModel note, IReadOnlyList<string> tokens) =>
         tokens.Count(token =>
