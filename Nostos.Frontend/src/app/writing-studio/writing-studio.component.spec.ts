@@ -1687,7 +1687,7 @@ describe('WritingStudio kept sources (#491)', () => {
     await component.insertQuote(sourceBeta as any);
 
     expect(editor.insertMarkdown).toHaveBeenCalledWith(
-      '> Beta excerpt\n> — *Book Beta*, p. 42',
+      '> Beta excerpt\n>\n> — *Book Beta*, p. 42',
     );
     expect(component.editorText()).toBe(sampleDoc1.content);
   });
