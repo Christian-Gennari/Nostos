@@ -26,6 +26,8 @@ export interface Note {
   passageEnd?: string | null;
   /** A passage's length in words; for a passage `selectedText` is only its opening. */
   passageWordCount?: number | null;
+  /** The book's author, when known (issue #1038). */
+  bookAuthor?: string | null;
 }
 
 export type NoteKind = 'note' | 'passage';
@@ -56,6 +58,8 @@ export interface Passage {
   content: string;
   highlightColour: string | null;
   createdAt: string;
+  /** The book's author, when known (issue #1038). */
+  bookAuthor?: string | null;
 }
 
 /** Whether a note is a passage: a stretch of the book saved to be read again. */
@@ -259,6 +263,8 @@ export interface NoteSearchHit {
   passageTitle?: string | null;
   passageEnd?: string | null;
   passageWordCount?: number | null;
+  /** The book's author, when known (issue #1038). */
+  bookAuthor?: string | null;
 }
 
 export interface NoteRawTranscript {

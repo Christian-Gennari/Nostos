@@ -34,7 +34,9 @@ public record NoteContextDto(
     string Kind = "note",
     string? PassageTitle = null,
     string? PassageEnd = null,
-    int? PassageWordCount = null
+    int? PassageWordCount = null,
+    // APPENDED (issue #1038): the book's author, so a quote can name who said it.
+    string? BookAuthor = null
 );
 
 // For the whole-brain knowledge graph
