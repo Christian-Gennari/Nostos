@@ -4,7 +4,7 @@ import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
-import { WritingStudio } from './writing-studio.component';
+import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -232,26 +232,6 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(back.classList.contains('nostos-button--sm')).toBe(true);
   });
 
-  it('exposes a keyboard-accessible desktop resize separator for the file sidebar', () => {
-    component.isCompact.set(false);
-    component.showFileSidebar.set(true);
-    component.leftSidebarWidth.set(280);
-    fixture.detectChanges();
-
-    const separator = fixture.nativeElement.querySelector('.sidebar-resizer') as HTMLElement;
-    expect(separator).toBeTruthy();
-    expect(separator.getAttribute('role')).toBe('separator');
-    expect(separator.getAttribute('aria-orientation')).toBe('vertical');
-    expect(separator.getAttribute('aria-valuenow')).toBe('280');
-
-    separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    fixture.detectChanges();
-
-    expect(component.leftSidebarWidth()).toBe(296);
-    expect(localStorage.getItem('nostos.studio.leftSidebarWidth')).toBe('296');
-    expect(separator.getAttribute('aria-valuenow')).toBe('296');
-  });
-
   it('does not run the shared transform entry animation on Studio sidebars', () => {
     const css = componentCss();
 
@@ -340,6 +320,46 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(component.isTyping()).toBe(false);
     expect(document.body.classList.contains('nostos-studio-typing')).toBe(false);
+  });
+
+  it('saves a blank page left while its writing was being created', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as {
+      create: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
+    const created = new Subject<{ id: string; name: string; type: string; updatedAt: string }>();
+    writings.create.mockReturnValue(created);
+    writings.update.mockReturnValue(of({}));
+
+    component.startBlankPage();
+    component.onEditorChange('# Left behind\n\nWords that must not be lost.');
+    component.startBlankPage(); // New again, before the create answered
+    created.next({ id: 'left-1', name: 'Untitled document', type: 'Document', updatedAt: '' });
+
+    expect(writings.update).toHaveBeenCalledWith('left-1', {
+      name: 'Left behind',
+      content: '# Left behind\n\nWords that must not be lost.',
+    });
+    expect(component.activeItem()).toBeNull();
+    expect(component.blankPage()).toBe(true);
+  });
+
+  it('asks the server once, not per keystroke, when creating fails', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as { create: ReturnType<typeof vi.fn> };
+    writings.create.mockReturnValue(throwError(() => new Error('offline')));
+    component.startBlankPage();
+    component.onEditorChange('a');
+    component.onEditorChange('ab');
+    component.onEditorChange('abc');
+    expect(writings.create).toHaveBeenCalledTimes(1);
+    expect(TestBed.inject(ToastService).error).toHaveBeenCalledTimes(1);
+  });
+
+  it('names a writing from its first line with words in it', () => {
+    expect(titleFromMarkdown('# Morning pages\n\nText')).toBe('Morning pages');
+    expect(titleFromMarkdown('#\n\n> *A* quoted opening')).toBe('A quoted opening');
+    expect(titleFromMarkdown('---\n\n')).toBe('');
+    expect(titleFromMarkdown('x'.repeat(30) + ' ' + 'y'.repeat(70)).endsWith('…')).toBe(true);
   });
 
   it('cycles words, characters and reading time in the stat corner', () => {
@@ -961,7 +981,9 @@ describe('WritingStudio delete (no window.confirm)', () => {
       component.createItem('Document');
       component.onEditorChange('Words');
 
-      expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith('Could not create a document');
+      expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
+        'Could not create a document. Your words are still on the page.',
+      );
       expect(component.editingId()).toBeNull();
     });
   });

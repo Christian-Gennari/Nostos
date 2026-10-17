@@ -1643,6 +1643,7 @@
 .editor-header .header-rail-toggle,
 .editor-header .typewriter-toggle,
 .editor-header .zen-toggle,
+.editor-header .touch-undo,
 .header-doc-meta {
   opacity: 0.55;
   transition: opacity var(--motion-base) ease;
@@ -1654,6 +1655,17 @@
 .editor-header:hover .header-doc-meta,
 .editor-header :focus-visible {
   opacity: 1;
+}
+
+/* Undo in the header is for touch screens only; a keyboard has Ctrl+Z. */
+.touch-undo {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-undo {
+    display: inline-flex;
+  }
 }
 
 /* The stat corner: low-opacity text that cycles on click. */

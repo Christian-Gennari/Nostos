@@ -62,19 +62,16 @@ import {
 
 /** localStorage flag for typewriter mode in the studio. */
 const TYPEWRITER_KEY = 'nostos.typewriter';
-const STUDIO_SIDEBAR_WIDTH_KEY = 'nostos.studio.leftSidebarWidth';
 /** Whether Reference sits beside the page on a wide screen (issue #1040). */
 const STUDIO_REFERENCE_PIN_KEY = 'nostos.studio.referencePinned';
 /** The writing the Studio opens on next time. */
 const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
-/** Per writing: where the caret and scroll were when it was last left. */
-const STUDIO_CARET_KEY_PREFIX = 'nostos.studio.caret.';
+/** Where the caret and scroll were in recently left writings, newest first. */
+const STUDIO_CARETS_KEY = 'nostos.studio.carets';
+const STUDIO_CARETS_MAX = 50;
 const UNTITLED_DOCUMENT = 'Untitled document';
 /** Average adult silent-reading pace, for the reading-time stat. */
 const READING_WORDS_PER_MINUTE = 238;
-const STUDIO_SIDEBAR_MIN = 220;
-const STUDIO_SIDEBAR_MAX = 420;
-const STUDIO_SIDEBAR_DEFAULT_MAX = 280;
 const STUDIO_COMPACT_WIDTH = 900;
 const STUDIO_COMPACT_HEIGHT = 500;
 
@@ -84,34 +81,6 @@ function isStudioCompactViewport(): boolean {
 
 type ReferenceLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type ReferenceScrollKey = 'writing' | 'topics' | 'topicNotes' | 'books' | 'bookNotes';
-
-function studioSidebarMaxWidth(): number {
-  return Math.max(
-    STUDIO_SIDEBAR_MIN,
-    Math.min(STUDIO_SIDEBAR_MAX, Math.floor(window.innerWidth * 0.42)),
-  );
-}
-
-function clampStudioSidebarWidth(width: number): number {
-  return Math.min(studioSidebarMaxWidth(), Math.max(STUDIO_SIDEBAR_MIN, Math.round(width)));
-}
-
-function readStudioSidebarWidth(): number {
-  try {
-    const stored = Number(localStorage.getItem(STUDIO_SIDEBAR_WIDTH_KEY));
-    return Number.isFinite(stored) && stored > 0
-      ? clampStudioSidebarWidth(stored)
-      : Math.max(
-          STUDIO_SIDEBAR_MIN,
-          Math.min(STUDIO_SIDEBAR_DEFAULT_MAX, Math.floor(window.innerWidth * 0.24)),
-        );
-  } catch {
-    return Math.max(
-      STUDIO_SIDEBAR_MIN,
-      Math.min(STUDIO_SIDEBAR_DEFAULT_MAX, Math.floor(window.innerWidth * 0.24)),
-    );
-  }
-}
 
 function readStudioFlag(key: string): boolean {
   try {
@@ -146,12 +115,34 @@ export function titleFromMarkdown(markdown: string): string {
   const line = (markdown ?? '')
     .split('\n')
     .map((l) => l.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '').replace(/[*_`~]/g, '').trim())
-    .find((l) => l.length > 0);
+    // A line of only markers or punctuation ("#", "---") names nothing.
+    .find((l) => /[\p{L}\p{N}]/u.test(l));
   if (!line) return '';
   if (line.length <= 80) return line;
   const cut = line.slice(0, 80);
   const space = cut.lastIndexOf(' ');
   return (space > 40 ? cut.slice(0, space) : cut).trim() + '…';
+}
+
+interface RememberedCaret {
+  id: string;
+  state: MarkdownEditorTransientState;
+}
+
+function readCarets(): RememberedCaret[] {
+  try {
+    const parsed = JSON.parse(readStudioValue(STUDIO_CARETS_KEY) ?? '[]') as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((e): e is RememberedCaret => !!e && typeof e.id === 'string' && !!e.state)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Bounded: a browser keeps the carets of its 50 most recently left writings. */
+function writeCarets(carets: RememberedCaret[]): void {
+  writeStudioValue(STUDIO_CARETS_KEY, JSON.stringify(carets.slice(0, STUDIO_CARETS_MAX)));
 }
 
 function readTypewriter(): boolean {
@@ -237,6 +228,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The open writing takes its name from its first line until it is renamed. */
   private autoTitle = false;
   private creatingFromBlank = false;
+  /** Which blank page is showing; a new one (New, or leaving) bumps it. */
+  private blankGeneration = 0;
+  /** What was last typed on each blank page, kept if it is left mid-create. */
+  private readonly blankPageTexts = new Map<number, string>();
+  /** After a failed create, the next attempt waits until this time. */
+  private blankRetryAt = 0;
+  /** Nudges the autosave once a blank page has become a writing. */
+  private readonly saveNudge = signal(0);
 
   /** While words are going onto the page, the chrome around it fades away. */
   isTyping = signal(false);
@@ -249,9 +248,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The keyboard shortcut sheet. */
   shortcutsOpen = signal(false);
   private compactDrawerCaret: MarkdownEditorTransientState | null = null;
-
-  /** Desktop file tree width. The divider is user-resizable; mobile owns its drawer width. */
-  leftSidebarWidth = signal(readStudioSidebarWidth());
 
   activeSidebarTab = signal<'brain' | 'notes'>('brain');
 
@@ -320,10 +316,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
       // Toggle still applies for the session even if it won't persist.
     }
     this.typewriter.set(next);
-  }
-
-  leftSidebarMaxWidth(): number {
-    return studioSidebarMaxWidth();
   }
 
   filesRailLabel(): string {
@@ -437,58 +429,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     void this.markdownEditor.restoreTransientState(state, this.editorText());
   }
 
-  startLeftSidebarResize(event: PointerEvent): void {
-    if (this.isCompact() || event.button !== 0) return;
-
-    const handle = event.currentTarget as HTMLElement | null;
-    if (!handle) return;
-
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = this.leftSidebarWidth();
-
-    handle.setPointerCapture?.(event.pointerId);
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      this.leftSidebarWidth.set(
-        clampStudioSidebarWidth(startWidth + moveEvent.clientX - startX),
-      );
-    };
-
-    const finish = (finishEvent: PointerEvent) => {
-      handle.removeEventListener('pointermove', onPointerMove);
-      handle.removeEventListener('pointerup', finish);
-      handle.removeEventListener('pointercancel', finish);
-      if (handle.hasPointerCapture?.(finishEvent.pointerId)) {
-        handle.releasePointerCapture(finishEvent.pointerId);
-      }
-      this.persistLeftSidebarWidth();
-    };
-
-    handle.addEventListener('pointermove', onPointerMove);
-    handle.addEventListener('pointerup', finish);
-    handle.addEventListener('pointercancel', finish);
-  }
-
-  resizeLeftSidebarWithKeyboard(event: KeyboardEvent): void {
-    if (this.isCompact()) return;
-
-    const delta = event.key === 'ArrowLeft' ? -16 : event.key === 'ArrowRight' ? 16 : 0;
-    if (delta === 0) return;
-
-    event.preventDefault();
-    this.leftSidebarWidth.set(clampStudioSidebarWidth(this.leftSidebarWidth() + delta));
-    this.persistLeftSidebarWidth();
-  }
-
-  private persistLeftSidebarWidth(): void {
-    try {
-      localStorage.setItem(STUDIO_SIDEBAR_WIDTH_KEY, String(this.leftSidebarWidth()));
-    } catch {
-      // Resizing still works for the session if storage is unavailable.
-    }
-  }
-
   /** Element that had focus when zen was entered; restored on exit. */
   private zenFocusReturn: HTMLElement | null = null;
 
@@ -581,7 +521,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
   constructor() {
     const onResize = () => {
       const compact = isStudioCompactViewport();
-      this.leftSidebarWidth.set(clampStudioSidebarWidth(this.leftSidebarWidth()));
 
       if (compact === this.isCompact()) return;
 
@@ -620,6 +559,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     effect((onCleanup) => {
       const text = this.editorText();
       const title = this.editorTitle();
+      this.saveNudge();
       const item = untracked(() => this.activeItem());
 
       if (!item) return;
@@ -680,12 +620,21 @@ export class WritingStudio implements OnInit, AfterViewInit {
       const title = titleFromMarkdown(markdown) || UNTITLED_DOCUMENT;
       if (title !== this.editorTitle()) this.editorTitle.set(title);
     }
-    if (this.blankPage() && !this.activeItem() && markdown.trim()) this.createFromBlankPage();
+    if (this.blankPage() && !this.activeItem()) {
+      this.blankPageTexts.set(this.blankGeneration, markdown);
+      if (markdown.trim() && Date.now() >= this.blankRetryAt) this.createFromBlankPage();
+    }
   }
 
   /** New, or no writing to return to: an empty page with the caret in it. */
   startBlankPage(): void {
     this.rememberCaret();
+    // Whatever was typed in the open writing in the last two seconds is saved,
+    // not dropped with the debounce the switch would cancel.
+    const open = this.activeItem();
+    if (open) void this.flushActiveWritingBeforeSource(open);
+    this.blankGeneration++;
+    this.blankRetryAt = 0;
     this.activeItem.set(null);
     this.blankPage.set(true);
     this.autoTitle = true;
@@ -708,16 +657,24 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private createFromBlankPage(): void {
     if (this.creatingFromBlank) return;
     this.creatingFromBlank = true;
+    const generation = this.blankGeneration;
     // Named on its first save, from its first line: at the first keystroke
     // the line is a single letter.
     this.writingsService.create({ name: UNTITLED_DOCUMENT, type: 'Document', parentId: null }).subscribe({
       next: (created) => {
         this.creatingFromBlank = false;
-        if (!this.blankPage()) return;
-        // Empty server content: the save lane then stores what is on the page.
+        if (generation !== this.blankGeneration || !this.blankPage()) {
+          // The page was left while this was in flight: its words still
+          // belong in the writing they created, not nowhere.
+          this.saveLeftBlankPage(created.id, generation);
+          return;
+        }
+        this.blankPageTexts.delete(generation);
+        // Empty server content: the nudge makes the save lane store the page.
         this.activeItem.set({ id: created.id, name: created.name, content: '', updatedAt: created.updatedAt });
         this.editorTitle.set(titleFromMarkdown(this.editorText()) || created.name);
         this.blankPage.set(false);
+        this.saveNudge.update((n) => n + 1);
         writeStudioValue(STUDIO_LAST_WRITING_KEY, created.id);
         this.recent.record({ kind: 'document', id: created.id, label: created.name, sub: 'Document' });
         this.loadTree();
@@ -725,8 +682,22 @@ export class WritingStudio implements OnInit, AfterViewInit {
       },
       error: () => {
         this.creatingFromBlank = false;
-        this.toast.error('Could not create a document');
+        // One message, then a pause: not a request and a toast per keystroke.
+        const first = this.blankRetryAt === 0;
+        this.blankRetryAt = Date.now() + 5000;
+        if (first) this.toast.error('Could not create a document. Your words are still on the page.');
       },
+    });
+  }
+
+  /** Stores what a blank page held when it was left before its writing existed. */
+  private saveLeftBlankPage(id: string, generation: number): void {
+    const content = this.blankPageTexts.get(generation) ?? '';
+    this.blankPageTexts.delete(generation);
+    const name = titleFromMarkdown(content) || UNTITLED_DOCUMENT;
+    this.writingsService.update(id, { name, content }).subscribe({
+      next: () => this.loadTree(),
+      error: () => this.toast.error('Could not save the page you left'),
     });
   }
 
@@ -743,17 +714,12 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const item = this.activeItem();
     const state = this.markdownEditor?.captureTransientState();
     if (!item || !state) return;
-    writeStudioValue(STUDIO_CARET_KEY_PREFIX + item.id, JSON.stringify(state));
+    const rest = readCarets().filter((entry) => entry.id !== item.id);
+    writeCarets([{ id: item.id, state }, ...rest]);
   };
 
   private restoreRememberedCaret(item: WritingContentDto): void {
-    const raw = readStudioValue(STUDIO_CARET_KEY_PREFIX + item.id);
-    let state: MarkdownEditorTransientState | null = null;
-    try {
-      state = raw ? (JSON.parse(raw) as MarkdownEditorTransientState) : null;
-    } catch {
-      state = null;
-    }
+    const state = readCarets().find((entry) => entry.id === item.id)?.state ?? null;
     const editor = () => this.markdownEditor;
     const apply = () => {
       if (this.activeItem()?.id !== item.id) return;
@@ -787,6 +753,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** A tap or click is deliberate: on touch screens it is how the chrome comes back. */
   private readonly onPointerDown = () => this.setTyping(false);
+
+  undoOnPage(): void {
+    this.markdownEditor?.undo();
+  }
 
   /** Words, characters, reading time: the corner stat cycles on click. */
   cycleStat(): void {
@@ -1127,13 +1097,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
     // Manual selection wins over any slower route-handoff request already in flight.
     this.handoffOpenGeneration++;
-    this.openWritingDocument(item.id, false);
+    this.openWritingDocument(item.id, false, undefined, true);
   }
 
   private openWritingDocument(
     id: string,
     fromHandoff: boolean,
     handoffGeneration?: number,
+    fromFileList = false,
   ): void {
     this.writingsService.get(id).subscribe({
       next: (contentDto) => {
@@ -1147,6 +1118,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
           this.rememberCaret();
           this.editorWordCount.set(null);
         }
+        if (this.blankPage()) this.blankGeneration++;
         this.blankPage.set(false);
         this.autoTitle = contentDto.name === UNTITLED_DOCUMENT;
         this.activeItem.set(contentDto);
@@ -1159,8 +1131,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.inspectedSource.set(null);
         this.moreSourceActionsOpen.set(false);
 
-        const drawerWasOpen = this.drawerOpen();
-        if (drawerWasOpen) {
+        // Choosing a writing in the file list closes the list; a handoff lands
+        // in the editor on a compact screen. A slow load never closes a
+        // slide-over the writer opened in the meantime.
+        if ((fromFileList || (fromHandoff && this.isCompact())) && this.drawerOpen()) {
           this.compactDrawerCaret = null;
           this.showFileSidebar.set(false);
           if (fromHandoff && this.isDrawer('reference')) this.showBrainSidebar.set(false);
@@ -1197,9 +1171,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     });
   }
 
-  /** A document made by New, opened once its name has been settled in the tree. */
-  private openAfterRenameId: string | null = null;
-
   /**
    * New document: a blank page with the caret in it, created on the server
    * with its first words (issue #1040). New folder: created now and named in
@@ -1213,7 +1184,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     }
     this.writingsService.create({ name: 'Untitled folder', type, parentId: null }).subscribe({
       next: (created) => {
-        this.openAfterRenameId = null;
         // The file list is a slide-over; the rename field has to be on
         // screen to be typed into.
         if (!this.showFileSidebar()) this.setRailOpen('files', true);
@@ -1222,14 +1192,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
       },
       error: () => this.toast.error('Could not create a folder'),
     });
-  }
-
-  /** Opens the document New just made, once its rename is over either way. */
-  private openCreatedDocument(id: string): void {
-    if (this.openAfterRenameId !== id) return;
-    this.openAfterRenameId = null;
-    this.handoffOpenGeneration++;
-    this.openWritingDocument(id, false);
   }
 
   startRename(node: any) {
@@ -1253,14 +1215,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
         // Named by hand: it no longer follows its first line.
         this.autoTitle = false;
       }
-      this.openCreatedDocument(id);
     });
   }
 
   cancelRename() {
-    const id = this.editingId();
     this.editingId.set(null);
-    if (id) this.openCreatedDocument(id);
   }
 
   /** Writing id awaiting delete confirmation (asked through ConfirmModal). */
@@ -1282,7 +1241,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.writingsService.delete(id).subscribe(() => {
       this.loadTree();
 
-      writeStudioValue(STUDIO_CARET_KEY_PREFIX + id, null);
+      writeCarets(readCarets().filter((entry) => entry.id !== id));
       if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) writeStudioValue(STUDIO_LAST_WRITING_KEY, null);
       if (this.activeItem()?.id === id) {
         // The page stays: a deleted writing leaves a blank one behind.
@@ -1775,7 +1734,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
         this.activeItem.set(updated);
         this.saveStatus.set('Saved');
-        if (title !== item.name) this.loadTree();
+        if (title !== item.name) {
+          this.loadTree();
+          this.recent.relabel('document', item.id, title);
+        }
       } catch (error) {
         if (generation === this.saveGeneration) this.saveStatus.set('Unsaved');
         throw error;

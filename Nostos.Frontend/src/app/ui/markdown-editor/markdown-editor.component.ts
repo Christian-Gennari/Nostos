@@ -156,10 +156,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     // it really differs, so a save echo never moves the caret.
     effect(() => {
       const markdown = this.initialContent();
-    // The bubble plugin attaches its element when a selection appears and
-    // removes it when it goes; rendered in place it would sit on the page as
-    // a bar. Angular keeps updating its bindings while it is detached.
-    this.bubble.nativeElement.remove();
       const editor = this.editor;
       if (
         editor &&
@@ -176,6 +172,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     if (this.destroyed) return;
     const markdown = this.initialContent();
+    // The bubble plugin attaches its element when a selection appears and
+    // removes it when it goes; rendered in place it would sit on the page as
+    // a bar. Angular keeps updating its bindings while it is detached.
+    this.bubble.nativeElement.remove();
 
     this.editor = new Editor({
       element: this.mount.nativeElement,
