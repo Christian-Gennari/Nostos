@@ -56,6 +56,29 @@ describe('buildPdfPageText', () => {
     ]);
   });
 
+  it('keeps a line whole when an OCR layer marks every word as ending a line', () => {
+    // Each word sits a little off the one before, as on a scan that is not
+    // quite straight. Read as one-word lines, that jitter would pass for the
+    // line spacing and every word would become a block of its own.
+    const word = (str: string, x: number, fromTop: number): PdfTextItem =>
+      run(str, x, fromTop, str.length * 6, true);
+    const page = buildPdfPageText(
+      [
+        word('tragic', 50, 200),
+        word('view', 92, 199.7),
+        word('of', 122, 199.5),
+        word('current', 140, 199.3),
+        word('societies;', 50, 216),
+        word('our', 116, 216.2),
+        word('societies', 140, 216.4),
+        word('fail.', 200, 216.6),
+      ],
+      PAGE,
+    );
+
+    expect(page.text).toBe('tragic view of current societies; our societies fail.');
+  });
+
   it('does not take the uneven word heights of a scanned page for headings', () => {
     const word = (str: string, x: number, fromTop: number, height: number, hasEOL = false): PdfTextItem => ({
       str,
@@ -105,10 +128,91 @@ describe('buildPdfPageText', () => {
 
     const alone = buildPdfPageText(items, PAGE);
     expect(alone.text).toContain('THE MAGIC MOUNTAIN');
-    expect(alone.marginLines).toEqual(['the magic mountain']);
+    expect(alone.marginLines.map((line) => line.key)).toContain('themagicmountain');
 
-    const withNeighbour = buildPdfPageText(items, PAGE, ['the magic mountain']);
+    const withNeighbour = buildPdfPageText(items, PAGE, [{ key: 'themagicmountain', size: 1, at: 30 / 800 - 12 / 800 }]);
     expect(withNeighbour.text).toBe('He had not meant to stay.');
+  });
+
+  it('finds the running header of a scan, set well inside the page and misread here and there', () => {
+    const neighbour = buildPdfPageText(
+      [run('66 GENEALOGY OF MORALS', 120, 110), run('the concept of revenge does not.', 50, 140)],
+      PAGE,
+    );
+    const page = buildPdfPageText(
+      [run('68 OENEALOOY OF MORALS', 120, 110), run('Perhaps in those days it was so.', 50, 140)],
+      PAGE,
+      neighbour.marginLines,
+    );
+
+    expect(page.text).toBe('Perhaps in those days it was so.');
+  });
+
+  it('reads a chapter title even when the pages after it repeat it as their header', () => {
+    const title: PdfTextItem = { str: 'The End', transform: [20, 0, 0, 20, 200, 800 - 160], width: 80, height: 20 };
+    const page = buildPdfPageText(
+      [title, run('Lying on his back, he opened his eyes.', 50, 220)],
+      PAGE,
+      // The header on the next page, set in the text's size.
+      [{ key: 'theend', size: 1, at: 0.05 }],
+    );
+
+    expect(page.text.split('\n')).toEqual(['The End', 'Lying on his back, he opened his eyes.']);
+  });
+
+  it('keeps the dated entries of a diary, which are not one running header', () => {
+    const neighbour = buildPdfPageText([run('January 22nd', 250, 60), run('Some text.', 50, 200)], PAGE);
+    const page = buildPdfPageText(
+      [run('January 23rd', 250, 60), run('Today was long.', 50, 200)],
+      PAGE,
+      neighbour.marginLines,
+    );
+
+    expect(page.text).toContain('January 23rd');
+  });
+
+  it('leaves out a page number set just outside the margin, but not a year under a title', () => {
+    const page = buildPdfPageText([run('Some text on the page.', 50, 300), run('6', 50, 745)], PAGE);
+    expect(page.text).toBe('Some text on the page.');
+
+    const partTitle = buildPdfPageText([run("Brodie's Report", 200, 150), run('(1970)', 260, 180)], PAGE);
+    expect(partTitle.text).toContain('(1970)');
+  });
+
+  it('reads small capitals and old-style figures a font keeps in private code points', () => {
+    const smallCaps = 'iberius'.replace(/./g, (ch) => String.fromCharCode(0xf700 + ch.charCodeAt(0)));
+    const oldStyle = String.fromCharCode(0xf731);
+    const page = buildPdfPageText([run(`The history of a T${smallCaps} in Part ${oldStyle}.`, 50, 300)], PAGE);
+
+    expect(page.text).toBe('The history of a Tiberius in Part 1.');
+  });
+
+  it('closes up letter-spaced text so it is not spelled out', () => {
+    const heading = buildPdfPageText([run('C O N T E N T S', 200, 300, 120, true), run('The opening.', 50, 340)], PAGE);
+    expect(heading.text).toContain('CONTENTS');
+
+    // Justified by spacing the letters: each word its own run, the word space a run of its own.
+    const line = buildPdfPageText(
+      [run('b u t', 50, 300, 20), run(' ', 70, 300, 6), run('r a t h e r', 76, 300, 34), run(' ', 110, 300, 6), run('d e p th s ,', 116, 300, 40)],
+      PAGE,
+    );
+    expect(line.text).toBe('but rather depths,');
+  });
+
+  it('puts a drop cap back on the first word of its paragraph', () => {
+    const cap: PdfTextItem = { str: 'T', transform: [43, 0, 0, 43, 50, 800 - 260], width: 26, height: 43 };
+    const page = buildPdfPageText(
+      [
+        run('January 18th', 250, 120, 72, true),
+        run('A heading', 50, 180, 54, true),
+        run('here are some turns of phrase', 78, 236, 180, true),
+        run('in this book.', 78, 252),
+        cap,
+      ],
+      PAGE,
+    );
+
+    expect(page.text.split('\n').at(-1)).toBe('There are some turns of phrase in this book.');
   });
 
   it('answers an empty page with no text', () => {
