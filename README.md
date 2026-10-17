@@ -124,7 +124,7 @@ On SelfHosted, you connect your own AI provider in **Settings → AI connections
 
 - **Portable:** export your whole library as a `.nostos` archive and import it into any Nostos, hosted or self-hosted.
 - **Use the files you already have (SelfHosted):** point Nostos at a folder of books on your server. It reads them in place and never changes them.
-- **Backups:** SelfHosted has local backup and restore. Nostos Cloud keeps managed backups you can restore from Settings.
+- **Backups:** SelfHosted has local backup and restore. Nostos Cloud makes daily managed backups, which you can see in Settings.
 - **OPDS:** browse and download your library from compatible e-reader apps.
 
 ---
