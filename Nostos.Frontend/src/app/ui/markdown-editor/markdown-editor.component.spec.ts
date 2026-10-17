@@ -130,13 +130,22 @@ describe('MarkdownEditorComponent', () => {
     expect(restored).toBe(true);
   });
 
-  it('offers no underline control, because Markdown cannot keep one', async () => {
+  it('has no toolbar: formatting lives in the selection bubble, with no underline', async () => {
     await create('Text.');
-    const labels = [...fixture.nativeElement.querySelectorAll('.editor-toolbar [aria-label]')].map(
-      (el: Element) => el.getAttribute('aria-label'),
-    );
+    expect(fixture.nativeElement.querySelector('.editor-toolbar')).toBeNull();
+    // The bubble is detached until a selection exists; its buttons are still there.
+    const bubble = (component as unknown as { bubble: { nativeElement: HTMLElement } }).bubble.nativeElement;
+    const labels = [...bubble.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label'));
     expect(labels).not.toContain('Underline');
-    expect(labels).toEqual(expect.arrayContaining(['Bold', 'Italic', 'Link', 'Image']));
+    expect(labels).toEqual(expect.arrayContaining(['Bold', 'Italic', 'Heading 2', 'Heading 3', 'Quote', 'Link']));
+  });
+
+  it('toggles a block style off when it is applied again', async () => {
+    await create('A line');
+    component.toggleBlock('h2');
+    expect(component.currentMarkdown()).toBe('## A line');
+    component.toggleBlock('h2');
+    expect(component.currentMarkdown()).toBe('A line');
   });
 
   it('toggles bold from the toolbar and saves it as Markdown', async () => {

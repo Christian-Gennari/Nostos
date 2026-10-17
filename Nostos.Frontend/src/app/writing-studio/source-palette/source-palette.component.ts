@@ -18,7 +18,6 @@ import { BooksService } from '../../core/services/books.service';
 import { CloudAuthService } from '../../core/services/cloud-auth.service';
 import { NotesService } from '../../core/services/notes.service';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
-import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import {
   PaletteChoice,
   PaletteInsertMode,
@@ -58,7 +57,7 @@ const DOCK_CLEARANCE = 104;
 @Component({
   selector: 'app-source-palette',
   standalone: true,
-  imports: [IconButtonComponent, NostosIconComponent],
+  imports: [IconButtonComponent],
   templateUrl: './source-palette.component.html',
   styleUrl: './source-palette.component.css',
   host: {

@@ -136,12 +136,6 @@ async function measureShell(page: import('@playwright/test').Page) {
   });
 }
 
-function expectToolbarGlyphAligned(measurement: Awaited<ReturnType<typeof measureShell>>): void {
-  expect(measurement.toolbarGlyphX).not.toBeNull();
-  expect(measurement.manuscriptTextX).not.toBeNull();
-  expect(Math.abs(measurement.toolbarTextDelta ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(2);
-}
-
 async function waitForEditorFonts(page: import('@playwright/test').Page): Promise<void> {
   await studioPage(page)
     .evaluate(async (body) => {
@@ -211,13 +205,11 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await waitForEditorFonts(page);
       await expect(page.locator('.header-doc-title')).toHaveAttribute('title', title);
       await expect(page.locator('.header-save-status')).toHaveText('Saved');
-      await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'true');
-      if (viewport.label === 'tablet-landscape') {
-        await page.locator('.sidebar-right').evaluate((element) => {
-          (element as HTMLElement).style.width = '280px';
-        });
-      }
+      // The page first (#1040): both rails are closed at rest and there is no
+      // formatting toolbar over the page.
+      await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.locator('app-markdown-editor .editor-toolbar')).toHaveCount(0);
 
       await page.waitForFunction(() => {
         const editor = document.querySelector('app-markdown-editor .nostos-manuscript-body');
@@ -226,73 +218,64 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         return true;
       });
 
-      const bothOpen = await measureShell(page);
-      expect(bothOpen.firstLineCharacters).toBeLessThanOrEqual(115);
-      expect(bothOpen.toolbarRows).toBeLessThanOrEqual(1);
-      if (viewport.label === 'desktop' || viewport.label === 'tablet-landscape') {
-        const expectedRailWidth = viewport.label === 'desktop' ? 360 : 280;
-        await expect
-          .poll(() =>
-            page
-              .locator('.sidebar-right')
-              .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
-          )
-          .toBe(expectedRailWidth);
+      const atRest = await measureShell(page);
+      expect(atRest.paneWidth).toBe(viewport.width);
+      expect(atRest.firstLineCharacters).toBeLessThanOrEqual(115);
+      if (viewport.label === 'desktop') {
+        // No rails: the manuscript keeps its 820px measure and the prose >700px.
+        expect(atRest.manuscriptWidth).toBe(820);
+        expect(atRest.manuscriptTextWidth).toBeGreaterThan(700);
       }
-      if (viewport.label === 'desktop') expectToolbarGlyphAligned(bothOpen);
       console.log(
-        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} both-open ${JSON.stringify(bothOpen)}`,
+        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} at-rest ${JSON.stringify(atRest)}`,
       );
 
-      await page.locator('.files-toggle').click();
-      await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.locator('.sidebar-left')).toBeHidden();
-      await expect(page.locator('.sidebar-right')).toBeVisible();
-      await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-files-hidden`);
-
+      // Files slides over the page: it dims it, never resizes it.
       await page.locator('.files-toggle').click();
       await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'true');
       await expect(page.locator('.sidebar-left')).toBeVisible();
+      await expect(page.locator('.backdrop.visible')).toHaveCount(1);
+      expect((await measureShell(page)).paneWidth).toBe(viewport.width);
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.locator('.files-toggle')).toBeFocused();
+      await expect(page.locator('.sidebar-left')).toBeHidden();
       await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-files-shown`);
+      await typeAfterLayoutChange(page, `${viewport.label}-files-closed`);
 
+      // One slide-over at a time.
       await page.locator('.reference-toggle').click();
+      await expect(page.locator('.sidebar-right')).toBeVisible();
+      await page.locator('.backdrop.visible').click({ position: { x: 20, y: 400 } });
       await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
       await expect(page.locator('.sidebar-right')).toBeHidden();
-      await expect(page.locator('.sidebar-left')).toBeVisible();
       await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-reference-hidden`);
+      await typeAfterLayoutChange(page, `${viewport.label}-reference-closed`);
 
+      // Pinned, Reference sits beside the page and the page makes room.
       await page.locator('.reference-toggle').click();
-      await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'true');
+      await page.locator('.reference-pin').click();
+      await expect(page.locator('.backdrop.visible')).toHaveCount(0);
       await expect(page.locator('.sidebar-right')).toBeVisible();
-      await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-reference-shown`);
-
+      // The rail's width eases in; measure once it has settled.
+      const railWidthNow = () =>
+        page.locator('.sidebar-right').evaluate((element) => Math.round(element.getBoundingClientRect().width));
+      await expect
+        .poll(async () => (await measureShell(page)).paneWidth + (await railWidthNow()))
+        .toBe(viewport.width);
+      const pinned = await measureShell(page);
+      expect(await railWidthNow()).toBeGreaterThan(0);
+      expect(pinned.firstLineCharacters).toBeLessThanOrEqual(115);
       await page.locator('.files-toggle').click();
-      await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.locator('.sidebar-right')).toBeVisible();
+      await page.keyboard.press('Escape');
       await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-both-hidden`);
-      await page.locator('.reference-toggle').click();
-      await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
-      await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-both-collapsed`);
-
-      const bothCollapsed = await measureShell(page);
-      expect(bothCollapsed.paneWidth).toBe(viewport.width);
-      expect(bothCollapsed.firstLineCharacters).toBeLessThanOrEqual(115);
-      expect(bothCollapsed.toolbarRows).toBeLessThanOrEqual(1);
-      if (viewport.label === 'desktop') {
-        // No sidebars: the manuscript should no longer be a 600px island
-        // centered in a much wider pane. The prose itself gets >700px.
-        expect(bothCollapsed.manuscriptWidth).toBe(820);
-        expect(bothCollapsed.manuscriptTextWidth).toBeGreaterThan(700);
-      }
+      await typeAfterLayoutChange(page, `${viewport.label}-pinned`);
       console.log(
-        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} both-collapsed ${JSON.stringify(bothCollapsed)}`,
+        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} pinned ${JSON.stringify(pinned)}`,
       );
-      if (viewport.label === 'desktop') expectToolbarGlyphAligned(bothCollapsed);
+      await page.locator('.reference-pin').click();
+      await expect(page.locator('.sidebar-right')).toBeHidden();
 
       if (viewport.label === 'desktop') {
         const keyboardFilesToggle = page.locator('.files-toggle');
@@ -309,44 +292,17 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
           );
         });
         expect(keyboardFocusIndicatorVisible).toBe(true);
-        await page.keyboard.press('Enter');
-        await expect(keyboardFilesToggle).toHaveAttribute('aria-expanded', 'true');
-        await typeAfterLayoutChange(page, 'keyboard-files-open');
-        await keyboardFilesToggle.focus();
-        await page.keyboard.press('Enter');
-        await expect(keyboardFilesToggle).toHaveAttribute('aria-expanded', 'false');
-        await typeAfterLayoutChange(page, 'keyboard-files-closed');
 
-        const railStates = [
-          { files: true, reference: true },
-          { files: true, reference: false },
-          { files: false, reference: true },
-          { files: false, reference: false },
-        ];
+        // Focus mode leaves the rails as they were.
+        await page.locator('.zen-toggle').click();
+        await expect(page.locator('.zen-exit')).toBeVisible();
+        await expect(page.locator('body')).toHaveClass(/nostos-zen/);
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.zen-exit')).toHaveCount(0);
+        await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
+        await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
 
-        for (const state of railStates) {
-          const filesToggle = page.locator('.files-toggle');
-          const referenceToggle = page.locator('.reference-toggle');
-          if ((await filesToggle.getAttribute('aria-expanded')) !== String(state.files)) {
-            await filesToggle.click();
-          }
-          if ((await referenceToggle.getAttribute('aria-expanded')) !== String(state.reference)) {
-            await referenceToggle.click();
-          }
-
-          await page.locator('.zen-toggle').click();
-          await expect(page.locator('.zen-exit')).toBeVisible();
-          await expect(page.locator('body')).toHaveClass(/nostos-zen/);
-          await page.keyboard.press('Escape');
-          await expect(page.locator('.zen-exit')).toHaveCount(0);
-          await expect(page.locator('body')).not.toHaveClass(/nostos-zen/);
-          await expect(filesToggle).toHaveAttribute('aria-expanded', String(state.files));
-          await expect(referenceToggle).toHaveAttribute(
-            'aria-expanded',
-            String(state.reference),
-          );
-        }
-
+        // Reference keeps its place across closing and reopening the slide-over.
         await page.locator('.reference-toggle').click();
         await page.getByRole('tab', { name: 'Library', exact: true }).click();
         const libraryTabsChrome = await page.locator('.library-tabs').evaluate((element) => {
@@ -360,8 +316,6 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
             tabHeights: buttons.map((button) => button.getBoundingClientRect().height),
           };
         });
-        // Topics/Books is a filter under the Reference switch, not a second
-        // tab bar: no tray behind it and no underline, only a filled selection.
         expect(libraryTabsChrome.trackBottomBorder).toBe('0px');
         expect(libraryTabsChrome.trackBackground).toBe('rgba(0, 0, 0, 0)');
         expect(libraryTabsChrome.activeBackground).not.toBe('rgba(0, 0, 0, 0)');
@@ -386,7 +340,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         });
         expect(referenceScroll.max).toBeGreaterThan(0);
 
-        await page.locator('.reference-toggle').click();
+        await page.locator('.reference-rail-collapse').click();
         await expect(page.locator('.sidebar-right')).toBeHidden();
         await page.locator('.reference-toggle').click();
         await expect(page.locator('.sidebar-right')).toBeVisible();
@@ -406,42 +360,16 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         await page.locator('.reference-note-list .reference-source-row-main').first().click();
         const inspectedSource = page.locator('.inspected-source-panel');
         await expect(inspectedSource).toContainText('Reference rail state note 1');
-        await page.locator('.reference-toggle').click();
+        await page.locator('.reference-rail-collapse').click();
         await expect(page.locator('.sidebar-right')).toBeHidden();
         await page.locator('.reference-toggle').click();
         await expect(page.locator('.sidebar-right')).toBeVisible();
         await expect(inspectedSource).toContainText('Reference rail state note 1');
-        await expect(page.getByRole('tab', { name: 'Library', exact: true })).toHaveAttribute(
-          'aria-selected',
-          'true',
-        );
-        await expect(page.getByRole('tab', { name: 'Books', exact: true })).toHaveAttribute(
-          'aria-selected',
-          'true',
-        );
         await expect(page.locator('.inspected-source-context')).toHaveText(
           'Back to ' + referenceBookTitle,
         );
-        await page.locator('.reference-toggle').click();
-      }
-
-      await page.locator('.files-toggle').click();
-      await typeAfterLayoutChange(page, `${viewport.label}-restore-files`);
-      await page.locator('.reference-toggle').click();
-      await typeAfterLayoutChange(page, `${viewport.label}-restore-reference`);
-
-      if (viewport.label === 'tablet-landscape') {
-        await page.locator('.files-toggle').click();
-        await typeAfterLayoutChange(page, 'reload-files-preference');
-        await expect(page.locator('.header-save-status')).toHaveText('Saved', {
-          timeout: 20_000,
-        });
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
-        await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'true');
-        await expect(editorBody).toContainText('Attention is less a private talent');
-        await page.locator('.files-toggle').click();
-        await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Escape');
+        await expect(page.locator('.sidebar-right')).toBeHidden();
       }
     }
 
@@ -478,7 +406,6 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       expect(drawersClosed.firstLineCharacters).toBeGreaterThanOrEqual(45);
       expect(drawersClosed.toolbarRows).toBeLessThanOrEqual(1);
       if (viewport.label === 'phone') {
-        expectToolbarGlyphAligned(drawersClosed);
         // The mobile manuscript still fills the phone and uses its existing face.
         expect(drawersClosed.manuscriptWidth).toBe(viewport.width);
         expect(drawersClosed.manuscriptFontSize).toBe('17px');
@@ -494,7 +421,6 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         'false',
       );
       const filesDrawerOpen = await measureShell(compactPage);
-      if (viewport.label === 'phone') expectToolbarGlyphAligned(filesDrawerOpen);
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} files-drawer ${JSON.stringify(filesDrawerOpen)}`,
       );
@@ -529,7 +455,6 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
             .evaluate((element) => element.getBoundingClientRect().width),
         )
         .toBe(expectedReferenceDrawerWidth);
-      if (viewport.label === 'phone') expectToolbarGlyphAligned(referenceDrawerOpen);
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} reference-drawer ${JSON.stringify(referenceDrawerOpen)}`,
       );
@@ -654,15 +579,12 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         expect(header.wordCountClearOfManuscript).toBe(true);
         console.log(`[studio-shell] phone header ${JSON.stringify(header)}`);
 
+        // With no writing to return to, /studio is a blank page, not an empty state.
+        await compactPage.evaluate(() => localStorage.removeItem('nostos.studio.lastWritingId'));
         await compactPage.goto(`${baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
-        await expect(compactPage.locator('.empty-state h2')).toHaveText(
-          'Open a document to begin writing',
-        );
-        await expect(compactPage.locator('.empty-subtext')).toHaveText(
-          'Choose one from Files, or start a new document.',
-        );
-        await expect(compactPage.locator('.empty-new-document')).toBeVisible();
-        await expect(compactPage.locator('.empty-browse-files')).toBeVisible();
+        await expect(compactPage.locator('.header-doc-title')).toHaveText('New page');
+        await expect(compactPage.locator('.empty-state')).toHaveCount(0);
+        await expect(studioPage(compactPage)).toBeVisible();
         const referenceToggle = compactPage.locator('.reference-toggle');
         await expect(referenceToggle).toHaveAttribute('aria-expanded', 'false');
         await referenceToggle.click();

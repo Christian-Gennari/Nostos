@@ -17,115 +17,98 @@ app-markdown-editor {
   background: var(--manuscript-paper);
 }
 
-/* --- Toolbar: one quiet, shallow strip --------------------------------- */
+/* --- The selection bubble (issue #1040) ---------------------------------
+   No toolbar sits over the page. Formatting appears where text is selected,
+   positioned by TipTap's bubble menu (which owns visibility and placement). */
 
-app-markdown-editor .editor-toolbar {
-  flex: 0 0 auto;
-  background: var(--editor-ui-bg, var(--bg-surface));
-  border-bottom: 1px solid var(--border-color);
-}
-
-app-markdown-editor .editor-toolbar-row {
+app-markdown-editor .editor-bubble {
+  /* Measured before it is first placed: as a block it spanned the page and
+     the placement clamped it into the corner. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: max-content;
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 2px;
-  box-sizing: border-box;
-  max-width: var(--manuscript-measure);
-  min-height: 44px;
-  margin-inline: auto;
-  padding: 4px var(--manuscript-gutter);
-  padding-inline-start: calc(var(--manuscript-gutter) - 8px);
-  overflow-x: auto;
-  scrollbar-width: none;
+  padding: 3px;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
 }
 
-app-markdown-editor .editor-toolbar-row::-webkit-scrollbar {
-  display: none;
-}
-
-app-markdown-editor .editor-toolbar-sep {
-  flex: 0 0 1px;
-  align-self: stretch;
-  margin: 8px 4px;
-  background: var(--border-color);
-}
-
-app-markdown-editor .editor-block-select {
-  flex: 0 0 auto;
-  min-width: 118px;
-}
-
-app-markdown-editor .editor-mark-btn {
-  flex: 0 0 auto;
+app-markdown-editor .editor-bubble-btn {
+  min-width: 32px;
   height: 32px;
-  color: var(--color-text-muted);
+  padding: 0 7px;
+  color: var(--manuscript-ink-soft);
   background: transparent;
   border: 0;
   border-radius: var(--radius-sm, 4px);
-  font-family: 'Hanken Grotesk', system-ui, sans-serif;
-  font-size: 0.86rem;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
   cursor: pointer;
   transition:
     color 120ms ease,
     background-color 120ms ease;
 }
 
-app-markdown-editor .editor-mark-btn {
-  min-width: 32px;
-  padding: 0 6px;
-}
-
-app-markdown-editor .editor-mark-bold {
-  font-weight: 700;
-}
-
 app-markdown-editor .editor-mark-italic {
   font-family: Newsreader, Georgia, serif;
   font-size: 1rem;
   font-style: italic;
+  font-weight: 400;
 }
 
-app-markdown-editor .editor-mark-btn:hover {
-  color: var(--color-text-main);
-  background: var(--bg-hover);
+app-markdown-editor .editor-mark-quote {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
-app-markdown-editor .editor-mark-btn.active {
-  color: var(--color-text-main);
-  background: var(--color-accent-bg);
+app-markdown-editor .editor-bubble-btn:hover {
+  color: var(--manuscript-ink);
+  background: var(--manuscript-selection);
 }
 
-app-markdown-editor .editor-mark-btn:focus-visible {
+app-markdown-editor .editor-bubble-btn.active {
+  color: var(--manuscript-ink);
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .editor-bubble-btn:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 
-app-markdown-editor .editor-url-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  max-width: var(--manuscript-measure);
-  margin-inline: auto;
-  padding: 0 var(--manuscript-gutter) 8px;
-  font-family: 'Hanken Grotesk', system-ui, sans-serif;
-  font-size: 0.86rem;
+app-markdown-editor .editor-bubble-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 3px;
+  background: var(--manuscript-rule);
 }
 
-app-markdown-editor .editor-url-label {
-  color: var(--color-text-muted);
+app-markdown-editor .editor-bubble-url {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 app-markdown-editor .editor-url-input {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: min(280px, 60vw);
   height: 32px;
   padding: 0 10px;
-  color: var(--color-text-main);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule);
   border-radius: var(--radius-sm, 4px);
   font: inherit;
+  font-size: 0.86rem;
 }
 
 app-markdown-editor .editor-url-input:focus-visible {
@@ -133,34 +116,14 @@ app-markdown-editor .editor-url-input:focus-visible {
   outline-offset: 0;
 }
 
-app-markdown-editor .editor-url-apply,
-app-markdown-editor .editor-url-cancel {
-  height: 32px;
-  padding: 0 12px;
-  color: var(--color-text-main);
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm, 4px);
-  font: inherit;
-  cursor: pointer;
-}
-
-app-markdown-editor .editor-url-apply {
-  color: var(--bg-surface);
-  background: var(--color-text-main);
-  border-color: var(--color-text-main);
-}
-
-@media (max-width: 768px), (pointer: coarse) {
-  /* 44px targets put the 16px glyph 14px inside its button, not 8px; keep the
-     first glyph on the manuscript's text edge. */
-  app-markdown-editor .editor-toolbar-row {
-    padding-inline-start: calc(var(--manuscript-gutter) - 14px);
+@media (pointer: coarse) {
+  app-markdown-editor .editor-bubble-btn,
+  app-markdown-editor .editor-bubble .editor-bubble-link {
+    min-width: 44px;
+    height: 44px;
   }
 
-  app-markdown-editor .editor-toolbar-row > button,
-  app-markdown-editor .editor-mark-btn {
-    min-width: 44px;
+  app-markdown-editor .editor-url-input {
     height: 44px;
   }
 }

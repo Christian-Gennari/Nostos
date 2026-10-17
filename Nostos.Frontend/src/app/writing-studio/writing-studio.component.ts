@@ -62,12 +62,16 @@ import {
 
 /** localStorage flag for typewriter mode in the studio. */
 const TYPEWRITER_KEY = 'nostos.typewriter';
-const STUDIO_SIDEBAR_WIDTH_KEY = 'nostos.studio.leftSidebarWidth';
-const STUDIO_FILES_RAIL_KEY = 'nostos.studio.filesRailOpen';
-const STUDIO_REFERENCE_RAIL_KEY = 'nostos.studio.referenceRailOpen';
-const STUDIO_SIDEBAR_MIN = 220;
-const STUDIO_SIDEBAR_MAX = 420;
-const STUDIO_SIDEBAR_DEFAULT_MAX = 280;
+/** Whether Reference sits beside the page on a wide screen (issue #1040). */
+const STUDIO_REFERENCE_PIN_KEY = 'nostos.studio.referencePinned';
+/** The writing the Studio opens on next time. */
+const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
+/** Where the caret and scroll were in recently left writings, newest first. */
+const STUDIO_CARETS_KEY = 'nostos.studio.carets';
+const STUDIO_CARETS_MAX = 50;
+const UNTITLED_DOCUMENT = 'Untitled document';
+/** Average adult silent-reading pace, for the reading-time stat. */
+const READING_WORDS_PER_MINUTE = 238;
 const STUDIO_COMPACT_WIDTH = 900;
 const STUDIO_COMPACT_HEIGHT = 500;
 
@@ -78,41 +82,67 @@ function isStudioCompactViewport(): boolean {
 type ReferenceLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type ReferenceScrollKey = 'writing' | 'topics' | 'topicNotes' | 'books' | 'bookNotes';
 
-function studioSidebarMaxWidth(): number {
-  return Math.max(
-    STUDIO_SIDEBAR_MIN,
-    Math.min(STUDIO_SIDEBAR_MAX, Math.floor(window.innerWidth * 0.42)),
-  );
-}
-
-function clampStudioSidebarWidth(width: number): number {
-  return Math.min(studioSidebarMaxWidth(), Math.max(STUDIO_SIDEBAR_MIN, Math.round(width)));
-}
-
-function readStudioSidebarWidth(): number {
+function readStudioFlag(key: string): boolean {
   try {
-    const stored = Number(localStorage.getItem(STUDIO_SIDEBAR_WIDTH_KEY));
-    return Number.isFinite(stored) && stored > 0
-      ? clampStudioSidebarWidth(stored)
-      : Math.max(
-          STUDIO_SIDEBAR_MIN,
-          Math.min(STUDIO_SIDEBAR_DEFAULT_MAX, Math.floor(window.innerWidth * 0.24)),
-        );
+    return localStorage.getItem(key) === '1';
   } catch {
-    return Math.max(
-      STUDIO_SIDEBAR_MIN,
-      Math.min(STUDIO_SIDEBAR_DEFAULT_MAX, Math.floor(window.innerWidth * 0.24)),
-    );
+    return false;
   }
 }
 
-function readStudioRailOpen(key: string): boolean {
+function writeStudioValue(key: string, value: string | null): void {
   try {
-    const stored = localStorage.getItem(key);
-    return stored === null ? true : stored === '1';
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
   } catch {
-    return true;
+    // A convenience only: the Studio works the same without storage.
   }
+}
+
+function readStudioValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The name a writing gets from its own first line while it has none of its
+ * own: Markdown markers off, at most 80 characters, cut at a word.
+ */
+export function titleFromMarkdown(markdown: string): string {
+  const line = (markdown ?? '')
+    .split('\n')
+    .map((l) => l.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '').replace(/[*_`~]/g, '').trim())
+    // A line of only markers or punctuation ("#", "---") names nothing.
+    .find((l) => /[\p{L}\p{N}]/u.test(l));
+  if (!line) return '';
+  if (line.length <= 80) return line;
+  const cut = line.slice(0, 80);
+  const space = cut.lastIndexOf(' ');
+  return (space > 40 ? cut.slice(0, space) : cut).trim() + '…';
+}
+
+interface RememberedCaret {
+  id: string;
+  state: MarkdownEditorTransientState;
+}
+
+function readCarets(): RememberedCaret[] {
+  try {
+    const parsed = JSON.parse(readStudioValue(STUDIO_CARETS_KEY) ?? '[]') as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((e): e is RememberedCaret => !!e && typeof e.id === 'string' && !!e.state)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Bounded: a browser keeps the carets of its 50 most recently left writings. */
+function writeCarets(carets: RememberedCaret[]): void {
+  writeStudioValue(STUDIO_CARETS_KEY, JSON.stringify(carets.slice(0, STUDIO_CARETS_MAX)));
 }
 
 function readTypewriter(): boolean {
@@ -183,16 +213,41 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   private readonly initialCompactMode = isStudioCompactViewport();
   isCompact = signal(this.initialCompactMode);
-  showFileSidebar = signal(
-    !this.initialCompactMode && readStudioRailOpen(STUDIO_FILES_RAIL_KEY),
-  );
-  showBrainSidebar = signal(
-    !this.initialCompactMode && readStudioRailOpen(STUDIO_REFERENCE_RAIL_KEY),
-  );
-  private compactDrawerCaret: MarkdownEditorTransientState | null = null;
+  /**
+   * Reference beside the page instead of over it (issue #1040). A preference
+   * for people who write with sources in view; the page-first default is off.
+   */
+  referencePinned = signal(readStudioFlag(STUDIO_REFERENCE_PIN_KEY));
+  // The page comes first: the file list is always a slide-over, and Reference
+  // is one too unless pinned beside the page on a wide screen.
+  showFileSidebar = signal(false);
+  showBrainSidebar = signal(!this.initialCompactMode && readStudioFlag(STUDIO_REFERENCE_PIN_KEY));
 
-  /** Desktop file tree width. The divider is user-resizable; mobile owns its drawer width. */
-  leftSidebarWidth = signal(readStudioSidebarWidth());
+  /** A blank page with no writing behind it yet; the first words create one. */
+  blankPage = signal(false);
+  /** The open writing takes its name from its first line until it is renamed. */
+  private autoTitle = false;
+  private creatingFromBlank = false;
+  /** Which blank page is showing; a new one (New, or leaving) bumps it. */
+  private blankGeneration = 0;
+  /** What was last typed on each blank page, kept if it is left mid-create. */
+  private readonly blankPageTexts = new Map<number, string>();
+  /** After a failed create, the next attempt waits until this time. */
+  private blankRetryAt = 0;
+  /** Nudges the autosave once a blank page has become a writing. */
+  private readonly saveNudge = signal(0);
+
+  /** While words are going onto the page, the chrome around it fades away. */
+  isTyping = signal(false);
+  private lastPointer: { x: number; y: number } | null = null;
+
+  /** Which statistic the corner shows; clicking it cycles them. */
+  statMode = signal<'words' | 'characters' | 'reading'>('words');
+  editorCharacterCount = signal(0);
+
+  /** The keyboard shortcut sheet. */
+  shortcutsOpen = signal(false);
+  private compactDrawerCaret: MarkdownEditorTransientState | null = null;
 
   activeSidebarTab = signal<'brain' | 'notes'>('brain');
 
@@ -263,10 +318,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.typewriter.set(next);
   }
 
-  leftSidebarMaxWidth(): number {
-    return studioSidebarMaxWidth();
-  }
-
   filesRailLabel(): string {
     return this.showFileSidebar() ? 'Hide files' : 'Show files';
   }
@@ -295,6 +346,29 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.setRailOpen('files', true);
   }
 
+  /** Whether a rail slides over the page (true) or sits beside it (pinned Reference). */
+  isDrawer(rail: 'files' | 'reference'): boolean {
+    return this.isCompact() || rail === 'files' || !this.referencePinned();
+  }
+
+  /** Whether an open slide-over is dimming the page. */
+  drawerOpen(): boolean {
+    return (
+      (this.showFileSidebar() && this.isDrawer('files')) ||
+      (this.showBrainSidebar() && this.isDrawer('reference'))
+    );
+  }
+
+  /** Pin Reference beside the page, or let it slide over it again. */
+  toggleReferencePin(): void {
+    const pinned = !this.referencePinned();
+    this.referencePinned.set(pinned);
+    writeStudioValue(STUDIO_REFERENCE_PIN_KEY, pinned ? '1' : '0');
+    this.compactDrawerCaret = null;
+    this.showBrainSidebar.set(pinned && !this.isCompact());
+    if (!pinned) this.focusHeaderRailToggle('reference');
+  }
+
   private setRailOpen(
     rail: 'files' | 'reference',
     open: boolean,
@@ -303,11 +377,12 @@ export class WritingStudio implements OnInit, AfterViewInit {
   ): void {
     const isFiles = rail === 'files';
 
-    if (this.isCompact()) {
+    if (this.isDrawer(rail)) {
       if (open) {
         this.captureCompactDrawerCaret();
-        if (isFiles) this.showBrainSidebar.set(false);
-        else this.showFileSidebar.set(false);
+        // One slide-over at a time; a pinned Reference column stays.
+        if (isFiles && this.isDrawer('reference')) this.showBrainSidebar.set(false);
+        if (!isFiles) this.showFileSidebar.set(false);
         if (isFiles) this.showFileSidebar.set(true);
         else this.showBrainSidebar.set(true);
         this.focusDrawerCollapse(rail);
@@ -321,24 +396,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
       return;
     }
 
-    if (isFiles) this.showFileSidebar.set(open);
-    else this.showBrainSidebar.set(open);
-    this.persistStudioRailOpen(
-      isFiles ? STUDIO_FILES_RAIL_KEY : STUDIO_REFERENCE_RAIL_KEY,
-      open,
-    );
-
+    this.showBrainSidebar.set(open);
     // The heading control is removed with its rail when it collapses, so return
     // focus to the persistent editor-header toggle in that case.
     if (!open && fromHeading) this.focusHeaderRailToggle(rail);
-  }
-
-  private persistStudioRailOpen(key: string, open: boolean): void {
-    try {
-      localStorage.setItem(key, open ? '1' : '0');
-    } catch {
-      // The rail still toggles for this session when storage is unavailable.
-    }
   }
 
   private focusHeaderRailToggle(rail: 'files' | 'reference'): void {
@@ -366,58 +427,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.compactDrawerCaret = null;
     if (!state || !this.activeItem() || !this.markdownEditor) return;
     void this.markdownEditor.restoreTransientState(state, this.editorText());
-  }
-
-  startLeftSidebarResize(event: PointerEvent): void {
-    if (this.isCompact() || event.button !== 0) return;
-
-    const handle = event.currentTarget as HTMLElement | null;
-    if (!handle) return;
-
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = this.leftSidebarWidth();
-
-    handle.setPointerCapture?.(event.pointerId);
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      this.leftSidebarWidth.set(
-        clampStudioSidebarWidth(startWidth + moveEvent.clientX - startX),
-      );
-    };
-
-    const finish = (finishEvent: PointerEvent) => {
-      handle.removeEventListener('pointermove', onPointerMove);
-      handle.removeEventListener('pointerup', finish);
-      handle.removeEventListener('pointercancel', finish);
-      if (handle.hasPointerCapture?.(finishEvent.pointerId)) {
-        handle.releasePointerCapture(finishEvent.pointerId);
-      }
-      this.persistLeftSidebarWidth();
-    };
-
-    handle.addEventListener('pointermove', onPointerMove);
-    handle.addEventListener('pointerup', finish);
-    handle.addEventListener('pointercancel', finish);
-  }
-
-  resizeLeftSidebarWithKeyboard(event: KeyboardEvent): void {
-    if (this.isCompact()) return;
-
-    const delta = event.key === 'ArrowLeft' ? -16 : event.key === 'ArrowRight' ? 16 : 0;
-    if (delta === 0) return;
-
-    event.preventDefault();
-    this.leftSidebarWidth.set(clampStudioSidebarWidth(this.leftSidebarWidth() + delta));
-    this.persistLeftSidebarWidth();
-  }
-
-  private persistLeftSidebarWidth(): void {
-    try {
-      localStorage.setItem(STUDIO_SIDEBAR_WIDTH_KEY, String(this.leftSidebarWidth()));
-    } catch {
-      // Resizing still works for the session if storage is unavailable.
-    }
   }
 
   /** Element that had focus when zen was entered; restored on exit. */
@@ -512,7 +521,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
   constructor() {
     const onResize = () => {
       const compact = isStudioCompactViewport();
-      this.leftSidebarWidth.set(clampStudioSidebarWidth(this.leftSidebarWidth()));
 
       if (compact === this.isCompact()) return;
 
@@ -523,8 +531,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.showBrainSidebar.set(false);
       } else {
         this.compactDrawerCaret = null;
-        this.showFileSidebar.set(readStudioRailOpen(STUDIO_FILES_RAIL_KEY));
-        this.showBrainSidebar.set(readStudioRailOpen(STUDIO_REFERENCE_RAIL_KEY));
+        this.showFileSidebar.set(false);
+        this.showBrainSidebar.set(this.referencePinned());
       }
     };
 
@@ -533,8 +541,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
     // Zen mode: Esc exits focus mode; listener removed on destroy.
     window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('pointermove', this.onPointerMove, { passive: true });
+    window.addEventListener('pointerdown', this.onPointerDown, { passive: true });
+    window.addEventListener('pagehide', this.rememberCaret);
     this.destroyRef.onDestroy(() => {
+      this.rememberCaret();
       window.removeEventListener('keydown', this.onKeyDown);
+      window.removeEventListener('pointermove', this.onPointerMove);
+      window.removeEventListener('pointerdown', this.onPointerDown);
+      window.removeEventListener('pagehide', this.rememberCaret);
+      document.body.classList.remove('nostos-studio-typing');
       this.writingHandoffSubscription?.unsubscribe();
       // Never leave the body class behind if the component is torn down mid-zen.
       document.body.classList.remove('nostos-zen');
@@ -543,6 +559,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     effect((onCleanup) => {
       const text = this.editorText();
       const title = this.editorTitle();
+      this.saveNudge();
       const item = untracked(() => this.activeItem());
 
       if (!item) return;
@@ -584,32 +601,235 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   closeSidebars() {
-    if (!this.isCompact()) return;
-    const returnTo: 'files' | 'reference' = this.showFileSidebar() ? 'files' : 'reference';
+    if (!this.drawerOpen()) return;
+    const returnTo: 'files' | 'reference' =
+      this.showFileSidebar() && this.isDrawer('files') ? 'files' : 'reference';
     this.showFileSidebar.set(false);
-    this.showBrainSidebar.set(false);
+    if (this.isDrawer('reference')) this.showBrainSidebar.set(false);
     this.focusHeaderRailToggle(returnTo);
     this.restoreCompactDrawerCaret();
+  }
+
+  // --- The page first (issue #1040) ---
+
+  /** The editor reported new Markdown: keep it, name an untitled writing, fade the chrome. */
+  onEditorChange(markdown: string): void {
+    this.editorText.set(markdown);
+    this.setTyping(true);
+    if (this.autoTitle) {
+      const title = titleFromMarkdown(markdown) || UNTITLED_DOCUMENT;
+      if (title !== this.editorTitle()) this.editorTitle.set(title);
+    }
+    if (this.blankPage() && !this.activeItem()) {
+      this.blankPageTexts.set(this.blankGeneration, markdown);
+      if (markdown.trim() && Date.now() >= this.blankRetryAt) this.createFromBlankPage();
+    }
+  }
+
+  /** New, or no writing to return to: an empty page with the caret in it. */
+  startBlankPage(): void {
+    this.rememberCaret();
+    // Whatever was typed in the open writing in the last two seconds is saved,
+    // not dropped with the debounce the switch would cancel.
+    const open = this.activeItem();
+    if (open) void this.flushActiveWritingBeforeSource(open);
+    this.blankGeneration++;
+    this.blankRetryAt = 0;
+    this.activeItem.set(null);
+    this.blankPage.set(true);
+    this.autoTitle = true;
+    this.editorWordCount.set(null);
+    this.editorText.set('');
+    this.editorTitle.set('');
+    this.keptSources.set([]);
+    this.inspectedSource.set(null);
+    if (this.showFileSidebar() && this.isDrawer('files')) {
+      this.showFileSidebar.set(false);
+      this.compactDrawerCaret = null;
+    }
+    this.focusPageSoon();
+  }
+
+  /**
+   * The first words on a blank page create its writing. Nothing is created
+   * for a page left empty, so abandoned blank pages leave no files behind.
+   */
+  private createFromBlankPage(): void {
+    if (this.creatingFromBlank) return;
+    this.creatingFromBlank = true;
+    const generation = this.blankGeneration;
+    // Named on its first save, from its first line: at the first keystroke
+    // the line is a single letter.
+    this.writingsService.create({ name: UNTITLED_DOCUMENT, type: 'Document', parentId: null }).subscribe({
+      next: (created) => {
+        this.creatingFromBlank = false;
+        if (generation !== this.blankGeneration || !this.blankPage()) {
+          // The page was left while this was in flight: its words still
+          // belong in the writing they created, not nowhere.
+          this.saveLeftBlankPage(created.id, generation);
+          return;
+        }
+        this.blankPageTexts.delete(generation);
+        // Empty server content: the nudge makes the save lane store the page.
+        this.activeItem.set({ id: created.id, name: created.name, content: '', updatedAt: created.updatedAt });
+        this.editorTitle.set(titleFromMarkdown(this.editorText()) || created.name);
+        this.blankPage.set(false);
+        this.saveNudge.update((n) => n + 1);
+        writeStudioValue(STUDIO_LAST_WRITING_KEY, created.id);
+        this.recent.record({ kind: 'document', id: created.id, label: created.name, sub: 'Document' });
+        this.loadTree();
+        this.loadKeptSources(created.id);
+      },
+      error: () => {
+        this.creatingFromBlank = false;
+        // One message, then a pause: not a request and a toast per keystroke.
+        const first = this.blankRetryAt === 0;
+        this.blankRetryAt = Date.now() + 5000;
+        if (first) this.toast.error('Could not create a document. Your words are still on the page.');
+      },
+    });
+  }
+
+  /** Stores what a blank page held when it was left before its writing existed. */
+  private saveLeftBlankPage(id: string, generation: number): void {
+    const content = this.blankPageTexts.get(generation) ?? '';
+    this.blankPageTexts.delete(generation);
+    const name = titleFromMarkdown(content) || UNTITLED_DOCUMENT;
+    this.writingsService.update(id, { name, content }).subscribe({
+      next: () => this.loadTree(),
+      error: () => this.toast.error('Could not save the page you left'),
+    });
+  }
+
+  /** Opens where the writer left off: the last writing, or a blank page. */
+  private openStartingPage(): void {
+    const lastId = readStudioValue(STUDIO_LAST_WRITING_KEY);
+    const last = lastId ? this.rootItems().find((i) => i.id === lastId && i.type === 'Document') : null;
+    if (last) this.openWritingDocument(last.id, false);
+    else this.startBlankPage();
+  }
+
+  /** Remembers the caret and scroll of the open writing for next time. */
+  private readonly rememberCaret = () => {
+    const item = this.activeItem();
+    const state = this.markdownEditor?.captureTransientState();
+    if (!item || !state) return;
+    const rest = readCarets().filter((entry) => entry.id !== item.id);
+    writeCarets([{ id: item.id, state }, ...rest]);
+  };
+
+  private restoreRememberedCaret(item: WritingContentDto): void {
+    const state = readCarets().find((entry) => entry.id === item.id)?.state ?? null;
+    const editor = () => this.markdownEditor;
+    const apply = () => {
+      if (this.activeItem()?.id !== item.id) return;
+      if (state) void editor()?.restoreTransientState(state, item.content);
+      this.focusPageSoon();
+    };
+    setTimeout(apply);
+  }
+
+  private focusPageSoon(): void {
+    setTimeout(() => {
+      if (this.drawerOpen()) return;
+      this.markdownEditor?.focus();
+    });
+  }
+
+  private setTyping(typing: boolean): void {
+    if (typing === this.isTyping()) return;
+    this.isTyping.set(typing);
+    document.body.classList.toggle('nostos-studio-typing', typing);
+    if (!typing) this.lastPointer = null;
+  }
+
+  /** A real pointer movement (not the jitter of a resting hand) brings the chrome back. */
+  private readonly onPointerMove = (event: PointerEvent) => {
+    if (!this.isTyping()) return;
+    const last = this.lastPointer;
+    this.lastPointer = { x: event.clientX, y: event.clientY };
+    if (last && Math.hypot(event.clientX - last.x, event.clientY - last.y) > 6) this.setTyping(false);
+  };
+
+  /** A tap or click is deliberate: on touch screens it is how the chrome comes back. */
+  private readonly onPointerDown = () => this.setTyping(false);
+
+  undoOnPage(): void {
+    this.markdownEditor?.undo();
+  }
+
+  /** Words, characters, reading time: the corner stat cycles on click. */
+  cycleStat(): void {
+    const order = ['words', 'characters', 'reading'] as const;
+    this.statMode.set(order[(order.indexOf(this.statMode()) + 1) % order.length]);
+  }
+
+  statText(): string {
+    const words = this.displayWordCount();
+    switch (this.statMode()) {
+      case 'characters': {
+        const chars = this.editorCharacterCount();
+        return `${chars} ${chars === 1 ? 'character' : 'characters'}`;
+      }
+      case 'reading': {
+        const minutes = Math.max(1, Math.ceil(words / READING_WORDS_PER_MINUTE));
+        return words === 0 ? '0 min read' : `${minutes} min read`;
+      }
+      default:
+        return `${words} ${words === 1 ? 'word' : 'words'}`;
+    }
   }
 
   // --- Zen (focus) mode — issue #49 ---
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
+    if (this.handleStudioShortcut(event)) return;
     if (event.key !== 'Escape') return;
+    // Esc closes the topmost layer first, and only then brings the chrome back.
+    if (this.shortcutsOpen()) {
+      this.shortcutsOpen.set(false);
+      event.preventDefault();
+      return;
+    }
     if (this.isZen()) {
       this.exitZen();
       return;
     }
-    if (event.defaultPrevented || !this.isCompact()) return;
+    if (event.defaultPrevented) return;
 
-    if (this.showFileSidebar()) {
+    if (this.showFileSidebar() && this.isDrawer('files')) {
       this.setRailOpen('files', false);
       event.preventDefault();
-    } else if (this.showBrainSidebar()) {
+    } else if (this.showBrainSidebar() && this.isDrawer('reference')) {
       this.setRailOpen('reference', false);
       event.preventDefault();
+    } else if (this.isTyping()) {
+      this.setTyping(false);
     }
   };
+
+  /**
+   * Alt+M files, Alt+R Reference, Ctrl/Cmd+/ (or ? outside the page) the
+   * shortcut sheet. Matched on the physical key, so a layout whose Alt types
+   * characters still reaches them.
+   */
+  private handleStudioShortcut(event: KeyboardEvent): boolean {
+    const mod = event.ctrlKey || event.metaKey;
+    if (event.altKey && !mod && !event.shiftKey && (event.code === 'KeyM' || event.code === 'KeyR')) {
+      event.preventDefault();
+      if (event.code === 'KeyM') this.toggleFilesRail();
+      else this.toggleReferenceRail();
+      return true;
+    }
+    const target = event.target as HTMLElement | null;
+    const typingIntoSomething = !!target?.closest?.('input, textarea, [contenteditable="true"]');
+    if ((mod && event.key === '/') || (event.key === '?' && !mod && !typingIntoSomething)) {
+      event.preventDefault();
+      this.shortcutsOpen.update((open) => !open);
+      return true;
+    }
+    return false;
+  }
 
   enterZen() {
     if (this.isZen()) return;
@@ -640,13 +860,17 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.writingsService.list().subscribe({
       next: (items) => {
         this.rootItems.set(items);
+        const firstLoad = !this.writingTreeLoaded;
         this.writingTreeLoaded = true;
         const requested = this.requestedWritingId;
         if (requested) this.openWritingFromHandoff(requested);
+        else if (firstLoad && !this.activeItem() && !this.blankPage()) this.openStartingPage();
       },
       error: () => {
+        const firstLoad = !this.writingTreeLoaded;
         this.writingTreeLoaded = true;
         if (this.requestedWritingId) this.toast.error('That writing is unavailable');
+        else if (firstLoad && !this.activeItem()) this.startBlankPage();
       },
     });
   }
@@ -873,13 +1097,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
     // Manual selection wins over any slower route-handoff request already in flight.
     this.handoffOpenGeneration++;
-    this.openWritingDocument(item.id, false);
+    this.openWritingDocument(item.id, false, undefined, true);
   }
 
   private openWritingDocument(
     id: string,
     fromHandoff: boolean,
     handoffGeneration?: number,
+    fromFileList = false,
   ): void {
     this.writingsService.get(id).subscribe({
       next: (contentDto) => {
@@ -889,8 +1114,15 @@ export class WritingStudio implements OnInit, AfterViewInit {
         ) {
           return;
         }
-        if (this.activeItem()?.id !== contentDto.id) this.editorWordCount.set(null);
+        if (this.activeItem()?.id !== contentDto.id) {
+          this.rememberCaret();
+          this.editorWordCount.set(null);
+        }
+        if (this.blankPage()) this.blankGeneration++;
+        this.blankPage.set(false);
+        this.autoTitle = contentDto.name === UNTITLED_DOCUMENT;
         this.activeItem.set(contentDto);
+        writeStudioValue(STUDIO_LAST_WRITING_KEY, contentDto.id);
         // Opening from the file tree does not change the URL, so the command
         // palette's Recent list would never see it; tell it directly.
         this.recent.record({ kind: 'document', id: contentDto.id, label: contentDto.name, sub: 'Document' });
@@ -899,17 +1131,17 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.inspectedSource.set(null);
         this.moreSourceActionsOpen.set(false);
 
-        if (this.isCompact()) {
-          const returnTo: 'files' | 'reference' = this.showFileSidebar()
-            ? 'files'
-            : 'reference';
+        // Choosing a writing in the file list closes the list; a handoff lands
+        // in the editor on a compact screen. A slow load never closes a
+        // slide-over the writer opened in the meantime.
+        if ((fromFileList || (fromHandoff && this.isCompact())) && this.drawerOpen()) {
           this.compactDrawerCaret = null;
           this.showFileSidebar.set(false);
-          if (fromHandoff) this.showBrainSidebar.set(false);
-          this.focusHeaderRailToggle(returnTo);
+          if (fromHandoff && this.isDrawer('reference')) this.showBrainSidebar.set(false);
         }
 
         if (fromHandoff) this.restoreSourceReturnSurface(contentDto);
+        else this.restoreRememberedCaret(contentDto);
         this.loadKeptSources(contentDto.id);
       },
       error: () => {
@@ -939,36 +1171,27 @@ export class WritingStudio implements OnInit, AfterViewInit {
     });
   }
 
-  /** A document made by New, opened once its name has been settled in the tree. */
-  private openAfterRenameId: string | null = null;
-
   /**
-   * New document / New folder: create it under a placeholder name and put its
-   * row straight into inline rename, instead of a browser prompt(). A new
-   * document opens once the rename is saved or dismissed; opening it while
-   * the rename field is up would move focus away and cancel the rename.
+   * New document: a blank page with the caret in it, created on the server
+   * with its first words (issue #1040). New folder: created now and named in
+   * the file list.
    */
   createItem(type: 'Folder' | 'Document') {
-    const name = type === 'Document' ? 'Untitled document' : 'Untitled folder';
-    this.writingsService.create({ name, type, parentId: null }).subscribe({
+    // A new document is a blank page; it becomes a writing when words arrive.
+    if (type === 'Document') {
+      this.startBlankPage();
+      return;
+    }
+    this.writingsService.create({ name: 'Untitled folder', type, parentId: null }).subscribe({
       next: (created) => {
-        this.openAfterRenameId = type === 'Document' ? created.id : null;
-        // The file list may be a closed drawer on a compact layout; the rename
-        // field has to be on screen to be typed into.
-        if (this.isCompact()) this.showFileSidebar.set(true);
+        // The file list is a slide-over; the rename field has to be on
+        // screen to be typed into.
+        if (!this.showFileSidebar()) this.setRailOpen('files', true);
         this.editingId.set(created.id);
         this.loadTree();
       },
-      error: () => this.toast.error(`Could not create a ${type === 'Document' ? 'document' : 'folder'}`),
+      error: () => this.toast.error('Could not create a folder'),
     });
-  }
-
-  /** Opens the document New just made, once its rename is over either way. */
-  private openCreatedDocument(id: string): void {
-    if (this.openAfterRenameId !== id) return;
-    this.openAfterRenameId = null;
-    this.handoffOpenGeneration++;
-    this.openWritingDocument(id, false);
   }
 
   startRename(node: any) {
@@ -989,15 +1212,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
       if (this.activeItem()?.id === id) {
         this.editorTitle.set(newName);
+        // Named by hand: it no longer follows its first line.
+        this.autoTitle = false;
       }
-      this.openCreatedDocument(id);
     });
   }
 
   cancelRename() {
-    const id = this.editingId();
     this.editingId.set(null);
-    if (id) this.openCreatedDocument(id);
   }
 
   /** Writing id awaiting delete confirmation (asked through ConfirmModal). */
@@ -1019,13 +1241,12 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.writingsService.delete(id).subscribe(() => {
       this.loadTree();
 
+      writeCarets(readCarets().filter((entry) => entry.id !== id));
+      if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) writeStudioValue(STUDIO_LAST_WRITING_KEY, null);
       if (this.activeItem()?.id === id) {
+        // The page stays: a deleted writing leaves a blank one behind.
         this.activeItem.set(null);
-        this.editorWordCount.set(null);
-        this.editorText.set('');
-        this.editorTitle.set('');
-        this.keptSources.set([]);
-        this.inspectedSource.set(null);
+        this.startBlankPage();
       }
     });
   }
@@ -1513,7 +1734,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
         this.activeItem.set(updated);
         this.saveStatus.set('Saved');
-        if (title !== item.name) this.loadTree();
+        if (title !== item.name) {
+          this.loadTree();
+          this.recent.relabel('document', item.id, title);
+        }
       } catch (error) {
         if (generation === this.saveGeneration) this.saveStatus.set('Unsaved');
         throw error;

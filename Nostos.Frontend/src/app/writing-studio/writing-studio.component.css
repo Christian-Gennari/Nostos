@@ -596,6 +596,14 @@
   opacity: 0;
 }
 
+/* On touch it is a control like any other: a 44px target. */
+@media (pointer: coarse) {
+  .editor-desk-telemetry {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -1601,5 +1609,264 @@
 
   :host ::ng-deep .sidebar-left app-flat-tree .tree-row {
     --actions-w: 140px;
+  }
+}
+
+/* =====================================================================
+   THE PAGE FIRST (issue #1040)
+   The Studio opens on the page. The file list and (unless pinned) the
+   Reference rail slide over it, the header is quiet, and the chrome fades
+   while words are going down.
+   ===================================================================== */
+
+.editor-pane,
+.editor-wrapper app-markdown-editor {
+  background: var(--manuscript-paper);
+}
+
+/* A quiet header: on the paper, no rule under it, faint until wanted. */
+.editor-header {
+  background-color: var(--manuscript-paper);
+  border-bottom-color: transparent;
+}
+
+.header-doc-title {
+  color: var(--manuscript-ink-soft);
+  font-size: 1rem;
+}
+
+.header-doc-title-blank {
+  color: var(--manuscript-ink-faint);
+  font-style: italic;
+}
+
+.editor-header .header-rail-toggle,
+.editor-header .typewriter-toggle,
+.editor-header .zen-toggle,
+.editor-header .touch-undo,
+.header-doc-meta {
+  opacity: 0.55;
+  transition: opacity var(--motion-base) ease;
+}
+
+.editor-header:hover .header-rail-toggle,
+.editor-header:hover .typewriter-toggle,
+.editor-header:hover .zen-toggle,
+.editor-header:hover .header-doc-meta,
+.editor-header :focus-visible {
+  opacity: 1;
+}
+
+/* Undo in the header is for touch screens only; a keyboard has Ctrl+Z. */
+.touch-undo {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-undo {
+    display: inline-flex;
+  }
+}
+
+/* The stat corner: low-opacity text that cycles on click. */
+.editor-desk-telemetry {
+  padding: 4px 6px;
+  color: var(--manuscript-ink-faint);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity var(--motion-base) ease;
+}
+
+.editor-desk-telemetry:hover,
+.editor-desk-telemetry:focus-visible {
+  opacity: 1;
+}
+
+:host-context(body.nostos-zen) .editor-desk-telemetry {
+  opacity: 0;
+}
+
+/* While typing, everything that is not the page fades away. A real pointer
+   movement or Esc brings it back (the Studio clears .is-typing). */
+.studio-layout.is-typing .editor-header,
+.studio-layout.is-typing .editor-footer {
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+
+.studio-layout:not(.is-typing) .editor-header,
+.studio-layout:not(.is-typing) .editor-footer {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+
+/* Slide-overs dim the page behind them. */
+.backdrop {
+  background: color-mix(in srgb, var(--manuscript-ink) 18%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+
+/* Wide screens: the file list (always) and Reference (unless pinned) slide
+   over the page instead of taking a column. Narrow screens already did. */
+@media (min-width: 901px) and (min-height: 501px) {
+  .studio-layout.drawer-files.drawer-reference {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-layout.drawer-files:not(.drawer-reference) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  }
+
+  .studio-layout.drawer-files .sidebar-left,
+  .studio-layout.drawer-reference .sidebar-right {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    height: auto;
+    opacity: 1;
+    z-index: 30;
+    box-shadow: var(--editor-ui-shadow);
+    visibility: hidden;
+    transition:
+      transform var(--motion-base) var(--ease-standard),
+      visibility 0s linear var(--motion-base);
+  }
+
+  .studio-layout.drawer-files .sidebar-left {
+    left: 0;
+    width: clamp(260px, 24vw, 320px) !important;
+    transform: translateX(-100%);
+    border-right: 1px solid var(--border-color);
+  }
+
+  .studio-layout.drawer-reference .sidebar-right {
+    right: 0;
+    width: clamp(320px, 30vw, 400px) !important;
+    transform: translateX(100%);
+    border-left: 1px solid var(--border-color);
+  }
+
+  .studio-layout.drawer-files .sidebar-left.open,
+  .studio-layout.drawer-reference .sidebar-right.open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+
+  .studio-layout.drawer-files .sidebar-left:not(.open),
+  .studio-layout.drawer-reference .sidebar-right:not(.open) {
+    display: flex;
+  }
+
+  .studio-layout.drawer-files .sidebar-resizer {
+    display: none;
+  }
+
+  /* The stage no longer shares the row with a rail column. */
+  .studio-layout.drawer-files .editor-pane {
+    grid-column: 1;
+  }
+}
+
+/* A closed slide-over is gone, not parked off-screen: its shadow no longer
+   bleeds in at the screen edge and nothing in it can be reached. */
+@media (max-width: 900px), (max-height: 500px) {
+  .sidebar-left:not(.open),
+  .sidebar-right:not(.open) {
+    visibility: hidden;
+    transition:
+      transform var(--motion-base) var(--ease-standard),
+      visibility 0s linear var(--motion-base);
+  }
+
+  .sidebar-left.open,
+  .sidebar-right.open {
+    visibility: visible;
+  }
+}
+
+/* The keyboard shortcut sheet. */
+.shortcut-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.shortcut-sheet {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 71;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 64px);
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+  padding: 1rem 1.25rem 1.25rem;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+.shortcut-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.shortcut-sheet-header h2 {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.shortcut-list {
+  margin: 0;
+}
+
+.shortcut-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--manuscript-rule);
+  font-size: 0.86rem;
+}
+
+.shortcut-list dt {
+  white-space: nowrap;
+  color: var(--manuscript-ink-soft);
+}
+
+.shortcut-list dd {
+  margin: 0;
+}
+
+.shortcut-list kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-layout.is-typing .editor-header,
+  .studio-layout.is-typing .editor-footer,
+  .studio-layout:not(.is-typing) .editor-header,
+  .studio-layout:not(.is-typing) .editor-footer,
+  .sidebar-left,
+  .sidebar-right {
+    transition: none !important;
   }
 }

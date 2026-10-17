@@ -27,7 +27,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { apiPost, loadFixture } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import { cleanupBrain, seedBrain, type BrainSeed } from './support/brain-fixture';
-import { STUDIO_PAGE_SELECTOR } from './support/studio-editor';
+import { STUDIO_PAGE_SELECTOR, openFilesRail } from './support/studio-editor';
 
 const MIN_TAP_TARGET = 44; // CSS px, Apple HIG / Material minimum
 
@@ -100,62 +100,42 @@ async function openStudioDocument(page: Page, title: string): Promise<void> {
   await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
 }
 
-test('the editor formatting toolbar occupies a single row on a phone', async ({ page }) => {
+test('the page carries no toolbar; formatting appears over a selection', async ({ page }) => {
   const title = `MobilePolishRow-${Date.now()}`;
   await seedDocument(title);
   await openStudioDocument(page, title);
 
-  const tops = await page
-    .locator('app-markdown-editor .editor-toolbar-row > *')
-    .evaluateAll((els) =>
-      els
-        .filter((el) => el.getBoundingClientRect().width > 0)
-        .map((el) => Math.round(el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2)),
-    );
-  expect(tops.length, 'the toolbar must render its controls').toBeGreaterThan(0);
-  expect(new Set(tops).size, 'the formatting toolbar must be a single row').toBe(1);
+  await expect(page.locator('app-markdown-editor .editor-toolbar')).toHaveCount(0);
+  await expect(page.getByTestId('editor-bubble')).toHaveCount(0);
 
-  const height = await page
-    .locator('app-markdown-editor .editor-toolbar-row')
-    .evaluate((el) => Math.round(el.getBoundingClientRect().height));
-  expect(height, 'a single toolbar row must not exceed ~60px').toBeLessThanOrEqual(60);
+  const firstParagraph = page.locator(`${STUDIO_PAGE_SELECTOR} p`).first();
+  await firstParagraph.dblclick({ position: { x: 20, y: 8 } });
+  const bubble = page.getByTestId('editor-bubble');
+  await expect(bubble).toBeVisible();
+  const box = await bubble.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });
 
-test('every editor toolbar button meets the 44px touch contract', async ({ page }) => {
+test('every selection bubble button meets the 44px touch contract', async ({ page }) => {
   const title = `MobilePolishTargets-${Date.now()}`;
   await seedDocument(title);
   await openStudioDocument(page, title);
 
-  const slivers = await page
-    .locator('app-markdown-editor .editor-toolbar-row button')
-    .evaluateAll((els) =>
-      els
-        .filter((el) => el.getBoundingClientRect().width > 0)
-        .map((el) => ({
-          label: el.getAttribute('aria-label') ?? '?',
-          width: Math.round(el.getBoundingClientRect().width),
-          height: Math.round(el.getBoundingClientRect().height),
-        }))
-        .filter((b) => b.width < 44 || b.height < 44),
-    );
-
-  expect(slivers, `toolbar buttons under 44px: ${JSON.stringify(slivers)}`).toEqual([]);
-});
-
-test('the toolbar scrolls sideways to reach every formatting control', async ({ page }) => {
-  const title = `MobilePolishOverflow-${Date.now()}`;
-  await seedDocument(title);
-  await openStudioDocument(page, title);
-
-  // The row never wraps; controls past the edge are reached by scrolling it.
-  const row = page.locator('app-markdown-editor .editor-toolbar-row');
-  const last = row.locator('button').last();
-  await last.scrollIntoViewIfNeeded();
-  await expect(last, 'the last formatting control must be reachable').toBeInViewport();
-  const pageOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  await page.locator(`${STUDIO_PAGE_SELECTOR} p`).first().dblclick({ position: { x: 20, y: 8 } });
+  const bubble = page.getByTestId('editor-bubble');
+  await expect(bubble).toBeVisible();
+  const slivers = await bubble.locator('button').evaluateAll((els) =>
+    els
+      .filter((el) => el.getBoundingClientRect().width > 0)
+      .map((el) => ({
+        label: el.getAttribute('aria-label') ?? '?',
+        width: Math.round(el.getBoundingClientRect().width),
+        height: Math.round(el.getBoundingClientRect().height),
+      }))
+      .filter((b) => b.width < 44 || b.height < 44),
   );
-  expect(pageOverflow, 'the toolbar must scroll inside itself, not widen the page').toBeLessThanOrEqual(1);
+  expect(slivers, `bubble buttons under 44px: ${JSON.stringify(slivers)}`).toEqual([]);
 });
 
 test('the studio document tree exposes 44px expand chevrons', async ({ page }) => {
@@ -163,10 +143,7 @@ test('the studio document tree exposes 44px expand chevrons', async ({ page }) =
   // the folder row gets the expand control.
   const parentId = await seedNestedFolder();
   await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
-  const openSidebar = page.getByRole('button', { name: 'Open Sidebar' });
-  if (await openSidebar.isVisible().catch(() => false)) {
-    await openSidebar.click();
-  }
+  await openFilesRail(page);
 
   const chevron = page.locator(`.file-list .tree-row[data-node-id="${parentId}"] .toggle-btn`);
   await expect(chevron).toBeVisible({ timeout: 30_000 });
