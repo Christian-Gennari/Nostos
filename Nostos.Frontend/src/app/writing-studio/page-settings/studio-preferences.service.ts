@@ -5,23 +5,27 @@ import { Injectable, computed, effect, signal } from '@angular/core';
  * spacing and measure, and how the page behaves. Saved per device, like the
  * library preferences; syncing them across devices is out of scope.
  */
-export type StudioTheme = 'match' | 'study' | 'mist' | 'dark' | 'black' | 'sepia' | 'paper';
+/** `match` follows the app's own light or dark look; the rest are the page's own. */
+export type StudioTheme = 'match' | 'paper' | 'sepia' | 'mist' | 'study';
 
 export interface StudioThemeOption {
-  value: StudioTheme;
+  value: Exclude<StudioTheme, 'match'>;
   label: string;
+  /** Which app mode the theme belongs with, for leaving Follow app. */
+  mode: 'light' | 'dark';
 }
 
-/** Each theme's colours are its token set in styles.css (`.studio-theme-<value>`). */
+/**
+ * Four page themes (issue #1060): a warm and a cool one, light and dark. Each
+ * theme's colours are its token set in styles.css (`.studio-theme-<value>`).
+ */
 export const STUDIO_THEMES: readonly StudioThemeOption[] = [
-  { value: 'match', label: 'Match app' },
-  { value: 'study', label: "Writer's Study" },
-  { value: 'mist', label: 'Mist' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'black', label: 'Black' },
-  { value: 'sepia', label: 'Sepia' },
-  { value: 'paper', label: 'Paper' },
+  { value: 'paper', label: 'Paper', mode: 'light' },
+  { value: 'sepia', label: 'Sepia', mode: 'light' },
+  { value: 'mist', label: 'Mist', mode: 'dark' },
+  { value: 'study', label: "Writer's Study", mode: 'dark' },
 ];
+
 
 export interface StudioFont {
   value: string;
@@ -91,6 +95,35 @@ export const TEXT_WIDTH_RANGE = { min: 40, max: 100, step: 2 } as const;
  */
 export const STANDARD_TEXT_WIDTH = 86;
 
+/** The three line spacings the settings offer (issue #1060). */
+export const LINE_SPACING_PRESETS = [
+  { label: 'Tight', value: 1.5 },
+  { label: 'Normal', value: 1.8 },
+  { label: 'Airy', value: 2.2 },
+] as const;
+
+/** The three line lengths the settings offer; null is the standard measure. */
+export const TEXT_WIDTH_PRESETS: readonly { label: string; value: number | null }[] = [
+  { label: 'Narrow', value: 66 },
+  { label: 'Standard', value: null },
+  { label: 'Wide', value: 100 },
+];
+
+function nearest<T>(options: readonly T[], distance: (option: T) => number): T {
+  return options.reduce((best, option) => (distance(option) < distance(best) ? option : best));
+}
+
+/** The preset a line spacing snaps to: the nearest one. */
+export function nearestLineSpacing(value: number): number {
+  return nearest(LINE_SPACING_PRESETS, (p) => Math.abs(p.value - value)).value;
+}
+
+/** The preset a line length snaps to; the standard measure counts as its characters. */
+export function nearestTextWidth(value: number | null): number | null {
+  if (value === null) return null;
+  return nearest(TEXT_WIDTH_PRESETS, (p) => Math.abs((p.value ?? STANDARD_TEXT_WIDTH) - value)).value;
+}
+
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : Number.NaN;
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
@@ -101,15 +134,22 @@ export function normalizeStudioPreferences(raw: unknown, legacyTypewriter = fals
   const value = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof StudioPreferences, unknown>>;
   const d = DEFAULT_STUDIO_PREFERENCES;
   return {
-    theme: STUDIO_THEMES.some((t) => t.value === value.theme) ? (value.theme as StudioTheme) : d.theme,
+    // Dark and Black, offered before #1060, are in neither: a saved one
+    // follows the app.
+    theme:
+      value.theme === 'match' || STUDIO_THEMES.some((t) => t.value === value.theme)
+        ? (value.theme as StudioTheme)
+        : d.theme,
     font: STUDIO_FONTS.some((f) => f.value === value.font) ? (value.font as string) : d.font,
     fontSize: Math.round(clamp(value.fontSize, FONT_SIZE_RANGE.min, FONT_SIZE_RANGE.max, d.fontSize)),
-    lineSpacing:
-      Math.round(clamp(value.lineSpacing, LINE_SPACING_RANGE.min, LINE_SPACING_RANGE.max, d.lineSpacing) * 10) / 10,
+    // The settings offer three spacings and three lengths (#1060); a value
+    // saved from the old sliders snaps to the nearest, so what the page shows
+    // is what the settings say.
+    lineSpacing: nearestLineSpacing(clamp(value.lineSpacing, LINE_SPACING_RANGE.min, LINE_SPACING_RANGE.max, d.lineSpacing)),
     textWidth:
       value.textWidth === null || value.textWidth === undefined
         ? d.textWidth
-        : Math.round(clamp(value.textWidth, TEXT_WIDTH_RANGE.min, TEXT_WIDTH_RANGE.max, STANDARD_TEXT_WIDTH)),
+        : nearestTextWidth(clamp(value.textWidth, TEXT_WIDTH_RANGE.min, TEXT_WIDTH_RANGE.max, STANDARD_TEXT_WIDTH)),
     spellCheck: typeof value.spellCheck === 'boolean' ? value.spellCheck : d.spellCheck,
     typewriter: typeof value.typewriter === 'boolean' ? value.typewriter : legacyTypewriter,
     sounds: typeof value.sounds === 'boolean' ? value.sounds : d.sounds,
@@ -136,9 +176,10 @@ export class StudioPreferencesService {
   readonly preferences = this.state.asReadonly();
 
   readonly theme = computed(() => this.state().theme);
-  readonly fontStack = computed(
-    () => STUDIO_FONTS.find((f) => f.value === this.state().font)?.stack ?? STUDIO_FONTS[3].stack,
+  readonly font = computed(
+    () => STUDIO_FONTS.find((f) => f.value === this.state().font) ?? STUDIO_FONTS.find((f) => f.value === DEFAULT_STUDIO_PREFERENCES.font)!,
   );
+  readonly fontStack = computed(() => this.font().stack);
 
   /** A change waiting for the debounce; written at once if the page goes away. */
   private unsaved: StudioPreferences | null = null;

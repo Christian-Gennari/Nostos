@@ -1,6 +1,6 @@
 # Writing Studio, end to end (epic #1036)
 
-The final journey on `feature/studio-writing-room` at 37c69c15 (all eight sub-issues; the docs-only #1056 merged afterwards). It ran in Chromium against a
+The final journey, last run on `feature/studio-settings-popover` (#1060: the epic branch plus the new page-settings popover). It ran in Chromium against a
 fresh synthetic library: Schopenhauer's *The World as Will and Representation*
 and *Studies in Pessimism*, plus Nietzsche's *Thus Spoke Zarathustra*, all public domain.
 `journey.cjs` is the script. Run it as `node journey.cjs <Nostos.Frontend> <frontend url> <api url> <out dir> 1440x900:light`.
@@ -22,7 +22,7 @@ Each step was taken at 1440×900 and 390×844 (touch), in light and dark app the
 Saved Markdown from the 1440 light run:
 
 ```markdown
-# Journey 1440-light 1792266785708
+# Journey 1440-light 1792271007453
 
 What we want is never what we need, and the wanting itself is the trouble.
 

@@ -302,6 +302,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The page's own settings (issue #1041): theme, type, measure, behaviour. */
   readonly pagePrefs = inject(StudioPreferencesService);
   pageSettingsOpen = signal(false);
+  /** The Aa button: the settings popover hangs under it (#1060). */
+  @ViewChild('pageSettingsButton', { read: ElementRef }) pageSettingsButton?: ElementRef<HTMLElement>;
 
   /** Typewriter mode: keep the caret line centered. A page setting now. */
   readonly typewriter = computed(() => this.pagePrefs.preferences().typewriter);
@@ -330,6 +332,17 @@ export class WritingStudio implements OnInit, AfterViewInit {
       if (this.isDrawer('reference')) this.showBrainSidebar.set(false);
     }
     this.pageSettingsOpen.set(open);
+    if (!open) this.markdownEditor?.focus();
+  }
+
+  /**
+   * Closed with Esc: back to the page. A press outside closes it without this,
+   * so focus stays where the press went (and no phone keyboard opens).
+   */
+  closePageSettings(): void {
+    if (!this.pageSettingsOpen()) return;
+    this.pageSettingsOpen.set(false);
+    this.markdownEditor?.focus();
   }
 
   filesRailLabel(): string {
@@ -812,7 +825,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       return;
     }
     if (this.pageSettingsOpen()) {
-      this.pageSettingsOpen.set(false);
+      this.closePageSettings();
       event.preventDefault();
       return;
     }

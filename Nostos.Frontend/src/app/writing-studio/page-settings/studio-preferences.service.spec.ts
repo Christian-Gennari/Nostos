@@ -4,6 +4,8 @@ import {
   DEFAULT_STUDIO_PREFERENCES,
   STUDIO_PREFERENCES_KEY,
   StudioPreferencesService,
+  nearestLineSpacing,
+  nearestTextWidth,
   normalizeStudioPreferences,
 } from './studio-preferences.service';
 
@@ -28,16 +30,17 @@ describe('Studio page preferences (issue #1041)', () => {
     expect(prefs.font).toBe('newsreader');
     expect(prefs.fontSize).toBe(28);
     expect(prefs.lineSpacing).toBe(1.8);
-    expect(prefs.textWidth).toBe(40);
+    expect(prefs.textWidth).toBe(66);
     expect(prefs.spellCheck).toBe(true);
     expect(prefs.soundVolume).toBe(1);
   });
 
   it('keeps a valid choice', () => {
-    const prefs = normalizeStudioPreferences({ theme: 'sepia', font: 'eb-garamond', fontSize: 21, lineSpacing: 2.14, textWidth: null });
+    const prefs = normalizeStudioPreferences({ theme: 'sepia', font: 'eb-garamond', fontSize: 21, lineSpacing: 2.2, textWidth: null });
     expect(prefs).toEqual(
-      expect.objectContaining({ theme: 'sepia', font: 'eb-garamond', fontSize: 21, lineSpacing: 2.1, textWidth: null }),
+      expect.objectContaining({ theme: 'sepia', font: 'eb-garamond', fontSize: 21, lineSpacing: 2.2, textWidth: null }),
     );
+    expect(normalizeStudioPreferences({ theme: 'match' }).theme).toBe('match');
   });
 
   it('saves changes once they settle, and reads them back in a later visit', async () => {
@@ -66,6 +69,27 @@ describe('Studio page preferences (issue #1041)', () => {
     localStorage.setItem('nostos.typewriter', '1');
     expect(TestBed.inject(StudioPreferencesService).preferences().typewriter).toBe(true);
     expect(localStorage.getItem('nostos.typewriter')).toBeNull();
+  });
+
+  it('moves the retired Dark and Black themes to following the app (#1060)', () => {
+    expect(normalizeStudioPreferences({ theme: 'dark' }).theme).toBe('match');
+    expect(normalizeStudioPreferences({ theme: 'black' }).theme).toBe('match');
+    expect(normalizeStudioPreferences({ theme: 'mist' }).theme).toBe('mist');
+  });
+
+  it('snaps spacing and width saved from the old sliders to the nearest preset (#1060)', () => {
+    expect(normalizeStudioPreferences({ lineSpacing: 1.6, textWidth: 70 })).toEqual(
+      expect.objectContaining({ lineSpacing: 1.5, textWidth: 66 }),
+    );
+    expect(normalizeStudioPreferences({ textWidth: 88 }).textWidth).toBeNull();
+
+    expect(nearestLineSpacing(1.2)).toBe(1.5);
+    expect(nearestLineSpacing(1.8)).toBe(1.8);
+    expect(nearestLineSpacing(2.4)).toBe(2.2);
+    expect(nearestTextWidth(null)).toBeNull();
+    expect(nearestTextWidth(40)).toBe(66);
+    expect(nearestTextWidth(84)).toBeNull();
+    expect(nearestTextWidth(96)).toBe(100);
   });
 
   it('survives corrupt storage', () => {
