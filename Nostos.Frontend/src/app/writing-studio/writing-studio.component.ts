@@ -223,6 +223,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         cfiRange: s.cfiRange ?? undefined,
         createdAt: s.createdAt,
         bookTitle: s.bookTitle ?? undefined,
+        bookAuthor: s.bookAuthor ?? undefined,
         sourceAnchorKind: s.sourceAnchorKind ?? undefined,
         sourceAnchorValue: s.sourceAnchorValue ?? undefined,
         anchorVerified: s.anchorVerified ?? undefined,
@@ -1010,6 +1011,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
           selectedText: n.selectedText,
           createdAt: n.createdAt ?? '',
           bookTitle: n.bookTitle,
+          bookAuthor: n.bookAuthor,
           sourceAnchorKind: n.sourceAnchorKind,
           sourceAnchorValue: n.sourceAnchorValue,
           anchorVerified: n.anchorVerified,
@@ -1229,6 +1231,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const markdown = buildQuoteMarkdown({
       selectedText: text,
       bookTitle: passage.bookTitle,
+      bookAuthor: passage.bookAuthor,
       passageTitle: passage.title,
     });
     if (!markdown || !this.activeItem() || !this.markdownEditor) {

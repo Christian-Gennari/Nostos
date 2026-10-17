@@ -1,5 +1,7 @@
 export interface SourceInsertionSource {
   bookTitle?: string | null;
+  /** The book's author (issue #1044): when a thinker is quoted, the name is what readers look for. */
+  bookAuthor?: string | null;
   content?: string | null;
   selectedText?: string | null;
   sourceAnchorKind?: string | null;
@@ -11,6 +13,7 @@ export interface SourceInsertionSource {
 
 export interface HumanSourceLabel {
   title: string;
+  author: string | null;
   locator: string | null;
 }
 
@@ -30,11 +33,13 @@ export function sourceHumanLabel(source: SourceInsertionSource): HumanSourceLabe
   const title = normalizeInlineText(source.bookTitle);
   if (!title) return null;
 
+  const authorText = normalizeInlineText(source.bookAuthor);
+  const author = authorText ? escapeMarkdownInline(authorText) : null;
   let locator: string | null = null;
   const passage = normalizeInlineText(source.passageTitle);
   if (passage) {
     // Quoted from a kept passage: name the passage, not where it starts.
-    return { title: escapeMarkdownInline(title), locator: `“${escapeMarkdownInline(passage)}”` };
+    return { title: escapeMarkdownInline(title), author, locator: `“${escapeMarkdownInline(passage)}”` };
   }
   if (
     source.anchorVerified === true &&
@@ -45,7 +50,12 @@ export function sourceHumanLabel(source: SourceInsertionSource): HumanSourceLabe
     if (Number.isInteger(page) && page > 0) locator = `p. ${page}`;
   }
 
-  return { title: escapeMarkdownInline(title), locator };
+  return { title: escapeMarkdownInline(title), author, locator };
+}
+
+/** "Author, Title, locator" with whichever parts are known; `title` is pre-formatted. */
+function readableSource(label: HumanSourceLabel, title: string): string {
+  return [label.author, title, label.locator].filter(Boolean).join(', ');
 }
 
 export function hasMeaningfulSelectedText(source: SourceInsertionSource): boolean {
@@ -62,8 +72,10 @@ export function buildQuoteMarkdown(source: SourceInsertionSource): string | null
   if (!quote || !label) return null;
 
   const quotedLines = quote.split('\n').map((line) => (line ? `> ${line}` : '>'));
-  const attribution = `> — *${label.title}*${label.locator ? `, ${label.locator}` : ''}`;
-  return [...quotedLines, attribution].join('\n');
+  // The attribution is its own paragraph inside the quote: as a second line of
+  // the same paragraph it ran on after the quoted words once rendered.
+  const attribution = `> — ${readableSource(label, `*${label.title}*`)}`;
+  return [...quotedLines, '>', attribution].join('\n');
 }
 
 export function buildNoteMarkdown(source: SourceInsertionSource): string | null {
@@ -71,14 +83,12 @@ export function buildNoteMarkdown(source: SourceInsertionSource): string | null 
   const label = sourceHumanLabel(source);
   if (!content || !label) return null;
 
-  const readable = `${label.title}${label.locator ? `, ${label.locator}` : ''}`;
-  return `${content}\n\n*Source: ${readable}*`;
+  return `${content}\n\n*Source: ${readableSource(label, label.title)}*`;
 }
 
 export function buildReferenceMarkdown(source: SourceInsertionSource): string | null {
   const label = sourceHumanLabel(source);
   if (!label) return null;
 
-  const readable = `${label.title}${label.locator ? `, ${label.locator}` : ''}`;
-  return `*See: ${readable}*`;
+  return `*See: ${readableSource(label, label.title)}*`;
 }
