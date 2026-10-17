@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, output } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, inject, output } from '@angular/core';
 
 import { DropdownComponent, DropdownOption } from '../../ui/dropdown/dropdown.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
@@ -10,6 +10,7 @@ import {
   STUDIO_THEMES,
   StudioPreferencesService,
   StudioTheme,
+  STANDARD_TEXT_WIDTH,
   TEXT_WIDTH_RANGE,
 } from './studio-preferences.service';
 
@@ -25,7 +26,7 @@ import {
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
 })
-export class StudioPageSettingsComponent {
+export class StudioPageSettingsComponent implements AfterViewInit {
   readonly prefs = inject(StudioPreferencesService);
   private readonly host = inject(ElementRef<HTMLElement>);
 
@@ -39,6 +40,13 @@ export class StudioPageSettingsComponent {
   readonly fontSize = FONT_SIZE_RANGE;
   readonly lineSpacing = LINE_SPACING_RANGE;
   readonly textWidth = TEXT_WIDTH_RANGE;
+
+  /** Focus moves into the panel, onto the theme now chosen. */
+  ngAfterViewInit(): void {
+    queueMicrotask(() =>
+      (this.host.nativeElement.querySelector('.ps-theme.active') as HTMLElement | null)?.focus(),
+    );
+  }
 
   setTheme(theme: StudioTheme): void {
     this.prefs.update({ theme });
@@ -63,6 +71,8 @@ export class StudioPageSettingsComponent {
   checkedFrom(event: Event): boolean {
     return (event.target as HTMLInputElement).checked;
   }
+
+  readonly standardWidth = STANDARD_TEXT_WIDTH;
 
   textWidthLabel(): string {
     const width = this.prefs.preferences().textWidth;

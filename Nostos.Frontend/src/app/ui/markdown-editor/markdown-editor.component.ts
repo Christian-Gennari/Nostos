@@ -131,9 +131,14 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
+    // Spell check is one of the view's attributes, so ProseMirror itself keeps
+    // it on every redraw; a transaction asks it to read the setting again.
     effect(() => {
-      const on = this.spellcheck();
-      this.editorDom()?.setAttribute('spellcheck', String(on));
+      this.spellcheck();
+      const editor = this.editor;
+      if (editor && !editor.isDestroyed && this.editorDom()) {
+        editor.view.dispatch(editor.state.tr.setMeta('nostosSpellcheck', true).setMeta('addToHistory', false));
+      }
     });
 
     // The page is the palette's combobox: it owns focus, and the list is
@@ -235,13 +240,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       ],
       content: markdownToHtml(markdown),
       editorProps: {
-        attributes: {
+        attributes: () => ({
           class: 'nostos-manuscript-body',
-          spellcheck: 'true',
+          spellcheck: String(this.spellcheck()),
           'aria-label': 'Document',
           'aria-multiline': 'true',
           role: 'textbox',
-        },
+        }),
         handlePaste: (_view, event) => this.pasteMarkdown(event),
       },
       onUpdate: () => {

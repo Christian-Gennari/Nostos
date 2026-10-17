@@ -86,7 +86,7 @@
         [min]="textWidth.min"
         [max]="textWidth.max"
         [step]="textWidth.step"
-        [value]="prefs.preferences().textWidth ?? 86"
+        [value]="prefs.preferences().textWidth ?? standardWidth"
         (input)="prefs.update({ textWidth: numberFrom($event) })"
       />
       @if (prefs.preferences().textWidth !== null) {

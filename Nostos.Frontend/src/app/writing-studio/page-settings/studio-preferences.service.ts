@@ -44,7 +44,8 @@ export const STUDIO_FONTS: readonly StudioFont[] = [
   { value: 'hanken-grotesk', label: 'Hanken Grotesk', group: 'Sans', stack: "'Hanken Grotesk', system-ui, sans-serif" },
   { value: 'inter', label: 'Inter', group: 'Sans', stack: "'Studio Inter', system-ui, sans-serif" },
   { value: 'special-elite', label: 'Special Elite', group: 'Typewriter', stack: "'Studio Special Elite', 'Courier New', monospace" },
-  { value: 'mono', label: 'Monospace', group: 'Typewriter', stack: "'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace" },
+  // The device's own monospace face: honest about not being a bundled font.
+  { value: 'mono', label: 'Monospace (system)', group: 'Typewriter', stack: "ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace" },
   { value: 'opendyslexic', label: 'OpenDyslexic', group: 'Accessibility', stack: "'Studio OpenDyslexic', sans-serif" },
 ];
 
@@ -84,6 +85,11 @@ export const DEFAULT_STUDIO_PREFERENCES: StudioPreferences = {
 export const FONT_SIZE_RANGE = { min: 14, max: 28, step: 1 } as const;
 export const LINE_SPACING_RANGE = { min: 1.2, max: 2.4, step: 0.1 } as const;
 export const TEXT_WIDTH_RANGE = { min: 40, max: 100, step: 2 } as const;
+/**
+ * Where the line-length slider rests while the page keeps its standard 820px
+ * measure: about the characters of the standard face on that measure.
+ */
+export const STANDARD_TEXT_WIDTH = 86;
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const n = typeof value === 'number' ? value : Number.NaN;
@@ -103,7 +109,7 @@ export function normalizeStudioPreferences(raw: unknown, legacyTypewriter = fals
     textWidth:
       value.textWidth === null || value.textWidth === undefined
         ? d.textWidth
-        : Math.round(clamp(value.textWidth, TEXT_WIDTH_RANGE.min, TEXT_WIDTH_RANGE.max, 66)),
+        : Math.round(clamp(value.textWidth, TEXT_WIDTH_RANGE.min, TEXT_WIDTH_RANGE.max, STANDARD_TEXT_WIDTH)),
     spellCheck: typeof value.spellCheck === 'boolean' ? value.spellCheck : d.spellCheck,
     typewriter: typeof value.typewriter === 'boolean' ? value.typewriter : legacyTypewriter,
     sounds: typeof value.sounds === 'boolean' ? value.sounds : d.sounds,
@@ -115,7 +121,10 @@ function readStored(): StudioPreferences {
   try {
     const raw = localStorage.getItem(STUDIO_PREFERENCES_KEY);
     const legacy = localStorage.getItem(LEGACY_TYPEWRITER_KEY) === '1';
-    return normalizeStudioPreferences(raw ? JSON.parse(raw) : null, legacy);
+    const prefs = normalizeStudioPreferences(raw ? JSON.parse(raw) : null, legacy);
+    // Carried over once; the old key has no other reader.
+    localStorage.removeItem(LEGACY_TYPEWRITER_KEY);
+    return prefs;
   } catch {
     return { ...DEFAULT_STUDIO_PREFERENCES };
   }
@@ -131,15 +140,31 @@ export class StudioPreferencesService {
     () => STUDIO_FONTS.find((f) => f.value === this.state().font)?.stack ?? STUDIO_FONTS[3].stack,
   );
 
+  /** A change waiting for the debounce; written at once if the page goes away. */
+  private unsaved: StudioPreferences | null = null;
+
   constructor() {
-    effect(() => {
+    // Saved once a slider has come to rest, not on every step of a drag.
+    effect((onCleanup) => {
       const prefs = this.state();
-      try {
-        localStorage.setItem(STUDIO_PREFERENCES_KEY, JSON.stringify(prefs));
-      } catch {
-        // The page still changes for this session when storage is unavailable.
-      }
+      this.unsaved = prefs;
+      const timer = setTimeout(() => this.flush(), 250);
+      onCleanup(() => clearTimeout(timer));
     });
+    // A reload or a closed tab inside the debounce must not lose the change.
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.flush());
+  }
+
+  /** Writes a waiting change now. */
+  flush(): void {
+    const prefs = this.unsaved;
+    if (!prefs) return;
+    this.unsaved = null;
+    try {
+      localStorage.setItem(STUDIO_PREFERENCES_KEY, JSON.stringify(prefs));
+    } catch {
+      // The page still changes for this session when storage is unavailable.
+    }
   }
 
   update(change: Partial<StudioPreferences>): void {

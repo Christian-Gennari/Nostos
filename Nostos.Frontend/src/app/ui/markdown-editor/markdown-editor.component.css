@@ -469,21 +469,24 @@ app-markdown-editor .nostos-manuscript-body h3 {
   text-wrap: balance;
 }
 
+/* Heading sizes are relative to the page's text size (a page setting), so a
+   larger page keeps its hierarchy. At the standard 18px they are the old
+   2rem / 1.42rem / 1.08rem. */
 app-markdown-editor .nostos-manuscript-body h1 {
   margin: 0 0 1.25em;
-  font-size: 2rem;
+  font-size: 1.78em;
   line-height: 1.18;
 }
 
 app-markdown-editor .nostos-manuscript-body h2 {
   margin: 2.4em 0 0.75em;
-  font-size: 1.42rem;
+  font-size: 1.26em;
   line-height: 1.25;
 }
 
 app-markdown-editor .nostos-manuscript-body h3 {
   margin: 2em 0 0.65em;
-  font-size: 1.08rem;
+  font-size: 0.96em;
   line-height: 1.35;
   letter-spacing: -0.012em;
 }
@@ -645,10 +648,10 @@ app-markdown-editor .nostos-manuscript-body img.ProseMirror-selectednode {
   }
 
   app-markdown-editor .nostos-manuscript-body h1 {
-    font-size: 1.7rem;
+    font-size: 1.6em;
   }
 
   app-markdown-editor .nostos-manuscript-body h2 {
-    font-size: 1.3rem;
+    font-size: 1.22em;
   }
 }

@@ -323,7 +323,13 @@ export class WritingStudio implements OnInit, AfterViewInit {
   });
 
   togglePageSettings(): void {
-    this.pageSettingsOpen.update((open) => !open);
+    const open = !this.pageSettingsOpen();
+    // One layer over the page at a time: the settings replace a slide-over.
+    if (open && this.drawerOpen()) {
+      this.showFileSidebar.set(false);
+      if (this.isDrawer('reference')) this.showBrainSidebar.set(false);
+    }
+    this.pageSettingsOpen.set(open);
   }
 
   filesRailLabel(): string {
@@ -542,7 +548,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       if (compact) {
         if (referenceWasColumn) this.showBrainSidebar.set(false);
       } else {
-        this.compactDrawerCaret = null;
+        // A drawer still open keeps the caret it will hand back on closing.
+        if (!this.drawerOpen()) this.compactDrawerCaret = null;
         if (this.referencePinned()) this.showBrainSidebar.set(true);
       }
     };
@@ -797,6 +804,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (this.handleStudioShortcut(event)) return;
     if (event.key !== 'Escape') return;
     // Esc closes the topmost layer first, and only then brings the chrome back.
+    // A layer inside (an open dropdown list) that already handled it wins.
+    if (event.defaultPrevented) return;
     if (this.shortcutsOpen()) {
       this.shortcutsOpen.set(false);
       event.preventDefault();

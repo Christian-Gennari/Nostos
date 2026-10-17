@@ -854,18 +854,38 @@ describe('WritingStudio typewriter mode', () => {
     fixture.detectChanges();
   });
 
-  it('starts off and toggles with persistence in the page settings', () => {
+  it('starts off and toggles with persistence in the page settings', async () => {
     expect(component.typewriter()).toBe(false);
+    const saved = async () => {
+      TestBed.tick();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return JSON.parse(localStorage.getItem('nostos.studio.preferences')!).typewriter;
+    };
 
     component.toggleTypewriter();
     expect(component.typewriter()).toBe(true);
-    TestBed.tick();
-    expect(JSON.parse(localStorage.getItem('nostos.studio.preferences')!).typewriter).toBe(true);
+    expect(await saved()).toBe(true);
 
     component.toggleTypewriter();
     expect(component.typewriter()).toBe(false);
-    TestBed.tick();
-    expect(JSON.parse(localStorage.getItem('nostos.studio.preferences')!).typewriter).toBe(false);
+    expect(await saved()).toBe(false);
+  });
+
+  it('leaves the panel open when Esc was meant for a list inside it', () => {
+    component.togglePageSettings();
+    fixture.detectChanges();
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+    expect(component.pageSettingsOpen()).toBe(true);
+  });
+
+  it('closes an open slide-over when the page settings open', () => {
+    component.toggleFilesRail();
+    expect(component.showFileSidebar()).toBe(true);
+    component.togglePageSettings();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.pageSettingsOpen()).toBe(true);
   });
 
   it('lives in the page settings, opened from the header or Ctrl+,', () => {
@@ -902,8 +922,6 @@ describe('WritingStudio typewriter mode', () => {
   });
 
   it('carries over typewriter centring set before it moved into the page settings', () => {
-    localStorage.clear();
-    localStorage.setItem('nostos.typewriter', '1');
     expect(normalizeStudioPreferences(null, true).typewriter).toBe(true);
   });
 });

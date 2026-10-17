@@ -40,10 +40,11 @@ describe('Studio page preferences (issue #1041)', () => {
     );
   });
 
-  it('saves changes and reads them back in a later visit', () => {
+  it('saves changes once they settle, and reads them back in a later visit', async () => {
     const service = TestBed.inject(StudioPreferencesService);
     service.update({ theme: 'study', font: 'lora' });
     TestBed.tick();
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(JSON.parse(localStorage.getItem(STUDIO_PREFERENCES_KEY)!)).toEqual(
       expect.objectContaining({ theme: 'study', font: 'lora' }),
     );
@@ -51,6 +52,20 @@ describe('Studio page preferences (issue #1041)', () => {
 
     service.reset();
     expect(service.preferences()).toEqual(DEFAULT_STUDIO_PREFERENCES);
+  });
+
+  it('writes a waiting change at once when the page goes away', () => {
+    const service = TestBed.inject(StudioPreferencesService);
+    service.update({ theme: 'sepia' });
+    TestBed.tick();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(JSON.parse(localStorage.getItem(STUDIO_PREFERENCES_KEY)!).theme).toBe('sepia');
+  });
+
+  it('carries the old typewriter flag over once and removes it', () => {
+    localStorage.setItem('nostos.typewriter', '1');
+    expect(TestBed.inject(StudioPreferencesService).preferences().typewriter).toBe(true);
+    expect(localStorage.getItem('nostos.typewriter')).toBeNull();
   });
 
   it('survives corrupt storage', () => {
