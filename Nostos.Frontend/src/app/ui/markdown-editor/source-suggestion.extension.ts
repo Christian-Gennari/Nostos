@@ -34,6 +34,10 @@ export function isPaletteQuery(query: string): boolean {
 
 export const SourceSuggestion = Extension.create<SourceSuggestionHandlers>({
   name: 'nostosSourceSuggestion',
+  // Ahead of StarterKit's keymaps: while a query is open, Enter, Shift+Enter
+  // and Ctrl/Cmd+Enter choose a source instead of splitting the paragraph or
+  // inserting a hard break.
+  priority: 1000,
 
   addOptions() {
     return {

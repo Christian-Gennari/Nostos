@@ -21,7 +21,8 @@ import { TableKit } from '@tiptap/extension-table';
 import { DropdownComponent, DropdownOption } from '../dropdown/dropdown.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
-import { SourceSuggestion } from './source-suggestion.extension';
+import { SOURCE_SUGGESTION_KEY, SourceSuggestion } from './source-suggestion.extension';
+import { exitSuggestion } from '@tiptap/suggestion';
 
 export interface MarkdownEditorTransientState {
   /** The selection, as ProseMirror document positions. */
@@ -85,10 +86,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   sourceSuggestion = output<SourceSuggestionState | null>();
   /** Keys pressed while an `@` query is open go here first; true consumes one. */
   sourceSuggestionKeyDown = input<((event: KeyboardEvent) => boolean) | null>(null);
+  /** The palette's highlighted option, announced through the page's ARIA. */
+  sourceSuggestionActiveId = input<string | null>(null);
 
   @ViewChild('mount', { static: true }) private mount!: ElementRef<HTMLElement>;
   @ViewChild('scroller', { static: true }) private scroller!: ElementRef<HTMLElement>;
   @ViewChild('urlInput') private urlInput?: ElementRef<HTMLInputElement>;
+
+  /** The editor's contenteditable element, once it exists. */
+  private readonly editorDom = signal<HTMLElement | null>(null);
 
   /** True until the editor exists, so the empty page never flashes a caret. */
   readonly editorStarting = signal(true);
@@ -123,9 +129,29 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private lastExternalMarkdownApplied: string | null = null;
   /** The text of the open `@` query (the `@` included), or null. */
   private suggestionRange: Range | null = null;
+  private suggestionQuery = '';
+  /** Whether the open query began with the shortcut, which typed its `@`. */
+  private suggestionFromShortcut = false;
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
+    // The page is the palette's combobox: it owns focus, and the list is
+    // announced through these while an `@` query is open.
+    effect(() => {
+      const activeId = this.sourceSuggestionActiveId();
+      const dom = this.editorDom();
+      if (!dom) return;
+      if (activeId) {
+        dom.setAttribute('aria-activedescendant', activeId);
+        dom.setAttribute('aria-controls', 'source-palette-list');
+        dom.setAttribute('aria-expanded', 'true');
+      } else {
+        dom.removeAttribute('aria-activedescendant');
+        dom.removeAttribute('aria-controls');
+        dom.setAttribute('aria-expanded', 'false');
+      }
+    });
+
     effect(() => {
       const on = this.typewriter();
       this.toggleTypewriterLayout(on);
@@ -171,7 +197,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         TableKit.configure({ table: { resizable: false } }),
         SourceSuggestion.configure({
           onChange: (state) => {
+            if (!state) this.dropShortcutAt();
             this.suggestionRange = state?.range ?? null;
+            this.suggestionQuery = state?.query ?? '';
             this.sourceSuggestion.emit(
               state ? { query: state.query, rect: state.rect ? plainRect(state.rect) : null } : null,
             );
@@ -201,6 +229,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     });
 
     this.lastExternalMarkdownApplied ??= markdown;
+    this.editorDom.set(this.editor.view.dom as HTMLElement);
     this.editorStarting.set(false);
     this.refreshToolbar();
     this.emitWordCount();
@@ -248,14 +277,27 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const snippet = markdown.trim();
     if (!editor || editor.isDestroyed || !range || !snippet) return false;
 
+    this.suggestionFromShortcut = false;
     editor.chain().focus().deleteRange(range).run();
     this.suggestionRange = null;
     if (placement === 'inline') {
-      editor.chain().focus().insertContent(markdownToHtml(snippet)).run();
+      // Unwrap the paragraph Markdown puts around a lone line, so the
+      // reference joins the sentence instead of starting a new one.
+      const inline = markdownToHtml(snippet).trim().replace(/^<p>([\s\S]*)<\/p>$/, '$1');
+      editor.chain().focus().insertContent(inline).run();
+      // The reference is italic; the sentence that goes on after it is not.
+      editor.view.dispatch(editor.state.tr.setStoredMarks([]));
     } else {
       this.insertBlockAtCaret(markdownToHtml(snippet));
     }
     return true;
+  }
+
+  /** Close the open `@` query and leave its text as typed. */
+  closeSourceQuery(): void {
+    const editor = this.editor;
+    if (!editor || editor.isDestroyed || !this.suggestionRange) return;
+    exitSuggestion(editor.view, SOURCE_SUGGESTION_KEY);
   }
 
   /** Remove the open `@` query and leave the caret where it was typed. */
@@ -263,6 +305,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const editor = this.editor;
     const range = this.suggestionRange;
     if (!editor || editor.isDestroyed || !range) return false;
+    this.suggestionFromShortcut = false;
     editor.chain().deleteRange(range).run();
     this.suggestionRange = null;
     return true;
@@ -285,7 +328,25 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const before = $from.parent.textBetween(0, $from.parentOffset, ' ', ' ');
     const needsSpace = before.length > 0 && !/\s$/.test(before);
     editor.chain().focus().insertContent(needsSpace ? ' @' : '@').run();
+    this.suggestionFromShortcut = true;
     return true;
+  }
+
+  /**
+   * A palette opened with the shortcut and closed with nothing typed leaves
+   * no stray `@`: the shortcut typed it, so closing takes it back.
+   */
+  private dropShortcutAt(): void {
+    const fromShortcut = this.suggestionFromShortcut;
+    this.suggestionFromShortcut = false;
+    const editor = this.editor;
+    const range = this.suggestionRange;
+    if (!fromShortcut || !editor || !range || this.suggestionQuery !== '') return;
+    if (editor.state.doc.textBetween(range.from, range.to) !== '@') return;
+    queueMicrotask(() => {
+      if (editor.isDestroyed || editor.state.doc.textBetween(range.from, range.to) !== '@') return;
+      editor.chain().deleteRange(range).run();
+    });
   }
 
   /** The page's current Markdown, straight from the editor. */

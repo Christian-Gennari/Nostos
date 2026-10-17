@@ -31,7 +31,10 @@ import { PassageViewerRequest, PassageViewerService } from '../ui/passage-viewer
 import {
   MarkdownEditorComponent,
   MarkdownEditorTransientState,
+  SourceSuggestionState,
 } from '../ui/markdown-editor/markdown-editor.component';
+import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
+import { PaletteChoice, rememberRecentSource } from './source-palette/source-palette.helpers';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -131,6 +134,7 @@ function readTypewriter(): boolean {
     FlatTreeComponent,
     NoteCardComponent,
     MarkdownEditorComponent,
+    SourcePaletteComponent,
     IconButtonComponent,
     ButtonComponent,
     InputDirective,
@@ -759,6 +763,79 @@ export class WritingStudio implements OnInit, AfterViewInit {
       },
     });
   }
+
+  // ------------------------------------------------------------------
+  // The @ source palette (issue #1039)
+  // ------------------------------------------------------------------
+
+  /** The text typed after `@`, or null while no query is open. */
+  readonly paletteQuery = signal<string | null>(null);
+  readonly paletteAnchor = signal<PaletteAnchor | null>(null);
+  @ViewChild(SourcePaletteComponent) private sourcePalette?: SourcePaletteComponent;
+
+  /** Keys the editor forwards while an `@` query is open. */
+  readonly paletteKeyHandler = (event: KeyboardEvent): boolean =>
+    this.sourcePalette?.handleKey(event) ?? false;
+
+  onSourceSuggestion(state: SourceSuggestionState | null): void {
+    this.paletteQuery.set(state ? state.query : null);
+    this.paletteAnchor.set(state?.rect ?? null);
+  }
+
+  /**
+   * Put the chosen source where `@` was typed, and keep it with the writing so
+   * the Reference rail shows it under "For this writing". A passage is never
+   * inserted whole: it opens in the viewer, and the sentences chosen there go
+   * where the `@` was.
+   */
+  insertFromPalette({ source, mode }: PaletteChoice): void {
+    const editor = this.markdownEditor;
+    if (!editor || !this.activeItem()) return;
+
+    if (source.kind === 'passage' && mode === 'quote') {
+      editor.clearSourceQuery();
+      this.passageViewer.open(source.id, this.palettePassageOptions);
+    } else {
+      const markdown =
+        mode === 'reference'
+          ? buildReferenceMarkdown(source)
+          : mode === 'note'
+            ? (buildNoteMarkdown(source) ?? buildQuoteMarkdown(source))
+            : (buildQuoteMarkdown(source) ?? buildNoteMarkdown(source));
+      if (!markdown || !editor.replaceSourceQuery(markdown, mode === 'reference' ? 'inline' : 'block')) {
+        this.toast.error('The editor is not ready for insertion yet');
+        return;
+      }
+    }
+    this.keepNote(source.id);
+    rememberRecentSource(source);
+  }
+
+  /** "Browse Reference" from an empty palette: the Books list, searched. */
+  browseFromPalette(query: string): void {
+    this.markdownEditor?.closeSourceQuery();
+    this.setReferenceMode('library');
+    this.setLibraryTab('notes');
+    this.bookQuery.set(query);
+    this.setRailOpen('reference', true);
+  }
+
+  /** The viewer opened from the palette puts its quote after the caret's paragraph. */
+  private readonly palettePassageOptions: Omit<PassageViewerRequest, 'noteId'> = {
+    quoteSelection: (text: string, passage: Passage) => {
+      const markdown = buildQuoteMarkdown({
+        selectedText: text,
+        bookTitle: passage.bookTitle,
+        bookAuthor: passage.bookAuthor,
+        passageTitle: passage.title,
+      });
+      if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown)) {
+        this.toast.success('Quoted in your writing');
+      } else {
+        this.toast.error('The editor is not ready for insertion yet');
+      }
+    },
+  };
 
   removeKeptSource(noteId: string, event?: Event) {
     event?.stopPropagation();

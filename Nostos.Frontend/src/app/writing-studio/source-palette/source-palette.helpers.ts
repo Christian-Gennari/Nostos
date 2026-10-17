@@ -115,7 +115,8 @@ function escapeRegExp(value: string): string {
  * Re-ranks server hits so a row that holds every word of the query comes
  * first, then rows by how many words they hold, in the server's order
  * otherwise. Words in the quotation or note count over words only in the
- * byline, and a source already kept with the writing wins a tie.
+ * byline, a source already kept with the writing wins a tie, and a direct
+ * quotation wins one over a passage.
  */
 export function rankSources(sources: readonly PaletteSource[], words: readonly string[]): PaletteSource[] {
   if (words.length === 0) return [...sources];
@@ -129,7 +130,11 @@ export function rankSources(sources: readonly PaletteSource[], words: readonly s
       if (inOwn || byline.includes(w)) hits++;
       if (inOwn) ownHits++;
     }
-    return (hits === words.length ? 1000 : 0) + hits * 10 + ownHits * 2 + (s.kept ? 1 : 0);
+    // A quotation goes straight onto the page; a passage first opens to have
+    // its sentences chosen. When both answer the query as well, the direct one
+    // leads, so Enter does what was asked.
+    const passagePenalty = s.kind === 'passage' ? 2 : 0;
+    return (hits === words.length ? 1000 : 0) + hits * 10 + ownHits * 2 + (s.kept ? 1 : 0) - passagePenalty;
   };
   return sources
     .map((s, i) => ({ s, i, score: score(s) }))
