@@ -109,17 +109,19 @@ export const TEXT_WIDTH_PRESETS: readonly { label: string; value: number | null 
   { label: 'Wide', value: 100 },
 ];
 
-/** The preset a stored line spacing reads as: the nearest one. */
-export function nearestLineSpacing(value: number): number {
-  return LINE_SPACING_PRESETS.reduce((best, p) => (Math.abs(p.value - value) < Math.abs(best - value) ? p.value : best), 1.8 as number);
+function nearest<T>(options: readonly T[], distance: (option: T) => number): T {
+  return options.reduce((best, option) => (distance(option) < distance(best) ? option : best));
 }
 
-/** The preset a stored line length reads as: standard, or the nearest of narrow and wide. */
+/** The preset a line spacing snaps to: the nearest one. */
+export function nearestLineSpacing(value: number): number {
+  return nearest(LINE_SPACING_PRESETS, (p) => Math.abs(p.value - value)).value;
+}
+
+/** The preset a line length snaps to; the standard measure counts as its characters. */
 export function nearestTextWidth(value: number | null): number | null {
   if (value === null) return null;
-  const standard = STANDARD_TEXT_WIDTH;
-  const candidates: [number | null, number][] = [[66, 66], [null, standard], [100, 100]];
-  return candidates.reduce((best, c) => (Math.abs(c[1] - value) < Math.abs(best[1] - value) ? c : best))[0];
+  return nearest(TEXT_WIDTH_PRESETS, (p) => Math.abs((p.value ?? STANDARD_TEXT_WIDTH) - value)).value;
 }
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
@@ -132,17 +134,22 @@ export function normalizeStudioPreferences(raw: unknown, legacyTypewriter = fals
   const value = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof StudioPreferences, unknown>>;
   const d = DEFAULT_STUDIO_PREFERENCES;
   return {
-    // Dark and Black, offered before #1060, are not in the list: a saved one
-    // falls back to following the app.
-    theme: STUDIO_THEMES.some((t) => t.value === value.theme) ? (value.theme as StudioTheme) : d.theme,
+    // Dark and Black, offered before #1060, are in neither: a saved one
+    // follows the app.
+    theme:
+      value.theme === 'match' || STUDIO_THEMES.some((t) => t.value === value.theme)
+        ? (value.theme as StudioTheme)
+        : d.theme,
     font: STUDIO_FONTS.some((f) => f.value === value.font) ? (value.font as string) : d.font,
     fontSize: Math.round(clamp(value.fontSize, FONT_SIZE_RANGE.min, FONT_SIZE_RANGE.max, d.fontSize)),
-    lineSpacing:
-      Math.round(clamp(value.lineSpacing, LINE_SPACING_RANGE.min, LINE_SPACING_RANGE.max, d.lineSpacing) * 10) / 10,
+    // The settings offer three spacings and three lengths (#1060); a value
+    // saved from the old sliders snaps to the nearest, so what the page shows
+    // is what the settings say.
+    lineSpacing: nearestLineSpacing(clamp(value.lineSpacing, LINE_SPACING_RANGE.min, LINE_SPACING_RANGE.max, d.lineSpacing)),
     textWidth:
       value.textWidth === null || value.textWidth === undefined
         ? d.textWidth
-        : Math.round(clamp(value.textWidth, TEXT_WIDTH_RANGE.min, TEXT_WIDTH_RANGE.max, STANDARD_TEXT_WIDTH)),
+        : nearestTextWidth(clamp(value.textWidth, TEXT_WIDTH_RANGE.min, TEXT_WIDTH_RANGE.max, STANDARD_TEXT_WIDTH)),
     spellCheck: typeof value.spellCheck === 'boolean' ? value.spellCheck : d.spellCheck,
     typewriter: typeof value.typewriter === 'boolean' ? value.typewriter : legacyTypewriter,
     sounds: typeof value.sounds === 'boolean' ? value.sounds : d.sounds,
@@ -169,9 +176,10 @@ export class StudioPreferencesService {
   readonly preferences = this.state.asReadonly();
 
   readonly theme = computed(() => this.state().theme);
-  readonly fontStack = computed(
-    () => STUDIO_FONTS.find((f) => f.value === this.state().font)?.stack ?? STUDIO_FONTS[3].stack,
+  readonly font = computed(
+    () => STUDIO_FONTS.find((f) => f.value === this.state().font) ?? STUDIO_FONTS.find((f) => f.value === DEFAULT_STUDIO_PREFERENCES.font)!,
   );
+  readonly fontStack = computed(() => this.font().stack);
 
   /** A change waiting for the debounce; written at once if the page goes away. */
   private unsaved: StudioPreferences | null = null;

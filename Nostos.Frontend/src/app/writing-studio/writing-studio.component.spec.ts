@@ -907,7 +907,7 @@ describe('WritingStudio typewriter mode', () => {
     fixture.detectChanges();
 
     const centred = fixture.nativeElement.querySelector(
-      '[data-testid="page-settings"] input[aria-label^="Keep the line in the middle"]',
+      '[data-testid="page-settings"] input[aria-label^="Keep the line centred"]',
     ) as HTMLInputElement;
     expect(centred.checked).toBe(false);
     centred.click();

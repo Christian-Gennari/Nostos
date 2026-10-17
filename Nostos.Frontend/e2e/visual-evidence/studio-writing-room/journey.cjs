@@ -98,8 +98,8 @@ const title = `Journey ${tag} ${Date.now()}`;
   const panel = page.getByTestId('page-settings');
   await panel.waitFor();
   await panel.locator('[data-theme-option="sepia"]').click();
-  await panel.locator('app-dropdown').click();
-  await page.getByRole('option', { name: /EB Garamond/ }).click();
+  await panel.locator('.ps-typeface').click();
+  await panel.locator('[data-font-option="eb-garamond"]').click();
   await page.waitForTimeout(700);
   const face = () => editor.evaluate((el) => ({ font: getComputedStyle(el).fontFamily, themed: !!el.closest('[class*="studio-theme-sepia"]') }));
   const f1 = await face();
@@ -110,9 +110,12 @@ const title = `Journey ${tag} ${Date.now()}`;
   await panel.getByRole('checkbox', { name: 'Typewriter sounds' }).click();
   await page.waitForTimeout(900);
   await shot(page, '6a-sounds-on');
-  if (phone) await page.getByRole('button', { name: /Close/ }).first().click().catch(() => page.keyboard.press('Escape'));
+  // A tap on the page above the sheet closes it on a phone; Esc on a desktop.
+  if (phone) await page.mouse.click(30, 90);
   else await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
+  // The "Quoted in your writing" toast sits over the last line on a phone.
+  await page.locator('.toast').waitFor({ state: 'detached', timeout: 15000 }).catch(() => undefined);
   await editor.locator('p').last().click();
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Enter');

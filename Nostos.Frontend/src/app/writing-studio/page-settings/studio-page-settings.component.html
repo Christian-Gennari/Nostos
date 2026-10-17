@@ -5,17 +5,20 @@
       <h2 class="ps-subhead-title">Typeface</h2>
     </header>
     <div class="ps-fonts" role="radiogroup" aria-label="Typeface">
-      @for (group of fontGroups; track group) {
-        <p class="ps-font-group" aria-hidden="true">{{ group }}</p>
-        @for (font of fontsIn(group); track font.value) {
+      @for (entry of fontGroups; track entry.group) {
+        <p class="ps-font-group" aria-hidden="true">{{ entry.group }}</p>
+        @for (font of entry.fonts; track font.value) {
+          <!-- Arrows try a face on the page; Enter or a click keeps it and goes back. -->
           <button
             type="button"
             role="radio"
             class="ps-font"
             [attr.aria-checked]="font.value === prefs.preferences().font"
+            [attr.tabindex]="font.value === prefs.font().value ? 0 : -1"
             [attr.data-font-option]="font.value"
             [style.font-family]="font.stack"
             (click)="pickFont(font)"
+            (keydown)="fontKey($event, font)"
           >{{ font.label }}</button>
         }
       }
@@ -46,9 +49,9 @@
 
     <div class="ps-rule" aria-hidden="true"></div>
 
-    <button type="button" class="ps-typeface" (click)="openFonts()" aria-haspopup="true">
+    <button type="button" class="ps-typeface" (click)="openFonts()">
       <span class="ps-label">Typeface</span>
-      <span class="ps-typeface-name" [style.font-family]="currentFont().stack">{{ currentFont().label }}</span>
+      <span class="ps-typeface-name" [style.font-family]="prefs.font().stack">{{ prefs.font().label }}</span>
       <span class="ps-chevron" aria-hidden="true">›</span>
     </button>
 
@@ -81,7 +84,7 @@
       <div class="ps-toggle">
         <span aria-hidden="true">Keep the line centred</span>
         <label appSwitch>
-          <input type="checkbox" aria-label="Keep the line in the middle (typewriter scrolling)" [checked]="prefs.preferences().typewriter" (change)="prefs.update({ typewriter: checkedFrom($event) })" />
+          <input type="checkbox" aria-label="Keep the line centred (typewriter scrolling)" [checked]="prefs.preferences().typewriter" (change)="prefs.update({ typewriter: checkedFrom($event) })" />
         </label>
       </div>
       <div class="ps-toggle">

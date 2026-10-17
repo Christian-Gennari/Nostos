@@ -692,7 +692,7 @@
   </app-confirm-modal>
 
   @if (pageSettingsOpen()) {
-    <app-studio-page-settings [anchor]="pageSettingsButton?.nativeElement ?? null" (closed)="closePageSettings()" />
+    <app-studio-page-settings [anchor]="pageSettingsButton?.nativeElement ?? null" (closed)="pageSettingsOpen.set(false)" />
   }
 
   @if (shortcutsOpen()) {

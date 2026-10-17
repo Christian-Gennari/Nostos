@@ -335,7 +335,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!open) this.markdownEditor?.focus();
   }
 
-  /** Closed from inside (Esc, a press outside): back to the page. */
+  /**
+   * Closed with Esc: back to the page. A press outside closes it without this,
+   * so focus stays where the press went (and no phone keyboard opens).
+   */
   closePageSettings(): void {
     if (!this.pageSettingsOpen()) return;
     this.pageSettingsOpen.set(false);

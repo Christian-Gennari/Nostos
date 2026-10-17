@@ -1,5 +1,18 @@
-import { AfterViewInit, Component, ElementRef, OnDestroy, computed, inject, input, output, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  Injector,
+  OnDestroy,
+  afterNextRender,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 
+import { ThemeService } from '../../core/services/theme.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmented.component';
@@ -31,11 +44,17 @@ const STANDARD_WIDTH_VALUE = 'standard';
   imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
-  host: { '[style.--ps-top.px]': 'top()' },
+  host: {
+    '[style.--ps-top.px]': 'top()',
+    '(window:resize)': 'viewport.update((n) => n + 1)',
+    '(keydown.escape)': 'escape($event)',
+  },
 })
 export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   readonly prefs = inject(StudioPreferencesService);
+  private readonly appTheme = inject(ThemeService);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly injector = inject(Injector);
 
   /** The Aa button: the popover hangs under it, and a click on it is its own toggle. */
   readonly anchor = input<HTMLElement | null>(null);
@@ -44,14 +63,13 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   readonly view = signal<'main' | 'fonts'>('main');
 
   readonly themes = STUDIO_THEMES;
-  readonly fonts = STUDIO_FONTS;
-  readonly fontGroups = [...new Set(STUDIO_FONTS.map((f) => f.group))];
+  readonly fontGroups = [...new Set(STUDIO_FONTS.map((f) => f.group))].map((group) => ({
+    group,
+    fonts: STUDIO_FONTS.filter((f) => f.group === group),
+  }));
   readonly sizeRange = FONT_SIZE_RANGE;
 
   readonly following = computed(() => this.prefs.theme() === 'match');
-  readonly currentFont = computed(
-    () => STUDIO_FONTS.find((f) => f.value === this.prefs.preferences().font) ?? STUDIO_FONTS[3],
-  );
 
   readonly spacingOptions: readonly SegmentedOption<number>[] = LINE_SPACING_PRESETS.map((p) => ({ value: p.value, label: p.label }));
   readonly spacing = computed(() => nearestLineSpacing(this.prefs.preferences().lineSpacing));
@@ -65,8 +83,12 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     return nearest === null ? STANDARD_WIDTH_VALUE : String(nearest);
   });
 
+  /** Bumped on resize, so the popover follows its button when the header reflows. */
+  readonly viewport = signal(0);
+
   /** Under the anchor; the stylesheet's own fallback when there is none. */
   readonly top = computed(() => {
+    this.viewport();
     const rect = this.anchor()?.getBoundingClientRect();
     return rect ? Math.round(rect.bottom + 6) : null;
   });
@@ -75,8 +97,6 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   private readonly onPointerDown = (event: PointerEvent) => {
     const target = event.target as Node | null;
     if (!target || this.host.nativeElement.contains(target) || this.anchor()?.contains(target)) return;
-    // A dropdown or menu the panel opened lives in an overlay outside it.
-    if ((target as Element).closest?.('.cdk-overlay-container')) return;
     this.closed.emit();
   };
 
@@ -100,8 +120,15 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
       this.prefs.update({ theme: 'match' });
       return;
     }
-    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    this.prefs.update({ theme: dark ? 'mist' : 'paper' });
+    const mode = this.appTheme.theme();
+    this.prefs.update({ theme: this.themes.find((t) => t.mode === mode)!.value });
+  }
+
+  /** In the typeface list Esc steps back; on the main view it is the Studio's to close. */
+  escape(event: Event): void {
+    if (this.view() !== 'fonts') return;
+    event.preventDefault();
+    this.backToMain();
   }
 
   /** Arrow keys move between swatches, as in any radio group. */
@@ -123,9 +150,24 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     this.prefs.update({ textWidth: value === STANDARD_WIDTH_VALUE ? null : Number(value) });
   }
 
+  /** The typeface list is one radio group: arrows move and pick, one tab stop. */
+  fontKey(event: KeyboardEvent, font: StudioFont): void {
+    const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const index = STUDIO_FONTS.indexOf(font);
+    const next = STUDIO_FONTS[(index + step + STUDIO_FONTS.length) % STUDIO_FONTS.length];
+    this.prefs.update({ font: next.value });
+    queueMicrotask(() =>
+      (this.host.nativeElement.querySelector(`[data-font-option="${next.value}"]`) as HTMLElement | null)?.focus(),
+    );
+  }
+
   openFonts(): void {
     this.view.set('fonts');
-    queueMicrotask(() => (this.host.nativeElement.querySelector('.ps-font[aria-checked="true"]') as HTMLElement | null)?.focus());
+    // The button pressed is gone with the view: focus must land in the list,
+    // once it exists, or Esc would reach the Studio and close everything.
+    this.focusAfterRender('.ps-font[aria-checked="true"]');
   }
 
   pickFont(font: StudioFont): void {
@@ -135,11 +177,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   backToMain(): void {
     this.view.set('main');
-    queueMicrotask(() => (this.host.nativeElement.querySelector('.ps-typeface') as HTMLElement | null)?.focus());
-  }
-
-  fontsIn(group: StudioFont['group']): StudioFont[] {
-    return STUDIO_FONTS.filter((f) => f.group === group);
+    this.focusAfterRender('.ps-typeface');
   }
 
   checkedFrom(event: Event): boolean {
@@ -148,6 +186,12 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   numberFrom(event: Event): number {
     return Number((event.target as HTMLInputElement).value);
+  }
+
+  private focusAfterRender(selector: string): void {
+    afterNextRender(() => (this.host.nativeElement.querySelector(selector) as HTMLElement | null)?.focus(), {
+      injector: this.injector,
+    });
   }
 
   private focusTheme(): void {

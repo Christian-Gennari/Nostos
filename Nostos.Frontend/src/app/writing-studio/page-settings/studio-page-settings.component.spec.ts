@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { ThemeService } from '../../core/services/theme.service';
 import { StudioPageSettingsComponent } from './studio-page-settings.component';
 import { DEFAULT_STUDIO_PREFERENCES, StudioPreferencesService } from './studio-preferences.service';
 
@@ -43,12 +44,13 @@ describe('StudioPageSettingsComponent (#1060)', () => {
   });
 
   it('leaving Follow app keeps a page of the same lightness', () => {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    const appTheme = TestBed.inject(ThemeService);
+    appTheme.setTheme('dark');
     try {
       click('.ps-follow input');
       expect(prefs.theme()).toBe('mist');
     } finally {
-      document.documentElement.removeAttribute('data-theme');
+      appTheme.setTheme('light');
     }
   });
 
@@ -93,6 +95,20 @@ describe('StudioPageSettingsComponent (#1060)', () => {
     prefs.update({ sounds: true });
     fixture.detectChanges();
     expect(root.querySelector('.ps-volume')).toBeTruthy();
+  });
+
+  it('steps back from the typeface list with Esc, and walks it with the arrows', () => {
+    click('.ps-typeface');
+    const current = root.querySelector('.ps-font[tabindex="0"]') as HTMLElement;
+    expect(current.getAttribute('data-font-option')).toBe('newsreader');
+    current.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    fixture.detectChanges();
+    expect(prefs.preferences().font).toBe('crimson-pro');
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    root.querySelector('.ps-font')!.dispatchEvent(esc);
+    fixture.detectChanges();
+    expect(esc.defaultPrevented).toBe(true);
+    expect(root.querySelector('.ps-typeface')).toBeTruthy();
   });
 
   it('closes on a press outside it, but not inside', () => {
