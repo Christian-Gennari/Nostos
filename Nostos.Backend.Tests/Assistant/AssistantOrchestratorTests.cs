@@ -2258,23 +2258,33 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     [Fact]
     public async Task Wall_clock_ceiling_cancels_an_in_flight_upstream_call()
     {
-        // The ceiling has to leave the orchestrator time to reach the provider:
-        // at 100 ms a busy runner spent the whole budget before the first call,
-        // and the turn ended without the in-flight call this test is about.
-        var h = CreateHarness(configure: options => options.MaxTurnElapsedMilliseconds = 1_000);
+        // The clock stands still until the provider has been entered, so the
+        // test does not depend on how fast the runner reaches the first call
+        // (#896): the deadline fires only when the test fires it.
+        var clock = new TurnDeadlineClock();
+        var h = CreateHarness(
+            configure: options => options.MaxTurnElapsedMilliseconds = 1_000,
+            timeProvider: clock);
+        var providerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         h.Llm.AsyncResponder = async (_, cancellationToken) =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            providerEntered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return new LlmCompletion("Too late.", "stop", []);
         };
 
         var turn = h.Orchestrator.HandleTurnAsync(
             Turn("Hello.", Context(surface: "library", route: "/library")));
 
-        var finished = await Task.WhenAny(turn, Task.Delay(TimeSpan.FromSeconds(10)));
-        finished.Should().BeSameAs(turn, "the turn deadline must cancel the in-flight provider call");
+        await providerEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        clock.DeadlineDueTime.Should().Be(
+            TimeSpan.FromMilliseconds(1_000),
+            "no time has passed, so the provider call is given the whole turn budget");
+        turn.IsCompleted.Should().BeFalse("the provider call is still in flight");
 
-        var response = await turn;
+        clock.FireDeadline();
+
+        var response = await turn.WaitAsync(TimeSpan.FromSeconds(10));
         h.Llm.CallCount.Should().Be(1);
         response.Reply.Should().Be(AssistantOrchestrator.IncompleteTurnReply);
     }
@@ -3539,7 +3549,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         IBookTextSearchService? bookText = null,
         IKnowledgeRetrievalService? knowledge = null,
         Func<IDbContextFactory<NostosDbContext>, ILibraryService, IBookTextSearchService>? bookTextFactory = null,
-        IThoughtProcessor? thoughts = null)
+        IThoughtProcessor? thoughts = null,
+        TimeProvider? timeProvider = null)
     {
         var path = _fixture.CreateDatabasePath();
         var options = new DbContextOptionsBuilder<NostosDbContext>()
@@ -3597,7 +3608,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             continuations,
             libraryService,
             assistantOptions,
-            NullLogger<AssistantOrchestrator>.Instance);
+            NullLogger<AssistantOrchestrator>.Instance,
+            timeProvider: timeProvider);
 
         return new Harness(db, factory, registry, llm, changesets, coordinator, continuations, orchestrator);
     }
@@ -3849,6 +3861,51 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
+        }
+    }
+
+    /// <summary>
+    /// A clock that never advances and arms timers without running them, so the
+    /// turn deadline fires exactly when a test calls <see cref="FireDeadline"/>.
+    /// </summary>
+    private sealed class TurnDeadlineClock : TimeProvider
+    {
+        private ManualTimer? _deadline;
+
+        public TimeSpan? DeadlineDueTime { get; private set; }
+
+        public override long GetTimestamp() => 0;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            DeadlineDueTime = dueTime;
+            _deadline = new ManualTimer(callback, state);
+            return _deadline;
+        }
+
+        public void FireDeadline() => _deadline!.Fire();
+
+        private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
+        {
+            private bool _disposed;
+
+            public void Fire()
+            {
+                if (!_disposed)
+                {
+                    callback(state);
+                }
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => !_disposed;
+
+            public void Dispose() => _disposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
         }
     }
 

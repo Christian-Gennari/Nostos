@@ -90,4 +90,32 @@ public sealed class AssistantExecutionMeterTests
         result.ReportedTotalTokens.Should().BeNull();
         result.StopReason.Should().Be(AssistantTurnStopReason.ProviderError);
     }
+
+    [Fact]
+    public void Elapsed_time_follows_the_supplied_clock_and_stops_at_finish()
+    {
+        var clock = new SteppedClock();
+        var meter = new AssistantExecutionMeter(clock);
+
+        clock.Advance(TimeSpan.FromMilliseconds(250));
+        meter.Snapshot().ElapsedMilliseconds.Should().Be(250);
+
+        clock.Advance(TimeSpan.FromMilliseconds(50));
+        var result = meter.Finish(AssistantTurnStopReason.Completed);
+        clock.Advance(TimeSpan.FromSeconds(5));
+
+        result.ElapsedMilliseconds.Should().Be(300);
+        meter.Snapshot().ElapsedMilliseconds.Should().Be(300, "a finished turn's clock no longer runs");
+    }
+
+    private sealed class SteppedClock : TimeProvider
+    {
+        private long _timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => _timestamp;
+
+        public void Advance(TimeSpan delta) => _timestamp += delta.Ticks;
+    }
 }
