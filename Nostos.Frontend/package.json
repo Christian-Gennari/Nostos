@@ -48,6 +48,13 @@
     "@angular/router": "^21.2.19",
     "@angular/service-worker": "^21.2.19",
     "@phosphor-icons/core": "^2.1.1",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/extension-placeholder": "3.31.4",
+    "@tiptap/extension-table": "3.31.4",
+    "@tiptap/extension-typography": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
     "d3-force": "^3.0.0",
     "epubjs": "^0.3.93",
     "graphology": "^0.26.0",
@@ -56,9 +63,9 @@
     "ngx-extended-pdf-viewer": "^25.6.1",
     "rxjs": "~7.8.0",
     "sigma": "^3.0.3",
-    "tinymce": "^8.8.2",
     "tslib": "^2.3.0",
-    "turndown": "^7.2.2"
+    "turndown": "^7.2.2",
+    "turndown-plugin-gfm": "1.0.2"
   },
   "devDependencies": {
     "@angular/build": "^21.0.0",

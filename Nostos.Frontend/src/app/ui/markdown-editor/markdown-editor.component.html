@@ -1,0 +1,49 @@
+<div class="editor-toolbar" role="toolbar" aria-label="Formatting">
+  <div class="editor-toolbar-row">
+    <button appIconButton icon="arrow-counter-clockwise" [glyphSize]="16" weight="thin" title="Undo (Ctrl+Z)" aria-label="Undo" [disabled]="!canUndo()" (mousedown)="$event.preventDefault()" (click)="undo()"></button>
+    <button appIconButton icon="arrow-clockwise" [glyphSize]="16" weight="thin" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" [disabled]="!canRedo()" (mousedown)="$event.preventDefault()" (click)="redo()"></button>
+    <span class="editor-toolbar-sep" aria-hidden="true"></span>
+    <app-dropdown
+      class="editor-block-select"
+      controlSize="compact"
+      appearance="subtle"
+      ariaLabel="Text style"
+      [options]="blockOptions"
+      [value]="activeBlock()"
+      (valueChange)="setBlock($event)"
+    />
+    <span class="editor-toolbar-sep" aria-hidden="true"></span>
+    <button type="button" class="editor-mark-btn editor-mark-bold" title="Bold (Ctrl+B)" aria-label="Bold" [class.active]="isBold()" [attr.aria-pressed]="isBold()" (mousedown)="$event.preventDefault()" (click)="toggleBold()">B</button>
+    <button type="button" class="editor-mark-btn editor-mark-italic" title="Italic (Ctrl+I)" aria-label="Italic" [class.active]="isItalic()" [attr.aria-pressed]="isItalic()" (mousedown)="$event.preventDefault()" (click)="toggleItalic()">I</button>
+    <span class="editor-toolbar-sep" aria-hidden="true"></span>
+    <button appIconButton icon="list-bullets" [glyphSize]="16" weight="thin" title="Bulleted list" aria-label="Bulleted list" [pressed]="isBulletList()" (mousedown)="$event.preventDefault()" (click)="toggleBulletList()"></button>
+    <button type="button" class="editor-mark-btn editor-mark-numbered" title="Numbered list" aria-label="Numbered list" [class.active]="isOrderedList()" [attr.aria-pressed]="isOrderedList()" (mousedown)="$event.preventDefault()" (click)="toggleOrderedList()">1.</button>
+    <span class="editor-toolbar-sep" aria-hidden="true"></span>
+    <button appIconButton icon="link-simple" [glyphSize]="16" weight="thin" title="Link" aria-label="Link" [pressed]="isLink()" (mousedown)="$event.preventDefault()" (click)="openUrlPrompt('link')"></button>
+    <button appIconButton icon="image" [glyphSize]="16" weight="thin" title="Image" aria-label="Image" (mousedown)="$event.preventDefault()" (click)="openUrlPrompt('image')"></button>
+    <button appIconButton icon="text-t" [glyphSize]="16" weight="thin" title="Clear formatting" aria-label="Clear formatting" (mousedown)="$event.preventDefault()" (click)="clearFormatting()"></button>
+  </div>
+  @if (urlPrompt(); as kind) {
+    <form class="editor-url-row" (submit)="$event.preventDefault(); applyUrl()">
+      <label class="editor-url-label" for="editor-url-input">{{ kind === 'link' ? 'Link' : 'Image URL' }}</label>
+      <input
+        id="editor-url-input"
+        class="editor-url-input"
+        type="url"
+        autocomplete="off"
+        spellcheck="false"
+        [placeholder]="kind === 'link' ? 'https://… (empty removes the link)' : 'https://…/image.jpg'"
+        [value]="urlValue()"
+        (input)="urlValue.set($any($event.target).value)"
+        (keydown.escape)="cancelUrl()"
+        #urlInput
+      />
+      <button type="submit" class="editor-url-apply">{{ kind === 'link' ? 'Apply' : 'Insert' }}</button>
+      <button type="button" class="editor-url-cancel" (click)="cancelUrl()">Cancel</button>
+    </form>
+  }
+</div>
+
+<div class="manuscript-scroll" #scroller>
+  <div class="nostos-manuscript" [class.editor-starting]="editorStarting()" #mount></div>
+</div>

@@ -424,8 +424,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
   });
 
   /**
-   * Word count reported by the TinyMCE wordcount plugin (authoritative for
-   * the rendered document). Falls back to the markdown-derived count until
+   * Word count reported by the editor (authoritative for the rendered
+   * document). Falls back to the markdown-derived count until
    * the editor boots and emits its first count.
    */
   editorWordCount = signal<number | null>(null);

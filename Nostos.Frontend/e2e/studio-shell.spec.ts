@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { apiPost, loadFixture } from './support/fixture';
 import { apiDelete, cleanupBrain, seedBrain, type BrainSeed } from './support/brain-fixture';
 import { apiPut } from './support/visual-capture';
+import { studioPage } from './support/studio-editor';
 
 const MANUSCRIPT = `# The Quiet Practice of Paying Attention
 
@@ -53,8 +54,10 @@ const REFERENCE_STATE_NOTES = Array.from(
 async function measureShell(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     const pane = document.querySelector('.editor-pane');
-    const iframe = document.querySelector<HTMLIFrameElement>('.tox-edit-area__iframe');
-    const editorBody = iframe?.contentDocument?.body;
+    // The page and its scroller live in the app's DOM since #1037, so every
+    // rectangle below is already in viewport coordinates.
+    const iframe = document.querySelector<HTMLElement>('app-markdown-editor .manuscript-scroll');
+    const editorBody = document.querySelector<HTMLElement>('app-markdown-editor .nostos-manuscript-body');
     const manuscriptRect = editorBody?.getBoundingClientRect();
     const manuscriptStyle = editorBody && getComputedStyle(editorBody);
     const paragraph = editorBody?.querySelector('p');
@@ -79,8 +82,8 @@ async function measureShell(page: import('@playwright/test').Page) {
       }
     }
 
-    const toolbar = document.querySelector('.tox-toolbar__primary');
-    const toolbarGlyph = toolbar?.querySelector<SVGSVGElement>('.tox-tbtn svg');
+    const toolbar = document.querySelector('app-markdown-editor .editor-toolbar-row');
+    const toolbarGlyph = toolbar?.querySelector<SVGSVGElement>('button svg');
     const toolbarGlyphRectX = toolbarGlyph?.getBoundingClientRect().left ?? null;
     const glyphBounds = toolbarGlyph?.getBBox();
     const glyphTransform = toolbarGlyph?.getScreenCTM();
@@ -90,15 +93,14 @@ async function measureShell(page: import('@playwright/test').Page) {
         : null;
     const toolbarRect = toolbar?.getBoundingClientRect();
     const toolbarRows = new Set(
-      Array.from(toolbar?.querySelectorAll('.tox-toolbar__group') ?? []).map((group) =>
-        Math.round(group.getBoundingClientRect().top),
+      Array.from(toolbar?.children ?? []).map((control) =>
+        Math.round(control.getBoundingClientRect().top + control.getBoundingClientRect().height / 2),
       ),
     ).size;
     const paneRect = pane?.getBoundingClientRect();
     const iframeRect = iframe?.getBoundingClientRect();
     const footerRect = document.querySelector('.editor-footer')?.getBoundingClientRect();
-    const manuscriptTextViewportX =
-      iframeRect && manuscriptTextX !== null ? iframeRect.left + manuscriptTextX : null;
+    const manuscriptTextViewportX = manuscriptTextX;
 
     return {
       paneWidth: Math.round(paneRect?.width ?? 0),
@@ -141,9 +143,7 @@ function expectToolbarGlyphAligned(measurement: Awaited<ReturnType<typeof measur
 }
 
 async function waitForEditorFonts(page: import('@playwright/test').Page): Promise<void> {
-  await page
-    .frameLocator('.tox-edit-area__iframe')
-    .locator('body')
+  await studioPage(page)
     .evaluate(async (body) => {
       await body.ownerDocument.fonts.ready;
     });
@@ -153,7 +153,7 @@ async function typeAfterLayoutChange(
   page: import('@playwright/test').Page,
   marker: string,
 ): Promise<void> {
-  const body = page.frameLocator('.tox-edit-area__iframe').locator('body');
+  const body = studioPage(page);
   await body.locator('p').first().click();
   await page.keyboard.press('Control+End');
   await page.keyboard.insertText(` [${marker}]`);
@@ -163,11 +163,12 @@ async function typeAfterLayoutChange(
 async function expectSameEditorInstance(
   page: import('@playwright/test').Page,
 ): Promise<void> {
+  // A re-created editor mounts a new page element; the same element means the
+  // same editor survived the layout change.
   const isSame = await page.evaluate(() => {
-    const tinyMce = (window as any).tinymce;
+    const marked = (window as any).__studioS1Editor;
     return Boolean(
-      tinyMce?.__studioS1Editor &&
-        tinyMce.__studioS1Editor === tinyMce.get('markdown-tinymce-editor'),
+      marked && marked === document.querySelector('app-markdown-editor .nostos-manuscript-body'),
     );
   });
   expect(isSame).toBe(true);
@@ -205,7 +206,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         waitUntil: 'domcontentloaded',
       });
 
-      const editorBody = page.frameLocator('.tox-edit-area__iframe').locator('body');
+      const editorBody = studioPage(page);
       await expect(editorBody).toContainText('The Quiet Practice of Paying Attention');
       await waitForEditorFonts(page);
       await expect(page.locator('.header-doc-title')).toHaveAttribute('title', title);
@@ -219,9 +220,9 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       }
 
       await page.waitForFunction(() => {
-        const tinyMce = (window as any).tinymce;
-        if (!tinyMce?.get('markdown-tinymce-editor')) return false;
-        tinyMce.__studioS1Editor = tinyMce.get('markdown-tinymce-editor');
+        const editor = document.querySelector('app-markdown-editor .nostos-manuscript-body');
+        if (!editor) return false;
+        (window as any).__studioS1Editor = editor;
         return true;
       });
 
@@ -457,13 +458,13 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await compactPage.goto(`${baseUrl}/studio?writingId=${writing.id}`, {
         waitUntil: 'domcontentloaded',
       });
-      const editorBody = compactPage.frameLocator('.tox-edit-area__iframe').locator('body');
+      const editorBody = studioPage(compactPage);
       await expect(editorBody).toContainText('The Quiet Practice of Paying Attention');
       await waitForEditorFonts(compactPage);
       await compactPage.waitForFunction(() => {
-        const tinyMce = (window as any).tinymce;
-        if (!tinyMce?.get('markdown-tinymce-editor')) return false;
-        tinyMce.__studioS1Editor = tinyMce.get('markdown-tinymce-editor');
+        const editor = document.querySelector('app-markdown-editor .nostos-manuscript-body');
+        if (!editor) return false;
+        (window as any).__studioS1Editor = editor;
         return true;
       });
       await expect(compactPage.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
@@ -636,7 +637,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
               height: Math.round(rect.height),
             };
           });
-          const iframe = document.querySelector('.tox-edit-area__iframe')!.getBoundingClientRect();
+          const iframe = document.querySelector('app-markdown-editor .manuscript-scroll')!.getBoundingClientRect();
           const footer = document.querySelector('.editor-footer')!.getBoundingClientRect();
           return {
             height: Math.round(header.getBoundingClientRect().height),
