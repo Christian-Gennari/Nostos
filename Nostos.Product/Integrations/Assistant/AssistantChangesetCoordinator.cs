@@ -22,8 +22,11 @@ public sealed record AssistantChangesetOutcome(AssistantChangesetDto? Changeset,
 public sealed class AssistantChangesetCoordinator(
     AssistantChangesetStore store,
     ILibraryChangesetService changesets,
-    AssistantOptions options)
+    AssistantOptions options,
+    IAssistantOwner? owner = null)
 {
+    private readonly IAssistantOwner _owner = owner ?? SingleAssistantOwner.Instance;
+
     public const string ReviewReply = "Here's what I'd change. Nothing changes until you apply it.";
     public const string LibraryMovedReason = "The library changed while I was working, so check this before applying.";
 
@@ -39,7 +42,7 @@ public sealed class AssistantChangesetCoordinator(
         bool turnIncomplete,
         CancellationToken ct)
     {
-        if (store.FindAppliedForTurn(conversationKey, turnId) is { } earlier)
+        if (store.FindAppliedForTurn(_owner.Key, conversationKey, turnId) is { } earlier)
             return new AssistantChangesetOutcome(earlier.ToDto(), null);
 
         if (draft.IsEmpty || draft.Diff is not { } diff || diff.IsEmpty || draft.DiffHash is not { } hash)
@@ -48,7 +51,7 @@ public sealed class AssistantChangesetCoordinator(
         var decision = AssistantChangePolicy.Evaluate(diff, options, readUntrustedContent, turnIncomplete);
         if (decision.RequiresReview)
         {
-            var review = store.Add(conversationKey, turnId, draft.Steps, diff, hash,
+            var review = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, diff, hash,
                 AssistantChangesetStatus.Review, decision.Reasons, undo: null);
             return new AssistantChangesetOutcome(review.ToDto(), null);
         }
@@ -57,14 +60,14 @@ public sealed class AssistantChangesetCoordinator(
         var applied = await changesets.ApplyAsync(draft.Steps.Select(s => s.Op).ToList(), hash, CancellationToken.None);
         if (applied.Success)
         {
-            var stored = store.Add(conversationKey, turnId, draft.Steps, applied.Diff!, applied.DiffHash!,
+            var stored = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, applied.Diff!, applied.DiffHash!,
                 AssistantChangesetStatus.Applied, [], applied.Undo);
             return new AssistantChangesetOutcome(stored.ToDto(), null);
         }
 
         if (applied.ErrorCode == LibraryChangesetErrorCodes.DiffChanged && applied.Diff is { IsEmpty: false })
         {
-            var review = store.Add(conversationKey, turnId, draft.Steps, applied.Diff, applied.DiffHash!,
+            var review = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, applied.Diff, applied.DiffHash!,
                 AssistantChangesetStatus.Review, [LibraryMovedReason], undo: null);
             return new AssistantChangesetOutcome(review.ToDto(), null);
         }

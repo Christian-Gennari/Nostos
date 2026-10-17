@@ -22,6 +22,7 @@ public enum AssistantChangesetStatus
 public sealed class StoredAssistantChangeset
 {
     public required string ChangesetId { get; init; }
+    public required string OwnerKey { get; init; }
     public required string ConversationKey { get; init; }
     public required string TurnId { get; init; }
     public required string ActionToken { get; init; }
@@ -65,12 +66,19 @@ public sealed class StoredAssistantChangeset
 /// newer one discards the older, so a stale card can never be applied by
 /// mistake. Undo records are a convenience held in memory, not history: they
 /// do not survive a restart, and the card then says undo is no longer available.
+///
+/// Every changeset belongs to an owner (<see cref="IAssistantOwner"/>), and
+/// conversations are matched within it. Each owner has its own capacity, so
+/// an owner that adds past it only expires its own changesets. When the
+/// process as a whole is full, room comes from whichever owner holds the
+/// most, so one account cannot push out another that holds fewer.
 /// </summary>
 public sealed class AssistantChangesetStore(TimeProvider? time = null)
 {
     public static readonly TimeSpan ReviewLifetime = TimeSpan.FromHours(1);
     public static readonly TimeSpan UndoLifetime = TimeSpan.FromHours(24);
     public const int Capacity = 500;
+    public const int OwnerCapacity = 100;
 
     private readonly TimeProvider _time = time ?? TimeProvider.System;
     private readonly object _gate = new();
@@ -80,6 +88,7 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
 
     /// <summary>Stores a new changeset, discarding any older review in the same conversation.</summary>
     public StoredAssistantChangeset Add(
+        string ownerKey,
         string conversationKey,
         string turnId,
         IReadOnlyList<AssistantStagedStep> steps,
@@ -91,11 +100,15 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
     {
         lock (_gate)
         {
-            Prune();
+            RemoveExpired();
+            MakeRoom(ownerKey);
             if (status == AssistantChangesetStatus.Review)
             {
                 foreach (var older in _byId.Values.Where(c =>
-                    c.ConversationKey == conversationKey && c.Status == AssistantChangesetStatus.Review && !c.Busy))
+                    c.OwnerKey == ownerKey
+                    && c.ConversationKey == conversationKey
+                    && c.Status == AssistantChangesetStatus.Review
+                    && !c.Busy))
                 {
                     older.Status = AssistantChangesetStatus.Discarded;
                 }
@@ -104,6 +117,7 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
             var stored = new StoredAssistantChangeset
             {
                 ChangesetId = Guid.NewGuid().ToString("N"),
+                OwnerKey = ownerKey,
                 ConversationKey = conversationKey,
                 TurnId = turnId,
                 ActionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant(),
@@ -124,12 +138,13 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
     /// The changeset a turn already applied, so a retried delivery of the same
     /// turn reports it instead of applying the changes a second time.
     /// </summary>
-    public StoredAssistantChangeset? FindAppliedForTurn(string conversationKey, string turnId)
+    public StoredAssistantChangeset? FindAppliedForTurn(string ownerKey, string conversationKey, string turnId)
     {
         lock (_gate)
         {
             return _byId.Values.FirstOrDefault(c =>
-                c.ConversationKey == conversationKey
+                c.OwnerKey == ownerKey
+                && c.ConversationKey == conversationKey
                 && c.TurnId == turnId
                 && c.Status is AssistantChangesetStatus.Applied or AssistantChangesetStatus.Undone);
         }
@@ -141,7 +156,7 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
     {
         lock (_gate)
         {
-            Prune();
+            RemoveExpired();
             changeset = null;
             if (string.IsNullOrWhiteSpace(changesetId) || !_byId.TryGetValue(changesetId, out var found))
                 return Lookup.NotFound;
@@ -192,18 +207,46 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
             update(changeset);
     }
 
-    private void Prune()
+    private void RemoveExpired()
     {
         var now = Now;
         foreach (var expired in _byId.Values.Where(c => !c.Busy && c.ExpiresAt <= now).ToList())
             _byId.Remove(expired.ChangesetId);
+    }
 
-        foreach (var oldest in _byId.Values.Where(c => !c.Busy)
-                     .OrderBy(c => c.ExpiresAt)
-                     .Take(Math.Max(0, _byId.Count - Capacity + 1))
-                     .ToList())
+    /// <summary>
+    /// Leaves room for one more changeset from <paramref name="ownerKey"/>.
+    /// Only adding makes room: a lookup never evicts anything.
+    /// </summary>
+    private void MakeRoom(string ownerKey)
+    {
+        while (_byId.Values.Count(c => c.OwnerKey == ownerKey) >= OwnerCapacity)
         {
-            _byId.Remove(oldest.ChangesetId);
+            if (!EvictOldestIdle(ownerKey))
+                break;
         }
+
+        while (_byId.Count >= Capacity)
+        {
+            // The owner holding the most gives up its oldest. On a tie the
+            // adding owner goes first, so adding never costs an equal peer.
+            var largest = _byId.Values
+                .GroupBy(c => c.OwnerKey)
+                .Where(g => g.Any(c => !c.Busy))
+                .OrderByDescending(g => g.Count())
+                .ThenByDescending(g => g.Key == ownerKey)
+                .Select(g => g.Key)
+                .FirstOrDefault();
+            if (largest is null || !EvictOldestIdle(largest))
+                break;
+        }
+    }
+
+    private bool EvictOldestIdle(string ownerKey)
+    {
+        var oldest = _byId.Values
+            .Where(c => c.OwnerKey == ownerKey && !c.Busy)
+            .MinBy(c => c.ExpiresAt);
+        return oldest is not null && _byId.Remove(oldest.ChangesetId);
     }
 }
