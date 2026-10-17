@@ -108,10 +108,15 @@ function toLines(items: readonly PdfTextItem[], page: PdfPageGeometry): Line[] {
       continue;
     }
 
-    const sameLine =
-      current !== null &&
-      !breakNext &&
-      Math.abs(baseline - previousBaseline) < (0.5 * height) / page.height;
+    const onBaseline = Math.abs(baseline - previousBaseline) < (0.5 * height) / page.height;
+    // Some OCR text layers mark every word as ending a line. A run that
+    // carries on along the same baseline, a word space to the right, is still
+    // the same line whatever the flag says.
+    const continues =
+      lastPiece !== undefined &&
+      piece.left >= lastPiece.left + lastPiece.width - (0.5 * height) / page.width &&
+      piece.left - (lastPiece.left + lastPiece.width) < (2 * height) / page.width;
+    const sameLine = current !== null && onBaseline && (!breakNext || continues);
 
     if (!current || !sameLine) {
       current = { pieces: [], text: '', top: piece.top, bottom: baseline, height: piece.height };

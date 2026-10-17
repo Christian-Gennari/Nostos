@@ -56,6 +56,29 @@ describe('buildPdfPageText', () => {
     ]);
   });
 
+  it('keeps a line whole when an OCR layer marks every word as ending a line', () => {
+    // Each word sits a little off the one before, as on a scan that is not
+    // quite straight. Read as one-word lines, that jitter would pass for the
+    // line spacing and every word would become a block of its own.
+    const word = (str: string, x: number, fromTop: number): PdfTextItem =>
+      run(str, x, fromTop, str.length * 6, true);
+    const page = buildPdfPageText(
+      [
+        word('tragic', 50, 200),
+        word('view', 92, 199.7),
+        word('of', 122, 199.5),
+        word('current', 140, 199.3),
+        word('societies;', 50, 216),
+        word('our', 116, 216.2),
+        word('societies', 140, 216.4),
+        word('fail.', 200, 216.6),
+      ],
+      PAGE,
+    );
+
+    expect(page.text).toBe('tragic view of current societies; our societies fail.');
+  });
+
   it('does not take the uneven word heights of a scanned page for headings', () => {
     const word = (str: string, x: number, fromTop: number, height: number, hasEOL = false): PdfTextItem => ({
       str,
