@@ -18,7 +18,7 @@ import { AddBookModal, AddBookPrefill } from '../add-book-modal/add-book-modal.c
 import { Collection } from '../core/dtos/collection.dtos';
 import { ACQUISITION_FINISHED_STATES } from '../core/dtos/provider.dtos';
 import { ReadingListEntry, SaveReadingListEntry } from '../core/dtos/reading-list.dtos';
-import { BooksService } from '../core/services/books.service';
+import { BookLookupError, BooksService } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ProvidersService } from '../core/services/providers.service';
 import { ReadingListService } from '../core/services/reading-list.service';
@@ -38,6 +38,18 @@ const COVER_HUES = [12, 38, 75, 140, 180, 210, 255, 320];
 
 /** Digits (and a trailing X) only, 10 or 13 long: what an ISBN looks like once its dashes are gone. */
 const ISBN_SHAPE = /^(?:\d{9}[\dXx]|\d{13})$/;
+
+/**
+ * What was typed, as a bare ISBN if it is one: an "ISBN" or "ISBN-13:" label,
+ * spaces, dots and any kind of dash (phone keyboards and copied text bring
+ * en dashes and non-breaking hyphens) are dropped. Null when it is not an ISBN.
+ */
+function asIsbn(typed: string): string | null {
+  const bare = typed
+    .replace(/^isbn(?:-1[03])?\s*:?/i, '')
+    .replace(/[\s.\-\u2010-\u2015\u2212]/g, '');
+  return ISBN_SHAPE.test(bare) ? bare.toUpperCase() : null;
+}
 
 /**
  * The reading list: books the user wants to read and does not have yet.
@@ -152,32 +164,52 @@ export class ReadingList implements OnInit {
     if (!title || this.adding()) return;
 
     const author = this.draftAuthor.trim();
-    const isbn = title.replace(/[\s-]/g, '');
+    const isbn = asIsbn(title);
 
     this.adding.set(true);
-    if (!author && ISBN_SHAPE.test(isbn)) {
-      this.addByIsbn(isbn);
+    if (isbn) {
+      this.addByIsbn(isbn, author || null);
       return;
     }
 
     this.create({ title, author: author || null });
   }
 
-  /** A typed ISBN is looked up so the entry carries the book's real title, not a number. */
-  private addByIsbn(isbn: string): void {
+  /**
+   * A typed ISBN is looked up so the entry carries the book's real title, not
+   * a number. An author typed alongside it wins over the looked-up one. A
+   * lookup without a title counts as nothing found: the number is never saved
+   * as the title.
+   */
+  private addByIsbn(isbn: string, author: string | null): void {
     this.books.lookup(isbn).subscribe({
-      next: (found) =>
+      next: (found) => {
+        const title = found.title?.trim();
+        if (!title) {
+          this.isbnNotFound();
+          return;
+        }
         this.create({
-          title: found.title || isbn,
-          author: found.author ?? null,
+          title,
+          author: author ?? found.author ?? null,
           isbn,
           publishedDate: found.publishedDate ?? null,
-        }),
-      error: () => {
-        this.adding.set(false);
-        this.toast.error('No book was found for that ISBN. Type the title instead.');
+        });
+      },
+      error: (error: unknown) => {
+        if (error instanceof BookLookupError && error.reason === 'unavailable') {
+          this.adding.set(false);
+          this.toast.error('Book lookup is not answering right now. Try again, or type the title.');
+          return;
+        }
+        this.isbnNotFound();
       },
     });
+  }
+
+  private isbnNotFound(): void {
+    this.adding.set(false);
+    this.toast.error('No book was found for that ISBN. Type the title instead.');
   }
 
   private create(entry: SaveReadingListEntry): void {

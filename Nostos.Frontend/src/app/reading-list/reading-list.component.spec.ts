@@ -6,7 +6,7 @@ import { Observable, of, throwError } from 'rxjs';
 import { AddBookModal, AddBookPrefill } from '../add-book-modal/add-book-modal.component';
 import { Collection } from '../core/dtos/collection.dtos';
 import { ReadingListEntry, SaveReadingListEntry } from '../core/dtos/reading-list.dtos';
-import { BooksService } from '../core/services/books.service';
+import { BookLookupError, BooksService } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ProvidersService } from '../core/services/providers.service';
 import { ReadingListService } from '../core/services/reading-list.service';
@@ -222,6 +222,49 @@ describe('ReadingList', () => {
     expect(list.add).not.toHaveBeenCalled();
     expect(component.draftTitle).toBe('9781590171998');
     expect(toast.error).toHaveBeenCalled();
+  });
+
+  it('recognises an ISBN with a label, en dashes or spaces', async () => {
+    books.lookup.mockReturnValue(of({ title: 'Stoner', author: 'John Williams' }));
+    await create();
+
+    await typeAndAdd('ISBN-13: 978–1–59017‑199 8');
+
+    expect(books.lookup).toHaveBeenCalledWith('9781590171998');
+    expect(list.add).toHaveBeenCalledWith(expect.objectContaining({ title: 'Stoner' }));
+  });
+
+  it('looks an ISBN up even with an author typed, and keeps that author', async () => {
+    books.lookup.mockReturnValue(of({ title: 'Stoner', author: 'J. Williams' }));
+    await create();
+
+    await typeAndAdd('9781590171998', 'John Williams');
+
+    expect(books.lookup).toHaveBeenCalledWith('9781590171998');
+    expect(list.add).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Stoner', author: 'John Williams', isbn: '9781590171998' }),
+    );
+  });
+
+  it('never saves the ISBN as the title when the lookup has no title', async () => {
+    books.lookup.mockReturnValue(of({ title: '  ', author: 'Someone' }));
+    await create();
+
+    await typeAndAdd('9781590171998');
+
+    expect(list.add).not.toHaveBeenCalled();
+    expect(component.draftTitle).toBe('9781590171998');
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('No book was found'));
+  });
+
+  it('says the lookup is down rather than that nothing was found', async () => {
+    books.lookup.mockReturnValue(throwError(() => new BookLookupError('unavailable', 503)));
+    await create();
+
+    await typeAndAdd('9781590171998');
+
+    expect(list.add).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('not answering'));
   });
 
   it('shows Next up in shelf order and Someday below it', async () => {

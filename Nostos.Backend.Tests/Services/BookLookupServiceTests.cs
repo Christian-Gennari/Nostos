@@ -142,6 +142,43 @@ public sealed class BookLookupServiceTests
         outcome.Failed.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task OpenLibrary_legacy_record_without_title_falls_back_to_canonical_isbn_endpoint()
+    {
+        var handler = Handler(
+            request =>
+                request.RequestUri?.AbsolutePath switch
+                {
+                    "/api/books" => Json("""{"ISBN:9780141183848": {"title": "", "number_of_pages": 176}}"""),
+                    var path when path == $"/isbn/{Isbn}.json" => Json(OpenLibraryCanonicalMatch),
+                    _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+                },
+            _ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+
+        var outcome = await Service(handler).LookupCombinedDetailedAsync(Isbn);
+
+        outcome.Metadata.Should().NotBeNull();
+        outcome.Metadata!.Title.Should().Be("Fictions (canonical)");
+    }
+
+    [Fact]
+    public async Task Records_without_a_title_anywhere_are_not_a_match()
+    {
+        var handler = Handler(
+            request =>
+                request.RequestUri?.AbsolutePath switch
+                {
+                    "/api/books" => Json("{}"),
+                    _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+                },
+            _ => Json("""{"items":[{"volumeInfo":{"authors":["Jorge Luis Borges"]}}]}"""));
+
+        var outcome = await Service(handler).LookupCombinedDetailedAsync(Isbn);
+
+        outcome.Metadata.Should().BeNull();
+        outcome.Failed.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.TooManyRequests)]
     [InlineData(HttpStatusCode.InternalServerError)]
