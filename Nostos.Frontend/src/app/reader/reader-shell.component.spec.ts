@@ -1277,7 +1277,7 @@ describe('ReaderShell toolbar contract', () => {
 
         const firstLabel = panel.querySelector('.typo-label')?.textContent?.trim();
         expect(firstLabel).toBe('Theme');
-        expect(panel.textContent).toContain('Applies throughout Nostos');
+        expect(panel.textContent).toContain('applies throughout Nostos');
         expect(appearanceButtons().map((el) => el.getAttribute('aria-label'))).toEqual([
           'Follow system',
           'Light',

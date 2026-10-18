@@ -889,8 +889,8 @@
     <h3 class="typo-group-title" id="typo-group-appearance">Appearance</h3>
     <div class="typo-row" data-testid="reader-appearance">
       <span class="typo-label" aria-hidden="true">Theme</span>
-      <nostos-theme-picker class="typo-opts" label="Theme" />
-      <span class="typo-hint" id="reader-appearance-hint">Applies throughout Nostos</span>
+      <!-- The caption names the theme and its scope: it applies throughout Nostos. -->
+      <nostos-theme-picker class="typo-opts" label="Theme" note="applies throughout Nostos" />
     </div>
     <!-- The PDF's page pixels, so it lives with the app theme it follows. -->
     @if (fileType() === 'pdf' && pdfReader?.isDark()) {

@@ -28,13 +28,6 @@
   scrollbar-width: thin;
 }
 
-/* --- Theme -------------------------------------------------------------- */
-
-.ps-hint {
-  color: var(--color-text-light);
-  font-size: 0.75rem;
-}
-
 .ps-rule {
   height: 1px;
   margin: 12px -16px;

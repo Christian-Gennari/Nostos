@@ -52,7 +52,7 @@ interface PickerOption {
         </button>
       }
     </div>
-    <p class="tp-caption" aria-hidden="true">{{ caption() }}</p>
+    <p class="tp-caption">{{ caption() }}</p>
   `,
   styles: `
     :host {
@@ -61,15 +61,17 @@ interface PickerOption {
       gap: 6px;
       min-width: 0;
     }
+    /* One row, always: six 32px swatches need 222px, which the reader's
+       control column (about 235px at 390px wide) and the Studio popover hold. */
     .tp-swatches {
       display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
     }
     .tp-swatch {
       display: inline-flex;
-      width: 36px;
-      height: 36px;
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
       padding: 0;
       overflow: hidden;
       border: 1px solid var(--border-color);
@@ -77,7 +79,7 @@ interface PickerOption {
       background: none;
       cursor: pointer;
       font-family: Newsreader, Georgia, serif;
-      font-size: 0.95rem;
+      font-size: 0.88rem;
       line-height: 1;
       transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
     }
@@ -120,6 +122,8 @@ export class ThemePickerComponent {
 
   /** The group's accessible name. */
   readonly label = input('Colour theme');
+  /** Said after the chosen theme's name in the caption, e.g. its scope. */
+  readonly note = input<string | null>(null);
 
   readonly options: readonly PickerOption[] = [
     { value: 'system', label: 'Follow system' },
@@ -133,8 +137,12 @@ export class ThemePickerComponent {
 
   readonly caption = computed(() => {
     const choice = this.theme.choice();
-    if (choice !== 'system') return themeOption(choice).label;
-    return `Follow system: ${this.day().label} by day, ${this.night().label} by night`;
+    const name =
+      choice === 'system'
+        ? `Follow system: ${this.day().label} by day, ${this.night().label} by night`
+        : themeOption(choice).label;
+    const note = this.note();
+    return note ? `${name} · ${note}` : name;
   });
 
   swatchOf(value: ThemeChoice) {
