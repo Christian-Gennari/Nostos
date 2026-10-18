@@ -12,19 +12,36 @@ public sealed class AssistantTurnLifecycleTests
     {
         var registry = new AssistantTurnExecutionRegistry();
 
-        using (var first = registry.TryBegin("conversation", "turn-1", CancellationToken.None))
+        using (var first = registry.TryBegin("library", "conversation", "turn-1", CancellationToken.None))
         {
             first.Should().NotBeNull();
         }
 
-        using var second = registry.TryBegin("conversation", "turn-2", CancellationToken.None);
+        using var second = registry.TryBegin("library", "conversation", "turn-2", CancellationToken.None);
         second.Should().NotBeNull();
 
-        registry.TryCancel("conversation", "turn-1").Should().BeFalse();
+        registry.TryCancel("library", "conversation", "turn-1").Should().BeFalse();
         second!.Token.IsCancellationRequested.Should().BeFalse();
 
-        registry.TryCancel("conversation", "turn-2").Should().BeTrue();
+        registry.TryCancel("library", "conversation", "turn-2").Should().BeTrue();
         second.Token.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public void One_owner_cannot_stop_another_owners_turn_with_the_same_identity()
+    {
+        // Clients that omit a conversation id all share "anonymous" (#1035).
+        var registry = new AssistantTurnExecutionRegistry();
+        using var mine = registry.TryBegin("account-a", "anonymous", "turn-1", CancellationToken.None);
+        using var theirs = registry.TryBegin("account-b", "anonymous", "turn-1", CancellationToken.None);
+
+        mine.Should().NotBeNull();
+        theirs.Should().NotBeNull();
+
+        registry.TryCancel("account-b", "anonymous", "turn-1").Should().BeTrue();
+
+        theirs!.Token.IsCancellationRequested.Should().BeTrue();
+        mine!.Token.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -32,8 +49,8 @@ public sealed class AssistantTurnLifecycleTests
     {
         var registry = new AssistantTurnExecutionRegistry();
 
-        using var first = registry.TryBegin("conversation", "turn-1", CancellationToken.None);
-        using var duplicate = registry.TryBegin("conversation", "turn-1", CancellationToken.None);
+        using var first = registry.TryBegin("library", "conversation", "turn-1", CancellationToken.None);
+        using var duplicate = registry.TryBegin("library", "conversation", "turn-1", CancellationToken.None);
 
         first.Should().NotBeNull();
         duplicate.Should().BeNull();
@@ -43,10 +60,10 @@ public sealed class AssistantTurnLifecycleTests
     public void Cancellation_wins_the_atomic_mutation_boundary_when_requested_first()
     {
         var registry = new AssistantTurnExecutionRegistry();
-        using var execution = registry.TryBegin("conversation", "turn-1", CancellationToken.None);
+        using var execution = registry.TryBegin("library", "conversation", "turn-1", CancellationToken.None);
 
         execution.Should().NotBeNull();
-        registry.TryCancel("conversation", "turn-1").Should().BeTrue();
+        registry.TryCancel("library", "conversation", "turn-1").Should().BeTrue();
 
         execution!.TryBeginMutation().Should().BeNull();
         execution.Token.IsCancellationRequested.Should().BeTrue();
@@ -56,13 +73,13 @@ public sealed class AssistantTurnLifecycleTests
     public void Mutation_start_wins_the_atomic_boundary_when_claimed_first()
     {
         var registry = new AssistantTurnExecutionRegistry();
-        using var execution = registry.TryBegin("conversation", "turn-1", CancellationToken.None);
+        using var execution = registry.TryBegin("library", "conversation", "turn-1", CancellationToken.None);
 
         execution.Should().NotBeNull();
         using var mutation = execution!.TryBeginMutation();
         mutation.Should().NotBeNull();
 
-        registry.TryCancel("conversation", "turn-1").Should().BeTrue();
+        registry.TryCancel("library", "conversation", "turn-1").Should().BeTrue();
         execution.Token.IsCancellationRequested.Should().BeTrue();
 
         // A cancellation requested during the in-flight write prevents any
@@ -77,11 +94,11 @@ public sealed class AssistantTurnLifecycleTests
         for (var i = 0; i < 256; i++)
         {
             var registry = new AssistantTurnExecutionRegistry();
-            var execution = registry.TryBegin("conversation", $"turn-{i}", CancellationToken.None);
+            var execution = registry.TryBegin("library", "conversation", $"turn-{i}", CancellationToken.None);
             execution.Should().NotBeNull();
 
             var cancel = Task.Run(() =>
-                Record.Exception(() => registry.TryCancel("conversation", $"turn-{i}")));
+                Record.Exception(() => registry.TryCancel("library", "conversation", $"turn-{i}")));
             var complete = Task.Run(() =>
                 Record.Exception(() => execution!.Dispose()));
 
