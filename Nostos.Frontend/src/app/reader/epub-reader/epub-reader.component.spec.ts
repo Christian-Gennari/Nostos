@@ -555,8 +555,8 @@ describe('EpubReader theme-following normalization', () => {
     await setupComponent();
 
     const themes = renditions[0].themes;
-    expect(themes.registered).toEqual(['nostos-light', 'nostos-dark']);
-    expect(log.filter((l) => l.startsWith('register:')).length).toBe(2);
+    expect(themes.registered).toEqual(['nostos-light', 'nostos-sepia', 'nostos-mist', 'nostos-study', 'nostos-dark']);
+    expect(log.filter((l) => l.startsWith('register:')).length).toBe(5);
     // The eager selection at rendition creation happens BEFORE display().
     // The test env has no stored choice and no dark OS preference: light.
     expect(log.indexOf('select:nostos-light')).toBeGreaterThanOrEqual(0);
@@ -573,6 +573,12 @@ describe('EpubReader theme-following normalization', () => {
     const dark = themes.rules['nostos-dark'];
     expect(dark.body.background).toBe('#121318 !important');
     expect(dark.body.color).toBe('#f0f1f4 !important');
+    // Sepia's page is its reading paper, the richer cream, with brown-black ink;
+    // Writer's Study's is the warm desk with cream ink (#1074).
+    expect(themes.rules['nostos-sepia'].body.background).toBe('#fbf4e5 !important');
+    expect(themes.rules['nostos-sepia'].body.color).toBe('#2f241a !important');
+    expect(themes.rules['nostos-study'].body.background).toBe('#1a1814 !important');
+    expect(themes.rules['nostos-mist'].body.background).toBe('#1e2026 !important');
   });
 
   it('a chapter rendered after the eager selection inherits the app-theme rules', async () => {
@@ -611,7 +617,7 @@ describe('EpubReader theme-following normalization', () => {
     themes.fontSize.mockClear();
     rendition.resize.mockClear();
 
-    TestBed.inject(ThemeService).setTheme('dark');
+    TestBed.inject(ThemeService).setChoice('dark');
     fixture.detectChanges();
 
     expect(themes.current).toBe('nostos-dark');
@@ -627,7 +633,12 @@ describe('EpubReader theme-following normalization', () => {
     expect(contents.document.body.classList.contains('nostos-dark')).toBe(true);
     expect(contents.document.body.classList.contains('nostos-light')).toBe(false);
 
-    TestBed.inject(ThemeService).setTheme('light');
+    TestBed.inject(ThemeService).setChoice('sepia');
+    fixture.detectChanges();
+    expect(themes.current).toBe('nostos-sepia');
+    expect(renditions).toHaveLength(1);
+
+    TestBed.inject(ThemeService).setChoice('light');
     fixture.detectChanges();
     expect(themes.current).toBe('nostos-light');
     expect(renditions).toHaveLength(1);
@@ -766,9 +777,10 @@ describe('EpubReader theme-following normalization', () => {
     // Exactly two content hooks per rendition (themes inject + component).
     expect(hookRegistrations).toBe(4);
 
-    // Each rendition registered both Nostos themes exactly once.
-    expect(firstRendition.themes.registered).toEqual(['nostos-light', 'nostos-dark']);
-    expect(secondRendition.themes.registered).toEqual(['nostos-light', 'nostos-dark']);
+    // Each rendition registered every Nostos theme exactly once.
+    const all = ['nostos-light', 'nostos-sepia', 'nostos-mist', 'nostos-study', 'nostos-dark'];
+    expect(firstRendition.themes.registered).toEqual(all);
+    expect(secondRendition.themes.registered).toEqual(all);
   });
 
   /**

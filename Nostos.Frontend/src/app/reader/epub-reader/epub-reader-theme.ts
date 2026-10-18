@@ -1,51 +1,51 @@
 import type { Contents } from 'epubjs';
 
-import type { Theme } from '../../core/services/theme.service';
+import { THEMES, type ThemeName } from '../../core/services/theme.service';
 
-/**
- * Rendition theme names. Both Nostos normalizations are registered once per
- * rendition; the selected one always mirrors the app theme (ThemeService),
- * so the page never renders white inside a dark UI or vice versa.
- */
-const NOSTOS_LIGHT_THEME = 'nostos-light';
-const NOSTOS_DARK_THEME = 'nostos-dark';
-/** Anchors that are links. See the note in NOSTOS_LIGHT_RULES. */
+/** Anchors that are links. See the note on `pageRules`. */
 const LINK_SELECTOR = 'a:any-link';
-/**
- * Color-only rules for the epub.js iframe, mirroring the Nostos light tokens
- * from styles.css (the iframe is a separate document and cannot read the
- * parent's CSS variables). Only foreground, background, links, and selection
- * colors are overridden; book typography, layout, emphasis, and images are
- * left untouched (images are never inverted).
- */
-const NOSTOS_LIGHT_RULES: Record<string, Record<string, string>> = {
-  html: { background: '#ffffff !important', color: '#1a1a1a !important' },
-  body: { background: '#ffffff !important', color: '#1a1a1a !important' },
-  // Publisher CSS often sets explicit text colors (e.g. h1 { color: #000 });
-  // normalize every element to inherit the theme text color so headings and
-  // body text stay readable. The link rule comes AFTER `body *` so the link
-  // color wins for links (and their descendants).
-  'body *': { color: 'inherit !important' },
-  // `:any-link`, not `a`: only anchors with an href are links. Books mark page
-  // breaks with `<a id="page_8"/>`, and epub.js hands the XHTML to the HTML
-  // parser (iframe.srcdoc), where that anchor is never closed and swallows
-  // the rest of the chapter. A bare `a` rule then colored all of it as a link.
-  [LINK_SELECTOR]: { color: '#60a5fa !important' },
-  '::selection': { background: 'rgba(96, 165, 250, 0.3) !important' },
-};
 
 /**
- * Color-only rules for the dark UI, mirroring the `:root[data-theme='dark']`
- * tokens from styles.css (ground #121318, ink #f0f1f4). Same contract as the
- * light rules: colors only, book typography and images untouched.
+ * The page colours of each app theme (issue #1074), mirroring its tokens in
+ * styles.css: the iframe is a separate document and cannot read the parent's
+ * CSS variables. Light keeps its white page and Dark its #121318 ground; Sepia
+ * and Writer's Study use their reading paper (`--manuscript-paper`), the richer
+ * cream and the warm dark desk, and Mist its slate.
  */
-const NOSTOS_DARK_RULES: Record<string, Record<string, string>> = {
-  html: { background: '#121318 !important', color: '#f0f1f4 !important' },
-  body: { background: '#121318 !important', color: '#f0f1f4 !important' },
-  'body *': { color: 'inherit !important' },
-  [LINK_SELECTOR]: { color: '#8fbfae !important' },
-  '::selection': { background: 'rgba(143, 191, 174, 0.35) !important' },
+const PAGE: Record<ThemeName, { paper: string; ink: string; link: string; selection: string }> = {
+  light: { paper: '#ffffff', ink: '#1a1a1a', link: '#60a5fa', selection: 'rgba(96, 165, 250, 0.3)' },
+  sepia: { paper: '#fbf4e5', ink: '#2f241a', link: '#84492d', selection: 'rgba(132, 73, 45, 0.2)' },
+  mist: { paper: '#1e2026', ink: '#c8ccd4', link: '#a4b2cb', selection: 'rgba(132, 148, 176, 0.32)' },
+  study: { paper: '#1a1814', ink: '#e4d5bf', link: '#d4a556', selection: 'rgba(201, 149, 62, 0.3)' },
+  dark: { paper: '#121318', ink: '#f0f1f4', link: '#8fbfae', selection: 'rgba(143, 191, 174, 0.35)' },
 };
+
+/** Rendition theme names: one Nostos normalization per app theme. */
+const themeName = (theme: ThemeName) => `nostos-${theme}`;
+
+/**
+ * Color-only rules for the epub.js iframe. Only foreground, background, links,
+ * and selection colors are overridden; book typography, layout, emphasis, and
+ * images are left untouched (images are never inverted).
+ */
+function pageRules(theme: ThemeName): Record<string, Record<string, string>> {
+  const page = PAGE[theme];
+  return {
+    html: { background: `${page.paper} !important`, color: `${page.ink} !important` },
+    body: { background: `${page.paper} !important`, color: `${page.ink} !important` },
+    // Publisher CSS often sets explicit text colors (e.g. h1 { color: #000 });
+    // normalize every element to inherit the theme text color so headings and
+    // body text stay readable. The link rule comes AFTER `body *` so the link
+    // color wins for links (and their descendants).
+    'body *': { color: 'inherit !important' },
+    // `:any-link`, not `a`: only anchors with an href are links. Books mark page
+    // breaks with `<a id="page_8"/>`, and epub.js hands the XHTML to the HTML
+    // parser (iframe.srcdoc), where that anchor is never closed and swallows
+    // the rest of the chapter. A bare `a` rule then colored all of it as a link.
+    [LINK_SELECTOR]: { color: `${page.link} !important` },
+    '::selection': { background: `${page.selection} !important` },
+  };
+}
 
 /** The theme surface of `rendition.themes` the reader drives. */
 interface ReaderThemes {
@@ -53,10 +53,9 @@ interface ReaderThemes {
   select(name: string): void;
 }
 
-/** Registers both Nostos themes on a rendition (once per rendition). */
+/** Registers every Nostos theme on a rendition (once per rendition). */
 export function registerNostosReaderThemes(themes: ReaderThemes): void {
-  themes.register(NOSTOS_LIGHT_THEME, NOSTOS_LIGHT_RULES);
-  themes.register(NOSTOS_DARK_THEME, NOSTOS_DARK_RULES);
+  for (const { value } of THEMES) themes.register(themeName(value), pageRules(value));
 }
 
 /**
@@ -64,22 +63,22 @@ export function registerNostosReaderThemes(themes: ReaderThemes): void {
  *
  * epub.js (0.3.93) keeps one `<style id="epubjs-inserted-css-<theme>">` per
  * theme in each section document and never removes or reorders it: selecting
- * a theme again appends its rules to the EXISTING element. Both Nostos themes
+ * a theme again appends its rules to the EXISTING element. All Nostos themes
  * use the same `!important` selectors, so whichever element sits later in
  * <head> wins. After dark -> light -> dark the light element is the later one,
- * and the page stayed white inside a dark app until a reload. Removing both
- * Nostos stylesheets first means epub.js re-creates only the selected one,
+ * and the page stayed white inside a dark app until a reload. Removing every
+ * Nostos stylesheet first means epub.js re-creates only the selected one,
  * last in <head>; sections rendered later only ever receive the current theme.
  */
 export function selectNostosReaderTheme(
   themes: ReaderThemes,
   contents: readonly Pick<Contents, 'document'>[],
-  theme: Theme,
+  theme: ThemeName,
 ): void {
   for (const content of contents) {
-    for (const name of [NOSTOS_LIGHT_THEME, NOSTOS_DARK_THEME]) {
-      content.document?.getElementById(`epubjs-inserted-css-${name}`)?.remove();
+    for (const { value } of THEMES) {
+      content.document?.getElementById(`epubjs-inserted-css-${themeName(value)}`)?.remove();
     }
   }
-  themes.select(theme === 'dark' ? NOSTOS_DARK_THEME : NOSTOS_LIGHT_THEME);
+  themes.select(themeName(theme));
 }

@@ -19,7 +19,7 @@ import { BooksService } from '../../core/services/books.service';
 import { CollectionsService } from '../../core/services/collections.service';
 import { HighlightImportService } from '../../core/services/highlight-import.service';
 import { NotesService } from '../../core/services/notes.service';
-import { ThemeService } from '../../core/services/theme.service';
+import { ThemeService, themeOption } from '../../core/services/theme.service';
 import { TopicDto, TopicsService } from '../../core/services/topics.service';
 import { WritingsService } from '../../core/services/writings.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -162,7 +162,10 @@ export class CommandPalette {
   private previouslyFocused: HTMLElement | null = null;
 
   private readonly actions = computed<PaletteEntry[]>(() => {
-    const dark = this.theme.theme() === 'dark';
+    const dark = this.theme.mode() === 'dark';
+    // The other side of light and dark: the person's own day or night theme.
+    const target = themeOption(dark ? this.theme.dayTheme() : this.theme.nightTheme());
+    const targetName = target.value === 'light' || target.value === 'dark' ? target.value : target.label;
     const assistantOn = this.launcher.available();
     const out: PaletteEntry[] = [
       { kind: 'action', id: 'add-book', label: 'Add a book', sub: 'Search for it or enter it by hand', icon: 'plus', keywords: 'new book import' },
@@ -176,10 +179,10 @@ export class CommandPalette {
       {
         kind: 'action',
         id: 'toggle-theme',
-        label: dark ? 'Switch to light theme' : 'Switch to dark theme',
+        label: `Switch to ${targetName} theme`,
         sub: 'Appearance',
         icon: dark ? 'sun' : 'moon',
-        keywords: 'theme dark light mode appearance',
+        keywords: 'theme dark light mode appearance sepia mist study',
       },
     );
     return out;

@@ -172,40 +172,70 @@
           </div>
         </div>
 
-        <div class="theme-grid" role="radiogroup" aria-label="Colour theme">
-          <button
-            type="button"
-            class="theme-card"
-            role="radio"
-            [attr.aria-checked]="theme() === 'light'"
-            [class.is-active]="theme() === 'light'"
-            (click)="setTheme('light')"
-          >
-            <span class="theme-card-icon"><nostos-icon name="sun" [size]="21"></nostos-icon></span>
-            <span class="theme-card-copy">
-              <strong>Light</strong>
-            </span>
-            @if (theme() === 'light') {
-              <span class="theme-card-check"><nostos-icon name="check" [size]="15"></nostos-icon></span>
-            }
-          </button>
-          <button
-            type="button"
-            class="theme-card"
-            role="radio"
-            [attr.aria-checked]="theme() === 'dark'"
-            [class.is-active]="theme() === 'dark'"
-            (click)="setTheme('dark')"
-          >
-            <span class="theme-card-icon"><nostos-icon name="moon" [size]="21"></nostos-icon></span>
-            <span class="theme-card-copy">
-              <strong>Dark</strong>
-            </span>
-            @if (theme() === 'dark') {
-              <span class="theme-card-check"><nostos-icon name="check" [size]="15"></nostos-icon></span>
-            }
-          </button>
+        <!-- Follow system and the five themes (issue #1074). Each card shows its
+             theme's real paper, ink and accent without wearing it. -->
+        <div class="theme-grid" role="radiogroup" aria-label="Colour theme" data-testid="theme-grid">
+          @for (card of themeCards; track card.value; let i = $index) {
+            <button
+              type="button"
+              class="theme-card"
+              role="radio"
+              [attr.aria-checked]="themeChoice() === card.value"
+              [attr.tabindex]="themeChoice() === card.value ? 0 : -1"
+              [attr.data-theme-option]="card.value"
+              [class.is-active]="themeChoice() === card.value"
+              (click)="setTheme(card.value)"
+              (keydown)="themeKey($event, i)"
+            >
+              @if (card.value === 'system') {
+                <span class="theme-preview theme-preview-split" aria-hidden="true">
+                  <span class="theme-preview-half" [style.background]="dayThemeOption().swatch.paper" [style.color]="dayThemeOption().swatch.ink">
+                    <span class="theme-preview-type">Aa</span>
+                  </span>
+                  <span class="theme-preview-half" [style.background]="nightThemeOption().swatch.paper" [style.color]="nightThemeOption().swatch.ink">
+                    <span class="theme-preview-type">Aa</span>
+                  </span>
+                </span>
+              } @else {
+                <span class="theme-preview" aria-hidden="true" [style.background]="swatchOf(card.value).paper" [style.color]="swatchOf(card.value).ink">
+                  <span class="theme-preview-type">Aa</span>
+                  <span class="theme-preview-lines">
+                    <span></span><span></span>
+                  </span>
+                  <span class="theme-preview-accent" [style.background]="swatchOf(card.value).accent"></span>
+                </span>
+              }
+              <span class="theme-card-copy">
+                <strong>{{ card.label }}</strong>
+              </span>
+              @if (themeChoice() === card.value) {
+                <span class="theme-card-check"><nostos-icon name="check" [size]="13"></nostos-icon></span>
+              }
+            </button>
+          }
         </div>
+
+        @if (themeChoice() === 'system') {
+          <div class="theme-slots" data-testid="theme-slots">
+            <p class="theme-slots-hint">Nostos follows this device's light and dark setting.</p>
+            <div class="theme-slot">
+              <span class="theme-slot-label" id="theme-day-label">
+                <nostos-icon name="sun" [size]="16"></nostos-icon>
+                By day
+              </span>
+              <nostos-segmented aria-labelledby="theme-day-label" data-testid="theme-day"
+                [options]="dayThemeOptions" [value]="dayTheme()" (valueChange)="setDayTheme($event)" />
+            </div>
+            <div class="theme-slot">
+              <span class="theme-slot-label" id="theme-night-label">
+                <nostos-icon name="moon" [size]="16"></nostos-icon>
+                By night
+              </span>
+              <nostos-segmented aria-labelledby="theme-night-label" data-testid="theme-night"
+                [options]="nightThemeOptions" [value]="nightTheme()" (valueChange)="setNightTheme($event)" />
+            </div>
+          </div>
+        }
       </section>
           </section>
 

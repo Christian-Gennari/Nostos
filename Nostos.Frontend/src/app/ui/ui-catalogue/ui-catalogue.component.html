@@ -12,26 +12,18 @@
     <div class="catalogue-theme" aria-label="Catalogue theme">
       <span>Theme</span>
       <div class="catalogue-theme-actions">
-        <button
-          appButton
-          size="sm"
-          type="button"
-          [variant]="theme() === 'light' ? 'primary' : 'secondary'"
-          [attr.aria-pressed]="theme() === 'light'"
-          (click)="setTheme('light')"
-        >
-          Light
-        </button>
-        <button
-          appButton
-          size="sm"
-          type="button"
-          [variant]="theme() === 'dark' ? 'primary' : 'secondary'"
-          [attr.aria-pressed]="theme() === 'dark'"
-          (click)="setTheme('dark')"
-        >
-          Dark
-        </button>
+        @for (option of themes; track option.value) {
+          <button
+            appButton
+            size="sm"
+            type="button"
+            [variant]="theme() === option.value ? 'primary' : 'secondary'"
+            [attr.aria-pressed]="theme() === option.value"
+            (click)="setTheme(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        }
       </div>
     </div>
   </header>

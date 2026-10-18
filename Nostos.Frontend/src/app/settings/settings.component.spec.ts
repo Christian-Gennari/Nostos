@@ -1062,18 +1062,52 @@ describe('SettingsComponent backup-only surface', () => {
     const options = fixture.debugElement.queryAll(By.css('.theme-card'));
     expect(
       options.map((o) => o.nativeElement.querySelector('strong')?.textContent.trim()),
-    ).toEqual(['Light', 'Dark']);
+    ).toEqual(['Follow system', 'Light', 'Sepia', 'Mist', "Writer's Study", 'Dark']);
 
-    // Defaults to light in a test environment (no stored choice, and
-    // matchMedia reports no dark preference).
+    // Follows the system by default; in a test environment matchMedia reports
+    // no dark preference, so the day theme (Light) is on.
     expect(options[0].nativeElement.classList.contains('is-active')).toBe(true);
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
 
-    options[1].nativeElement.click();
+    options[5].nativeElement.click();
     fixture.detectChanges();
 
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(localStorage.getItem('nostos.theme')).toBe('dark');
+  });
+
+  it('offers the day and night themes only while following the system (#1074)', () => {
+    const slots = () => fixture.debugElement.query(By.css('[data-testid="theme-slots"]'));
+    expect(slots()).not.toBeNull();
+    const day = slots().queryAll(By.css('[data-testid="theme-day"] .seg-opt'));
+    expect(day.map((o) => o.nativeElement.textContent.trim())).toEqual(['Light', 'Sepia']);
+    const night = slots().queryAll(By.css('[data-testid="theme-night"] .seg-opt'));
+    expect(night.map((o) => o.nativeElement.textContent.trim())).toEqual(['Mist', "Writer's Study", 'Dark']);
+
+    day[1].nativeElement.click();
+    fixture.detectChanges();
+    expect(localStorage.getItem('nostos.theme.day')).toBe('sepia');
+    expect(document.documentElement.getAttribute('data-palette')).toBe('sepia');
+
+    fixture.componentInstance.setTheme('mist');
+    fixture.detectChanges();
+    expect(slots()).toBeNull();
+    expect(document.documentElement.getAttribute('data-palette')).toBe('mist');
+
+    fixture.componentInstance.setTheme('system');
+    fixture.componentInstance.setDayTheme('light');
+    fixture.detectChanges();
+    expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
+  });
+
+  it('moves between theme cards with the arrow keys, as one radio group', () => {
+    const cards = () => fixture.debugElement.queryAll(By.css('.theme-card')).map((c) => c.nativeElement as HTMLElement);
+    expect(cards().filter((c) => c.tabIndex === 0)).toHaveLength(1);
+    cards()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    fixture.detectChanges();
+    expect(cards()[1].getAttribute('aria-checked')).toBe('true');
+    expect(localStorage.getItem('nostos.theme')).toBe('light');
+    fixture.componentInstance.setTheme('system');
   });
 
   it('reverts to light and clears the attribute when Light is chosen', () => {

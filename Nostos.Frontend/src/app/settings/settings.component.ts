@@ -20,7 +20,8 @@ import { of } from 'rxjs';
 import { BackupService } from '../core/services/backup.service';
 import { OpdsService } from '../core/services/opds.service';
 import { ToastService } from '../core/services/toast.service';
-import { ThemeService, Theme } from '../core/services/theme.service';
+import { DAY_THEMES, NIGHT_THEMES, THEMES, ThemeChoice, ThemeName, ThemeService, themeOption } from '../core/services/theme.service';
+import { SegmentedComponent, SegmentedOption } from '../ui/segmented/segmented.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import {
   BackupStatus,
@@ -269,6 +270,7 @@ const defaultProgress: BackupProgress = {
     CloudAccountDeletionSettingsComponent,
     ExternalMediaSettingsComponent,
     LibraryTransferHostComponent,
+    SegmentedComponent,
   ],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.css'],
@@ -510,8 +512,18 @@ export class SettingsComponent implements OnInit, OnDestroy {
   /** The Book providers card's copy, same single-source rule. */
   readonly copyProviders = BOOK_PROVIDER_COPY;
 
-  /** The active theme, exposed for the Appearance card. */
-  readonly theme = this.themeService.theme;
+  /** The theme choice and its options, for the Colour theme card (issue #1074). */
+  readonly themeChoice = this.themeService.choice;
+  readonly themeCards: readonly { value: ThemeChoice; label: string }[] = [
+    { value: 'system', label: 'Follow system' },
+    ...THEMES.map((t) => ({ value: t.value, label: t.label })),
+  ];
+  readonly dayThemeOptions: readonly SegmentedOption<ThemeName>[] = DAY_THEMES.map((t) => ({ value: t.value, label: t.label }));
+  readonly nightThemeOptions: readonly SegmentedOption<ThemeName>[] = NIGHT_THEMES.map((t) => ({ value: t.value, label: t.label }));
+  readonly dayTheme = this.themeService.dayTheme;
+  readonly nightTheme = this.themeService.nightTheme;
+  readonly dayThemeOption = computed(() => themeOption(this.dayTheme()));
+  readonly nightThemeOption = computed(() => themeOption(this.nightTheme()));
 
   /** Whether the server can run the assistant, for the Reading assistant card. */
   readonly assistantAvailable = this.assistantStatus.available;
@@ -665,8 +677,32 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.providerSavingIds.set(next);
   }
 
-  setTheme(theme: Theme): void {
-    this.themeService.setTheme(theme);
+  setTheme(choice: ThemeChoice): void {
+    this.themeService.setChoice(choice);
+  }
+
+  setDayTheme(name: ThemeName): void {
+    this.themeService.setDayTheme(name);
+  }
+
+  setNightTheme(name: ThemeName): void {
+    this.themeService.setNightTheme(name);
+  }
+
+  /** A theme card's swatch colours (not for Follow system, which shows day and night). */
+  swatchOf(choice: ThemeChoice) {
+    return themeOption(choice as ThemeName).swatch;
+  }
+
+  /** Arrow keys move between the theme cards and pick, as in any radio group. */
+  themeKey(event: KeyboardEvent, index: number): void {
+    const step =
+      event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = (index + step + this.themeCards.length) % this.themeCards.length;
+    this.setTheme(this.themeCards[next].value);
+    (this.host.nativeElement.querySelectorAll('.theme-card')[next] as HTMLElement | undefined)?.focus();
   }
   /** E-reader access (issue #187): null until the server has answered. */
   opds = signal<OpdsInfo | null>(null);
