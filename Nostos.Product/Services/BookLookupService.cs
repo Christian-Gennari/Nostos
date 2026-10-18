@@ -110,10 +110,10 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
             );
 
         if (gbData is null)
-            return new BookLookupOutcome(baseData, failed);
+            return Titled(baseData, failed);
 
         // 4. Merge (Priority: Keep existing OL data, fill gaps with GB)
-        return new BookLookupOutcome(baseData with
+        return Titled(baseData with
         {
             Title = !string.IsNullOrWhiteSpace(baseData.Title) ? baseData.Title : gbData.Title,
             Subtitle = !string.IsNullOrWhiteSpace(baseData.Subtitle)
@@ -141,6 +141,15 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
                 : gbData.Categories,
         }, failed);
     }
+
+    /// <summary>
+    /// A record without a title is not a usable match: callers would end up
+    /// naming the book after its ISBN. Report it as "no metadata found".
+    /// </summary>
+    private static BookLookupOutcome Titled(CreateBookDto metadata, bool failed) =>
+        string.IsNullOrWhiteSpace(metadata.Title)
+            ? new BookLookupOutcome(null, failed)
+            : new BookLookupOutcome(metadata, failed);
 
     private string CleanIsbn(string isbn)
     {
@@ -210,7 +219,11 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
                         cancellationToken: ct
                     );
 
-                if (response is not null && response.TryGetValue(key, out var item))
+                // A legacy record without a title is not a match; the canonical
+                // endpoint below may still have one.
+                if (response is not null
+                    && response.TryGetValue(key, out var item)
+                    && !string.IsNullOrWhiteSpace(item.Title))
                     return MapOpenLibraryBook(item, isbn);
             }
             else if (legacyResponse.StatusCode != HttpStatusCode.NotFound)
