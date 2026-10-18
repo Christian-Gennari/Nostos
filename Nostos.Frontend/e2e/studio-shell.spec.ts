@@ -243,39 +243,42 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await expectSameEditorInstance(page);
       await typeAfterLayoutChange(page, `${viewport.label}-files-closed`);
 
-      // One slide-over at a time.
-      await page.locator('.reference-toggle').click();
-      await expect(page.locator('.sidebar-right')).toBeVisible();
-      await page.locator('.backdrop.visible').click({ position: { x: 20, y: 400 } });
-      await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.locator('.sidebar-right')).toBeHidden();
-      await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-reference-closed`);
-
-      // Pinned, Reference sits beside the page and the page makes room.
-      await page.locator('.reference-toggle').click();
-      await page.locator('.reference-pin').click();
-      await expect(page.locator('.backdrop.visible')).toHaveCount(0);
-      await expect(page.locator('.sidebar-right')).toBeVisible();
-      // The rail's width eases in; measure once it has settled.
-      const railWidthNow = () =>
-        page.locator('.sidebar-right').evaluate((element) => Math.round(element.getBoundingClientRect().width));
-      await expect
-        .poll(async () => (await measureShell(page)).paneWidth + (await railWidthNow()))
-        .toBe(viewport.width);
-      const pinned = await measureShell(page);
-      expect(await railWidthNow()).toBeGreaterThan(0);
-      expect(pinned.firstLineCharacters).toBeLessThanOrEqual(115);
-      await page.locator('.files-toggle').click();
-      await expect(page.locator('.sidebar-right')).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expectSameEditorInstance(page);
-      await typeAfterLayoutChange(page, `${viewport.label}-pinned`);
-      console.log(
-        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} pinned ${JSON.stringify(pinned)}`,
-      );
-      await page.locator('.reference-pin').click();
-      await expect(page.locator('.sidebar-right')).toBeHidden();
+      // Reference has one behaviour per screen, no pin: beside the page on a
+      // wide screen, a slide-over on a compact one.
+      const compact = viewport.width <= 900 || viewport.height <= 500;
+      if (compact) {
+        await page.locator('.reference-toggle').click();
+        await expect(page.locator('.sidebar-right')).toBeVisible();
+        await page.locator('.backdrop.visible').click({ position: { x: 20, y: 400 } });
+        await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
+        await expect(page.locator('.sidebar-right')).toBeHidden();
+        await expectSameEditorInstance(page);
+        await typeAfterLayoutChange(page, `${viewport.label}-reference-closed`);
+      } else {
+        // Reference sits beside the page and the page makes room.
+        await page.locator('.reference-toggle').click();
+        await expect(page.locator('.backdrop.visible')).toHaveCount(0);
+        await expect(page.locator('.sidebar-right')).toBeVisible();
+        // The rail's width eases in; measure once it has settled.
+        const railWidthNow = () =>
+          page.locator('.sidebar-right').evaluate((element) => Math.round(element.getBoundingClientRect().width));
+        await expect
+          .poll(async () => (await measureShell(page)).paneWidth + (await railWidthNow()))
+          .toBe(viewport.width);
+        const beside = await measureShell(page);
+        expect(await railWidthNow()).toBeGreaterThan(0);
+        expect(beside.firstLineCharacters).toBeLessThanOrEqual(115);
+        await page.locator('.files-toggle').click();
+        await expect(page.locator('.sidebar-right')).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expectSameEditorInstance(page);
+        await typeAfterLayoutChange(page, `${viewport.label}-reference-beside`);
+        console.log(
+          `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} reference-beside ${JSON.stringify(beside)}`,
+        );
+        await page.locator('.reference-rail-collapse').click();
+        await expect(page.locator('.sidebar-right')).toBeHidden();
+      }
 
       if (viewport.label === 'desktop') {
         const keyboardFilesToggle = page.locator('.files-toggle');
@@ -302,7 +305,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
         await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
 
-        // Reference keeps its place across closing and reopening the slide-over.
+        // Reference keeps its place across closing and reopening.
         await page.locator('.reference-toggle').click();
         await page.getByRole('tab', { name: 'Library', exact: true }).click();
         const libraryTabsChrome = await page.locator('.library-tabs').evaluate((element) => {
@@ -368,7 +371,11 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         await expect(page.locator('.inspected-source-context')).toHaveText(
           'Back to ' + referenceBookTitle,
         );
+        // A column beside the page is not a slide-over: Esc leaves it, its
+        // own close button shuts it.
         await page.keyboard.press('Escape');
+        await expect(page.locator('.sidebar-right')).toBeVisible();
+        await page.locator('.reference-rail-collapse').click();
         await expect(page.locator('.sidebar-right')).toBeHidden();
       }
     }

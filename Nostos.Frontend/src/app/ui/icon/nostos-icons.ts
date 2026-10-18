@@ -103,7 +103,6 @@ import booksFill from '@phosphor-icons/core/fill/books-fill.svg';
 import brainFill from '@phosphor-icons/core/fill/brain-fill.svg';
 import penNibFill from '@phosphor-icons/core/fill/pen-nib-fill.svg';
 import sparkleFill from '@phosphor-icons/core/fill/sparkle-fill.svg';
-import pushPinSimpleFill from '@phosphor-icons/core/fill/push-pin-simple-fill.svg';
 import books from '@phosphor-icons/core/regular/books.svg';
 import brain from '@phosphor-icons/core/regular/brain.svg';
 import buildings from '@phosphor-icons/core/regular/buildings.svg';
@@ -158,7 +157,6 @@ import penNib from '@phosphor-icons/core/regular/pen-nib.svg';
 import pencilSimple from '@phosphor-icons/core/regular/pencil-simple.svg';
 import play from '@phosphor-icons/core/regular/play.svg';
 import plus from '@phosphor-icons/core/regular/plus.svg';
-import pushPinSimple from '@phosphor-icons/core/regular/push-pin-simple.svg';
 import quotes from '@phosphor-icons/core/regular/quotes.svg';
 import scroll from '@phosphor-icons/core/regular/scroll.svg';
 import scan from '@phosphor-icons/core/regular/scan.svg';
@@ -285,7 +283,6 @@ export const NOSTOS_ICONS = {
   'pencil-simple': { regular: pencilSimple, },
   'play': { regular: play, fill: playFill, },
   'plus': { regular: plus, thin: plusThin, light: plusLight, },
-  'push-pin-simple': { regular: pushPinSimple, fill: pushPinSimpleFill, },
   'quotes': { regular: quotes, },
   'scroll': { regular: scroll, },
   'scan': { regular: scan, },
