@@ -367,7 +367,7 @@ describe('BookDetail reset progress', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('.edition-select-card'));
   }
 
-  it('renders edition rows when multiple editions exist and switches on click', async () => {
+  it('renders edition rows as status, not a second way to switch', async () => {
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     await setup(multiEditionBook());
@@ -377,11 +377,11 @@ describe('BookDetail reset progress', () => {
     expect(rows[0].textContent).toContain('EPUB');
     expect(rows[1].textContent).toContain('Audiobook');
 
-    // Every alternate edition stays directly switchable from Book Details.
+    // Switching lives only in the hero format switcher (issue #1062).
+    expect(fixture.nativeElement.querySelector('.edition-list button')).toBeNull();
     rows[1].click();
     fixture.detectChanges();
-
-    expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   it('renders the editions section as a rail card with the page eyebrow heading', async () => {
@@ -408,9 +408,8 @@ describe('BookDetail reset progress', () => {
     expect(current.getAttribute('aria-current')).toBe('true');
     // State is not carried by the fill alone: the row says it in words too.
     expect(current.querySelector('.card-status-pill.current')?.textContent).toContain('Current');
-    // Both rows share one shape; only the alternate one is a control.
-    expect(current.tagName).toBe('DIV');
-    expect(editionRows()[1].tagName).toBe('BUTTON');
+    // Exactly one row is marked current.
+    expect(editionRows().filter((row) => row.getAttribute('aria-current') === 'true').length).toBe(1);
   });
 
   it('keeps each edition progress and finished state on its own row', async () => {
@@ -446,6 +445,121 @@ describe('BookDetail reset progress', () => {
 
     expect(fixture.nativeElement.querySelector('.edition-section')).toBeNull();
     expect(editionRows().length).toBe(0);
+  });
+
+  // ── Hero format switcher (issue #1062) ──────────────────────────────────────
+  // On a phone the rail stacks below the notes feed, so the switch also sits in
+  // the hero beside Read/Listen.
+
+  function editionChips(): HTMLElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('.edition-switcher .edition-chip'));
+  }
+
+  it('puts a format switcher in the hero action area that switches on click', async () => {
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
+
+    const nav = fixture.nativeElement.querySelector('.stage-strip nav.edition-switcher') as HTMLElement;
+    expect(nav).not.toBeNull();
+    expect(nav.getAttribute('aria-label')).toBe('Switch edition');
+    // It precedes the notes feed in document order, so no scrolling past notes.
+    expect(nav.compareDocumentPosition(fixture.nativeElement.querySelector('.detail-grid')))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    const chips = editionChips();
+    expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['Audiobook', 'EPUB']);
+
+    const audio = chips[0] as HTMLButtonElement;
+    expect(audio.tagName).toBe('BUTTON');
+    audio.click();
+    expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
+  });
+
+  it('marks the current chip with aria-current and a check, not as a control', async () => {
+    await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
+
+    const current = editionChips().find((chip) => chip.getAttribute('aria-current') === 'true')!;
+    expect(current.textContent?.trim()).toBe('EPUB');
+    expect(current.tagName).toBe('SPAN');
+    // The state is carried by a glyph as well as the fill.
+    expect(current.querySelector('nostos-icon')).not.toBeNull();
+    expect(editionChips().filter((chip) => chip.getAttribute('aria-current') === 'true').length).toBe(1);
+  });
+
+  it('tells apart two editions of one format by their edition detail', async () => {
+    await setup(
+      readableBook({
+        fileName: 'book.epub',
+        edition: '1st',
+        otherEditions: [{ id: 'b2', type: 'ebook', fileName: 'other.epub', edition: '2nd', progressPercent: 0, hasFile: true }],
+      }),
+    );
+
+    expect(editionChips().map((chip) => chip.textContent?.trim())).toEqual(['EPUB · 1st', 'EPUB · 2nd']);
+  });
+
+  // ── Collapsed notes feed (issue #1062) ──────────────────────────────────────
+
+  function seedNotes(count: number): void {
+    component.store.notes.set(
+      Array.from({ length: count }, (_, i) => ({
+        id: `n${i}`,
+        bookId: 'b1',
+        content: `Note ${i}`,
+        createdAt: `2026-08-${String(i + 1).padStart(2, '0')}T08:00:00Z`,
+      })),
+    );
+    fixture.detectChanges();
+  }
+
+  function renderedNoteIds(): string[] {
+    return component.visibleNotes().map((note) => note.id);
+  }
+
+  function showEarlierButton(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('.notes-show-earlier');
+  }
+
+  it('shows only the latest notes of a long feed until asked', async () => {
+    await setup();
+    seedNotes(25);
+
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(10);
+    // The latest ones, still oldest-first.
+    expect(renderedNoteIds()).toEqual(Array.from({ length: 10 }, (_, i) => `n${i + 15}`));
+    // The header count is still every note.
+    expect(fixture.nativeElement.querySelector('.notes-header')?.textContent).toContain('25');
+
+    const reveal = showEarlierButton()!;
+    expect(reveal.textContent).toContain('Show 15 earlier notes');
+    reveal.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(25);
+    expect(showEarlierButton()).toBeNull();
+  });
+
+  it('shows a short feed whole, with no reveal', async () => {
+    await setup();
+    seedNotes(10);
+
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(10);
+    expect(showEarlierButton()).toBeNull();
+  });
+
+  it('says "note" for a single hidden note', async () => {
+    await setup();
+    seedNotes(11);
+
+    expect(showEarlierButton()?.textContent).toContain('Show 1 earlier note');
+    expect(showEarlierButton()?.textContent).not.toContain('notes');
+  });
+
+  it('renders no format switcher for a single-edition book', async () => {
+    await setup(readableBook());
+
+    expect(fixture.nativeElement.querySelector('.edition-switcher')).toBeNull();
   });
 
   // ── Advanced work membership (issue #143) ───────────────────────────────────

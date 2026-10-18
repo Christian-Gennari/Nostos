@@ -1025,9 +1025,14 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
       'merge-target', 'merge-picker-cancel', 'merge-picker-confirm', 'related-chip', 'related-more'])],
   ['src/app/book-detail/book-detail.component.html',
     // Gone from this ledger: 'edit-menu-item' (the Edit menu is `nostos-menu`)
-    // and 'status-chip' / 'status-dropdown-item' (the status is `app-dropdown`).
+    // and 'status-chip' / 'status-dropdown-item' (the status is `app-dropdown`),
+    // and 'edition-select-card' (the rail's edition rows are status, not controls).
+    // edition-chip is the hero format switcher (#1062): like brain-area it is
+    // visible-text navigation with nav + aria-current semantics, painted on the
+    // segmented track, so neither appChip (a filter capsule) nor the
+    // nostos-segmented radio group (arrow keys select) fits.
     new Set(['btn-back', 'cover-overlay-btn',
-      'expand-btn', 'edition-select-card', 'edition-section-action'])],
+      'expand-btn', 'edition-chip', 'edition-section-action'])],
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
     new Set(['manage-member-action', 'manage-link-candidate'])],
   ['src/app/reader/reader-shell.component.html',

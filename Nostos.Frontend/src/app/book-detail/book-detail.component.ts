@@ -33,6 +33,9 @@ import { formatBytes } from '../library-transfer/library-transfer.copy';
  */
 export const REVIEW_COLLAPSE_LINES = 50;
 
+/** How many of the latest notes a collapsed feed shows (issue #1062). */
+export const NOTES_COLLAPSED_COUNT = 10;
+
 /** A work-membership action awaiting confirmation. */
 interface PendingWorkAction {
   kind: 'link' | 'unlink';
@@ -40,6 +43,16 @@ interface PendingWorkAction {
   label: string;
   /** True when the action joins two multi-edition groups, not just two books. */
   merge: boolean;
+}
+
+/** One chip of the hero format switcher. */
+interface EditionSwitchOption {
+  id: string;
+  label: string;
+  icon: 'headphones' | 'book-open';
+  current: boolean;
+  /** Full edition label (format plus narrator, duration, edition) for the tooltip. */
+  title: string;
 }
 
 // UI Components
@@ -128,6 +141,21 @@ export class BookDetail implements OnInit, OnDestroy {
   });
   // Local UI State
   isDescriptionExpanded = signal(false);
+
+  /**
+   * A long notes feed shows only its latest notes until asked (issue #1062):
+   * the feed had no limit, so the most-annotated books were the longest to
+   * scroll. Oldest-first order is kept, so the hidden notes are the earlier ones
+   * and the reveal sits above the feed. Resets per book.
+   */
+  readonly notesExpanded = signal(false);
+  readonly visibleNotes = computed(() => {
+    const notes = this.store.notes();
+    return this.notesExpanded() || notes.length <= NOTES_COLLAPSED_COUNT
+      ? notes
+      : notes.slice(-NOTES_COLLAPSED_COUNT);
+  });
+  readonly hiddenNoteCount = computed(() => this.store.notes().length - this.visibleNotes().length);
   showMetadataModal = signal(false);
   showDeleteConfirm = signal(false);
   pendingStatus = signal<'notstarted' | 'reading' | 'finished' | null>(null);
@@ -381,6 +409,7 @@ export class BookDetail implements OnInit, OnDestroy {
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (id) {
+        this.notesExpanded.set(false);
         this.store.loadAllData(id);
       }
     });
@@ -526,6 +555,53 @@ export class BookDetail implements OnInit, OnDestroy {
       formatIcon: this.getEditionConcept(edition.type, this.getSummaryEditionLabel(edition)),
     }));
     return [current, ...others];
+  });
+
+  /**
+   * The hero format switcher, the one place to switch edition (issue #1062). It
+   * replaced the switch rows on the rail's editions card, which on a phone stacks
+   * below the whole notes feed. Empty for a single-edition book, so nothing renders.
+   *
+   * Ordered by label then id, not current-first, so the chips hold still when the
+   * user switches. Two editions of one format are told apart by their edition
+   * detail, or failing that a number, since the chip carries the format only.
+   */
+  readonly editionSwitchOptions = computed<EditionSwitchOption[]>(() => {
+    const book = this.store.book();
+    const others = book?.otherEditions ?? [];
+    if (!book || others.length === 0) return [];
+
+    const all = [
+      { id: book.id, type: book.type, fileName: book.fileName, format: undefined, edition: book.edition, current: true, title: this.getEditionLabel(book) },
+      ...others.map((edition) => ({
+        id: edition.id,
+        type: edition.type,
+        fileName: edition.fileName,
+        format: edition.format,
+        edition: edition.edition,
+        current: false,
+        title: `Switch to ${this.getSummaryEditionLabel(edition)}`,
+      })),
+    ].map((entry) => ({ ...entry, format: this.buildEditionLabel(entry.type, entry.fileName, entry.format) }));
+
+    all.sort((a, b) => a.format.localeCompare(b.format) || a.id.localeCompare(b.id));
+
+    const seen = new Map<string, number>();
+    return all.map((entry) => {
+      const sameFormat = all.filter((other) => other.format === entry.format).length;
+      const nth = (seen.get(entry.format) ?? 0) + 1;
+      seen.set(entry.format, nth);
+      const label =
+        sameFormat < 2 ? entry.format : entry.edition?.trim() ? `${entry.format} · ${entry.edition.trim()}` : `${entry.format} ${nth}`;
+      const isAudio = entry.type === 'audiobook' || entry.type === 'audio';
+      return {
+        id: entry.id,
+        label,
+        icon: isAudio ? ('headphones' as const) : ('book-open' as const),
+        current: entry.current,
+        title: entry.title,
+      };
+    });
   });
 
   /**

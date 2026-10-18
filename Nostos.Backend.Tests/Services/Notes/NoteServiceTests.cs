@@ -373,6 +373,35 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     // ------------------------------------------------------------------
+    // GetByBook: defined order (#1062)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetByBook_returns_notes_oldest_first_whatever_the_insert_order()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var start = new DateTime(2026, 8, 1, 8, 0, 0, DateTimeKind.Utc);
+        // Inserted newest first, so insertion order cannot pass for the sort.
+        foreach (var day in new[] { 3, 1, 2 })
+        {
+            h.Db.Notes.Add(new NoteModel
+            {
+                Id = Guid.NewGuid(),
+                BookId = book.Id,
+                Content = $"day {day}",
+                CreatedAt = start.AddDays(day),
+            });
+        }
+        await h.Db.SaveChangesAsync();
+
+        var notes = await h.Service.GetByBookAsync(book.Id);
+
+        notes.Select(n => n.Content).Should().Equal("day 1", "day 2", "day 3");
+    }
+
+    // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
 
