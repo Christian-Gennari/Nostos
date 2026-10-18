@@ -1,6 +1,6 @@
 // Nostos.Frontend/src/app/reader/epub-reader/epub-text-marks.ts
 import { Contents, EpubCFI } from 'epubjs';
-import type { Theme } from '../../core/services/theme.service';
+import type { ThemeMode as Theme } from '../../core/services/theme.service';
 import { HIGHLIGHT_COLOURS, HighlightColour, resolveHighlightFill } from '../highlight-colours';
 
 /**

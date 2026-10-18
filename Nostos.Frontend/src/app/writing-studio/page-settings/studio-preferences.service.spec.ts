@@ -27,7 +27,6 @@ describe('Studio page preferences (issue #1041)', () => {
       soundVolume: 3,
       soundPack: 'kazoo',
     });
-    expect(prefs.theme).toBe('match');
     expect(prefs.font).toBe('newsreader');
     expect(prefs.fontSize).toBe(28);
     expect(prefs.lineSpacing).toBe(1.8);
@@ -46,20 +45,19 @@ describe('Studio page preferences (issue #1041)', () => {
   });
 
   it('keeps a valid choice', () => {
-    const prefs = normalizeStudioPreferences({ theme: 'sepia', font: 'eb-garamond', fontSize: 21, lineSpacing: 2.2, textWidth: null });
+    const prefs = normalizeStudioPreferences({ font: 'eb-garamond', fontSize: 21, lineSpacing: 2.2, textWidth: null });
     expect(prefs).toEqual(
-      expect.objectContaining({ theme: 'sepia', font: 'eb-garamond', fontSize: 21, lineSpacing: 2.2, textWidth: null }),
+      expect.objectContaining({ font: 'eb-garamond', fontSize: 21, lineSpacing: 2.2, textWidth: null }),
     );
-    expect(normalizeStudioPreferences({ theme: 'match' }).theme).toBe('match');
   });
 
   it('saves changes once they settle, and reads them back in a later visit', async () => {
     const service = TestBed.inject(StudioPreferencesService);
-    service.update({ theme: 'study', font: 'lora' });
+    service.update({ font: 'lora' });
     TestBed.tick();
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(JSON.parse(localStorage.getItem(STUDIO_PREFERENCES_KEY)!)).toEqual(
-      expect.objectContaining({ theme: 'study', font: 'lora' }),
+      expect.objectContaining({ font: 'lora' }),
     );
     expect(service.fontStack()).toContain('Studio Lora');
 
@@ -69,10 +67,10 @@ describe('Studio page preferences (issue #1041)', () => {
 
   it('writes a waiting change at once when the page goes away', () => {
     const service = TestBed.inject(StudioPreferencesService);
-    service.update({ theme: 'sepia' });
+    service.update({ fontSize: 22 });
     TestBed.tick();
     window.dispatchEvent(new Event('pagehide'));
-    expect(JSON.parse(localStorage.getItem(STUDIO_PREFERENCES_KEY)!).theme).toBe('sepia');
+    expect(JSON.parse(localStorage.getItem(STUDIO_PREFERENCES_KEY)!).fontSize).toBe(22);
   });
 
   it('carries the old typewriter flag over once and removes it', () => {
@@ -81,10 +79,8 @@ describe('Studio page preferences (issue #1041)', () => {
     expect(localStorage.getItem('nostos.typewriter')).toBeNull();
   });
 
-  it('moves the retired Dark and Black themes to following the app (#1060)', () => {
-    expect(normalizeStudioPreferences({ theme: 'dark' }).theme).toBe('match');
-    expect(normalizeStudioPreferences({ theme: 'black' }).theme).toBe('match');
-    expect(normalizeStudioPreferences({ theme: 'mist' }).theme).toBe('mist');
+  it('no longer keeps a page theme of its own: the app theme is the one (#1074)', () => {
+    expect(normalizeStudioPreferences({ theme: 'mist' })).not.toHaveProperty('theme');
   });
 
   it('snaps spacing and width saved from the old sliders to the nearest preset (#1060)', () => {

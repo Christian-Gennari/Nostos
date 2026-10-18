@@ -18,7 +18,7 @@
  *
  * Usage:
  *   node scripts/capture-baseline.mjs [--port 5214] [--out <dir>]
- *   node scripts/capture-baseline.mjs --theme dark --surface library
+ *   node scripts/capture-baseline.mjs --theme sepia --surface library
  *
  * Assumes an app is already serving (npm run prod / npm start). It does NOT
  * start one: a baseline captured against a freshly-started server would race
@@ -139,7 +139,11 @@ const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },
 ];
 
-const THEMES = ['light', 'dark'];
+/* Every app theme (issue #1074). Sepia, Mist and Writer's Study are
+   `data-palette` blocks over their mode, so each needs its own baseline: a token
+   that moves in one of them shows nowhere in Light or Dark. */
+const THEMES = ['light', 'sepia', 'mist', 'study', 'dark'];
+const DARK_THEMES = new Set(['mist', 'study', 'dark']);
 
 /** Clusters computed values over every element that actually paints. */
 const SWEEP = () => {
@@ -397,6 +401,14 @@ async function main() {
             }));
         }
 
+        /* The library's live change stream (`/api/library/changes`, 2810509b) is
+           an EventSource that never ends, so no page that watches the library
+           ever reaches `networkidle` and the capture hung on its first library
+           surface. A still capture wants no live updates anyway: a 204 ends an
+           EventSource for good (no reconnect), and the screens fall back to
+           showing what they loaded, exactly as without EventSource support. */
+        await context.route('**/api/library/changes', (route) => route.fulfill({ status: 204, body: '' }));
+
         // Seed the theme the way the app persists it, then let the app apply it.
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
         await page.evaluate((t) => localStorage.setItem('nostos.theme', t), theme);
@@ -413,22 +425,34 @@ async function main() {
              (7f83f46e both), which made the pixel gate report phantom
              regressions and, worse, made real ones look like flake.
              Force eager + await decode + assert nothing is broken. */
-          const imgState = await page.evaluate(async () => {
+          /* Polled from Node, not awaited inside the page: the page runs on the
+             installed fake clock, where an in-page timer or a pending `load` can
+             wait forever, and one late cover then hung the whole run. Each poll
+             is a synchronous read; the waiting happens on Node's real clock. */
+          await page.evaluate(() => { for (const i of document.images) i.loading = 'eager'; });
+          const readImages = () => page.evaluate(() => {
             const imgs = Array.from(document.images);
-            for (const i of imgs) i.loading = 'eager';
-            await Promise.all(imgs.map((i) => (i.complete && i.naturalWidth > 0)
-              ? Promise.resolve()
-              : new Promise((res) => { i.onload = res; i.onerror = res; })));
-            await Promise.all(imgs.map((i) => (i.decode ? i.decode().catch(() => {}) : Promise.resolve())));
             return {
               total: imgs.length,
               broken: imgs.filter((i) => i.complete && i.naturalWidth === 0).map((i) => i.currentSrc || i.src),
               pending: imgs.filter((i) => !i.complete).length,
+              pendingSrc: imgs.filter((i) => !i.complete).map((i) => i.currentSrc || i.src).slice(0, 5),
             };
           });
+          let imgState = await readImages();
+          for (let waited = 0; imgState.pending > 0 && waited < 20000; waited += 250) {
+            await new Promise((r) => setTimeout(r, 250));
+            imgState = await readImages();
+          }
+          // Decoded, too, but bounded on Node's clock for the same reason.
+          await Promise.race([
+            page.evaluate(() => Promise.all(Array.from(document.images).map((i) => (i.decode ? i.decode().catch(() => {}) : null)))),
+            new Promise((r) => setTimeout(r, 5000)),
+          ]);
           if (imgState.pending > 0 || imgState.broken.length > 0) {
             throw new Error(`${surface.name}: images did not settle ` +
-              `(pending=${imgState.pending}, broken=${imgState.broken.length}) — ` +
+              `(pending=${imgState.pending} ${JSON.stringify(imgState.pendingSrc)}, ` +
+              `broken=${imgState.broken.length} ${JSON.stringify(imgState.broken.slice(0, 5))}) — ` +
               `a race here makes every downstream comparison meaningless`);
           }
 
@@ -438,29 +462,34 @@ async function main() {
              That is the reader's 11239-pixel diff with an identical contentHash: the
              element count moved 279 -> 280 while the styling did not. Wait for the
              bloomed count to stop changing before measuring anything. */
-          await page.evaluate(async () => {
-            const count = () => document.querySelectorAll('.is-bloomed').length;
-            let prev = -1;
-            for (let i = 0; i < 20; i++) {
-              const n = count();
-              if (n === prev) break;
-              prev = n;
-              await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-              await new Promise((r) => setTimeout(r, 60));
-            }
-            /* The class only STARTS the reveal. `.is-bloomed` plays the global
-               `bloom-in` keyframes (blur 12px -> 0, scale 1.03 -> 1, opacity 0 -> 1),
-               so waiting for the class still samples mid-animation and the same build
-               renders differently — measured as a 11239-pixel diff in the reader's
-               cover band with geo, contentHash and sweep all identical. Wait for the
-               animation to actually finish. */
-            const running = document.getAnimations?.() ?? [];
-            await Promise.all(running.map((a) => a.finished.catch(() => {})));
-            // Belt and braces: the keyframe duration outlives a single frame batch.
-            await new Promise((r) => setTimeout(r, 600));
-          });
+          // Polled from Node for the fake-clock reason above.
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          let prevBloomed = -1;
+          for (let i = 0; i < 20; i++) {
+            const n = await page.evaluate(() => document.querySelectorAll('.is-bloomed').length);
+            if (n === prevBloomed) break;
+            prevBloomed = n;
+            await sleep(100);
+          }
+          /* The class only STARTS the reveal. `.is-bloomed` plays the global
+             `bloom-in` keyframes (blur 12px -> 0, scale 1.03 -> 1, opacity 0 -> 1),
+             so waiting for the class still samples mid-animation and the same build
+             renders differently — measured as a 11239-pixel diff in the reader's
+             cover band with geo, contentHash and sweep all identical. Wait for the
+             finite animations to actually finish (an infinite one, a spinner, never
+             does and must not block the capture). */
+          for (let waited = 0; waited < 8000; waited += 100) {
+            const running = await page.evaluate(() => (document.getAnimations?.() ?? []).filter(
+              (a) => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity,
+            ).length);
+            if (running === 0) break;
+            await sleep(100);
+          }
+          // Belt and braces: the keyframe duration outlives a single frame batch.
+          await sleep(600);
 
           const applied = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+          const palette = await page.evaluate(() => document.documentElement.getAttribute('data-palette'));
           const geo = await geometry(page);
           const sweep = await page.evaluate(SWEEP);
           /* Per-surface content hash. The report-level hash is a concatenation, so
@@ -481,8 +510,11 @@ async function main() {
             throw new Error(`${tag}: surface looks empty (elements=${geo.elementCount}, painted=${sweep.painted})`);
           }
           if (geo.dpr !== 1) throw new Error(`${tag}: DPR ${geo.dpr}, expected 1`);
-          const themeOk = theme === 'dark' ? applied === 'dark' : applied === null || applied === 'light';
-          if (!themeOk) throw new Error(`${tag}: theme '${theme}' not applied (data-theme=${applied})`);
+          const modeOk = DARK_THEMES.has(theme) ? applied === 'dark' : applied === null || applied === 'light';
+          const paletteOk = theme === 'light' || theme === 'dark' ? palette === null : palette === theme;
+          if (!modeOk || !paletteOk) {
+            throw new Error(`${tag}: theme '${theme}' not applied (data-theme=${applied}, data-palette=${palette})`);
+          }
 
           report.captures.push({ tag, surface: surface.name, viewport: vp.name, theme, png, applied, geo, sweep, contentHash, errors });
           console.log(`  ✔ ${tag}  elements=${geo.elementCount} painted=${sweep.painted}${errors.length ? `  (${errors.length} console errors)` : ''}`);

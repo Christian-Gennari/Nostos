@@ -124,7 +124,7 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     localStorage.clear();
     vi.restoreAllMocks();
     // Reset to light so other suites are not affected.
-    themeService.setTheme('light');
+    themeService.setChoice('light');
   });
 
   function setupComponent() {
@@ -252,7 +252,7 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
   });
 
   it('follows the light theme with the established surround and light library theme', () => {
-    themeService.setTheme('light');
+    themeService.setChoice('light');
     setupComponent();
 
     expect(viewerStub().backgroundColor()).toBe('#fefeff');
@@ -260,11 +260,24 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
   });
 
   it('follows the dark theme with a dark surround and dark library theme', () => {
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     setupComponent();
 
     expect(viewerStub().backgroundColor()).toBe('#0d0e11');
     expect(viewerStub().theme()).toBe('dark');
+  });
+
+  it('sets the page on each theme ground: parchment for Sepia, the desk for Writer\'s Study (#1074)', () => {
+    themeService.setChoice('sepia');
+    setupComponent();
+    expect(viewerStub().backgroundColor()).toBe('#fbf5eb');
+    expect(viewerStub().theme()).toBe('light');
+
+    themeService.setChoice('study');
+    fixture.detectChanges();
+    expect(viewerStub().backgroundColor()).toBe('#141210');
+    expect(viewerStub().theme()).toBe('dark');
+    themeService.setChoice('light');
   });
 
   it('applies a grounded PDF source received before pagesLoaded instead of losing it', () => {
@@ -295,11 +308,11 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
   });
 
   it('defaults to inverted in dark mode and as-printed in light mode', () => {
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     setupComponent();
     expect(fixture.componentInstance.pageInverted()).toBe(true);
 
-    themeService.setTheme('light');
+    themeService.setChoice('light');
     fixture = TestBed.createComponent(PdfReader);
     fixture.componentRef.setInput('bookId', 'book-2');
     fixture.detectChanges();
@@ -307,13 +320,13 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
   });
 
   it('switches theme mid-document without recreating the viewer, keeping chrome and pages in step (#651)', () => {
-    themeService.setTheme('light');
+    themeService.setChoice('light');
     setupComponent();
     const viewer = viewerStub();
     const container = fixture.debugElement.query(By.css('.pdf-container')).nativeElement as HTMLElement;
     expect(container.classList.contains('inverted')).toBe(false);
 
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     fixture.detectChanges();
     expect(viewerStub()).toBe(viewer);
     expect(viewer.theme()).toBe('dark');
@@ -322,7 +335,7 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     // change as the chrome, so there is no frame where they disagree.
     expect(container.classList.contains('inverted')).toBe(true);
 
-    themeService.setTheme('light');
+    themeService.setChoice('light');
     fixture.detectChanges();
     expect(viewerStub()).toBe(viewer);
     expect(viewer.theme()).toBe('light');
@@ -330,27 +343,27 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
   });
 
   it('keeps an explicit As printed choice across theme switches and never inverts in light', () => {
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     setupComponent();
     fixture.componentInstance.setPageInverted(false);
 
-    themeService.setTheme('light');
+    themeService.setChoice('light');
     fixture.detectChanges();
     expect(fixture.componentInstance.pageInverted()).toBe(false);
 
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     fixture.detectChanges();
     expect(fixture.componentInstance.pageInverted()).toBe(false);
 
     fixture.componentInstance.setPageInverted(true);
-    themeService.setTheme('light');
+    themeService.setChoice('light');
     fixture.detectChanges();
     // Page colours are a dark-mode choice.
     expect(fixture.componentInstance.pageInverted()).toBe(false);
   });
 
   it('persists the inversion choice per book and restores it', () => {
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     setupComponent();
     // Override the default.
     fixture.componentInstance.setPageInverted(false);
@@ -364,7 +377,7 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
   });
 
   it('applies the inverted class when pageInverted is true', () => {
-    themeService.setTheme('dark');
+    themeService.setChoice('dark');
     setupComponent();
     const container = fixture.debugElement.query(By.css('.pdf-container'));
     expect(container.nativeElement.classList.contains('inverted')).toBe(true);

@@ -57,7 +57,7 @@ import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
-import { Theme, ThemeService } from '../core/services/theme.service';
+import { ThemePickerComponent } from '../ui/theme-picker/theme-picker.component';
 import { ToastService } from '../core/services/toast.service';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { Passage, passageReadingMinutes, passageSizeLabel } from '../core/dtos/note.dtos';
@@ -180,6 +180,7 @@ function readAloudFallbackNotice(code: string | null): string {
     MenuSeparatorDirective,
     MenuTriggerDirective,
     ModalShell,
+    ThemePickerComponent,
   ],
   providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
@@ -356,7 +357,6 @@ export class ReaderShell implements OnInit, OnDestroy {
   private topicsService = inject(TopicsService);
   private autocompleteService = inject(TopicAutocompleteService);
 
-  private themeService = inject(ThemeService);
   private toast = inject(ToastService);
   private readonly assistant = inject(AssistantService);
   readonly askNostosAvailable = this.assistant.surfaceAvailable;
@@ -679,17 +679,6 @@ export class ReaderShell implements OnInit, OnDestroy {
    */
   chromeVisible = signal(false);
 
-  /**
-   * The app-wide theme, switchable from inside a book (#651). The readers
-   * already follow ThemeService, so a switch is colour-only: no reload,
-   * reflow or position change.
-   */
-  readonly appTheme = this.themeService.theme;
-  readonly appThemes: readonly { value: Theme; label: string }[] = [
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-  ];
-
   /** Line heights as segmented options; the label is the value at one decimal. */
   readonly lineHeightOptions = EPUB_LINE_OPTIONS.map((value) => ({ value, label: value.toFixed(1) }));
 
@@ -698,10 +687,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     { value: 'inverted', label: 'Inverted' },
     { value: 'printed', label: 'As printed' },
   ] as const;
-
-  setAppTheme(theme: Theme): void {
-    this.themeService.setTheme(theme);
-  }
 
   toggleTypo(): void {
     const opening = !this.typoOpen();

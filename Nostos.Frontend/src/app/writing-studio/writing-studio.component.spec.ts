@@ -5,7 +5,8 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
 import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
-import { StudioPreferencesService, normalizeStudioPreferences } from './page-settings/studio-preferences.service';
+import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
+import { ThemeService } from '../core/services/theme.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -131,33 +132,22 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
   afterEach(() => {
     document.body.classList.remove('nostos-zen');
-    document.documentElement.removeAttribute('data-room-theme');
+    document.documentElement.removeAttribute('data-palette');
   });
 
-  it('dresses the whole screen in the page theme while open, and hands it back on leaving', () => {
+  it('wears the app theme and leaves it alone on leaving (#1074)', () => {
     const root = document.documentElement;
-    const prefs = TestBed.inject(StudioPreferencesService);
+    const theme = TestBed.inject(ThemeService);
 
-    prefs.update({ theme: 'sepia' });
+    theme.setChoice('study');
     fixture.detectChanges();
-    expect(root.getAttribute('data-room-theme')).toBe('sepia');
-    expect(root.hasAttribute('data-theme')).toBe(false);
-
-    prefs.update({ theme: 'study' });
-    fixture.detectChanges();
-    expect(root.getAttribute('data-room-theme')).toBe('study');
+    expect(root.getAttribute('data-palette')).toBe('study');
     expect(root.getAttribute('data-theme')).toBe('dark');
 
-    prefs.update({ theme: 'match' });
-    fixture.detectChanges();
-    expect(root.hasAttribute('data-room-theme')).toBe(false);
-
-    prefs.update({ theme: 'mist' });
-    fixture.detectChanges();
     fixture.destroy();
-    expect(root.hasAttribute('data-room-theme')).toBe(false);
-    expect(root.hasAttribute('data-theme')).toBe(false);
-    prefs.reset();
+    expect(root.getAttribute('data-palette')).toBe('study');
+    expect(root.getAttribute('data-theme')).toBe('dark');
+    theme.setChoice('system');
   });
 
   it('gives the Reference header one control, close, on every screen', () => {

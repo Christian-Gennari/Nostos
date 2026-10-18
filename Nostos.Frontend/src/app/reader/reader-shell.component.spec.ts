@@ -1254,12 +1254,12 @@ describe('ReaderShell toolbar contract', () => {
   describe('App appearance row in View settings (#651)', () => {
     function appearanceButtons(): HTMLButtonElement[] {
       return Array.from(fixture.nativeElement.querySelectorAll(
-        '[data-testid="reader-appearance"] .seg-opt',
+        '[data-testid="reader-appearance"] .tp-swatch',
       ));
     }
 
     function button(label: string): HTMLButtonElement {
-      return appearanceButtons().find((el) => el.textContent?.trim() === label)!;
+      return appearanceButtons().find((el) => el.getAttribute('aria-label') === label)!;
     }
 
     async function openPanelFor(fileName: string): Promise<HTMLElement> {
@@ -1277,8 +1277,15 @@ describe('ReaderShell toolbar contract', () => {
 
         const firstLabel = panel.querySelector('.typo-label')?.textContent?.trim();
         expect(firstLabel).toBe('Theme');
-        expect(panel.textContent).toContain('Applies throughout Nostos');
-        expect(appearanceButtons().map((el) => el.textContent?.trim())).toEqual(['Light', 'Dark']);
+        expect(panel.textContent).toContain('applies throughout Nostos');
+        expect(appearanceButtons().map((el) => el.getAttribute('aria-label'))).toEqual([
+          'Follow system',
+          'Light',
+          'Sepia',
+          'Mist',
+          "Writer's Study",
+          'Dark',
+        ]);
       });
     }
 
@@ -1293,21 +1300,28 @@ describe('ReaderShell toolbar contract', () => {
     it('drives the app-wide ThemeService and persists with the Settings key', async () => {
       await openPanelFor('being-and-time.pdf');
       const theme = TestBed.inject(ThemeService);
-      expect(theme.theme()).toBe('light');
+      expect(theme.active()).toBe('light');
 
       button('Dark').click();
       render();
-      expect(theme.theme()).toBe('dark');
+      expect(theme.active()).toBe('dark');
       expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
       expect(button('Dark').getAttribute('aria-checked')).toBe('true');
       const layout = fixture.debugElement.query(By.css('.reader-layout'));
       expect(layout.nativeElement.hasAttribute('data-theme')).toBe(false);
 
+      button('Sepia').click();
+      render();
+      expect(theme.active()).toBe('sepia');
+      expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+      expect(document.documentElement.getAttribute('data-palette')).toBe('sepia');
+      expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('sepia');
+
       button('Light').click();
       render();
-      expect(theme.theme()).toBe('light');
-      expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+      expect(theme.active()).toBe('light');
+      expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
       expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
     });
   });
@@ -1371,7 +1385,9 @@ describe('ReaderShell toolbar contract', () => {
     // contract, so the panel must not hand-roll option buttons again.
     const source = readSource('./reader-shell.component.html');
     expect(source).not.toContain('class="typo-opt"');
-    expect((source.match(/<nostos-segmented\b/g) ?? []).length).toBe(7);
+    expect((source.match(/<nostos-segmented\b/g) ?? []).length).toBe(6);
+    // The app theme is a row of swatches (#1074): six choices do not fit a track.
+    expect((source.match(/<nostos-theme-picker\b/g) ?? []).length).toBe(1);
   });
 
   it('has no overflow menu left to reach the desktop-only controls', async () => {

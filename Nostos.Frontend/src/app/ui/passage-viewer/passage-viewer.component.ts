@@ -98,7 +98,7 @@ export class PassageViewerComponent {
    */
   readonly pdfInverted = computed(() => {
     const passage = this.passage();
-    if (!passage || this.theme.theme() !== 'dark') return false;
+    if (!passage || this.theme.mode() !== 'dark') return false;
     try {
       const saved = localStorage.getItem(`nostos.pdf-invert.${passage.bookId}`);
       return saved === null ? true : JSON.parse(saved) === true;
