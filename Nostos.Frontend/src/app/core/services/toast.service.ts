@@ -27,7 +27,11 @@ export class ToastService {
     const trimmed = message.trim();
     if (!trimmed) return;
 
-    const existing = this.toasts().find((t) => t.message === trimmed && t.type === type);
+    // Identical messages replace each other, unless either carries an action:
+    // two quick "Topic added" toasts each keep their own Undo.
+    const existing = action
+      ? undefined
+      : this.toasts().find((t) => t.message === trimmed && t.type === type && !t.action);
     if (existing) {
       this.dismiss(existing.id);
     }

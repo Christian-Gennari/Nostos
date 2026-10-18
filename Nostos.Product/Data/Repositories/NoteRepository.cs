@@ -152,7 +152,7 @@ public class NoteRepository : INoteRepository
             // Notes without a book row sort last rather than first.
             NoteBrowseOrder.Book => notes
                 .OrderBy(n => n.Book == null)
-                .ThenBy(n => n.Book!.Title)
+                .ThenBy(n => n.Book!.Title.ToLower())
                 .ThenBy(n => n.BookId)
                 .ThenBy(n => n.CreatedAt)
                 .ThenBy(n => n.Id),
@@ -177,8 +177,11 @@ public class NoteRepository : INoteRepository
             .Select(group => new { group.Key.BookId, group.Key.Title, group.Key.Author, Count = group.Count() })
             .ToListAsync();
 
+        // The same order as the list's "by book": title ignoring case, a note
+        // whose book row is gone last.
         return rows
-            .OrderBy(row => row.Title, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(row => row.Title.Length == 0)
+            .ThenBy(row => row.Title.ToLowerInvariant(), StringComparer.Ordinal)
             .ThenBy(row => row.BookId)
             .Select(row => new NoteBookFacet(row.BookId, row.Title, row.Author, row.Count))
             .ToList();
@@ -188,8 +191,7 @@ public class NoteRepository : INoteRepository
     {
         var total = await _db.Notes.CountAsync();
         var passages = await _db.Notes.CountAsync(n => n.Kind == NoteKinds.Passage);
-        var unsorted = await _db.Notes.CountAsync(n => !n.NoteTopics.Any());
-        return new NoteSummary(total, passages, unsorted);
+        return new NoteSummary(total, passages, await CountWithoutTopicsAsync());
     }
 
     /// <summary>The notes in one place of the Brain, before order and paging.</summary>

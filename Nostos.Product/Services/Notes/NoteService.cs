@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data;
@@ -134,8 +133,7 @@ public sealed class NoteService : INoteService
         ChangeTopicReferencesAsync(topics, noteIds, TopicReferences.Remove, ct);
 
     private const int MaxTopicsPerLink = 20;
-    private const int MaxNotesPerLink = 500;
-    private const int MaxTopicNameLength = 200;
+    private const int MaxNotesPerLink = 200;
 
     /// <summary>
     /// Rewrites each listed note's body with <paramref name="change"/> for every
@@ -158,9 +156,9 @@ public sealed class NoteService : INoteService
             return InvalidTopicLink("Name at least one topic and one note.");
         if (names.Count > MaxTopicsPerLink || ids.Count > MaxNotesPerLink)
             return InvalidTopicLink($"At most {MaxTopicsPerLink} topics and {MaxNotesPerLink} notes at once.");
-        if (names.Any(name => name.Length == 0 || name.Length > MaxTopicNameLength
-                || name.Contains("[[") || name.Contains("]]") || name.Contains('\n')))
-            return InvalidTopicLink($"A topic name is 1 to {MaxTopicNameLength} characters on one line, without [[ or ]].");
+        if (!names.All(TopicReferences.IsValidName))
+            return InvalidTopicLink(
+                $"A topic name is 1 to {TopicReferences.MaxNameLength} characters on one line, without [[, ]], | or a closing ].");
 
         var notes = await _db.Notes
             .Include(n => n.Book)
@@ -175,7 +173,14 @@ public sealed class NoteService : INoteService
         var changed = new List<Guid>();
         foreach (var note in ordered)
         {
-            var content = names.Aggregate(note.Content, change);
+            // The body is re-read for links below, so a link it does not declare
+            // (older data, an import) is written into it first; otherwise this
+            // change would silently drop that link, or fail to remove it.
+            var declared = note.NoteTopics
+                .Select(link => link.Topic?.Topic)
+                .OfType<string>()
+                .Aggregate(note.Content, TopicReferences.Append);
+            var content = names.Aggregate(declared, change);
             if (content == note.Content) continue;
 
             note.Content = content;
@@ -184,7 +189,7 @@ public sealed class NoteService : INoteService
         }
 
         if (changed.Count > 0)
-            await _notes.SaveChangesAsync();
+            await _db.SaveChangesAsync(ct);
 
         return NoteCommandResult<TopicLinkResultDto>.Ok(
             new TopicLinkResultDto(changed, ordered.Select(n => ByText(n, null)).ToList()));
@@ -666,9 +671,7 @@ public sealed class NoteService : INoteService
         // edit. A join-only Act link would disappear when UpdateAsync reprocesses
         // that body. Normalize older join-only links on this note as well, so
         // accepting a new proposal does not make those disappear on the next edit.
-        var references = Regex.Matches(note.Content, @"\[\[(.*?)\]\]").Cast<Match>()
-            .Select(match => match.Groups[1].Value.Trim())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var references = TopicReferences.Names(note.Content).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var contentChanged = false;
         foreach (var name in existingNames.Select(link => link.Name).Append(topic.Topic))
         {

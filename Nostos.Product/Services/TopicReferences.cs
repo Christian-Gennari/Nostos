@@ -26,6 +26,23 @@ public static partial class TopicReferences
     [GeneratedRegex(@"\[\[(.*?)\]\]")]
     private static partial Regex ReferenceRegex();
 
+    public const int MaxNameLength = 200;
+
+    /// <summary>
+    /// Whether <paramref name="name"/> can stand inside <c>[[ ]]</c> and be read
+    /// back as the same name: one line, no brackets that would close or open a
+    /// reference early, no <c>|</c> (which the reader shows as a link alias).
+    /// </summary>
+    public static bool IsValidName(string? name)
+    {
+        var topic = name?.Trim() ?? string.Empty;
+        return topic.Length is > 0 and <= MaxNameLength
+            && !topic.Contains("[[") && !topic.Contains("]]")
+            && !topic.EndsWith(']') && !topic.StartsWith('[')
+            && !topic.Contains('|')
+            && !topic.Contains('\n') && !topic.Contains('\r');
+    }
+
     /// <summary>The topic names <paramref name="content"/> declares, trimmed and distinct.</summary>
     public static IReadOnlyList<string> Names(string? content) =>
         ReferenceRegex().Matches(content ?? string.Empty)

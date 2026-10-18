@@ -463,10 +463,10 @@ public class TopicRepository : ITopicRepository
         // Topics created earlier in this same unit of work are not in the
         // database yet. Linking one new topic to several notes at once must
         // reuse it, or the second note creates a duplicate the unique index
-        // rejects.
+        // rejects. Matched exactly, as the stored lookup above is.
         var pending = _db.ChangeTracker.Entries<TopicModel>()
             .Where(entry => entry.State == EntityState.Added
-                && nameList.Contains(entry.Entity.Topic, StringComparer.OrdinalIgnoreCase))
+                && nameList.Contains(entry.Entity.Topic, StringComparer.Ordinal))
             .Select(entry => entry.Entity)
             .Where(topic => !stored.Contains(topic));
         return stored.Concat(pending).ToList();

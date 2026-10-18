@@ -1,10 +1,9 @@
-using System.Text.RegularExpressions;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 
 namespace Nostos.Backend.Services;
 
-public partial class NoteProcessorService
+public class NoteProcessorService
 {
     private readonly ITopicRepository _topicRepo;
 
@@ -13,24 +12,14 @@ public partial class NoteProcessorService
         _topicRepo = topicRepo;
     }
 
-    // 1. Encapsulate the Regex here
-    [GeneratedRegex(@"\[\[(.*?)\]\]", RegexOptions.Compiled)]
-    private static partial Regex TopicRegex();
-
     /// <summary>
     /// Parses the note content for [[Topics]], creates them if missing,
     /// and updates the Many-to-Many links.
     /// </summary>
     public async Task ProcessNoteAsync(NoteModel note)
     {
-        // A. Parse content
-        var matches = TopicRegex().Matches(note.Content);
-
-        var foundNames = matches
-            .Select(m => m.Groups[1].Value.Trim())
-            .Where(s => !string.IsNullOrEmpty(s))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // A. Parse content (the one parser every [[ ]] rule shares)
+        var foundNames = TopicReferences.Names(note.Content).ToList();
 
         // B. Clear existing links for this note (Full refresh strategy)
         await _topicRepo.ClearNoteLinksAsync(note.Id);

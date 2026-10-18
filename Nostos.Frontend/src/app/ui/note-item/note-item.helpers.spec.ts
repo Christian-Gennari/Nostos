@@ -76,6 +76,10 @@ describe('newTopicName', () => {
   it('refuses names that cannot stand inside [[ ]]', () => {
     expect(newTopicName(topics, '')).toBeNull();
     expect(newTopicName(topics, 'a ]] b')).toBeNull();
+    expect(newTopicName(topics, 'foo]')).toBeNull();
+    expect(newTopicName(topics, '[foo')).toBeNull();
+    expect(newTopicName(topics, 'a|b')).toBeNull();
+    expect(newTopicName(topics, 'Kant [1781] notes')).toBe('Kant [1781] notes');
   });
 });
 

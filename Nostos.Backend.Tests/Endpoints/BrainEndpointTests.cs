@@ -162,12 +162,55 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
     [InlineData("")]
     [InlineData("has ]] brackets")]
     [InlineData("two\nlines")]
+    [InlineData("foo]")]
     public async Task Link_rejects_a_name_that_cannot_stand_inside_brackets(string name)
     {
         var (_, notes) = await CreateBookWithNotesAsync("Text.");
 
         var response = await Client.PostAsJsonAsync("/api/topics/link",
             new TopicLinkRequestDto([name], [notes[0].Id]));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Link_and_unlink_keep_a_link_the_text_never_declared()
+    {
+        var kept = $"Join only {Guid.NewGuid():N}";
+        var added = $"Added {Guid.NewGuid():N}";
+        var (_, notes) = await CreateBookWithNotesAsync($"Text [[{kept}]]");
+        var keptId = (await GetTopicsAsync()).Single(t => t.Name == kept).Id;
+
+        // Older data and imports can hold a link whose name is not in the body.
+        await using (var db = await OpenDbAsync())
+        {
+            var note = await db.Notes.SingleAsync(n => n.Id == notes[0].Id);
+            note.Content = "Text without the reference";
+            await db.SaveChangesAsync();
+        }
+
+        var linked = (await (await Client.PostAsJsonAsync("/api/topics/link",
+            new TopicLinkRequestDto([added], [notes[0].Id]))).Content.ReadFromJsonAsync<TopicLinkResultDto>())!;
+        linked.Notes.Single().TopicNames.Should().BeEquivalentTo([kept, added]);
+
+        var unlinked = (await (await Client.PostAsJsonAsync("/api/topics/unlink",
+            new TopicLinkRequestDto([kept], [notes[0].Id]))).Content.ReadFromJsonAsync<TopicLinkResultDto>())!;
+        unlinked.ChangedNoteIds.Should().Equal(notes[0].Id);
+        unlinked.Notes.Single().TopicNames.Should().Equal(added);
+        (await GetTopicsAsync()).Single(t => t.Id == keptId).UsageCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("a]]b")]
+    [InlineData("ends with]")]
+    [InlineData("alias|shown")]
+    public async Task Rename_refuses_a_name_that_would_break_the_notes_references(string name)
+    {
+        var original = $"Rename Guard {Guid.NewGuid():N}";
+        await CreateBookWithNotesAsync($"[[{original}]]");
+        var topic = (await GetTopicsAsync()).Single(t => t.Name == original);
+
+        var response = await Client.PutAsJsonAsync($"/api/topics/{topic.Id}", new UpdateTopicDto(name));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }

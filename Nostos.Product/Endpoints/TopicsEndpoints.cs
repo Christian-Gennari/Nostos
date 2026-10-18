@@ -1,5 +1,6 @@
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Mapping;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
 
@@ -102,6 +103,12 @@ public static class TopicsEndpoints
             {
                 if (string.IsNullOrWhiteSpace(dto.Topic))
                     return Results.BadRequest(new { error = "Topic name cannot be empty." });
+                // The new name is written into the notes' [[ ]] references.
+                if (!TopicReferences.IsValidName(dto.Topic))
+                    return Results.BadRequest(new
+                    {
+                        error = $"A topic name is 1 to {TopicReferences.MaxNameLength} characters on one line, without [[, ]], | or a closing ].",
+                    });
 
                 var topic = await repo.RenameAsync(id, dto.Topic.Trim());
                 return topic is null
@@ -155,8 +162,8 @@ public static class TopicsEndpoints
                 : Results.BadRequest(new { error = result.ErrorMessage });
 
     /// <summary>
-    /// Deletes a topic and its note links. The topic will be re-created
-    /// the next time a note containing [[Name]] is saved; that is expected.
+    /// Deletes a topic and its note links, and turns its references in the
+    /// notes' text into plain words, so it is not re-created on their next save.
     /// </summary>
     private static async Task<IResult> DeleteTopicAsync(Guid id, ITopicRepository repo)
     {

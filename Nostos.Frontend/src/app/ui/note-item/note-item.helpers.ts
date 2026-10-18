@@ -85,11 +85,24 @@ export function rankTopicChoices(
 }
 
 /**
- * The name typed in a picker when it would create a new topic: non-empty,
- * free of the `[[ ]]` brackets, and not already a topic.
+ * Whether a name can stand inside `[[ ]]` and be read back as itself: the
+ * server's rule (TopicReferences.IsValidName), so the picker never offers a
+ * name the server refuses.
+ */
+export function isValidTopicName(name: string): boolean {
+  const topic = name.trim();
+  return topic.length > 0 && topic.length <= 200
+    && !topic.includes('[[') && !topic.includes(']]')
+    && !topic.endsWith(']') && !topic.startsWith('[')
+    && !topic.includes('|') && !/[\r\n]/.test(topic);
+}
+
+/**
+ * The name typed in a picker when it would create a new topic: a valid name
+ * that is not already a topic.
  */
 export function newTopicName(topics: readonly TopicDto[], query: string): string | null {
   const name = query.trim().replace(/\s+/g, ' ');
-  if (!name || name.length > 200 || name.includes('[[') || name.includes(']]')) return null;
+  if (!isValidTopicName(name)) return null;
   return topics.some((topic) => topic.name.toLocaleLowerCase() === name.toLocaleLowerCase()) ? null : name;
 }

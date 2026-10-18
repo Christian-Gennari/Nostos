@@ -59,4 +59,11 @@ describe('ToastService', () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(service.toasts()).toEqual([]);
   });
+
+  it('keeps two identical toasts that each carry an action', () => {
+    service.success('Topic added', { label: 'Undo', run: vi.fn() });
+    service.success('Topic added', { label: 'Undo', run: vi.fn() });
+
+    expect(service.toasts().length).toBe(2);
+  });
 });
