@@ -17,6 +17,9 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmented.component';
 import { SwitchComponent } from '../../ui/switch/switch.component';
+import { CheckboxDirective } from '../../ui/check/check.directive';
+import { RangeDirective } from '../../ui/range/range.directive';
+import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import {
   FONT_SIZE_RANGE,
   LINE_SPACING_PRESETS,
@@ -41,7 +44,7 @@ const STANDARD_WIDTH_VALUE = 'standard';
 @Component({
   selector: 'app-studio-page-settings',
   standalone: true,
-  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent],
+  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, CheckboxDirective, RangeDirective, NostosIconComponent],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
   host: {

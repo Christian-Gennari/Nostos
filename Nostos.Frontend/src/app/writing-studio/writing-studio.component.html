@@ -5,7 +5,6 @@
   [class.drawer-files]="isDrawer('files')"
   [class.drawer-reference]="isDrawer('reference')"
   [class.is-typing]="isTyping()"
-  [ngClass]="themeClass()"
 >
   <div
     class="backdrop"
@@ -204,21 +203,6 @@
     <div class="sidebar-header compact">
       <div class="sidebar-title-row">
         <h2>Reference</h2>
-        @if (!isCompact()) {
-        <button
-          appIconButton
-          size="xs"
-          class="reference-pin"
-          icon="sidebar-simple"
-          [glyphSize]="16"
-          weight="thin"
-          (click)="toggleReferencePin()"
-          [title]="referencePinned() ? 'Let Reference slide over the page' : 'Pin Reference beside the page'"
-          [attr.aria-label]="referencePinned() ? 'Unpin Reference' : 'Pin Reference beside the page'"
-          [attr.aria-pressed]="referencePinned()"
-        ></button>
-        }
-        @if (isDrawer('reference')) {
         <button
           appIconButton
           size="xs"
@@ -232,7 +216,6 @@
           [attr.aria-expanded]="showBrainSidebar()"
           [attr.aria-pressed]="showBrainSidebar()"
         ></button>
-        }
       </div>
 
       <!-- Top-level reference mode switch: "For this writing" vs "Library" (issue #491) -->

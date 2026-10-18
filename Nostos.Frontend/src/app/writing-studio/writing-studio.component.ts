@@ -36,7 +36,8 @@ import {
 import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
 import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
-import { StudioPreferencesService } from './page-settings/studio-preferences.service';
+import { STUDIO_THEMES, StudioPreferencesService } from './page-settings/studio-preferences.service';
+import { ThemeService } from '../core/services/theme.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -62,8 +63,6 @@ import {
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
 
-/** Whether Reference sits beside the page on a wide screen (issue #1040). */
-const STUDIO_REFERENCE_PIN_KEY = 'nostos.studio.referencePinned';
 /** The writing the Studio opens on next time. */
 const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
 /** Where the caret and scroll were in recently left writings, newest first. */
@@ -81,14 +80,6 @@ function isStudioCompactViewport(): boolean {
 
 type ReferenceLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type ReferenceScrollKey = 'writing' | 'topics' | 'topicNotes' | 'books' | 'bookNotes';
-
-function readStudioFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
 
 function writeStudioValue(key: string, value: string | null): void {
   try {
@@ -207,15 +198,13 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   private readonly initialCompactMode = isStudioCompactViewport();
   isCompact = signal(this.initialCompactMode);
-  /**
-   * Reference beside the page instead of over it (issue #1040). A preference
-   * for people who write with sources in view; the page-first default is off.
-   */
-  referencePinned = signal(readStudioFlag(STUDIO_REFERENCE_PIN_KEY));
-  // The page comes first: the file list is always a slide-over, and Reference
-  // is one too unless pinned beside the page on a wide screen.
+  // The page comes first: both rails start closed. The file list is always a
+  // slide-over. Reference sits beside the page on a wide screen, so a source
+  // stays in view while it is quoted, and slides over on a compact one. One
+  // behaviour, no pin: a choice between the two was a second header button
+  // nobody could read.
   showFileSidebar = signal(false);
-  showBrainSidebar = signal(!this.initialCompactMode && readStudioFlag(STUDIO_REFERENCE_PIN_KEY));
+  showBrainSidebar = signal(false);
 
   /** A blank page with no writing behind it yet; the first words create one. */
   blankPage = signal(false);
@@ -312,11 +301,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.pagePrefs.update({ typewriter: !this.typewriter() });
   }
 
-  /** The Studio theme's class, or none when the page matches the app. */
-  readonly themeClass = computed(() => {
-    const theme = this.pagePrefs.theme();
-    return theme === 'match' ? '' : `studio-theme-${theme}`;
-  });
+  private readonly appTheme = inject(ThemeService);
 
   /** A chosen line length, in characters of the page's own face. */
   readonly textMeasure = computed(() => {
@@ -373,9 +358,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.setRailOpen('files', true);
   }
 
-  /** Whether a rail slides over the page (true) or sits beside it (pinned Reference). */
+  /** Whether a rail slides over the page (true) or sits beside it (Reference on a wide screen). */
   isDrawer(rail: 'files' | 'reference'): boolean {
-    return this.isCompact() || rail === 'files' || !this.referencePinned();
+    return this.isCompact() || rail === 'files';
   }
 
   /** Whether an open slide-over is dimming the page. */
@@ -384,16 +369,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
       (this.showFileSidebar() && this.isDrawer('files')) ||
       (this.showBrainSidebar() && this.isDrawer('reference'))
     );
-  }
-
-  /** Pin Reference beside the page, or let it slide over it again. */
-  toggleReferencePin(): void {
-    const pinned = !this.referencePinned();
-    this.referencePinned.set(pinned);
-    writeStudioValue(STUDIO_REFERENCE_PIN_KEY, pinned ? '1' : '0');
-    this.compactDrawerCaret = null;
-    this.showBrainSidebar.set(pinned && !this.isCompact());
-    if (!pinned) this.focusHeaderRailToggle('reference');
   }
 
   private setRailOpen(
@@ -407,7 +382,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (this.isDrawer(rail)) {
       if (open) {
         this.captureCompactDrawerCaret();
-        // One slide-over at a time; a pinned Reference column stays.
+        // One slide-over at a time; a Reference column stays.
         if (isFiles && this.isDrawer('reference')) this.showBrainSidebar.set(false);
         if (!isFiles) this.showFileSidebar.set(false);
         if (isFiles) this.showFileSidebar.set(true);
@@ -554,16 +529,15 @@ export class WritingStudio implements OnInit, AfterViewInit {
       // The file list is a slide-over in both modes, so crossing the
       // breakpoint leaves it as it is (a first layout can report a narrow
       // viewport and then widen; that must not shut a drawer just opened).
-      // Only a pinned Reference column changes kind: it closes on a compact
-      // screen and comes back beside the page on a wide one.
-      const referenceWasColumn = !this.isCompact() && this.referencePinned() && this.showBrainSidebar();
+      // Only an open Reference column changes kind: it closes on a compact
+      // screen rather than turning into a slide-over that covers the page.
+      const referenceWasColumn = !this.isCompact() && this.showBrainSidebar();
       this.isCompact.set(compact);
       if (compact) {
         if (referenceWasColumn) this.showBrainSidebar.set(false);
       } else {
         // A drawer still open keeps the caret it will hand back on closing.
         if (!this.drawerOpen()) this.compactDrawerCaret = null;
-        if (this.referencePinned()) this.showBrainSidebar.set(true);
       }
     };
 
@@ -585,6 +559,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.writingHandoffSubscription?.unsubscribe();
       // Never leave the body class behind if the component is torn down mid-zen.
       document.body.classList.remove('nostos-zen');
+      // The rest of the app goes back to its own theme.
+      this.appTheme.present(null);
+    });
+
+    // The page theme dresses everything on screen while the Studio is open:
+    // rails, popovers, the dock and the assistant, not just the page. `match`
+    // hands the app its own theme back.
+    effect(() => {
+      const option = STUDIO_THEMES.find((t) => t.value === this.pagePrefs.theme());
+      this.appTheme.present(option ? { name: option.value, mode: option.mode } : null);
     });
 
     effect((onCleanup) => {

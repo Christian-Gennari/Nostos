@@ -5,7 +5,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
 import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
-import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
+import { StudioPreferencesService, normalizeStudioPreferences } from './page-settings/studio-preferences.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -130,6 +130,44 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
   afterEach(() => {
     document.body.classList.remove('nostos-zen');
+    document.documentElement.removeAttribute('data-room-theme');
+  });
+
+  it('dresses the whole screen in the page theme while open, and hands it back on leaving', () => {
+    const root = document.documentElement;
+    const prefs = TestBed.inject(StudioPreferencesService);
+
+    prefs.update({ theme: 'sepia' });
+    fixture.detectChanges();
+    expect(root.getAttribute('data-room-theme')).toBe('sepia');
+    expect(root.hasAttribute('data-theme')).toBe(false);
+
+    prefs.update({ theme: 'study' });
+    fixture.detectChanges();
+    expect(root.getAttribute('data-room-theme')).toBe('study');
+    expect(root.getAttribute('data-theme')).toBe('dark');
+
+    prefs.update({ theme: 'match' });
+    fixture.detectChanges();
+    expect(root.hasAttribute('data-room-theme')).toBe(false);
+
+    prefs.update({ theme: 'mist' });
+    fixture.detectChanges();
+    fixture.destroy();
+    expect(root.hasAttribute('data-room-theme')).toBe(false);
+    expect(root.hasAttribute('data-theme')).toBe(false);
+    prefs.reset();
+  });
+
+  it('gives the Reference header one control, close, on every screen', () => {
+    for (const compact of [false, true]) {
+      component.isCompact.set(compact);
+      component.showBrainSidebar.set(true);
+      fixture.detectChanges();
+      const buttons = fixture.nativeElement.querySelectorAll('.sidebar-right .sidebar-title-row button');
+      expect(buttons.length).toBe(1);
+      expect(buttons[0].classList).toContain('reference-rail-collapse');
+    }
   });
 
   const zenToggle = (): HTMLButtonElement | null =>
@@ -272,7 +310,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(fixture.nativeElement.querySelector('.reference-rail-collapse')).toBeTruthy();
   });
 
-  it('slides the rails over the page, and pins Reference beside it when asked', () => {
+  it('slides Files over the page and sets Reference beside it on a wide screen', () => {
     const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
     const referenceToggle = fixture.nativeElement.querySelector(
       '.reference-toggle',
@@ -284,29 +322,39 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(component.drawerOpen()).toBe(true);
     expect(fixture.nativeElement.querySelector('.backdrop.visible')).toBeTruthy();
 
-    // One slide-over at a time.
+    component.toggleFilesRail();
+    fixture.detectChanges();
+    expect(component.drawerOpen()).toBe(false);
+
+    // Reference is a column beside the page: it does not dim the page.
     referenceToggle.click();
     fixture.detectChanges();
-    expect(component.showFileSidebar()).toBe(false);
-    expect(component.showBrainSidebar()).toBe(true);
-
-    component.toggleReferencePin();
-    fixture.detectChanges();
-    expect(component.referencePinned()).toBe(true);
-    expect(localStorage.getItem('nostos.studio.referencePinned')).toBe('1');
     expect(component.showBrainSidebar()).toBe(true);
     expect(component.drawerOpen()).toBe(false);
     expect(fixture.nativeElement.querySelector('.studio-layout.drawer-reference')).toBeNull();
 
-    // Opening Files leaves a pinned Reference where it is.
+    // Opening Files leaves the Reference column where it is.
     filesToggle.click();
     fixture.detectChanges();
     expect(component.showFileSidebar()).toBe(true);
     expect(component.showBrainSidebar()).toBe(true);
 
-    component.toggleReferencePin();
-    expect(localStorage.getItem('nostos.studio.referencePinned')).toBe('0');
+    // Reference closes from its own header.
+    component.toggleFilesRail();
+    (fixture.nativeElement.querySelector('.reference-rail-collapse') as HTMLButtonElement).click();
+    fixture.detectChanges();
     expect(component.showBrainSidebar()).toBe(false);
+  });
+
+  it('slides Reference over the page on a compact screen, one slide-over at a time', () => {
+    component.isCompact.set(true);
+    component.toggleFilesRail();
+    fixture.detectChanges();
+    component.toggleReferenceRail();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(true);
+    expect(component.drawerOpen()).toBe(true);
   });
 
   it('closes an open slide-over with Esc before anything else', () => {
