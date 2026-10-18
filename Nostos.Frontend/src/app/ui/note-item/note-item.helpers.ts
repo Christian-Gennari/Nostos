@@ -111,3 +111,8 @@ export function newTopicName(topics: readonly TopicDto[], query: string): string
   if (!isValidTopicName(name)) return null;
   return topics.some((topic) => topic.name.toLocaleLowerCase() === name.toLocaleLowerCase()) ? null : name;
 }
+
+/** Topics by trimmed, lower-cased name: what chips and inline links resolve against. */
+export function topicLookup(topics: readonly TopicDto[]): ReadonlyMap<string, TopicDto> {
+  return new Map(topics.map((topic) => [topic.name.trim().toLocaleLowerCase(), topic]));
+}
