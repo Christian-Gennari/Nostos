@@ -1874,9 +1874,11 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(editor.replaceSourceQuery).not.toHaveBeenCalled();
       expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
 
-      const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => void };
+      const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => boolean };
       expect(writingsService.addSource).not.toHaveBeenCalledWith('doc-1', 'passage-1');
-      options.quoteSelection('Time is that in which all things pass away.', {
+      const toast = TestBed.inject(ToastService);
+      const success = vi.spyOn(toast, 'success');
+      const quoted = options.quoteSelection('Time is that in which all things pass away.', {
         id: 'passage-1',
         bookTitle: 'Studies in Pessimism',
         bookAuthor: 'Arthur Schopenhauer',
@@ -1887,6 +1889,24 @@ describe('WritingStudio kept sources (#491)', () => {
       );
       // Kept only once something was quoted from it.
       expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
+      // The viewer confirms on its own button; no toast lands on the page.
+      expect(quoted).toBe(true);
+      expect(success).not.toHaveBeenCalled();
+    });
+
+    it('reports a quote from the Reference viewer as inserted, or not, without a success toast', async () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      const toast = TestBed.inject(ToastService);
+      const success = vi.spyOn(toast, 'success');
+      const passage = { id: 'passage-1', bookTitle: 'Studies in Pessimism', bookAuthor: 'Arthur Schopenhauer', title: 'On the Vanity of Existence' };
+
+      await expect(component.passageViewerOptions.quoteSelection!('Time is that in which all things pass away.', passage as never)).resolves.toBe(true);
+      expect(editor.insertMarkdown).toHaveBeenCalled();
+      expect(success).not.toHaveBeenCalled();
+
+      editor.insertMarkdown.mockResolvedValueOnce(false);
+      await expect(component.passageViewerOptions.quoteSelection!('Again.', passage as never)).resolves.toBe(false);
+      expect(toast.error).toHaveBeenCalledWith('The editor is not ready for insertion yet');
     });
 
     it('sends "Browse Reference" to the searched Books list', () => {

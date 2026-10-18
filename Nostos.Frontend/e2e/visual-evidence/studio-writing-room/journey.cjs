@@ -86,6 +86,10 @@ const title = `Journey ${tag} ${Date.now()}`;
   await page.waitForTimeout(200);
   await shot(page, '4a-passage-open');
   await page.getByTestId('passage-viewer-quote').click();
+  await page.waitForTimeout(150);
+  check('the viewer confirms on its button, with no toast over the page',
+    /Quoted/.test(await page.getByTestId('passage-viewer-quote').innerText()) && (await page.locator('.toast').count()) === 0);
+  await shot(page, '4c-quote-confirmed');
   await page.getByTestId('passage-viewer-close').click();
   await page.waitForTimeout(400);
   const pq = (await editor.locator('blockquote').filter({ hasText: 'Time is that' }).first().innerText().catch(() => '')).replace(/\s+/g, ' ');
@@ -114,9 +118,10 @@ const title = `Journey ${tag} ${Date.now()}`;
   if (phone) await page.mouse.click(30, 90);
   else await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
-  // The "Quoted in your writing" toast sits over the last line on a phone.
-  await page.locator('.toast').waitFor({ state: 'detached', timeout: 15000 }).catch(() => undefined);
   await editor.locator('p').last().click();
+  // ProseMirror reads a tapped caret on the next selectionchange; a script
+  // that types in the same millisecond would beat it, a person never does.
+  await page.waitForTimeout(300);
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('Written to the sound of keys.', { delay: 70 });

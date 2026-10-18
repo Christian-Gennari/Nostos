@@ -121,7 +121,9 @@ test('a kept passage is quoted by selecting words in the passage viewer', async 
   });
   await expect(quote).toBeEnabled();
   await quote.click();
-  await expect(page.getByText('Quoted in your writing')).toBeVisible();
+  // Confirmed on the viewer's own button for a moment, never by a toast
+  // over the page the quote just landed on.
+  await expect(page.locator('.toast')).toHaveCount(0);
 
   await page.getByTestId('passage-viewer-close').click();
   await expect(editor).toContainText('Man prefers peace, and even death, to freedom of choice');

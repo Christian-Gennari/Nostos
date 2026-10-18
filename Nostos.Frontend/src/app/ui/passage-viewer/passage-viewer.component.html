@@ -171,13 +171,20 @@
         variant="secondary"
         type="button"
         class="pv-quote"
-        [disabled]="!selection().trim()"
+        [disabled]="!selection().trim() && !quoted()"
+        [attr.aria-disabled]="quoted() && !selection().trim() ? 'true' : null"
         data-testid="passage-viewer-quote"
         (click)="quote()"
       >
-        <nostos-icon name="quotes" [size]="16"></nostos-icon>
-        Quote in writing
+        @if (quoted() && !selection().trim()) {
+          <nostos-icon name="check" [size]="16"></nostos-icon>
+          Quoted
+        } @else {
+          <nostos-icon name="quotes" [size]="16"></nostos-icon>
+          Quote in writing
+        }
       </button>
+      <span class="visually-hidden" aria-live="polite">{{ quoted() ? 'Quoted in your writing' : '' }}</span>
       }
 
       @if (!isAudio()) {
