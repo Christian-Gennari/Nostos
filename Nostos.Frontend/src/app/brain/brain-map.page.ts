@@ -54,6 +54,8 @@ export class BrainMapPage {
   })();
 
   readonly topics = this.state.topics;
+  /** The selected topic's own words, which the card shows before a line from its notes. */
+  readonly focusedWords = computed(() => this.state.topicById(this.focus())?.description?.trim() || null);
   readonly countText = computed(() => plural(this.state.sidebarTopics().length, 'topic'));
 
   readonly finder = signal('');

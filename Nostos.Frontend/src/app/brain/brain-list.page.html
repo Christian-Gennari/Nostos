@@ -119,6 +119,10 @@
     </div>
   </header>
 
+  @if (place() === 'topic' && topic(); as current) {
+  <app-brain-topic-words class="topic-words" [topic]="current" />
+  }
+
   @if (place() === 'topic' && related().length) {
   <section class="often-with" aria-label="Often with">
     <span class="often-label">Often with</span>

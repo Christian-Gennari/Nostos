@@ -148,12 +148,18 @@
 }
 
 /* --- Topic strip and filters ---------------------------------------------- */
+.topic-words,
 .often-with,
 .filter-bar,
 .narrow-notice {
   max-width: calc(46rem + 6rem);
   margin: 0;
   padding: 0 3rem;
+}
+
+.topic-words {
+  padding-top: 0.75rem;
+  padding-bottom: 0.5rem;
 }
 
 .often-with {
@@ -406,6 +412,7 @@
     min-height: var(--control-h-touch);
   }
 
+  .topic-words,
   .often-with,
   .filter-bar,
   .narrow-notice,

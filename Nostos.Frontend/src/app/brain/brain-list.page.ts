@@ -36,6 +36,7 @@ import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
+import { BrainTopicWordsComponent } from './brain-topic-words.component';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
 import {
   NOTE_ORDER_KEY,
@@ -89,6 +90,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     TopicPickerPopoverComponent,
     BrainTopicRenameComponent,
     BrainNoteDialogsComponent,
+    BrainTopicWordsComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',

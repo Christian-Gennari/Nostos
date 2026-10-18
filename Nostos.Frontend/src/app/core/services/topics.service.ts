@@ -12,6 +12,8 @@ export interface TopicDto {
   // these carry what matched, and are absent on the unfiltered list.
   noteMatchCount?: number;
   noteMatchSnippet?: string | null;
+  /** Appended: the reader's own words about the topic, if any. */
+  description?: string | null;
 }
 
 export interface TopicStatsDto {
@@ -113,6 +115,11 @@ export class TopicsService {
 
   rename(id: string, topic: string): Observable<TopicDto> {
     return this.http.put<TopicDto>(`/api/topics/${id}`, { topic });
+  }
+
+  /** Sets the topic's own words; an empty value clears them. */
+  setDescription(id: string, description: string | null): Observable<TopicDto> {
+    return this.http.put<TopicDto>(`/api/topics/${id}/description`, { description });
   }
 
   merge(sourceId: string, targetId: string): Observable<TopicDto> {

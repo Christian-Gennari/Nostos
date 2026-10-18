@@ -6,6 +6,7 @@ import { ToastService } from '../core/services/toast.service';
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
 import { rankTopicChoices, topicChoices } from '../ui/note-item/note-item.helpers';
 import { BrainStateService } from './brain-state.service';
+import { isListedTopic } from './brain.helpers';
 
 /** Where a rename was started: the sidebar row or the topic page's title. */
 export type RenameSurface = 'sidebar' | 'title';
@@ -44,7 +45,7 @@ export class BrainTopicActionsService {
   readonly mergeCandidates = computed(() => {
     const source = this.mergeSource();
     if (!source) return [];
-    return rankTopicChoices(topicChoices(this.state.topics().filter((t) => t.usageCount > 0)), this.mergeQuery(), [source.name], 50);
+    return rankTopicChoices(topicChoices(this.state.topics().filter(isListedTopic)), this.mergeQuery(), [source.name], 50);
   });
 
   readonly mergeTarget = computed(() => this.state.topicById(this.mergeTargetId()));
