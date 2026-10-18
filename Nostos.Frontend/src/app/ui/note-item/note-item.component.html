@@ -43,7 +43,7 @@
       <button
         type="button"
         class="note-item-pen"
-        [style.background]="fillRef(pen.id)"
+        [style.background-color]="fillRef(pen.id)"
         [class.is-active]="editColour() === pen.id"
         [attr.aria-pressed]="editColour() === pen.id"
         [attr.aria-label]="pen.label + ' highlighter'"

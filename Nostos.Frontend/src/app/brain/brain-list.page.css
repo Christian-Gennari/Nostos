@@ -44,7 +44,11 @@
   }
 }
 
-.place-switch {
+.place-switch,
+.toolbar-spacer,
+.order-select-phone,
+.book-select-phone,
+.sort-start-phone {
   display: none;
 }
 
@@ -347,17 +351,51 @@
     display: none;
   }
 
+  /* One row: the place on the left, the page's controls on the right, all
+     on the touch rung; the search takes the next row, as in the Library. */
   .toolbar-right {
-    margin-left: auto;
-    gap: 0.25rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 4px;
   }
 
-  .book-select {
+  .toolbar-spacer {
+    display: block;
+    flex: 1 1 0;
+    min-width: 4px;
+  }
+
+  .book-select,
+  .order-select,
+  .toolbar-right > .sort-start {
     display: none;
   }
 
-  .order-select {
-    min-width: 0;
+  .order-select-phone,
+  .book-select-phone {
+    display: inline-block;
+    flex: none;
+  }
+
+  .select-toggle,
+  .topic-more {
+    width: var(--control-h-touch);
+    min-width: var(--control-h-touch);
+    height: var(--control-h-touch);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .select-label {
+    display: none;
+  }
+
+  .sort-start-phone {
+    display: inline-flex;
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: var(--control-h-touch);
   }
 
   .search-bar-container {
@@ -384,6 +422,21 @@
 
   .selection-action {
     padding-inline: 0.5rem;
+  }
+}
+
+/* Touch: every control on the page is on the 44px rung. */
+@media (pointer: coarse), (hover: none) {
+  button[appButton],
+  a[appButton],
+  button[appChip],
+  a.topic-link {
+    min-height: 44px;
+  }
+
+  button[appIconButton] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

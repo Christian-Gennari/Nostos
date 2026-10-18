@@ -105,7 +105,7 @@ test('adds one topic to several selected notes, with Undo for exactly those note
   await page.goto(`${baseUrl}/brain/unsorted?q=${encodeURIComponent(run)}`);
   await expect(card(page, noteIds['loose2'])).toBeVisible();
 
-  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.getByRole('button', { name: 'Select notes' }).click();
   for (const key of ['loose1', 'loose2']) {
     await card(page, noteIds[key]).getByRole('checkbox').check();
   }
