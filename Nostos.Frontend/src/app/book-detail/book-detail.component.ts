@@ -42,6 +42,16 @@ interface PendingWorkAction {
   merge: boolean;
 }
 
+/** One chip of the hero format switcher. */
+interface EditionSwitchOption {
+  id: string;
+  label: string;
+  icon: 'headphones' | 'book-open';
+  current: boolean;
+  /** Full edition label (format plus narrator, duration, edition) for the tooltip. */
+  title: string;
+}
+
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
@@ -526,6 +536,54 @@ export class BookDetail implements OnInit, OnDestroy {
       formatIcon: this.getEditionConcept(edition.type, this.getSummaryEditionLabel(edition)),
     }));
     return [current, ...others];
+  });
+
+  /**
+   * The compact format switcher in the hero (issue #1062). On a phone the rail's
+   * editions card stacks below the whole notes feed, so switching EPUB ->
+   * Audiobook meant scrolling past every note; this puts the switch next to
+   * Read/Listen instead. Empty for a single-edition book, so nothing renders.
+   *
+   * Ordered by label then id, not current-first, so the chips hold still when the
+   * user switches. Two editions of one format are told apart by their edition
+   * detail, or failing that a number, since the chip carries the format only.
+   */
+  readonly editionSwitchOptions = computed<EditionSwitchOption[]>(() => {
+    const book = this.store.book();
+    const others = book?.otherEditions ?? [];
+    if (!book || others.length === 0) return [];
+
+    const all = [
+      { id: book.id, type: book.type, fileName: book.fileName, format: undefined, edition: book.edition, current: true, title: this.getEditionLabel(book) },
+      ...others.map((edition) => ({
+        id: edition.id,
+        type: edition.type,
+        fileName: edition.fileName,
+        format: edition.format,
+        edition: edition.edition,
+        current: false,
+        title: `Switch to ${this.getSummaryEditionLabel(edition)}`,
+      })),
+    ].map((entry) => ({ ...entry, format: this.buildEditionLabel(entry.type, entry.fileName, entry.format) }));
+
+    all.sort((a, b) => a.format.localeCompare(b.format) || a.id.localeCompare(b.id));
+
+    const seen = new Map<string, number>();
+    return all.map((entry) => {
+      const sameFormat = all.filter((other) => other.format === entry.format).length;
+      const nth = (seen.get(entry.format) ?? 0) + 1;
+      seen.set(entry.format, nth);
+      const label =
+        sameFormat < 2 ? entry.format : entry.edition?.trim() ? `${entry.format} · ${entry.edition.trim()}` : `${entry.format} ${nth}`;
+      const isAudio = entry.type === 'audiobook' || entry.type === 'audio';
+      return {
+        id: entry.id,
+        label,
+        icon: isAudio ? ('headphones' as const) : ('book-open' as const),
+        current: entry.current,
+        title: entry.title,
+      };
+    });
   });
 
   /**

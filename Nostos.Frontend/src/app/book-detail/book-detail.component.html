@@ -169,6 +169,30 @@
             ></button>
           </div>
 
+          <!-- Format switcher (issue #1062). The rail's editions card stacks
+               below the whole notes feed on a phone, so the switch also lives
+               here, beside Read/Listen. Navigation, not a setting: a <nav> of
+               buttons with aria-current, not a radio group whose arrow keys
+               would navigate away on every press. The current chip is plain
+               text plus a check, so its state never rests on the fill alone. -->
+          @if (editionSwitchOptions().length > 0) {
+          <nav class="edition-switcher" aria-label="Switch edition">
+            @for (option of editionSwitchOptions(); track option.id) {
+              @if (option.current) {
+              <span class="edition-chip current" aria-current="true" [title]="option.title">
+                <nostos-icon name="check" [size]="12" aria-hidden="true"></nostos-icon>
+                <span>{{ option.label }}</span>
+              </span>
+              } @else {
+              <button type="button" class="edition-chip" [title]="option.title" (click)="switchEdition(option.id)">
+                <nostos-icon [name]="option.icon" [size]="12" aria-hidden="true"></nostos-icon>
+                <span>{{ option.label }}</span>
+              </button>
+              }
+            }
+          </nav>
+          }
+
           <div class="primary-actions">
             @if (store.isImporting()) {
             <div class="detail-import-progress" role="status"

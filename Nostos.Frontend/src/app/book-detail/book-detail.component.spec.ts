@@ -448,6 +448,64 @@ describe('BookDetail reset progress', () => {
     expect(editionRows().length).toBe(0);
   });
 
+  // ── Hero format switcher (issue #1062) ──────────────────────────────────────
+  // On a phone the rail stacks below the notes feed, so the switch also sits in
+  // the hero beside Read/Listen.
+
+  function editionChips(): HTMLElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('.edition-switcher .edition-chip'));
+  }
+
+  it('puts a format switcher in the hero action area that switches on click', async () => {
+    const router = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
+
+    const nav = fixture.nativeElement.querySelector('.stage-strip nav.edition-switcher') as HTMLElement;
+    expect(nav).not.toBeNull();
+    expect(nav.getAttribute('aria-label')).toBe('Switch edition');
+    // It precedes the notes feed in document order, so no scrolling past notes.
+    expect(nav.compareDocumentPosition(fixture.nativeElement.querySelector('.detail-grid')))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    const chips = editionChips();
+    expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['Audiobook', 'EPUB']);
+
+    const audio = chips[0] as HTMLButtonElement;
+    expect(audio.tagName).toBe('BUTTON');
+    audio.click();
+    expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
+  });
+
+  it('marks the current chip with aria-current and a check, not as a control', async () => {
+    await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
+
+    const current = editionChips().find((chip) => chip.getAttribute('aria-current') === 'true')!;
+    expect(current.textContent?.trim()).toBe('EPUB');
+    expect(current.tagName).toBe('SPAN');
+    // The state is carried by a glyph as well as the fill.
+    expect(current.querySelector('nostos-icon')).not.toBeNull();
+    expect(editionChips().filter((chip) => chip.getAttribute('aria-current') === 'true').length).toBe(1);
+  });
+
+  it('tells apart two editions of one format by their edition detail', async () => {
+    await setup(
+      readableBook({
+        fileName: 'book.epub',
+        edition: '1st',
+        otherEditions: [{ id: 'b2', type: 'ebook', fileName: 'other.epub', edition: '2nd', progressPercent: 0, hasFile: true }],
+      }),
+    );
+
+    expect(editionChips().map((chip) => chip.textContent?.trim())).toEqual(['EPUB · 1st', 'EPUB · 2nd']);
+  });
+
+  it('renders no format switcher for a single-edition book', async () => {
+    await setup(readableBook());
+
+    expect(fixture.nativeElement.querySelector('.edition-switcher')).toBeNull();
+  });
+
   // ── Advanced work membership (issue #143) ───────────────────────────────────
   // A collapsed, secondary surface that corrects an automatic grouping. It must
   // be present even for a book that is alone in its work — that is how a group
