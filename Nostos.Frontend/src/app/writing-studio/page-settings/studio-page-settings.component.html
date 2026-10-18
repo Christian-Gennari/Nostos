@@ -99,6 +99,8 @@
         </label>
       </div>
       @if (prefs.preferences().sounds) {
+        <nostos-segmented fill class="ps-sound-pack" aria-label="Sound" data-testid="ps-sound-pack"
+          [options]="soundPackOptions" [value]="prefs.preferences().soundPack" (valueChange)="setSoundPack($event)" />
         <input
           class="ps-volume"
           type="range"
@@ -109,7 +111,16 @@
           aria-label="Typewriter sound volume"
           [value]="prefs.preferences().soundVolume"
           (input)="prefs.update({ soundVolume: numberFrom($event) })"
+          (change)="previewSound()"
         />
+        @if (prefs.preferences().soundPack === 'typewriter') {
+          <div class="ps-toggle">
+            <span aria-hidden="true">Margin bell</span>
+            <label appSwitch>
+              <input type="checkbox" aria-label="Margin bell" [checked]="prefs.preferences().marginBell" (change)="setMarginBell(checkedFrom($event))" />
+            </label>
+          </div>
+        }
       }
       <div class="ps-toggle">
         <span aria-hidden="true">Spell check</span>

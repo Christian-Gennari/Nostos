@@ -23,7 +23,7 @@ import BubbleMenu from '@tiptap/extension-bubble-menu';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
-import { TypewriterSounds, soundForInput } from './typewriter-sounds';
+import { SoundPack, TypewriterSounds, packHasSound, ringsMarginBell, soundForInput } from './typewriter-sounds';
 import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
 import { exitSuggestion } from '@tiptap/suggestion';
 
@@ -93,6 +93,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   sounds = input<boolean>(false);
   /** 0–1. */
   soundVolume = input<number>(0.6);
+  /** Which recordings play (#1065). */
+  soundPack = input<SoundPack>('typewriter');
+  /** Ring the margin bell near the end of a long line, where the pack has one. */
+  marginBell = input<boolean>(true);
 
   private typewriterSounds: TypewriterSounds | null = null;
   /** Whether the key behind the coming edit is auto-repeating (no sound). */
@@ -176,6 +180,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     // turning them off releases the audio context.
     effect(() => {
       if (this.sounds()) {
+        this.soundPlayer().setPack(this.soundPack());
         void this.soundPlayer().prefetch();
       } else if (this.typewriterSounds) {
         this.typewriterSounds.dispose();
@@ -885,7 +890,23 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     if (!sound) return;
     if ((sound === 'return' || sound === 'backspace') && performance.now() - this.keydownSoundAt < 100) return;
     this.soundPlayer().play(sound, this.soundVolume(), event.data?.charCodeAt(0) ?? 0);
+    if ((sound === 'key' || sound === 'space') && this.reachesMargin(event.data?.length ?? 1)) this.soundPlayer().play('bell', this.soundVolume());
   };
+
+  /**
+   * Whether the `typed` characters reach the margin bell's column, counted
+   * from the start of the paragraph or the last line break before the caret.
+   * beforeinput comes before the edit, so the caret is where they land. An
+   * Android keyboard can commit a whole word at once; any column it spans counts.
+   */
+  private reachesMargin(typed: number): boolean {
+    if (!this.marginBell() || !packHasSound(this.soundPack(), 'bell') || !this.editor) return false;
+    const { $from, empty } = this.editor.state.selection;
+    if (!empty || !$from.parent.isTextblock) return false;
+    const before = $from.parent.textBetween(0, $from.parentOffset, undefined, '\n');
+    const column = before.length - before.lastIndexOf('\n') - 1;
+    return Array.from({ length: Math.max(1, typed) }, (_, i) => column + i).some(ringsMarginBell);
+  }
 
   private emitMarkdown(): void {
     if (!this.editor) return;
