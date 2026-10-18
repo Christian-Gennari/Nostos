@@ -16,8 +16,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Layers come from the Actions cache that runs on main fill. Pull
+      # requests only read it: exporting changed layers (minutes on a cold
+      # cache) would lengthen every pull request, and a pull request's cache
+      # scope is not readable from main or other pull requests anyway.
       - name: Build production container
-        run: docker build --pull --tag nostos-runtime:test .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          pull: true
+          load: true
+          tags: nostos-runtime:test
+          cache-from: type=gha,scope=selfhosted-image
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,scope=selfhosted-image,mode=max' || '' }}
 
       - name: Smoke-test production container
         run: |

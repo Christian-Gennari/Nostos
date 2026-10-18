@@ -26,12 +26,14 @@ RUN dotnet publish Nostos.Backend/Nostos.Backend.csproj \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
 WORKDIR /app
-COPY --from=build /app/publish/ ./
+# Installed before the application is copied in, so a source change reuses
+# this layer instead of installing ffmpeg again.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data /tmp/nostos \
     && chown -R "$APP_UID:$APP_UID" /app /data /tmp/nostos
+COPY --chown=$APP_UID:$APP_UID --from=build /app/publish/ ./
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://0.0.0.0:8080 \
     Persistence__DatabasePath=/data/nostos.db \
