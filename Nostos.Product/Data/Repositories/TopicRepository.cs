@@ -21,7 +21,7 @@ public class TopicRepository : ITopicRepository
         return await _db
             .Topics.OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
-            .Select(c => new TopicDto(c.Id, c.Topic, c.NoteTopics.Count()))
+            .Select(c => new TopicDto(c.Id, c.Topic, c.NoteTopics.Count(), 0, null, c.Description))
             .ToListAsync();
     }
 
@@ -398,6 +398,7 @@ public class TopicRepository : ITopicRepository
     {
         RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target.Topic));
         MoveLinks(source, target);
+        target.Description = MergeDescriptions(target.Description, source.Description);
         _db.Topics.Remove(source);
         await _db.SaveChangesAsync();
         return target;
@@ -420,6 +421,34 @@ public class TopicRepository : ITopicRepository
         _db.Topics.Remove(topic);
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    /// <summary>
+    /// The survivor's words, then the merged topic's after a blank line; either
+    /// alone when the other has none. Cut to the length a description may have.
+    /// </summary>
+    internal static string? MergeDescriptions(string? target, string? source)
+    {
+        var kept = string.IsNullOrWhiteSpace(target) ? null : target.Trim();
+        var added = string.IsNullOrWhiteSpace(source) ? null : source.Trim();
+        var merged = kept is null ? added : added is null ? kept : $"{kept}\n\n{added}";
+        return merged is { Length: > TopicModel.MaxDescriptionLength }
+            ? merged[..TopicModel.MaxDescriptionLength]
+            : merged;
+    }
+
+    /// <summary>
+    /// Sets or clears a topic's description. Returns the topic, or null when it
+    /// is not found.
+    /// </summary>
+    public async Task<TopicModel?> SetDescriptionAsync(Guid id, string? description)
+    {
+        var topic = await _db.Topics.Include(c => c.NoteTopics).FirstOrDefaultAsync(c => c.Id == id);
+        if (topic is null)
+            return null;
+        topic.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        await _db.SaveChangesAsync();
+        return topic;
     }
 
     private IQueryable<TopicModel> WithLinkedNotes() =>
@@ -531,7 +560,10 @@ public class TopicRepository : ITopicRepository
         // takes the singleton lock in the same order (issue #679 Slice 11).
         await using var transaction = await _db.Database.BeginTransactionAsync(ct);
         await LibraryRevision.AdvanceAndGetAsync(_db, ct);
-        var deleted = await _db.Topics.Where(c => !c.NoteTopics.Any()).ExecuteDeleteAsync(ct);
+        // A topic the reader described is kept: its words are theirs to delete.
+        var deleted = await _db.Topics
+            .Where(c => !c.NoteTopics.Any() && (c.Description == null || c.Description == ""))
+            .ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
         return deleted;
     }

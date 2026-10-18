@@ -146,7 +146,7 @@ public static class PortableLibraryRecoverySource
             .ToList();
 
         var topics = (await db.Topics.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
-            .Select(x => new PortableTopic(x.Id, x.Topic))
+            .Select(x => new PortableTopic(x.Id, x.Topic, x.Description))
             .ToList();
 
         var noteTopics = (await db.NoteTopics.AsNoTracking()

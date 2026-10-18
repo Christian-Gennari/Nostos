@@ -105,6 +105,42 @@ public sealed class BackupServiceTests
     }
 
     [Fact]
+    public async Task RestoreBackup_RoundTripsATopicsOwnWords()
+    {
+        using var h = BackupHarness.Create();
+        var topicId = Guid.NewGuid();
+        const string words = "What virtue means to me, in my own words.";
+        await using (var db = h.NewDbContext())
+        {
+            // No note carries it: the description alone is what keeps it.
+            db.Topics.Add(new TopicModel { Id = topicId, Topic = "Virtue", Description = words });
+            await db.SaveChangesAsync();
+        }
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        using (var zip = ZipFile.OpenRead(h.Service.GetLocalArchivePath(created.Id)!))
+        {
+            using var reader = new StreamReader(zip.GetEntry("metadata/topics.json")!.Open());
+            (await reader.ReadToEndAsync()).Should().Contain(words, "the readable metadata carries the description too");
+        }
+
+        await using (var db = h.NewDbContext())
+        {
+            db.Topics.RemoveRange(db.Topics);
+            await db.SaveChangesAsync();
+        }
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        await using var after = h.NewDbContext();
+        var topic = await after.Topics.SingleAsync(t => t.Id == topicId);
+        topic.Description.Should().Be(words);
+    }
+
+    [Fact]
     public async Task RestoreBackup_WithConfiguredDatabasePath_ReplacesThatDatabaseAndLeavesContentRootDecoyUntouched()
     {
         var volume = Path.Combine(

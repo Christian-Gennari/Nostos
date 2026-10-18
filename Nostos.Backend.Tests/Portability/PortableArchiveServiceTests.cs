@@ -130,6 +130,12 @@ public sealed class PortableArchiveServiceTests
         note.AnchorVerified.Should().BeTrue();
         note.HighlightColour.Should().Be("sage", "a highlight keeps its pen through export and import");
 
+        var topic = await destination.Db.Topics
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == ids.TopicId);
+        topic.Description.Should().Be("Moving a library between hosts without losing anything.",
+            "a topic keeps the reader's own words through export and import");
+
         var writing = await destination.Db.Writings
             .AsNoTracking()
             .SingleAsync(x => x.Id == ids.WritingDocumentId);

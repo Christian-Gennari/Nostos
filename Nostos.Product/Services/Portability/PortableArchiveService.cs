@@ -668,7 +668,8 @@ public sealed class PortableArchiveService(
             .ToListAsync(ct))
             .Select(x => new PortableTopic(
                 x.Id,
-                x.Topic))
+                x.Topic,
+                x.Description))
             .ToList();
 
         var noteTopics = (await _db.NoteTopics

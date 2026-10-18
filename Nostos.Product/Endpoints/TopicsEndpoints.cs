@@ -1,4 +1,5 @@
 using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
@@ -108,6 +109,21 @@ public static class TopicsEndpoints
                     return Results.BadRequest(new { error = TopicReferences.InvalidNameMessage });
 
                 var topic = await repo.RenameAsync(id, dto.Topic.Trim());
+                return topic is null
+                    ? Results.NotFound()
+                    : Results.Ok(topic.ToDto());
+            }
+        );
+
+        // The reader's own words about a topic; an empty value clears them.
+        group.MapPut(
+            "/{id}/description",
+            async (Guid id, UpdateTopicDescriptionDto dto, ITopicRepository repo) =>
+            {
+                if (dto.Description is { Length: > TopicModel.MaxDescriptionLength })
+                    return Results.BadRequest(new { error = $"A topic's description is at most {TopicModel.MaxDescriptionLength} characters." });
+
+                var topic = await repo.SetDescriptionAsync(id, dto.Description);
                 return topic is null
                     ? Results.NotFound()
                     : Results.Ok(topic.ToDto());

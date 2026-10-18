@@ -1,7 +1,14 @@
 namespace Nostos.Shared.Dtos;
 
 // For the list
-public record TopicDto(Guid Id, string Name, int UsageCount, int NoteMatchCount = 0, string? NoteMatchSnippet = null);
+public record TopicDto(
+    Guid Id,
+    string Name,
+    int UsageCount,
+    int NoteMatchCount = 0,
+    string? NoteMatchSnippet = null,
+    // APPENDED: the reader's own words about the topic.
+    string? Description = null);
 
 // For the detail view
 public record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
@@ -47,6 +54,9 @@ public record TopicGraphDto(List<TopicGraphNodeDto> Nodes, List<TopicGraphEdgeDt
 public record CreateTopicDto(string Topic);
 public record UpdateTopicDto(string Topic);
 public record MergeTopicDto(Guid TargetId);
+
+/// <summary>Body of <c>PUT /api/topics/{id}/description</c>; empty or null clears it.</summary>
+public record UpdateTopicDescriptionDto(string? Description);
 
 /// <summary>
 /// Body of <c>POST /api/topics/link</c> and <c>/unlink</c>: add or remove the
