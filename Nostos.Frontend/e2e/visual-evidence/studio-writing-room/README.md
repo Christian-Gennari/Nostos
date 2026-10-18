@@ -1,6 +1,6 @@
 # Writing Studio, end to end (epic #1036)
 
-The final journey, last run on `feature/studio-settings-popover` (#1060: the epic branch plus the new page-settings popover). It ran in Chromium against a
+The final journey, last run on `fix/studio-quote-confirmation` (the epic branch with #1060 and the in-viewer quote confirmation). It ran in Chromium against a
 fresh synthetic library: Schopenhauer's *The World as Will and Representation*
 and *Studies in Pessimism*, plus Nietzsche's *Thus Spoke Zarathustra*, all public domain.
 `journey.cjs` is the script. Run it as `node journey.cjs <Nostos.Frontend> <frontend url> <api url> <out dir> 1440x900:light`.
@@ -10,7 +10,7 @@ Steps (file prefix):
 1. `1-blank-page`: the Studio opens on a blank page with the caret in it.
 2. `2-writing`: the first words create a writing named from its first line.
 3. `3a-palette`, `3b-quote`: `@schopenhauer will` finds the quote, and Enter inserts it with `— Arthur Schopenhauer, *The World as Will and Representation*`.
-4. `4a-passage-open`, `4b-passage-quoted`: `@vanity` opens the passage "On the Vanity of Existence". Two of its sentences are selected and quoted, not the whole passage.
+4. `4a-passage-open`, `4c-quote-confirmed`, `4b-passage-quoted`: `@vanity` opens the passage "On the Vanity of Existence". Two of its sentences are selected and quoted, not the whole passage. The viewer's button confirms it ("Quoted"), with no toast over the page.
 5. `5-theme-font`: the Studio theme is set to Sepia and the typeface to EB Garamond.
 6. `6a-sounds-on`, `6b-typing-with-sounds`: typewriter sounds are turned on, and typing plays them (`AudioBufferSourceNode.start` is counted).
 7. `7-after-reload`: after a reload, the same writing reopens with everything shown. The theme, typeface and sounds are kept, and the saved Markdown holds the heading, both quotes with their attributions, and the last line.
@@ -22,7 +22,7 @@ Each step was taken at 1440×900 and 390×844 (touch), in light and dark app the
 Saved Markdown from the 1440 light run:
 
 ```markdown
-# Journey 1440-light 1792271007453
+# Journey 1440-light 1792308352088
 
 What we want is never what we need, and the wanting itself is the trouble.
 

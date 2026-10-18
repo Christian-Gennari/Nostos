@@ -1102,13 +1102,13 @@ export class WritingStudio implements OnInit, AfterViewInit {
         passageTitle: passage.title,
       });
       if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown)) {
-        this.toast.success('Quoted in your writing');
         this.keepNote(passage.id);
         const source = this.palettePassageSource;
         if (source?.id === passage.id) this.sourcePalette?.remember(source);
-      } else {
-        this.toast.error('The editor is not ready for insertion yet');
+        return true;
       }
+      this.toast.error('The editor is not ready for insertion yet');
+      return false;
     },
   };
 
@@ -1569,14 +1569,15 @@ export class WritingStudio implements OnInit, AfterViewInit {
    * words selected in it go into the draft as a quotation from the passage.
    */
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
-    quoteSelection: (text: string, passage: Passage) => void this.quotePassageSelection(text, passage),
+    quoteSelection: (text: string, passage: Passage) => this.quotePassageSelection(text, passage),
   };
 
   readPassage(source: Note): void {
     this.passageViewer.open(source.id, this.passageViewerOptions);
   }
 
-  private async quotePassageSelection(text: string, passage: Passage): Promise<void> {
+  /** Whether the quote went in; the viewer confirms success on its own button. */
+  private async quotePassageSelection(text: string, passage: Passage): Promise<boolean> {
     const markdown = buildQuoteMarkdown({
       selectedText: text,
       bookTitle: passage.bookTitle,
@@ -1585,13 +1586,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
     });
     if (!markdown || !this.activeItem() || !this.markdownEditor) {
       this.toast.error('Open a writing and place the cursor in the editor first');
-      return;
+      return false;
     }
-    if (await this.markdownEditor.insertMarkdown(markdown)) {
-      this.toast.success('Quoted in your writing');
-    } else {
-      this.toast.error('The editor is not ready for insertion yet');
-    }
+    if (await this.markdownEditor.insertMarkdown(markdown)) return true;
+    this.toast.error('The editor is not ready for insertion yet');
+    return false;
   }
 
   canInsertNote(source: Note | null = this.inspectedSource()): boolean {

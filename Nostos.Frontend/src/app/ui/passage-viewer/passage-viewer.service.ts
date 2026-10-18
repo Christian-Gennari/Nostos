@@ -12,9 +12,11 @@ export interface PassageViewerRequest {
   openInBook?: (passage: Passage) => void;
   /**
    * Offered as "Quote in writing" for text selected in the viewer (Studio,
-   * issue #1021). Absent everywhere else.
+   * issue #1021). Absent everywhere else. Says whether the quote went in: the
+   * viewer confirms it on its own button, where the writer is looking,
+   * rather than with a toast over the page the quote just landed on.
    */
-  quoteSelection?: (text: string, passage: Passage) => void;
+  quoteSelection?: (text: string, passage: Passage) => boolean | Promise<boolean>;
 }
 
 /**

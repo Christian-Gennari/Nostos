@@ -1874,9 +1874,11 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(editor.replaceSourceQuery).not.toHaveBeenCalled();
       expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
 
-      const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => void };
+      const options = open.mock.calls[0][1] as { quoteSelection: (text: string, passage: unknown) => boolean };
       expect(writingsService.addSource).not.toHaveBeenCalledWith('doc-1', 'passage-1');
-      options.quoteSelection('Time is that in which all things pass away.', {
+      const toast = TestBed.inject(ToastService);
+      const success = vi.spyOn(toast, 'success');
+      const quoted = options.quoteSelection('Time is that in which all things pass away.', {
         id: 'passage-1',
         bookTitle: 'Studies in Pessimism',
         bookAuthor: 'Arthur Schopenhauer',
@@ -1887,6 +1889,9 @@ describe('WritingStudio kept sources (#491)', () => {
       );
       // Kept only once something was quoted from it.
       expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
+      // The viewer confirms on its own button; no toast lands on the page.
+      expect(quoted).toBe(true);
+      expect(success).not.toHaveBeenCalled();
     });
 
     it('sends "Browse Reference" to the searched Books list', () => {
