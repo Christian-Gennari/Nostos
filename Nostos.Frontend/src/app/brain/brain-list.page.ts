@@ -197,6 +197,9 @@ export class BrainListPage {
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
   private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
   private seq = 0;
+  private booksSeq = 0;
+  private lastScrollTop = 0;
+  private refillQueued = false;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private currentKey: string | null = null;
 
@@ -227,8 +230,19 @@ export class BrainListPage {
     effect(() => {
       const q = this.q();
       untracked(() => {
-        if (this.searchTimer === null) this.searchDraft.set(q);
+        // Only a change from elsewhere: the reader's own trailing space stays.
+        if (this.searchTimer === null && this.searchDraft().trim() !== q) this.searchDraft.set(q);
       });
+    });
+
+    // A topic was renamed, merged or deleted: the server rewrote the notes'
+    // references, so read the notes on screen again.
+    let rewritten = this.state.topicsRewritten();
+    effect(() => {
+      const version = this.state.topicsRewritten();
+      if (version === rewritten) return;
+      rewritten = version;
+      untracked(() => this.refill());
     });
 
     // Load the next page when the end of the list comes into view.
@@ -267,15 +281,20 @@ export class BrainListPage {
     this.currentKey = key;
     this.leaveSelection();
 
-    const restored = this.cache.restore(key);
+    // Whatever was loading belongs to the list being left.
+    this.seq++;
+    this.booksSeq++;
+    this.loading.set(false);
+
+    const restored = this.cache.restore(key, this.state.dataVersion());
     if (restored) {
-      this.seq++;
       this.notes.set(restored.notes);
       this.total.set(restored.total);
       this.books.set(restored.books);
       this.loaded.set(true);
       this.loading.set(false);
       this.failed.set(false);
+      this.lastScrollTop = restored.scrollTop;
       afterNextRender(() => this.scroller()?.nativeElement.scrollTo({ top: restored.scrollTop }), {
         injector: this.injector,
       });
@@ -286,6 +305,7 @@ export class BrainListPage {
     this.total.set(0);
     this.loaded.set(false);
     this.failed.set(false);
+    this.lastScrollTop = 0;
     this.scroller()?.nativeElement.scrollTo({ top: 0 });
     this.loadPage();
     this.loadBooks();
@@ -297,8 +317,43 @@ export class BrainListPage {
       notes: this.notes(),
       total: this.total(),
       books: this.books(),
-      scrollTop: this.scroller()?.nativeElement.scrollTop ?? 0,
+      // Read from the last scroll event: by the time a destroyed page saves,
+      // its element is detached and reports 0.
+      scrollTop: this.lastScrollTop,
+      version: this.state.dataVersion(),
     });
+  }
+
+  onScroll(event: Event): void {
+    this.lastScrollTop = (event.target as HTMLElement).scrollTop;
+  }
+
+  /**
+   * Reads the notes on screen again, as many as are loaded, keeping the
+   * reader's place: after a topic rename, or when Undo brought back a note
+   * this list had let go.
+   */
+  private refill(): void {
+    const seq = ++this.seq;
+    this.loading.set(true);
+    this.notesService.browse({
+      ...this.filter(),
+      order: this.order(),
+      limit: Math.min(200, Math.max(PAGE_SIZE, this.notes().length + 1)),
+      offset: 0,
+    }).subscribe({
+      next: (page) => {
+        if (seq !== this.seq) return;
+        this.notes.set(page.items);
+        this.total.set(page.totalCount);
+        this.loading.set(false);
+        this.loaded.set(true);
+      },
+      error: () => {
+        if (seq === this.seq) this.loading.set(false);
+      },
+    });
+    this.loadBooks();
   }
 
   loadPage(): void {
@@ -333,10 +388,10 @@ export class BrainListPage {
   }
 
   private loadBooks(): void {
-    const seq = this.seq;
+    const seq = ++this.booksSeq;
     this.notesService.books(this.filter()).subscribe({
       next: (books) => {
-        if (seq === this.seq) this.books.set(books);
+        if (seq === this.booksSeq) this.books.set(books);
       },
       error: () => undefined,
     });
@@ -401,11 +456,32 @@ export class BrainListPage {
   // --- The notes on screen ----------------------------------------------
 
   private replaceNote(note: NoteSearchHit): void {
-    if (!stillBelongs(note, this.place(), this.topic(), this.withTopic())) {
+    const belongs = stillBelongs(note, this.place(), this.topic(), this.withTopic());
+    if (!this.notes().some((item) => item.id === note.id)) {
+      // A note this list had let go belongs again (Undo): read the list again
+      // so it returns in its place.
+      if (belongs) this.queueRefill();
+      return;
+    }
+    if (!belongs) {
       this.removeNote(note.id);
       return;
     }
     this.notes.update((notes) => notes.map((item) => (item.id === note.id ? note : item)));
+  }
+
+  /** One refill for a batch of returning notes, not one each. */
+  private queueRefill(): void {
+    if (this.refillQueued) return;
+    this.refillQueued = true;
+    queueMicrotask(() => {
+      this.refillQueued = false;
+      this.refill();
+    });
+  }
+
+  pickerClosed(noteId: string): void {
+    if (this.suggestions.noteId() === noteId) this.suggestions.clear();
   }
 
   private removeNote(id: string): void {

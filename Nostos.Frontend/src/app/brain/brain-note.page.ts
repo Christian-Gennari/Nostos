@@ -51,6 +51,8 @@ export class BrainNotePage {
     });
     effect(() => {
       const id = this.noteId();
+      // A topic rename rewrites the note's references: read it again.
+      this.state.topicsRewritten();
       untracked(() => this.load(id));
     });
   }

@@ -79,8 +79,25 @@ test('adds a topic from the picker, removes it, and Undo puts it back', async ({
   await expect.poll(async () => (await note(noteIds['loose1'])).topicNames).toEqual([]);
   expect((await note(noteIds['loose1'])).content).toBe(`A loose thought ${run} one.`);
 
+  // Removing the page's own topic takes the note off the page...
+  await expect(card(page, noteIds['loose1'])).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Undo' }).click();
   await expect.poll(async () => (await note(noteIds['loose1'])).topicNames).toEqual([`New${run}`]);
+  // ...and Undo brings it back.
+  await expect(card(page, noteIds['loose1'])).toBeVisible();
+});
+
+test('keeps the search field as typed, trailing space and all', async ({ page }) => {
+  const { baseUrl } = loadFixture();
+  await page.goto(`${baseUrl}/brain`);
+  const field = page.getByRole('searchbox', { name: 'Search all notes' });
+  await field.pressSequentially('loose ', { delay: 30 });
+  await page.waitForTimeout(600);
+  await expect(field).toHaveValue('loose ');
+  await field.pressSequentially('thought', { delay: 30 });
+  await expect(page).toHaveURL(/q=loose(\+|%20)thought/);
+  await expect(card(page, noteIds['loose1'])).toBeVisible();
 });
 
 test('adds one topic to several selected notes, with Undo for exactly those notes', async ({ page }) => {
@@ -108,6 +125,26 @@ test('adds one topic to several selected notes, with Undo for exactly those note
     await expect.poll(async () => (await note(noteIds[key])).topicNames).toEqual([]);
     expect((await note(noteIds[key])).content).not.toContain('[[');
   }
+});
+
+test('Back returns to the list where the reader left it', async ({ page }) => {
+  const { baseUrl } = loadFixture();
+  for (let i = 0; i < 30; i++) {
+    await apiPost(baseUrl, `/api/books/${seed.bookId}/notes`, { content: `Filler ${run} ${i}. ` + 'A longer line of text. '.repeat(6) });
+  }
+  await page.goto(`${baseUrl}/brain?q=${encodeURIComponent(run)}&order=oldest`);
+  const scroller = page.locator('.brain-scroller');
+  await expect(card(page, noteIds['both'])).toBeVisible();
+  await scroller.evaluate((el) => el.scrollTo({ top: 1500 }));
+  await page.waitForTimeout(300);
+
+  // Leave in the app (a sidebar topic), then come Back.
+  await page.locator('.topic-row', { hasText: ethics }).click();
+  await expect(card(page, noteIds['ethicsOnly'])).toBeVisible();
+  await page.goBack();
+
+  await expect(card(page, noteIds['both'])).toBeAttached();
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(1000);
 });
 
 test('narrows a topic to the notes it shares with another', async ({ page }) => {

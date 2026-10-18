@@ -1,4 +1,4 @@
-<div class="brain-scroller" #scroller>
+<div class="brain-scroller" #scroller (scroll)="onScroll($event)">
   <header class="toolbar" [class.is-topic]="place() === 'topic'">
     <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
     <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
@@ -195,6 +195,7 @@
         (topicAdded)="noteActions.addTopic(note, $event)"
         (topicRemoved)="noteActions.removeTopic(note, $event)"
         (pickerOpened)="suggestions.request(note)"
+        (pickerClosed)="pickerClosed(note.id)"
         (edited)="noteActions.edit($event)"
         (keepWithWriting)="noteActions.keepWithWriting([note.id])"
         (moreFromBook)="setBook(note.bookId)"

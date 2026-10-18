@@ -107,7 +107,7 @@ export class BrainTopicActionsService {
       next: (survivor) => {
         this.renaming.set(false);
         this.renameId.set(null);
-        this.state.refresh();
+        this.state.topicsChanged();
         this.toast.success(survivor.id === id ? `Renamed to “${survivor.name}”` : `Merged into “${survivor.name}”`);
         this.followSurvivor(id, survivor.id);
       },
@@ -150,7 +150,7 @@ export class BrainTopicActionsService {
         this.merging.set(false);
         this.mergeSource.set(null);
         this.mergeConfirming.set(false);
-        this.state.refresh();
+        this.state.topicsChanged();
         this.toast.success(`Merged into “${survivor.name}”`);
         this.followSurvivor(source.id, survivor.id);
       },
@@ -177,7 +177,7 @@ export class BrainTopicActionsService {
       next: () => {
         this.deleting.set(false);
         this.deleteTarget.set(null);
-        this.state.refresh();
+        this.state.topicsChanged();
         this.toast.success(`Deleted “${target.name}”`);
         if (this.onTopicPage(target.id)) void this.router.navigate(['/brain']);
       },

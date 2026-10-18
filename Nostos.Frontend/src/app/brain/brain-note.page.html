@@ -28,6 +28,7 @@
       (topicAdded)="noteActions.addTopic(current, $event)"
       (topicRemoved)="noteActions.removeTopic(current, $event)"
       (pickerOpened)="suggestions.request(current)"
+      (pickerClosed)="suggestions.clear()"
       (edited)="noteActions.edit($event)"
       (keepWithWriting)="noteActions.keepWithWriting([current.id])"
       (moreFromBook)="moreFromBook(current)"

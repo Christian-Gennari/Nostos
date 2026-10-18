@@ -31,36 +31,65 @@ export class BrainStateService {
   readonly topicSort = signal<TopicSort>(readStored(TOPIC_SORT_KEY, isTopicSort, 'usage'));
   /** The phone drawer holding the sidebar; closes on every navigation. */
   readonly drawerOpen = signal(false);
+  /**
+   * Bumped by every change to notes or topics, so a list remembered for Back
+   * is not shown once something has changed since.
+   */
+  readonly dataVersion = signal(0);
+  /**
+   * Bumped when a topic was renamed, merged or deleted: the server rewrote
+   * notes' [[ ]] references, so the notes on screen must be read again.
+   */
+  readonly topicsRewritten = signal(0);
 
   /** The topics by lower-cased name, built once for every card on screen. */
   readonly lookup = computed(() => topicLookup(this.topics()));
   readonly sidebarTopics = computed(() => sidebarTopics(this.topics(), this.topicSort()));
 
   private loading = false;
+  private refreshSeq = 0;
 
   /** Loads the topics and counts the first time anything asks. */
   ensureLoaded(): void {
     if (this.topicsLoaded() || this.loading) return;
-    this.refresh();
+    this.load();
   }
 
   /** Reloads the topics and counts after notes or topics changed. */
   refresh(): void {
+    this.dataVersion.update((version) => version + 1);
+    this.load();
+  }
+
+  /** A topic was renamed, merged or deleted: refresh, and have lists reread their notes. */
+  topicsChanged(): void {
+    this.topicsRewritten.update((version) => version + 1);
+    this.refresh();
+  }
+
+  private load(): void {
+    // Only the latest request's answers are kept: an older response that
+    // arrives last must not undo a newer one.
+    const seq = ++this.refreshSeq;
     this.loading = true;
     this.topicsService.list().subscribe({
       next: (topics) => {
+        if (seq !== this.refreshSeq) return;
         this.topics.set(topics);
         this.topicsLoaded.set(true);
         this.topicsFailed.set(false);
         this.loading = false;
       },
       error: () => {
+        if (seq !== this.refreshSeq) return;
         this.topicsFailed.set(!this.topicsLoaded());
         this.loading = false;
       },
     });
     this.notesService.summary().subscribe({
-      next: (summary) => this.summary.set(summary),
+      next: (summary) => {
+        if (seq === this.refreshSeq) this.summary.set(summary);
+      },
       // Counts decorate the sidebar; a failure must not make the Brain unusable.
       error: () => undefined,
     });

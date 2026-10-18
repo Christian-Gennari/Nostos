@@ -9,6 +9,8 @@ export interface BrainListSnapshot {
   total: number;
   books: NoteBookFacet[];
   scrollTop: number;
+  /** BrainStateService.dataVersion when taken: any change since makes it stale. */
+  version: number;
 }
 
 const KEPT = 12;
@@ -39,8 +41,13 @@ export class BrainListCacheService {
     }
   }
 
-  /** The list as it was, when this navigation is a step back or forward through history. */
-  restore(key: string): BrainListSnapshot | null {
-    return this.lastWasHistory ? this.snapshots.get(key) ?? null : null;
+  /**
+   * The list as it was, when this navigation is a step back or forward through
+   * history and nothing has changed since it was taken.
+   */
+  restore(key: string, version: number): BrainListSnapshot | null {
+    if (!this.lastWasHistory) return null;
+    const snapshot = this.snapshots.get(key);
+    return snapshot && snapshot.version === version ? snapshot : null;
   }
 }

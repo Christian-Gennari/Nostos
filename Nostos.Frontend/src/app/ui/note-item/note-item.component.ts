@@ -128,6 +128,8 @@ export class NoteItemComponent {
   readonly topicRemoved = output<string>();
   /** The picker opened: the caller may start loading suggestions. */
   readonly pickerOpened = output<void>();
+  /** The picker closed (a choice, Escape, a click elsewhere): stop any suggestions. */
+  readonly pickerClosed = output<void>();
   readonly edited = output<NoteItemEdit>();
   readonly keepWithWriting = output<void>();
   readonly moreFromBook = output<void>();
@@ -187,11 +189,13 @@ export class NoteItemComponent {
   }
 
   closePicker(): void {
+    if (!this.pickerOpen()) return;
     this.pickerOpen.set(false);
+    this.pickerClosed.emit();
   }
 
   chooseTopic(name: string): void {
-    this.pickerOpen.set(false);
+    this.closePicker();
     this.topicAdded.emit(name);
   }
 
