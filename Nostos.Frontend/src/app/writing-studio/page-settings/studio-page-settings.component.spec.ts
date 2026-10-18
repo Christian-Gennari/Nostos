@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { ThemeService } from '../../core/services/theme.service';
+import { TypewriterSounds } from '../../ui/markdown-editor/typewriter-sounds';
 import { StudioPageSettingsComponent } from './studio-page-settings.component';
 import { DEFAULT_STUDIO_PREFERENCES, StudioPreferencesService } from './studio-preferences.service';
 
@@ -95,6 +96,41 @@ describe('StudioPageSettingsComponent (#1060)', () => {
     prefs.update({ sounds: true });
     fixture.detectChanges();
     expect(root.querySelector('.ps-volume')).toBeTruthy();
+  });
+
+  describe('sounds (#1065)', () => {
+    let previews: string[];
+
+    beforeEach(() => {
+      previews = [];
+      vi.spyOn(TypewriterSounds.prototype, 'preview').mockImplementation(function (this: TypewriterSounds, sound) {
+        previews.push(sound);
+        return Promise.resolve();
+      });
+      prefs.update({ sounds: true });
+      fixture.detectChanges();
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('plays one key when the volume slider comes to rest, not while it moves', () => {
+      const slider = root.querySelector('.ps-volume') as HTMLInputElement;
+      slider.value = '0.3';
+      slider.dispatchEvent(new Event('input'));
+      expect(previews).toEqual([]);
+      slider.dispatchEvent(new Event('change'));
+      expect(prefs.preferences().soundVolume).toBe(0.3);
+      expect(previews).toEqual(['key']);
+    });
+
+    it('offers the typewriter and the keyboard, and lets the writer hear a pick', () => {
+      const options = [...root.querySelectorAll('[data-testid="ps-sound-pack"] [role="radio"]')].map((el) => el.textContent?.trim());
+      expect(options).toEqual(['Typewriter', 'Keyboard']);
+      (root.querySelectorAll('[data-testid="ps-sound-pack"] [role="radio"]')[1] as HTMLElement).click();
+      fixture.detectChanges();
+      expect(prefs.preferences().soundPack).toBe('keyboard');
+      expect(previews).toEqual(['key']);
+    });
   });
 
   it('steps back from the typeface list with Esc, and walks it with the arrows', () => {

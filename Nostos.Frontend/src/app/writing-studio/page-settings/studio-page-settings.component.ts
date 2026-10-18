@@ -20,6 +20,7 @@ import { SwitchComponent } from '../../ui/switch/switch.component';
 import { CheckboxDirective } from '../../ui/check/check.directive';
 import { RangeDirective } from '../../ui/range/range.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { SoundPack, TypewriterSound, TypewriterSounds } from '../../ui/markdown-editor/typewriter-sounds';
 import {
   FONT_SIZE_RANGE,
   LINE_SPACING_PRESETS,
@@ -86,6 +87,14 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     return nearest === null ? STANDARD_WIDTH_VALUE : String(nearest);
   });
 
+  readonly soundPackOptions: readonly SegmentedOption<SoundPack>[] = [
+    { value: 'typewriter', label: 'Typewriter' },
+    { value: 'keyboard', label: 'Keyboard' },
+  ];
+
+  /** Plays a sample from the settings themselves; made on the first preview. */
+  private soundPreview: TypewriterSounds | null = null;
+
   /** Bumped on resize, so the popover follows its button when the header reflows. */
   readonly viewport = signal(0);
 
@@ -111,6 +120,24 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     document.removeEventListener('pointerdown', this.onPointerDown, true);
+    this.soundPreview?.dispose();
+  }
+
+  setSoundPack(soundPack: SoundPack): void {
+    this.prefs.update({ soundPack });
+    this.previewSound('key');
+  }
+
+  /**
+   * One key at the current level and pack, so the level can be set without
+   * leaving the panel. Called when the slider comes to rest (release, or each
+   * arrow-key step), not on every step of a drag.
+   */
+  previewSound(sound: TypewriterSound = 'key'): void {
+    const prefs = this.prefs.preferences();
+    this.soundPreview ??= new TypewriterSounds();
+    this.soundPreview.setPack(prefs.soundPack);
+    void this.soundPreview.preview(sound, prefs.soundVolume);
   }
 
   setTheme(theme: StudioThemeOption['value']): void {

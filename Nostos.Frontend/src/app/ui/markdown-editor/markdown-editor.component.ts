@@ -23,7 +23,7 @@ import BubbleMenu from '@tiptap/extension-bubble-menu';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
-import { TypewriterSounds, soundForInput } from './typewriter-sounds';
+import { SoundPack, TypewriterSounds, soundForInput } from './typewriter-sounds';
 import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
 import { exitSuggestion } from '@tiptap/suggestion';
 
@@ -93,6 +93,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   sounds = input<boolean>(false);
   /** 0–1. */
   soundVolume = input<number>(0.6);
+  /** Which recordings play (#1065). */
+  soundPack = input<SoundPack>('typewriter');
 
   private typewriterSounds: TypewriterSounds | null = null;
   /** Whether the key behind the coming edit is auto-repeating (no sound). */
@@ -176,6 +178,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     // turning them off releases the audio context.
     effect(() => {
       if (this.sounds()) {
+        this.soundPlayer().setPack(this.soundPack());
         void this.soundPlayer().prefetch();
       } else if (this.typewriterSounds) {
         this.typewriterSounds.dispose();
