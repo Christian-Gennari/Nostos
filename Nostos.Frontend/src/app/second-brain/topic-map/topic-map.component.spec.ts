@@ -562,6 +562,38 @@ describe('TopicMapComponent', () => {
     expect(component.selectedNodeId()).toBe('beta');
   });
 
+  it('opens at the camera its host kept, instead of framing the graph', () => {
+    const camera = (globalThis as unknown as { __camera: Record<string, ReturnType<typeof vi.fn>> }).__camera;
+    camera['setState'].mockClear();
+    camera['animate'].mockClear();
+    fixture.componentRef.setInput('camera', { x: 0.2, y: 0.7, ratio: 0.4, angle: 0 });
+    setTopics(topics);
+    flushGraph();
+
+    expect(camera['setState']).toHaveBeenCalledWith({ x: 0.2, y: 0.7, ratio: 0.4, angle: 0 });
+    expect(camera['animate']).not.toHaveBeenCalled();
+  });
+
+  it('hands its host the camera as it goes away', () => {
+    const kept = vi.fn();
+    component.cameraKept.subscribe(kept);
+    setTopics(topics);
+    flushGraph();
+
+    fixture.destroy();
+    expect(kept).toHaveBeenCalledWith({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+  });
+
+  it('names the card action as its host asks', () => {
+    fixture.componentRef.setInput('notesLabel', 'Open topic');
+    setTopics(topics);
+    flushGraph();
+    component.selectAccessibleNode('alpha');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.map-card-notes').textContent.trim()).toBe('Open topic');
+  });
+
   it('keeps the accessible list in sync with the rendered graph', () => {
     setTopics(topics);
     flushGraph();

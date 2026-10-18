@@ -84,6 +84,7 @@
         aria-label="Topic actions" [nostosMenuTriggerFor]="topicMenu"></button>
       <ng-template #topicMenu>
         <nostos-menu aria-label="Topic actions">
+          <button nostosMenuItem icon="graph" (triggered)="showOnMap(current.id)">Show on map</button>
           <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
           <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
           <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes with writing…</button>

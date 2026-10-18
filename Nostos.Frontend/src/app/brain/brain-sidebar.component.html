@@ -31,6 +31,10 @@
         <span class="label">Unsorted</span>
         @if (state.summary()?.unsorted) { <span class="count-badge">{{ state.summary()?.unsorted }}</span> }
       </a>
+      <a class="nav-item" routerLink="/brain/map" routerLinkActive="active" ariaCurrentWhenActive="page">
+        <nostos-icon concept="topicMap" [size]="16" weight="light" />
+        <span class="label">Map</span>
+      </a>
     </div>
 
     <div class="nav-group" data-testid="brain-topics">

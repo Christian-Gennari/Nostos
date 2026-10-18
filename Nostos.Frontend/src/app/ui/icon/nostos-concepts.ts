@@ -46,6 +46,8 @@ export const NOSTOS_CONCEPTS = {
   topic: 'hash',
   /** Notes with no topic yet: the Brain's Unsorted, like the Library's. */
   unsorted: 'tray',
+  /** The Brain's map: topics as a graph, joined by the notes they share. */
+  topicMap: 'graph',
 
   /** The writing studio's AI suggestion surface. */
   aiSuggestion: 'sparkle',

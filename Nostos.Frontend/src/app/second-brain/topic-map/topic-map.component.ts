@@ -65,6 +65,7 @@ import {
   readTheme,
   drawThemeNodeHover,
   compareTopics,
+  drawnTopics,
   COMMUNITY_HUES,
   COMMUNITY_MIN_SIZE,
   LABEL_PRIORITY,
@@ -78,9 +79,11 @@ import {
   shelfPositions,
   alignmentRotation,
   type DiscObstacle,
+  type MapCamera,
 } from './topic-map.helpers';
 
 export { MAX_MAP_TOPICS } from './topic-map.helpers';
+export type { MapCamera } from './topic-map.helpers';
 
 /** How many related topics the selection card lists. */
 const SELECTION_RELATED_MAX = 4;
@@ -103,6 +106,7 @@ interface MapModel {
   hue: Map<string, string | null>;
 }
 
+/** Where the map's camera stands, as Sigma reports it. */
 export interface MapSelection {
   id: string;
   name: string;
@@ -140,6 +144,17 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
    * excluded them. With the query the map can say which of the two it is.
    */
   @Input() searchQuery = '';
+  /**
+   * A camera to open at instead of framing the whole graph: the host's record
+   * of where the reader left the map, so Back returns to the same view.
+   */
+  @Input() camera: MapCamera | null = null;
+  /** Open centred on the selected topic (unless `camera` is given). */
+  @Input() centerOnLoad = false;
+  /** The card's action label. */
+  @Input() notesLabel = 'Read notes';
+  /** The camera as the map goes away, so the host can keep the view for Back. */
+  @Output() readonly cameraKept = new EventEmitter<MapCamera>();
   @Output() readonly topicSelected = new EventEmitter<string>();
   /** Emitted by the rail's "Read notes" action. */
   @Output() readonly openNotes = new EventEmitter<void>();
@@ -161,6 +176,14 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @ViewChild('mapLegend', { static: false }) mapLegend?: ElementRef<HTMLElement>;
 
   private sigma: Sigma | null = null;
+  private graphRequest: { unsubscribe(): void } | null = null;
+  /**
+   * The camera of the graph a rebuild replaced, when the host tracks the
+   * camera: a refreshed topic set keeps the reader's view rather than jumping.
+   */
+  private carriedCamera: MapCamera | null = null;
+  /** The host's start view (`camera` / `centerOnLoad`) applies to the first build only. */
+  private framed = false;
   private graph: Graph | null = null;
   private graphData: TopicGraphDto | null = null;
   private theme: ThemeColors = readTheme();
@@ -302,6 +325,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
+    this.graphRequest?.unsubscribe();
+    if (this.sigma) this.cameraKept.emit({ ...this.sigma.getCamera().getState() });
     document.removeEventListener('fullscreenchange', this.handleFullscreenChange);
     this.disposeSigma();
     this.resizeObserver?.disconnect();
@@ -312,7 +337,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   private loadGraphData(): void {
     this.loading.set(true);
-    this.topicsService.getGraph().subscribe({
+    // A newer topic set supersedes a graph still on its way.
+    this.graphRequest?.unsubscribe();
+    this.graphRequest = this.topicsService.getGraph().subscribe({
       next: (data) => {
         if (this.destroyed) return;
         this.graphData = data;
@@ -334,18 +361,16 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   /* ── Graph construction ── */
 
   private rebuildSigma(): void {
+    // A host that chose the start view also keeps the reader's view across a rebuild.
+    const keepsView = this.camera !== null || this.centerOnLoad;
+    this.carriedCamera = this.sigma && keepsView ? { ...this.sigma.getCamera().getState() } : null;
     this.disposeSigma();
     if (!this.graphData || !this.sigmaContainer?.nativeElement) return;
 
     this.theme = readTheme();
     const container = this.sigmaContainer.nativeElement;
 
-    const visibleIds = new Set(
-      [...(this.topics ?? [])]
-        .sort(compareTopics)
-        .slice(0, MAX_MAP_TOPICS)
-        .map((c) => c.id)
-    );
+    const visibleIds = new Set(drawnTopics(this.topics ?? []).map((c) => c.id));
 
     const visibleNodes = this.graphData.nodes.filter((n) => visibleIds.has(n.id));
     const visibleEdges = this.graphData.edges.filter(
@@ -1046,7 +1071,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     window.requestAnimationFrame(() => {
       if (this.destroyed || !this.sigma) return;
       this.sigma.refresh();
-      this.fitGraph();
+      this.frameOnLoad();
+      this.markFramed();
+      this.carriedCamera = null;
     });
 
     // Resize observer to keep Sigma in sync with container size changes.
@@ -1072,7 +1099,25 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     }
 
     // Frame the graph on first paint.
-    this.fitGraph();
+    this.frameOnLoad();
+  }
+
+  /** The first view of a built graph: where the host left it, its selection, or all of it. */
+  private frameOnLoad(): void {
+    const selected = this.selectedNodeId();
+    const kept = this.carriedCamera ?? (this.framed ? null : this.camera);
+    if (kept) {
+      this.sigma?.getCamera().setState(kept);
+    } else if (!this.framed && this.centerOnLoad && selected && this.graph?.hasNode(selected)) {
+      this.centerSelected();
+    } else {
+      this.fitGraph();
+    }
+  }
+
+  /** The first build's view is settled; later builds keep the reader's. */
+  private markFramed(): void {
+    this.framed = true;
   }
 
   /**
@@ -1624,6 +1669,11 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   /** Select a related topic from the card and bring it into view. */
   selectRelated(id: string): void {
+    this.focusTopic(id);
+  }
+
+  /** Select a topic and bring it to the middle of the stage. */
+  focusTopic(id: string): void {
     this.selectAccessibleNode(id);
     this.centerSelected();
   }

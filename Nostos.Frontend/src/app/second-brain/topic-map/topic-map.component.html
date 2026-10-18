@@ -65,6 +65,7 @@
           {{ sel.usageCount }} {{ sel.usageCount === 1 ? 'reference' : 'references' }} ·
           {{ sel.connectionCount }} {{ sel.connectionCount === 1 ? 'connection' : 'connections' }}
         </p>
+        <ng-content select="[mapCardDetail]" />
         @if (sel.related.length) {
         <div class="map-card-related" role="group" aria-label="Most connected topics">
           @for (related of sel.related; track related.id) {
@@ -86,7 +87,7 @@
           (click)="openNotes.emit()"
         >
           <nostos-icon name="book-open" [size]="16" />
-          Read notes
+          {{ notesLabel }}
         </button>
       </section>
       }

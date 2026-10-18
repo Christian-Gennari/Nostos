@@ -560,4 +560,8 @@ export class BrainListPage {
   openDrawer(): void {
     this.state.drawerOpen.set(true);
   }
+
+  showOnMap(topicId: string): void {
+    void this.router.navigate(['/brain/map'], { queryParams: { focus: topicId } });
+  }
 }

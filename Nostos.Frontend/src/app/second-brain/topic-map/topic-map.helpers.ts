@@ -3,6 +3,19 @@ import type { TopicDto } from '../../core/services/topics.service';
 
 export const MAX_MAP_TOPICS = 150;
 
+/** Where the map's camera stands, as Sigma reports it. */
+export interface MapCamera {
+  x: number;
+  y: number;
+  ratio: number;
+  angle: number;
+}
+
+/** The topics the map draws: the most referenced, up to the cap. */
+export function drawnTopics<T extends TopicDto>(topics: readonly T[]): T[] {
+  return [...topics].sort(compareTopics).slice(0, MAX_MAP_TOPICS);
+}
+
 /* ── Visual constants ── */
 export const NODE_SIZE_MIN = 4;
 export const NODE_SIZE_MAX = 16;
