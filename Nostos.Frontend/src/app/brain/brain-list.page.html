@@ -69,6 +69,12 @@
         [value]="order()"
         (valueChange)="setOrder($event)"
       />
+      @if (place() === 'unsorted' && total() > 0) {
+      <a appButton variant="primary" size="sm" class="sort-start" routerLink="/brain/unsorted/sort"
+        [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
+        Sort one by one <nostos-icon name="arrow-right" [size]="14" />
+      </a>
+      }
       <button appButton variant="ghost" size="sm" type="button" class="select-toggle"
         [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
         <nostos-icon name="check-square" [size]="16" />Select

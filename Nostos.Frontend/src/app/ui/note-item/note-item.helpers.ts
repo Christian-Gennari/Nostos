@@ -116,3 +116,14 @@ export function newTopicName(topics: readonly TopicDto[], query: string): string
 export function topicLookup(topics: readonly TopicDto[]): ReadonlyMap<string, TopicDto> {
   return new Map(topics.map((topic) => [topic.name.trim().toLocaleLowerCase(), topic]));
 }
+
+/**
+ * The address of the inline `[[Topic]]` link a plain left click landed on, so
+ * the app can open it without a page load; null for a modified click (new tab)
+ * or a click anywhere else.
+ */
+export function inlineTopicHref(event: MouseEvent): string | null {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+  const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a.topic-tag');
+  return link?.getAttribute('href') ?? null;
+}

@@ -36,7 +36,7 @@ import {
   TopicPickerPopoverComponent,
   type TopicSuggestionState,
 } from '../topic-picker-popover/topic-picker-popover.component';
-import { noteLocationLabel, thoughtForDisplay, topicLookup } from './note-item.helpers';
+import { inlineTopicHref, noteLocationLabel, thoughtForDisplay, topicLookup } from './note-item.helpers';
 import type { Note } from '../../core/dtos/note.dtos';
 
 /** What an edit changed. Fields that did not change are absent. */
@@ -209,9 +209,8 @@ export class NoteItemComponent {
    * modified click (new tab) go to the same place.
    */
   onThoughtClick(event: MouseEvent): void {
-    const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a.topic-tag');
-    const href = link?.getAttribute('href');
-    if (!href || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const href = inlineTopicHref(event);
+    if (!href) return;
     event.preventDefault();
     void this.router.navigateByUrl(href);
   }
