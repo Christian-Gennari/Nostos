@@ -1,8 +1,5 @@
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Configuration;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Webp;
-using SixLabors.ImageSharp.Processing;
 
 namespace Nostos.Backend.Services;
 
@@ -321,18 +318,24 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
         if (File.Exists(thumbnailPath))
             return thumbnailPath;
 
-        using var image = await Image.LoadAsync(CoverImageDecoding.Options, coverPath, ct);
-        image.Mutate(context => context.Resize(new ResizeOptions
+        // Encode beside the cache file and move it into place, so a cover
+        // that fails to decode never leaves a half-written thumbnail behind
+        // to be served on every later list render.
+        var scratchPath = $"{thumbnailPath}.{Guid.NewGuid():N}.tmp";
+        try
         {
-            Size = new Size(safeWidth, 0),
-            Mode = ResizeMode.Max,
-        }));
+            await using (var cover = File.OpenRead(coverPath))
+            await using (var thumbnail = File.Create(scratchPath))
+            {
+                await CoverImageProcessor.WriteWebpThumbnailAsync(cover, safeWidth, thumbnail, ct);
+            }
 
-        await image.SaveAsWebpAsync(
-            thumbnailPath,
-            new WebpEncoder { Quality = 82 },
-            ct
-        );
+            File.Move(scratchPath, thumbnailPath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(scratchPath);
+        }
 
         return thumbnailPath;
     }
