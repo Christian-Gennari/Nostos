@@ -10,6 +10,8 @@ on:
   workflow_run:
     workflows:
       - Public product CI
+    branches:
+      - main
     types:
       - completed
 
@@ -81,6 +83,9 @@ jobs:
           context: .
           pull: true
           push: true
+          # Written by the SelfHosted container job in CI, which has just
+          # built this revision on main.
+          cache-from: type=gha,scope=selfhosted-image
           tags: |
             ghcr.io/christian-gennari/nostos:latest
             ghcr.io/christian-gennari/nostos:${{ steps.source.outputs.tag }}

@@ -1,5 +1,7 @@
 import { Injectable, computed, effect, signal } from '@angular/core';
 
+import { SOUND_PACKS, SoundPack } from '../../ui/markdown-editor/typewriter-sounds';
+
 /**
  * The Studio page's own settings (issue #1041): theme, typeface, size,
  * spacing and measure, and how the page behaves. Saved per device, like the
@@ -68,6 +70,8 @@ export interface StudioPreferences {
   sounds: boolean;
   /** 0–1. */
   soundVolume: number;
+  /** Which recordings the sounds use (issue #1065). */
+  soundPack: SoundPack;
 }
 
 export const STUDIO_PREFERENCES_KEY = 'nostos.studio.preferences';
@@ -84,6 +88,7 @@ export const DEFAULT_STUDIO_PREFERENCES: StudioPreferences = {
   typewriter: false,
   sounds: false,
   soundVolume: 0.6,
+  soundPack: 'typewriter',
 };
 
 export const FONT_SIZE_RANGE = { min: 14, max: 28, step: 1 } as const;
@@ -154,6 +159,7 @@ export function normalizeStudioPreferences(raw: unknown, legacyTypewriter = fals
     typewriter: typeof value.typewriter === 'boolean' ? value.typewriter : legacyTypewriter,
     sounds: typeof value.sounds === 'boolean' ? value.sounds : d.sounds,
     soundVolume: Math.round(clamp(value.soundVolume, 0, 1, d.soundVolume) * 100) / 100,
+    soundPack: SOUND_PACKS.includes(value.soundPack as SoundPack) ? (value.soundPack as SoundPack) : d.soundPack,
   };
 }
 

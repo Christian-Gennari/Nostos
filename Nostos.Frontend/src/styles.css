@@ -1615,6 +1615,93 @@ button {
   }
 }
 
+/* Slider (appRange). The native range input keeps every behaviour; this draws
+   a 4px track whose filled part (up to --range-fill, kept by the directive)
+   takes the switch's fill, and a flat round thumb in the page's own ink-on-
+   surface, so it sits with the switches above it in every theme. */
+.nostos-range {
+  --range-track: var(--border-color);
+  --range-on: var(--color-brand-accent-fill);
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.nostos-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--range-on) 0 var(--range-fill, 0%),
+    var(--range-track) var(--range-fill, 0%) 100%
+  );
+}
+.nostos-range::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--range-track);
+}
+.nostos-range::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--range-on);
+}
+.nostos-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--on-primary);
+  box-shadow: 0 0 0 1px var(--range-on), 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform var(--motion-fast) var(--ease-plain);
+}
+.nostos-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--on-primary);
+  box-shadow: 0 0 0 1px var(--range-on), 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform var(--motion-fast) var(--ease-plain);
+}
+.nostos-range:hover::-webkit-slider-thumb,
+.nostos-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.nostos-range:hover::-moz-range-thumb,
+.nostos-range:active::-moz-range-thumb {
+  transform: scale(1.15);
+}
+.nostos-range:focus-visible {
+  outline: none;
+}
+.nostos-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--range-on), var(--focus-halo);
+}
+.nostos-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 1px var(--range-on), var(--focus-halo);
+}
+.nostos-range:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Kept apart: one unknown vendor pseudo drops a whole selector list. */
+  .nostos-range::-webkit-slider-thumb {
+    transition: none;
+  }
+  .nostos-range::-moz-range-thumb {
+    transition: none;
+  }
+}
+
 /* Canonical native text controls. Ordinary text fields use the native-host
    appInput/appTextarea directives below; single-choice dropdowns use
    app-dropdown. Product-owned fields keep their interaction/layout locally. */
@@ -1867,16 +1954,29 @@ app-assistant {
 
 
 /* ------------------------------
-   STUDIO THEMES (issue #1041)
+   STUDIO THEMES (issues #1041, #1060)
 ------------------------------ */
-/* Token sets for the Studio page, independent of the app theme for now. A
-   theme class on the Studio layout overrides the manuscript tokens and the
-   core surface tokens its rails, palette and bubble read, so the whole Studio
-   takes the theme while the dock keeps the app's. Each set is complete on its
-   own, so the same blocks can later become app-wide themes unchanged.
+/* The Studio's page themes dress the whole screen while the Studio is open:
+   ThemeService puts `data-room-theme` on <html> (and the theme's light or
+   dark base on `data-theme`), so the rails, popovers, the dock, the assistant
+   and toasts all take the same colours. An earlier version themed only the
+   Studio's own element, and everything rendered outside it (the dock above
+   all) kept the app's green and grey beside a sepia or amber page.
+
+   Each block sets every LITERAL colour role of the app graph. Derived roles
+   (`--cta-*`, `--control-border-hover`, `--focus-halo`, `--danger-*`...) are
+   declared on :root as var()/color-mix() of these, and since this block sits
+   on the same element they re-resolve against the theme by themselves.
+   Danger, success, info, highlight pens and the graph keep the base mode's
+   values: they mean the same thing in every theme.
+
+   The `.studio-theme-<name>` class carries the same set onto the page
+   settings' swatches, so each swatch shows its real paper and ink.
    Palettes ported from Scriptorium; muted and link inks were raised where
    needed to keep WCAG AA (4.5:1) on both paper and rail surfaces. */
-/* Writer's Study (warm ink on a dark desk) */
+
+/* Writer's Study (warm ink on a dark desk, amber accent) */
+:root[data-room-theme='study'],
 .studio-theme-study {
   color-scheme: dark;
   --manuscript-paper: #1a1814;
@@ -1896,25 +1996,76 @@ app-assistant {
   --manuscript-table-head-bg: #24201a;
   --manuscript-placeholder: #958a75;
 
+  --bg-body: #141210;
   --bg-surface: #1a1814;
-  --bg-sidebar: #24201a;
-  --bg-body: #0f0e0c;
-  --bg-hover: #2d2822;
+  --bg-surface-alt: #201d18;
+  --bg-sidebar: #1f1c18;
   --bg-input: #1a1814;
+  --bg-hover: #2a2620;
+  --surface-image-ground: #201d18;
   --color-text-main: #e4d5bf;
   --color-text-muted: #bcae96;
   --color-text-light: #958a75;
-  --border-color: #3a342c;
-  --border-light: #2d2822;
+  --color-text-placeholder: #857a66;
+  --color-text-faint: #4a4238;
+
+  --primary-ink: #f1e6d3;
+  /* Deep amber: the switch's on track and primary buttons, with cream on it (4.9:1). */
+  --primary-fill: #7d5a22;
+  --on-primary: #f1e6d3;
+  --color-primary: #d4a556;
+  --color-primary-hover: #e0b061;
+  --color-primary-dim: #8a6a35;
+  --color-brand-accent: #c9953e;
+  --color-brand-accent-fill: #7d5a22;
+  --color-accent: #c9953e;
+  --color-accent-hover: #e0b061;
+  --color-accent-faint: rgba(201, 149, 62, 0.30);
   --color-accent-bg: rgba(201, 149, 62, 0.14);
-  --focus-ring: #c9953e;
-  --editor-ui-bg: #24201a;
-  --overlay-light: rgba(0, 0, 0, 0.45);
+  --color-secondary: #4a4238;
+  --selection-surface: #332d25;
+  --selection-ink: #f1e6d3;
+  --selection-focus-ring: #c9953e;
+  --text-selection-bg: #4a3f2e;
+  --cta-surface-hover: #d6c7ae;
+
+  --dock-surface: #24201b;
+  --dock-border: #3a342c;
+  --dock-pill: #3b342b;
+  --dock-hover: #2f2a23;
+  --dock-field: #1f1c18;
   --control-active-fill: #3b342b;
   --control-active-ink: var(--color-text-main);
   --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  --border-color: #3a342c;
+  --border-light: #2d2822;
+  --border-focus: #6b5e4c;
+  --control-border: #5a4f40;
+  --focus-ring: #c9953e;
+  --scrollbar-thumb: #3a342c;
+  --scrollbar-thumb-hover: #4a4238;
+
+  --overlay-medium: rgba(20, 18, 16, 0.72);
+  --overlay-light: rgba(0, 0, 0, 0.45);
+  --modal-scrim: rgba(10, 9, 7, 0.66);
+  --glass-bg: rgba(20, 18, 16, 0.60);
+  --glass-bg-strong: rgba(20, 18, 16, 0.95);
+  --glass-border: #3a342c;
+  --gradient-pastel: linear-gradient(120deg, #e0b061, #c9953e, #7d5a22);
+
+  --editor-ui-bg: #24201a;
+  --editor-ui-bg-hover: #2a2620;
+  --editor-ui-text: #e4d5bf;
+  --editor-ui-muted: #958a75;
+  --editor-ui-border: rgba(228, 213, 191, 0.10);
+  --editor-ui-focus: #c9953e;
+  --editor-ui-accent: #bcae96;
+  --editor-ui-accent-soft: rgba(188, 174, 150, 0.13);
 }
-/* Mist (cool grey) */
+
+/* Mist (cool grey, slate-blue accent) */
+:root[data-room-theme='mist'],
 .studio-theme-mist {
   color-scheme: dark;
   --manuscript-paper: #1e2026;
@@ -1934,25 +2085,76 @@ app-assistant {
   --manuscript-table-head-bg: #25282e;
   --manuscript-placeholder: #8a8f99;
 
-  --bg-surface: #1e2026;
-  --bg-sidebar: #25282e;
   --bg-body: #16181c;
-  --bg-hover: #2d3037;
+  --bg-surface: #1e2026;
+  --bg-surface-alt: #24272d;
+  --bg-sidebar: #23262c;
   --bg-input: #1e2026;
+  --bg-hover: #2d3037;
+  --surface-image-ground: #24272d;
   --color-text-main: #c8ccd4;
   --color-text-muted: #a9adb6;
   --color-text-light: #8a8f99;
-  --border-color: #33363d;
-  --border-light: #2d3037;
+  --color-text-placeholder: #7c818b;
+  --color-text-faint: #42464f;
+
+  --primary-ink: #dde0e6;
+  /* Slate blue, with the page's light ink on it (5.4:1). */
+  --primary-fill: #4a5874;
+  --on-primary: #dde0e6;
+  --color-primary: #a4b2cb;
+  --color-primary-hover: #5a6a88;
+  --color-primary-dim: #5d6b85;
+  --color-brand-accent: #8494b0;
+  --color-brand-accent-fill: #4a5874;
+  --color-accent: #8494b0;
+  --color-accent-hover: #a4b2cb;
+  --color-accent-faint: rgba(132, 148, 176, 0.30);
   --color-accent-bg: rgba(122, 139, 168, 0.16);
-  --focus-ring: #8494b0;
-  --editor-ui-bg: #25282e;
-  --overlay-light: rgba(0, 0, 0, 0.45);
+  --color-secondary: #42464f;
+  --selection-surface: #33363d;
+  --selection-ink: #dde0e6;
+  --selection-focus-ring: #8494b0;
+  --text-selection-bg: #3d4556;
+  --cta-surface-hover: #b9bdc6;
+
+  --dock-surface: #272a31;
+  --dock-border: #3a3d45;
+  --dock-pill: #383c45;
+  --dock-hover: #31343b;
+  --dock-field: #23262c;
   --control-active-fill: #383c45;
   --control-active-ink: var(--color-text-main);
   --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  --border-color: #33363d;
+  --border-light: #2d3037;
+  --border-focus: #5d6680;
+  --control-border: #555a66;
+  --focus-ring: #8494b0;
+  --scrollbar-thumb: #33363d;
+  --scrollbar-thumb-hover: #42464f;
+
+  --overlay-medium: rgba(22, 24, 28, 0.72);
+  --overlay-light: rgba(0, 0, 0, 0.45);
+  --modal-scrim: rgba(10, 11, 13, 0.66);
+  --glass-bg: rgba(22, 24, 28, 0.60);
+  --glass-bg-strong: rgba(22, 24, 28, 0.95);
+  --glass-border: #33363d;
+  --gradient-pastel: linear-gradient(120deg, #a4b2cb, #8494b0, #4a5874);
+
+  --editor-ui-bg: #25282e;
+  --editor-ui-bg-hover: #2d3037;
+  --editor-ui-text: #c8ccd4;
+  --editor-ui-muted: #8a8f99;
+  --editor-ui-border: rgba(200, 204, 212, 0.10);
+  --editor-ui-focus: #8494b0;
+  --editor-ui-accent: #a9adb6;
+  --editor-ui-accent-soft: rgba(169, 173, 182, 0.13);
 }
-/* Sepia (warm paper) */
+
+/* Sepia (warm paper, brown ink) */
+:root[data-room-theme='sepia'],
 .studio-theme-sepia {
   color-scheme: light;
   --manuscript-paper: #fbf3e0;
@@ -1972,25 +2174,77 @@ app-assistant {
   --manuscript-table-head-bg: #f0e8d0;
   --manuscript-placeholder: #715f44;
 
+  --bg-body: #f3e9d3;
   --bg-surface: #fbf3e0;
-  --bg-sidebar: #f0e8d0;
-  --bg-body: #e8dcc8;
-  --bg-hover: #e8dcc8;
+  --bg-surface-alt: #f3e9d3;
+  --bg-sidebar: #f5ecd7;
   --bg-input: #fbf3e0;
+  --bg-hover: #ece0c6;
+  --surface-image-ground: #f0e8d0;
   --color-text-main: #5f4b32;
   --color-text-muted: #6f5b40;
   --color-text-light: #715f44;
-  --border-color: #d8c8a8;
-  --border-light: #e8dcc8;
+  --color-text-placeholder: #9a8767;
+  --color-text-faint: #d8c8a8;
+
+  --primary-ink: #4a3a26;
+  --primary-fill: #5f4b32;
+  --on-primary: #fbf3e0;
+  --color-primary: #5f4b32;
+  --color-primary-hover: #4a3a26;
+  --color-primary-dim: #a08a68;
+  --color-brand-accent: #715b3f;
+  --color-brand-accent-fill: #8b7355;
+  --color-accent: #8b7355;
+  --color-accent-hover: #5f4b32;
+  --color-accent-faint: rgba(139, 115, 85, 0.30);
   --color-accent-bg: rgba(139, 115, 85, 0.14);
-  --focus-ring: #715b3f;
-  --editor-ui-bg: #f0e8d0;
-  --overlay-light: rgba(95, 75, 50, 0.20);
+  --color-secondary: #8b7355;
+  --selection-surface: #5f4b32;
+  --selection-ink: #fbf3e0;
+
+  --dock-pill: #ece0c6;
+  --dock-hover: #f3e9d3;
+  --dock-field: #f3e9d3;
+  --dock-shadow: 0 8px 22px rgba(95, 75, 50, 0.14);
+  --dock-shadow-rail: 0 -6px 20px rgba(95, 75, 50, 0.10);
   --control-active-fill: var(--bg-surface);
   --control-active-ink: var(--color-text-main);
   --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
+
+  --border-color: #d8c8a8;
+  --border-light: #e8dcc8;
+  --border-focus: #8b7355;
+  --focus-ring: #715b3f;
+  --scrollbar-thumb: #dccdb0;
+  --scrollbar-thumb-hover: #c4b08a;
+
+  --overlay-medium: rgba(95, 75, 50, 0.30);
+  --overlay-light: rgba(95, 75, 50, 0.20);
+  --modal-scrim: rgba(74, 58, 38, 0.36);
+  --glass-bg: rgba(251, 243, 224, 0.60);
+  --glass-bg-strong: rgba(251, 243, 224, 0.90);
+  --glass-border: rgba(216, 200, 168, 0.85);
+  --shadow-sm: 0 1px 2px rgba(95, 75, 50, 0.08);
+  --shadow-md: 0 4px 12px rgba(95, 75, 50, 0.12);
+  --shadow-glass: 0 8px 24px -6px rgba(95, 75, 50, 0.14), 0 2px 6px rgba(95, 75, 50, 0.05);
+  --shadow-glass-lg: 0 16px 36px -8px rgba(95, 75, 50, 0.18), 0 4px 10px rgba(95, 75, 50, 0.06);
+  --shadow-glow: 0 6px 20px -4px rgba(139, 115, 85, 0.30);
+  --gradient-pastel: linear-gradient(120deg, #4a3a26, #8b7355, #c4b08a);
+
+  --editor-ui-bg: #f5ecd7;
+  --editor-ui-bg-hover: #ece0c6;
+  --editor-ui-text: #5f4b32;
+  --editor-ui-muted: #6f5b40;
+  --editor-ui-border: rgba(95, 75, 50, 0.16);
+  --editor-ui-focus: #715b3f;
+  --editor-ui-accent: #6f5b40;
+  --editor-ui-accent-soft: #ece0c6;
+  --editor-ui-shadow: 0 12px 32px rgba(95, 75, 50, 0.16);
 }
-/* Paper (white, ink blue accents) */
+
+/* Paper (white, ink-blue accent) */
+:root[data-room-theme='paper'],
 .studio-theme-paper {
   color-scheme: light;
   --manuscript-paper: #ffffff;
@@ -2010,25 +2264,66 @@ app-assistant {
   --manuscript-table-head-bg: #f5f6f7;
   --manuscript-placeholder: #6b6b6b;
 
+  --bg-body: #f5f6f7;
   --bg-surface: #ffffff;
-  --bg-sidebar: #f5f6f7;
-  --bg-body: #f0f1f2;
-  --bg-hover: #ebedef;
+  --bg-surface-alt: #f5f6f7;
+  --bg-sidebar: #f7f8f9;
   --bg-input: #ffffff;
+  --bg-hover: #ebedef;
+  --surface-image-ground: #ebedef;
   --color-text-main: #1a1a1a;
   --color-text-muted: #4a4a4a;
   --color-text-light: #6b6b6b;
-  --border-color: #d4d6d8;
-  --border-light: #ebedef;
+  --color-text-placeholder: #8c8f93;
+  --color-text-faint: #c8cacc;
+
+  --primary-ink: #10243d;
+  --primary-fill: #1e3a5f;
+  --on-primary: #ffffff;
+  --color-primary: #1e3a5f;
+  --color-primary-hover: #10243d;
+  --color-primary-dim: #8a9bb3;
+  --color-brand-accent: #1e3a5f;
+  --color-brand-accent-fill: #1e3a5f;
+  --color-accent: #1e3a5f;
+  --color-accent-hover: #10243d;
+  --color-accent-faint: rgba(30, 58, 95, 0.30);
   --color-accent-bg: rgba(30, 58, 95, 0.10);
-  --focus-ring: #1e3a5f;
-  --editor-ui-bg: #f5f6f7;
-  --overlay-light: rgba(26, 26, 26, 0.18);
+  --color-secondary: #4a4a4a;
+  --selection-surface: #1e3a5f;
+  --selection-ink: #ffffff;
+
+  --dock-pill: #e6eaf0;
+  --dock-hover: #f2f4f6;
+  --dock-field: #f5f6f7;
   /* Segmented thumbs and other selected controls: re-resolved here, since
      the app's values were resolved against its own surface. */
   --control-active-fill: var(--bg-surface);
   --control-active-ink: var(--color-text-main);
   --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
+
+  --border-color: #d4d6d8;
+  --border-light: #ebedef;
+  --border-focus: #1e3a5f;
+  --focus-ring: #1e3a5f;
+  --scrollbar-thumb: #dcdee0;
+  --scrollbar-thumb-hover: #b8bbbe;
+
+  --overlay-light: rgba(26, 26, 26, 0.18);
+  --glass-bg: rgba(255, 255, 255, 0.60);
+  --glass-bg-strong: rgba(255, 255, 255, 0.90);
+  --glass-border: rgba(212, 214, 216, 0.85);
+  --shadow-glow: 0 6px 20px -4px rgba(30, 58, 95, 0.25);
+  --gradient-pastel: linear-gradient(120deg, #10243d, #1e3a5f, #8a9bb3);
+
+  --editor-ui-bg: #f7f8f9;
+  --editor-ui-bg-hover: #ebedef;
+  --editor-ui-text: #1a1a1a;
+  --editor-ui-muted: #4a4a4a;
+  --editor-ui-border: rgba(26, 26, 26, 0.11);
+  --editor-ui-focus: #1e3a5f;
+  --editor-ui-accent: #4a4a4a;
+  --editor-ui-accent-soft: #ebedef;
 }
 
 /* ------------------------------

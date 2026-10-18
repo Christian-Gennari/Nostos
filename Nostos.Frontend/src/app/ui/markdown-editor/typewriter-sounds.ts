@@ -1,22 +1,48 @@
 /**
- * Optional typewriter sounds for the Studio page (issue #1042), ported from
- * Scriptorium's audio.js onto CC0 recordings (see public/audio/typewriter).
+ * Optional typewriter sounds for the Studio page (issues #1042, #1065), ported
+ * from Scriptorium's audio.js onto CC0 recordings (see public/audio/typewriter).
  *
  * Nothing is fetched and no AudioContext exists until sounds are turned on and
  * a key is pressed, and the context sleeps while the page is hidden.
  */
 export type TypewriterSound = 'key' | 'space' | 'return' | 'backspace';
 
+/** Which recordings play: a real typewriter, or a quiet office keyboard. */
+export type SoundPack = 'typewriter' | 'keyboard';
+export const SOUND_PACKS: readonly SoundPack[] = ['typewriter', 'keyboard'];
+
+interface PackSamples {
+  folder: string;
+  keys: readonly string[];
+}
+
+const keyNames = (count: number) => Array.from({ length: count }, (_, i) => `key-${i + 1}`);
+
+const PACKS: Record<SoundPack, PackSamples> = {
+  typewriter: { folder: 'olivetti-lettera-22', keys: keyNames(12) },
+  keyboard: { folder: 'cherry-kc1000', keys: keyNames(5) },
+};
+const OTHER_SAMPLES = ['space', 'return', 'backspace'];
+
 const BASE = '/audio/typewriter/';
-const KEY_SAMPLES = ['key-1', 'key-2', 'key-3', 'key-4', 'key-5'];
-const ALL_SAMPLES = [...KEY_SAMPLES, 'space', 'return', 'backspace'];
-/** Keys closer together than this make one sound, as a real carriage would. */
-const THROTTLE_MS = 30;
+/**
+ * One key event can arrive twice (keydown, then beforeinput); closer than this
+ * is one sound. Kept short: at 100+ wpm two keys can land within a few tens of
+ * milliseconds, and a slight overlap sounds more natural than a dropped strike.
+ */
+const THROTTLE_MS = 12;
 
 type AudioContextCtor = typeof AudioContext;
 
+function samplesOf(pack: SoundPack): string[] {
+  const { folder, keys } = PACKS[pack];
+  return [...keys, ...OTHER_SAMPLES].map((name) => `${folder}/${name}`);
+}
+
 export class TypewriterSounds {
   private context: AudioContext | null = null;
+  private pack: SoundPack = 'typewriter';
+  /** Decoded samples by path (`<folder>/<name>`), for every pack used so far. */
   private readonly buffers = new Map<string, AudioBuffer>();
   /** The encoded samples, fetched ahead without needing an AudioContext. */
   private readonly files = new Map<string, ArrayBuffer>();
@@ -31,28 +57,42 @@ export class TypewriterSounds {
 
   constructor(private readonly random: () => number = Math.random) {}
 
+  /** Switches the recordings; the new pack is fetched on the next prefetch or key. */
+  setPack(pack: SoundPack): void {
+    if (pack === this.pack) return;
+    this.pack = pack;
+    this.fetching = null;
+    this.decoding = null;
+  }
+
   /**
    * Plays the sound for one keystroke. `charCode` picks the key variant, so
-   * the same letter always sounds the same, like a real keyboard.
+   * the same letter always sounds the same, like a real machine.
    */
   play(sound: TypewriterSound, volume: number, charCode = 0): void {
     const now = performance.now();
-    if (now - this.lastPlayed < THROTTLE_MS) return;
+    // The carriage return is its own event: a key struck with it neither
+    // silences it nor is silenced by it.
+    const throttled = sound !== 'return';
+    if (throttled && now - this.lastPlayed < THROTTLE_MS) return;
 
     const context = this.ensureContext();
     if (!context) return;
     void this.ensureDecoded(context);
 
-    const name = sound === 'key' ? KEY_SAMPLES[Math.abs(charCode) % KEY_SAMPLES.length] : sound;
-    const buffer = this.buffers.get(name);
+    const { folder, keys } = PACKS[this.pack];
+    const name = sound === 'key' ? keys[Math.abs(charCode) % keys.length] : sound;
+    const buffer = this.buffers.get(`${folder}/${name}`);
     if (!buffer) return;
     // Only a sound that plays starts the throttle window.
-    this.lastPlayed = now;
+    if (throttled) this.lastPlayed = now;
 
+    // Each sound is its own source, so a carriage return plays out in full
+    // while the next line is already being typed.
     const source = context.createBufferSource();
     source.buffer = buffer;
     // Small variation in pitch and level keeps a run of keys from sounding
-    // like one sample on a loop.
+    // like one sample on a loop; the carriage barely varies.
     source.playbackRate.value = this.vary(sound === 'return' ? 0.01 : 0.03);
     const gain = context.createGain();
     const level = Math.max(0, Math.min(1, volume));
@@ -63,20 +103,35 @@ export class TypewriterSounds {
   }
 
   /**
-   * Fetches the samples ahead of the first key once sounds are turned on. No
-   * AudioContext is made here: browsers expect one to start with a gesture.
+   * Plays one sound once it has loaded, for the settings to let a writer hear
+   * the level or the pack without typing. The context still starts inside
+   * the gesture that asked for it; only the sound waits for the sample.
+   */
+  async preview(sound: TypewriterSound, volume: number): Promise<void> {
+    const context = this.ensureContext();
+    if (!context) return;
+    await this.ensureDecoded(context);
+    this.lastPlayed = 0;
+    this.play(sound, volume, Math.floor(this.random() * 1000));
+  }
+
+  /**
+   * Fetches the pack's samples ahead of the first key once sounds are turned
+   * on. No AudioContext is made here: browsers expect one to start with a gesture.
    */
   prefetch(): Promise<void> {
     this.fetching ??= Promise.all(
-      ALL_SAMPLES.filter((name) => !this.files.has(name)).map(async (name) => {
-        try {
-          const response = await fetch(`${BASE}${name}.mp3`);
-          if (!response.ok) throw new Error(String(response.status));
-          this.files.set(name, await response.arrayBuffer());
-        } catch {
-          // Missing for now; tried again on the next key (see ensureDecoded).
-        }
-      }),
+      samplesOf(this.pack)
+        .filter((path) => !this.files.has(path) && !this.buffers.has(path))
+        .map(async (path) => {
+          try {
+            const response = await fetch(`${BASE}${path}.mp3`);
+            if (!response.ok) throw new Error(String(response.status));
+            this.files.set(path, await response.arrayBuffer());
+          } catch {
+            // Missing for now; tried again on the next key (see ensureDecoded).
+          }
+        }),
     ).then(() => undefined);
     return this.fetching;
   }
@@ -113,27 +168,31 @@ export class TypewriterSounds {
   /** Decodes what has been fetched; a sample that failed is fetched again later. */
   private ensureDecoded(context: AudioContext): Promise<void> {
     if (this.decoding) return this.decoding;
-    this.decoding = this.prefetch()
+    const samples = samplesOf(this.pack);
+    const decoding: Promise<void> = this.prefetch()
       .then(() =>
         Promise.all(
-          [...this.files].filter(([name]) => !this.buffers.has(name)).map(async ([name, data]) => {
+          [...this.files].map(async ([path, data]) => {
             try {
               // decodeAudioData detaches its input; decode a copy so a retry can.
-              this.buffers.set(name, await context.decodeAudioData(data.slice(0)));
+              this.buffers.set(path, await context.decodeAudioData(data.slice(0)));
             } catch {
-              this.files.delete(name);
+              // Fetched again on a later key.
             }
+            this.files.delete(path);
           }),
         ),
       )
       .then(() => {
-        // Anything still missing (offline, a bad file) is retried on a later key.
-        if (this.buffers.size < ALL_SAMPLES.length) {
+        // Anything still missing (offline, a bad file) is retried on a later
+        // key, unless the pack changed meanwhile and reset this already.
+        if (this.decoding === decoding && samples.some((path) => !this.buffers.has(path))) {
           this.fetching = null;
           this.decoding = null;
         }
       });
-    return this.decoding;
+    this.decoding = decoding;
+    return decoding;
   }
 }
 

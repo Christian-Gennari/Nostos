@@ -25,6 +25,7 @@ describe('Studio page preferences (issue #1041)', () => {
       textWidth: 5,
       spellCheck: 'yes',
       soundVolume: 3,
+      soundPack: 'kazoo',
     });
     expect(prefs.theme).toBe('match');
     expect(prefs.font).toBe('newsreader');
@@ -33,6 +34,15 @@ describe('Studio page preferences (issue #1041)', () => {
     expect(prefs.textWidth).toBe(66);
     expect(prefs.spellCheck).toBe(true);
     expect(prefs.soundVolume).toBe(1);
+    expect(prefs.soundPack).toBe('typewriter');
+  });
+
+  it('defaults to the real typewriter and keeps the keyboard when chosen (#1065)', () => {
+    expect(DEFAULT_STUDIO_PREFERENCES.soundPack).toBe('typewriter');
+    expect(DEFAULT_STUDIO_PREFERENCES.sounds).toBe(false);
+    expect(normalizeStudioPreferences({ soundPack: 'keyboard' })).toEqual(
+      expect.objectContaining({ soundPack: 'keyboard' }),
+    );
   });
 
   it('keeps a valid choice', () => {

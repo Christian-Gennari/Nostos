@@ -105,7 +105,6 @@
 
 .ps-follow input {
   margin: 0;
-  accent-color: var(--focus-ring);
 }
 
 .ps-rule {
@@ -201,10 +200,12 @@
   min-height: 34px;
 }
 
+.ps-sound-pack {
+  margin: 2px 0 6px;
+}
+
 .ps-volume {
-  width: 100%;
-  margin: 0 0 4px;
-  accent-color: var(--focus-ring);
+  margin: 2px 0 6px;
 }
 
 .ps-reset {
@@ -232,35 +233,52 @@
 .ps-fonts {
   display: flex;
   flex-direction: column;
+  /* Rows run edge to edge of the popover: a selected row is a flat band,
+     not a rounded chip with a stripe. */
+  margin: 0 -16px;
 }
 
 .ps-font-group {
-  margin: 10px 0 2px;
-  color: var(--color-text-muted);
+  margin: 12px 16px 4px;
+  color: var(--color-text-light);
   font-size: 0.72rem;
 }
 
 .ps-font {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-height: 36px;
-  padding: 0 10px;
-  color: var(--color-text-main);
+  padding: 0 16px;
+  color: var(--color-text-muted);
   background: transparent;
   border: 0;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: 0;
   font-size: 1.05rem;
   text-align: left;
   cursor: pointer;
 }
 
+.ps-font-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ps-font-check {
+  flex: 0 0 auto;
+  color: var(--color-accent);
+}
+
 @media (hover: hover) {
   .ps-font:hover {
-    background: var(--color-accent-bg);
+    color: var(--color-text-main);
+    background: var(--bg-hover);
   }
 }
 
 .ps-font[aria-checked='true'] {
+  color: var(--color-text-main);
   background: var(--color-accent-bg);
-  box-shadow: inset 2px 0 0 var(--focus-ring);
 }
 
 .ps-font:focus-visible {
@@ -289,6 +307,10 @@
 
   .ps-rule {
     margin: 12px -18px;
+  }
+
+  .ps-fonts {
+    margin: 0 -18px;
   }
 
   /* A sheet's grab handle: says the sheet sits over the page and goes away

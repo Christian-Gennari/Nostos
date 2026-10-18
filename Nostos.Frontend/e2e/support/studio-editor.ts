@@ -18,12 +18,25 @@ export async function waitForStudioEditor(page: Page, timeout = 45_000): Promise
 }
 
 /**
- * Pin the Reference rail beside the page (issue #1040). The page-first Studio
- * opens with Reference as a closed slide-over; specs written for working with
- * sources in view use the same preference a writer would set.
+ * Open the Reference rail as each Studio page loads, for specs written for
+ * working with sources in view. On a wide screen Reference sits beside the
+ * page; there is no pin to set any more, so this presses the header's
+ * Reference button once per document, as a writer would.
  */
-export async function pinReferenceRail(target: Pick<Page, 'addInitScript'>): Promise<void> {
-  await target.addInitScript(() => localStorage.setItem('nostos.studio.referencePinned', '1'));
+export async function openReferenceRailOnLoad(target: Pick<Page, 'addInitScript'>): Promise<void> {
+  await target.addInitScript(() => {
+    if (window.innerWidth <= 900 || window.innerHeight <= 500) return;
+    const started = Date.now();
+    const tryOpen = () => {
+      const toggle = document.querySelector<HTMLButtonElement>('.reference-toggle');
+      if (toggle) {
+        if (toggle.getAttribute('aria-expanded') === 'false') toggle.click();
+        return;
+      }
+      if (Date.now() - started < 15000) window.setTimeout(tryOpen, 50);
+    };
+    window.addEventListener('DOMContentLoaded', tryOpen, { once: true });
+  });
 }
 
 /** Open the file list slide-over if it is closed. */

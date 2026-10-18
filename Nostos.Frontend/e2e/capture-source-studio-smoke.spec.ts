@@ -8,12 +8,12 @@ import type {
   WritingContentDto,
   WritingSourceDto,
 } from '../src/app/core/dtos/writing.dtos';
-import { pinReferenceRail, studioPage, STUDIO_PAGE_SELECTOR } from './support/studio-editor';
+import { openReferenceRailOnLoad, studioPage, STUDIO_PAGE_SELECTOR } from './support/studio-editor';
 
 // These journeys work with sources in view: Reference pinned beside the page
 // (#1040), as a writer who prefers that would set it.
 test.beforeEach(async ({ context }) => {
-  await pinReferenceRail(context);
+  await openReferenceRailOnLoad(context);
 });
 
 test('captured source survives Brain → Keep with writing → Studio on the real backend', async ({

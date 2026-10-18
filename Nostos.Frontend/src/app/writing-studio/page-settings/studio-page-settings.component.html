@@ -19,7 +19,12 @@
             [style.font-family]="font.stack"
             (click)="pickFont(font)"
             (keydown)="fontKey($event, font)"
-          >{{ font.label }}</button>
+          >
+            <span class="ps-font-name">{{ font.label }}</span>
+            @if (font.value === prefs.preferences().font) {
+              <nostos-icon class="ps-font-check" name="check" [size]="16" aria-hidden="true"></nostos-icon>
+            }
+          </button>
         }
       }
     </div>
@@ -43,7 +48,7 @@
       }
     </div>
     <label class="ps-follow">
-      <input type="checkbox" [checked]="following()" (change)="setFollow(checkedFrom($event))" />
+      <input type="checkbox" appCheckbox [checked]="following()" (change)="setFollow(checkedFrom($event))" />
       Follow the app's light and dark
     </label>
 
@@ -94,15 +99,19 @@
         </label>
       </div>
       @if (prefs.preferences().sounds) {
+        <nostos-segmented fill class="ps-sound-pack" aria-label="Sound" data-testid="ps-sound-pack"
+          [options]="soundPackOptions" [value]="prefs.preferences().soundPack" (valueChange)="setSoundPack($event)" />
         <input
           class="ps-volume"
           type="range"
+          appRange
           min="0"
           max="1"
           step="0.05"
           aria-label="Typewriter sound volume"
           [value]="prefs.preferences().soundVolume"
           (input)="prefs.update({ soundVolume: numberFrom($event) })"
+          (change)="previewSound()"
         />
       }
       <div class="ps-toggle">

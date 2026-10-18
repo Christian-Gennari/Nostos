@@ -7,12 +7,12 @@ import { apiGet, apiPost, loadFixture } from './support/fixture';
 import { apiPut } from './support/visual-capture';
 import type { Note } from '../src/app/core/dtos/note.dtos';
 import type { WritingContentDto, WritingSourceDto } from '../src/app/core/dtos/writing.dtos';
-import { STUDIO_PAGE_SELECTOR, pinReferenceRail, studioPage, waitForStudioEditor } from './support/studio-editor';
+import { STUDIO_PAGE_SELECTOR, openReferenceRailOnLoad, studioPage, waitForStudioEditor } from './support/studio-editor';
 
 // These journeys work with sources in view: Reference pinned beside the page
 // (#1040), as a writer who prefers that would set it.
 test.beforeEach(async ({ context }) => {
-  await pinReferenceRail(context);
+  await openReferenceRailOnLoad(context);
 });
 
 const screenshotDir =
@@ -534,7 +534,12 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
   await typeAndRemoveProbe(page, 'S2BookNotes');
   await page.setViewportSize({ width: 1024, height: 768 });
+  // Closed stays closed across the breakpoint; on a wide screen it opens as a
+  // column beside the page.
+  await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('.reference-toggle').click();
   await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.backdrop.visible')).toHaveCount(0);
   await expect(page.locator('.sidebar-right')).toBeVisible();
   await page.locator('.sidebar-right').evaluate((element) => {
     (element as HTMLElement).style.width = '280px';
@@ -770,7 +775,7 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   });
   const darkPage = await darkContext.newPage();
   await darkPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
-  await pinReferenceRail(darkPage);
+  await openReferenceRailOnLoad(darkPage);
   await openWriting(darkPage, { width: 1280, height: 720 });
   await expectDarkEditor(darkPage);
   await expect(darkPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
@@ -836,7 +841,7 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   });
   const touchPage = await touchContext.newPage();
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
-  await pinReferenceRail(touchPage);
+  await openReferenceRailOnLoad(touchPage);
   await openWriting(touchPage, { width: 390, height: 844 });
   const referenceToggle = touchPage.locator('.reference-toggle');
   await referenceToggle.click();
@@ -1076,7 +1081,7 @@ test('a quote inserted from the Reference rail lands at the caret and autosaves'
   // test held and aborted that request. TipTap ships inside the Studio chunk
   // (#1037), so the journey that remains is the insertion and its save.
   const context = await browser.newContext({ serviceWorkers: 'block' });
-  await pinReferenceRail(context);
+  await openReferenceRailOnLoad(context);
   const page = await context.newPage();
   const writing = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
   const initialContent = writing.content ?? '';
