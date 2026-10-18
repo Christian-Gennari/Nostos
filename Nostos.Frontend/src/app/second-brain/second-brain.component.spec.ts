@@ -1731,9 +1731,8 @@ describe('SecondBrain', () => {
     component.topicActions.openDeleteTopic('c-alpha');
     fixture.detectChanges();
     const modal = fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
-    expect(modal.textContent).toContain('does not edit note text');
-    expect(modal.textContent).toContain('[[Alpha]] reference stays in notes');
-    expect(modal.textContent).toContain('saving a note again will re-create the topic');
+    expect(modal.textContent).toContain('removes it from its notes');
+    expect(modal.textContent).toContain('[[Alpha]] becomes plain words');
 
     (modal.querySelector('.btn-confirm') as HTMLButtonElement).click();
     const deletion = http.expectOne('/api/topics/c-alpha');
