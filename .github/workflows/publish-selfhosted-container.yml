@@ -83,10 +83,9 @@ jobs:
           context: .
           pull: true
           push: true
-          # Shared with the SelfHosted container job in CI, which has just
+          # Written by the SelfHosted container job in CI, which has just
           # built this revision on main.
           cache-from: type=gha,scope=selfhosted-image
-          cache-to: type=gha,scope=selfhosted-image,mode=max
           tags: |
             ghcr.io/christian-gennari/nostos:latest
             ghcr.io/christian-gennari/nostos:${{ steps.source.outputs.tag }}
