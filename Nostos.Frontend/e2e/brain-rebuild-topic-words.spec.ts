@@ -18,15 +18,18 @@ interface Topic {
 
 let seed: BrainSeed;
 let topic: string;
+let other: string;
 
 test.beforeEach(async () => {
   const { baseUrl } = loadFixture();
   const run = newRunId();
   topic = `Words${run}`;
+  other = `Other${run}`;
   const beforeTopicIds = await snapshotTopicIds(baseUrl);
   const book = await apiPost<{ id: string }>(baseUrl, '/api/books', { type: 'physical', title: `Words ${run}`, author: 'Nostos QA' });
-  seed = { bookId: book.id, topicNames: [topic], beforeTopicIds };
+  seed = { bookId: book.id, topicNames: [topic, other], beforeTopicIds };
   await apiPost(baseUrl, `/api/books/${book.id}/notes`, { content: `A note. [[${topic}]]` });
+  await apiPost(baseUrl, `/api/books/${book.id}/notes`, { content: `Another. [[${other}]]` });
 });
 
 test.afterEach(async () => {
@@ -65,4 +68,20 @@ test('adds, edits and clears a topic in your own words', async ({ page }) => {
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('button', { name: 'Add your own words…' })).toBeVisible();
   await expect.poll(() => described(id)).toBeNull();
+});
+
+test('a draft stays with its topic when the reader moves to another', async ({ page }) => {
+  const { baseUrl } = loadFixture();
+  const id = (await findTopicId(baseUrl, topic))!;
+  const otherId = (await findTopicId(baseUrl, other))!;
+  await page.goto(`${baseUrl}/brain/topics/${id}`);
+
+  await page.getByRole('button', { name: 'Add your own words…' }).click();
+  await page.getByRole('textbox', { name: `Your own words about ${topic}` }).fill('Meant for the first topic.');
+
+  await page.locator('.topic-row', { hasText: other }).click();
+  await expect(page).toHaveURL(new RegExp(`/brain/topics/${otherId}`));
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add your own words…' })).toBeVisible();
+  expect(await described(otherId)).toBeNull();
 });

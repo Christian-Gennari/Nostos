@@ -110,6 +110,7 @@ public class TopicRepository : ITopicRepository
             {
                 nc.TopicId,
                 TopicName = nc.Topic.Topic,
+                nc.Topic.Description,
                 TotalUsageCount = nc.Topic.NoteTopics.Count(),
                 nc.NoteId,
                 nc.Note.Content,
@@ -123,7 +124,7 @@ public class TopicRepository : ITopicRepository
             return [];
 
         return matchingRows
-            .GroupBy(row => new { row.TopicId, row.TopicName, row.TotalUsageCount })
+            .GroupBy(row => new { row.TopicId, row.TopicName, row.Description, row.TotalUsageCount })
             .Select(group =>
             {
                 var noteGroups = group.GroupBy(row => row.NoteId).ToList();
@@ -141,7 +142,8 @@ public class TopicRepository : ITopicRepository
                     group.Key.TopicName,
                     group.Key.TotalUsageCount,
                     noteGroups.Count,
-                    snippet);
+                    snippet,
+                    group.Key.Description);
             })
             .OrderByDescending(topic => topic.NoteMatchCount)
             .ThenBy(topic => topic.Name)
@@ -425,16 +427,20 @@ public class TopicRepository : ITopicRepository
 
     /// <summary>
     /// The survivor's words, then the merged topic's after a blank line; either
-    /// alone when the other has none. Cut to the length a description may have.
+    /// alone when the other has none. Cut to the length a description may have,
+    /// never inside a character.
     /// </summary>
     internal static string? MergeDescriptions(string? target, string? source)
     {
-        var kept = string.IsNullOrWhiteSpace(target) ? null : target.Trim();
-        var added = string.IsNullOrWhiteSpace(source) ? null : source.Trim();
+        var kept = TopicModel.NormalizeDescription(target);
+        var added = TopicModel.NormalizeDescription(source);
         var merged = kept is null ? added : added is null ? kept : $"{kept}\n\n{added}";
-        return merged is { Length: > TopicModel.MaxDescriptionLength }
-            ? merged[..TopicModel.MaxDescriptionLength]
-            : merged;
+        if (merged is not { Length: > TopicModel.MaxDescriptionLength })
+            return merged;
+        var length = TopicModel.MaxDescriptionLength;
+        if (char.IsHighSurrogate(merged[length - 1]))
+            length--;
+        return merged[..length].TrimEnd();
     }
 
     /// <summary>
@@ -446,7 +452,7 @@ public class TopicRepository : ITopicRepository
         var topic = await _db.Topics.Include(c => c.NoteTopics).FirstOrDefaultAsync(c => c.Id == id);
         if (topic is null)
             return null;
-        topic.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        topic.Description = TopicModel.NormalizeDescription(description);
         await _db.SaveChangesAsync();
         return topic;
     }
@@ -562,7 +568,7 @@ public class TopicRepository : ITopicRepository
         await LibraryRevision.AdvanceAndGetAsync(_db, ct);
         // A topic the reader described is kept: its words are theirs to delete.
         var deleted = await _db.Topics
-            .Where(c => !c.NoteTopics.Any() && (c.Description == null || c.Description == ""))
+            .Where(c => !c.NoteTopics.Any() && (c.Description == null || c.Description.Trim() == ""))
             .ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
         return deleted;

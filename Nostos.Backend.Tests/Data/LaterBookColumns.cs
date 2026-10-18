@@ -25,6 +25,7 @@ internal static class LaterBookColumns
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Notes\" ADD COLUMN \"HighlightColour\" TEXT NULL");
         await RestorePassageColumnsAsync(db);
+        await RestoreTopicDescriptionAsync(db);
     }
 
     /// <summary>
@@ -42,4 +43,12 @@ internal static class LaterBookColumns
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Notes\" ADD COLUMN \"PassageHtml\" TEXT NULL");
     }
+
+    /// <summary>
+    /// AddTopicDescription: the reader's own words, which the current model
+    /// reads and writes on every topic.
+    /// </summary>
+    public static async Task RestoreTopicDescriptionAsync(NostosDbContext db) =>
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Topics\" ADD COLUMN \"Description\" TEXT NULL");
 }

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, inject, input, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
 import { ToastService } from '../core/services/toast.service';
@@ -31,7 +31,9 @@ export class BrainTopicWordsComponent {
 
   readonly topic = input.required<TopicDto>();
 
-  readonly editing = signal(false);
+  /** The topic being edited; a draft belongs to it and to no other. */
+  private readonly editingId = signal<string | null>(null);
+  readonly editing = computed(() => this.editingId() !== null && this.editingId() === this.topic().id);
   readonly draft = signal('');
   readonly saving = signal(false);
   readonly max = TOPIC_WORDS_MAX;
@@ -40,20 +42,33 @@ export class BrainTopicWordsComponent {
     (this.topic().description ?? '').split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean));
 
   private readonly field = viewChild<ElementRef<HTMLTextAreaElement>>('field');
+  private readonly opener = viewChild<ElementRef<HTMLButtonElement>>('opener');
+
+  constructor() {
+    // Moving to another topic (the same view, a new input) drops the draft.
+    effect(() => {
+      const id = this.topic().id;
+      untracked(() => {
+        if (this.editingId() !== null && this.editingId() !== id && !this.saving()) this.editingId.set(null);
+      });
+    });
+  }
 
   edit(): void {
     this.draft.set(this.topic().description ?? '');
-    this.editing.set(true);
-    afterNextRender(() => {
-      const field = this.field()?.nativeElement;
-      if (!field) return;
-      field.focus();
-      field.setSelectionRange(field.value.length, field.value.length);
-    }, { injector: this.injector });
+    this.editingId.set(this.topic().id);
+    this.focusField(true);
+  }
+
+  /** A click on the words edits them, unless it ended a text selection. */
+  onTextClick(): void {
+    if (!globalThis.getSelection?.()?.toString()) this.edit();
   }
 
   cancel(): void {
-    if (!this.saving()) this.editing.set(false);
+    if (this.saving()) return;
+    this.editingId.set(null);
+    this.focusOpener();
   }
 
   onKeydown(event: KeyboardEvent): void {
@@ -70,22 +85,40 @@ export class BrainTopicWordsComponent {
   save(): void {
     if (this.saving()) return;
     const topic = this.topic();
+    if (this.editingId() !== topic.id) return;
     const words = this.draft().trim();
     if (words === (topic.description ?? '').trim()) {
-      this.editing.set(false);
+      this.editingId.set(null);
+      this.focusOpener();
       return;
     }
     this.saving.set(true);
     this.topics.setDescription(topic.id, words || null).subscribe({
       next: (saved) => {
         this.saving.set(false);
-        this.editing.set(false);
-        this.state.replaceTopic({ ...topic, description: saved.description ?? null });
+        this.editingId.set(null);
+        this.state.replaceTopic(saved);
+        this.focusOpener();
       },
       error: () => {
         this.saving.set(false);
         this.toast.error('Could not save your words. Try again.');
+        this.focusField(false);
       },
     });
+  }
+
+  /** Focus stays with the words: the field while editing, Edit or Add after. */
+  private focusField(toEnd: boolean): void {
+    afterNextRender(() => {
+      const field = this.field()?.nativeElement;
+      if (!field) return;
+      field.focus();
+      if (toEnd) field.setSelectionRange(field.value.length, field.value.length);
+    }, { injector: this.injector });
+  }
+
+  private focusOpener(): void {
+    afterNextRender(() => this.opener()?.nativeElement.focus(), { injector: this.injector });
   }
 }

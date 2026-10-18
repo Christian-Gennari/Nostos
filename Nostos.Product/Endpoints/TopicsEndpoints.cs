@@ -120,7 +120,8 @@ public static class TopicsEndpoints
             "/{id}/description",
             async (Guid id, UpdateTopicDescriptionDto dto, ITopicRepository repo) =>
             {
-                if (dto.Description is { Length: > TopicModel.MaxDescriptionLength })
+                // The length that counts is what is kept: the trimmed text.
+                if (TopicModel.NormalizeDescription(dto.Description) is { Length: > TopicModel.MaxDescriptionLength })
                     return Results.BadRequest(new { error = $"A topic's description is at most {TopicModel.MaxDescriptionLength} characters." });
 
                 var topic = await repo.SetDescriptionAsync(id, dto.Description);

@@ -62,7 +62,6 @@ export function countLabel(place: BrainPlace, total: number): string {
   }
 }
 
-/** Sidebar topics: hidden when no note carries them any more, in the chosen order. */
 /**
  * A topic the Brain lists: one a note carries, or one the reader described
  * (its words keep it, as the server's cleanup does).
@@ -71,6 +70,7 @@ export function isListedTopic(topic: TopicDto): boolean {
   return topic.usageCount > 0 || !!topic.description?.trim();
 }
 
+/** Sidebar topics: the listed ones (see {@link isListedTopic}), in the chosen order. */
 export function sidebarTopics(topics: readonly TopicDto[], sort: TopicSort): TopicDto[] {
   return topics
     .filter(isListedTopic)

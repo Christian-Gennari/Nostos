@@ -73,7 +73,8 @@ export class BrainMapPage {
   /** A line from the selected topic's newest note, so the card says what the topic holds. */
   readonly sample = toSignal(
     toObservable(this.focus).pipe(
-      switchMap((topicId) => !topicId
+      // A topic with its own words shows those instead, so its notes are not asked for.
+      switchMap((topicId) => !topicId || this.state.topicById(topicId)?.description?.trim()
         ? of(null)
         : this.notes.browse({ topicId, order: 'newest', limit: 1, offset: 0 }).pipe(
           map((page) => {

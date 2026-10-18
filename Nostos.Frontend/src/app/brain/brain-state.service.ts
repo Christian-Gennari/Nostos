@@ -108,9 +108,13 @@ export class BrainStateService {
     writeStored(TOPIC_SORT_KEY, sort);
   }
 
-  /** Shows a topic as the server now has it, before the next refresh. */
+  /**
+   * Shows a topic as the server now has it, then reloads: the reload also
+   * supersedes any list still in flight from before the change.
+   */
   replaceTopic(changed: TopicDto): void {
     this.topics.update((topics) => topics.map((topic) => (topic.id === changed.id ? { ...topic, ...changed } : topic)));
+    this.refresh();
   }
 
   topicById(id: string | null): TopicDto | null {
