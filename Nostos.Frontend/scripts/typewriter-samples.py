@@ -35,7 +35,7 @@ CUTS = {
     # Lever, line feed, the carriage sliding back and its stop.
     'return': (59.955, 1.30, 0.15, -20),
 }
-BELL = (41.795, 0.95, -22)
+BELL = (41.795, 0.95, -27)
 
 
 def decode(path):
@@ -88,20 +88,26 @@ for name, (start, length, fade, target) in CUTS.items():
     encode(y, name)
     report[name] = round(lufs(y), 1)
 
-# The bell rings over the key that tripped it, so keep only its two partials.
+# The bell rings over the key that tripped it, so only its envelope is taken:
+# the fundamental's decay, isolated with a narrow band-pass.
 start, length, target = BELL
 a = int(start * sr)
 seg = x[a:a + int(length * sr)]
-bell = (ffilter(seg, 'bandpass=f=3071:width_type=h:w=40,bandpass=f=3071:width_type=h:w=40')
-        + 0.5 * ffilter(seg, 'bandpass=f=7461:width_type=h:w=60,bandpass=f=7461:width_type=h:w=60'))
-# Later keys still leak through the filters as bumps; a struck bell only decays,
+ring = ffilter(seg, 'bandpass=f=3071:width_type=h:w=40,bandpass=f=3071:width_type=h:w=40')
+# Later keys still leak through the filter as bumps; a struck bell only decays,
 # so hold the envelope to its running minimum after the peak.
 win = int(0.008 * sr)
-env = np.convolve(np.abs(bell), np.ones(win) / win, mode='same') + 1e-7
+env = np.convolve(np.abs(ring), np.ones(win) / win, mode='same') + 1e-7
 p = int(np.argmax(env))
-target_env = env.copy()
-target_env[p:] = np.minimum.accumulate(env[p:])
-bell = bell * np.minimum(1, target_env / env)
+env[p:] = np.minimum.accumulate(env[p:])
+env /= env.max()
+# The machine's own bell rings at 3071 Hz with a partial at 7461 Hz, in the
+# range the ear is most sensitive to: writers found it piercing. The same decay
+# is voiced as a soft ding at 1100 Hz, with a faint octave so it is not a bare tone.
+t = np.arange(len(env)) / sr
+bell = env * (np.sin(2 * np.pi * 1100 * t) + 0.1 * np.sin(2 * np.pi * 2200 * t))
+n_attack = int(0.008 * sr)  # a soft strike, not a click
+bell[:n_attack] *= np.linspace(0, 1, n_attack)
 y = finish(bell, 0.35, target)
 encode(y, 'bell')
 report['bell'] = round(lufs(y), 1)

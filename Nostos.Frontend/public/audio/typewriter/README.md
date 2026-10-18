@@ -22,7 +22,7 @@ A real manual typewriter. Every sample comes from one machine in one session.
 | `space.mp3` | 61.550. The space bar moves only the escapement: a soft thunk and its release click, quieter than a letter. |
 | `backspace.mp3` | 12.818. A single escapement click. |
 | `return.mp3` | 59.955–61.255. The lever, the line feed, the carriage sliding back and its stop (1.3 s). |
-| `bell.mp3` | 41.795. The margin bell. A key was struck as it rang, so only the bell's two partials (3071 Hz and 7461 Hz) are kept, with a decay that only falls. |
+| `bell.mp3` | 41.795. The margin bell's decay. The machine's own bell rings at 3071 Hz with a partial at 7461 Hz, which writers found piercing. Its decay envelope is kept, voiced as a soft 1100 Hz ding with a faint octave, an 8 ms attack and 5 dB below the keys. |
 
 Processing: `scripts/typewriter-samples.py` (ffmpeg and numpy) reproduces these
 files from the recording. Mono, 44.1 kHz, 70 Hz high-pass and 13 kHz low-pass
