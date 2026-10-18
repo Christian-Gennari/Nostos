@@ -21,7 +21,6 @@ vi.mock('sigma', () => {
     getState: vi.fn(() => ({ x: camera.x, y: camera.y, angle: 0, ratio: camera.ratio })),
     disable: vi.fn(),
     enable: vi.fn(),
-    on: vi.fn(),
   };
 
   /**
@@ -575,18 +574,14 @@ describe('TopicMapComponent', () => {
     expect(camera['animate']).not.toHaveBeenCalled();
   });
 
-  it('reports every camera move to its host', () => {
-    const camera = (globalThis as unknown as { __camera: Record<string, ReturnType<typeof vi.fn>> }).__camera;
-    camera['on'].mockClear();
-    const moved = vi.fn();
-    component.cameraChange.subscribe(moved);
+  it('hands its host the camera as it goes away', () => {
+    const kept = vi.fn();
+    component.cameraKept.subscribe(kept);
     setTopics(topics);
     flushGraph();
 
-    const [event, listener] = camera['on'].mock.calls.at(-1)!;
-    expect(event).toBe('updated');
-    listener({ x: 0.1, y: 0.2, ratio: 2, angle: 0 });
-    expect(moved).toHaveBeenCalledWith({ x: 0.1, y: 0.2, ratio: 2, angle: 0 });
+    fixture.destroy();
+    expect(kept).toHaveBeenCalledWith({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
   });
 
   it('names the card action as its host asks', () => {

@@ -10,6 +10,7 @@ import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { rankTopicChoices, thoughtForDisplay, topicChoices } from '../ui/note-item/note-item.helpers';
 import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
 import { TopicMapComponent, type MapCamera } from '../second-brain/topic-map/topic-map.component';
+import { drawnTopics } from '../second-brain/topic-map/topic-map.helpers';
 import { BrainStateService } from './brain-state.service';
 import { plural } from './brain.helpers';
 
@@ -42,31 +43,30 @@ export class BrainMapPage {
   });
 
   /**
-   * The view to open at, read once: Back to the same focus restores the camera
-   * left behind; a new focus (Show on map) centres on it instead.
+   * The view to open at, read once: Back to the map restores the camera left
+   * behind; any other arrival (Show on map, the sidebar) centres on the focus,
+   * or frames the whole graph.
    */
   readonly startCamera: MapCamera | null = (() => {
     const kept = this.state.mapView();
-    return kept && kept.focus === this.route.snapshot.queryParamMap.get('focus') ? kept.camera : null;
+    const back = this.router.currentNavigation()?.trigger === 'popstate';
+    return back && kept && kept.focus === this.route.snapshot.queryParamMap.get('focus') ? kept.camera : null;
   })();
 
   readonly topics = this.state.topics;
-  readonly focusedTopic = computed(() => {
-    const id = this.focus();
-    return id ? this.topics().find((topic) => topic.id === id) ?? null : null;
-  });
-  readonly countText = computed(() => {
-    const topics = this.topics().filter((topic) => topic.usageCount > 0).length;
-    return plural(topics, 'topic');
-  });
+  readonly countText = computed(() => plural(this.state.sidebarTopics().length, 'topic'));
 
   readonly finder = signal('');
+  readonly finderOpen = signal(false);
   readonly finderActive = signal(0);
-  private readonly choices = computed(() => topicChoices(this.topics().filter((topic) => topic.usageCount > 0)));
+  /** Only topics the map draws can be found on it. */
+  private readonly choices = computed(() => topicChoices(drawnTopics(this.state.sidebarTopics())));
   readonly finds = computed(() => {
     const typed = this.finder().trim();
-    return typed ? rankTopicChoices(this.choices(), typed, [], FINDER_LIMIT) : [];
+    return typed && this.finderOpen() ? rankTopicChoices(this.choices(), typed, [], FINDER_LIMIT) : [];
   });
+  /** The highlighted find, kept inside the list as it shrinks. */
+  readonly activeFind = computed(() => Math.min(this.finderActive(), Math.max(0, this.finds().length - 1)));
 
   /** A line from the selected topic's newest note, so the card says what the topic holds. */
   readonly sample = toSignal(
@@ -78,7 +78,9 @@ export class BrainMapPage {
             const note = page.items[0];
             if (!note) return null;
             const quote = note.selectedText?.trim();
-            return quote ? { text: quote, quote: true } : { text: noteWikilinksToText(thoughtForDisplay(note.content)), quote: false };
+            if (quote) return { text: quote, quote: true };
+            const words = noteWikilinksToText(thoughtForDisplay(note.content)).trim();
+            return words ? { text: words, quote: false } : null;
           }),
           catchError(() => of(null)),
           startWith(null),
@@ -89,14 +91,6 @@ export class BrainMapPage {
 
   constructor() {
     this.state.ensureLoaded();
-  }
-
-  select(topicId: string): void {
-    this.setFocus(topicId);
-  }
-
-  cleared(): void {
-    this.setFocus(null);
   }
 
   keepCamera(camera: MapCamera): void {
@@ -111,6 +105,7 @@ export class BrainMapPage {
 
   onFinderInput(value: string): void {
     this.finder.set(value);
+    this.finderOpen.set(true);
     this.finderActive.set(0);
   }
 
@@ -127,17 +122,17 @@ export class BrainMapPage {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       const step = event.key === 'ArrowDown' ? 1 : -1;
-      this.finderActive.set((this.finderActive() + step + finds.length) % finds.length);
+      this.finderActive.set((this.activeFind() + step + finds.length) % finds.length);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      this.find(finds[this.finderActive()]?.id ?? finds[0].id);
+      this.find(finds[this.activeFind()].id);
     }
   }
 
   /** Selects a found topic and brings it to the middle of the map. */
   find(topicId: string): void {
     this.finder.set('');
-    this.map()?.selectRelated(topicId);
+    this.map()?.focusTopic(topicId);
   }
 
   openDrawer(): void {
@@ -145,9 +140,8 @@ export class BrainMapPage {
   }
 
   /** The selection lives in the URL (replacing, so Back leaves the map rather than stepping through clicks). */
-  private setFocus(topicId: string | null): void {
+  setFocus(topicId: string | null): void {
     if (topicId === this.focus()) return;
-    this.state.mapView.update((view) => view && { ...view, focus: topicId });
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { focus: topicId },

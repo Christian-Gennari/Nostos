@@ -22,17 +22,19 @@
         aria-autocomplete="list"
         aria-controls="map-finds"
         [attr.aria-expanded]="finds().length > 0"
-        [attr.aria-activedescendant]="finds().length ? 'map-find-' + finderActive() : null"
+        [attr.aria-activedescendant]="finds().length ? 'map-find-' + activeFind() : null"
         placeholder="Find a topic…"
         [value]="finder()"
         (input)="onFinderInput($any($event.target).value)"
         (keydown)="onFinderKeydown($event)"
+        (blur)="finderOpen.set(false)"
+        (focus)="finderOpen.set(true)"
       />
       @if (finds().length) {
       <ul class="finds" id="map-finds" role="listbox" aria-label="Topics">
         @for (topic of finds(); track topic.id; let i = $index) {
-        <li role="option" [id]="'map-find-' + i" [attr.aria-selected]="i === finderActive()"
-          [class.is-active]="i === finderActive()"
+        <li role="option" [id]="'map-find-' + i" [attr.aria-selected]="i === activeFind()"
+          [class.is-active]="i === activeFind()"
           (mousedown)="$event.preventDefault()" (mouseenter)="finderActive.set(i)" (click)="find(topic.id)">
           <span class="find-name">{{ topic.name }}</span>
           <span class="find-count">{{ topic.usageCount }}</span>
@@ -48,15 +50,14 @@
     class="map-place"
     [topics]="topics()"
     [selectedId]="focus()"
-    [selectedName]="focusedTopic()?.name ?? null"
     [camera]="startCamera"
     [centerOnLoad]="!startCamera"
     notesLabel="Open topic"
-    (topicSelected)="select($event)"
-    (selectionCleared)="cleared()"
+    (topicSelected)="setFocus($event)"
+    (selectionCleared)="setFocus(null)"
     (openNotes)="openTopic()"
     (openTopic)="openTopic($event)"
-    (cameraChange)="keepCamera($event)"
+    (cameraKept)="keepCamera($event)"
   >
     @if (sample(); as line) {
     <p mapCardDetail class="map-sample" [class.is-quote]="line.quote">{{ line.text }}</p>

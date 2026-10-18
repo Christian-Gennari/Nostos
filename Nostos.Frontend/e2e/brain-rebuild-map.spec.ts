@@ -97,6 +97,23 @@ test('Show on map opens the map on the topic', async ({ page }) => {
   await expect(page.locator('.nav-item', { hasText: 'Map' })).toHaveAttribute('aria-current', 'page');
 });
 
+test('Show on map centres afresh rather than restoring an old view', async ({ page }) => {
+  const { baseUrl } = loadFixture();
+  await page.goto(`${baseUrl}/brain/map`);
+  await findOnMap(page, ethics);
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.waitForTimeout(600);
+  const zoomed = await stage(page).screenshot();
+
+  await card(page).getByRole('button', { name: 'Open topic' }).click();
+  await page.getByRole('button', { name: 'Topic actions' }).click();
+  await page.getByRole('menuitem', { name: 'Show on map' }).click();
+  await expect(card(page).getByRole('heading', { name: ethics })).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(meanDifference(zoomed, await stage(page).screenshot())).toBeGreaterThan(2);
+});
+
 test('works on a phone', async ({ page }) => {
   const { baseUrl } = loadFixture();
   await page.setViewportSize({ width: 390, height: 844 });
