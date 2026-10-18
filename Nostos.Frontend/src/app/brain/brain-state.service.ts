@@ -24,7 +24,7 @@ export class BrainStateService {
   private readonly topicsService = inject(TopicsService);
   private readonly notesService = inject(NotesService);
 
-  readonly topics = signal<TopicDto[]>([]);
+  readonly topics = signal<TopicDto[]>([], { equal: sameTopics });
   readonly topicsLoaded = signal(false);
   readonly topicsFailed = signal(false);
   readonly summary = signal<NoteSummary | null>(null);
@@ -103,4 +103,10 @@ export class BrainStateService {
   topicById(id: string | null): TopicDto | null {
     return id ? this.topics().find((topic) => topic.id === id) ?? null : null;
   }
+}
+
+/** An unchanged list keeps its identity, so every card's lookup is not rebuilt. */
+function sameTopics(a: readonly TopicDto[], b: readonly TopicDto[]): boolean {
+  return a.length === b.length && a.every((topic, i) =>
+    topic.id === b[i].id && topic.name === b[i].name && topic.usageCount === b[i].usageCount);
 }

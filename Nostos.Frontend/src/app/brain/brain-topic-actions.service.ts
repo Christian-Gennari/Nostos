@@ -16,7 +16,7 @@ export type RenameSurface = 'sidebar' | 'title';
  * renders once; a result refreshes the Brain and, when the topic on screen
  * changed identity, goes to the one that survives.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class BrainTopicActionsService {
   private readonly topicsService = inject(TopicsService);
   private readonly state = inject(BrainStateService);

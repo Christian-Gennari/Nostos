@@ -32,6 +32,8 @@ export class BrainListCacheService {
   }
 
   save(key: string, snapshot: BrainListSnapshot): void {
+    // Older versions can never be restored: let them go.
+    for (const [k, kept] of this.snapshots) if (kept.version !== snapshot.version) this.snapshots.delete(k);
     this.snapshots.delete(key);
     this.snapshots.set(key, snapshot);
     while (this.snapshots.size > KEPT) {

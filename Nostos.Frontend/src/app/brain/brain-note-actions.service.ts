@@ -7,6 +7,7 @@ import { ToastService } from '../core/services/toast.service';
 import { TopicsService } from '../core/services/topics.service';
 import type { NoteItemEdit } from '../ui/note-item/note-item.component';
 import { BrainStateService } from './brain-state.service';
+import { plural } from './brain.helpers';
 
 /** What a page tells the actions about its notes, and how it hears back. */
 export interface BrainNoteHost {
@@ -40,15 +41,11 @@ export class BrainNoteActionsService {
 
   readonly deleteHeading = computed(() => {
     const count = this.deleteIds().length;
-    return count === 1 ? 'Delete this note?' : `Delete ${count} notes?`;
+    return count === 1 ? 'Delete this note?' : `Delete ${plural(count, 'note')}?`;
   });
 
   attach(host: BrainNoteHost): void {
     this.host = host;
-  }
-
-  isBusy(noteId: string): boolean {
-    return this.busy().has(noteId);
   }
 
   /** Adds `topic` to one note. */
@@ -69,7 +66,7 @@ export class BrainNoteActionsService {
     this.link([topic], noteIds, (changed) =>
       changed.length === 0
         ? `Every selected note already has “${topic}”`
-        : `Added “${topic}” to ${changed.length === 1 ? '1 note' : `${changed.length} notes`}`);
+        : `Added “${topic}” to ${plural(changed.length, 'note')}`);
   }
 
   private link(topics: string[], noteIds: string[], message: ((changed: string[]) => string) | null): void {
@@ -147,7 +144,7 @@ export class BrainNoteActionsService {
   }
 
   /** Deletes the notes asked about; reports any that failed. */
-  confirmDelete(onDone?: (deleted: string[]) => void): void {
+  confirmDelete(): void {
     const ids = this.deleteIds();
     if (!ids.length || this.deleting()) return;
     this.deleting.set(true);
@@ -158,7 +155,6 @@ export class BrainNoteActionsService {
         this.deleting.set(false);
         this.deleteIds.set([]);
         this.state.refresh();
-        onDone?.(deleted);
         if (deleted.length === ids.length) {
           this.toast.success(deleted.length === 1 ? 'Note deleted' : `${deleted.length} notes deleted`);
         } else {

@@ -5,12 +5,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
 import { ButtonComponent } from '../ui/button/button.component';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
-import { BrainWritingHandoffComponent } from '../second-brain/writing-handoff/brain-writing-handoff.component';
 import { BrainNoteActionsService } from './brain-note-actions.service';
+import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
 
@@ -21,13 +20,11 @@ import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service'
 @Component({
   selector: 'app-brain-note-page',
   standalone: true,
-  imports: [RouterLink, ButtonComponent, ConfirmModal, NostosIconComponent, LoadingIndicatorComponent, NoteItemComponent,
-    BrainWritingHandoffComponent],
+  imports: [RouterLink, ButtonComponent, NostosIconComponent, LoadingIndicatorComponent, NoteItemComponent, BrainNoteDialogsComponent],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-note.page.html',
   styleUrls: ['./brain-note.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'brain-page' },
 })
 export class BrainNotePage {
   private readonly route = inject(ActivatedRoute);

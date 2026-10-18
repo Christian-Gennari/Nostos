@@ -19,6 +19,7 @@
   z-index: 5;
   display: grid;
   grid-template-columns: minmax(max-content, 1fr) minmax(0, 420px) minmax(max-content, 1fr);
+  grid-template-rows: minmax(2.4rem, auto);
   align-items: center;
   column-gap: 2rem;
   padding: 1.5rem 3rem 1.25rem;
@@ -182,12 +183,6 @@
 
 .narrow-notice > span:first-child {
   flex: 1 1 18rem;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
 }
 
 .narrow-notice strong {

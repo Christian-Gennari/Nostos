@@ -11,10 +11,11 @@
     <div class="toolbar-title">
       @if (place() === 'topic') {
       <span class="eyebrow"><nostos-icon concept="topic" [size]="12" />Topic</span>
-      @if (topic() && topicActions.renameId() === topic()!.id && topicActions.renameSurface() === 'title') {
+      }
+      @if (renamingTitle(); as current) {
       <app-brain-topic-rename
         variant="title"
-        [name]="topic()!.name"
+        [name]="current.name"
         [value]="topicActions.renameValue()"
         (valueChange)="topicActions.renameValue.set($event)"
         [error]="topicActions.renameError()"
@@ -22,9 +23,6 @@
         (committed)="topicActions.commitRename()"
         (cancelled)="topicActions.cancelRename()"
       />
-      } @else {
-      <h1 class="page-title">{{ title() }}</h1>
-      }
       } @else {
       <h1 class="page-title">{{ title() }}</h1>
       }
@@ -112,7 +110,7 @@
 
   @if (withTopic(); as other) {
   <div class="narrow-notice" role="status">
-    <span>Showing the {{ total() === 1 ? 'note' : total() + ' notes' }} with both <strong>{{ title() }}</strong> and
+    <span appNotice>Showing the {{ total() === 1 ? 'note' : total() + ' notes' }} with both <strong>{{ title() }}</strong> and
       <strong>{{ other.name }}</strong></span>
     <span class="narrow-actions">
       <a appButton variant="ghost" size="sm" [routerLink]="['/brain/topics', other.id]">
@@ -177,7 +175,7 @@
         <h2 class="book-group-title">{{ note.bookTitle || 'Unknown book' }}</h2>
         <span class="book-group-meta">
           @if (note.bookAuthor) { {{ note.bookAuthor }} · }
-          @if (bookCount(note.bookId); as count) { {{ count === 1 ? '1 note' : count + ' notes' }} }
+          @if (bookCounts().get(note.bookId); as count) { {{ plural(count, 'note') }} }
         </span>
       </header>
       }
@@ -195,7 +193,7 @@
         (topicAdded)="noteActions.addTopic(note, $event)"
         (topicRemoved)="noteActions.removeTopic(note, $event)"
         (pickerOpened)="suggestions.request(note)"
-        (pickerClosed)="pickerClosed(note.id)"
+        (pickerClosed)="suggestions.closeFor(note.id)"
         (edited)="noteActions.edit($event)"
         (keepWithWriting)="noteActions.keepWithWriting([note.id])"
         (moreFromBook)="setBook(note.bookId)"
@@ -258,21 +256,4 @@
 </div>
 }
 
-@if (noteActions.handoffIds().length) {
-<app-brain-writing-handoff
-  [noteIds]="noteActions.handoffIds()"
-  (cancelled)="noteActions.closeHandoff()"
-  (completed)="noteActions.closeHandoff()"
-/>
-}
-
-<app-confirm-modal
-  [isOpen]="noteActions.deleteIds().length > 0"
-  [heading]="noteActions.deleteHeading()"
-  description="Deleted notes are removed from their book and from every topic. This cannot be undone."
-  confirmLabel="Delete"
-  busyLabel="Deleting…"
-  [busy]="noteActions.deleting()"
-  (confirm)="confirmDelete()"
-  (cancel)="noteActions.cancelDelete()"
-></app-confirm-modal>
+<app-brain-note-dialogs />

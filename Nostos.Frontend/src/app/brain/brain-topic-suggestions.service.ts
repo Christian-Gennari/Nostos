@@ -5,6 +5,8 @@ import { AssistantContextService } from '../ui/assistant/assistant-context.servi
 import { AssistantService } from '../ui/assistant/assistant.service';
 import type { TopicSuggestionState } from '../ui/topic-picker-popover/topic-picker-popover.component';
 
+const NONE: readonly string[] = [];
+
 /**
  * Optional AI suggestions for one note's topic picker. Asks Ask Nostos for up
  * to three existing topics that fit the note, only when the assistant is
@@ -52,8 +54,13 @@ export class BrainTopicSuggestionsService {
     return this.noteId() === noteId ? this.state() : 'off';
   }
 
-  namesFor(noteId: string): string[] {
-    return this.noteId() === noteId ? this.names() : [];
+  namesFor(noteId: string): readonly string[] {
+    return this.noteId() === noteId ? this.names() : NONE;
+  }
+
+  /** `noteId`'s picker closed: stop, if it was the one asking. */
+  closeFor(noteId: string): void {
+    if (this.noteId() === noteId) this.clear();
   }
 
   /** A picker opened on `note`: ask, unless the assistant is off or busy. */

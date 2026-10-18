@@ -1,6 +1,7 @@
 import type { NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
 import type { TopicDto } from '../core/services/topics.service';
 import { normalizeSearchText } from '../core/search-text';
+import { hasTopic } from '../ui/note-item/note-item.helpers';
 
 /** A place in the Brain that lists notes. The map and a single note are routes of their own. */
 export type BrainPlace = 'all' | 'passages' | 'unsorted' | 'topic';
@@ -44,16 +45,20 @@ export function placeTitle(place: BrainPlace, topic: TopicDto | null): string {
   }
 }
 
+/** "1 note", "3 notes". */
+export function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
 /** "65 notes", "1 passage", "43 notes without a topic". */
 export function countLabel(place: BrainPlace, total: number): string {
-  const plural = (word: string) => `${total} ${word}${total === 1 ? '' : 's'}`;
   switch (place) {
     case 'passages':
-      return plural('passage');
+      return plural(total, 'passage');
     case 'unsorted':
-      return `${plural('note')} without a topic`;
+      return `${plural(total, 'note')} without a topic`;
     default:
-      return plural('note');
+      return plural(total, 'note');
   }
 }
 
@@ -88,7 +93,7 @@ export function stillBelongs(
   topic: TopicDto | null,
   withTopic: TopicDto | null,
 ): boolean {
-  const has = (name: string) => note.topicNames.some((n) => n.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase());
+  const has = (name: string) => hasTopic(note.topicNames, name);
   if (place === 'unsorted') return note.topicNames.length === 0;
   if (place === 'topic' && topic && !has(topic.name)) return false;
   if (withTopic && !has(withTopic.name)) return false;

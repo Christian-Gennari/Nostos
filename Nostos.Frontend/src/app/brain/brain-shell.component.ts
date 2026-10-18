@@ -20,6 +20,8 @@ import { BrainTopicActionsService } from './brain-topic-actions.service';
   selector: 'app-brain-shell',
   standalone: true,
   imports: [RouterOutlet, BrainSidebarComponent, ConfirmModal, ModalShell, BrainTopicPickerComponent],
+  // The topic dialogs live and die with the Brain.
+  providers: [BrainTopicActionsService],
   templateUrl: './brain-shell.component.html',
   styleUrls: ['./brain-shell.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,7 +31,9 @@ export class BrainShellComponent {
   readonly actions = inject(BrainTopicActionsService);
 
   constructor() {
-    this.state.ensureLoaded();
+    // Notes change outside the Brain (the reader, a book page): coming in
+    // rereads the counts and topics, and stales any list kept for Back.
+    this.state.refresh();
     // Choosing a place closes the phone drawer.
     inject(Router).events
       .pipe(filter((event) => event instanceof NavigationEnd), takeUntilDestroyed(inject(DestroyRef)))

@@ -28,7 +28,7 @@
       (topicAdded)="noteActions.addTopic(current, $event)"
       (topicRemoved)="noteActions.removeTopic(current, $event)"
       (pickerOpened)="suggestions.request(current)"
-      (pickerClosed)="suggestions.clear()"
+      (pickerClosed)="suggestions.closeFor(current.id)"
       (edited)="noteActions.edit($event)"
       (keepWithWriting)="noteActions.keepWithWriting([current.id])"
       (moreFromBook)="moreFromBook(current)"
@@ -41,21 +41,4 @@
   </main>
 </div>
 
-@if (noteActions.handoffIds().length) {
-<app-brain-writing-handoff
-  [noteIds]="noteActions.handoffIds()"
-  (cancelled)="noteActions.closeHandoff()"
-  (completed)="noteActions.closeHandoff()"
-/>
-}
-
-<app-confirm-modal
-  [isOpen]="noteActions.deleteIds().length > 0"
-  [heading]="noteActions.deleteHeading()"
-  description="Deleted notes are removed from their book and from every topic. This cannot be undone."
-  confirmLabel="Delete"
-  busyLabel="Deleting…"
-  [busy]="noteActions.deleting()"
-  (confirm)="noteActions.confirmDelete()"
-  (cancel)="noteActions.cancelDelete()"
-></app-confirm-modal>
+<app-brain-note-dialogs />

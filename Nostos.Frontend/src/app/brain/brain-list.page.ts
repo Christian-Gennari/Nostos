@@ -21,7 +21,6 @@ import { NotesService, type NoteBrowseFilter } from '../core/services/notes.serv
 import { TopicsService, type RelatedTopicDto, type TopicDto } from '../core/services/topics.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -29,11 +28,12 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
+import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
 import { BrainTopicRenameComponent } from '../second-brain/topic-rename/brain-topic-rename.component';
-import { BrainWritingHandoffComponent } from '../second-brain/writing-handoff/brain-writing-handoff.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
+import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
@@ -46,6 +46,7 @@ import {
   defaultOrder,
   isOrder,
   placeTitle,
+  plural,
   readStored,
   stillBelongs,
   topicsMatching,
@@ -78,22 +79,21 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     ...NOSTOS_MENU,
     ButtonComponent,
     ChipComponent,
-    ConfirmModal,
     DropdownComponent,
     IconButtonComponent,
     NostosIconComponent,
     InputDirective,
     LoadingIndicatorComponent,
     NoteItemComponent,
+    NoticeComponent,
     TopicPickerPopoverComponent,
     BrainTopicRenameComponent,
-    BrainWritingHandoffComponent,
+    BrainNoteDialogsComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',
   styleUrls: ['./brain-list.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'brain-page' },
 })
 export class BrainListPage {
   private readonly route = inject(ActivatedRoute);
@@ -175,9 +175,15 @@ export class BrainListPage {
   readonly topicSummary = computed(() => {
     const topic = this.topic();
     if (!topic) return '';
-    const notes = topic.usageCount === 1 ? '1 note' : `${topic.usageCount} notes`;
     const books = this.books().length;
-    return books ? `${notes} from ${books === 1 ? '1 book' : `${books} books`}` : notes;
+    return books ? `${plural(topic.usageCount, 'note')} from ${plural(books, 'book')}` : plural(topic.usageCount, 'note');
+  });
+  readonly bookCounts = computed(() => new Map(this.books().map((book) => [book.bookId, book.noteCount])));
+  readonly plural = plural;
+  /** The topic whose title is being renamed in place, if it is this page's. */
+  readonly renamingTitle = computed(() => {
+    const topic = this.topic();
+    return topic && this.topicActions.renameId() === topic.id && this.topicActions.renameSurface() === 'title' ? topic : null;
   });
 
   readonly emptyText = computed(() => {
@@ -198,8 +204,10 @@ export class BrainListPage {
   private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
   private seq = 0;
   private booksSeq = 0;
+  private booksKey: string | null = null;
+  /** Where notes the list let go were, so Undo can put them back there. */
+  private readonly letGo = new Map<string, number>();
   private lastScrollTop = 0;
-  private refillQueued = false;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private currentKey: string | null = null;
 
@@ -279,6 +287,7 @@ export class BrainListPage {
   private open(key: string): void {
     this.saveSnapshot();
     this.currentKey = key;
+    this.letGo.clear();
     this.leaveSelection();
 
     // Whatever was loading belongs to the list being left.
@@ -291,8 +300,8 @@ export class BrainListPage {
       this.notes.set(restored.notes);
       this.total.set(restored.total);
       this.books.set(restored.books);
+      this.booksKey = JSON.stringify(this.filter());
       this.loaded.set(true);
-      this.loading.set(false);
       this.failed.set(false);
       this.lastScrollTop = restored.scrollTop;
       afterNextRender(() => this.scroller()?.nativeElement.scrollTo({ top: restored.scrollTop }), {
@@ -353,7 +362,7 @@ export class BrainListPage {
         if (seq === this.seq) this.loading.set(false);
       },
     });
-    this.loadBooks();
+    this.loadBooks(true);
   }
 
   loadPage(): void {
@@ -387,13 +396,19 @@ export class BrainListPage {
     if (this.loaded() && !this.loading() && !this.failed() && this.notes().length < this.total()) this.loadPage();
   }
 
-  private loadBooks(): void {
+  /** The book list depends on the place and filters, not the order: reload only when those change. */
+  private loadBooks(force = false): void {
+    const key = JSON.stringify(this.filter());
+    if (!force && key === this.booksKey) return;
+    this.booksKey = key;
     const seq = ++this.booksSeq;
     this.notesService.books(this.filter()).subscribe({
       next: (books) => {
         if (seq === this.booksSeq) this.books.set(books);
       },
-      error: () => undefined,
+      error: () => {
+        if (seq === this.booksSeq) this.booksKey = null;
+      },
     });
   }
 
@@ -458,9 +473,13 @@ export class BrainListPage {
   private replaceNote(note: NoteSearchHit): void {
     const belongs = stillBelongs(note, this.place(), this.topic(), this.withTopic());
     if (!this.notes().some((item) => item.id === note.id)) {
-      // A note this list had let go belongs again (Undo): read the list again
-      // so it returns in its place.
-      if (belongs) this.queueRefill();
+      // A note this list had let go belongs again (Undo): back in its place.
+      const at = this.letGo.get(note.id);
+      if (belongs && at !== undefined) {
+        this.letGo.delete(note.id);
+        this.notes.update((notes) => [...notes.slice(0, at), note, ...notes.slice(at)]);
+        this.total.update((total) => total + 1);
+      }
       return;
     }
     if (!belongs) {
@@ -470,40 +489,24 @@ export class BrainListPage {
     this.notes.update((notes) => notes.map((item) => (item.id === note.id ? note : item)));
   }
 
-  /** One refill for a batch of returning notes, not one each. */
-  private queueRefill(): void {
-    if (this.refillQueued) return;
-    this.refillQueued = true;
-    queueMicrotask(() => {
-      this.refillQueued = false;
-      this.refill();
-    });
-  }
-
-  pickerClosed(noteId: string): void {
-    if (this.suggestions.noteId() === noteId) this.suggestions.clear();
-  }
-
   private removeNote(id: string): void {
-    if (!this.notes().some((note) => note.id === id)) return;
+    const at = this.notes().findIndex((note) => note.id === id);
+    if (at < 0) return;
+    this.letGo.set(id, at);
     this.notes.update((notes) => notes.filter((note) => note.id !== id));
     this.total.update((total) => Math.max(0, total - 1));
-    this.selected.update((selected) => {
-      if (!selected.has(id)) return selected;
-      const next = new Set(selected);
-      next.delete(id);
-      return next;
-    });
+    if (!this.selected().has(id)) return;
+    const next = new Set(this.selected());
+    next.delete(id);
+    this.selected.set(next);
+    // A deleted selection leaves nothing to act on.
+    if (next.size === 0 && this.noteActions.deleting()) this.leaveSelection();
   }
 
   /** Where a book's group starts in the "by book" order. */
   startsBook(index: number): boolean {
     const notes = this.notes();
     return index === 0 || notes[index - 1].bookId !== notes[index].bookId;
-  }
-
-  bookCount(bookId: string): number | null {
-    return this.books().find((book) => book.bookId === bookId)?.noteCount ?? null;
   }
 
   // --- Selection ----------------------------------------------------------
@@ -544,12 +547,6 @@ export class BrainListPage {
 
   deleteSelection(): void {
     this.noteActions.askDelete([...this.selected()]);
-  }
-
-  confirmDelete(): void {
-    this.noteActions.confirmDelete(() => {
-      if (this.selecting() && this.selected().size === 0) this.leaveSelection();
-    });
   }
 
   /** Keep the topic's notes with a writing: every note it has, not only the ones loaded. */
