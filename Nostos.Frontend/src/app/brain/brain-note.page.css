@@ -1,0 +1,82 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.brain-scroller {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.note-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1.5rem 3rem 0.5rem;
+}
+
+.back-link {
+  margin-left: -0.6rem;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 1.75rem;
+  font-weight: var(--fw-medium);
+}
+
+.place-switch {
+  display: none;
+}
+
+.note-column {
+  display: block;
+  max-width: calc(46rem + 6rem);
+  padding: 0 3rem 8rem;
+}
+
+.list-loading {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 0;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+  padding: 3rem 0;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--color-text-main);
+}
+
+@media (max-width: 768px) {
+  .note-head {
+    padding: 10px 14px 0;
+  }
+
+  .place-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: var(--control-h-touch);
+    color: var(--color-text-main);
+    font-weight: var(--fw-semibold);
+  }
+
+  .back-link,
+  .page-title {
+    display: none;
+  }
+
+  .note-column {
+    padding: 0 16px 6rem;
+  }
+}

@@ -36,7 +36,7 @@ import {
   TopicPickerPopoverComponent,
   type TopicSuggestionState,
 } from '../topic-picker-popover/topic-picker-popover.component';
-import { noteLocationLabel, thoughtForDisplay } from './note-item.helpers';
+import { noteLocationLabel, thoughtForDisplay, topicLookup } from './note-item.helpers';
 import type { Note } from '../../core/dtos/note.dtos';
 
 /** What an edit changed. Fields that did not change are absent. */
@@ -116,6 +116,8 @@ export class NoteItemComponent {
   readonly showMoreFromBook = input(true);
   /** A topic change for this note is in flight: its topic controls wait. */
   readonly busy = input(false);
+  /** Offer "Select" in the menu (a list where several notes can be chosen). */
+  readonly canSelect = input(true);
   readonly selectable = input(false);
   readonly selected = input(false);
   /** AI suggestions for this note's picker, already loaded by the caller. */
@@ -255,9 +257,4 @@ export class NoteItemComponent {
   toggleSelected(checked: boolean): void {
     this.selectedChange.emit(checked);
   }
-}
-
-/** Topics by trimmed, lower-cased name: what chips and inline links resolve against. */
-export function topicLookup(topics: readonly TopicDto[]): ReadonlyMap<string, TopicDto> {
-  return new Map(topics.map((topic) => [topic.name.trim().toLocaleLowerCase(), topic]));
 }

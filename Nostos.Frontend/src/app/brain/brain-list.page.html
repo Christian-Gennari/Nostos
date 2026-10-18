@@ -1,0 +1,277 @@
+<div class="brain-scroller" #scroller>
+  <header class="toolbar" [class.is-topic]="place() === 'topic'">
+    <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
+    <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
+      [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
+      @if (place() === 'topic') { <nostos-icon concept="topic" [size]="16" /> }
+      <span class="place-switch-label">{{ title() }}</span>
+      <nostos-icon name="caret-down" [size]="14" />
+    </button>
+
+    <div class="toolbar-title">
+      @if (place() === 'topic') {
+      <span class="eyebrow"><nostos-icon concept="topic" [size]="12" />Topic</span>
+      @if (topic() && topicActions.renameId() === topic()!.id && topicActions.renameSurface() === 'title') {
+      <app-brain-topic-rename
+        variant="title"
+        [name]="topic()!.name"
+        [value]="topicActions.renameValue()"
+        (valueChange)="topicActions.renameValue.set($event)"
+        [error]="topicActions.renameError()"
+        [busy]="topicActions.renaming()"
+        (committed)="topicActions.commitRename()"
+        (cancelled)="topicActions.cancelRename()"
+      />
+      } @else {
+      <h1 class="page-title">{{ title() }}</h1>
+      }
+      } @else {
+      <h1 class="page-title">{{ title() }}</h1>
+      }
+      @if (loaded()) {
+      <span class="page-count" role="status" aria-live="polite">
+        {{ place() === 'topic' && !filtersActive() && !withTopic() ? topicSummary() : countText() }}
+      </span>
+      }
+    </div>
+
+    <div class="search-bar-container">
+      <nostos-icon name="magnifying-glass" [size]="18" class="search-icon" />
+      <input
+        appInput
+        controlSize="compact"
+        type="search"
+        class="search-input"
+        id="brain-search"
+        [attr.aria-label]="'Search ' + (place() === 'topic' ? 'in ' + title() : title().toLocaleLowerCase())"
+        [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : 'Search notes, quotes, books, topics…'"
+        [value]="searchDraft()"
+        (input)="onSearchInput($any($event.target).value)"
+        (keydown.escape)="clearSearch()"
+      />
+    </div>
+
+    <div class="toolbar-right">
+      <app-dropdown
+        class="book-select"
+        appearance="subtle"
+        controlSize="compact"
+        align="end"
+        ariaLabel="Book"
+        [options]="bookOptions()"
+        [value]="bookId() ?? ''"
+        (valueChange)="setBook($event || null)"
+      />
+      <app-dropdown
+        class="order-select"
+        controlSize="compact"
+        align="end"
+        ariaLabel="Order"
+        [options]="orderOptions"
+        [value]="order()"
+        (valueChange)="setOrder($event)"
+      />
+      <button appButton variant="ghost" size="sm" type="button" class="select-toggle"
+        [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
+        <nostos-icon name="check-square" [size]="16" />Select
+      </button>
+      @if (place() === 'topic' && topic(); as current) {
+      <button appIconButton type="button" icon="dots-three" class="topic-more" [glyphSize]="18"
+        aria-label="Topic actions" [nostosMenuTriggerFor]="topicMenu"></button>
+      <ng-template #topicMenu>
+        <nostos-menu aria-label="Topic actions">
+          <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
+          <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
+          <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes with writing…</button>
+          <hr nostosMenuSeparator />
+          <button nostosMenuItem icon="trash" tone="danger" (triggered)="topicActions.openDelete(current)">Delete topic</button>
+        </nostos-menu>
+      </ng-template>
+      }
+    </div>
+  </header>
+
+  @if (place() === 'topic' && related().length) {
+  <section class="often-with" aria-label="Often with">
+    <span class="often-label">Often with</span>
+    @for (item of visibleRelated(); track item.id) {
+    <button appChip type="button" class="often-chip" [attr.aria-pressed]="withId() === item.id"
+      [title]="item.sharedNotes === 1 ? '1 shared note' : item.sharedNotes + ' shared notes'"
+      (click)="narrowTo(withId() === item.id ? null : item.id)">
+      {{ item.name }}
+      @if (withId() === item.id) { <nostos-icon name="x" [size]="12" /> }
+    </button>
+    }
+    @if (hiddenRelated() > 0) {
+    <button appButton variant="link" size="sm" type="button" (click)="relatedExpanded.set(!relatedExpanded())">
+      {{ relatedExpanded() ? 'Fewer' : '+' + hiddenRelated() + ' more' }}
+    </button>
+    }
+  </section>
+  }
+
+  @if (withTopic(); as other) {
+  <div class="narrow-notice" role="status">
+    <span>Showing the {{ total() === 1 ? 'note' : total() + ' notes' }} with both <strong>{{ title() }}</strong> and
+      <strong>{{ other.name }}</strong></span>
+    <span class="narrow-actions">
+      <a appButton variant="ghost" size="sm" [routerLink]="['/brain/topics', other.id]">
+        Open {{ other.name }} <nostos-icon name="arrow-right" [size]="14" />
+      </a>
+      <button appButton variant="secondary" size="sm" type="button" (click)="narrowTo(null)">Show all</button>
+    </span>
+  </div>
+  }
+
+  @if (filtersActive() || matchingTopics().length) {
+  <div class="filter-bar">
+    @if (bookTitle(); as book) {
+    <button appChip type="button" class="filter-chip" (click)="setBook(null)" [title]="'Clear book: ' + book">
+      <span>{{ book }}</span><nostos-icon name="x" [size]="14" />
+    </button>
+    }
+    @if (q()) {
+    <button appChip type="button" class="filter-chip" (click)="clearSearch()" [title]="'Clear search: ' + q()">
+      <span>“{{ q() }}”</span><nostos-icon name="x" [size]="14" />
+    </button>
+    }
+    @if (matchingTopics().length) {
+    <span class="matching-topics" aria-label="Topics matching the search">
+      <span class="often-label">Topics</span>
+      @for (match of matchingTopics(); track match.id) {
+      <a class="topic-link" [routerLink]="['/brain/topics', match.id]">
+        <nostos-icon concept="topic" [size]="12" />{{ match.name }}
+      </a>
+      }
+    </span>
+    }
+  </div>
+  }
+
+  <main class="brain-list" [attr.aria-busy]="loading()" aria-label="Notes">
+    @if (topicMissing()) {
+    <div class="empty-state" role="status">
+      <p>This topic is gone. It may have been merged into another or deleted.</p>
+      <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
+    </div>
+    } @else if (!loaded() && loading()) {
+    <nostos-loading-indicator class="list-loading" label="Loading notes" />
+    } @else if (failed() && !loaded()) {
+    <div class="empty-state" role="alert">
+      <p>Notes could not be loaded.</p>
+      <button appButton variant="secondary" size="sm" type="button" (click)="loadPage()">Try again</button>
+    </div>
+    } @else if (loaded() && notes().length === 0) {
+    <div class="empty-state" role="status">
+      <p>{{ emptyText() }}</p>
+      @if (filtersActive()) {
+      <button appButton variant="secondary" size="sm" type="button" (click)="clearFilters()">Clear filters</button>
+      } @else if (place() === 'unsorted') {
+      <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
+      }
+    </div>
+    } @else {
+    @for (note of notes(); track note.id; let i = $index) {
+      @if (order() === 'book' && startsBook(i)) {
+      <header class="book-group">
+        <h2 class="book-group-title">{{ note.bookTitle || 'Unknown book' }}</h2>
+        <span class="book-group-meta">
+          @if (note.bookAuthor) { {{ note.bookAuthor }} · }
+          @if (bookCount(note.bookId); as count) { {{ count === 1 ? '1 note' : count + ' notes' }} }
+        </span>
+      </header>
+      }
+      <app-note-item
+        [note]="note"
+        [topics]="state.topics()"
+        [topicMap]="state.lookup()"
+        [showBook]="order() !== 'book'"
+        [showMoreFromBook]="!bookId()"
+        [busy]="noteActions.busy().has(note.id)"
+        [selectable]="selecting()"
+        [selected]="selected().has(note.id)"
+        [suggestions]="suggestions.namesFor(note.id)"
+        [suggestionState]="suggestions.stateFor(note.id)"
+        (topicAdded)="noteActions.addTopic(note, $event)"
+        (topicRemoved)="noteActions.removeTopic(note, $event)"
+        (pickerOpened)="suggestions.request(note)"
+        (edited)="noteActions.edit($event)"
+        (keepWithWriting)="noteActions.keepWithWriting([note.id])"
+        (moreFromBook)="setBook(note.bookId)"
+        (selectRequested)="startSelecting(note.id)"
+        (selectedChange)="setSelected(note.id, $event)"
+        (deleteRequested)="noteActions.askDelete([note.id])"
+        (restored)="noteActions.restored($event)"
+      />
+    }
+    <div class="list-end" #sentinel>
+      @if (failed()) {
+      <button appButton variant="ghost" size="sm" type="button" (click)="loadPage()">Try loading more again</button>
+      } @else if (notes().length < total()) {
+      <button appButton variant="ghost" size="sm" type="button" [disabled]="loading()" (click)="loadMore()">
+        {{ loading() ? 'Loading…' : 'Load more' }}
+      </button>
+      }
+    </div>
+    }
+  </main>
+</div>
+
+@if (selecting()) {
+<div class="selection-bar" role="toolbar" aria-label="Selected notes">
+  <span class="selection-count" role="status" aria-live="polite">
+    {{ selected().size === 1 ? '1 selected' : selected().size + ' selected' }}
+  </span>
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    cdkOverlayOrigin #selectionOrigin="cdkOverlayOrigin"
+    [disabled]="selected().size === 0" [attr.aria-expanded]="selectionPickerOpen()" aria-haspopup="dialog"
+    (click)="selectionPickerOpen.set(!selectionPickerOpen())">
+    <nostos-icon concept="topic" [size]="14" />Add topic…
+  </button>
+  <ng-template
+    cdkConnectedOverlay
+    [cdkConnectedOverlayOrigin]="selectionOrigin"
+    [cdkConnectedOverlayOpen]="selectionPickerOpen()"
+    [cdkConnectedOverlayPositions]="selectionPickerPositions"
+    [cdkConnectedOverlayPush]="true"
+    (overlayOutsideClick)="selectionPickerOpen.set(false)"
+    (detach)="selectionPickerOpen.set(false)"
+  >
+    <app-topic-picker-popover
+      [topics]="state.topics()"
+      label="Add a topic to the selected notes"
+      (chosen)="addTopicToSelection($event)"
+      (closed)="selectionPickerOpen.set(false)"
+    />
+  </ng-template>
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    [disabled]="selected().size === 0" (click)="keepSelectionWithWriting()">
+    <nostos-icon name="bookmark-simple" [size]="14" />Keep with writing…
+  </button>
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    [disabled]="selected().size === 0" (click)="deleteSelection()">
+    <nostos-icon name="trash" [size]="14" />Delete
+  </button>
+  <button appIconButton type="button" icon="x" surface="overlay" class="selection-close" [glyphSize]="16"
+    aria-label="Stop selecting" (click)="leaveSelection()"></button>
+</div>
+}
+
+@if (noteActions.handoffIds().length) {
+<app-brain-writing-handoff
+  [noteIds]="noteActions.handoffIds()"
+  (cancelled)="noteActions.closeHandoff()"
+  (completed)="noteActions.closeHandoff()"
+/>
+}
+
+<app-confirm-modal
+  [isOpen]="noteActions.deleteIds().length > 0"
+  [heading]="noteActions.deleteHeading()"
+  description="Deleted notes are removed from their book and from every topic. This cannot be undone."
+  confirmLabel="Delete"
+  busyLabel="Deleting…"
+  [busy]="noteActions.deleting()"
+  (confirm)="confirmDelete()"
+  (cancel)="noteActions.cancelDelete()"
+></app-confirm-modal>

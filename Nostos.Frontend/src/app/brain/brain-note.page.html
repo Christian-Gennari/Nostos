@@ -1,0 +1,60 @@
+<div class="brain-scroller">
+  <header class="note-head">
+    <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
+      [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
+      <span>Note</span><nostos-icon name="caret-down" [size]="14" />
+    </button>
+    <a appButton variant="ghost" size="sm" class="back-link" routerLink="/brain">
+      <nostos-icon name="arrow-left" [size]="14" />All notes
+    </a>
+    <h1 class="page-title">{{ note()?.bookTitle || 'Note' }}</h1>
+  </header>
+
+  <main class="note-column" aria-label="Note">
+    @if (failed()) {
+    <div class="empty-state" role="alert">
+      <p>This note could not be found. It may have been deleted.</p>
+      <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
+    </div>
+    } @else if (note(); as current) {
+    <app-note-item
+      [note]="current"
+      [topics]="state.topics()"
+      [topicMap]="state.lookup()"
+      [busy]="noteActions.busy().has(current.id)"
+      [canSelect]="false"
+      [suggestions]="suggestions.namesFor(current.id)"
+      [suggestionState]="suggestions.stateFor(current.id)"
+      (topicAdded)="noteActions.addTopic(current, $event)"
+      (topicRemoved)="noteActions.removeTopic(current, $event)"
+      (pickerOpened)="suggestions.request(current)"
+      (edited)="noteActions.edit($event)"
+      (keepWithWriting)="noteActions.keepWithWriting([current.id])"
+      (moreFromBook)="moreFromBook(current)"
+      (deleteRequested)="noteActions.askDelete([current.id])"
+      (restored)="noteActions.restored($event)"
+    />
+    } @else {
+    <nostos-loading-indicator class="list-loading" label="Loading the note" />
+    }
+  </main>
+</div>
+
+@if (noteActions.handoffIds().length) {
+<app-brain-writing-handoff
+  [noteIds]="noteActions.handoffIds()"
+  (cancelled)="noteActions.closeHandoff()"
+  (completed)="noteActions.closeHandoff()"
+/>
+}
+
+<app-confirm-modal
+  [isOpen]="noteActions.deleteIds().length > 0"
+  [heading]="noteActions.deleteHeading()"
+  description="Deleted notes are removed from their book and from every topic. This cannot be undone."
+  confirmLabel="Delete"
+  busyLabel="Deleting…"
+  [busy]="noteActions.deleting()"
+  (confirm)="noteActions.confirmDelete()"
+  (cancel)="noteActions.cancelDelete()"
+></app-confirm-modal>
