@@ -128,11 +128,6 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     this.previewSound('key');
   }
 
-  setMarginBell(marginBell: boolean): void {
-    this.prefs.update({ marginBell });
-    if (marginBell) this.previewSound('bell');
-  }
-
   /**
    * One key at the current level and pack, so the level can be set without
    * leaving the panel. Called when the slider comes to rest (release, or each

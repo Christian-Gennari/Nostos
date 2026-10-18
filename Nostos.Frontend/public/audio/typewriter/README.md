@@ -7,12 +7,14 @@ switch. Only the chosen pack is fetched, and only after the sounds are turned on
 ## `olivetti-lettera-22/`: Typewriter (the default)
 
 A real manual typewriter. Every sample comes from one machine in one session.
+Like Calmly Writer's typewriter sounds, there is no margin bell: the page
+wraps its own lines, so a bell would ring at a margin the writer cannot see.
 
 - Source: "typewriter-olivetti-lettra-22.wav" by keithpeter,
   <https://freesound.org/people/keithpeter/sounds/123344/>. An Olivetti
-  Lettera 22 is fed a sheet, types about 50 words and has the sheet removed.
-  The margin bell rings at the end of each line, and the carriage is pushed
-  back. Dynamic microphone about 30 cm away, 44.1 kHz, 16-bit mono.
+  Lettera 22 is fed a sheet, types about 50 words and has the sheet removed,
+  pushing the carriage back at the end of each line. Dynamic microphone
+  about 30 cm away, 44.1 kHz, 16-bit mono.
 - Licence: **CC0 1.0** (public domain dedication), as stated on that page.
 - Cut from Freesound's high-quality preview of the recording (128 kbit/s MP3).
 
@@ -22,7 +24,6 @@ A real manual typewriter. Every sample comes from one machine in one session.
 | `space.mp3` | 61.550. The space bar moves only the escapement: a soft thunk and its release click, quieter than a letter. |
 | `backspace.mp3` | 12.818. A single escapement click. |
 | `return.mp3` | 59.955–61.255. The lever, the line feed, the carriage sliding back and its stop (1.3 s). |
-| `bell.mp3` | 41.795. The margin bell's decay. The machine's own bell rings at 3071 Hz with a partial at 7461 Hz, which writers found piercing. Its decay envelope is kept, voiced as a soft 1100 Hz ding with a faint octave, an 8 ms attack and 5 dB below the keys. |
 
 Processing: `scripts/typewriter-samples.py` (ffmpeg and numpy) reproduces these
 files from the recording. Mono, 44.1 kHz, 70 Hz high-pass and 13 kHz low-pass
@@ -30,7 +31,7 @@ files from the recording. Mono, 44.1 kHz, 70 Hz high-pass and 13 kHz low-pass
 fade-in, squared fade-out, true peak −3 dB, 64 kbit/s MP3. Letters are levelled
 to the loudness of the keyboard pack's keys (within about 1 dB on the same
 meter). Space and backspace are 3 dB softer, as on the machine. Keys are about
-2 KB each, the return 11 KB and the bell 8 KB.
+2 KB each and the return 11 KB.
 
 ## `cherry-kc1000/`: Keyboard
 
@@ -53,8 +54,6 @@ Files here, from the pack's `Single Keys/`:
 
 Processing (ffmpeg): mono, 44.1 kHz, leading silence trimmed, a 50 ms fade-out,
 loudness normalised to −20 LUFS (true peak −3 dB), 0.24 s, 64 kbit/s MP3.
-
-This pack has no bell, so the margin bell is offered only with the typewriter.
 
 ---
 

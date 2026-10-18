@@ -113,14 +113,6 @@
           (input)="prefs.update({ soundVolume: numberFrom($event) })"
           (change)="previewSound()"
         />
-        @if (prefs.preferences().soundPack === 'typewriter') {
-          <div class="ps-toggle">
-            <span aria-hidden="true">Margin bell</span>
-            <label appSwitch>
-              <input type="checkbox" aria-label="Margin bell" [checked]="prefs.preferences().marginBell" (change)="setMarginBell(checkedFrom($event))" />
-            </label>
-          </div>
-        }
       }
       <div class="ps-toggle">
         <span aria-hidden="true">Spell check</span>

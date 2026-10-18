@@ -6,7 +6,6 @@ import {
   countWords,
   looksLikeMarkdown,
 } from './markdown-editor.component';
-import { TypewriterSounds } from './typewriter-sounds';
 
 /**
  * The Studio page on TipTap (issue #1037). These run the real editor in jsdom
@@ -302,42 +301,6 @@ describe('MarkdownEditorComponent', () => {
     page().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'a', bubbles: true }));
     expect(fetchSpy.mock.calls.filter(([u]) => String(u).includes('/audio/typewriter/'))).toEqual([]);
     fetchSpy.mockRestore();
-  });
-
-  it('rings the margin bell on the character that reaches the margin, once per line (#1065)', async () => {
-    const played: string[] = [];
-    const play = vi.spyOn(TypewriterSounds.prototype, 'play').mockImplementation((sound) => void played.push(sound));
-    vi.spyOn(TypewriterSounds.prototype, 'prefetch').mockResolvedValue(undefined);
-    await create('x'.repeat(61));
-    fixture.componentRef.setInput('sounds', true);
-    fixture.detectChanges();
-    const editor = (component as any).editor as import('@tiptap/core').Editor;
-    const type = (ch: string) => {
-      page().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: ch, bubbles: true }));
-      editor.commands.insertContent(ch);
-    };
-    editor.commands.focus('end');
-    type('a'); // column 61: not yet
-    expect(played).toEqual(['key']);
-    type('b'); // column 62: eight before the 70-column margin
-    expect(played).toEqual(['key', 'key', 'bell']);
-    type('c');
-    expect(played.filter((s) => s === 'bell').length).toBe(1);
-
-    // A soft keyboard committing a word across the column rings too.
-    played.length = 0;
-    editor.commands.insertContent(' ');
-    editor.commands.insertContent('x'.repeat(2 * 70 - 8 - 66));
-    page().dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: 'words', bubbles: true }));
-    expect(played).toEqual(['key', 'bell']);
-
-    played.length = 0;
-    fixture.componentRef.setInput('soundPack', 'keyboard');
-    fixture.detectChanges();
-    editor.commands.setTextSelection(62 + 1); // back at column 62
-    type('d');
-    expect(played).toEqual(['key']);
-    play.mockRestore();
   });
 
   describe('the / menu (#1043)', () => {

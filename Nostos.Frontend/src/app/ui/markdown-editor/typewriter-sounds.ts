@@ -5,7 +5,7 @@
  * Nothing is fetched and no AudioContext exists until sounds are turned on and
  * a key is pressed, and the context sleeps while the page is hidden.
  */
-export type TypewriterSound = 'key' | 'space' | 'return' | 'backspace' | 'bell';
+export type TypewriterSound = 'key' | 'space' | 'return' | 'backspace';
 
 /** Which recordings play: a real typewriter, or a quiet office keyboard. */
 export type SoundPack = 'typewriter' | 'keyboard';
@@ -14,16 +14,15 @@ export const SOUND_PACKS: readonly SoundPack[] = ['typewriter', 'keyboard'];
 interface PackSamples {
   folder: string;
   keys: readonly string[];
-  /** The other sounds this pack has; one it lacks is silent. */
-  others: readonly Exclude<TypewriterSound, 'key'>[];
 }
 
 const keyNames = (count: number) => Array.from({ length: count }, (_, i) => `key-${i + 1}`);
 
 const PACKS: Record<SoundPack, PackSamples> = {
-  typewriter: { folder: 'olivetti-lettera-22', keys: keyNames(12), others: ['space', 'return', 'backspace', 'bell'] },
-  keyboard: { folder: 'cherry-kc1000', keys: keyNames(5), others: ['space', 'return', 'backspace'] },
+  typewriter: { folder: 'olivetti-lettera-22', keys: keyNames(12) },
+  keyboard: { folder: 'cherry-kc1000', keys: keyNames(5) },
 };
+const OTHER_SAMPLES = ['space', 'return', 'backspace'];
 
 const BASE = '/audio/typewriter/';
 /**
@@ -35,13 +34,9 @@ const THROTTLE_MS = 12;
 
 type AudioContextCtor = typeof AudioContext;
 
-export function packHasSound(pack: SoundPack, sound: TypewriterSound): boolean {
-  return sound === 'key' || PACKS[pack].others.includes(sound);
-}
-
 function samplesOf(pack: SoundPack): string[] {
-  const { folder, keys, others } = PACKS[pack];
-  return [...keys, ...others].map((name) => `${folder}/${name}`);
+  const { folder, keys } = PACKS[pack];
+  return [...keys, ...OTHER_SAMPLES].map((name) => `${folder}/${name}`);
 }
 
 export class TypewriterSounds {
@@ -76,9 +71,9 @@ export class TypewriterSounds {
    */
   play(sound: TypewriterSound, volume: number, charCode = 0): void {
     const now = performance.now();
-    // The carriage and the bell are their own events: a key struck with them
-    // neither silences them nor is silenced by them.
-    const throttled = sound !== 'return' && sound !== 'bell';
+    // The carriage return is its own event: a key struck with it neither
+    // silences it nor is silenced by it.
+    const throttled = sound !== 'return';
     if (throttled && now - this.lastPlayed < THROTTLE_MS) return;
 
     const context = this.ensureContext();
@@ -97,8 +92,8 @@ export class TypewriterSounds {
     const source = context.createBufferSource();
     source.buffer = buffer;
     // Small variation in pitch and level keeps a run of keys from sounding
-    // like one sample on a loop; the long sounds barely vary.
-    source.playbackRate.value = this.vary(sound === 'key' || sound === 'space' ? 0.03 : 0.01);
+    // like one sample on a loop; the carriage barely varies.
+    source.playbackRate.value = this.vary(sound === 'return' ? 0.01 : 0.03);
     const gain = context.createGain();
     const level = Math.max(0, Math.min(1, volume));
     gain.gain.value = sound === 'key' ? level * (0.8 + this.random() * 0.2) : level;
@@ -220,20 +215,4 @@ export function soundForInput(inputType: string, data: string | null): Typewrite
     default:
       return null;
   }
-}
-
-/** Characters on one line of the imagined carriage (a pica machine's width). */
-export const MARGIN_COLUMNS = 70;
-/** The bell rings this many characters before the margin, as on a real machine. */
-const BELL_WARNING = 8;
-
-/**
- * Whether typing the character at `column` (0-based, from the start of the
- * paragraph or line break) rings the margin bell. The Studio page has no fixed
- * width, so the carriage is a character count: it rings once per line of
- * `MARGIN_COLUMNS`, eight characters before its end.
- */
-export function ringsMarginBell(column: number): boolean {
-  const bellAt = MARGIN_COLUMNS - BELL_WARNING;
-  return column >= bellAt && (column - bellAt) % MARGIN_COLUMNS === 0;
 }

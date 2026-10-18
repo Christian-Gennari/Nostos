@@ -72,8 +72,6 @@ export interface StudioPreferences {
   soundVolume: number;
   /** Which recordings the sounds use (issue #1065). */
   soundPack: SoundPack;
-  /** The typewriter's margin bell near the end of a long line. */
-  marginBell: boolean;
 }
 
 export const STUDIO_PREFERENCES_KEY = 'nostos.studio.preferences';
@@ -91,7 +89,6 @@ export const DEFAULT_STUDIO_PREFERENCES: StudioPreferences = {
   sounds: false,
   soundVolume: 0.6,
   soundPack: 'typewriter',
-  marginBell: true,
 };
 
 export const FONT_SIZE_RANGE = { min: 14, max: 28, step: 1 } as const;
@@ -163,7 +160,6 @@ export function normalizeStudioPreferences(raw: unknown, legacyTypewriter = fals
     sounds: typeof value.sounds === 'boolean' ? value.sounds : d.sounds,
     soundVolume: Math.round(clamp(value.soundVolume, 0, 1, d.soundVolume) * 100) / 100,
     soundPack: SOUND_PACKS.includes(value.soundPack as SoundPack) ? (value.soundPack as SoundPack) : d.soundPack,
-    marginBell: typeof value.marginBell === 'boolean' ? value.marginBell : d.marginBell,
   };
 }
 

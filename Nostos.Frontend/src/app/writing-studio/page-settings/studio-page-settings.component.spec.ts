@@ -131,20 +131,6 @@ describe('StudioPageSettingsComponent (#1060)', () => {
       expect(prefs.preferences().soundPack).toBe('keyboard');
       expect(previews).toEqual(['key']);
     });
-
-    it('offers the margin bell only for the typewriter, and rings it when turned on', () => {
-      const bell = () => root.querySelector('input[aria-label="Margin bell"]') as HTMLInputElement | null;
-      expect(bell()?.checked).toBe(true);
-      bell()!.click();
-      fixture.detectChanges();
-      expect(prefs.preferences().marginBell).toBe(false);
-      bell()!.click();
-      fixture.detectChanges();
-      expect(previews).toEqual(['bell']);
-      prefs.update({ soundPack: 'keyboard' });
-      fixture.detectChanges();
-      expect(bell()).toBeNull();
-    });
   });
 
   it('steps back from the typeface list with Esc, and walks it with the arrows', () => {
