@@ -65,7 +65,9 @@ test('sorts notes with the keyboard alone and resumes after a reload', async ({ 
   await expect(page.getByText(`Third loose note ${run}.`)).toBeVisible();
   await field.press('ArrowLeft');
   await expect(page.getByText(`Second loose note ${run}.`)).toBeVisible();
-  await field.fill(`alp`);
+  await field.fill(`Alpha${run}`.slice(0, -2));
+  // The topic made a moment ago is offered once the topics have reloaded.
+  await expect(page.getByRole('option', { name: `Alpha${run}` })).toBeVisible();
   await field.press('Enter');
   await field.press('Enter');
   await expect(page.getByText(`Third loose note ${run}.`)).toBeVisible();

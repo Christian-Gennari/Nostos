@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, catchError, map, of, shareReplay, switchMap } from 'rxjs';
+import { Observable, catchError, defer, map, of, switchMap } from 'rxjs';
 
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
@@ -11,6 +11,7 @@ export interface SortPosition {
   noteId: string;
   book: string | null;
   order: string;
+  query?: string | null;
 }
 
 /**
@@ -24,7 +25,8 @@ export class BrainSortPositionService {
   private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly cloudAuth = inject(CloudAuthService);
 
-  private readonly key$: Observable<string | null> = this.capabilities.get().pipe(
+  /** Resolved per use, so a sign-in or sign-out in this tab moves to that account's key. */
+  private readonly key$: Observable<string | null> = defer(() => this.capabilities.get()).pipe(
     switchMap((capabilities) => {
       if (capabilities.deploymentMode === 'SelfHosted') return of('selfhosted');
       if (capabilities.deploymentMode !== 'Cloud') return of(null);
@@ -34,7 +36,6 @@ export class BrainSortPositionService {
     }),
     map((identity) => (identity ? `${STORAGE_PREFIX}:${encodeURIComponent(identity)}` : null)),
     catchError(() => of(null)),
-    shareReplay({ bufferSize: 1, refCount: false }),
   );
 
   read(): Observable<SortPosition | null> {
@@ -44,7 +45,7 @@ export class BrainSortPositionService {
         const raw = localStorage.getItem(key);
         const value = raw ? (JSON.parse(raw) as Partial<SortPosition>) : null;
         return value && typeof value.noteId === 'string'
-          ? { noteId: value.noteId, book: value.book ?? null, order: value.order ?? 'oldest' }
+          ? { noteId: value.noteId, book: value.book ?? null, order: value.order ?? 'oldest', query: value.query ?? null }
           : null;
       } catch {
         return null;

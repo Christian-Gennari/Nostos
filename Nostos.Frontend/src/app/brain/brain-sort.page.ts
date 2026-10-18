@@ -18,7 +18,6 @@ import { ToastService } from '../core/services/toast.service';
 import { TopicsService } from '../core/services/topics.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
 import { ButtonComponent } from '../ui/button/button.component';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { ChipComponent } from '../ui/chip/chip.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -32,7 +31,8 @@ import {
   thoughtForDisplay,
   topicChoices,
 } from '../ui/note-item/note-item.helpers';
-import { BrainWritingHandoffComponent } from '../second-brain/writing-handoff/brain-writing-handoff.component';
+import { BrainNoteActionsService } from './brain-note-actions.service';
+import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
 import { BrainSortPositionService } from './brain-sort-position.service';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
@@ -63,17 +63,16 @@ interface Choice {
     ...NOSTOS_MENU,
     ButtonComponent,
     ChipComponent,
-    ConfirmModal,
     IconButtonComponent,
     NostosIconComponent,
     LoadingIndicatorComponent,
-    BrainWritingHandoffComponent,
+    BrainNoteDialogsComponent,
   ],
-  providers: [BrainTopicSuggestionsService],
+  providers: [BrainTopicSuggestionsService, BrainNoteActionsService],
   templateUrl: './brain-sort.page.html',
   styleUrls: ['./brain-sort.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '(document:keydown.escape)': 'onEscape()' },
+  host: { '(document:keydown.escape)': 'onEscape($event)' },
 })
 export class BrainSortPage {
   private readonly route = inject(ActivatedRoute);
@@ -89,6 +88,8 @@ export class BrainSortPage {
   readonly suggestions = inject(BrainTopicSuggestionsService);
 
   readonly bookId = this.route.snapshot.queryParamMap.get('book');
+  /** Unsorted's search, so the queue is the notes that list showed. */
+  readonly query = this.route.snapshot.queryParamMap.get('q')?.trim() || null;
   readonly order: NoteOrder = (() => {
     const value = this.route.snapshot.queryParamMap.get('order');
     return isOrder(value) && value !== 'book' ? value : 'oldest';
@@ -111,9 +112,7 @@ export class BrainSortPage {
   /** Topics given this session, latest first: one tap for a run of related notes. */
   readonly recent = signal<string[]>([]);
 
-  readonly deleting = signal(false);
-  readonly confirmingDelete = signal(false);
-  readonly handoffIds = signal<string[]>([]);
+  readonly actions = inject(BrainNoteActionsService);
 
   private readonly field = viewChild<ElementRef<HTMLInputElement>>('field');
 
@@ -134,7 +133,7 @@ export class BrainSortPage {
   });
   readonly passage = computed(() => isPassage(this.note()));
 
-  private readonly choicesSource = computed(() => topicChoices(this.state.topics().filter((t) => t.usageCount > 0)));
+  private readonly choicesSource = computed(() => topicChoices(this.state.topics()));
 
   /** What the typed text matches, then a new topic by that name. */
   readonly matches = computed<Choice[]>(() => {
@@ -171,18 +170,23 @@ export class BrainSortPage {
 
   constructor() {
     this.state.ensureLoaded();
+    // The queue shows only unsorted notes, so a changed note has nothing to redraw.
+    this.actions.attach({ replace: () => undefined, remove: (noteId) => this.drop(noteId) });
     this.position.read().subscribe((saved) => {
-      const resume = saved && saved.book === this.bookId && saved.order === this.order ? saved.noteId : null;
+      const resume = saved && saved.book === this.bookId && saved.order === this.order
+        && (saved.query ?? null) === this.query ? saved.noteId : null;
       this.loadPage(resume);
     });
   }
 
-  private loadPage(resumeId: string | null = null): void {
+  /** Fetches the next page; while resuming, keeps fetching (up to 8 pages) until the remembered note is found. */
+  private loadPage(resumeId: string | null = null, pagesLeft = 8): void {
     if (this.loading()) return;
     this.loading.set(true);
     this.failed.set(false);
     this.notes.browse({
       withoutTopics: true,
+      query: this.query ?? undefined,
       bookId: this.bookId ?? undefined,
       order: this.order,
       limit: PAGE_SIZE,
@@ -190,14 +194,23 @@ export class BrainSortPage {
     }).subscribe({
       next: (page) => {
         const held = new Set(this.queue().map((note) => note.id));
-        this.queue.update((queue) => [...queue, ...page.items.filter((note) => !held.has(note.id))]);
-        this.remaining.set(page.totalCount);
+        const fresh = page.items.filter((note) => !held.has(note.id));
+        this.queue.update((queue) => [...queue, ...fresh]);
+        // A page that brought nothing new (notes sorted elsewhere): the queue
+        // ends at what is held, rather than waiting for a note that never comes.
+        this.remaining.set(fresh.length ? page.totalCount : this.queue().length);
         this.loading.set(false);
         this.loaded.set(true);
         if (resumeId) {
           const at = this.queue().findIndex((note) => note.id === resumeId);
           if (at >= 0) this.index.set(at);
+          else if (fresh.length && pagesLeft > 1 && this.queue().length < this.remaining()) {
+            this.loadPage(resumeId, pagesLeft - 1);
+            return;
+          }
         }
+        if (this.index() >= this.remaining()) this.index.set(Math.max(0, this.remaining() - 1));
+        this.remember();
         this.focusField();
       },
       error: () => {
@@ -210,13 +223,19 @@ export class BrainSortPage {
   /** Make sure the note at the index is fetched, then remember it. */
   private settle(): void {
     if (this.index() >= this.queue().length && this.queue().length < this.remaining()) this.loadPage();
-    const note = this.note();
-    this.position.write(note ? { noteId: note.id, book: this.bookId, order: this.order } : null);
+    this.remember();
     this.suggestions.clear();
     this.typed.set('');
     this.chips.set([]);
     this.active.set(0);
     this.focusField();
+  }
+
+  /** Keeps the note in focus for a reload; a note not fetched yet changes nothing. */
+  private remember(): void {
+    const note = this.note();
+    if (note) this.position.write({ noteId: note.id, book: this.bookId, order: this.order, query: this.query });
+    else if (this.done()) this.position.write(null);
   }
 
   // --- The field ----------------------------------------------------------
@@ -304,7 +323,7 @@ export class BrainSortPage {
       next: () => {
         this.saving.set(false);
         this.recent.update((recent) => [...chips, ...recent.filter((name) => !hasTopic(chips, name))].slice(0, RECENT_SHOWN));
-        this.dropCurrent();
+        this.drop(note.id);
         this.sortedCount.update((count) => count + 1);
         this.state.refresh();
       },
@@ -316,53 +335,37 @@ export class BrainSortPage {
   }
 
   skip(): void {
-    if (!this.note() || this.index() + 1 >= this.remaining()) return;
+    if (this.saving() || !this.note() || this.index() + 1 >= this.remaining()) return;
     this.index.update((index) => index + 1);
     this.settle();
   }
 
   previous(): void {
-    if (this.index() === 0) return;
+    if (this.saving() || this.index() === 0) return;
     this.index.update((index) => index - 1);
     this.settle();
   }
 
-  /** The note in focus left the queue (saved or deleted); the next one takes its place. */
-  private dropCurrent(): void {
-    const at = this.index();
-    this.queue.update((queue) => queue.filter((_, i) => i !== at));
+  /** A note left the queue (saved or deleted); the next one takes its place. */
+  private drop(noteId: string): void {
+    const at = this.queue().findIndex((note) => note.id === noteId);
+    if (at < 0) return;
+    this.queue.update((queue) => queue.filter((note) => note.id !== noteId));
+    if (at < this.index()) this.index.update((index) => index - 1);
     this.remaining.update((remaining) => Math.max(0, remaining - 1));
     if (this.index() >= this.remaining()) this.index.set(Math.max(0, this.remaining() - 1));
     this.settle();
   }
 
   leave(): void {
-    void this.router.navigate(['/brain/unsorted'], { queryParams: { book: this.bookId } });
+    void this.router.navigate(['/brain/unsorted'], { queryParams: { book: this.bookId, q: this.query } });
   }
 
   // --- The note's other actions --------------------------------------------
 
   askDelete(): void {
-    this.confirmingDelete.set(true);
-  }
-
-  confirmDelete(): void {
     const note = this.note();
-    if (!note || this.deleting()) return;
-    this.deleting.set(true);
-    this.notes.delete(note.id).subscribe({
-      next: () => {
-        this.deleting.set(false);
-        this.confirmingDelete.set(false);
-        this.dropCurrent();
-        this.state.refresh();
-        this.toast.success('Note deleted');
-      },
-      error: () => {
-        this.deleting.set(false);
-        this.toast.error('Could not delete the note. Try again.');
-      },
-    });
+    if (note) this.actions.askDelete([note.id]);
   }
 
   openBook(bookId: string): void {
@@ -371,12 +374,13 @@ export class BrainSortPage {
 
   keepWithWriting(): void {
     const note = this.note();
-    if (note) this.handoffIds.set([note.id]);
+    if (note) this.actions.keepWithWriting([note.id]);
   }
 
   /** Esc leaves from anywhere on the screen, unless a dialog is open over it. */
-  onEscape(): void {
-    if (this.confirmingDelete() || this.handoffIds().length) return;
+  onEscape(event: Event): void {
+    // A menu or list that Escape closed has claimed it.
+    if (event.defaultPrevented || this.actions.deleteIds().length || this.actions.handoffIds().length) return;
     this.leave();
   }
 

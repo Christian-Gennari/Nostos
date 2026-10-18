@@ -155,16 +155,4 @@
   }
 </div>
 
-@if (handoffIds().length) {
-<app-brain-writing-handoff [noteIds]="handoffIds()" (cancelled)="handoffIds.set([])" (completed)="handoffIds.set([])" />
-}
-<app-confirm-modal
-  [isOpen]="confirmingDelete()"
-  heading="Delete this note?"
-  description="Deleted notes are removed from their book and from every topic. This cannot be undone."
-  confirmLabel="Delete"
-  busyLabel="Deleting…"
-  [busy]="deleting()"
-  (confirm)="confirmDelete()"
-  (cancel)="confirmingDelete.set(false)"
-></app-confirm-modal>
+<app-brain-note-dialogs />
