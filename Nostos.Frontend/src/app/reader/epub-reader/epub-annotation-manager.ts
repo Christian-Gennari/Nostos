@@ -9,7 +9,7 @@ import {
   resolveHighlightFill,
 } from '../highlight-colours';
 import { Note, noteHasText } from '../../core/dtos/note.dtos';
-import type { Theme } from '../../core/services/theme.service';
+import type { ThemeMode as Theme } from '../../core/services/theme.service';
 import { EpubTextMarks, TextMark, sectionOf, textMarksSupported } from './epub-text-marks';
 import {
   HighlightHit,

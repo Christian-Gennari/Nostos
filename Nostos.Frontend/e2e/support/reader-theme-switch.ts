@@ -104,12 +104,12 @@ async function expectCompactPanel(page: Page, maxHeight = 500, mayScroll = false
   if (pager) expect(box.y + box.height, 'panel ends above the pager').toBeLessThanOrEqual(pager.y + 1);
   const clipped = await panel.evaluate((el) => {
     const outer = el.getBoundingClientRect();
-    return [...el.querySelectorAll<HTMLElement>('.seg-opt, .typo-step, .typo-step-value, .typo-label')]
+    return [...el.querySelectorAll<HTMLElement>('.seg-opt, .tp-swatch, .typo-step, .typo-step-value, .typo-label')]
       .filter((c) => {
         const r = c.getBoundingClientRect();
         return c.scrollWidth > c.clientWidth + 1 || r.left < outer.left || r.right > outer.right;
       })
-      .map((c) => c.textContent?.trim());
+      .map((c) => c.getAttribute('aria-label') ?? c.textContent?.trim());
   });
   expect(clipped, 'clipped controls').toEqual([]);
   if (!mayScroll) {
@@ -129,9 +129,10 @@ async function expectCompactPanel(page: Page, maxHeight = 500, mayScroll = false
 }
 
 async function chooseTheme(page: Page, label: 'Light' | 'Dark') {
-  await page.locator('[data-testid="reader-appearance"] .seg-opt', { hasText: label }).click();
-  await expect(page.locator('[data-testid="reader-appearance"] .seg-opt', { hasText: label }))
-    .toHaveAttribute('aria-checked', 'true');
+  // The theme is a row of swatches (#1074), named by their accessible names.
+  const swatch = page.locator(`[data-testid="reader-appearance"] .tp-swatch[aria-label="${label}"]`);
+  await swatch.click();
+  await expect(swatch).toHaveAttribute('aria-checked', 'true');
 }
 
 async function htmlTheme(page: Page) {

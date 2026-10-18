@@ -97,15 +97,15 @@ const title = `Journey ${tag} ${Date.now()}`;
   check('the whole passage was not inserted', !(await editor.innerText()).includes('This vanity finds expression'));
   await shot(page, '4b-passage-quoted');
 
-  // 5. Studio theme and font.
+  // 5. Theme and font. The theme is the app's (#1074), chosen from the page settings.
   await page.getByTitle(/^Page: theme/).click();
   const panel = page.getByTestId('page-settings');
   await panel.waitFor();
-  await panel.locator('[data-theme-option="sepia"]').click();
+  await panel.locator('[data-testid="ps-theme"] [data-theme-option="sepia"]').click();
   await panel.locator('.ps-typeface').click();
   await panel.locator('[data-font-option="eb-garamond"]').click();
   await page.waitForTimeout(700);
-  const face = () => editor.evaluate((el) => ({ font: getComputedStyle(el).fontFamily, themed: !!el.closest('[class*="studio-theme-sepia"]') }));
+  const face = () => editor.evaluate((el) => ({ font: getComputedStyle(el).fontFamily, themed: document.documentElement.getAttribute('data-palette') === 'sepia' }));
   const f1 = await face();
   check('Sepia theme and EB Garamond applied', f1.themed && /Garamond/.test(f1.font), f1);
   await shot(page, '5-theme-font');

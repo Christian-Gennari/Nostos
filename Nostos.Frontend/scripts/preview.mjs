@@ -33,6 +33,9 @@ const API = new URL(process.env.NOSTOS_PREVIEW_API ?? 'http://127.0.0.1:5214');
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  // pdf.js loads its worker as a module; served as octet-stream it is refused
+  // and every PDF renders blank.
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json',
   '.webmanifest': 'application/manifest+json',
