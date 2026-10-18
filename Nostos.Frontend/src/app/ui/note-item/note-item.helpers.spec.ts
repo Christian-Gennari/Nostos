@@ -5,6 +5,7 @@ import {
   noteLocationLabel,
   rankTopicChoices,
   thoughtForDisplay,
+  topicChoices,
 } from './note-item.helpers';
 import type { TopicDto } from '../../core/services/topics.service';
 
@@ -43,25 +44,36 @@ describe('isReferenceLine', () => {
 });
 
 describe('noteLocationLabel', () => {
-  it('names a PDF page and an audio time, and nothing for an EPUB location', () => {
-    expect(noteLocationLabel({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '53' })).toBe('p. 53');
-    expect(noteLocationLabel({ sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '3725' })).toBe('1:02:05');
-    expect(noteLocationLabel({ sourceAnchorKind: 'epub_cfi', sourceAnchorValue: 'epubcfi(/6/2)' })).toBeNull();
-    expect(noteLocationLabel({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: 'x' })).toBeNull();
+  it('names a verified PDF page and audio time, and nothing for an EPUB location', () => {
+    const at = (kind: string, value: string) =>
+      noteLocationLabel({ sourceAnchorKind: kind, sourceAnchorValue: value, anchorVerified: true });
+    expect(at('pdf_page', '53')).toBe('p. 53');
+    expect(at('audio_timestamp', '3725')).toBe('1:02:05');
+    expect(at('epub_cfi', 'epubcfi(/6/2)')).toBeNull();
+    expect(at('pdf_page', '1e3')).toBeNull();
+  });
+
+  it('shows nothing for a location the reader cannot open', () => {
+    expect(noteLocationLabel({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '53', anchorVerified: false })).toBeNull();
   });
 });
 
 describe('rankTopicChoices', () => {
-  const topics = [topic('virtue ethics', 1), topic('virtue', 4), topic('civic virtue', 2), topic('freedom', 9)];
+  const choices = topicChoices([topic('virtue ethics', 1), topic('virtue', 4), topic('civic virtue', 2), topic('freedom', 9)]);
 
   it('puts the exact name first, then names starting with the query, then the rest that contain it', () => {
-    expect(rankTopicChoices(topics, 'virtue', []).map((t) => t.name))
+    expect(rankTopicChoices(choices, 'virtue', []).map((t) => t.name))
       .toEqual(['virtue', 'virtue ethics', 'civic virtue']);
   });
 
   it('lists the most used first with no query, leaving out names the note has', () => {
-    expect(rankTopicChoices(topics, '', ['Freedom']).map((t) => t.name))
+    expect(rankTopicChoices(choices, '', ['Freedom']).map((t) => t.name))
       .toEqual(['virtue', 'civic virtue', 'virtue ethics']);
+  });
+
+  it('ignores accents', () => {
+    expect(rankTopicChoices(topicChoices([topic('Café society', 1)]), 'cafe', []).map((t) => t.name))
+      .toEqual(['Café society']);
   });
 });
 

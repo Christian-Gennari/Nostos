@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Notes;
+using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Repositories;
 
@@ -165,7 +166,7 @@ public class NoteRepository : INoteRepository
         return (items, total);
     }
 
-    public async Task<IReadOnlyList<NoteBookFacet>> GetBookFacetsAsync(NoteBrowseQuery query)
+    public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(NoteBrowseQuery query)
     {
         var rows = await Filter(query with { BookId = null })
             .GroupBy(note => new
@@ -183,15 +184,22 @@ public class NoteRepository : INoteRepository
             .OrderBy(row => row.Title.Length == 0)
             .ThenBy(row => row.Title.ToLowerInvariant(), StringComparer.Ordinal)
             .ThenBy(row => row.BookId)
-            .Select(row => new NoteBookFacet(row.BookId, row.Title, row.Author, row.Count))
+            .Select(row => new NoteBookFacetDto(row.BookId, row.Title, row.Author, row.Count))
             .ToList();
     }
 
-    public async Task<NoteSummary> GetSummaryAsync()
+    public async Task<NoteSummaryDto> GetSummaryAsync()
     {
-        var total = await _db.Notes.CountAsync();
-        var passages = await _db.Notes.CountAsync(n => n.Kind == NoteKinds.Passage);
-        return new NoteSummary(total, passages, await CountWithoutTopicsAsync());
+        // One pass, the shape TopicRepository.GetStatsAsync already uses.
+        var summary = await _db.Notes
+            .Select(n => new { Passage = n.Kind == NoteKinds.Passage, Unsorted = !n.NoteTopics.Any() })
+            .GroupBy(_ => 1)
+            .Select(group => new NoteSummaryDto(
+                group.Count(),
+                group.Count(n => n.Passage),
+                group.Count(n => n.Unsorted)))
+            .SingleOrDefaultAsync();
+        return summary ?? new NoteSummaryDto(0, 0, 0);
     }
 
     /// <summary>The notes in one place of the Brain, before order and paging.</summary>

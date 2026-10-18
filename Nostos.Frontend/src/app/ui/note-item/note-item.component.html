@@ -37,13 +37,13 @@
     ></textarea>
     }
 
-    @if (note().selectedText || isPassage()) {
+    @if (hasPen()) {
     <div class="note-item-pens" role="group" aria-label="Highlight colour">
       @for (pen of highlightColours; track pen.id) {
       <button
         type="button"
         class="note-item-pen"
-        [style.background]="'var(--highlight-' + pen.id + ')'"
+        [style.background]="fillRef(pen.id)"
         [class.is-active]="editColour() === pen.id"
         [attr.aria-pressed]="editColour() === pen.id"
         [attr.aria-label]="pen.label + ' highlighter'"
@@ -91,7 +91,7 @@
     class="note-item-quote nostos-accent-rail"
     [class.is-opening]="isPassage()"
     [class.is-clamped]="long() && !expanded()"
-    [style.--nostos-accent-rail-color]="penColour() ? 'var(--highlight-' + penColour() + ')' : null"
+    [style.--nostos-accent-rail-color]="penFill()"
   >{{ quote() }}</blockquote>
   }
 
@@ -100,7 +100,7 @@
     class="note-item-thought"
     [class.is-lead]="!quote()"
     [class.is-clamped]="long() && !expanded()"
-    [innerHTML]="thought() | noteFormat : topicMap()"
+    [innerHTML]="thought() | noteFormat : lookup()"
     (click)="onThoughtClick($event)"
   ></div>
   }
@@ -113,14 +113,14 @@
   }
 
   <div class="note-item-topics" role="group" aria-label="Topics">
-    @for (name of topicNames(); track name) {
+    @for (chip of chips(); track chip.name) {
     <span class="note-item-topic">
-      @if (topicId(name); as id) {
-      <a class="note-item-topic-name" [routerLink]="['/brain/topics', id]">
-        <nostos-icon concept="topic" [size]="12" />{{ name }}
+      @if (chip.id) {
+      <a class="note-item-topic-name" [routerLink]="['/brain/topics', chip.id]">
+        <nostos-icon concept="topic" [size]="12" />{{ chip.name }}
       </a>
       } @else {
-      <span class="note-item-topic-name"><nostos-icon concept="topic" [size]="12" />{{ name }}</span>
+      <span class="note-item-topic-name"><nostos-icon concept="topic" [size]="12" />{{ chip.name }}</span>
       }
       <button
         appIconButton
@@ -130,9 +130,9 @@
         class="note-item-topic-remove"
         [glyphSize]="11"
         [disabled]="busy()"
-        [attr.aria-label]="'Remove topic ' + name"
-        [title]="'Remove ' + name"
-        (click)="topicRemoved.emit(name)"
+        [attr.aria-label]="'Remove topic ' + chip.name"
+        [title]="'Remove ' + chip.name"
+        (click)="topicRemoved.emit(chip.name)"
       ></button>
     </span>
     }

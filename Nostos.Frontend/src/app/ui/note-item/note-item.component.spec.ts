@@ -98,15 +98,15 @@ describe('NoteItemComponent', () => {
     expect(removed).toEqual(['mean']);
   });
 
-  it('opens an inline [[link]] in the app', async () => {
+  it('opens an inline [[link]] in the app, at the address the link names', async () => {
     render({ content: 'On [[virtue]] as a mean.' });
     const router = TestBed.inject(Router);
-    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    const link = element.querySelector('.note-item-thought a.topic-tag') as HTMLAnchorElement;
 
-    (element.querySelector('.note-item-thought .topic-tag') as HTMLElement)
-      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
 
-    expect(navigate).toHaveBeenCalledWith(['/brain/topics', 't-virtue']);
+    expect(navigate).toHaveBeenCalledWith(link.getAttribute('href'));
   });
 
   it('offers "Add a topic" on a note with none', () => {

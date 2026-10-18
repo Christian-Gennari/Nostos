@@ -12,7 +12,7 @@ import {
 import type { TopicDto } from '../../core/services/topics.service';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
-import { hasTopic, newTopicName, rankTopicChoices } from '../note-item/note-item.helpers';
+import { hasTopic, newTopicName, rankTopicChoices, topicChoices } from '../note-item/note-item.helpers';
 
 /** Where AI topic suggestions are; `off` hides the group entirely. */
 export type TopicSuggestionState = 'off' | 'loading' | 'ready' | 'error';
@@ -40,7 +40,7 @@ let nextPickerId = 0;
   imports: [NostosIconComponent, InputDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="picker" role="dialog" [attr.aria-label]="label()" (keydown.escape)="closed.emit()">
+    <div class="picker" role="dialog" [attr.aria-label]="label()">
       <label class="visually-hidden" [attr.for]="inputId">{{ label() }}</label>
       <input
         #field
@@ -220,17 +220,19 @@ export class TopicPickerPopoverComponent implements AfterViewInit {
 
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
 
+  /** Every topic folded for matching once per list, not once per keystroke. */
+  private readonly choices = computed(() => topicChoices(this.topics()));
+
   readonly options = computed<PickerOption[]>(() => {
     const exclude = this.exclude();
-    const matches: PickerOption[] = rankTopicChoices(this.topics(), this.query(), exclude)
+    const options: PickerOption[] = rankTopicChoices(this.choices(), this.query(), exclude)
       .map((topic) => ({ kind: 'topic', name: topic.name, count: topic.usageCount }));
     const create = newTopicName(this.topics(), this.query());
-    const options = [...matches];
     if (create && !hasTopic(exclude, create)) options.push({ kind: 'create', name: create });
     if (this.suggestionState() === 'ready') {
       const q = this.query().trim().toLocaleLowerCase();
       for (const name of this.suggestions()) {
-        if (hasTopic(exclude, name) || options.some((o) => o.name.toLocaleLowerCase() === name.toLocaleLowerCase())) continue;
+        if (hasTopic(exclude, name) || hasTopic(options.map((o) => o.name), name)) continue;
         if (q && !name.toLocaleLowerCase().includes(q)) continue;
         options.push({ kind: 'suggestion', name });
       }

@@ -71,10 +71,12 @@ public interface ITopicRepository
     void AddRange(IEnumerable<TopicModel> topics);
 
     /// <summary>
-    /// Removes all NoteTopicModel links for a given note.
+    /// Removes all NoteTopicModel links for a given note, and returns the names
+    /// of the linked topics its STORED text did not declare (link-only links:
+    /// older data, imports), so the processor can keep them.
     /// Loads then removes so changes stay in the current unit-of-work.
     /// </summary>
-    Task ClearNoteLinksAsync(Guid noteId);
+    Task<IReadOnlyList<string>> ClearNoteLinksAsync(NoteModel note);
 
     /// <summary>
     /// Stages a single note–topic link for insertion (does NOT call SaveChanges).

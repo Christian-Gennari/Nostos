@@ -20,6 +20,7 @@ import { ToastService } from '../core/services/toast.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { NotesService } from '../core/services/notes.service';
+import { noteSourceLink } from '../core/note-source';
 import { Note, NoteSearchHit } from '../core/dtos/note.dtos';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NoteCardComponent, type NoteSourceNavigation } from '../ui/note-card.component/note-card.component';
@@ -178,12 +179,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   noteSourceNavigation(note: NoteSearchHit | NoteContextDto): NoteSourceNavigation {
-    const queryParams = this.browseSourceParams(note);
-    return {
-      commands: [queryParams ? '/read' : '/library', note.bookId],
-      queryParams,
-      label: queryParams ? 'Return to passage' : 'Open book',
-    };
+    return noteSourceLink(note);
   }
 
   openBrowseTopic(name: string): void {

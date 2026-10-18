@@ -1,4 +1,5 @@
-import { formatAudioTime, type NoteSearchHit } from '../../core/dtos/note.dtos';
+import { formatAudioTime, parseAudioSeconds, type NoteSearchHit } from '../../core/dtos/note.dtos';
+import { normalizeSearchText } from '../../core/search-text';
 import type { TopicDto } from '../../core/services/topics.service';
 
 const REFERENCE = /\[\[(.*?)\]\]/g;
@@ -27,19 +28,20 @@ export function isReferenceLine(line: string): boolean {
 
 /**
  * Where in its book the note sits, in words a reader uses: a page, a time in
- * the recording. An EPUB location has no number worth showing.
+ * the recording. Only a verified location is shown, the same rule the card's
+ * "Open in book" link follows; an EPUB location has no number worth showing.
  */
-export function noteLocationLabel(note: Pick<NoteSearchHit, 'sourceAnchorKind' | 'sourceAnchorValue' | 'anchorVerified'>): string | null {
-  const value = note.sourceAnchorValue?.trim();
-  if (!value) return null;
+export function noteLocationLabel(
+  note: Pick<NoteSearchHit, 'sourceAnchorKind' | 'sourceAnchorValue' | 'anchorVerified'>,
+): string | null {
+  if (!note.anchorVerified) return null;
+  const value = note.sourceAnchorValue?.trim() ?? '';
   switch (note.sourceAnchorKind?.toLowerCase()) {
-    case 'pdf_page': {
-      const page = Number(value);
-      return Number.isInteger(page) && page > 0 ? `p. ${page}` : null;
-    }
+    case 'pdf_page':
+      return /^[1-9]\d*$/.test(value) ? `p. ${value}` : null;
     case 'audio_timestamp': {
-      const seconds = Number(value);
-      return Number.isFinite(seconds) && seconds >= 0 ? formatAudioTime(seconds) : null;
+      const seconds = parseAudioSeconds(value);
+      return seconds === null ? null : formatAudioTime(seconds);
     }
     default:
       return null;
@@ -52,36 +54,39 @@ export function hasTopic(names: readonly string[], name: string): boolean {
   return names.some((existing) => existing.trim().toLocaleLowerCase() === wanted);
 }
 
+/** A topic with its name folded once for matching (see {@link normalizeSearchText}). */
+export interface TopicChoice {
+  topic: TopicDto;
+  key: string;
+}
+
+/** Fold every name once, most used first, so a keystroke only filters. */
+export function topicChoices(topics: readonly TopicDto[]): TopicChoice[] {
+  return topics
+    .map((topic) => ({ topic, key: normalizeSearchText(topic.name.trim()) }))
+    .sort((a, b) => b.topic.usageCount - a.topic.usageCount || a.key.localeCompare(b.key));
+}
+
 /**
  * The topics a picker offers for `query`: an exact match first, then names
- * that start with it, then names that contain it; most used first within each.
- * Names the note already has are left out.
+ * that start with it, then names that contain it, accents ignored; most used
+ * first within each. Names the note already has are left out.
  */
 export function rankTopicChoices(
-  topics: readonly TopicDto[],
+  choices: readonly TopicChoice[],
   query: string,
   exclude: readonly string[],
   limit = 8,
 ): TopicDto[] {
-  const q = query.trim().toLocaleLowerCase();
-  const rank = (name: string): number => {
-    const n = name.toLocaleLowerCase();
-    if (!q) return 3;
-    if (n === q) return 0;
-    if (n.startsWith(q)) return 1;
-    if (n.includes(q)) return 2;
-    return -1;
-  };
-  return topics
-    .filter((topic) => !hasTopic(exclude, topic.name))
-    .map((topic) => ({ topic, rank: rank(topic.name) }))
-    .filter((entry) => entry.rank >= 0)
-    .sort((a, b) =>
-      a.rank - b.rank ||
-      b.topic.usageCount - a.topic.usageCount ||
-      a.topic.name.localeCompare(b.topic.name))
-    .slice(0, limit)
-    .map((entry) => entry.topic);
+  const q = normalizeSearchText(query.trim());
+  const excluded = new Set(exclude.map((name) => normalizeSearchText(name.trim())));
+  const groups: TopicDto[][] = [[], [], []];
+  for (const { topic, key } of choices) {
+    if (excluded.has(key)) continue;
+    const rank = !q || key.startsWith(q) ? (key === q ? 0 : 1) : key.includes(q) ? 2 : -1;
+    if (rank >= 0 && groups[rank].length < limit) groups[rank].push(topic);
+  }
+  return groups.flat().slice(0, limit);
 }
 
 /**

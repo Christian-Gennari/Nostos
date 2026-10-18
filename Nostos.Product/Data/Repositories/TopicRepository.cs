@@ -364,22 +364,16 @@ public class TopicRepository : ITopicRepository
             .Topics.Include(c => c.NoteTopics)
             .FirstOrDefaultAsync(c => c.Id != id && c.Topic == name);
 
+        if (target is not null)
+            return await MergeIntoAsync(source, target);
+
         // A note's body is what every later save re-derives its links from, so
         // the body follows the rename; otherwise the old name comes back on the
         // note's next edit.
-        RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target?.Topic ?? name));
-
-        if (target is null)
-        {
-            source.Topic = name;
-            await _db.SaveChangesAsync();
-            return source;
-        }
-
-        MoveLinks(source, target);
-        _db.Topics.Remove(source);
+        RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, name));
+        source.Topic = name;
         await _db.SaveChangesAsync();
-        return target;
+        return source;
     }
 
     public async Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId)
@@ -392,6 +386,16 @@ public class TopicRepository : ITopicRepository
         if (source is null || target is null)
             return null;
 
+        return await MergeIntoAsync(source, target);
+    }
+
+    /// <summary>
+    /// Moves <paramref name="source"/>'s notes to <paramref name="target"/>, text
+    /// and links, and removes the source: a merge, or a rename onto a name that
+    /// is already a topic.
+    /// </summary>
+    private async Task<TopicModel> MergeIntoAsync(TopicModel source, TopicModel target)
+    {
         RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target.Topic));
         MoveLinks(source, target);
         _db.Topics.Remove(source);
@@ -423,11 +427,9 @@ public class TopicRepository : ITopicRepository
 
     private static void RewriteReferences(TopicModel topic, Func<string, string> rewrite)
     {
+        // Setting an equal value leaves the property unmodified to EF.
         foreach (var note in topic.NoteTopics.Select(link => link.Note).OfType<NoteModel>())
-        {
-            var content = rewrite(note.Content);
-            if (content != note.Content) note.Content = content;
-        }
+            note.Content = rewrite(note.Content);
     }
 
     private void MoveLinks(TopicModel source, TopicModel target)
@@ -464,12 +466,23 @@ public class TopicRepository : ITopicRepository
         // database yet. Linking one new topic to several notes at once must
         // reuse it, or the second note creates a duplicate the unique index
         // rejects. Matched exactly, as the stored lookup above is.
-        var pending = _db.ChangeTracker.Entries<TopicModel>()
-            .Where(entry => entry.State == EntityState.Added
-                && nameList.Contains(entry.Entity.Topic, StringComparer.Ordinal))
-            .Select(entry => entry.Entity)
-            .Where(topic => !stored.Contains(topic));
-        return stored.Concat(pending).ToList();
+        // Entries() would run DetectChanges over every tracked entity on each
+        // call; an Added topic is already marked Added without it.
+        var detect = _db.ChangeTracker.AutoDetectChangesEnabled;
+        _db.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            var pending = _db.ChangeTracker.Entries<TopicModel>()
+                .Where(entry => entry.State == EntityState.Added
+                    && nameList.Contains(entry.Entity.Topic, StringComparer.Ordinal))
+                .Select(entry => entry.Entity)
+                .Where(topic => !stored.Contains(topic));
+            return stored.Concat(pending).ToList();
+        }
+        finally
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = detect;
+        }
     }
 
     public void AddRange(IEnumerable<TopicModel> topics)
@@ -477,14 +490,31 @@ public class TopicRepository : ITopicRepository
         _db.Topics.AddRange(topics);
     }
 
-    public async Task ClearNoteLinksAsync(Guid noteId)
+    public async Task<IReadOnlyList<string>> ClearNoteLinksAsync(NoteModel note)
     {
-        var currentLinks = await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ToListAsync();
+        var currentLinks = await _db.NoteTopics
+            .Include(link => link.Topic)
+            .Where(nc => nc.NoteId == note.Id)
+            .ToListAsync();
 
-        if (currentLinks.Count != 0)
-        {
-            _db.NoteTopics.RemoveRange(currentLinks);
-        }
+        if (currentLinks.Count == 0)
+            return [];
+
+        _db.NoteTopics.RemoveRange(currentLinks);
+
+        // What the note said before this unit of work changed it: a link whose
+        // name that text never declared was made some other way, and must not
+        // vanish because the text was edited.
+        var entry = _db.Entry(note);
+        var stored = entry.State is EntityState.Unchanged or EntityState.Modified
+            ? entry.Property(n => n.Content).OriginalValue
+            : note.Content;
+        var declared = TopicReferences.Names(stored).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return currentLinks
+            .Select(link => link.Topic?.Topic)
+            .OfType<string>()
+            .Where(name => !declared.Contains(name))
+            .ToList();
     }
 
     public void AddNoteLink(NoteTopicModel link)

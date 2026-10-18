@@ -247,10 +247,6 @@ a.note-item-topic-name:focus-visible {
   font-weight: var(--fw-medium);
 }
 
-.note-item-dot {
-  color: var(--color-text-light);
-}
-
 .note-item-source {
   display: inline-flex;
   align-items: center;

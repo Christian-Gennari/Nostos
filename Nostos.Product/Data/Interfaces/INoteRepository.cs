@@ -1,4 +1,5 @@
 using Nostos.Backend.Data.Models;
+using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Interfaces;
 
@@ -71,10 +72,10 @@ public interface INoteRepository
     /// The books that have notes matching <paramref name="query"/> (its book is
     /// ignored), with how many each: the Brain's Book filter for one place.
     /// </summary>
-    Task<IReadOnlyList<NoteBookFacet>> GetBookFacetsAsync(NoteBrowseQuery query);
+    Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(NoteBrowseQuery query);
 
     /// <summary>How many notes, passages and notes without a topic there are.</summary>
-    Task<NoteSummary> GetSummaryAsync();
+    Task<NoteSummaryDto> GetSummaryAsync();
 
     /// <summary>
     /// How many notes are linked to no topic right now. The unlinked-note review
@@ -116,6 +117,3 @@ public enum NoteBrowseOrder
     Book,
 }
 
-public sealed record NoteBookFacet(Guid BookId, string BookTitle, string? BookAuthor, int NoteCount);
-
-public sealed record NoteSummary(int Total, int Passages, int Unsorted);

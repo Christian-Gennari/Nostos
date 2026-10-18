@@ -28,6 +28,10 @@ public static partial class TopicReferences
 
     public const int MaxNameLength = 200;
 
+    /// <summary>Why <see cref="IsValidName"/> refused a name, in the reader's words.</summary>
+    public static readonly string InvalidNameMessage =
+        $"A topic name is 1 to {MaxNameLength} characters on one line, without [[, ]] or |, and does not start with [ or end with ].";
+
     /// <summary>
     /// Whether <paramref name="name"/> can stand inside <c>[[ ]]</c> and be read
     /// back as the same name: one line, no brackets that would close or open a
@@ -51,21 +55,34 @@ public static partial class TopicReferences
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-    public static bool Declares(string? content, string name) =>
-        Names(content).Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
+    public static bool Declares(string? content, string name)
+    {
+        var topic = name.Trim();
+        return ReferenceRegex().Matches(content ?? string.Empty).Any(match => Is(match, topic));
+    }
 
     /// <summary>
     /// <paramref name="content"/> with a reference to <paramref name="name"/>
     /// as its last paragraph, or unchanged when it already declares the topic.
     /// </summary>
-    public static string Append(string? content, string name)
+    public static string Append(string? content, string name) => AppendAll(content, [name]);
+
+    /// <summary>
+    /// <see cref="Append"/> for each of <paramref name="names"/> the body does
+    /// not declare yet, parsing the body once.
+    /// </summary>
+    public static string AppendAll(string? content, IEnumerable<string> names)
     {
         var body = content ?? string.Empty;
-        var topic = name.Trim();
-        if (topic.Length == 0 || Declares(body, topic)) return body;
-
-        body = body.TrimEnd();
-        return body.Length == 0 ? $"[[{topic}]]" : $"{body}\n\n[[{topic}]]";
+        var declared = Names(body).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in names)
+        {
+            var topic = name.Trim();
+            if (topic.Length == 0 || !declared.Add(topic)) continue;
+            body = body.TrimEnd();
+            body = body.Length == 0 ? $"[[{topic}]]" : $"{body}\n\n[[{topic}]]";
+        }
+        return body;
     }
 
     /// <summary>
@@ -96,47 +113,37 @@ public static partial class TopicReferences
 
         // A merge into a topic the note already declares must not leave the
         // same reference twice on a line of references.
-        var replacementDeclared = replacement is not null
-            && !string.Equals(topic, replacement, StringComparison.OrdinalIgnoreCase)
-            && Declares(content, replacement);
+        var dropOnReferenceLine = replacement is null
+            || (!string.Equals(topic, replacement, StringComparison.OrdinalIgnoreCase)
+                && Declares(content, replacement));
+        Func<string, string> inProse = replacement is null
+            ? inner => inner.Trim()
+            : _ => $"[[{replacement}]]";
 
         var lines = content.Split('\n').Select(line => (string?)line).ToList();
-        var removedAt = new List<int>();
         for (var i = 0; i < lines.Count; i++)
         {
             var line = lines[i]!;
-            if (!LineDeclares(line, topic)) continue;
+            if (!ReferenceRegex().Matches(line).Any(match => Is(match, topic))) continue;
 
-            if (IsReferenceLine(line))
+            if (!IsReferenceLine(line))
             {
-                var rewritten = replacement is null || replacementDeclared
-                    ? RemoveFromReferenceLine(line, topic)
-                    : ReplaceMatching(line, topic, _ => $"[[{replacement}]]");
-                if (string.IsNullOrWhiteSpace(rewritten))
-                {
-                    removedAt.Add(i);
-                    lines[i] = null;
-                }
-                else
-                {
-                    lines[i] = rewritten;
-                }
+                lines[i] = ReplaceMatching(line, topic, inProse);
+                continue;
             }
-            else
-            {
-                lines[i] = replacement is null
-                    ? ReplaceMatching(line, topic, inner => inner.Trim())
-                    : ReplaceMatching(line, topic, _ => $"[[{replacement}]]");
-            }
+
+            var rewritten = dropOnReferenceLine
+                ? RemoveFromReferenceLine(line, topic)
+                : ReplaceMatching(line, topic, inProse);
+            lines[i] = string.IsNullOrWhiteSpace(rewritten) ? null : rewritten;
         }
 
-        if (removedAt.Count == 0) return string.Join('\n', lines);
         return JoinWithoutRemovedLines(lines);
     }
 
-    private static bool LineDeclares(string line, string topic) =>
-        ReferenceRegex().Matches(line)
-            .Any(match => string.Equals(match.Groups[1].Value.Trim(), topic, StringComparison.OrdinalIgnoreCase));
+    /// <summary>Whether a reference names <paramref name="topic"/> (trimmed, any case).</summary>
+    private static bool Is(Match reference, string topic) =>
+        string.Equals(reference.Groups[1].Value.Trim(), topic, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// A line made of references and separators only: what linking writes, or a
@@ -149,10 +156,7 @@ public static partial class TopicReferences
     }
 
     private static string ReplaceMatching(string line, string topic, Func<string, string> replace) =>
-        ReferenceRegex().Replace(line, match =>
-            string.Equals(match.Groups[1].Value.Trim(), topic, StringComparison.OrdinalIgnoreCase)
-                ? replace(match.Groups[1].Value)
-                : match.Value);
+        ReferenceRegex().Replace(line, match => Is(match, topic) ? replace(match.Groups[1].Value) : match.Value);
 
     /// <summary>
     /// Drops the matching references from a line of references, with the
@@ -160,40 +164,28 @@ public static partial class TopicReferences
     /// </summary>
     private static string RemoveFromReferenceLine(string line, string topic)
     {
-        var tokens = new List<(string Reference, string Separator)>();
-        var lead = string.Empty;
         var matches = ReferenceRegex().Matches(line);
-        for (var m = 0; m < matches.Count; m++)
+        var tokens = matches.Select((match, m) =>
         {
-            var match = matches[m];
-            if (m == 0) lead = line[..match.Index];
             var end = match.Index + match.Length;
             var next = m + 1 < matches.Count ? matches[m + 1].Index : line.Length;
-            tokens.Add((match.Value, line[end..next]));
-        }
+            return (match.Value, Separator: line[end..next], Drop: Is(match, topic));
+        }).ToList();
 
-        var kept = tokens
-            .Where(token => !string.Equals(
-                ReferenceRegex().Match(token.Reference).Groups[1].Value.Trim(), topic,
-                StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var kept = tokens.Where(token => !token.Drop).ToList();
         if (kept.Count == 0) return string.Empty;
 
-        var builder = new StringBuilder(lead);
+        var builder = new StringBuilder(line[..matches[0].Index]);
+        var lastSeparator = tokens[^1].Separator;
         for (var k = 0; k < kept.Count; k++)
         {
-            builder.Append(kept[k].Reference);
+            builder.Append(kept[k].Value);
             // The last kept reference ends the line the way the line ended.
-            builder.Append(k == kept.Count - 1 ? TrailingWhitespace(tokens[^1].Separator) : kept[k].Separator);
+            builder.Append(k == kept.Count - 1
+                ? lastSeparator[lastSeparator.TrimEnd().Length..]
+                : kept[k].Separator);
         }
         return builder.ToString();
-    }
-
-    private static string TrailingWhitespace(string separator)
-    {
-        var start = separator.Length;
-        while (start > 0 && char.IsWhiteSpace(separator[start - 1])) start--;
-        return separator[start..];
     }
 
     /// <summary>
@@ -206,7 +198,7 @@ public static partial class TopicReferences
         var result = new List<string>();
         for (var i = 0; i < lines.Count; i++)
         {
-            if (lines[i] is null)
+            if (lines[i] is not { } kept)
             {
                 // Collapse the blank line before the removed one when the line
                 // after it is blank too (or the removed line was the last).
@@ -215,7 +207,6 @@ public static partial class TopicReferences
                     result.RemoveAt(result.Count - 1);
                 continue;
             }
-            var kept = lines[i]!;
             // A blank line that opened the note before a removed first line goes too.
             if (result.Count == 0 && string.IsNullOrWhiteSpace(kept) && i > 0 && lines[i - 1] is null)
                 continue;

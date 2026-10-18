@@ -35,3 +35,19 @@ export function noteSourceParams(note: NoteSearchHit | NoteContextDto): NoteSour
   }
   return null;
 }
+
+/** Where a note's "open" link goes: its place in the reader, or the book's page. */
+export interface NoteSourceLink {
+  commands: Array<string | number>;
+  queryParams: NoteSourceParams | null;
+  label: 'Return to passage' | 'Open book';
+}
+
+export function noteSourceLink(note: NoteSearchHit | NoteContextDto): NoteSourceLink {
+  const queryParams = noteSourceParams(note);
+  return {
+    commands: [queryParams ? '/read' : '/library', note.bookId],
+    queryParams,
+    label: queryParams ? 'Return to passage' : 'Open book',
+  };
+}

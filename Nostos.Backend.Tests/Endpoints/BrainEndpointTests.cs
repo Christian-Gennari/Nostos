@@ -200,6 +200,37 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
         (await GetTopicsAsync()).Single(t => t.Id == keptId).UsageCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task Editing_a_note_keeps_a_link_its_text_never_declared_and_unlink_still_removes_it()
+    {
+        var kept = $"Edit keeps {Guid.NewGuid():N}";
+        var (_, notes) = await CreateBookWithNotesAsync($"Text [[{kept}]]");
+        await using (var db = await OpenDbAsync())
+        {
+            var note = await db.Notes.SingleAsync(n => n.Id == notes[0].Id);
+            note.Content = "Text without the reference";
+            await db.SaveChangesAsync();
+        }
+
+        (await Client.PutAsJsonAsync($"/api/notes/{notes[0].Id}", new { content = "Edited text" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = await GetNoteAsync(notes[0].Id);
+        edited.TopicNames.Should().Equal(kept);
+        edited.Content.Should().Be($"Edited text\n\n[[{kept}]]");
+
+        await using (var db = await OpenDbAsync())
+        {
+            var note = await db.Notes.SingleAsync(n => n.Id == notes[0].Id);
+            note.Content = "Link only again";
+            await db.SaveChangesAsync();
+        }
+        var unlinked = (await (await Client.PostAsJsonAsync("/api/topics/unlink",
+            new TopicLinkRequestDto([kept], [notes[0].Id]))).Content.ReadFromJsonAsync<TopicLinkResultDto>())!;
+        unlinked.ChangedNoteIds.Should().Equal(notes[0].Id);
+        unlinked.Notes.Single().TopicNames.Should().BeEmpty();
+        unlinked.Notes.Single().Content.Should().Be("Link only again");
+    }
+
     [Theory]
     [InlineData("a]]b")]
     [InlineData("ends with]")]

@@ -105,10 +105,7 @@ public static class TopicsEndpoints
                     return Results.BadRequest(new { error = "Topic name cannot be empty." });
                 // The new name is written into the notes' [[ ]] references.
                 if (!TopicReferences.IsValidName(dto.Topic))
-                    return Results.BadRequest(new
-                    {
-                        error = $"A topic name is 1 to {TopicReferences.MaxNameLength} characters on one line, without [[, ]], | or a closing ].",
-                    });
+                    return Results.BadRequest(new { error = TopicReferences.InvalidNameMessage });
 
                 var topic = await repo.RenameAsync(id, dto.Topic.Trim());
                 return topic is null

@@ -136,7 +136,7 @@ export function noteNavigationTarget(note: Note): string | number | null {
   }
 }
 
-function parseAudioSeconds(value: string | null | undefined): number | null {
+export function parseAudioSeconds(value: string | null | undefined): number | null {
   const text = value?.trim() ?? '';
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
   const seconds = Number(text);

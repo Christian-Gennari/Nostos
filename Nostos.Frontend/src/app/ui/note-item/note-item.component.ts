@@ -13,11 +13,12 @@ import { Router, RouterLink } from '@angular/router';
 import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
 
 import { isPassage, passageSizeLabel, type NoteSearchHit } from '../../core/dtos/note.dtos';
-import { noteSourceParams } from '../../core/note-source';
+import { noteSourceLink } from '../../core/note-source';
 import type { TopicDto } from '../../core/services/topics.service';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HIGHLIGHT_COLOURS,
+  highlightFillRef,
   noteHighlightColour,
   type HighlightColour,
 } from '../../reader/highlight-colours';
@@ -101,8 +102,14 @@ const PICKER_POSITIONS: ConnectedPosition[] = [
 })
 export class NoteItemComponent {
   readonly note = input.required<NoteSearchHit>();
-  /** Every topic, for the picker and for turning inline `[[links]]` into links. */
+  /** Every topic, for the picker. */
   readonly topics = input<readonly TopicDto[]>([]);
+  /**
+   * The same topics by lower-cased name, built ONCE by the list that renders
+   * the cards (see {@link topicLookup}); turns chips and inline `[[links]]`
+   * into links. Built here from `topics` only when no list passes it.
+   */
+  readonly topicMap = input<ReadonlyMap<string, TopicDto> | null>(null);
   /** False where a heading above already names the book. */
   readonly showBook = input(true);
   /** Offer "More from this book" (not when the list is already that book). */
@@ -148,34 +155,28 @@ export class NoteItemComponent {
   readonly topicNames = computed(() => this.note().topicNames ?? []);
   readonly location = computed(() => noteLocationLabel(this.note()));
 
-  readonly topicMap = computed(() => {
-    const map = new Map<string, TopicDto>();
-    for (const topic of this.topics()) map.set(topic.name.trim().toLocaleLowerCase(), topic);
-    return map;
-  });
+  readonly lookup = computed(() => this.topicMap() ?? topicLookup(this.topics()));
 
-  /** The pen the quote's rule is drawn in; null keeps the neutral rule. */
-  readonly penColour = computed<HighlightColour | null>(() => {
+  /** The chips: each topic name with its id, when the topic still exists. */
+  readonly chips = computed(() =>
+    this.topicNames().map((name) => ({ name, id: this.lookup().get(name.trim().toLocaleLowerCase())?.id ?? null })));
+
+  /** A highlight (or passage) has a pen that can be shown and changed. */
+  readonly hasPen = computed(() => !!this.note().selectedText || this.isPassage());
+
+  readonly fillRef = highlightFillRef;
+
+  /** The fill the quote's rule is drawn in; null keeps the neutral rule. */
+  readonly penFill = computed<string | null>(() => {
     const note = this.note();
     if (!note.selectedText || note.highlightColour === undefined) return null;
-    return noteHighlightColour(note);
+    return highlightFillRef(noteHighlightColour(note));
   });
 
   readonly long = computed(() =>
     !this.isPassage() && (this.quote().length > LONG_QUOTE || this.thought().length > LONG_THOUGHT));
 
-  readonly source = computed(() => {
-    const note = this.note();
-    const params = noteSourceParams(note);
-    return {
-      commands: params ? ['/read', note.bookId] : ['/library', note.bookId],
-      queryParams: params,
-    };
-  });
-
-  topicId(name: string): string | null {
-    return this.topicMap().get(name.trim().toLocaleLowerCase())?.id ?? null;
-  }
+  readonly source = computed(() => noteSourceLink(this.note()));
 
   openPicker(): void {
     if (this.busy()) return;
@@ -197,16 +198,16 @@ export class NoteItemComponent {
   }
 
   /**
-   * An inline `[[link]]` in the note's words opens its topic in the app, not
-   * with a page load; a modified click keeps the browser's own behaviour.
+   * An inline `[[link]]` in the note's words opens in the app rather than with
+   * a page load, at the address the link itself names, so a plain click and a
+   * modified click (new tab) go to the same place.
    */
   onThoughtClick(event: MouseEvent): void {
     const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a.topic-tag');
-    if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const id = topicIdFromLink(link);
-    if (!id) return;
+    const href = link?.getAttribute('href');
+    if (!href || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    void this.router.navigate(['/brain/topics', id]);
+    void this.router.navigateByUrl(href);
   }
 
   startEdit(): void {
@@ -236,13 +237,13 @@ export class NoteItemComponent {
         edit.passageTitle = title;
         changed = true;
       }
-    } else if (note.selectedText || this.editQuote().trim()) {
+    } else if (note.selectedText) {
       const quote = this.editQuote().trim();
       edit.selectedText = quote;
       if (quote !== (note.selectedText ?? '').trim()) changed = true;
     }
 
-    if ((note.selectedText || this.isPassage()) && this.editColour() !== noteHighlightColour(note)) {
+    if (this.hasPen() && this.editColour() !== noteHighlightColour(note)) {
       edit.highlightColour = this.editColour();
       changed = true;
     }
@@ -256,15 +257,7 @@ export class NoteItemComponent {
   }
 }
 
-/**
- * The topic an inline link points at. Angular's sanitizer may drop the data
- * attribute the format pipe writes, so the link's own address is the source:
- * `/brain/topics/<id>` or the older `?topicId=<id>`.
- */
-function topicIdFromLink(link: HTMLAnchorElement): string | null {
-  if (link.dataset['topicId']) return link.dataset['topicId'];
-  const url = new URL(link.getAttribute('href') ?? '', 'http://nostos.invalid');
-  return url.searchParams.get('topicId')
-    ?? url.pathname.match(/^\/brain\/topics\/([^/]+)$/)?.[1]
-    ?? null;
+/** Topics by trimmed, lower-cased name: what chips and inline links resolve against. */
+export function topicLookup(topics: readonly TopicDto[]): ReadonlyMap<string, TopicDto> {
+  return new Map(topics.map((topic) => [topic.name.trim().toLocaleLowerCase(), topic]));
 }

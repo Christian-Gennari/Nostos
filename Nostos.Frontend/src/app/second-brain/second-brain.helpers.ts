@@ -1,4 +1,5 @@
 import type { TopicDto } from '../core/services/topics.service';
+import { newTopicName } from '../ui/note-item/note-item.helpers';
 
 export type IndexSort = 'usage' | 'az' | 'za';
 export type NoteSort = 'newest' | 'oldest' | 'source';
@@ -48,9 +49,8 @@ export interface NamePart {
   highlight: boolean;
 }
 
-export function normalizeSearchText(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
+export { normalizeSearchText } from '../core/search-text';
+import { normalizeSearchText } from '../core/search-text';
 
 /**
  * Live note-text search is debounced: it runs on the server per keystroke otherwise
@@ -96,9 +96,7 @@ export function declaresTopic(content: string): boolean {
  * is empty, too long, would break the `[[name]]` syntax, or already exists.
  */
 export function newTopicNameFor(query: string, topics: readonly TopicDto[]): string | null {
-  const name = query.trim();
-  if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
-  return topics.some((topic) => topic.name.toLowerCase() === name.toLowerCase()) ? null : name;
+  return newTopicName(topics, query);
 }
 
 /** `content` with an explicit `[[name]]` reference, appended unless already there. */
