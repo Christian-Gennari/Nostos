@@ -207,7 +207,9 @@
     @if (showMoreFromBook()) {
     <button nostosMenuItem icon="books" (triggered)="moreFromBook.emit()">More from this book</button>
     }
+    @if (canSelect()) {
     <button nostosMenuItem icon="check-square" (triggered)="selectRequested.emit()">Select</button>
+    }
     <hr nostosMenuSeparator />
     <button nostosMenuItem icon="trash" tone="danger" (triggered)="deleteRequested.emit()">Delete note</button>
   </nostos-menu>

@@ -1,0 +1,93 @@
+<nav class="sidebar" aria-label="Brain">
+  <div class="sidebar-header">
+    <svg class="brand-lockup" viewBox="0 0 1840 512" role="img" aria-label="Nostos" focusable="false">
+      <g transform="scale(0.5)">
+        <rect class="brand-lockup__tile" x="0" y="0" width="1024" height="1024" rx="205" />
+        <path
+          class="brand-lockup__arch"
+          d="M 282 764 L 282 509 A 229 234 0 0 1 740 509 L 740 764 Z M 358 764 L 358 509 A 110 112 0 0 1 578 509 L 578 764 Z"
+          fill-rule="evenodd"
+        />
+      </g>
+      <text class="brand-lockup__word" x="625" y="345" font-size="255" font-weight="500" letter-spacing="-8">nostos</text>
+    </svg>
+  </div>
+
+  <div class="nav-scroll-area">
+    <div class="nav-group" data-testid="brain-places">
+      <a class="nav-item" routerLink="/brain" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
+        ariaCurrentWhenActive="page">
+        <nostos-icon concept="note" [size]="16" weight="light" />
+        <span class="label">All notes</span>
+        @if (state.summary()?.total) { <span class="count-badge">{{ state.summary()?.total }}</span> }
+      </a>
+      <a class="nav-item" routerLink="/brain/passages" routerLinkActive="active" ariaCurrentWhenActive="page">
+        <nostos-icon concept="passage" [size]="16" weight="light" />
+        <span class="label">Passages</span>
+        @if (state.summary()?.passages) { <span class="count-badge">{{ state.summary()?.passages }}</span> }
+      </a>
+      <a class="nav-item" routerLink="/brain/unsorted" routerLinkActive="active" ariaCurrentWhenActive="page">
+        <nostos-icon concept="unsorted" [size]="16" weight="light" />
+        <span class="label">Unsorted</span>
+        @if (state.summary()?.unsorted) { <span class="count-badge">{{ state.summary()?.unsorted }}</span> }
+      </a>
+    </div>
+
+    <div class="nav-group" data-testid="brain-topics">
+      <div class="section-head">
+        <span class="section-label" id="brain-topics-label">Topics</span>
+        <app-dropdown
+          class="topic-sort"
+          appearance="subtle"
+          controlSize="compact"
+          align="end"
+          ariaLabel="Order topics"
+          [options]="sortOptions"
+          [value]="state.topicSort()"
+          (valueChange)="setSort($event)"
+        />
+      </div>
+
+      <div class="topic-list" role="list" aria-labelledby="brain-topics-label">
+        @for (topic of state.sidebarTopics(); track topic.id) {
+        <div class="topic-row-shell" role="listitem">
+          @if (isRenaming(topic)) {
+          <div class="topic-row topic-row--renaming">
+            <app-brain-topic-rename
+              variant="row"
+              [name]="topic.name"
+              [value]="actions.renameValue()"
+              (valueChange)="actions.renameValue.set($event)"
+              [error]="actions.renameError()"
+              [busy]="actions.renaming()"
+              (committed)="actions.commitRename()"
+              (cancelled)="actions.cancelRename()"
+            />
+          </div>
+          } @else {
+          <a class="topic-row" [routerLink]="['/brain/topics', topic.id]" routerLinkActive="active"
+            ariaCurrentWhenActive="page" [title]="topic.name">
+            <nostos-icon class="topic-glyph" concept="topic" [size]="14" weight="light" />
+            <span class="name">{{ topic.name }}</span>
+            <span class="count">{{ topic.usageCount }}</span>
+          </a>
+          <div class="row-actions">
+            <button appIconButton type="button" size="xs" icon="pencil-simple" [glyphSize]="13" class="row-action"
+              [attr.aria-label]="'Rename ' + topic.name" (click)="actions.startRename(topic, 'sidebar')"></button>
+            <button appIconButton type="button" size="xs" tone="danger" icon="trash" [glyphSize]="13"
+              class="row-action danger" [attr.aria-label]="'Delete ' + topic.name"
+              (click)="actions.openDelete(topic)"></button>
+          </div>
+          }
+        </div>
+        } @empty {
+          @if (state.topicsLoaded()) {
+          <p class="topics-empty">Topics appear when you add one to a note.</p>
+          } @else if (state.topicsFailed()) {
+          <p class="topics-empty" role="alert">Topics could not be loaded.</p>
+          }
+        }
+      </div>
+    </div>
+  </div>
+</nav>

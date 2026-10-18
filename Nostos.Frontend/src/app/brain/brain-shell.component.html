@@ -1,0 +1,57 @@
+<div class="brain-layout" [class.drawer-open]="state.drawerOpen()" (keydown.escape)="closeDrawer()">
+  @if (state.drawerOpen()) {
+  <div class="brain-backdrop" aria-hidden="true" (click)="closeDrawer()"></div>
+  }
+  <app-brain-sidebar id="brain-sidebar" class="brain-sidebar-column" />
+  <div class="brain-main">
+    <router-outlet />
+  </div>
+</div>
+
+@if (actions.mergeSource(); as source) {
+  @if (!actions.mergeConfirming()) {
+  <app-modal-shell [isOpen]="true" maxWidth="440px" [ariaLabel]="'Merge ' + source.name + ' into another topic'"
+    (closed)="actions.closeMerge()">
+    <app-brain-topic-picker
+      role="dialog"
+      label="Choose a topic to merge into"
+      [heading]="'Merge “' + source.name + '” into…'"
+      closeLabel="Close"
+      searchLabel="Search topics to merge into"
+      emptyText="No other topics match."
+      confirmLabel="Continue"
+      [candidates]="actions.mergeCandidates()"
+      [selectedId]="actions.mergeTargetId()"
+      [confirmDisabled]="!actions.mergeTarget()"
+      [query]="actions.mergeQuery()"
+      (queryChange)="actions.mergeQuery.set($event)"
+      (chosen)="actions.mergeTargetId.set($event)"
+      (confirmed)="actions.confirmMergeTarget()"
+      (closed)="actions.closeMerge()"
+    />
+  </app-modal-shell>
+  }
+}
+
+<app-confirm-modal
+  [isOpen]="actions.mergeConfirming()"
+  [heading]="actions.mergeHeading()"
+  [description]="actions.mergeDescription()"
+  confirmLabel="Merge topics"
+  busyLabel="Merging…"
+  tone="neutral"
+  [busy]="actions.merging()"
+  (confirm)="actions.merge()"
+  (cancel)="actions.cancelMergeConfirmation()"
+></app-confirm-modal>
+
+<app-confirm-modal
+  [isOpen]="!!actions.deleteTarget()"
+  [heading]="actions.deleteHeading()"
+  [description]="actions.deleteDescription()"
+  confirmLabel="Delete topic"
+  busyLabel="Deleting…"
+  [busy]="actions.deleting()"
+  (confirm)="actions.delete()"
+  (cancel)="actions.cancelDelete()"
+></app-confirm-modal>

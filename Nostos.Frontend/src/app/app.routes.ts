@@ -36,6 +36,12 @@ export const routes: Routes = [
         path: 'library',
         loadComponent: () => import('./library/library.component').then((m) => m.Library),
       },
+      // The rebuilt Brain (docs/brain.md). Not in the dock until the old Brain
+      // below is retired.
+      {
+        path: 'brain',
+        loadChildren: () => import('./brain/brain.routes').then((m) => m.BRAIN_ROUTES),
+      },
       {
         path: 'second-brain',
         loadComponent: () =>
