@@ -1,4 +1,8 @@
 # Shared frontend gate used by the dual-mode CI orchestrator.
+#
+# Two parallel jobs: design checks and unit tests, and the production build
+# with the browser lanes. The job id `frontend` is kept for the first so the
+# required check "Frontend / frontend" keeps its name.
 name: Frontend
 
 on:
@@ -10,6 +14,37 @@ permissions:
 
 jobs:
   frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Nostos.Frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Nostos.Frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Design checks (CSS integrity, theme tokens, design language)
+        run: npm run check
+
+      # Most of this step is jsdom and Angular set up afresh per spec file,
+      # which `isolate: true` requires (see vitest-base.config.ts).
+      - name: Unit tests
+        run: npm test -- --watch=false
+
+  browser:
+    name: browser
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -35,17 +70,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Design checks (CSS integrity, theme tokens, design language)
-        run: npm run check
-
-      - name: Unit tests
-        run: npm test -- --watch=false
-
       - name: Production build
         run: npm run build
 
+      - name: Resolve the installed Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # The browser download is cached per Playwright version; the system
+      # libraries it needs are installed on every run.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+
       - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Launcher lifecycle regression
         run: node e2e/support/launch-regression.mjs
