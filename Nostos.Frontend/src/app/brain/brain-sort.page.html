@@ -1,0 +1,170 @@
+<div class="sort-screen">
+  <header class="sort-top">
+    <button appButton variant="ghost" size="sm" type="button" class="sort-done" (click)="leave()">
+      <nostos-icon name="x" [size]="16" />Done
+    </button>
+    <span class="sort-title">Sorting unsorted notes · {{ order === 'oldest' ? 'oldest first' : 'newest first' }}</span>
+    @if (!done() && note()) {
+    <span class="sort-position" role="status" aria-live="polite">{{ positionLabel() }}</span>
+    }
+    <span class="sort-progress" aria-hidden="true" [style.width.%]="progress()"></span>
+  </header>
+
+  <main class="sort-body">
+    @if (done()) {
+    <section class="sort-finished" role="status">
+      <h1>All sorted</h1>
+      <p>Every note{{ bookId ? ' from this book' : '' }} has a topic now.</p>
+      <div class="sort-finished-links">
+        <a appButton variant="primary" routerLink="/brain">All notes</a>
+        <a appButton variant="secondary" routerLink="/brain/unsorted">Unsorted</a>
+      </div>
+    </section>
+    } @else if (failed() && !note()) {
+    <section class="sort-finished" role="alert">
+      <p>The notes could not be loaded.</p>
+      <button appButton variant="secondary" type="button" (click)="leave()">Back to Unsorted</button>
+    </section>
+    } @else if (note(); as current) {
+    <article class="sort-note" [attr.aria-label]="'Note from ' + (current.bookTitle || 'an unknown book')">
+      <p class="sort-source">
+        {{ current.bookTitle || 'Unknown book' }}@if (current.bookAuthor) { · {{ current.bookAuthor }} } ·
+        {{ current.createdAt | date: 'd MMM y' }}@if (where(); as at) { · {{ at }} }
+      </p>
+      @if (passage()) {
+      <h2 class="sort-passage-title"><nostos-icon concept="passage" [size]="18" />{{ current.passageTitle || 'Passage' }}</h2>
+      }
+      @if (quote()) {
+      <blockquote class="sort-quote" [class.is-opening]="passage()">{{ quote() }}</blockquote>
+      }
+      @if (thought()) {
+      <p class="sort-thought">{{ thought() }}</p>
+      }
+      <div class="sort-links">
+        <a appButton variant="link" size="sm" [routerLink]="['/brain/notes', current.id]">
+          <nostos-icon name="pencil-simple" [size]="14" />Edit note
+        </a>
+        <button appButton variant="link" size="sm" type="button" [nostosMenuTriggerFor]="sortMore">
+          <nostos-icon name="dots-three" [size]="14" />More
+        </button>
+        <ng-template #sortMore>
+          <nostos-menu aria-label="More for this note">
+            <button nostosMenuItem icon="book-open" (triggered)="openBook(current.bookId)">Open the book</button>
+            <button nostosMenuItem icon="bookmark-simple" (triggered)="keepWithWriting()">Keep with writing…</button>
+            <hr nostosMenuSeparator />
+            <button nostosMenuItem icon="trash" tone="danger" (triggered)="askDelete()">Delete note</button>
+          </nostos-menu>
+        </ng-template>
+      </div>
+    </article>
+
+    <section class="sort-topics" aria-label="Topics for this note">
+      <label class="sort-field" for="sort-topic-field">
+        @for (chip of chips(); track chip) {
+        <span class="sort-chip">
+          <nostos-icon concept="topic" [size]="12" />{{ chip }}
+          <button appIconButton size="xxs" type="button" icon="x" [glyphSize]="11" class="sort-chip-remove"
+            [attr.aria-label]="'Remove ' + chip" (click)="removeChip(chip)"></button>
+        </span>
+        }
+        <input
+          #field
+          id="sort-topic-field"
+          type="text"
+          class="sort-input"
+          autocomplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-controls="sort-matches"
+          [attr.aria-expanded]="matches().length > 0"
+          [attr.aria-activedescendant]="matches().length ? 'sort-match-' + active() : null"
+          aria-label="Topics for this note"
+          [placeholder]="chips().length ? 'Another topic…' : 'Which topics does this belong to?'"
+          [value]="typed()"
+          (input)="onInput($any($event.target).value)"
+          (keydown)="onKeydown($event)"
+        />
+      </label>
+
+      @if (matches().length) {
+      <ul class="sort-matches" id="sort-matches" role="listbox" aria-label="Matching topics">
+        @for (choice of matches(); track choice.kind + choice.name; let i = $index) {
+        <li role="option" class="sort-match" [id]="'sort-match-' + i" [class.is-active]="i === active()"
+          [attr.aria-selected]="i === active()" (mousedown)="$event.preventDefault()" (click)="addChip(choice.name)">
+          @if (choice.kind === 'create') {
+          <nostos-icon name="plus" [size]="13" />Create “{{ choice.name }}”
+          } @else {
+          <nostos-icon concept="topic" [size]="13" />{{ choice.name }}<span class="sort-count">{{ choice.count }}</span>
+          }
+        </li>
+        }
+      </ul>
+      }
+
+      @if (recentChoices().length) {
+      <div class="sort-row">
+        <span class="sort-row-label">Recent</span>
+        @for (name of recentChoices(); track name) {
+        <button appChip type="button" [attr.aria-pressed]="false" (click)="addChip(name)">{{ name }}</button>
+        }
+      </div>
+      }
+
+      @if (aiAvailable()) {
+      <div class="sort-row">
+        <span class="sort-row-label"><nostos-icon concept="aiSuggestion" [size]="12" />Suggested</span>
+        @switch (suggestionState()) {
+          @case ('ready') {
+            @for (name of suggested(); track name) {
+            <button appChip type="button" [attr.aria-pressed]="false" (click)="addChip(name)">{{ name }}</button>
+            } @empty { <span class="sort-quiet">No suggestions for this note.</span> }
+          }
+          @case ('loading') { <span class="sort-quiet">Asking…</span> }
+          @case ('error') { <span class="sort-quiet">Suggestions are unavailable right now.</span> }
+          @default {
+            <button appButton variant="link" size="sm" type="button" (click)="askSuggestions()">Suggest topics</button>
+          }
+        }
+      </div>
+      }
+    </section>
+    } @else {
+    <nostos-loading-indicator class="sort-loading" label="Loading notes" />
+    }
+  </main>
+
+  @if (!done() && note()) {
+  <footer class="sort-foot">
+    <div class="sort-foot-inner">
+      <button appButton variant="ghost" type="button" class="sort-previous" [disabled]="index() === 0" (click)="previous()">
+        <nostos-icon name="arrow-left" [size]="14" />Previous
+      </button>
+      <span class="sort-spacer"></span>
+      <button appButton variant="secondary" type="button" class="sort-skip"
+        [disabled]="index() + 1 >= remaining()" (click)="skip()">Skip</button>
+      <button appButton variant="primary" type="button" class="sort-save" [disabled]="!chips().length"
+        [busy]="saving()" (click)="save()">Save and next <nostos-icon name="arrow-right" [size]="14" /></button>
+    </div>
+    <p class="sort-keys" aria-hidden="true">
+      <span><kbd>Enter</kbd> add a topic, or save and next</span>
+      <span><kbd>→</kbd> skip</span>
+      <span><kbd>←</kbd> previous</span>
+      <span><kbd>Esc</kbd> done</span>
+    </p>
+  </footer>
+  }
+</div>
+
+@if (handoffIds().length) {
+<app-brain-writing-handoff [noteIds]="handoffIds()" (cancelled)="handoffIds.set([])" (completed)="handoffIds.set([])" />
+}
+<app-confirm-modal
+  [isOpen]="confirmingDelete()"
+  heading="Delete this note?"
+  description="Deleted notes are removed from their book and from every topic. This cannot be undone."
+  confirmLabel="Delete"
+  busyLabel="Deleting…"
+  [busy]="deleting()"
+  (confirm)="confirmDelete()"
+  (cancel)="confirmingDelete.set(false)"
+></app-confirm-modal>

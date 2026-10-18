@@ -21,6 +21,12 @@ export const routes: Routes = [
       import('./ui/ui-catalogue/ui-catalogue.component').then((m) => m.UiCatalogueComponent),
   },
 
+  // Sort one by one: a whole screen for one unsorted note, outside the dock.
+  {
+    path: 'brain/unsorted/sort',
+    loadComponent: () => import('./brain/brain-sort.page').then((m) => m.BrainSortPage),
+  },
+
   // Dedicated Reader Route (full-screen immersive mode)
   {
     path: 'read/:id',
