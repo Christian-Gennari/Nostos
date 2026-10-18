@@ -539,10 +539,9 @@ export class BookDetail implements OnInit, OnDestroy {
   });
 
   /**
-   * The compact format switcher in the hero (issue #1062). On a phone the rail's
-   * editions card stacks below the whole notes feed, so switching EPUB ->
-   * Audiobook meant scrolling past every note; this puts the switch next to
-   * Read/Listen instead. Empty for a single-edition book, so nothing renders.
+   * The hero format switcher, the one place to switch edition (issue #1062). It
+   * replaced the switch rows on the rail's editions card, which on a phone stacks
+   * below the whole notes feed. Empty for a single-edition book, so nothing renders.
    *
    * Ordered by label then id, not current-first, so the chips hold still when the
    * user switches. Two editions of one format are told apart by their edition

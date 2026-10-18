@@ -670,12 +670,6 @@
   background: transparent;
 }
 
-@media (hover: hover) {
-  .edition-list button.edition-select-card:hover:not(:disabled) {
-    background: var(--bg-hover);
-  }
-}
-
 /* The format glyph alone, with no square drawn behind it. */
 .edition-list .edition-select-card .card-icon-frame {
   background: transparent;

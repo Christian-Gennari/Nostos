@@ -367,7 +367,7 @@ describe('BookDetail reset progress', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('.edition-select-card'));
   }
 
-  it('renders edition rows when multiple editions exist and switches on click', async () => {
+  it('renders edition rows as status, not a second way to switch', async () => {
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     await setup(multiEditionBook());
@@ -377,11 +377,11 @@ describe('BookDetail reset progress', () => {
     expect(rows[0].textContent).toContain('EPUB');
     expect(rows[1].textContent).toContain('Audiobook');
 
-    // Every alternate edition stays directly switchable from Book Details.
+    // Switching lives only in the hero format switcher (issue #1062).
+    expect(fixture.nativeElement.querySelector('.edition-list button')).toBeNull();
     rows[1].click();
     fixture.detectChanges();
-
-    expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   it('renders the editions section as a rail card with the page eyebrow heading', async () => {
@@ -408,9 +408,8 @@ describe('BookDetail reset progress', () => {
     expect(current.getAttribute('aria-current')).toBe('true');
     // State is not carried by the fill alone: the row says it in words too.
     expect(current.querySelector('.card-status-pill.current')?.textContent).toContain('Current');
-    // Both rows share one shape; only the alternate one is a control.
-    expect(current.tagName).toBe('DIV');
-    expect(editionRows()[1].tagName).toBe('BUTTON');
+    // Exactly one row is marked current.
+    expect(editionRows().filter((row) => row.getAttribute('aria-current') === 'true').length).toBe(1);
   });
 
   it('keeps each edition progress and finished state on its own row', async () => {

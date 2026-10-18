@@ -169,9 +169,10 @@
             ></button>
           </div>
 
-          <!-- Format switcher (issue #1062). The rail's editions card stacks
-               below the whole notes feed on a phone, so the switch also lives
-               here, beside Read/Listen. Navigation, not a setting: a <nav> of
+          <!-- Format switcher (issue #1062): the ONLY place to switch edition.
+               It used to live on the rail's editions card, which stacks below
+               the whole notes feed on a phone; here it sits beside Read/Listen
+               at every width. Navigation, not a setting: a <nav> of
                buttons with aria-current, not a radio group whose arrow keys
                would navigate away on every press. The current chip is plain
                text plus a check, so its state never rests on the fill alone. -->
@@ -562,11 +563,11 @@
             </div>
 
             <ul class="edition-list">
-              <!-- The edition being read. One row shape for both states, but this
-                   one is a plain element rather than a <button>: it is where the
-                   user already is, and a control that cannot do anything is worse
-                   than no control. `aria-current` plus the "Current" pill carry
-                   the state, so it is never read from the fill colour alone. -->
+              <!-- Status rows, not controls: switching lives in ONE place, the
+                   hero format switcher beside Read/Listen (issue #1062), so the
+                   rail only reports each edition's progress and Finished state.
+                   `aria-current` plus the "Current" pill mark the edition being
+                   read, so it is never read from the fill colour alone. -->
               <li>
                 <div
                   appChoiceRow
@@ -602,12 +603,10 @@
 
               @for (edition of store.book()!.otherEditions!; track edition.id) {
               <li>
-                <button
-                  type="button"
+                <div
                   appChoiceRow
                   class="edition-select-card"
-                  (click)="switchEdition(edition.id)"
-                  [title]="'Switch to ' + getSummaryEditionLabel(edition)"
+                  [title]="getSummaryEditionLabel(edition)"
                 >
                   <span appIconTile tone="quiet" class="card-icon-frame">
                     <nostos-icon
@@ -630,7 +629,7 @@
                       }
                     </span>
                   </span>
-                </button>
+                </div>
               </li>
               }
             </ul>
