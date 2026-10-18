@@ -3,6 +3,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import type { NoteSummary } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
+import type { MapCamera } from '../second-brain/topic-map/topic-map.component';
 import { topicLookup } from '../ui/note-item/note-item.helpers';
 import {
   TOPIC_SORT_KEY,
@@ -12,6 +13,11 @@ import {
   writeStored,
   type TopicSort,
 } from './brain.helpers';
+
+export interface BrainMapView {
+  camera: MapCamera;
+  focus: string | null;
+}
 
 /**
  * What every place of the Brain shares: the topics and the counts the sidebar
@@ -41,6 +47,8 @@ export class BrainStateService {
    * notes' [[ ]] references, so the notes on screen must be read again.
    */
   readonly topicsRewritten = signal(0);
+  /** Where the map was left (camera and selected topic), so Back returns to it. */
+  readonly mapView = signal<BrainMapView | null>(null);
 
   /** The topics by lower-cased name, built once for every card on screen. */
   readonly lookup = computed(() => topicLookup(this.topics()));

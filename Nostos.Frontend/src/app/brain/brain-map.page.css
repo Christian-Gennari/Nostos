@@ -1,0 +1,170 @@
+/* The map as a place: the Library's toolbar (title | finder), then the graph
+   filling the rest of the column. */
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.brain-map {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.map-toolbar {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 420px) minmax(max-content, 1fr);
+  align-items: center;
+  column-gap: 2rem;
+  padding: 1.5rem 3rem 1.25rem;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.place-switch {
+  display: none;
+}
+
+.map-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 1.75rem;
+  font-weight: var(--fw-medium);
+  line-height: 2.4rem;
+}
+
+.page-count {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.finder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.finder-icon {
+  position: absolute;
+  left: 12px;
+  z-index: 1;
+  color: var(--color-text-light);
+  pointer-events: none;
+}
+
+.finder-input {
+  width: 100%;
+  padding-left: 2.5rem;
+}
+
+.finds {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.finds li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.2rem;
+  padding: 0 0.7rem;
+  border-radius: var(--radius-popover-item);
+  color: var(--color-text-main);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.finds li.is-active {
+  background: var(--bg-hover);
+}
+
+.find-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-count {
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.map-place {
+  flex: 1;
+  min-height: 0;
+}
+
+.map-sample {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.map-sample.is-quote {
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--border-color);
+  font-family: 'Newsreader', serif;
+}
+
+@media (max-width: 768px) {
+  .map-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+
+  .place-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: var(--control-h-touch);
+    padding: 0 0.6rem;
+    color: var(--color-text-main);
+    font-size: 1.05rem;
+    font-weight: var(--fw-semibold);
+  }
+
+  .map-title {
+    display: none;
+  }
+
+  .finder {
+    flex: 1 1 100%;
+  }
+
+  .finder-input {
+    min-height: var(--control-h-touch);
+  }
+}

@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { BrainListPage } from './brain-list.page';
+import { BrainMapPage } from './brain-map.page';
 import { BrainNotePage } from './brain-note.page';
 import { BrainShellComponent } from './brain-shell.component';
 
@@ -15,6 +16,7 @@ export const BRAIN_ROUTES: Routes = [
       { path: 'unsorted', component: BrainListPage, data: { place: 'unsorted' } },
       { path: 'topics/:topicId', component: BrainListPage, data: { place: 'topic' } },
       { path: 'notes/:noteId', component: BrainNotePage },
+      { path: 'map', component: BrainMapPage },
     ],
   },
 ];

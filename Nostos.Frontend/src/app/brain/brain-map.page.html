@@ -1,0 +1,66 @@
+<div class="brain-map">
+  <header class="map-toolbar">
+    <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
+      [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
+      <span class="place-switch-label">Map</span>
+      <nostos-icon name="caret-down" [size]="14" />
+    </button>
+    <div class="map-title">
+      <h1 class="page-title">Map</h1>
+      @if (state.topicsLoaded()) { <span class="page-count">{{ countText() }}</span> }
+    </div>
+
+    <div class="finder">
+      <nostos-icon name="magnifying-glass" [size]="18" class="finder-icon" />
+      <input
+        appInput
+        controlSize="compact"
+        type="search"
+        class="finder-input"
+        role="combobox"
+        aria-label="Find a topic on the map"
+        aria-autocomplete="list"
+        aria-controls="map-finds"
+        [attr.aria-expanded]="finds().length > 0"
+        [attr.aria-activedescendant]="finds().length ? 'map-find-' + finderActive() : null"
+        placeholder="Find a topic…"
+        [value]="finder()"
+        (input)="onFinderInput($any($event.target).value)"
+        (keydown)="onFinderKeydown($event)"
+      />
+      @if (finds().length) {
+      <ul class="finds" id="map-finds" role="listbox" aria-label="Topics">
+        @for (topic of finds(); track topic.id; let i = $index) {
+        <li role="option" [id]="'map-find-' + i" [attr.aria-selected]="i === finderActive()"
+          [class.is-active]="i === finderActive()"
+          (mousedown)="$event.preventDefault()" (mouseenter)="finderActive.set(i)" (click)="find(topic.id)">
+          <span class="find-name">{{ topic.name }}</span>
+          <span class="find-count">{{ topic.usageCount }}</span>
+        </li>
+        }
+      </ul>
+      }
+    </div>
+  </header>
+
+  @if (state.topicsLoaded()) {
+  <app-topic-map
+    class="map-place"
+    [topics]="topics()"
+    [selectedId]="focus()"
+    [selectedName]="focusedTopic()?.name ?? null"
+    [camera]="startCamera"
+    [centerOnLoad]="!startCamera"
+    notesLabel="Open topic"
+    (topicSelected)="select($event)"
+    (selectionCleared)="cleared()"
+    (openNotes)="openTopic()"
+    (openTopic)="openTopic($event)"
+    (cameraChange)="keepCamera($event)"
+  >
+    @if (sample(); as line) {
+    <p mapCardDetail class="map-sample" [class.is-quote]="line.quote">{{ line.text }}</p>
+    }
+  </app-topic-map>
+  }
+</div>

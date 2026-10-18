@@ -103,6 +103,14 @@ interface MapModel {
   hue: Map<string, string | null>;
 }
 
+/** Where the map's camera stands, as Sigma reports it. */
+export interface MapCamera {
+  x: number;
+  y: number;
+  ratio: number;
+  angle: number;
+}
+
 export interface MapSelection {
   id: string;
   name: string;
@@ -140,6 +148,17 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
    * excluded them. With the query the map can say which of the two it is.
    */
   @Input() searchQuery = '';
+  /**
+   * A camera to open at instead of framing the whole graph: the host's record
+   * of where the reader left the map, so Back returns to the same view.
+   */
+  @Input() camera: MapCamera | null = null;
+  /** Open centred on the selected topic (unless `camera` is given). */
+  @Input() centerOnLoad = false;
+  /** The card's action label. */
+  @Input() notesLabel = 'Read notes';
+  /** Every camera move, so the host can keep the view for Back. */
+  @Output() readonly cameraChange = new EventEmitter<MapCamera>();
   @Output() readonly topicSelected = new EventEmitter<string>();
   /** Emitted by the rail's "Read notes" action. */
   @Output() readonly openNotes = new EventEmitter<void>();
@@ -727,6 +746,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     });
 
     this.sigma = sigma;
+    sigma.getCamera().on('updated', (state) => this.cameraChange.emit({ ...state }));
 
     sigma.on('beforeRender', () => {
       this.labelCandidates = [];
@@ -1046,7 +1066,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     window.requestAnimationFrame(() => {
       if (this.destroyed || !this.sigma) return;
       this.sigma.refresh();
-      this.fitGraph();
+      this.frameOnLoad();
     });
 
     // Resize observer to keep Sigma in sync with container size changes.
@@ -1072,7 +1092,18 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     }
 
     // Frame the graph on first paint.
-    this.fitGraph();
+    this.frameOnLoad();
+  }
+
+  /** The first view of a built graph: where the host left it, its selection, or all of it. */
+  private frameOnLoad(): void {
+    if (this.camera) {
+      this.sigma?.getCamera().setState(this.camera);
+    } else if (this.centerOnLoad && this.selectedNodeId()) {
+      this.centerSelected();
+    } else {
+      this.fitGraph();
+    }
   }
 
   /**

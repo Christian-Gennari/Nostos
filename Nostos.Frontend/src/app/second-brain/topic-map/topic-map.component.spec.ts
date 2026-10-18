@@ -21,6 +21,7 @@ vi.mock('sigma', () => {
     getState: vi.fn(() => ({ x: camera.x, y: camera.y, angle: 0, ratio: camera.ratio })),
     disable: vi.fn(),
     enable: vi.fn(),
+    on: vi.fn(),
   };
 
   /**
@@ -560,6 +561,42 @@ describe('TopicMapComponent', () => {
     fixture.detectChanges();
 
     expect(component.selectedNodeId()).toBe('beta');
+  });
+
+  it('opens at the camera its host kept, instead of framing the graph', () => {
+    const camera = (globalThis as unknown as { __camera: Record<string, ReturnType<typeof vi.fn>> }).__camera;
+    camera['setState'].mockClear();
+    camera['animate'].mockClear();
+    fixture.componentRef.setInput('camera', { x: 0.2, y: 0.7, ratio: 0.4, angle: 0 });
+    setTopics(topics);
+    flushGraph();
+
+    expect(camera['setState']).toHaveBeenCalledWith({ x: 0.2, y: 0.7, ratio: 0.4, angle: 0 });
+    expect(camera['animate']).not.toHaveBeenCalled();
+  });
+
+  it('reports every camera move to its host', () => {
+    const camera = (globalThis as unknown as { __camera: Record<string, ReturnType<typeof vi.fn>> }).__camera;
+    camera['on'].mockClear();
+    const moved = vi.fn();
+    component.cameraChange.subscribe(moved);
+    setTopics(topics);
+    flushGraph();
+
+    const [event, listener] = camera['on'].mock.calls.at(-1)!;
+    expect(event).toBe('updated');
+    listener({ x: 0.1, y: 0.2, ratio: 2, angle: 0 });
+    expect(moved).toHaveBeenCalledWith({ x: 0.1, y: 0.2, ratio: 2, angle: 0 });
+  });
+
+  it('names the card action as its host asks', () => {
+    fixture.componentRef.setInput('notesLabel', 'Open topic');
+    setTopics(topics);
+    flushGraph();
+    component.selectAccessibleNode('alpha');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.map-card-notes').textContent.trim()).toBe('Open topic');
   });
 
   it('keeps the accessible list in sync with the rendered graph', () => {
