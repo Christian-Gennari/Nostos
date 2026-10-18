@@ -10,3 +10,10 @@
 @media (max-width: 768px) {
   .original-body { padding: 1rem; }
 }
+
+/* Touch: View original is a 44px target, wherever the card sits. */
+@media (pointer: coarse), (hover: none) {
+  .capture-summary button {
+    min-height: var(--control-h-touch);
+  }
+}

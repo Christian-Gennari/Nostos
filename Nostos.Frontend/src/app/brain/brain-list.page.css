@@ -44,7 +44,9 @@
   }
 }
 
-.place-switch {
+.place-switch,
+.order-select-phone,
+.book-select-phone {
   display: none;
 }
 
@@ -320,7 +322,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 10px 4px;
     padding: 10px 14px;
   }
 
@@ -347,17 +349,52 @@
     display: none;
   }
 
+  /* One row: the place on the left (its name ellipsizes), the page's
+     controls on the right, all on the touch rung; the search takes the next
+     row and Unsorted's Sort one by one the row after, as in the Library.
+     The controls' wrapper steps aside so each can take its own row. */
   .toolbar-right {
-    margin-left: auto;
-    gap: 0.25rem;
+    display: contents;
   }
 
-  .book-select {
+  .place-switch {
+    flex: 1 1 0;
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .book-select,
+  .order-select {
     display: none;
   }
 
-  .order-select {
-    min-width: 0;
+  .order-select-phone,
+  .book-select-phone {
+    display: inline-block;
+    flex: none;
+    /* The square follows the touch rung even under a fine pointer, like its neighbours. */
+    --control-h-field: var(--control-h-touch);
+  }
+
+  .select-toggle,
+  .topic-more {
+    flex: none;
+    width: var(--control-h-touch);
+    min-width: var(--control-h-touch);
+    height: var(--control-h-touch);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .select-label {
+    display: none;
+  }
+
+  .sort-start {
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: var(--control-h-touch);
   }
 
   .search-bar-container {
@@ -386,6 +423,7 @@
     padding-inline: 0.5rem;
   }
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .search-icon {

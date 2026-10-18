@@ -226,7 +226,7 @@
 .topic-row-shell:hover .row-actions,
 .topic-row-shell:focus-within .row-actions {
   opacity: 1;
-  visibility: visible;
+  visibility: inherit;
   pointer-events: auto;
   transition: opacity 0.15s, visibility 0s;
 }
@@ -261,12 +261,31 @@
 @media (hover: none) {
   .topic-row-shell:has(.topic-row.active) .row-actions {
     opacity: 1;
-    visibility: visible;
+    visibility: inherit;
     pointer-events: auto;
   }
 
   .topic-row-shell:has(.topic-row.active) .topic-row .count {
     opacity: 0;
+  }
+}
+
+/* Touch: rows and their actions on the 44px rung, as the old index had. */
+@media (pointer: coarse), (hover: none) {
+  .nav-item,
+  .topic-row-shell,
+  .topic-row {
+    min-height: 44px;
+  }
+
+  .topic-row-shell {
+    --actions-w: 96px;
+  }
+
+  /* `button.` out-weighs appIconButton's own xs rung. */
+  button.row-action {
+    width: 44px;
+    height: 44px;
   }
 }
 

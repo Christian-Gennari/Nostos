@@ -50,6 +50,29 @@
     </div>
 
     <div class="toolbar-right">
+      <!-- Phone: order and book as square buttons; the open list shows the choice. -->
+      <app-dropdown
+        class="order-select-phone"
+        appearance="icon"
+        triggerIcon="arrows-down-up"
+        align="end"
+        ariaLabel="Order"
+        [options]="orderOptions"
+        [value]="order()"
+        (valueChange)="setOrder($event)"
+      />
+      @if (bookOptions().length > 1) {
+      <app-dropdown
+        class="book-select-phone"
+        appearance="icon"
+        triggerIcon="books"
+        align="end"
+        ariaLabel="Book"
+        [options]="bookOptions()"
+        [value]="bookId() ?? ''"
+        (valueChange)="setBook($event || null)"
+      />
+      }
       <app-dropdown
         class="book-select"
         appearance="subtle"
@@ -75,9 +98,9 @@
         Sort one by one <nostos-icon name="arrow-right" [size]="14" />
       </a>
       }
-      <button appButton variant="ghost" size="sm" type="button" class="select-toggle"
+      <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select notes"
         [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
-        <nostos-icon name="check-square" [size]="16" />Select
+        <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
       </button>
       @if (place() === 'topic' && topic(); as current) {
       <button appIconButton type="button" icon="dots-three" class="topic-more" [glyphSize]="18"

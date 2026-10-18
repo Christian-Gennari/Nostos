@@ -316,3 +316,14 @@ kbd {
     display: none;
   }
 }
+
+@media (pointer: coarse), (hover: none) {
+  /* The chip keeps its size; the cross's larger box reaches past it. */
+  button.sort-chip-remove {
+    margin: -10px -10px -10px -6px;
+  }
+
+  .sort-field input {
+    min-height: var(--control-h-touch);
+  }
+}

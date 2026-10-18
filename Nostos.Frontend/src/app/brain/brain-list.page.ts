@@ -92,7 +92,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',
-  styleUrls: ['./brain-list.page.css'],
+  styleUrls: ['./brain-list.page.css', './brain-touch.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BrainListPage {
