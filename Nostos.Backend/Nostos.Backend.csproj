@@ -18,9 +18,14 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <!-- Security overrides for vulnerable transitives:
          Microsoft.OpenApi 2.0.0 -> 2.7.5 (GHSA-v5pm-xwqc-g5wc)
-         SQLitePCLRaw.lib.e_sqlite3 2.1.11 -> 3.53.3 (GHSA-2m69-gcr7-jv3q). -->
+         SQLitePCLRaw.lib.e_sqlite3 2.1.11 -> 3.53.3 (GHSA-2m69-gcr7-jv3q).
+         SixLabors.ImageSharp 3.1.12 -> 3.2.0 (GHSA-j3p4-wp97-rph4, GHSA-j9gm-c75j-xc9q,
+         GHSA-jjfr-hcj7-qf5w, GHSA-gwg2-r3hj-4w44, GHSA-wmxv-xphr-5c9g). Stay on 3.x:
+         ImageSharp 4 needs a commercial license. NuGet audit may still flag 3.2.0
+         until the global advisory database lists it as patched, as ImageSharp's
+         own advisories already do. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <PackageReference Include="z440.atl.core" Version="7.9.0" />
   </ItemGroup>
