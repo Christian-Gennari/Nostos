@@ -29,28 +29,13 @@
       }
     </div>
   } @else {
-    <div class="ps-themes" role="radiogroup" aria-label="Page theme">
-      @for (theme of themes; track theme.value; let i = $index) {
-        <button
-          type="button"
-          role="radio"
-          class="ps-theme"
-          [attr.aria-checked]="prefs.theme() === theme.value"
-          [attr.tabindex]="prefs.theme() === theme.value || (following() && i === 0) ? 0 : -1"
-          [attr.data-theme-option]="theme.value"
-          (click)="setTheme(theme.value)"
-          (keydown)="themeKey($event, i)"
-        >
-          <!-- Only the swatch takes its theme's tokens; the label stays readable. -->
-          <span [class]="'ps-swatch studio-theme-' + theme.value" aria-hidden="true">Aa</span>
-          <span class="ps-theme-label">{{ theme.label }}</span>
-        </button>
-      }
+    <!-- The app theme (issue #1074): the same setting as Settings → Colour
+         theme, so the Studio wears what every other screen does. -->
+    <div class="ps-row ps-row-stacked" data-testid="ps-theme">
+      <span class="ps-label" aria-hidden="true">Theme</span>
+      <nostos-theme-picker label="Theme" />
+      <span class="ps-hint">Applies throughout Nostos</span>
     </div>
-    <label class="ps-follow">
-      <input type="checkbox" appCheckbox [checked]="following()" (change)="setFollow(checkedFrom($event))" />
-      Follow the app's light and dark
-    </label>
 
     <div class="ps-rule" aria-hidden="true"></div>
 

@@ -30,28 +30,16 @@ describe('StudioPageSettingsComponent (#1060)', () => {
     fixture.detectChanges();
   };
 
-  it('offers four themes, follows the app by default and leaves it on a pick', () => {
-    const options = [...root.querySelectorAll('.ps-theme')].map((el) => el.getAttribute('data-theme-option'));
-    expect(options).toEqual(['paper', 'sepia', 'mist', 'study']);
-    const follow = root.querySelector('.ps-follow input') as HTMLInputElement;
-    expect(follow.checked).toBe(true);
-
-    click('[data-theme-option="study"]');
-    expect(prefs.theme()).toBe('study');
-    expect((root.querySelector('.ps-follow input') as HTMLInputElement).checked).toBe(false);
-
-    click('.ps-follow input');
-    expect(prefs.theme()).toBe('match');
-  });
-
-  it('leaving Follow app keeps a page of the same lightness', () => {
+  it('offers the app themes, and a pick changes the app theme (#1074)', () => {
     const appTheme = TestBed.inject(ThemeService);
-    appTheme.setTheme('dark');
+    const options = [...root.querySelectorAll('[data-testid="ps-theme"] .tp-swatch')].map((el) => el.getAttribute('data-theme-option'));
+    expect(options).toEqual(['system', 'light', 'sepia', 'mist', 'study', 'dark']);
     try {
-      click('.ps-follow input');
-      expect(prefs.theme()).toBe('mist');
+      click('[data-theme-option="study"]');
+      expect(appTheme.choice()).toBe('study');
+      expect(root.querySelector('[data-theme-option="study"]')!.getAttribute('aria-checked')).toBe('true');
     } finally {
-      appTheme.setTheme('light');
+      appTheme.setChoice('system');
     }
   });
 
@@ -148,7 +136,7 @@ describe('StudioPageSettingsComponent (#1060)', () => {
   });
 
   it('closes on a press outside it, but not inside', () => {
-    root.querySelector('.ps-theme')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    root.querySelector('.tp-swatch')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     expect(closed).toBe(0);
     document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     expect(closed).toBe(1);

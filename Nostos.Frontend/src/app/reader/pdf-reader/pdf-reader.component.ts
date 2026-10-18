@@ -46,7 +46,7 @@ import { NotesService } from '../../core/services/notes.service';
 import { Note, noteHasText } from '../../core/dtos/note.dtos';
 import type { HighlightHit } from '../highlight-hit';
 import { BooksService } from '../../core/services/books.service';
-import { ThemeService } from '../../core/services/theme.service';
+import { ThemeService, themeOption } from '../../core/services/theme.service';
 import {
   IReader,
   ReaderProgress,
@@ -64,13 +64,13 @@ import {
 } from '../reader-keyboard';
 
 /**
- * Surround colours for the pdf.js viewer canvas, mirroring the Nostos tokens
- * from styles.css. Light keeps the established near-white; dark follows
- * `--bg-body` (#0d0e11). The library's `[theme]` input adds a CSS-variable
- * sheet that themes its own toolbar/sidebar/find bar chrome.
+ * Surround colour for the pdf.js viewer canvas. Light keeps the established
+ * near-white; every other theme follows its `--bg-body` (THEMES' chrome
+ * colour), so Sepia's page sits on parchment and Writer's Study's on its desk.
+ * The library's `[theme]` input adds a CSS-variable sheet that themes its own
+ * toolbar/sidebar/find bar chrome.
  */
 const PDF_LIGHT_SURROUND = '#fefeff';
-const PDF_DARK_SURROUND = '#0d0e11';
 
 /**
  * Page fits a fixed-layout document can be read at, offered in the shell's view
@@ -193,13 +193,16 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   // --- Theme-following surround (issue #259) ---
 
   /** Whether the app is currently in dark mode. */
-  isDark = computed(() => this.themeService.theme() === 'dark');
+  isDark = computed(() => this.themeService.mode() === 'dark');
 
   /** The library's own theme — 'dark' activates `<pdf-dark-theme>`. */
   pdfTheme = computed(() => (this.isDark() ? 'dark' : 'light'));
 
   /** Surround colour for the viewer canvas. */
-  pdfBgColor = computed(() => (this.isDark() ? PDF_DARK_SURROUND : PDF_LIGHT_SURROUND));
+  pdfBgColor = computed(() => {
+    const theme = this.themeService.active();
+    return theme === 'light' ? PDF_LIGHT_SURROUND : themeOption(theme).chrome;
+  });
 
   // --- Page-colour inversion (issue #259) ---
 

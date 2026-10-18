@@ -4,7 +4,7 @@
  */
 import { NOSTOS_MENU } from '../menu/menu.component';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { Theme, ThemeService } from '../../core/services/theme.service';
+import { THEMES, ThemeName, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
 import { BadgeComponent } from '../badge/badge.component';
 import { NoticeComponent } from '../notice/notice.component';
@@ -67,7 +67,9 @@ export class UiCatalogueComponent {
   private readonly themeService = inject(ThemeService);
   private readonly toastService = inject(ToastService);
 
-  readonly theme = this.themeService.theme;
+  /** Every theme, so each control can be checked in all five. */
+  readonly themes = THEMES;
+  readonly theme = this.themeService.active;
   readonly selectedTab = signal<'primitives' | 'patterns'>('primitives');
   /** Deliberately a plain string: the component is not generic, so the demo does not
       pretend to narrow the value it receives. */
@@ -114,7 +116,7 @@ export class UiCatalogueComponent {
     this.toastService.show('Could not save book details.', 'error', 30_000);
   }
 
-  setTheme(theme: Theme): void {
-    this.themeService.setTheme(theme);
+  setTheme(theme: ThemeName): void {
+    this.themeService.setChoice(theme);
   }
 }

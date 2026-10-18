@@ -3,31 +3,12 @@ import { Injectable, computed, effect, signal } from '@angular/core';
 import { SOUND_PACKS, SoundPack } from '../../ui/markdown-editor/typewriter-sounds';
 
 /**
- * The Studio page's own settings (issue #1041): theme, typeface, size,
- * spacing and measure, and how the page behaves. Saved per device, like the
- * library preferences; syncing them across devices is out of scope.
+ * The Studio page's own settings (issue #1041): typeface, size, spacing and
+ * measure, and how the page behaves. Saved per device, like the library
+ * preferences; syncing them across devices is out of scope. The colours are
+ * the app theme's (issue #1074): the Studio no longer has page themes of its
+ * own, and a page theme saved before is carried over once by ThemeService.
  */
-/** `match` follows the app's own light or dark look; the rest are the page's own. */
-export type StudioTheme = 'match' | 'paper' | 'sepia' | 'mist' | 'study';
-
-export interface StudioThemeOption {
-  value: Exclude<StudioTheme, 'match'>;
-  label: string;
-  /** Which app mode the theme belongs with, for leaving Follow app. */
-  mode: 'light' | 'dark';
-}
-
-/**
- * Four page themes (issue #1060): a warm and a cool one, light and dark. Each
- * theme's colours are its token set in styles.css (`.studio-theme-<value>`).
- */
-export const STUDIO_THEMES: readonly StudioThemeOption[] = [
-  { value: 'paper', label: 'Paper', mode: 'light' },
-  { value: 'sepia', label: 'Sepia', mode: 'light' },
-  { value: 'mist', label: 'Mist', mode: 'dark' },
-  { value: 'study', label: "Writer's Study", mode: 'dark' },
-];
-
 
 export interface StudioFont {
   value: string;
@@ -56,7 +37,6 @@ export const STUDIO_FONTS: readonly StudioFont[] = [
 ];
 
 export interface StudioPreferences {
-  theme: StudioTheme;
   font: string;
   /** Page text size in px. */
   fontSize: number;
@@ -79,7 +59,6 @@ export const STUDIO_PREFERENCES_KEY = 'nostos.studio.preferences';
 const LEGACY_TYPEWRITER_KEY = 'nostos.typewriter';
 
 export const DEFAULT_STUDIO_PREFERENCES: StudioPreferences = {
-  theme: 'match',
   font: 'newsreader',
   fontSize: 18,
   lineSpacing: 1.8,
@@ -139,12 +118,6 @@ export function normalizeStudioPreferences(raw: unknown, legacyTypewriter = fals
   const value = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof StudioPreferences, unknown>>;
   const d = DEFAULT_STUDIO_PREFERENCES;
   return {
-    // Dark and Black, offered before #1060, are in neither: a saved one
-    // follows the app.
-    theme:
-      value.theme === 'match' || STUDIO_THEMES.some((t) => t.value === value.theme)
-        ? (value.theme as StudioTheme)
-        : d.theme,
     font: STUDIO_FONTS.some((f) => f.value === value.font) ? (value.font as string) : d.font,
     fontSize: Math.round(clamp(value.fontSize, FONT_SIZE_RANGE.min, FONT_SIZE_RANGE.max, d.fontSize)),
     // The settings offer three spacings and three lengths (#1060); a value
@@ -181,7 +154,6 @@ export class StudioPreferencesService {
   private readonly state = signal<StudioPreferences>(readStored());
   readonly preferences = this.state.asReadonly();
 
-  readonly theme = computed(() => this.state().theme);
   readonly font = computed(
     () => STUDIO_FONTS.find((f) => f.value === this.state().font) ?? STUDIO_FONTS.find((f) => f.value === DEFAULT_STUDIO_PREFERENCES.font)!,
   );

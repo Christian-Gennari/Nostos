@@ -281,19 +281,18 @@
 /* --- Appearance: theme choice ----------------------------------------- */
 .theme-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 16px 0;
 }
 
 .theme-card {
   position: relative;
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 56px;
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 8px 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-surface);
   background: transparent;
@@ -321,13 +320,65 @@
   outline-offset: 2px;
 }
 
-.theme-card-icon {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
+/* A small page in the theme's own colours: type, two lines of text and its
+   accent. The values come from THEMES, so a card never has to wear a theme to
+   show it. */
+.theme-preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: calc(var(--radius-surface) - 3px);
+}
+
+.theme-preview-type {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.theme-preview-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-preview-lines span {
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.32;
+}
+
+.theme-preview-lines span:last-child {
+  width: 64%;
+}
+
+.theme-preview-accent {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  width: 16px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.theme-preview-split {
+  padding: 0;
+  gap: 0;
+}
+
+.theme-preview-half {
+  display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-muted);
+  height: 100%;
 }
 
 .theme-card-copy {
@@ -344,14 +395,51 @@
 
 
 .theme-card-check {
-  width: 24px;
-  height: 24px;
+  /* On the name row, so it never sits on the preview. */
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: var(--primary-fill);
   color: var(--on-primary);
+}
+
+/* Follow system's day and night themes, shown while it is the choice. */
+.theme-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 0 16px;
+}
+
+.theme-slots-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-light);
+}
+
+.theme-slot {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-slot nostos-segmented {
+  justify-self: start;
+}
+
+.theme-slot-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
 }
 
 .history-error {
@@ -793,9 +881,17 @@
   }
 
   .provider-grid,
-  .provider-wide-fields,
-  .theme-grid {
+  .provider-wide-fields {
     grid-template-columns: 1fr;
+  }
+
+  .theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .theme-slot {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .provider-section + .provider-section {

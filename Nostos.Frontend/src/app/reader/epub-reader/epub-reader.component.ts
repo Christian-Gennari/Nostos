@@ -23,7 +23,7 @@ import { EpubAnnotationManager, SelectionAnchor } from './epub-annotation-manage
 import { DEFAULT_HIGHLIGHT_COLOUR, HighlightColour } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
-import { ThemeService, Theme } from '../../core/services/theme.service';
+import { ThemeName, ThemeService, themeOption } from '../../core/services/theme.service';
 import { Book as BookDto } from '../../core/dtos/book.dtos';
 import {
   ImportedNoteLocation,
@@ -455,10 +455,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     });
 
     // The rendition is a separate document: re-select the matching Nostos
-    // theme whenever the app theme changes, so the page follows light/dark
-    // without a reload.
+    // theme whenever the app theme changes, so the page follows it without a
+    // reload.
     effect(() => {
-      const theme = this.themeService.theme();
+      const theme = this.themeService.active();
       if (this.rendition) {
         this.selectReaderTheme(theme);
       }
@@ -1638,7 +1638,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       () => this.commitFailed.emit(),
     );
     this.annotationManager.setHighlightColour(this.highlightColour());
-    this.annotationManager.setTheme(this.themeService.theme());
+    this.annotationManager.setTheme(this.themeService.mode());
     this.annotationManager.setOnSelectionCaptured((text, anchor) => {
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
@@ -2228,14 +2228,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     registerNostosReaderThemes(themes);
 
     // Select the matching theme so the first section is rendered with it.
-    this.selectReaderTheme(this.themeService.theme());
+    this.selectReaderTheme(this.themeService.active());
   }
 
-  private selectReaderTheme(theme: Theme) {
+  private selectReaderTheme(theme: ThemeName) {
     const themes = this.rendition?.themes;
     if (!themes) return;
     selectNostosReaderTheme(themes, this.renderedContents(), theme);
-    this.annotationManager?.setTheme(theme);
+    this.annotationManager?.setTheme(themeOption(theme).mode);
   }
 
   public deleteHighlight(cfiRange: string) {

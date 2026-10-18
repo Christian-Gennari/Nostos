@@ -43,17 +43,25 @@ sizes listed above.
 
 ## Switching themes
 
-The app offers **Settings → Appearance → Colour theme → Light/Dark**. The
-theme service stores the selection under `localStorage['nostos.theme']`. Dark
-applies `data-theme="dark"` to the document root; light removes that attribute
-and uses the stylesheet's `:root` values. With no saved choice, the app follows
-the operating-system preference.
+The app offers **Settings → General → Colour theme**: Follow system (the
+default) or one of five themes, Light, Sepia, Mist, Writer's Study and Dark
+(issue #1074). The reader's View settings and the Studio's page settings show
+the same choice as a row of swatches. The theme service stores the choice under
+`localStorage['nostos.theme']` (`system`, a theme name, or nothing, which means
+Follow system), and Follow system's day and night themes under
+`nostos.theme.day` (Light or Sepia) and `nostos.theme.night` (Mist, Writer's
+Study or Dark).
 
-For a deterministic browser check, choose Light or Dark in Settings. In the
-browser console, the equivalent is:
+On the document root, every dark theme sets `data-theme="dark"`; light ones
+remove it and use the stylesheet's `:root` values. Sepia, Mist and Writer's
+Study also set `data-palette="<name>"`, whose block in `styles.css` layers over
+its mode's values.
+
+For a deterministic browser check, choose a theme in Settings. In the browser
+console, the equivalent is:
 
 ```js
-localStorage.setItem('nostos.theme', 'dark'); // or 'light'
+localStorage.setItem('nostos.theme', 'sepia'); // light, sepia, mist, study, dark or system
 location.reload();
 ```
 
@@ -62,7 +70,7 @@ it during startup:
 
 ```ts
 await page.addInitScript(() => {
-  localStorage.setItem('nostos.theme', 'dark'); // use 'light' for light mode
+  localStorage.setItem('nostos.theme', 'dark'); // or light, sepia, mist, study
 });
 await page.goto(url);
 ```

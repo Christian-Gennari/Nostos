@@ -1954,119 +1954,159 @@ app-assistant {
 
 
 /* ------------------------------
-   STUDIO THEMES (issues #1041, #1060)
+   APP THEMES: SEPIA, MIST, WRITER'S STUDY (issue #1074)
 ------------------------------ */
-/* The Studio's page themes dress the whole screen while the Studio is open:
-   ThemeService puts `data-room-theme` on <html> (and the theme's light or
-   dark base on `data-theme`), so the rails, popovers, the dock, the assistant
-   and toasts all take the same colours. An earlier version themed only the
-   Studio's own element, and everything rendered outside it (the dock above
-   all) kept the app's green and grey beside a sepia or amber page.
+/* Five app-wide themes: Light (`:root`), Dark (`:root[data-theme='dark']`)
+   and the three below. ThemeService puts `data-palette` on <html> together
+   with the theme's light or dark base on `data-theme`, so each block layers
+   over its mode's values and wins on source order (same specificity).
 
-   Each block sets every LITERAL colour role of the app graph. Derived roles
-   (`--cta-*`, `--control-border-hover`, `--focus-halo`, `--danger-*`...) are
-   declared on :root as var()/color-mix() of these, and since this block sits
-   on the same element they re-resolve against the theme by themselves.
-   Danger, success, info, highlight pens and the graph keep the base mode's
-   values: they mean the same thing in every theme.
+   Each block sets every LITERAL colour token of its base mode. Tokens the base
+   declares as var()/color-mix() of others (`--cta-*`, `--ink-lede`,
+   `--danger-field*`, `--focus-halo`...) re-resolve against the palette by
+   themselves, because this block sits on the same element.
+   `npm run check:theme` enforces both rules.
 
-   The `.studio-theme-<name>` class carries the same set onto the page
-   settings' swatches, so each swatch shows its real paper and ink.
-   Palettes ported from Scriptorium; muted and link inks were raised where
-   needed to keep WCAG AA (4.5:1) on both paper and rail surfaces. */
+   Sepia is the delicate one: a page theme stretched across the whole app
+   easily turns "everything is yellow". Its chrome is a LOW-chroma parchment
+   (OKLCH C 0.007-0.018, hue ~80) stepped by lightness, not by more yellow;
+   the richer cream is kept for the reading and writing page
+   (`--manuscript-paper`, the EPUB page). Ink is brown-black; lines, shadows
+   and scrims are warm-tinted (grey ones read as dirt on cream); and the brand
+   forest stays the accent, as on Light. Every text role holds WCAG AA on the
+   surfaces it sits on.
 
-/* Writer's Study (warm ink on a dark desk, amber accent) */
-:root[data-room-theme='study'],
-.studio-theme-study {
-  color-scheme: dark;
-  --manuscript-paper: #1a1814;
-  --manuscript-ink: #e4d5bf;
-  --manuscript-ink-strong: #f1e6d3;
-  --manuscript-ink-soft: #bcae96;
-  --manuscript-ink-faint: #958a75;
-  --manuscript-rule: #3a342c;
-  --manuscript-rule-strong: #4a4238;
-  --manuscript-link: #c9953e;
-  --manuscript-link-hover: #e0b061;
-  --manuscript-link-rule: rgba(201, 149, 62, 0.45);
-  --manuscript-selection: rgba(201, 149, 62, 0.22);
-  --manuscript-quote-rule: #c9953e;
-  --manuscript-code-bg: #24201a;
-  --manuscript-code-ink: #e4d5bf;
-  --manuscript-table-head-bg: #24201a;
-  --manuscript-placeholder: #958a75;
+   Mist and Writer's Study were the Studio's page themes (issues #1041,
+   #1060); palettes ported from Scriptorium, with muted and link inks raised
+   to keep AA on both paper and rail surfaces. */
 
-  --bg-body: #141210;
-  --bg-surface: #1a1814;
-  --bg-surface-alt: #201d18;
-  --bg-sidebar: #1f1c18;
-  --bg-input: #1a1814;
-  --bg-hover: #2a2620;
-  --surface-image-ground: #201d18;
-  --color-text-main: #e4d5bf;
-  --color-text-muted: #bcae96;
-  --color-text-light: #958a75;
-  --color-text-placeholder: #857a66;
-  --color-text-faint: #4a4238;
+:root[data-palette='sepia'] {
+  color-scheme: light;
+  /* ── Surfaces: value steps of one low-chroma parchment ── */
+  --bg-body: #fbf5eb;
+  --bg-surface: #fefbf5;
+  --bg-surface-alt: #f5ede1;
+  --bg-sidebar: #f6eee3;
+  --bg-input: #fefbf5;
+  --bg-hover: #efe7d9;
+  --surface-image-ground: #efe7d9;
 
-  --primary-ink: #f1e6d3;
-  /* Deep amber: the switch's on track and primary buttons, with cream on it (4.9:1). */
-  --primary-fill: #7d5a22;
-  --on-primary: #f1e6d3;
-  --color-primary: #d4a556;
-  --color-primary-hover: #e0b061;
-  --color-primary-dim: #8a6a35;
-  --color-brand-accent: #c9953e;
-  --color-brand-accent-fill: #7d5a22;
-  --color-accent: #c9953e;
-  --color-accent-hover: #e0b061;
-  --color-accent-faint: rgba(201, 149, 62, 0.30);
-  --color-accent-bg: rgba(201, 149, 62, 0.14);
-  --color-secondary: #4a4238;
-  --selection-surface: #332d25;
-  --selection-ink: #f1e6d3;
-  --selection-focus-ring: #c9953e;
-  --text-selection-bg: #4a3f2e;
-  --cta-surface-hover: #d6c7ae;
+  /* ── Text: brown-black, never mid-brown ── */
+  --color-text-main: #2b2118;
+  --color-text-muted: #574a3e;
+  --color-text-light: #716558;
+  --color-text-placeholder: #9a8f81;
+  --color-text-faint: #d3cbbf;
 
-  --dock-surface: #24201b;
-  --dock-border: #3a342c;
-  --dock-pill: #3b342b;
-  --dock-hover: #2f2a23;
-  --dock-field: #1f1c18;
-  --control-active-fill: #3b342b;
-  --control-active-ink: var(--color-text-main);
-  --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --primary-ink: #2b2118;
+  --primary-fill: #382b21;
+  --on-primary: #fefbf5;
+  --color-primary: #2b2118;
+  --color-primary-hover: #4b3d31;
+  --color-primary-dim: #716558;
+  /* The brand forest, as on Light: green on parchment. */
+  --color-brand-accent: #293E32;
+  --color-brand-accent-fill: #293E32;
 
-  --border-color: #3a342c;
-  --border-light: #2d2822;
-  --border-focus: #6b5e4c;
-  --control-border: #5a4f40;
-  --focus-ring: #c9953e;
-  --scrollbar-thumb: #3a342c;
-  --scrollbar-thumb-hover: #4a4238;
+  --graph-node: #4f463c;
+  --graph-node-head: #2b2118;
+  --graph-edge: #7e7265;
+  --graph-edge-active: #2b2118;
+  --graph-label-box: #fefbf5;
+  --graph-community-1: #2d6945;
+  --graph-community-2: #ae662f;
+  --graph-community-3: #505b99;
 
-  --overlay-medium: rgba(20, 18, 16, 0.72);
-  --overlay-light: rgba(0, 0, 0, 0.45);
-  --modal-scrim: rgba(10, 9, 7, 0.66);
-  --glass-bg: rgba(20, 18, 16, 0.60);
-  --glass-bg-strong: rgba(20, 18, 16, 0.95);
-  --glass-border: #3a342c;
-  --gradient-pastel: linear-gradient(120deg, #e0b061, #c9953e, #7d5a22);
+  --color-accent: #63594e;
+  --color-accent-hover: #4b3d31;
+  --color-accent-faint: rgba(99, 89, 78, 0.3);
+  --color-accent-bg: #eae2d5;
+  --color-secondary: #63594e;
+  --selection-surface: #382b21;
+  --selection-ink: #fefbf5;
 
-  --editor-ui-bg: #24201a;
-  --editor-ui-bg-hover: #2a2620;
-  --editor-ui-text: #e4d5bf;
-  --editor-ui-muted: #958a75;
-  --editor-ui-border: rgba(228, 213, 191, 0.10);
-  --editor-ui-focus: #c9953e;
-  --editor-ui-accent: #bcae96;
-  --editor-ui-accent-soft: rgba(188, 174, 150, 0.13);
+  --dock-shadow-rail: 0 -6px 20px rgba(43, 33, 24, 0.09);
+  --dock-shadow: 0 8px 22px rgba(43, 33, 24, 0.11);
+  --dock-pill: #ede4d6;
+  --dock-hover: #f5ede1;
+  --dock-field: #f5ede1;
+  --cover-shadow: 0 1px 4px rgba(43, 33, 24, 0.16);
+  --button-shadow: none;
+  --button-shadow-primary: 0 1px 2px rgba(43, 33, 24, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --cover-shadow-hover: 0 14px 28px -6px rgba(43, 33, 24, 0.16), 0 4px 10px -2px rgba(43, 33, 24, 0.1);
+  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
+
+  /* ── Semantic colours, re-tuned to sit on cream ── */
+  --color-danger: #a8372a;
+  --color-danger-vivid: #c04637;
+  --color-danger-bg: #fddcd1;
+  --color-success: #439458;
+  --color-success-dark: #255a33;
+  --color-highlight: #c8e0bc;
+  --color-highlight-hover: #bcd8ad;
+  --color-info: #2b568b;
+  --color-info-border: #a1c3db;
+  --color-info-bg: #e5f1f7;
+
+  /* ── The page: a little richer than the chrome around it ── */
+  --manuscript-paper: #fbf4e5;
+  --manuscript-ink: #2f241a;
+  --manuscript-ink-strong: #221810;
+  --manuscript-ink-soft: #574a3e;
+  --manuscript-ink-faint: #736758;
+  --manuscript-rule: #e2d9cb;
+  --manuscript-rule-strong: #ccc1b0;
+  --manuscript-link: #84492d;
+  --manuscript-link-hover: #6b3317;
+  --manuscript-link-rule: rgba(132, 73, 45, 0.4);
+  --manuscript-selection: rgba(113, 101, 88, 0.22);
+  --manuscript-quote-rule: #b2a28d;
+  --manuscript-code-bg: #f3eadb;
+  --manuscript-code-ink: #574a3e;
+  --manuscript-table-head-bg: #f3eadb;
+  --manuscript-placeholder: #9a8f81;
+
+  /* ── Lines: warm, never grey ── */
+  --border-color: #e6dfd3;
+  --border-light: #efe9df;
+  --border-focus: #2b2118;
+  --focus-ring: #7e6f5f;
+  --scrollbar-thumb: #dfd8cd;
+  --scrollbar-thumb-hover: #d1c7bb;
+
+  --cover-disc-bg: rgba(254, 251, 245, 0.92);
+  --cover-disc-ink: #6c6155;
+  --cover-disc-border: transparent;
+  --cover-disc-shadow: 0 1px 3px rgba(43, 33, 24, 0.16);
+
+  /* ── Shadows and scrims: soft brown, not grey ── */
+  --overlay-heavy: rgba(43, 33, 24, 0.7);
+  --overlay-medium: rgba(43, 33, 24, 0.4);
+  --overlay-light: rgba(43, 33, 24, 0.3);
+  --modal-scrim: rgba(43, 33, 24, 0.4);
+  --glass-bg: rgba(251, 245, 235, 0.6);
+  --glass-bg-strong: rgba(251, 245, 235, 0.88);
+  --glass-border: rgba(230, 223, 211, 0.85);
+  --shadow-sm: 0 1px 2px rgba(43, 33, 24, 0.07);
+  --shadow-md: 0 4px 12px rgba(43, 33, 24, 0.09);
+  --shadow-glass: 0 8px 24px -6px rgba(43, 33, 24, 0.12), 0 2px 6px rgba(43, 33, 24, 0.04);
+  --shadow-glass-lg: 0 16px 36px -8px rgba(43, 33, 24, 0.16), 0 4px 10px rgba(43, 33, 24, 0.05);
+  --shadow-glow: 0 6px 20px -4px rgba(99, 89, 78, 0.3);
+  --gradient-pastel: linear-gradient(120deg, #2b2118, #63594e, #9a8f81);
+
+  --editor-ui-bg: var(--bg-surface);
+  --editor-ui-bg-hover: #f5ede1;
+  --editor-ui-text: var(--color-text-main);
+  --editor-ui-muted: #574a3e;
+  --editor-ui-border: rgba(43, 33, 24, 0.11);
+  --editor-ui-focus: #63594e;
+  --editor-ui-accent: #574a3e;
+  --editor-ui-accent-soft: #efe7d9;
+  --editor-ui-shadow: 0 12px 32px rgba(43, 33, 24, 0.14);
 }
 
-/* Mist (cool grey, slate-blue accent) */
-:root[data-room-theme='mist'],
-.studio-theme-mist {
+/* Mist (cool grey, slate-blue accent): the dim theme, softer than Dark */
+:root[data-palette='mist'] {
   color-scheme: dark;
   --manuscript-paper: #1e2026;
   --manuscript-ink: #c8ccd4;
@@ -2094,7 +2134,7 @@ app-assistant {
   --surface-image-ground: #24272d;
   --color-text-main: #c8ccd4;
   --color-text-muted: #a9adb6;
-  --color-text-light: #8a8f99;
+  --color-text-light: #989da7;
   --color-text-placeholder: #7c818b;
   --color-text-faint: #42464f;
 
@@ -2151,179 +2191,184 @@ app-assistant {
   --editor-ui-focus: #8494b0;
   --editor-ui-accent: #a9adb6;
   --editor-ui-accent-soft: rgba(169, 173, 182, 0.13);
+
+  /* ── Graph, semantic colours and depth, completing the app graph ── */
+  --graph-node: #b9bfca;
+  --graph-node-head: #dde0e6;
+  --graph-edge: #5f6572;
+  --graph-edge-active: #dde0e6;
+  --graph-label-box: #1e2026;
+  --graph-community-1: #5fa585;
+  --graph-community-2: #c98a4f;
+  --graph-community-3: #8b93d8;
+  --danger-ink: #dde0e6;
+  --color-success: #8FC7A8;
+  --color-success-dark: #8FC7A8;
+  --color-highlight: #b9d6e0;
+  --color-highlight-hover: #cfe3ea;
+  --cover-disc-bg: rgba(36, 39, 45, 0.90);
+  --cover-disc-ink: #9ba1ac;
+  --cover-disc-border: rgba(221, 224, 230, 0.10);
+  --cover-disc-shadow: 0 1px 3px rgba(0, 0, 0, 0.42);
+  --selection-badge-bg: rgba(0, 0, 0, 0.28);
+  --dock-shadow-rail: 0 16px 40px rgba(0, 0, 0, 0.58), 0 3px 10px rgba(0, 0, 0, 0.42);
+  --dock-shadow: 0 16px 40px rgba(0, 0, 0, 0.58), 0 3px 10px rgba(0, 0, 0, 0.42);
+  --cover-shadow: 0 2px 12px rgba(0, 0, 0, 0.48);
+  --button-shadow: none;
+  --button-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --cover-shadow-hover: 0 2px 4px -1px rgba(0, 0, 0, 0.5), 0 12px 24px -8px rgba(0, 0, 0, 0.5);
+
+  --color-danger: #ffb4ab;
+  --color-danger-vivid: #ffdad6;
+  --color-danger-bg: #93000a;
+  --danger-solid: #93000a;
+  --danger-solid-hover: #a81212;
+  --danger-surface: #93000a;
+  --danger-hairline: #c98a86;
+  --color-info: #A8C4E8;
+  --color-info-border: #4A6A94;
+  --color-info-bg: #1A2433;
+
+  --overlay-heavy: rgba(0, 0, 0, 0.80);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.36);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.40);
+  --shadow-glass: 0 8px 24px -6px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.28);
+  --shadow-glass-lg: 0 16px 36px -8px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.32);
+  --shadow-glow: 0 6px 20px -4px rgba(0, 0, 0, 0.35);
+  --editor-ui-shadow: 0 16px 44px rgba(0, 0, 0, 0.56);
 }
 
-/* Sepia (warm paper, brown ink) */
-:root[data-room-theme='sepia'],
-.studio-theme-sepia {
-  color-scheme: light;
-  --manuscript-paper: #fbf3e0;
-  --manuscript-ink: #5f4b32;
-  --manuscript-ink-strong: #4a3a26;
-  --manuscript-ink-soft: #6f5b40;
-  --manuscript-ink-faint: #715f44;
-  --manuscript-rule: #d8c8a8;
-  --manuscript-rule-strong: #c4b08a;
-  --manuscript-link: #715b3f;
-  --manuscript-link-hover: #4a3a26;
-  --manuscript-link-rule: rgba(113, 91, 63, 0.40);
-  --manuscript-selection: rgba(139, 115, 85, 0.18);
-  --manuscript-quote-rule: #b09a74;
-  --manuscript-code-bg: #f0e8d0;
-  --manuscript-code-ink: #5f4b32;
-  --manuscript-table-head-bg: #f0e8d0;
-  --manuscript-placeholder: #715f44;
+/* Writer's Study (warm ink on a dark desk, amber accent) */
+:root[data-palette='study'] {
+  color-scheme: dark;
+  --manuscript-paper: #1a1814;
+  --manuscript-ink: #e4d5bf;
+  --manuscript-ink-strong: #f1e6d3;
+  --manuscript-ink-soft: #bcae96;
+  --manuscript-ink-faint: #958a75;
+  --manuscript-rule: #3a342c;
+  --manuscript-rule-strong: #4a4238;
+  --manuscript-link: #c9953e;
+  --manuscript-link-hover: #e0b061;
+  --manuscript-link-rule: rgba(201, 149, 62, 0.45);
+  --manuscript-selection: rgba(201, 149, 62, 0.22);
+  --manuscript-quote-rule: #c9953e;
+  --manuscript-code-bg: #24201a;
+  --manuscript-code-ink: #e4d5bf;
+  --manuscript-table-head-bg: #24201a;
+  --manuscript-placeholder: #958a75;
 
-  --bg-body: #f3e9d3;
-  --bg-surface: #fbf3e0;
-  --bg-surface-alt: #f3e9d3;
-  --bg-sidebar: #f5ecd7;
-  --bg-input: #fbf3e0;
-  --bg-hover: #ece0c6;
-  --surface-image-ground: #f0e8d0;
-  --color-text-main: #5f4b32;
-  --color-text-muted: #6f5b40;
-  --color-text-light: #715f44;
-  --color-text-placeholder: #9a8767;
-  --color-text-faint: #d8c8a8;
+  --bg-body: #141210;
+  --bg-surface: #1a1814;
+  --bg-surface-alt: #201d18;
+  --bg-sidebar: #1f1c18;
+  --bg-input: #1a1814;
+  --bg-hover: #2a2620;
+  --surface-image-ground: #201d18;
+  --color-text-main: #e4d5bf;
+  --color-text-muted: #bcae96;
+  --color-text-light: #9c917c;
+  --color-text-placeholder: #857a66;
+  --color-text-faint: #4a4238;
 
-  --primary-ink: #4a3a26;
-  --primary-fill: #5f4b32;
-  --on-primary: #fbf3e0;
-  --color-primary: #5f4b32;
-  --color-primary-hover: #4a3a26;
-  --color-primary-dim: #a08a68;
-  --color-brand-accent: #715b3f;
-  --color-brand-accent-fill: #8b7355;
-  --color-accent: #8b7355;
-  --color-accent-hover: #5f4b32;
-  --color-accent-faint: rgba(139, 115, 85, 0.30);
-  --color-accent-bg: rgba(139, 115, 85, 0.14);
-  --color-secondary: #8b7355;
-  --selection-surface: #5f4b32;
-  --selection-ink: #fbf3e0;
+  --primary-ink: #f1e6d3;
+  /* Deep amber: the switch's on track and primary buttons, with cream on it (4.9:1). */
+  --primary-fill: #7d5a22;
+  --on-primary: #f1e6d3;
+  --color-primary: #d4a556;
+  --color-primary-hover: #e0b061;
+  --color-primary-dim: #8a6a35;
+  --color-brand-accent: #c9953e;
+  --color-brand-accent-fill: #7d5a22;
+  --color-accent: #c9953e;
+  --color-accent-hover: #e0b061;
+  --color-accent-faint: rgba(201, 149, 62, 0.30);
+  --color-accent-bg: rgba(201, 149, 62, 0.14);
+  --color-secondary: #4a4238;
+  --selection-surface: #332d25;
+  --selection-ink: #f1e6d3;
+  --selection-focus-ring: #c9953e;
+  --text-selection-bg: #4a3f2e;
+  --cta-surface-hover: #d6c7ae;
 
-  --dock-pill: #ece0c6;
-  --dock-hover: #f3e9d3;
-  --dock-field: #f3e9d3;
-  --dock-shadow: 0 8px 22px rgba(95, 75, 50, 0.14);
-  --dock-shadow-rail: 0 -6px 20px rgba(95, 75, 50, 0.10);
-  --control-active-fill: var(--bg-surface);
+  --dock-surface: #24201b;
+  --dock-border: #3a342c;
+  --dock-pill: #3b342b;
+  --dock-hover: #2f2a23;
+  --dock-field: #1f1c18;
+  --control-active-fill: #3b342b;
   --control-active-ink: var(--color-text-main);
-  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
+  --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
-  --border-color: #d8c8a8;
-  --border-light: #e8dcc8;
-  --border-focus: #8b7355;
-  --focus-ring: #715b3f;
-  --scrollbar-thumb: #dccdb0;
-  --scrollbar-thumb-hover: #c4b08a;
+  --border-color: #3a342c;
+  --border-light: #2d2822;
+  --border-focus: #6b5e4c;
+  --control-border: #5a4f40;
+  --focus-ring: #c9953e;
+  --scrollbar-thumb: #3a342c;
+  --scrollbar-thumb-hover: #4a4238;
 
-  --overlay-medium: rgba(95, 75, 50, 0.30);
-  --overlay-light: rgba(95, 75, 50, 0.20);
-  --modal-scrim: rgba(74, 58, 38, 0.36);
-  --glass-bg: rgba(251, 243, 224, 0.60);
-  --glass-bg-strong: rgba(251, 243, 224, 0.90);
-  --glass-border: rgba(216, 200, 168, 0.85);
-  --shadow-sm: 0 1px 2px rgba(95, 75, 50, 0.08);
-  --shadow-md: 0 4px 12px rgba(95, 75, 50, 0.12);
-  --shadow-glass: 0 8px 24px -6px rgba(95, 75, 50, 0.14), 0 2px 6px rgba(95, 75, 50, 0.05);
-  --shadow-glass-lg: 0 16px 36px -8px rgba(95, 75, 50, 0.18), 0 4px 10px rgba(95, 75, 50, 0.06);
-  --shadow-glow: 0 6px 20px -4px rgba(139, 115, 85, 0.30);
-  --gradient-pastel: linear-gradient(120deg, #4a3a26, #8b7355, #c4b08a);
+  --overlay-medium: rgba(20, 18, 16, 0.72);
+  --overlay-light: rgba(0, 0, 0, 0.45);
+  --modal-scrim: rgba(10, 9, 7, 0.66);
+  --glass-bg: rgba(20, 18, 16, 0.60);
+  --glass-bg-strong: rgba(20, 18, 16, 0.95);
+  --glass-border: #3a342c;
+  --gradient-pastel: linear-gradient(120deg, #e0b061, #c9953e, #7d5a22);
 
-  --editor-ui-bg: #f5ecd7;
-  --editor-ui-bg-hover: #ece0c6;
-  --editor-ui-text: #5f4b32;
-  --editor-ui-muted: #6f5b40;
-  --editor-ui-border: rgba(95, 75, 50, 0.16);
-  --editor-ui-focus: #715b3f;
-  --editor-ui-accent: #6f5b40;
-  --editor-ui-accent-soft: #ece0c6;
-  --editor-ui-shadow: 0 12px 32px rgba(95, 75, 50, 0.16);
-}
+  --editor-ui-bg: #24201a;
+  --editor-ui-bg-hover: #2a2620;
+  --editor-ui-text: #e4d5bf;
+  --editor-ui-muted: #958a75;
+  --editor-ui-border: rgba(228, 213, 191, 0.10);
+  --editor-ui-focus: #c9953e;
+  --editor-ui-accent: #bcae96;
+  --editor-ui-accent-soft: rgba(188, 174, 150, 0.13);
 
-/* Paper (white, ink-blue accent) */
-:root[data-room-theme='paper'],
-.studio-theme-paper {
-  color-scheme: light;
-  --manuscript-paper: #ffffff;
-  --manuscript-ink: #1a1a1a;
-  --manuscript-ink-strong: #000000;
-  --manuscript-ink-soft: #4a4a4a;
-  --manuscript-ink-faint: #6b6b6b;
-  --manuscript-rule: #d4d6d8;
-  --manuscript-rule-strong: #b8bbbe;
-  --manuscript-link: #1e3a5f;
-  --manuscript-link-hover: #10243d;
-  --manuscript-link-rule: rgba(30, 58, 95, 0.40);
-  --manuscript-selection: rgba(30, 58, 95, 0.14);
-  --manuscript-quote-rule: #1e3a5f;
-  --manuscript-code-bg: #f5f6f7;
-  --manuscript-code-ink: #1a1a1a;
-  --manuscript-table-head-bg: #f5f6f7;
-  --manuscript-placeholder: #6b6b6b;
+  /* ── Graph, semantic colours and depth, completing the app graph ── */
+  --graph-node: #cdbfa6;
+  --graph-node-head: #f1e6d3;
+  --graph-edge: #6e6352;
+  --graph-edge-active: #f1e6d3;
+  --graph-label-box: #1a1814;
+  --graph-community-1: #6aa77c;
+  --graph-community-2: #d08a45;
+  --graph-community-3: #8f93d6;
+  --danger-ink: #f1e6d3;
+  --color-success: #a7c58e;
+  --color-success-dark: #a7c58e;
+  --color-highlight: #e3cf9f;
+  --color-highlight-hover: #eddcb3;
+  --cover-disc-bg: rgba(32, 29, 24, 0.90);
+  --cover-disc-ink: #a89c86;
+  --cover-disc-border: rgba(241, 230, 211, 0.10);
+  --cover-disc-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --selection-badge-bg: rgba(0, 0, 0, 0.28);
+  --dock-shadow-rail: 0 16px 40px rgba(0, 0, 0, 0.58), 0 3px 10px rgba(0, 0, 0, 0.42);
+  --dock-shadow: 0 16px 40px rgba(0, 0, 0, 0.58), 0 3px 10px rgba(0, 0, 0, 0.42);
+  --cover-shadow: 0 2px 12px rgba(0, 0, 0, 0.48);
+  --button-shadow: none;
+  --button-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --cover-shadow-hover: 0 2px 4px -1px rgba(0, 0, 0, 0.5), 0 12px 24px -8px rgba(0, 0, 0, 0.5);
 
-  --bg-body: #f5f6f7;
-  --bg-surface: #ffffff;
-  --bg-surface-alt: #f5f6f7;
-  --bg-sidebar: #f7f8f9;
-  --bg-input: #ffffff;
-  --bg-hover: #ebedef;
-  --surface-image-ground: #ebedef;
-  --color-text-main: #1a1a1a;
-  --color-text-muted: #4a4a4a;
-  --color-text-light: #6b6b6b;
-  --color-text-placeholder: #8c8f93;
-  --color-text-faint: #c8cacc;
+  --color-danger: #ffb4ab;
+  --color-danger-vivid: #ffdad6;
+  --color-danger-bg: #93000a;
+  --danger-solid: #93000a;
+  --danger-solid-hover: #a81212;
+  --danger-surface: #93000a;
+  --danger-hairline: #c98a86;
+  --color-info: #A8C4E8;
+  --color-info-border: #4A6A94;
+  --color-info-bg: #1A2433;
 
-  --primary-ink: #10243d;
-  --primary-fill: #1e3a5f;
-  --on-primary: #ffffff;
-  --color-primary: #1e3a5f;
-  --color-primary-hover: #10243d;
-  --color-primary-dim: #8a9bb3;
-  --color-brand-accent: #1e3a5f;
-  --color-brand-accent-fill: #1e3a5f;
-  --color-accent: #1e3a5f;
-  --color-accent-hover: #10243d;
-  --color-accent-faint: rgba(30, 58, 95, 0.30);
-  --color-accent-bg: rgba(30, 58, 95, 0.10);
-  --color-secondary: #4a4a4a;
-  --selection-surface: #1e3a5f;
-  --selection-ink: #ffffff;
-
-  --dock-pill: #e6eaf0;
-  --dock-hover: #f2f4f6;
-  --dock-field: #f5f6f7;
-  /* Segmented thumbs and other selected controls: re-resolved here, since
-     the app's values were resolved against its own surface. */
-  --control-active-fill: var(--bg-surface);
-  --control-active-ink: var(--color-text-main);
-  --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
-
-  --border-color: #d4d6d8;
-  --border-light: #ebedef;
-  --border-focus: #1e3a5f;
-  --focus-ring: #1e3a5f;
-  --scrollbar-thumb: #dcdee0;
-  --scrollbar-thumb-hover: #b8bbbe;
-
-  --overlay-light: rgba(26, 26, 26, 0.18);
-  --glass-bg: rgba(255, 255, 255, 0.60);
-  --glass-bg-strong: rgba(255, 255, 255, 0.90);
-  --glass-border: rgba(212, 214, 216, 0.85);
-  --shadow-glow: 0 6px 20px -4px rgba(30, 58, 95, 0.25);
-  --gradient-pastel: linear-gradient(120deg, #10243d, #1e3a5f, #8a9bb3);
-
-  --editor-ui-bg: #f7f8f9;
-  --editor-ui-bg-hover: #ebedef;
-  --editor-ui-text: #1a1a1a;
-  --editor-ui-muted: #4a4a4a;
-  --editor-ui-border: rgba(26, 26, 26, 0.11);
-  --editor-ui-focus: #1e3a5f;
-  --editor-ui-accent: #4a4a4a;
-  --editor-ui-accent-soft: #ebedef;
+  --overlay-heavy: rgba(0, 0, 0, 0.80);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.36);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.40);
+  --shadow-glass: 0 8px 24px -6px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.28);
+  --shadow-glass-lg: 0 16px 36px -8px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.32);
+  --shadow-glow: 0 6px 20px -4px rgba(0, 0, 0, 0.35);
+  --editor-ui-shadow: 0 16px 44px rgba(0, 0, 0, 0.56);
 }
 
 /* ------------------------------

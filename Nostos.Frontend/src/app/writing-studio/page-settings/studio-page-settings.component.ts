@@ -12,23 +12,20 @@ import {
   signal,
 } from '@angular/core';
 
-import { ThemeService } from '../../core/services/theme.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmented.component';
 import { SwitchComponent } from '../../ui/switch/switch.component';
-import { CheckboxDirective } from '../../ui/check/check.directive';
 import { RangeDirective } from '../../ui/range/range.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { ThemePickerComponent } from '../../ui/theme-picker/theme-picker.component';
 import { SoundPack, TypewriterSound, TypewriterSounds } from '../../ui/markdown-editor/typewriter-sounds';
 import {
   FONT_SIZE_RANGE,
   LINE_SPACING_PRESETS,
   STUDIO_FONTS,
-  STUDIO_THEMES,
   StudioFont,
   StudioPreferencesService,
-  StudioThemeOption,
   TEXT_WIDTH_PRESETS,
   nearestLineSpacing,
   nearestTextWidth,
@@ -45,7 +42,7 @@ const STANDARD_WIDTH_VALUE = 'standard';
 @Component({
   selector: 'app-studio-page-settings',
   standalone: true,
-  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, CheckboxDirective, RangeDirective, NostosIconComponent],
+  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
   host: {
@@ -56,7 +53,6 @@ const STANDARD_WIDTH_VALUE = 'standard';
 })
 export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   readonly prefs = inject(StudioPreferencesService);
-  private readonly appTheme = inject(ThemeService);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly injector = inject(Injector);
 
@@ -66,14 +62,11 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   readonly view = signal<'main' | 'fonts'>('main');
 
-  readonly themes = STUDIO_THEMES;
   readonly fontGroups = [...new Set(STUDIO_FONTS.map((f) => f.group))].map((group) => ({
     group,
     fonts: STUDIO_FONTS.filter((f) => f.group === group),
   }));
   readonly sizeRange = FONT_SIZE_RANGE;
-
-  readonly following = computed(() => this.prefs.theme() === 'match');
 
   readonly spacingOptions: readonly SegmentedOption<number>[] = LINE_SPACING_PRESETS.map((p) => ({ value: p.value, label: p.label }));
   readonly spacing = computed(() => nearestLineSpacing(this.prefs.preferences().lineSpacing));
@@ -114,7 +107,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     document.addEventListener('pointerdown', this.onPointerDown, true);
-    // Focus moves into the popover, onto the theme now chosen (or the first).
+    // Focus moves into the popover, onto the theme now chosen.
     queueMicrotask(() => this.focusTheme());
   }
 
@@ -140,36 +133,11 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     void this.soundPreview.preview(sound, prefs.soundVolume);
   }
 
-  setTheme(theme: StudioThemeOption['value']): void {
-    this.prefs.update({ theme });
-  }
-
-  /** Following the app; leaving it keeps the look the page has now. */
-  setFollow(follow: boolean): void {
-    if (follow) {
-      this.prefs.update({ theme: 'match' });
-      return;
-    }
-    const mode = this.appTheme.theme();
-    this.prefs.update({ theme: this.themes.find((t) => t.mode === mode)!.value });
-  }
-
   /** In the typeface list Esc steps back; on the main view it is the Studio's to close. */
   escape(event: Event): void {
     if (this.view() !== 'fonts') return;
     event.preventDefault();
     this.backToMain();
-  }
-
-  /** Arrow keys move between swatches, as in any radio group. */
-  themeKey(event: KeyboardEvent, index: number): void {
-    const step =
-      event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
-    if (!step) return;
-    event.preventDefault();
-    const next = this.themes[(index + step + this.themes.length) % this.themes.length];
-    this.setTheme(next.value);
-    queueMicrotask(() => this.focusTheme());
   }
 
   stepSize(delta: number): void {
@@ -226,6 +194,6 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   private focusTheme(): void {
     const root = this.host.nativeElement;
-    ((root.querySelector('.ps-theme[aria-checked="true"]') ?? root.querySelector('.ps-theme')) as HTMLElement | null)?.focus();
+    ((root.querySelector('.tp-swatch[aria-checked="true"]') ?? root.querySelector('.tp-swatch')) as HTMLElement | null)?.focus();
   }
 }

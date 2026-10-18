@@ -45,8 +45,11 @@ const rawSource = css;
  * (the EPUB iframe and the PDF page are the book's own light page — which is why
  * the themed `--color-highlight` is a pale sage on dark). Three per-theme copies
  * would be three ways to state one value.
+ *
+ * `--danger-deepen-to` is the fixed near-black that danger fills mix toward,
+ * so the fill deepens in every theme; it is one value on purpose.
  */
-const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|container-width|fw|transition|glass-blur|modal-scrim-blur|sidebar-width|brand-|highlight-|control-h|focus-ring-width|dock-rail-h|dock-float-bottom|dock-bar-h)/;
+const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|container-width|fw|transition|glass-blur|modal-scrim-blur|sidebar-width|brand-|highlight-|control-h|focus-ring-width|dock-rail-h|dock-float-bottom|dock-bar-h|danger-deepen-to$)/;
 
 /**
  * Tokens whose value is a `color-mix()` of another token. They re-derive
@@ -249,4 +252,51 @@ if (missing.length) {
   process.exit(1);
 }
 
-console.log('\n✔ Every colour token has a dark counterpart, in styles.css and in every theme module.\n');
+/**
+ * Rule 3 (issue #1074) — the palettes. Sepia, Mist and Writer's Study are
+ * `:root[data-palette='<name>']` blocks layered over their mode's base (light
+ * `:root`, or the dark block). A colour the base declares LITERALLY and the
+ * palette leaves out shows the base's value inside the palette: a cool grey
+ * border in Sepia, a spruce button in Writer's Study. Tokens the base declares
+ * as var()/color-mix() of others re-resolve against the palette by
+ * themselves, so they are not required. The mode is the block's own
+ * `color-scheme`. Every theme ThemeService lists, besides Light and Dark, must
+ * have a block, so a theme cannot ship without its colours.
+ */
+const isLiteral = (value) => !/var\(|color-mix\(/.test(value);
+const palettes = [...css.matchAll(/:root\[data-palette=['"]([a-z-]+)['"]\]\s*\{/g)].map((m) => {
+  const block = tokenSetInBlock(css.slice(m.index), /\{/);
+  const body = css.slice(m.index, css.indexOf('}', m.index));
+  return { name: m[1], block, mode: /color-scheme:\s*dark/.test(body) ? 'dark' : 'light' };
+});
+const serviceSource = readFileSync(join(srcRoot, 'app/core/services/theme.service.ts'), 'utf8');
+const listed = [...serviceSource.slice(serviceSource.indexOf('export const THEMES')).matchAll(/\{ value: '([a-z-]+)'/g)]
+  .map((m) => m[1])
+  .filter((name) => name !== 'light' && name !== 'dark');
+const paletteFailures = [];
+for (const name of listed) {
+  if (!palettes.some((p) => p.name === name)) paletteFailures.push({ name, miss: ['(no :root[data-palette] block at all)'] });
+}
+for (const { name, block, mode } of palettes) {
+  const base = mode === 'dark' ? new Map([...light, ...dark]) : light;
+  const miss = [...base]
+    .filter(([token, value]) => isLiteral(value) && !INVARIANT.test(token) && !block.has(token))
+    .map(([token]) => token);
+  console.log(`  palette ${name.padEnd(25)} ${String(block.size).padStart(3)} tokens on ${mode}`);
+  if (miss.length) paletteFailures.push({ name, miss });
+}
+if (listed.length === 0 || palettes.length === 0) {
+  console.error('\n✖ found no palettes: the THEMES list or the data-palette blocks moved, so this rule would pass vacuously.\n');
+  process.exit(1);
+}
+if (paletteFailures.length) {
+  console.error(`\n✖ ${paletteFailures.length} palette(s) leave colour tokens to their base theme.`);
+  for (const { name, miss } of paletteFailures) {
+    console.error(`\n  ${name} is missing:`);
+    for (const t of miss) console.error(`    ${t}`);
+  }
+  console.error('\n  Each would show the base theme\'s value inside the palette.\n');
+  process.exit(1);
+}
+
+console.log('\n✔ Every colour token has a dark counterpart and a value in every palette, in styles.css and in every theme module.\n');

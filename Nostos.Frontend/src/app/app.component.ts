@@ -54,7 +54,7 @@ export class App {
     // Applies the persisted theme immediately. `index.html` already set the
     // attribute before first paint; this reconciles the signal with the DOM and
     // owns the attribute for the rest of the session.
-    inject(ThemeService).theme();
+    inject(ThemeService).active();
 
     // Keeps the service worker's navigation manifest fresh, so a deploy that
     // changes how URLs are served (the app shell vs. the API) reaches an

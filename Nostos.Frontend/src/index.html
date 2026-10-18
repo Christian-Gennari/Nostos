@@ -8,7 +8,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#121316" />
+    <meta name="theme-color" content="#FBFBFC" />
     <link rel="manifest" href="manifest.webmanifest" />
     <!-- Nostos brand kit v1 favicon: ONE mark, the kit's primary variant
          (forest tile + paper arch) on every colour scheme. There is no
@@ -30,18 +30,35 @@
 
   <body>
     <!-- Theme hydration, BEFORE first paint.
-         Without this, an app booted in dark would paint light for one frame and
-         then flip. The read must be synchronous and inline (a module would be
-         fetched too late), and it must mirror `theme.service.ts` exactly:
-         key `nostos.theme`, values `dark`/absent. Keep the two in sync. -->
+         Without this, an app booted in a dark theme would paint light for one
+         frame and then flip. The read must be synchronous and inline (a module
+         would be fetched too late), and it must mirror `theme.service.ts`
+         exactly: keys `nostos.theme` (a theme, `system` or absent),
+         `nostos.theme.day` and `nostos.theme.night`, the one-time carry-over of
+         a Studio page theme, `data-theme`, `data-palette` and the chrome
+         colours of THEMES. Keep the two in sync. -->
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem('nostos.theme');
-          var dark =
-            stored === 'dark' ||
-            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+          var modes = { light: 'light', sepia: 'light', mist: 'dark', study: 'dark', dark: 'dark' };
+          var chrome = { light: '#FBFBFC', sepia: '#fbf5eb', mist: '#16181c', study: '#141210', dark: '#0d0e11' };
+          var choice = localStorage.getItem('nostos.theme');
+          if (choice === null) {
+            var studio = JSON.parse(localStorage.getItem('nostos.studio.preferences') || 'null');
+            var carried = studio && studio.theme;
+            if (carried === 'sepia' || carried === 'mist' || carried === 'study') choice = carried;
+          }
+          var theme = modes[choice] ? choice : null;
+          if (!theme) {
+            var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var slot = localStorage.getItem(dark ? 'nostos.theme.night' : 'nostos.theme.day');
+            theme = modes[slot] === (dark ? 'dark' : 'light') ? slot : dark ? 'dark' : 'light';
+          }
+          var root = document.documentElement;
+          if (modes[theme] === 'dark') root.setAttribute('data-theme', 'dark');
+          if (theme !== 'light' && theme !== 'dark') root.setAttribute('data-palette', theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', chrome[theme]);
         } catch (e) {
           /* storage unavailable — stay light */
         }

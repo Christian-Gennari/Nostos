@@ -393,14 +393,27 @@ describe('CommandPalette', () => {
 
     it('switches the theme in place', () => {
       const theme = TestBed.inject(ThemeService);
-      theme.setTheme('light');
+      theme.setChoice('light');
       type('dark');
       const toggle = component.entries().find((e) => e.id === 'toggle-theme')!;
       // The label names the theme it switches TO.
       expect(toggle.label).toBe('Switch to dark theme');
       component.run(toggle);
-      expect(theme.theme()).toBe('dark');
-      theme.setTheme('light');
+      expect(theme.active()).toBe('dark');
+      theme.setChoice('system');
+    });
+
+    it('switches to the person\'s own night theme by name (#1074)', () => {
+      const theme = TestBed.inject(ThemeService);
+      theme.setNightTheme('study');
+      theme.setChoice('sepia');
+      type('theme');
+      const toggle = component.entries().find((e) => e.id === 'toggle-theme')!;
+      expect(toggle.label).toBe("Switch to Writer's Study theme");
+      component.run(toggle);
+      expect(theme.active()).toBe('study');
+      theme.setNightTheme('dark');
+      theme.setChoice('system');
     });
 
     it('opens the highlight import dialog in place', () => {
