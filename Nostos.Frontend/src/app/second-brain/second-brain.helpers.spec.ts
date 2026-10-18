@@ -28,11 +28,16 @@ describe('second-brain helpers', () => {
       expect(newTopicNameFor('stoicism', topics)).toBeNull();
     });
 
-    it('offers nothing for an empty, overlong or link-breaking name', () => {
+    it('offers nothing for an empty, overlong or link-breaking name (the server rule)', () => {
       expect(newTopicNameFor('   ', topics)).toBeNull();
-      expect(newTopicNameFor('x'.repeat(101), topics)).toBeNull();
-      expect(newTopicNameFor('a]b', topics)).toBeNull();
-      expect(newTopicNameFor('a\nb', topics)).toBeNull();
+      expect(newTopicNameFor('x'.repeat(201), topics)).toBeNull();
+      expect(newTopicNameFor('a]]b', topics)).toBeNull();
+      expect(newTopicNameFor('ends]', topics)).toBeNull();
+      expect(newTopicNameFor('a|b', topics)).toBeNull();
+    });
+
+    it('folds a typed line break into a space', () => {
+      expect(newTopicNameFor('a\nb', topics)).toBe('a b');
     });
   });
 

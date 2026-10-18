@@ -28,6 +28,10 @@ public static class NoteErrorCodes
     public const string EmptyNote = "empty_note";
     public const string TopicNotFound = "topic_not_found";
 
+    // A link or unlink request with no topics or notes, too many of either, or
+    // a name that cannot stand inside [[ ]].
+    public const string InvalidTopicLink = "invalid_topic_link";
+
     // Post-processing (issue #262 §7, §8): an unknown mode is a typed refusal
     // rather than a silent downgrade to verbatim, and a restore of a note that
     // never kept a raw transcript is a conflict, not a success.

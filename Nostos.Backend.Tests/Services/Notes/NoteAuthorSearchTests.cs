@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Services;
@@ -102,7 +103,7 @@ public sealed class NoteAuthorSearchTests : IClassFixture<SqliteTestFixture>
 
         (await repo.SearchByAllTermsAsync(["Åsa"], 50)).Should().ContainSingle().Which.Id.Should().Be(note.Id);
         (await repo.SearchByAllTermsAsync(["Ärlighet"], 50)).Should().ContainSingle();
-        (await repo.BrowseAsync("Öberg", null, false, false, 50, 0)).Total.Should().Be(1);
+        (await repo.BrowseAsync(new NoteBrowseQuery("Öberg"), 50, 0)).Total.Should().Be(1);
     }
 
     [Fact]
@@ -111,7 +112,7 @@ public sealed class NoteAuthorSearchTests : IClassFixture<SqliteTestFixture>
         using var h = CreateHarness();
         await AuthorSearchSeed.SeedAsync(h.Db);
 
-        var (items, total) = await new NoteRepository(h.Db).BrowseAsync("schopenhauer", null, false, false, 50, 0);
+        var (items, total) = await new NoteRepository(h.Db).BrowseAsync(new NoteBrowseQuery("schopenhauer"), 50, 0);
 
         total.Should().Be(3);
         items.Should().OnlyContain(n => n.Book!.Author == "Arthur Schopenhauer");

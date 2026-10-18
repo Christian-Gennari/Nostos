@@ -47,3 +47,12 @@ public record TopicGraphDto(List<TopicGraphNodeDto> Nodes, List<TopicGraphEdgeDt
 public record CreateTopicDto(string Topic);
 public record UpdateTopicDto(string Topic);
 public record MergeTopicDto(Guid TargetId);
+
+/// <summary>
+/// Body of <c>POST /api/topics/link</c> and <c>/unlink</c>: add or remove the
+/// named topics on every listed note. A topic linked by name is created if new.
+/// </summary>
+public record TopicLinkRequestDto(IReadOnlyList<string> Topics, IReadOnlyList<Guid> NoteIds);
+
+/// <summary>The notes a link or unlink changed, and every listed note as it now is.</summary>
+public record TopicLinkResultDto(IReadOnlyList<Guid> ChangedNoteIds, IReadOnlyList<NoteSearchHitDto> Notes);

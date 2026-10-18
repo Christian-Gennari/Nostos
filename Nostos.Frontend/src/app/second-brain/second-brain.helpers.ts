@@ -1,9 +1,5 @@
-import {
-  importedNoteLocation,
-  isImportedAnchor,
-  type NoteSearchHit,
-} from '../core/dtos/note.dtos';
-import type { NoteContextDto, TopicDto } from '../core/services/topics.service';
+import type { TopicDto } from '../core/services/topics.service';
+import { newTopicName } from '../ui/note-item/note-item.helpers';
 
 export type IndexSort = 'usage' | 'az' | 'za';
 export type NoteSort = 'newest' | 'oldest' | 'source';
@@ -53,9 +49,8 @@ export interface NamePart {
   highlight: boolean;
 }
 
-export function normalizeSearchText(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
+export { normalizeSearchText } from '../core/search-text';
+import { normalizeSearchText } from '../core/search-text';
 
 /**
  * Live note-text search is debounced: it runs on the server per keystroke otherwise
@@ -101,9 +96,7 @@ export function declaresTopic(content: string): boolean {
  * is empty, too long, would break the `[[name]]` syntax, or already exists.
  */
 export function newTopicNameFor(query: string, topics: readonly TopicDto[]): string | null {
-  const name = query.trim();
-  if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
-  return topics.some((topic) => topic.name.toLowerCase() === name.toLowerCase()) ? null : name;
+  return newTopicName(topics, query);
 }
 
 /** `content` with an explicit `[[name]]` reference, appended unless already there. */
@@ -193,33 +186,4 @@ export function highlightNameParts(name: string, queryText: string): NamePart[] 
   ].filter((part) => part.text.length > 0);
 }
 
-/** The reader query params that open a note's source passage. */
-export type NoteSourceParams =
-  | { sourcePage: number }
-  | { sourceCfi: string }
-  | { sourceTime: number }
-  | { sourceNote: string };
-
-/** Where in its book a note points, or null when it has no usable location. */
-export function noteSourceParams(note: NoteSearchHit | NoteContextDto): NoteSourceParams | null {
-  const anchor = note.anchorVerified ? note.sourceAnchorValue?.trim() : null;
-  const kind = note.sourceAnchorKind?.toLowerCase();
-  if (kind === 'pdf_page' && anchor) {
-    const page = Number(anchor);
-    if (Number.isInteger(page) && page > 0) return { sourcePage: page };
-  }
-  if (kind === 'epub_cfi' && anchor) return { sourceCfi: anchor };
-  if (kind === 'audio_timestamp' && anchor) {
-    const sourceTime = Number(anchor);
-    if (Number.isFinite(sourceTime) && sourceTime >= 0) return { sourceTime };
-  }
-  const cfi = note.cfiRange?.trim();
-  if (cfi?.startsWith('epubcfi(')) return { sourceCfi: cfi };
-
-  // An imported highlight has no location until the reader has found it in
-  // the book, so the link names the note and the reader looks it up.
-  if (isImportedAnchor(note.sourceAnchorKind) && importedNoteLocation(note)) {
-    return { sourceNote: 'noteId' in note ? note.noteId : note.id };
-  }
-  return null;
-}
+export { noteSourceParams, type NoteSourceParams } from '../core/note-source';

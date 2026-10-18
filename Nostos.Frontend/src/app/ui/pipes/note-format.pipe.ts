@@ -27,7 +27,7 @@ export function noteWikilinksToText(content: string): string {
   standalone: true,
 })
 export class NoteFormatPipe implements PipeTransform {
-  transform(content: string, topicMap: Map<string, TopicDto> | null): string {
+  transform(content: string, topicMap: ReadonlyMap<string, TopicDto> | null): string {
     if (!content) return '';
 
     const topics = topicMap ?? new Map<string, TopicDto>();

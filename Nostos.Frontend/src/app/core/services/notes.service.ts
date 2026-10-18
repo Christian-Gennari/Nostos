@@ -1,7 +1,22 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Note, CreateNoteDto, NoteSearchHit, NoteSearchPage, NoteRawTranscript, Passage, UpdateNoteDto } from '../dtos/note.dtos';
+import {
+  Note, CreateNoteDto, NoteBookFacet, NoteOrder, NoteSearchHit, NoteSearchPage, NoteRawTranscript, NoteSummary,
+  Passage, UpdateNoteDto,
+} from '../dtos/note.dtos';
+
+/** One place of the Brain: everything, unsorted, a kind, a topic, or what two topics share. */
+export interface NoteBrowseFilter {
+  query?: string;
+  bookId?: string;
+  withoutTopics?: boolean;
+  /** Only notes of this kind (issue #1014: Brain's Passages filter). */
+  kind?: 'note' | 'passage';
+  topicId?: string;
+  /** With `topicId`: only the notes that also carry this topic. */
+  withTopicId?: string;
+}
 
 /**
  * The assistant's capture payload (issue #261 §4). Appended: it extends the
@@ -74,26 +89,29 @@ export class NotesService {
     });
   }
 
-  browse(options: {
-    query?: string;
-    bookId?: string;
-    withoutTopics?: boolean;
+  browse(options: NoteBrowseFilter & {
     oldestFirst?: boolean;
-    /** Only notes of this kind (issue #1014: Brain's Passages filter). */
-    kind?: 'note' | 'passage';
+    order?: NoteOrder;
     limit?: number;
     offset?: number;
   } = {}): Observable<NoteSearchPage> {
-    const params: Record<string, string | number | boolean> = {
-      limit: options.limit ?? 25,
-      offset: options.offset ?? 0,
-    };
-    if (options.query?.trim()) params['query'] = options.query.trim();
-    if (options.bookId) params['bookId'] = options.bookId;
-    if (options.withoutTopics) params['withoutTopics'] = true;
-    if (options.oldestFirst) params['oldestFirst'] = true;
-    if (options.kind) params['kind'] = options.kind;
+    const params = browseParams(options);
+    params['limit'] = options.limit ?? 25;
+    params['offset'] = options.offset ?? 0;
+    if (options.order) params['order'] = options.order;
+    else if (options.oldestFirst) params['oldestFirst'] = true;
     return this.http.get<NoteSearchPage>('/api/notes', { params });
+  }
+
+  /** The books with notes in one place, and how many each (its book filter is ignored). */
+  books(filter: NoteBrowseFilter = {}): Observable<NoteBookFacet[]> {
+    const { bookId: _ignored, ...rest } = filter;
+    return this.http.get<NoteBookFacet[]>('/api/notes/books', { params: browseParams(rest) });
+  }
+
+  /** How many notes, passages and unsorted notes there are. */
+  summary(): Observable<NoteSummary> {
+    return this.http.get<NoteSummary>('/api/notes/summary');
   }
 
   /**
@@ -118,4 +136,15 @@ export class NotesService {
   capture(bookId: string, dto: CaptureNoteDto): Observable<Note> {
     return this.http.post<Note>(`/api/books/${bookId}/notes`, dto);
   }
+}
+
+function browseParams(filter: NoteBrowseFilter): Record<string, string | number | boolean> {
+  const params: Record<string, string | number | boolean> = {};
+  if (filter.query?.trim()) params['query'] = filter.query.trim();
+  if (filter.bookId) params['bookId'] = filter.bookId;
+  if (filter.withoutTopics) params['withoutTopics'] = true;
+  if (filter.kind) params['kind'] = filter.kind;
+  if (filter.topicId) params['topicId'] = filter.topicId;
+  if (filter.withTopicId) params['withTopicId'] = filter.withTopicId;
+  return params;
 }

@@ -75,7 +75,7 @@ export class BrainTopicActions {
   readonly topicDeleteDescription = computed(() => {
     const target = this.topicDeleteTarget();
     return target
-      ? `Deleting this topic removes its note links, but does not edit note text. The [[${target.name}]] reference stays in notes, and saving a note again will re-create the topic.`
+      ? `Deleting this topic removes it from its notes. In their text, [[${target.name}]] becomes plain words, so nothing you wrote is lost.`
       : '';
   });
 

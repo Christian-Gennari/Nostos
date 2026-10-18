@@ -1,10 +1,9 @@
-using System.Text.RegularExpressions;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 
 namespace Nostos.Backend.Services;
 
-public partial class NoteProcessorService
+public class NoteProcessorService
 {
     private readonly ITopicRepository _topicRepo;
 
@@ -13,27 +12,27 @@ public partial class NoteProcessorService
         _topicRepo = topicRepo;
     }
 
-    // 1. Encapsulate the Regex here
-    [GeneratedRegex(@"\[\[(.*?)\]\]", RegexOptions.Compiled)]
-    private static partial Regex TopicRegex();
-
     /// <summary>
     /// Parses the note content for [[Topics]], creates them if missing,
     /// and updates the Many-to-Many links.
+    ///
+    /// A link whose name the note's stored text never declared (older data, an
+    /// import) is kept, and written into the text so the text is complete; one
+    /// named in <paramref name="removed"/> is the caller unlinking it, and goes.
     /// </summary>
-    public async Task ProcessNoteAsync(NoteModel note)
+    public async Task ProcessNoteAsync(NoteModel note, IReadOnlyCollection<string>? removed = null)
     {
-        // A. Parse content
-        var matches = TopicRegex().Matches(note.Content);
+        // A. Clear existing links for this note (Full refresh strategy), keeping
+        //    what only the links knew.
+        var linkOnly = await _topicRepo.ClearNoteLinksAsync(note);
+        if (linkOnly.Count != 0)
+        {
+            var dropped = (removed ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            note.Content = TopicReferences.AppendAll(note.Content, linkOnly.Where(name => !dropped.Contains(name)));
+        }
 
-        var foundNames = matches
-            .Select(m => m.Groups[1].Value.Trim())
-            .Where(s => !string.IsNullOrEmpty(s))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // B. Clear existing links for this note (Full refresh strategy)
-        await _topicRepo.ClearNoteLinksAsync(note.Id);
+        // B. Parse content (the one parser every [[ ]] rule shares)
+        var foundNames = TopicReferences.Names(note.Content).ToList();
 
         if (foundNames.Count == 0)
             return;
