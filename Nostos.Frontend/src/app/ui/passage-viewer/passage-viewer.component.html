@@ -172,6 +172,7 @@
         type="button"
         class="pv-quote"
         [disabled]="!selection().trim() && !quoted()"
+        [attr.aria-disabled]="quoted() && !selection().trim() ? 'true' : null"
         data-testid="passage-viewer-quote"
         (click)="quote()"
       >

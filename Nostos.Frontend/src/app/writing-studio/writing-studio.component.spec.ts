@@ -1894,6 +1894,21 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(success).not.toHaveBeenCalled();
     });
 
+    it('reports a quote from the Reference viewer as inserted, or not, without a success toast', async () => {
+      const editor = (component as any).markdownEditor as MarkdownEditorStub;
+      const toast = TestBed.inject(ToastService);
+      const success = vi.spyOn(toast, 'success');
+      const passage = { id: 'passage-1', bookTitle: 'Studies in Pessimism', bookAuthor: 'Arthur Schopenhauer', title: 'On the Vanity of Existence' };
+
+      await expect(component.passageViewerOptions.quoteSelection!('Time is that in which all things pass away.', passage as never)).resolves.toBe(true);
+      expect(editor.insertMarkdown).toHaveBeenCalled();
+      expect(success).not.toHaveBeenCalled();
+
+      editor.insertMarkdown.mockResolvedValueOnce(false);
+      await expect(component.passageViewerOptions.quoteSelection!('Again.', passage as never)).resolves.toBe(false);
+      expect(toast.error).toHaveBeenCalledWith('The editor is not ready for insertion yet');
+    });
+
     it('sends "Browse Reference" to the searched Books list', () => {
       component.browseFromPalette('schopenhaur');
       expect(component.referenceMode()).toBe('library');

@@ -74,6 +74,9 @@ export class PassageViewerComponent {
   /** Briefly true after a quote went in: the button says so. */
   readonly quoted = signal(false);
   private quotedTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A quote on its way in: a second press must not insert it twice. */
+  private quoting = false;
+  private destroyed = false;
   /** Width of one page in px, measured from the frame. */
   readonly pageWidth = signal(0);
 
@@ -190,6 +193,7 @@ export class PassageViewerComponent {
     });
 
     this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
       if (this.quotedTimer) clearTimeout(this.quotedTimer);
       this.load?.unsubscribe();
       this.resizeObserver?.disconnect();
@@ -248,12 +252,23 @@ export class PassageViewerComponent {
   }
 
   async quote(): Promise<void> {
+    const request = this.request();
     const passage = this.passage();
     const text = this.selection().trim();
-    const quote = this.request()?.quoteSelection;
-    if (!passage || !text || !quote) return;
-    // A failed quote keeps the selection, so it can be tried again.
-    if (!(await quote(text, passage))) return;
+    const quote = request?.quoteSelection;
+    if (!passage || !text || !quote || this.quoting) return;
+    this.quoting = true;
+    let inserted = false;
+    try {
+      inserted = await quote(text, passage);
+    } catch {
+      // The host reports its own failures; the button just stays as it was.
+    } finally {
+      this.quoting = false;
+    }
+    // A failed quote keeps the selection, so it can be tried again. A viewer
+    // closed or moved to another passage meanwhile has nothing to confirm.
+    if (!inserted || this.destroyed || this.request() !== request) return;
     window.getSelection()?.removeAllRanges();
     this.selection.set('');
     this.quoted.set(true);
