@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { apiDelete } from './support/brain-fixture';
 import { apiPost, loadFixture } from './support/fixture';
+import { STUDIO_PAGE_SELECTOR } from './support/studio-editor';
 
 async function undersizedVisibleControls(page: import('@playwright/test').Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -58,7 +59,7 @@ test('Studio Files rail scroll end clears the dock across the acceptance viewpor
     await page.goto(fixture.baseUrl + '/studio?writingId=' + writingIds[0], {
       waitUntil: 'domcontentloaded',
     });
-    await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+    await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
     const filesToggle = page.locator('.files-toggle');
     if ((await filesToggle.getAttribute('aria-expanded')) !== 'true') {
       await filesToggle.click();

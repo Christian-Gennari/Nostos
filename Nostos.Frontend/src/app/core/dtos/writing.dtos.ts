@@ -49,5 +49,7 @@ export interface WritingSourceDto {
   passageTitle?: string | null;
   passageEnd?: string | null;
   passageWordCount?: number | null;
+  /** The book's author, when known (issue #1038). */
+  bookAuthor?: string | null;
 }
 

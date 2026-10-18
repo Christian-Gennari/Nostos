@@ -937,6 +937,54 @@ public sealed class PostgreSqlCompatibilitySpikeTests
     // so two concurrent admissions end as one admitted + one rejected.
     [Fact]
     [Trait("Category", "PostgresSpike")]
+    public async Task Note_search_finds_authors_case_insensitively_on_postgresql()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        // PostgreSQL's LIKE is case-sensitive, unlike SQLite's; issue #1038's
+        // "@schopenhauer" must still find "Arthur Schopenhauer" on Cloud.
+        var schema = "nostos_author_search_" + Guid.NewGuid().ToString("N");
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = schema,
+        };
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseNpgsql(connectionBuilder.ConnectionString)
+            .Options;
+
+        try
+        {
+            await using var db = new NostosDbContext(options);
+            await db.Database.ExecuteSqlRawAsync($"CREATE SCHEMA \"{schema}\"");
+            await db.Database.ExecuteSqlRawAsync(db.Database.GenerateCreateScript());
+
+            var seed = await Nostos.Backend.Tests.Services.Notes.AuthorSearchSeed.SeedAsync(db);
+            var service = Nostos.Backend.Tests.Services.Notes.AuthorSearchSeed.CreateService(db);
+
+            var byAuthor = await service.SearchAsync("schopenhauer", 50);
+            byAuthor.Select(hit => hit.Id).Should().BeEquivalentTo(
+                [seed.WillQuoteId, seed.SufferingQuoteId, seed.PassageId]);
+            byAuthor.Should().OnlyContain(hit => hit.BookAuthor == "Arthur Schopenhauer");
+
+            var narrowed = await service.SearchAsync("schopenhauer will", 50);
+            narrowed[0].Id.Should().Be(seed.WillQuoteId);
+
+            var nonAscii = await service.SearchAsync("SØREN", 50);
+            nonAscii.Should().ContainSingle().Which.Id.Should().Be(seed.KierkegaardId);
+        }
+        finally
+        {
+            await using var cleanup = new NostosDbContext(options);
+            await cleanup.Database.ExecuteSqlRawAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "PostgresSpike")]
     public async Task Concurrent_capacity_admissions_end_as_one_admission_and_one_rejection_on_postgresql()
     {
         var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);

@@ -83,9 +83,11 @@ The Brain is where notes from different books meet.
 
 ### Writing Studio
 
-- **Write next to your reading:** a focused editor with your files on one side and your notes, passages and topics on the other.
-- **Quote with the source kept:** insert quotations from your notes, or select words in a saved passage to quote them.
-- **Saves as you type,** with a typewriter mode that keeps the current line centred.
+- **Opens on the page:** a blank sheet with the caret in it; your files and references slide in when you want them, and the chrome fades while you type.
+- **Type `@` to quote:** find a note, quote or passage by its words, book or author (`@schopenhauer will`) and put it on the page with its attribution. A long passage opens so you can pick the sentences you want.
+- **`/` for blocks:** headings, lists, a divider, an image, a table or code from an empty line.
+- **Make the page yours:** Studio themes, typefaces, size, spacing and width, a typewriter mode that keeps the current line centred, and optional typewriter sounds.
+- **Saves as you type,** as plain Markdown.
 
 <div align="center">
   <img width="2880" height="1800" alt="Nostos Writing Studio" src="docs/screenshots/writing-studio.png" />
@@ -187,7 +189,7 @@ Nostos/
 └── docs/              # product, architecture and operations docs
 ```
 
-**Stack:** [.NET 10](https://dotnet.microsoft.com/) Minimal APIs, EF Core 10 and SQLite · [Angular 21](https://angular.dev/) with Signals · epub.js · ngx-extended-pdf-viewer · Howler.js · Sigma.js and Graphology · TinyMCE with Turndown · Phosphor icons · Newsreader and Hanken Grotesk.
+**Stack:** [.NET 10](https://dotnet.microsoft.com/) Minimal APIs, EF Core 10 and SQLite · [Angular 21](https://angular.dev/) with Signals · epub.js · ngx-extended-pdf-viewer · Howler.js · Sigma.js and Graphology · TipTap with marked and Turndown · Phosphor icons · Newsreader and Hanken Grotesk.
 
 **Design:** warm paper surfaces, a restrained forest green, literary type and quiet controls. The mark is a doorway and a lowercase `n`: a Forest Green (`#293E32`) tile with a White (`#FFFFFF`) arch, the same in light and dark themes. Read the [Design Manifesto](docs/design-manifesto.md) or browse the [brand assets](_brand-assets/README.md).
 

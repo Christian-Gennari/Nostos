@@ -30,7 +30,9 @@ public record NoteDto(
     string Kind = "note",
     string? PassageTitle = null,
     string? PassageEnd = null,
-    int? PassageWordCount = null
+    int? PassageWordCount = null,
+    // APPENDED (issue #1038): the book's author, so a quote can name who said it.
+    string? BookAuthor = null
 );
 
 public record CreateNoteDto(
@@ -99,7 +101,9 @@ public record NoteSearchHitDto(
     string Kind = "note",
     string? PassageTitle = null,
     string? PassageEnd = null,
-    int? PassageWordCount = null
+    int? PassageWordCount = null,
+    // APPENDED (issue #1038): the book's author, so a quote can name who said it.
+    string? BookAuthor = null
 );
 
 /// <summary>
@@ -121,7 +125,9 @@ public record PassageDto(
     int WordCount,
     string Content,
     string? HighlightColour,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // APPENDED (issue #1038): the book's author, for the quote's attribution.
+    string? BookAuthor = null
 );
 
 /// <summary>

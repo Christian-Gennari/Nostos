@@ -69,7 +69,8 @@ public static class TopicsEndpoints
                         nc.Note.Kind,
                         nc.Note.PassageTitle,
                         nc.Note.PassageEnd,
-                        nc.Note.IsPassage() ? PassageText.WordCount(nc.Note.SelectedText) : null
+                        nc.Note.IsPassage() ? PassageText.WordCount(nc.Note.SelectedText) : null,
+                        nc.Note.Book?.Author
                     ) with
                     {
                         SelectedText = nc.Note.IsPassage()

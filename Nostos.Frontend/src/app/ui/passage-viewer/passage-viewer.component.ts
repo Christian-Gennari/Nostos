@@ -71,6 +71,12 @@ export class PassageViewerComponent {
   readonly pageCount = signal(1);
   /** Text selected inside the passage, offered to `quoteSelection`. */
   readonly selection = signal('');
+  /** Briefly true after a quote went in: the button says so. */
+  readonly quoted = signal(false);
+  private quotedTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A quote on its way in: a second press must not insert it twice. */
+  private quoting = false;
+  private destroyed = false;
   /** Width of one page in px, measured from the frame. */
   readonly pageWidth = signal(0);
 
@@ -187,6 +193,8 @@ export class PassageViewerComponent {
     });
 
     this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      if (this.quotedTimer) clearTimeout(this.quotedTimer);
       this.load?.unsubscribe();
       this.resizeObserver?.disconnect();
       this.closePdf();
@@ -195,6 +203,7 @@ export class PassageViewerComponent {
   }
 
   private open(request: PassageViewerRequest | null): void {
+    this.quoted.set(false);
     this.load?.unsubscribe();
     this.closePdf();
     this.closeClip();
@@ -242,14 +251,29 @@ export class PassageViewerComponent {
     void this.router.navigate(['/read', passage.bookId], queryParams ? { queryParams } : undefined);
   }
 
-  quote(): void {
+  async quote(): Promise<void> {
+    const request = this.request();
     const passage = this.passage();
     const text = this.selection().trim();
-    const quote = this.request()?.quoteSelection;
-    if (!passage || !text || !quote) return;
-    quote(text, passage);
+    const quote = request?.quoteSelection;
+    if (!passage || !text || !quote || this.quoting) return;
+    this.quoting = true;
+    let inserted = false;
+    try {
+      inserted = await quote(text, passage);
+    } catch {
+      // The host reports its own failures; the button just stays as it was.
+    } finally {
+      this.quoting = false;
+    }
+    // A failed quote keeps the selection, so it can be tried again. A viewer
+    // closed or moved to another passage meanwhile has nothing to confirm.
+    if (!inserted || this.destroyed || this.request() !== request) return;
     window.getSelection()?.removeAllRanges();
     this.selection.set('');
+    this.quoted.set(true);
+    if (this.quotedTimer) clearTimeout(this.quotedTimer);
+    this.quotedTimer = setTimeout(() => this.quoted.set(false), 2000);
   }
 
   @HostListener('document:selectionchange')

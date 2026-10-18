@@ -1,0 +1,739 @@
+/* The Studio page (issue #1037). Encapsulation is off because ProseMirror
+   renders the page's nodes itself; every rule is scoped under
+   `app-markdown-editor`. Colours come from the --manuscript-* token set in
+   styles.css, which Studio themes override. */
+
+app-markdown-editor {
+  /* Shared desktop manuscript measure. 820px keeps a readable column while
+     using the desk; narrow viewports own their own geometry below. */
+  --manuscript-measure: 820px;
+  --manuscript-gutter: clamp(20px, 4%, 40px);
+  /* The standard page. The Studio's page settings (#1041) override these as
+     inline styles on this element. */
+  --manuscript-font: Newsreader, Georgia, 'Times New Roman', serif;
+  --manuscript-font-size: 18px;
+  --manuscript-leading: 1.8;
+  --manuscript-text-measure: var(--manuscript-measure);
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  background: var(--manuscript-paper);
+}
+
+/* --- The selection bubble (issue #1040) ---------------------------------
+   No toolbar sits over the page. Formatting appears where text is selected,
+   positioned by TipTap's bubble menu (which owns visibility and placement). */
+
+app-markdown-editor .editor-bubble {
+  /* Measured before it is first placed: as a block it spanned the page and
+     the placement clamped it into the corner. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: max-content;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+app-markdown-editor .editor-bubble-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  color: var(--manuscript-ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+app-markdown-editor .editor-mark-italic {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1rem;
+  font-style: italic;
+  font-weight: 400;
+}
+
+app-markdown-editor .editor-mark-quote {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+app-markdown-editor .editor-bubble-btn:hover {
+  color: var(--manuscript-ink);
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .editor-bubble-btn.active {
+  color: var(--manuscript-ink);
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .editor-bubble-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+app-markdown-editor .editor-bubble-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 3px;
+  background: var(--manuscript-rule);
+}
+
+app-markdown-editor .editor-bubble-url {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+app-markdown-editor .editor-url-input {
+  width: min(280px, 60vw);
+  height: 32px;
+  padding: 0 10px;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule);
+  border-radius: var(--radius-sm, 4px);
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+app-markdown-editor .editor-url-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+@media (pointer: coarse) {
+  app-markdown-editor .editor-bubble-btn,
+  app-markdown-editor .editor-bubble .editor-bubble-link {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  app-markdown-editor .editor-url-input {
+    height: 44px;
+  }
+}
+
+/* --- Page typefaces (issue #1041) --------------------------------------
+   Self-hosted under /fonts/studio/ (see its README for sources and licences).
+   A browser downloads a face only when text is set in it, so declaring them
+   all costs nothing until one is chosen. */
+
+@font-face {
+  font-family: 'Studio EB Garamond';
+  src: url('/fonts/studio/eb-garamond/eb-garamond-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio EB Garamond';
+  src: url('/fonts/studio/eb-garamond/eb-garamond-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio EB Garamond';
+  src: url('/fonts/studio/eb-garamond/eb-garamond-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio PT Serif';
+  src: url('/fonts/studio/pt-serif/pt-serif-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio PT Serif';
+  src: url('/fonts/studio/pt-serif/pt-serif-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio PT Serif';
+  src: url('/fonts/studio/pt-serif/pt-serif-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Libre Baskerville';
+  src: url('/fonts/studio/libre-baskerville/libre-baskerville-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Libre Baskerville';
+  src: url('/fonts/studio/libre-baskerville/libre-baskerville-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Libre Baskerville';
+  src: url('/fonts/studio/libre-baskerville/libre-baskerville-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Crimson Pro';
+  src: url('/fonts/studio/crimson-pro/crimson-pro-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Crimson Pro';
+  src: url('/fonts/studio/crimson-pro/crimson-pro-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Crimson Pro';
+  src: url('/fonts/studio/crimson-pro/crimson-pro-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Literata';
+  src: url('/fonts/studio/literata/literata-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Literata';
+  src: url('/fonts/studio/literata/literata-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Literata';
+  src: url('/fonts/studio/literata/literata-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Source Serif 4';
+  src: url('/fonts/studio/source-serif-4/source-serif-4-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Source Serif 4';
+  src: url('/fonts/studio/source-serif-4/source-serif-4-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Source Serif 4';
+  src: url('/fonts/studio/source-serif-4/source-serif-4-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Lora';
+  src: url('/fonts/studio/lora/lora-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Lora';
+  src: url('/fonts/studio/lora/lora-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Lora';
+  src: url('/fonts/studio/lora/lora-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Alegreya';
+  src: url('/fonts/studio/alegreya/alegreya-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Alegreya';
+  src: url('/fonts/studio/alegreya/alegreya-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Alegreya';
+  src: url('/fonts/studio/alegreya/alegreya-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Inter';
+  src: url('/fonts/studio/inter/inter-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Inter';
+  src: url('/fonts/studio/inter/inter-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Inter';
+  src: url('/fonts/studio/inter/inter-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio Special Elite';
+  src: url('/fonts/studio/special-elite/special-elite-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio OpenDyslexic';
+  src: url('/fonts/studio/opendyslexic/opendyslexic-latin-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio OpenDyslexic';
+  src: url('/fonts/studio/opendyslexic/opendyslexic-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Studio OpenDyslexic';
+  src: url('/fonts/studio/opendyslexic/opendyslexic-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* --- The / menu (issue #1043) ------------------------------------------ */
+
+app-markdown-editor .block-menu {
+  position: fixed;
+  z-index: 45;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 24px));
+  max-height: min(360px, 55vh);
+  overflow-y: auto;
+  padding: 4px;
+  color: var(--manuscript-ink);
+  background: var(--manuscript-paper);
+  border: 1px solid var(--manuscript-rule-strong);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--editor-ui-shadow);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+}
+
+app-markdown-editor .block-menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+app-markdown-editor .block-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+app-markdown-editor .block-menu-item.active {
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .block-menu-hint {
+  color: var(--manuscript-ink-faint);
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.74rem;
+}
+
+app-markdown-editor .block-menu-empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--manuscript-ink-soft);
+  font-size: 0.86rem;
+}
+
+app-markdown-editor .block-menu-image {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+app-markdown-editor .block-menu-image-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+app-markdown-editor .block-menu-image-row .editor-url-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+app-markdown-editor .block-menu-image-label {
+  color: var(--manuscript-ink-soft);
+  font-size: 0.78rem;
+}
+
+@media (pointer: coarse) {
+  app-markdown-editor .block-menu-item {
+    min-height: 44px;
+  }
+}
+
+/* --- The page ------------------------------------------------------------ */
+
+app-markdown-editor .manuscript-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--manuscript-paper);
+  scrollbar-width: thin;
+  scrollbar-color: var(--manuscript-rule-strong) transparent;
+}
+
+app-markdown-editor .nostos-manuscript {
+  min-height: 100%;
+}
+
+/* No flash of an empty, caretless page before the editor exists. */
+app-markdown-editor .nostos-manuscript.editor-starting {
+  visibility: hidden;
+}
+
+app-markdown-editor .nostos-manuscript-body {
+  box-sizing: border-box;
+  width: 100%;
+  /* A chosen line length is in characters of the page's own face. */
+  max-width: var(--manuscript-text-measure);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(2rem, 4vw, 3.5rem) var(--manuscript-gutter) 7rem;
+
+  color: var(--manuscript-ink);
+  /* The page settings (#1041) set these on the Studio; the fallbacks are the
+     standard page. */
+  font-family: var(--manuscript-font);
+  font-size: var(--manuscript-font-size);
+  font-weight: 400;
+  line-height: var(--manuscript-leading);
+
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  outline: none;
+  caret-color: var(--manuscript-ink);
+}
+
+/* Typewriter mode needs real scroll runway above and below the manuscript.
+   Without it the first and last lines can never reach the 45% target. */
+app-markdown-editor .manuscript-scroll.typewriter .nostos-manuscript-body {
+  padding-top: 45vh;
+  padding-bottom: 55vh;
+}
+
+app-markdown-editor .nostos-manuscript-body ::selection {
+  color: var(--manuscript-ink);
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .nostos-manuscript-body p {
+  margin: 0 0 1.35em;
+}
+
+app-markdown-editor .nostos-manuscript-body p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--manuscript-placeholder);
+  font-style: italic;
+  pointer-events: none;
+}
+
+app-markdown-editor .nostos-manuscript-body h1,
+app-markdown-editor .nostos-manuscript-body h2,
+app-markdown-editor .nostos-manuscript-body h3 {
+  color: var(--manuscript-ink);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-weight: 600;
+  font-style: normal;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+/* Heading sizes are relative to the page's text size (a page setting), so a
+   larger page keeps its hierarchy. At the standard 18px they are the old
+   2rem / 1.42rem / 1.08rem. */
+app-markdown-editor .nostos-manuscript-body h1 {
+  margin: 0 0 1.25em;
+  font-size: 1.78em;
+  line-height: 1.18;
+}
+
+app-markdown-editor .nostos-manuscript-body h2 {
+  margin: 2.4em 0 0.75em;
+  font-size: 1.26em;
+  line-height: 1.25;
+}
+
+app-markdown-editor .nostos-manuscript-body h3 {
+  margin: 2em 0 0.65em;
+  font-size: 0.96em;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+}
+
+app-markdown-editor .nostos-manuscript-body h1 + h2,
+app-markdown-editor .nostos-manuscript-body h2 + h3 {
+  margin-top: 1.2em;
+}
+
+app-markdown-editor .nostos-manuscript-body strong {
+  color: var(--manuscript-ink-strong);
+  font-weight: 600;
+}
+
+app-markdown-editor .nostos-manuscript-body a {
+  color: var(--manuscript-link);
+  text-decoration-line: underline;
+  text-decoration-color: var(--manuscript-link-rule);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+app-markdown-editor .nostos-manuscript-body a:hover {
+  color: var(--manuscript-link-hover);
+  text-decoration-color: currentColor;
+}
+
+app-markdown-editor .nostos-manuscript-body blockquote {
+  margin: 2.1rem 0;
+  padding: 0.15rem 0 0.15rem 1.25rem;
+  color: var(--manuscript-ink-soft);
+  border-left: 2px solid var(--manuscript-quote-rule);
+  font-size: 1.03em;
+  font-style: italic;
+  line-height: 1.75;
+}
+
+app-markdown-editor .nostos-manuscript-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+app-markdown-editor .nostos-manuscript-body ul,
+app-markdown-editor .nostos-manuscript-body ol {
+  margin: 0 0 1.4em;
+  padding-left: 1.6em;
+}
+
+app-markdown-editor .nostos-manuscript-body li {
+  margin: 0.3em 0;
+  padding-left: 0.18em;
+}
+
+app-markdown-editor .nostos-manuscript-body li p {
+  margin: 0;
+}
+
+app-markdown-editor .nostos-manuscript-body li::marker {
+  color: var(--manuscript-ink-faint);
+}
+
+app-markdown-editor .nostos-manuscript-body code {
+  padding: 0.12em 0.34em;
+  color: var(--manuscript-code-ink);
+  background: var(--manuscript-code-bg);
+  border: 1px solid var(--manuscript-rule);
+  border-radius: 4px;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.84em;
+}
+
+app-markdown-editor .nostos-manuscript-body pre {
+  margin: 1.8rem 0;
+  padding: 1.15rem 1.25rem;
+  overflow-x: auto;
+  color: var(--manuscript-code-ink);
+  background: var(--manuscript-code-bg);
+  border: 1px solid var(--manuscript-rule);
+  border-radius: 6px;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+app-markdown-editor .nostos-manuscript-body pre code {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+app-markdown-editor .nostos-manuscript-body hr {
+  width: 32%;
+  margin: 3.25rem auto;
+  border: 0;
+  border-top: 1px solid var(--manuscript-rule-strong);
+}
+
+app-markdown-editor .nostos-manuscript-body table {
+  width: 100%;
+  margin: 2rem 0;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  color: var(--manuscript-ink);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+app-markdown-editor .nostos-manuscript-body th,
+app-markdown-editor .nostos-manuscript-body td {
+  padding: 0.7rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--manuscript-rule);
+}
+
+app-markdown-editor .nostos-manuscript-body th {
+  color: var(--manuscript-ink-soft);
+  background: var(--manuscript-table-head-bg);
+  border-top: 1px solid var(--manuscript-rule-strong);
+  border-bottom-color: var(--manuscript-rule-strong);
+  font-weight: 600;
+}
+
+app-markdown-editor .nostos-manuscript-body th p,
+app-markdown-editor .nostos-manuscript-body td p {
+  margin: 0;
+}
+
+app-markdown-editor .nostos-manuscript-body tr:last-child td {
+  border-bottom-color: var(--manuscript-rule-strong);
+}
+
+app-markdown-editor .nostos-manuscript-body .selectedCell {
+  background: var(--manuscript-selection);
+}
+
+app-markdown-editor .nostos-manuscript-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 2rem auto;
+  border-radius: 3px;
+}
+
+app-markdown-editor .nostos-manuscript-body img.ProseMirror-selectednode {
+  outline: 2px solid var(--manuscript-link);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  app-markdown-editor .nostos-manuscript-body {
+    padding: 2rem 1.25rem 6rem;
+    font-size: calc(var(--manuscript-font-size) - 1px);
+    line-height: calc(var(--manuscript-leading) - 0.08);
+  }
+
+  app-markdown-editor .nostos-manuscript-body h1 {
+    font-size: 1.6em;
+  }
+
+  app-markdown-editor .nostos-manuscript-body h2 {
+    font-size: 1.22em;
+  }
+}
