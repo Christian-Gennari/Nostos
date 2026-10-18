@@ -408,8 +408,15 @@
               }
             </div>
 
+            @if (hiddenNoteCount() > 0) {
+            <button type="button" appButton variant="link" class="notes-show-earlier" (click)="notesExpanded.set(true)">
+              <nostos-icon name="caret-up" [size]="13"></nostos-icon>
+              <span>Show {{ hiddenNoteCount() }} earlier {{ hiddenNoteCount() === 1 ? 'note' : 'notes' }}</span>
+            </button>
+            }
+
             <div class="notes-feed">
-              @for (note of store.notes(); track note.id) {
+              @for (note of visibleNotes(); track note.id) {
               <app-note-card
                 layout="passage"
                 [note]="note"

@@ -33,6 +33,9 @@ import { formatBytes } from '../library-transfer/library-transfer.copy';
  */
 export const REVIEW_COLLAPSE_LINES = 50;
 
+/** How many of the latest notes a collapsed feed shows (issue #1062). */
+export const NOTES_COLLAPSED_COUNT = 10;
+
 /** A work-membership action awaiting confirmation. */
 interface PendingWorkAction {
   kind: 'link' | 'unlink';
@@ -138,6 +141,21 @@ export class BookDetail implements OnInit, OnDestroy {
   });
   // Local UI State
   isDescriptionExpanded = signal(false);
+
+  /**
+   * A long notes feed shows only its latest notes until asked (issue #1062):
+   * the feed had no limit, so the most-annotated books were the longest to
+   * scroll. Oldest-first order is kept, so the hidden notes are the earlier ones
+   * and the reveal sits above the feed. Resets per book.
+   */
+  readonly notesExpanded = signal(false);
+  readonly visibleNotes = computed(() => {
+    const notes = this.store.notes();
+    return this.notesExpanded() || notes.length <= NOTES_COLLAPSED_COUNT
+      ? notes
+      : notes.slice(-NOTES_COLLAPSED_COUNT);
+  });
+  readonly hiddenNoteCount = computed(() => this.store.notes().length - this.visibleNotes().length);
   showMetadataModal = signal(false);
   showDeleteConfirm = signal(false);
   pendingStatus = signal<'notstarted' | 'reading' | 'finished' | null>(null);
@@ -391,6 +409,7 @@ export class BookDetail implements OnInit, OnDestroy {
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (id) {
+        this.notesExpanded.set(false);
         this.store.loadAllData(id);
       }
     });

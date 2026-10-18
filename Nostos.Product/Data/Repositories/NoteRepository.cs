@@ -15,7 +15,10 @@ public class NoteRepository : INoteRepository
 
     public async Task<List<NoteModel>> GetByBookIdAsync(Guid bookId)
     {
-        return await _db.Notes.Include(n => n.Book).Where(n => n.BookId == bookId).ToListAsync();
+        // Oldest first, with Id as a tiebreak: the book page shows the latest notes
+        // at the end of a collapsed feed, which needs a defined order (#1062).
+        return await _db.Notes.Include(n => n.Book).Where(n => n.BookId == bookId)
+            .OrderBy(n => n.CreatedAt).ThenBy(n => n.Id).ToListAsync();
     }
 
     public async Task<NoteModel?> GetByIdAsync(Guid id)

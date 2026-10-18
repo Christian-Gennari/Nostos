@@ -1154,6 +1154,10 @@ button.edition-chip:focus-visible {
   display: flex;
   flex-direction: column;
 }
+/* The reveal for a collapsed feed's earlier notes, above the latest ones. */
+.notes-show-earlier {
+  margin-top: 1rem;
+}
 
 /* The book's notes are set as a reading column, like a topic's notes in the
    Brain: the note card's `passage` layout (upright quotation at a reading

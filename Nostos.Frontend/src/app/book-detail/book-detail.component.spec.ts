@@ -499,6 +499,63 @@ describe('BookDetail reset progress', () => {
     expect(editionChips().map((chip) => chip.textContent?.trim())).toEqual(['EPUB · 1st', 'EPUB · 2nd']);
   });
 
+  // ── Collapsed notes feed (issue #1062) ──────────────────────────────────────
+
+  function seedNotes(count: number): void {
+    component.store.notes.set(
+      Array.from({ length: count }, (_, i) => ({
+        id: `n${i}`,
+        bookId: 'b1',
+        content: `Note ${i}`,
+        createdAt: `2026-08-${String(i + 1).padStart(2, '0')}T08:00:00Z`,
+      })),
+    );
+    fixture.detectChanges();
+  }
+
+  function renderedNoteIds(): string[] {
+    return component.visibleNotes().map((note) => note.id);
+  }
+
+  function showEarlierButton(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('.notes-show-earlier');
+  }
+
+  it('shows only the latest notes of a long feed until asked', async () => {
+    await setup();
+    seedNotes(25);
+
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(10);
+    // The latest ones, still oldest-first.
+    expect(renderedNoteIds()).toEqual(Array.from({ length: 10 }, (_, i) => `n${i + 15}`));
+    // The header count is still every note.
+    expect(fixture.nativeElement.querySelector('.notes-header')?.textContent).toContain('25');
+
+    const reveal = showEarlierButton()!;
+    expect(reveal.textContent).toContain('Show 15 earlier notes');
+    reveal.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(25);
+    expect(showEarlierButton()).toBeNull();
+  });
+
+  it('shows a short feed whole, with no reveal', async () => {
+    await setup();
+    seedNotes(10);
+
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(10);
+    expect(showEarlierButton()).toBeNull();
+  });
+
+  it('says "note" for a single hidden note', async () => {
+    await setup();
+    seedNotes(11);
+
+    expect(showEarlierButton()?.textContent).toContain('Show 1 earlier note');
+    expect(showEarlierButton()?.textContent).not.toContain('notes');
+  });
+
   it('renders no format switcher for a single-edition book', async () => {
     await setup(readableBook());
 
