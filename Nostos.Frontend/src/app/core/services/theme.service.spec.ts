@@ -18,6 +18,28 @@ describe('ThemeService', () => {
   afterEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute('data-room-theme');
+  });
+
+  it('presents a room theme on <html> without saving it, and gives the app its own back', () => {
+    const service = TestBed.inject(ThemeService);
+    const root = document.documentElement;
+
+    service.present({ name: 'study', mode: 'dark' });
+    expect(root.getAttribute('data-room-theme')).toBe('study');
+    expect(root.getAttribute('data-theme')).toBe('dark');
+    expect(service.theme()).toBe('light');
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+
+    // The person's own choice still lands while a room is presented...
+    service.setTheme('dark');
+    service.present({ name: 'paper', mode: 'light' });
+    expect(root.hasAttribute('data-theme')).toBe(false);
+
+    // ...and is what comes back when the room ends.
+    service.present(null);
+    expect(root.hasAttribute('data-room-theme')).toBe(false);
+    expect(root.getAttribute('data-theme')).toBe('dark');
   });
 
   it('defaults to light when nothing is stored and the OS reports no preference', () => {

@@ -36,7 +36,8 @@ import {
 import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
 import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
-import { StudioPreferencesService } from './page-settings/studio-preferences.service';
+import { STUDIO_THEMES, StudioPreferencesService } from './page-settings/studio-preferences.service';
+import { ThemeService } from '../core/services/theme.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -312,11 +313,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.pagePrefs.update({ typewriter: !this.typewriter() });
   }
 
-  /** The Studio theme's class, or none when the page matches the app. */
-  readonly themeClass = computed(() => {
-    const theme = this.pagePrefs.theme();
-    return theme === 'match' ? '' : `studio-theme-${theme}`;
-  });
+  private readonly appTheme = inject(ThemeService);
 
   /** A chosen line length, in characters of the page's own face. */
   readonly textMeasure = computed(() => {
@@ -585,6 +582,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.writingHandoffSubscription?.unsubscribe();
       // Never leave the body class behind if the component is torn down mid-zen.
       document.body.classList.remove('nostos-zen');
+      // The rest of the app goes back to its own theme.
+      this.appTheme.present(null);
+    });
+
+    // The page theme dresses everything on screen while the Studio is open:
+    // rails, popovers, the dock and the assistant, not just the page. `match`
+    // hands the app its own theme back.
+    effect(() => {
+      const option = STUDIO_THEMES.find((t) => t.value === this.pagePrefs.theme());
+      this.appTheme.present(option ? { name: option.value, mode: option.mode } : null);
     });
 
     effect((onCleanup) => {

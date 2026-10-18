@@ -5,7 +5,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 
 import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
-import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
+import { StudioPreferencesService, normalizeStudioPreferences } from './page-settings/studio-preferences.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -130,6 +130,45 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
   afterEach(() => {
     document.body.classList.remove('nostos-zen');
+    document.documentElement.removeAttribute('data-room-theme');
+  });
+
+  it('dresses the whole screen in the page theme while open, and hands it back on leaving', () => {
+    const root = document.documentElement;
+    const prefs = TestBed.inject(StudioPreferencesService);
+
+    prefs.update({ theme: 'sepia' });
+    fixture.detectChanges();
+    expect(root.getAttribute('data-room-theme')).toBe('sepia');
+    expect(root.hasAttribute('data-theme')).toBe(false);
+
+    prefs.update({ theme: 'study' });
+    fixture.detectChanges();
+    expect(root.getAttribute('data-room-theme')).toBe('study');
+    expect(root.getAttribute('data-theme')).toBe('dark');
+
+    prefs.update({ theme: 'match' });
+    fixture.detectChanges();
+    expect(root.hasAttribute('data-room-theme')).toBe(false);
+
+    prefs.update({ theme: 'mist' });
+    fixture.detectChanges();
+    fixture.destroy();
+    expect(root.hasAttribute('data-room-theme')).toBe(false);
+    expect(root.hasAttribute('data-theme')).toBe(false);
+    prefs.reset();
+  });
+
+  it('draws the Reference pin and the drawer close as two different glyphs', () => {
+    component.referencePinned.set(false);
+    component.isCompact.set(false);
+    component.showBrainSidebar.set(true);
+    fixture.detectChanges();
+    const pin = fixture.nativeElement.querySelector('.reference-pin') as HTMLElement;
+    const close = fixture.nativeElement.querySelector('.reference-rail-collapse') as HTMLElement;
+    expect(pin).toBeTruthy();
+    expect(close).toBeTruthy();
+    expect(pin.innerHTML).not.toBe(close.innerHTML);
   });
 
   const zenToggle = (): HTMLButtonElement | null =>

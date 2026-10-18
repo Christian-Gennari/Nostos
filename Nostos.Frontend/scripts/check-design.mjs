@@ -286,8 +286,10 @@ for (const f of files) {
    Lowered 46 -> 45 by the breathable library pass: the sidebar's selected row
    lost its `rgba(0, 0, 0, 0.08)` contact shadow along with the filled pill.
    Lowered 45 -> 43 by its grid/list half: the list's thumbnail shadow and its
-   restyled format capsule (each with an rgba literal) are gone. */
-const LITERAL_COLOUR_BUDGET = 43;
+   restyled format capsule (each with an rgba literal) are gone.
+   Lowered 43 -> 41 by the Studio theme pass: the slide-over rails' two
+   `rgba(0, 0, 0, 0.15)` drop shadows are gone (a hairline edge instead). */
+const LITERAL_COLOUR_BUDGET = 41;
 
 {
   const ALLOW = [

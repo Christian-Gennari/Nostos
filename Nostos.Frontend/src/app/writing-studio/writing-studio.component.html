@@ -5,7 +5,6 @@
   [class.drawer-files]="isDrawer('files')"
   [class.drawer-reference]="isDrawer('reference')"
   [class.is-typing]="isTyping()"
-  [ngClass]="themeClass()"
 >
   <div
     class="backdrop"
@@ -209,9 +208,9 @@
           appIconButton
           size="xs"
           class="reference-pin"
-          icon="sidebar-simple"
+          icon="push-pin-simple"
           [glyphSize]="16"
-          weight="thin"
+          [weight]="referencePinned() ? 'fill' : 'regular'"
           (click)="toggleReferencePin()"
           [title]="referencePinned() ? 'Let Reference slide over the page' : 'Pin Reference beside the page'"
           [attr.aria-label]="referencePinned() ? 'Unpin Reference' : 'Pin Reference beside the page'"
