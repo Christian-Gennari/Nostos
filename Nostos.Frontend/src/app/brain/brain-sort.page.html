@@ -7,7 +7,7 @@
     @if (!done() && note()) {
     <span class="sort-position" role="status" aria-live="polite">{{ positionLabel() }}</span>
     }
-    <span class="sort-progress" aria-hidden="true" [style.width.%]="progress()"></span>
+    <nostos-progress class="sort-progress" [value]="progress()" label="Sorted so far" />
   </header>
 
   <main class="sort-body">
@@ -38,7 +38,7 @@
       <blockquote class="sort-quote" [class.is-opening]="passage()">{{ quote() }}</blockquote>
       }
       @if (thought()) {
-      <p class="sort-thought">{{ thought() }}</p>
+      <p class="sort-thought" (click)="onThoughtClick($event)" [innerHTML]="thought() | noteFormat : state.lookup()"></p>
       }
       <div class="sort-links">
         <a appButton variant="link" size="sm" [routerLink]="['/brain/notes', current.id]">
@@ -49,10 +49,10 @@
         </button>
         <ng-template #sortMore>
           <nostos-menu aria-label="More for this note">
-            <button nostosMenuItem icon="book-open" (triggered)="openBook(current.bookId)">Open the book</button>
-            <button nostosMenuItem icon="bookmark-simple" (triggered)="keepWithWriting()">Keep with writing…</button>
+            <button nostosMenuItem icon="book-open" (triggered)="openSource(current)">{{ sourceLabel() }}</button>
+            <button nostosMenuItem icon="bookmark-simple" (triggered)="actions.keepWithWriting([current.id])">Keep with writing…</button>
             <hr nostosMenuSeparator />
-            <button nostosMenuItem icon="trash" tone="danger" (triggered)="askDelete()">Delete note</button>
+            <button nostosMenuItem icon="trash" tone="danger" (triggered)="actions.askDelete([current.id])">Delete note</button>
           </nostos-menu>
         </ng-template>
       </div>
@@ -122,7 +122,7 @@
           @case ('loading') { <span class="sort-quiet">Asking…</span> }
           @case ('error') { <span class="sort-quiet">Suggestions are unavailable right now.</span> }
           @default {
-            <button appButton variant="link" size="sm" type="button" (click)="askSuggestions()">Suggest topics</button>
+            <button appButton variant="link" size="sm" type="button" (click)="suggestions.request(current)">Suggest topics</button>
           }
         }
       </div>

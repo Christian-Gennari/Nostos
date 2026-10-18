@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -11,6 +12,7 @@ import {
 } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { isPassage, type NoteOrder, type NoteSearchHit } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
@@ -22,9 +24,13 @@ import { ChipComponent } from '../ui/chip/chip.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
+import { ProgressComponent } from '../ui/progress/progress.component';
+import { noteSourceLink } from '../core/note-source';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import {
   hasTopic,
+  inlineTopicHref,
   newTopicName,
   noteLocationLabel,
   rankTopicChoices,
@@ -33,10 +39,10 @@ import {
 } from '../ui/note-item/note-item.helpers';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
-import { BrainSortPositionService } from './brain-sort-position.service';
+import { BrainSortPositionService, sortQueueKey } from './brain-sort-position.service';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
-import { isOrder } from './brain.helpers';
+import { isOrder, stillBelongs } from './brain.helpers';
 
 const PAGE_SIZE = 25;
 const RECENT_SHOWN = 6;
@@ -66,6 +72,8 @@ interface Choice {
     IconButtonComponent,
     NostosIconComponent,
     LoadingIndicatorComponent,
+    NoteFormatPipe,
+    ProgressComponent,
     BrainNoteDialogsComponent,
   ],
   providers: [BrainTopicSuggestionsService, BrainNoteActionsService],
@@ -83,6 +91,7 @@ export class BrainSortPage {
   private readonly position = inject(BrainSortPositionService);
   private readonly assistant = inject(AssistantService);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly state = inject(BrainStateService);
   readonly suggestions = inject(BrainTopicSuggestionsService);
@@ -94,6 +103,7 @@ export class BrainSortPage {
     const value = this.route.snapshot.queryParamMap.get('order');
     return isOrder(value) && value !== 'book' ? value : 'oldest';
   })();
+  private readonly queueKey = sortQueueKey(this.bookId, this.order, this.query);
 
   /** The notes fetched so far that are still unsorted, in queue order. */
   readonly queue = signal<NoteSearchHit[]>([]);
@@ -132,6 +142,10 @@ export class BrainSortPage {
     return note ? noteLocationLabel(note) : null;
   });
   readonly passage = computed(() => isPassage(this.note()));
+  readonly sourceLabel = computed(() => {
+    const note = this.note();
+    return note ? noteSourceLink(note).label : 'Open book';
+  });
 
   private readonly choicesSource = computed(() => topicChoices(this.state.topics()));
 
@@ -154,7 +168,7 @@ export class BrainSortPage {
       if (names.length >= RECENT_SHOWN * 2) break;
       names.push(topic.name);
     }
-    return names.filter((name, i) => !hasTopic(chosen, name) && names.findIndex((n) => n.toLocaleLowerCase() === name.toLocaleLowerCase()) === i)
+    return names.filter((name, i) => !hasTopic(chosen, name) && !hasTopic(names.slice(0, i), name))
       .slice(0, RECENT_SHOWN);
   });
 
@@ -170,12 +184,13 @@ export class BrainSortPage {
 
   constructor() {
     this.state.ensureLoaded();
-    // The queue shows only unsorted notes, so a changed note has nothing to redraw.
-    this.actions.attach({ replace: () => undefined, remove: (noteId) => this.drop(noteId) });
-    this.position.read().subscribe((saved) => {
-      const resume = saved && saved.book === this.bookId && saved.order === this.order
-        && (saved.query ?? null) === this.query ? saved.noteId : null;
-      this.loadPage(resume);
+    // The queue holds only unsorted notes: one that gained a topic leaves it.
+    this.actions.attach({
+      replace: (note) => { if (!stillBelongs(note, 'unsorted', null, null)) this.drop(note.id); },
+      remove: (noteId) => this.drop(noteId),
+    });
+    this.position.read().pipe(takeUntilDestroyed(this.destroyRef)).subscribe((saved) => {
+      this.loadPage(saved?.queue === this.queueKey ? saved.noteId : null);
     });
   }
 
@@ -191,7 +206,7 @@ export class BrainSortPage {
       order: this.order,
       limit: PAGE_SIZE,
       offset: this.queue().length,
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
         const held = new Set(this.queue().map((note) => note.id));
         const fresh = page.items.filter((note) => !held.has(note.id));
@@ -234,7 +249,7 @@ export class BrainSortPage {
   /** Keeps the note in focus for a reload; a note not fetched yet changes nothing. */
   private remember(): void {
     const note = this.note();
-    if (note) this.position.write({ noteId: note.id, book: this.bookId, order: this.order, query: this.query });
+    if (note) this.position.write({ noteId: note.id, queue: this.queueKey });
     else if (this.done()) this.position.write(null);
   }
 
@@ -307,11 +322,6 @@ export class BrainSortPage {
     this.focusField();
   }
 
-  askSuggestions(): void {
-    const note = this.note();
-    if (note) this.suggestions.request(note);
-  }
-
   // --- Moving through the queue -------------------------------------------
 
   save(): void {
@@ -319,7 +329,7 @@ export class BrainSortPage {
     const chips = this.chips();
     if (!note || !chips.length || this.saving()) return;
     this.saving.set(true);
-    this.topicsService.link(chips, [note.id]).subscribe({
+    this.topicsService.link(chips, [note.id]).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.saving.set(false);
         this.recent.update((recent) => [...chips, ...recent.filter((name) => !hasTopic(chips, name))].slice(0, RECENT_SHOWN));
@@ -363,18 +373,18 @@ export class BrainSortPage {
 
   // --- The note's other actions --------------------------------------------
 
-  askDelete(): void {
-    const note = this.note();
-    if (note) this.actions.askDelete([note.id]);
+  /** An inline topic link opens in the app. */
+  onThoughtClick(event: MouseEvent): void {
+    const href = inlineTopicHref(event);
+    if (!href) return;
+    event.preventDefault();
+    void this.router.navigateByUrl(href);
   }
 
-  openBook(bookId: string): void {
-    void this.router.navigate(['/library', bookId]);
-  }
-
-  keepWithWriting(): void {
-    const note = this.note();
-    if (note) this.actions.keepWithWriting([note.id]);
+  /** Its passage in the reader when the note's place is known, else the book. */
+  openSource(note: NoteSearchHit): void {
+    const link = noteSourceLink(note);
+    void this.router.navigate(link.commands, { queryParams: link.queryParams ?? undefined });
   }
 
   /** Esc leaves from anywhere on the screen, unless a dialog is open over it. */

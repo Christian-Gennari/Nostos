@@ -45,10 +45,8 @@
 .sort-progress {
   position: absolute;
   left: 0;
+  right: 0;
   bottom: -1px;
-  height: 2px;
-  background: var(--color-text-main);
-  transition: width var(--motion-fast) ease;
 }
 
 .sort-body {
@@ -316,11 +314,5 @@ kbd {
 
   .sort-spacer {
     display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sort-progress {
-    transition: none;
   }
 }

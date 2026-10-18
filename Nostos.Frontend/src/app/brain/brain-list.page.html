@@ -71,7 +71,7 @@
       />
       @if (place() === 'unsorted' && total() > 0) {
       <a appButton variant="primary" size="sm" class="sort-start" routerLink="/brain/unsorted/sort"
-        [queryParams]="{ book: bookId(), q: q() || null, order: order() === 'newest' ? 'newest' : 'oldest' }">
+        [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
         Sort one by one <nostos-icon name="arrow-right" [size]="14" />
       </a>
       }

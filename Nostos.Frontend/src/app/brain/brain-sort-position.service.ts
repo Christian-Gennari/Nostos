@@ -4,14 +4,18 @@ import { Observable, catchError, defer, map, of, switchMap } from 'rxjs';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 
-const STORAGE_PREFIX = 'nostos.brain.sortPosition.v1';
+const STORAGE_PREFIX = 'nostos.brain.sortPosition.v2';
 
 /** Where sorting one by one was left: the note in focus, in that queue. */
 export interface SortPosition {
   noteId: string;
-  book: string | null;
-  order: string;
-  query?: string | null;
+  /** Which queue (book, order, search): see {@link sortQueueKey}. */
+  queue: string;
+}
+
+/** One string for a queue, so a saved place resumes only in the same queue. */
+export function sortQueueKey(book: string | null, order: string, query: string | null): string {
+  return JSON.stringify([book, order, query]);
 }
 
 /**
@@ -44,8 +48,8 @@ export class BrainSortPositionService {
       try {
         const raw = localStorage.getItem(key);
         const value = raw ? (JSON.parse(raw) as Partial<SortPosition>) : null;
-        return value && typeof value.noteId === 'string'
-          ? { noteId: value.noteId, book: value.book ?? null, order: value.order ?? 'oldest', query: value.query ?? null }
+        return value && typeof value.noteId === 'string' && typeof value.queue === 'string'
+          ? { noteId: value.noteId, queue: value.queue }
           : null;
       } catch {
         return null;
