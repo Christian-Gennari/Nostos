@@ -6,8 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Services;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using Nostos.Backend.Tests.Support;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services;
@@ -448,39 +447,25 @@ public sealed class FileStorageServiceTests : IDisposable
         // The decoder is chosen from the bytes, not the name, so a file in a
         // format no cover uses is refused even when it is named cover.jpg.
         var bookId = Guid.NewGuid();
-        using var tiff = new MemoryStream();
-        using (var image = new Image<Rgba32>(10, 10))
-        {
-            image.SaveAsTiff(tiff);
-        }
-
-        tiff.Position = 0;
+        using var tiff = new MemoryStream(TestImages.Create(".tif"));
         await _sut.SaveBookCoverAsync(bookId, tiff, "cover.jpg");
 
         var act = () => _sut.GetBookCoverThumbnailPathAsync(bookId, 200);
 
-        await act.Should().ThrowAsync<UnknownImageFormatException>();
+        await act.Should().ThrowAsync<UnsupportedCoverImageException>();
         Directory.EnumerateFiles(Path.Combine(_tempDirectory, bookId.ToString()), "cover-thumb-*")
             .Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("webp")]
-    [InlineData("gif")]
-    [InlineData("bmp")]
+    [InlineData(".webp")]
+    [InlineData(".gif")]
+    [InlineData(".png")]
     public async Task GetBookCoverThumbnailPathAsync_StillDecodesOtherCoverFormatsUnderAJpgName(string format)
     {
         // Providers sometimes label one web image format as another.
         var bookId = Guid.NewGuid();
-        using var bytes = new MemoryStream();
-        using (var image = new Image<Rgba32>(10, 10))
-        {
-            if (format == "webp") image.SaveAsWebp(bytes);
-            else if (format == "gif") image.SaveAsGif(bytes);
-            else image.SaveAsBmp(bytes);
-        }
-
-        bytes.Position = 0;
+        using var bytes = new MemoryStream(TestImages.Create(format));
         await _sut.SaveBookCoverAsync(bookId, bytes, "cover.jpg");
 
         var thumbPath = await _sut.GetBookCoverThumbnailPathAsync(bookId, 200);
@@ -488,21 +473,24 @@ public sealed class FileStorageServiceTests : IDisposable
         File.Exists(thumbPath!).Should().BeTrue();
     }
 
-    private static byte[] CreatePngBytes()
+    [Fact]
+    public async Task GetBookCoverThumbnailPathAsync_WritesAWebpAtTheRequestedWidth()
     {
-        using var image = new Image<Rgba32>(10, 10);
-        using var ms = new MemoryStream();
-        image.SaveAsPng(ms);
-        return ms.ToArray();
+        var bookId = Guid.NewGuid();
+        using var cover = new MemoryStream(TestImages.Create(".jpg", 600, 900));
+        await _sut.SaveBookCoverAsync(bookId, cover, "cover.jpg");
+
+        var thumbPath = await _sut.GetBookCoverThumbnailPathAsync(bookId, 200);
+
+        Path.GetFileName(thumbPath).Should().Be("cover-thumb-200.webp");
+        TestImages.Describe(await File.ReadAllBytesAsync(thumbPath!))
+            .Should().Be((200, 300, "webpload_buffer"));
+        Directory.EnumerateFiles(Path.GetDirectoryName(thumbPath)!, "*.tmp").Should().BeEmpty();
     }
 
-    private static byte[] CreateJpgBytes()
-    {
-        using var image = new Image<Rgba32>(10, 10);
-        using var ms = new MemoryStream();
-        image.SaveAsJpeg(ms);
-        return ms.ToArray();
-    }
+    private static byte[] CreatePngBytes() => TestImages.Create(".png");
+
+    private static byte[] CreateJpgBytes() => TestImages.Create(".jpg");
 
     private sealed class ThrowingStream : Stream
     {

@@ -5,8 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -728,11 +726,7 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         source.Db.Books.Add(book);
         await source.Db.SaveChangesAsync();
 
-        using var image = new Image<Rgba32>(4, 4);
-        image[0, 0] = new Rgba32(10, 20, 30);
-        using var png = new MemoryStream();
-        await image.SaveAsPngAsync(png);
-        png.Position = 0;
+        using var png = new MemoryStream(Nostos.Backend.Tests.Support.TestImages.Create(".png", 4, 4, red: 10, green: 20, blue: 30));
         await source.Storage.SaveBookCoverAsync(book.Id, png, "cover.png");
         await source.Storage.SaveBookFileAsync(
             book.Id,

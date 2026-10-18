@@ -13,8 +13,6 @@ using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
 using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Endpoints;
@@ -189,7 +187,7 @@ public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>
         var book = (await created.Content.ReadFromJsonAsync<BookDto>())!;
         var coverUrl = $"/api/books/{book.Id}/cover{suffix}";
 
-        (await UploadCoverAsync(book.Id, Color.Red)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await UploadCoverAsync(book.Id, red: 255, blue: 0)).StatusCode.Should().Be(HttpStatusCode.OK);
         var first = await Client.GetAsync(coverUrl);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
         first.Headers.CacheControl!.NoCache.Should().BeTrue();
@@ -197,7 +195,7 @@ public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>
         var oldTag = first.Headers.ETag!;
         var oldBytes = await first.Content.ReadAsByteArrayAsync();
 
-        (await UploadCoverAsync(book.Id, Color.Blue)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await UploadCoverAsync(book.Id, red: 0, blue: 255)).StatusCode.Should().Be(HttpStatusCode.OK);
         using var revalidate = new HttpRequestMessage(HttpMethod.Get, coverUrl);
         revalidate.Headers.IfNoneMatch.Add(oldTag);
         var second = await Client.SendAsync(revalidate);
@@ -212,16 +210,12 @@ public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>
         (await Client.SendAsync(unchanged)).StatusCode.Should().Be(HttpStatusCode.NotModified);
     }
 
-    private async Task<HttpResponseMessage> UploadCoverAsync(Guid bookId, Color colour)
+    private async Task<HttpResponseMessage> UploadCoverAsync(Guid bookId, byte red, byte blue)
     {
-        using var png = new MemoryStream();
-        using (var image = new Image<Rgba32>(10, 10, colour.ToPixel<Rgba32>()))
-        {
-            image.SaveAsPng(png);
-        }
+        var png = TestImages.Create(".png", red: red, blue: blue);
 
         using var form = new MultipartFormDataContent();
-        var file = new ByteArrayContent(png.ToArray());
+        var file = new ByteArrayContent(png);
         file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         form.Add(file, "file", "cover.png");
         return await Client.PostAsync($"/api/books/{bookId}/cover", form);
