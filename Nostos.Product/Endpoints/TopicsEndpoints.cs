@@ -130,7 +130,29 @@ public static class TopicsEndpoints
             async (Guid id, ITopicRepository repo) =>
                 await DeleteTopicAsync(id, repo)
         );
+
+        // LINK named topics to many notes at once (the Brain's selection bar
+        // and its one-by-one sorter); topics are created when new.
+        group.MapPost(
+            "/link",
+            async (TopicLinkRequestDto dto, INoteService notes, CancellationToken ct) =>
+                LinkResult(await notes.LinkTopicsAsync(dto.Topics, dto.NoteIds, ct))
+        );
+
+        // UNLINK named topics from many notes at once; also how a link is undone.
+        group.MapPost(
+            "/unlink",
+            async (TopicLinkRequestDto dto, INoteService notes, CancellationToken ct) =>
+                LinkResult(await notes.UnlinkTopicsAsync(dto.Topics, dto.NoteIds, ct))
+        );
     }
+
+    private static IResult LinkResult(NoteCommandResult<TopicLinkResultDto> result) =>
+        result.Success
+            ? Results.Ok(result.Value)
+            : result.ErrorCode == NoteErrorCodes.NoteNotFound
+                ? Results.NotFound(new { error = result.ErrorMessage })
+                : Results.BadRequest(new { error = result.ErrorMessage });
 
     /// <summary>
     /// Deletes a topic and its note links. The topic will be re-created

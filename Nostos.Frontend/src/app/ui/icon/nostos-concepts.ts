@@ -42,6 +42,10 @@ export const NOSTOS_CONCEPTS = {
   note: 'note',
   /** A passage (issue #1014): a long stretch of a book kept to read again. */
   passage: 'scroll',
+  /** A topic in the Brain: a name notes are gathered under, written [[Topic]]. */
+  topic: 'hash',
+  /** Notes with no topic yet: the Brain's Unsorted, like the Library's. */
+  unsorted: 'tray',
 
   /** The writing studio's AI suggestion surface. */
   aiSuggestion: 'sparkle',

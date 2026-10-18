@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import type { TopicLinkResult } from '../dtos/note.dtos';
 
 export interface TopicDto {
   id: string;
@@ -116,6 +117,16 @@ export class TopicsService {
 
   merge(sourceId: string, targetId: string): Observable<TopicDto> {
     return this.http.post<TopicDto>(`/api/topics/${sourceId}/merge`, { targetId });
+  }
+
+  /** Adds the named topics to every listed note, creating new topics; one unit of work. */
+  link(topics: string[], noteIds: string[]): Observable<TopicLinkResult> {
+    return this.http.post<TopicLinkResult>('/api/topics/link', { topics, noteIds });
+  }
+
+  /** Removes the named topics from every listed note; also how a link is undone. */
+  unlink(topics: string[], noteIds: string[]): Observable<TopicLinkResult> {
+    return this.http.post<TopicLinkResult>('/api/topics/unlink', { topics, noteIds });
   }
 
   delete(id: string): Observable<void> {

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Notes;
 
 namespace Nostos.Backend.Data.Repositories;
 
@@ -141,29 +142,73 @@ public class NoteRepository : INoteRepository
             .ToListAsync();
     }
 
-    public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(
-        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset,
-        string? kind = null)
+    public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(NoteBrowseQuery query, int limit, int offset)
     {
-        var notes = _db.Notes.AsNoTracking().AsQueryable();
-        if (bookId.HasValue) notes = notes.Where(n => n.BookId == bookId.Value);
-        if (!string.IsNullOrEmpty(kind)) notes = notes.Where(n => n.Kind == kind);
-        if (withoutTopics) notes = notes.Where(n => !n.NoteTopics.Any());
-        var term = query?.Trim();
-        if (!string.IsNullOrEmpty(term))
-        {
-            notes = WhereAnyFieldContains(notes, term);
-        }
-
+        var notes = Filter(query);
         var total = await notes.CountAsync();
-        var ordered = oldestFirst
-            ? notes.OrderBy(n => n.CreatedAt).ThenBy(n => n.Id)
-            : notes.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id);
+        var ordered = query.Order switch
+        {
+            NoteBrowseOrder.Oldest => notes.OrderBy(n => n.CreatedAt).ThenBy(n => n.Id),
+            // Notes without a book row sort last rather than first.
+            NoteBrowseOrder.Book => notes
+                .OrderBy(n => n.Book == null)
+                .ThenBy(n => n.Book!.Title)
+                .ThenBy(n => n.BookId)
+                .ThenBy(n => n.CreatedAt)
+                .ThenBy(n => n.Id),
+            _ => notes.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id),
+        };
         var items = await ordered.Skip(offset).Take(limit)
             .Include(n => n.Book)
             .Include(n => n.NoteTopics).ThenInclude(nc => nc.Topic)
             .ToListAsync();
         return (items, total);
+    }
+
+    public async Task<IReadOnlyList<NoteBookFacet>> GetBookFacetsAsync(NoteBrowseQuery query)
+    {
+        var rows = await Filter(query with { BookId = null })
+            .GroupBy(note => new
+            {
+                note.BookId,
+                Title = note.Book != null ? note.Book.Title : string.Empty,
+                Author = note.Book != null ? note.Book.Author : null,
+            })
+            .Select(group => new { group.Key.BookId, group.Key.Title, group.Key.Author, Count = group.Count() })
+            .ToListAsync();
+
+        return rows
+            .OrderBy(row => row.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(row => row.BookId)
+            .Select(row => new NoteBookFacet(row.BookId, row.Title, row.Author, row.Count))
+            .ToList();
+    }
+
+    public async Task<NoteSummary> GetSummaryAsync()
+    {
+        var total = await _db.Notes.CountAsync();
+        var passages = await _db.Notes.CountAsync(n => n.Kind == NoteKinds.Passage);
+        var unsorted = await _db.Notes.CountAsync(n => !n.NoteTopics.Any());
+        return new NoteSummary(total, passages, unsorted);
+    }
+
+    /// <summary>The notes in one place of the Brain, before order and paging.</summary>
+    private IQueryable<NoteModel> Filter(NoteBrowseQuery query)
+    {
+        var notes = _db.Notes.AsNoTracking().AsQueryable();
+        if (query.BookId is { } bookId) notes = notes.Where(n => n.BookId == bookId);
+        if (!string.IsNullOrEmpty(query.Kind)) notes = notes.Where(n => n.Kind == query.Kind);
+        if (query.WithoutTopics) notes = notes.Where(n => !n.NoteTopics.Any());
+        if (query.TopicId is { } topicId)
+            notes = notes.Where(n => n.NoteTopics.Any(link => link.TopicId == topicId));
+        if (query.WithTopicId is { } withTopicId)
+            notes = notes.Where(n => n.NoteTopics.Any(link => link.TopicId == withTopicId));
+        var term = query.Text?.Trim();
+        if (!string.IsNullOrEmpty(term))
+        {
+            notes = WhereAnyFieldContains(notes, term);
+        }
+        return notes;
     }
 
     public async Task<int> CountWithoutTopicsAsync()

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Search;
+using Nostos.Backend.Services;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Repositories;
@@ -354,9 +355,7 @@ public class TopicRepository : ITopicRepository
 
     public async Task<TopicModel?> RenameAsync(Guid id, string name)
     {
-        var source = await _db
-            .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id);
 
         if (source is null)
             return null;
@@ -364,6 +363,11 @@ public class TopicRepository : ITopicRepository
         var target = await _db
             .Topics.Include(c => c.NoteTopics)
             .FirstOrDefaultAsync(c => c.Id != id && c.Topic == name);
+
+        // A note's body is what every later save re-derives its links from, so
+        // the body follows the rename; otherwise the old name comes back on the
+        // note's next edit.
+        RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target?.Topic ?? name));
 
         if (target is null)
         {
@@ -380,9 +384,7 @@ public class TopicRepository : ITopicRepository
 
     public async Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId)
     {
-        var source = await _db
-            .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == sourceId);
+        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == sourceId);
         var target = await _db
             .Topics.Include(c => c.NoteTopics)
             .FirstOrDefaultAsync(c => c.Id == targetId);
@@ -390,25 +392,42 @@ public class TopicRepository : ITopicRepository
         if (source is null || target is null)
             return null;
 
+        RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target.Topic));
         MoveLinks(source, target);
         _db.Topics.Remove(source);
         await _db.SaveChangesAsync();
         return target;
     }
 
+    /// <summary>
+    /// Deletes a topic and its links, and turns its references in the notes'
+    /// text into plain words, so the topic stays deleted when a note is next
+    /// saved.
+    /// </summary>
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var topic = await _db
-            .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var topic = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id);
 
         if (topic is null)
             return false;
 
+        RewriteReferences(topic, content => TopicReferences.Remove(content, topic.Topic));
         _db.NoteTopics.RemoveRange(topic.NoteTopics);
         _db.Topics.Remove(topic);
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    private IQueryable<TopicModel> WithLinkedNotes() =>
+        _db.Topics.Include(c => c.NoteTopics).ThenInclude(link => link.Note);
+
+    private static void RewriteReferences(TopicModel topic, Func<string, string> rewrite)
+    {
+        foreach (var note in topic.NoteTopics.Select(link => link.Note).OfType<NoteModel>())
+        {
+            var content = rewrite(note.Content);
+            if (content != note.Content) note.Content = content;
+        }
     }
 
     private void MoveLinks(TopicModel source, TopicModel target)
@@ -439,7 +458,18 @@ public class TopicRepository : ITopicRepository
     public async Task<List<TopicModel>> GetByNamesAsync(IEnumerable<string> names)
     {
         var nameList = names.ToList();
-        return await _db.Topics.Where(c => nameList.Contains(c.Topic)).ToListAsync();
+        var stored = await _db.Topics.Where(c => nameList.Contains(c.Topic)).ToListAsync();
+
+        // Topics created earlier in this same unit of work are not in the
+        // database yet. Linking one new topic to several notes at once must
+        // reuse it, or the second note creates a duplicate the unique index
+        // rejects.
+        var pending = _db.ChangeTracker.Entries<TopicModel>()
+            .Where(entry => entry.State == EntityState.Added
+                && nameList.Contains(entry.Entity.Topic, StringComparer.OrdinalIgnoreCase))
+            .Select(entry => entry.Entity)
+            .Where(topic => !stored.Contains(topic));
+        return stored.Concat(pending).ToList();
     }
 
     public void AddRange(IEnumerable<TopicModel> topics)

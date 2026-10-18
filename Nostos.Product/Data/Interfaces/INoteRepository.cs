@@ -65,10 +65,16 @@ public interface INoteRepository
     Task<List<NoteModel>> GetWithoutTopicsAsync(int limit, int offset);
 
     /// <summary>A stable, bounded page across all notes, including notes without topics.</summary>
-    /// <paramref name="kind"/> narrows it to one kind of note (issue #1014: Brain's Passages filter).
-    Task<(List<NoteModel> Items, int Total)> BrowseAsync(
-        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset,
-        string? kind = null);
+    Task<(List<NoteModel> Items, int Total)> BrowseAsync(NoteBrowseQuery query, int limit, int offset);
+
+    /// <summary>
+    /// The books that have notes matching <paramref name="query"/> (its book is
+    /// ignored), with how many each: the Brain's Book filter for one place.
+    /// </summary>
+    Task<IReadOnlyList<NoteBookFacet>> GetBookFacetsAsync(NoteBrowseQuery query);
+
+    /// <summary>How many notes, passages and notes without a topic there are.</summary>
+    Task<NoteSummary> GetSummaryAsync();
 
     /// <summary>
     /// How many notes are linked to no topic right now. The unlinked-note review
@@ -88,3 +94,28 @@ public interface INoteRepository
 }
 
 public sealed record NoteBookCount(Guid BookId, string BookTitle, int NoteCount);
+
+/// <summary>
+/// What a list of notes in the Brain shows: one place (everything, unsorted,
+/// a kind, a topic, or what two topics share), narrowed by book and text.
+/// </summary>
+public sealed record NoteBrowseQuery(
+    string? Text = null,
+    Guid? BookId = null,
+    bool WithoutTopics = false,
+    string? Kind = null,
+    Guid? TopicId = null,
+    Guid? WithTopicId = null,
+    NoteBrowseOrder Order = NoteBrowseOrder.Newest);
+
+public enum NoteBrowseOrder
+{
+    Newest,
+    Oldest,
+    /// <summary>By book title, then in the order the notes were made.</summary>
+    Book,
+}
+
+public sealed record NoteBookFacet(Guid BookId, string BookTitle, string? BookAuthor, int NoteCount);
+
+public sealed record NoteSummary(int Total, int Passages, int Unsorted);

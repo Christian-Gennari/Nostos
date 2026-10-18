@@ -103,7 +103,10 @@ public record NoteSearchHitDto(
     string? PassageEnd = null,
     int? PassageWordCount = null,
     // APPENDED (issue #1038): the book's author, so a quote can name who said it.
-    string? BookAuthor = null
+    string? BookAuthor = null,
+    // APPENDED (Brain rebuild): the highlighter pen, by name, so a listed note
+    // draws its quote in the colour it was highlighted with.
+    string? HighlightColour = null
 );
 
 /// <summary>
@@ -142,6 +145,12 @@ public record NoteSearchPageDto(
     int Offset,
     int Limit
 );
+
+/// <summary>How many notes each of the Brain's fixed places holds.</summary>
+public record NoteSummaryDto(int Total, int Passages, int Unsorted);
+
+/// <summary>A book that has notes in one place of the Brain, with how many.</summary>
+public record NoteBookFacetDto(Guid BookId, string BookTitle, string? BookAuthor, int NoteCount);
 
 /// <summary>
 /// Body of <c>POST /api/notes/{id}/reprocess</c> (issue #262 §7, §8): re-derive

@@ -265,6 +265,8 @@ export interface NoteSearchHit {
   passageWordCount?: number | null;
   /** The book's author, when known (issue #1038). */
   bookAuthor?: string | null;
+  /** The highlighter pen, by name; absent on older payloads. */
+  highlightColour?: string | null;
 }
 
 export interface NoteRawTranscript {
@@ -285,4 +287,28 @@ export interface NoteSearchPage {
   totalCount: number;
   offset: number;
   limit: number;
+}
+
+/** How many notes each of the Brain's fixed places holds. */
+export interface NoteSummary {
+  total: number;
+  passages: number;
+  unsorted: number;
+}
+
+/** A book with notes in one place of the Brain, for its Book filter. */
+export interface NoteBookFacet {
+  bookId: string;
+  bookTitle: string;
+  bookAuthor: string | null;
+  noteCount: number;
+}
+
+/** The order a list of notes is shown in. */
+export type NoteOrder = 'newest' | 'oldest' | 'book';
+
+/** The notes a topic link or unlink changed, and every listed note as it now is. */
+export interface TopicLinkResult {
+  changedNoteIds: string[];
+  notes: NoteSearchHit[];
 }
