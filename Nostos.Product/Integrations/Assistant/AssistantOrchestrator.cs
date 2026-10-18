@@ -42,11 +42,13 @@ public sealed class AssistantOrchestrator(
     AssistantOptions options,
     ILogger<AssistantOrchestrator> logger,
     IAiUsageAccountingService? usageAccounting = null,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    IAssistantOwner? owner = null)
 {
     private readonly IAiUsageAccountingService _usageAccounting =
         usageAccounting ?? NoOpAiUsageAccountingService.Instance;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly IAssistantOwner _owner = owner ?? SingleAssistantOwner.Instance;
     private readonly AssistantConversationBuilder _conversation =
         new(registry, new AssistantContextPacker(options));
     private readonly AssistantCapturePolicy _capturePolicy = new(library);
@@ -439,6 +441,7 @@ public sealed class AssistantOrchestrator(
                     if (capture.Prompt is { } prompt)
                     {
                         var storedContinuation = continuations.Create(
+                            _owner.Key,
                             conversationKey,
                             turnId,
                             prompt.Kind,
@@ -947,6 +950,7 @@ public sealed class AssistantOrchestrator(
         // inspect active state. Terminal captures may already have removed that
         // state, but their receipt remains bounded for a short retry window.
         if (continuations.TryGetReceipt(
+                _owner.Key,
                 continuationId,
                 conversationKey,
                 turnId,
@@ -955,7 +959,7 @@ public sealed class AssistantOrchestrator(
             return replay;
         }
 
-        var lookup = continuations.Find(continuationId, conversationKey);
+        var lookup = continuations.Find(_owner.Key, continuationId, conversationKey);
         if (lookup.Status == AssistantContinuationLookupStatus.ConversationMismatch)
         {
             return ContinuationFailure(
@@ -1042,6 +1046,7 @@ public sealed class AssistantOrchestrator(
                 Error: null);
 
             continuations.RecordReceipt(
+                _owner.Key,
                 continuationId,
                 conversationKey,
                 turnId,
@@ -1102,6 +1107,7 @@ public sealed class AssistantOrchestrator(
                 result.ErrorCode ?? AssistantErrorCodes.NotFound,
                 result.ErrorMessage ?? "The capture could not be completed.");
             continuations.RecordReceipt(
+                _owner.Key,
                 continuationId,
                 conversationKey,
                 turnId,

@@ -90,6 +90,7 @@ public static class AssistantEndpoints
         AssistantTurnRequest request,
         AssistantOrchestrator orchestrator,
         AssistantTurnExecutionRegistry executions,
+        IAssistantOwner owner,
         IAiProviderConfigResolver config,
         IAiAccessPolicy access)
     {
@@ -104,6 +105,7 @@ public static class AssistantEndpoints
         http.Response.ContentType = "application/x-ndjson; charset=utf-8";
 
         using var execution = executions.TryBegin(
+            owner.Key,
             conversationKey,
             turnId,
             http.RequestAborted);
@@ -206,7 +208,8 @@ public static class AssistantEndpoints
 
     private static IResult CancelTurn(
         AssistantTurnCancelRequest request,
-        AssistantTurnExecutionRegistry executions)
+        AssistantTurnExecutionRegistry executions,
+        IAssistantOwner owner)
     {
         if (string.IsNullOrWhiteSpace(request.TurnId))
         {
@@ -217,7 +220,7 @@ public static class AssistantEndpoints
         }
 
         var conversationKey = AssistantTurnIdentity.ConversationKey(request.ConversationId);
-        var accepted = executions.TryCancel(conversationKey, request.TurnId.Trim());
+        var accepted = executions.TryCancel(owner.Key, conversationKey,request.TurnId.Trim());
         return Results.Ok(new AssistantTurnCancelResponse(
             accepted,
             accepted ? "cancel_requested" : "not_active"));

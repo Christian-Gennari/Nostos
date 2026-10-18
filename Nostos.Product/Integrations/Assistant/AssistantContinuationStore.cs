@@ -13,6 +13,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// </summary>
 internal sealed record StoredAssistantContinuation(
     string ContinuationId,
+    string OwnerKey,
     string ConversationId,
     string OriginalTurnId,
     string Kind,
@@ -33,10 +34,21 @@ internal sealed record AssistantContinuationLookup(
     AssistantContinuationLookupStatus Status,
     StoredAssistantContinuation? Continuation);
 
+/// <summary>
+/// Process-local store of interrupted captures and their replay receipts.
+///
+/// Every continuation belongs to an owner (<see cref="IAssistantOwner"/>), and
+/// conversations are matched within it. Each owner has its own capacity in
+/// both pools, so an owner that adds past it only expires its own entries.
+/// When a pool as a whole is full, room comes from whichever owner holds the
+/// most, so one account cannot push out another that holds fewer.
+/// </summary>
 public sealed class AssistantContinuationStore
 {
     internal const int MaxActiveContinuations = 256;
     internal const int MaxReplayReceipts = 256;
+    internal const int OwnerActiveContinuations = 64;
+    internal const int OwnerReplayReceipts = 64;
     internal static readonly TimeSpan ActiveLifetime = TimeSpan.FromMinutes(20);
     internal static readonly TimeSpan ReceiptLifetime = TimeSpan.FromMinutes(20);
 
@@ -45,15 +57,15 @@ public sealed class AssistantContinuationStore
 
     private readonly Dictionary<string, StoredAssistantContinuation> _activeById =
         new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _activeIdByConversation =
-        new(StringComparer.Ordinal);
-    private readonly Dictionary<(string ContinuationId, string ConversationId, string TurnId), ContinuationReceipt>
-        _receipts = new();
+    private readonly Dictionary<(string OwnerKey, string ConversationId), string> _activeIdByConversation =
+        new();
+    private readonly Dictionary<ReceiptKey, ContinuationReceipt> _receipts = new();
 
     public AssistantContinuationStore(TimeProvider? timeProvider = null) =>
         _timeProvider = timeProvider ?? TimeProvider.System;
 
     internal StoredAssistantContinuation Create(
+        string ownerKey,
         string conversationId,
         string originalTurnId,
         string kind,
@@ -65,15 +77,16 @@ public sealed class AssistantContinuationStore
         {
             CleanupExpired();
 
-            if (_activeIdByConversation.TryGetValue(conversationId, out var previousId))
+            if (_activeIdByConversation.TryGetValue((ownerKey, conversationId), out var previousId))
             {
                 _activeById.Remove(previousId);
             }
 
-            EnsureActiveCapacity();
+            EnsureActiveCapacity(ownerKey);
 
             var continuation = new StoredAssistantContinuation(
                 Guid.NewGuid().ToString("N"),
+                ownerKey,
                 conversationId,
                 originalTurnId,
                 kind,
@@ -83,18 +96,24 @@ public sealed class AssistantContinuationStore
                 Now + ActiveLifetime);
 
             _activeById[continuation.ContinuationId] = continuation;
-            _activeIdByConversation[conversationId] = continuation.ContinuationId;
+            _activeIdByConversation[(ownerKey, conversationId)] = continuation.ContinuationId;
             return continuation;
         }
     }
 
-    internal AssistantContinuationLookup Find(string continuationId, string conversationId)
+    internal AssistantContinuationLookup Find(
+        string ownerKey,
+        string continuationId,
+        string conversationId)
     {
         lock (_gate)
         {
             CleanupExpired();
 
-            if (!_activeById.TryGetValue(continuationId, out var continuation))
+            // Another owner's continuation reads as missing rather than as a
+            // mismatch, so a lookup reveals nothing about other accounts.
+            if (!_activeById.TryGetValue(continuationId, out var continuation)
+                || !string.Equals(continuation.OwnerKey, ownerKey, StringComparison.Ordinal))
             {
                 return new AssistantContinuationLookup(
                     AssistantContinuationLookupStatus.NotFound,
@@ -148,6 +167,7 @@ public sealed class AssistantContinuationStore
     }
 
     internal bool TryGetReceipt(
+        string ownerKey,
         string continuationId,
         string conversationId,
         string turnId,
@@ -157,7 +177,9 @@ public sealed class AssistantContinuationStore
         {
             CleanupExpired();
 
-            if (_receipts.TryGetValue((continuationId, conversationId, turnId), out var receipt))
+            if (_receipts.TryGetValue(
+                    new ReceiptKey(ownerKey, continuationId, conversationId, turnId),
+                    out var receipt))
             {
                 response = receipt.Response;
                 return true;
@@ -174,6 +196,7 @@ public sealed class AssistantContinuationStore
     /// again, or a book answer that advances to a page prompt).
     /// </summary>
     internal void RecordReceipt(
+        string ownerKey,
         string continuationId,
         string conversationId,
         string turnId,
@@ -182,9 +205,7 @@ public sealed class AssistantContinuationStore
         lock (_gate)
         {
             CleanupExpired();
-            EnsureReceiptCapacity();
-            _receipts[(continuationId, conversationId, turnId)] =
-                new ContinuationReceipt(response, Now + ReceiptLifetime);
+            AddReceipt(new ReceiptKey(ownerKey, continuationId, conversationId, turnId), response);
         }
     }
 
@@ -205,17 +226,16 @@ public sealed class AssistantContinuationStore
             if (_activeById.TryGetValue(continuation.ContinuationId, out var current)
                 && ReferenceEquals(current, continuation))
             {
-                _activeById.Remove(continuation.ContinuationId);
-                if (_activeIdByConversation.TryGetValue(continuation.ConversationId, out var currentId)
-                    && string.Equals(currentId, continuation.ContinuationId, StringComparison.Ordinal))
-                {
-                    _activeIdByConversation.Remove(continuation.ConversationId);
-                }
+                RemoveActive(continuation);
             }
 
-            EnsureReceiptCapacity();
-            _receipts[(continuation.ContinuationId, continuation.ConversationId, turnId)] =
-                new ContinuationReceipt(response, Now + ReceiptLifetime);
+            AddReceipt(
+                new ReceiptKey(
+                    continuation.OwnerKey,
+                    continuation.ContinuationId,
+                    continuation.ConversationId,
+                    turnId),
+                response);
         }
     }
 
@@ -229,12 +249,7 @@ public sealed class AssistantContinuationStore
                      .Where(item => item.ExpiresAt <= now)
                      .ToList())
         {
-            _activeById.Remove(continuation.ContinuationId);
-            if (_activeIdByConversation.TryGetValue(continuation.ConversationId, out var currentId)
-                && string.Equals(currentId, continuation.ContinuationId, StringComparison.Ordinal))
-            {
-                _activeIdByConversation.Remove(continuation.ConversationId);
-            }
+            RemoveActive(continuation);
         }
 
         foreach (var pair in _receipts.Where(pair => pair.Value.ExpiresAt <= now).ToList())
@@ -243,28 +258,78 @@ public sealed class AssistantContinuationStore
         }
     }
 
-    private void EnsureActiveCapacity()
+    private void RemoveActive(StoredAssistantContinuation continuation)
     {
-        while (_activeById.Count >= MaxActiveContinuations)
+        _activeById.Remove(continuation.ContinuationId);
+        var conversation = (continuation.OwnerKey, continuation.ConversationId);
+        if (_activeIdByConversation.TryGetValue(conversation, out var currentId)
+            && string.Equals(currentId, continuation.ContinuationId, StringComparison.Ordinal))
         {
-            var oldest = _activeById.Values.OrderBy(item => item.ExpiresAt).First();
-            _activeById.Remove(oldest.ContinuationId);
-            if (_activeIdByConversation.TryGetValue(oldest.ConversationId, out var currentId)
-                && string.Equals(currentId, oldest.ContinuationId, StringComparison.Ordinal))
-            {
-                _activeIdByConversation.Remove(oldest.ConversationId);
-            }
+            _activeIdByConversation.Remove(conversation);
         }
     }
 
-    private void EnsureReceiptCapacity()
+    /// <summary>Leaves room for one more active continuation from <paramref name="ownerKey"/>.</summary>
+    private void EnsureActiveCapacity(string ownerKey)
     {
-        while (_receipts.Count >= MaxReplayReceipts)
+        while (_activeById.Values.Count(item => item.OwnerKey == ownerKey) >= OwnerActiveContinuations)
         {
-            var oldest = _receipts.OrderBy(pair => pair.Value.ExpiresAt).First();
-            _receipts.Remove(oldest.Key);
+            RemoveActive(OldestActive(ownerKey));
+        }
+
+        while (_activeById.Count >= MaxActiveContinuations)
+        {
+            RemoveActive(OldestActive(Largest(_activeById.Values.Select(item => item.OwnerKey), ownerKey)));
         }
     }
+
+    private StoredAssistantContinuation OldestActive(string ownerKey) =>
+        _activeById.Values
+            .Where(item => item.OwnerKey == ownerKey)
+            .MinBy(item => item.ExpiresAt)!;
+
+    /// <summary>Stores a receipt, making room within its owner first when it is new.</summary>
+    private void AddReceipt(ReceiptKey key, AssistantTurnResponse response)
+    {
+        if (!_receipts.ContainsKey(key))
+        {
+            while (_receipts.Keys.Count(item => item.OwnerKey == key.OwnerKey) >= OwnerReplayReceipts)
+            {
+                _receipts.Remove(OldestReceipt(key.OwnerKey));
+            }
+
+            while (_receipts.Count >= MaxReplayReceipts)
+            {
+                _receipts.Remove(OldestReceipt(Largest(_receipts.Keys.Select(item => item.OwnerKey), key.OwnerKey)));
+            }
+        }
+
+        _receipts[key] = new ContinuationReceipt(response, Now + ReceiptLifetime);
+    }
+
+    private ReceiptKey OldestReceipt(string ownerKey) =>
+        _receipts
+            .Where(pair => pair.Key.OwnerKey == ownerKey)
+            .MinBy(pair => pair.Value.ExpiresAt)
+            .Key;
+
+    /// <summary>
+    /// The owner holding the most entries. On a tie the adding owner goes
+    /// first, so adding never costs an equal peer.
+    /// </summary>
+    private static string Largest(IEnumerable<string> owners, string addingOwner) =>
+        owners
+            .GroupBy(owner => owner, StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count())
+            .ThenByDescending(group => group.Key == addingOwner)
+            .First()
+            .Key;
+
+    private readonly record struct ReceiptKey(
+        string OwnerKey,
+        string ContinuationId,
+        string ConversationId,
+        string TurnId);
 
     private sealed record ContinuationReceipt(
         AssistantTurnResponse Response,

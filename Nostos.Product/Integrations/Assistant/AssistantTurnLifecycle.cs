@@ -24,8 +24,10 @@ public static class AssistantTurnIdentity
 }
 
 /// <summary>
-/// Active-turn cancellation registry. The key is the canonical
-/// (ConversationId, TurnId) pair, so a stale stop can never cancel a newer turn.
+/// Active-turn cancellation registry. The key is the owner
+/// (<see cref="IAssistantOwner"/>) with the canonical (ConversationId, TurnId)
+/// pair, so a stale stop can never cancel a newer turn, and one account can
+/// never stop another's turn even when both share a conversation key.
 ///
 /// The active state also owns the mutation boundary. Cancellation and
 /// "mutation has begun" are serialized through the same gate so exactly one
@@ -38,11 +40,12 @@ public sealed class AssistantTurnExecutionRegistry
     private readonly ConcurrentDictionary<TurnKey, ActiveTurn> _active = new();
 
     public AssistantTurnExecution? TryBegin(
+        string ownerKey,
         string conversationId,
         string turnId,
         CancellationToken requestAborted)
     {
-        var key = new TurnKey(conversationId, turnId);
+        var key = new TurnKey(ownerKey, conversationId, turnId);
         var active = new ActiveTurn(
             CancellationTokenSource.CreateLinkedTokenSource(requestAborted));
 
@@ -58,9 +61,9 @@ public sealed class AssistantTurnExecutionRegistry
             () => Complete(key, active));
     }
 
-    public bool TryCancel(string conversationId, string turnId)
+    public bool TryCancel(string ownerKey, string conversationId, string turnId)
     {
-        var key = new TurnKey(conversationId, turnId);
+        var key = new TurnKey(ownerKey, conversationId, turnId);
         if (!_active.TryGetValue(key, out var active))
             return false;
 
@@ -81,7 +84,7 @@ public sealed class AssistantTurnExecutionRegistry
         }
     }
 
-    private readonly record struct TurnKey(string ConversationId, string TurnId);
+    private readonly record struct TurnKey(string OwnerKey, string ConversationId, string TurnId);
 
     private sealed class ActiveTurn
     {
