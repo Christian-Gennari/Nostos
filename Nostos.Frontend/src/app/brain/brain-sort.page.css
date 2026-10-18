@@ -317,26 +317,13 @@ kbd {
   }
 }
 
-/* Touch: every control on the page is on the 44px rung. */
 @media (pointer: coarse), (hover: none) {
-  button[appButton],
-  a[appButton],
-  button[appChip],
-  a.topic-link {
-    min-height: 44px;
-  }
-
-  button[appIconButton] {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
   /* The chip keeps its size; the cross's larger box reaches past it. */
   button.sort-chip-remove {
     margin: -10px -10px -10px -6px;
   }
 
   .sort-field input {
-    min-height: 44px;
+    min-height: var(--control-h-touch);
   }
 }

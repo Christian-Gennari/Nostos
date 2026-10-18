@@ -49,16 +49,7 @@
       />
     </div>
 
-    @if (place() === 'unsorted' && total() > 0) {
-    <!-- Phone: the sorter's way in gets its own row under the search. -->
-    <a appButton variant="primary" class="sort-start-phone" routerLink="/brain/unsorted/sort"
-      [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
-      Sort one by one <nostos-icon name="arrow-right" [size]="14" />
-    </a>
-    }
-
     <div class="toolbar-right">
-      <span class="toolbar-spacer" aria-hidden="true"></span>
       <!-- Phone: order and book as square buttons; the open list shows the choice. -->
       <app-dropdown
         class="order-select-phone"

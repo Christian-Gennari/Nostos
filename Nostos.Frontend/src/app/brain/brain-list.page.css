@@ -45,10 +45,8 @@
 }
 
 .place-switch,
-.toolbar-spacer,
 .order-select-phone,
-.book-select-phone,
-.sort-start-phone {
+.book-select-phone {
   display: none;
 }
 
@@ -324,7 +322,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 10px 4px;
     padding: 10px 14px;
   }
 
@@ -351,23 +349,22 @@
     display: none;
   }
 
-  /* One row: the place on the left, the page's controls on the right, all
-     on the touch rung; the search takes the next row, as in the Library. */
+  /* One row: the place on the left (its name ellipsizes), the page's
+     controls on the right, all on the touch rung; the search takes the next
+     row and Unsorted's Sort one by one the row after, as in the Library.
+     The controls' wrapper steps aside so each can take its own row. */
   .toolbar-right {
-    flex: 1 1 auto;
-    min-width: 0;
-    gap: 4px;
+    display: contents;
   }
 
-  .toolbar-spacer {
-    display: block;
+  .place-switch {
     flex: 1 1 0;
-    min-width: 4px;
+    max-width: none;
+    justify-content: flex-start;
   }
 
   .book-select,
-  .order-select,
-  .toolbar-right > .sort-start {
+  .order-select {
     display: none;
   }
 
@@ -375,10 +372,13 @@
   .book-select-phone {
     display: inline-block;
     flex: none;
+    /* The square follows the touch rung even under a fine pointer, like its neighbours. */
+    --control-h-field: var(--control-h-touch);
   }
 
   .select-toggle,
   .topic-more {
+    flex: none;
     width: var(--control-h-touch);
     min-width: var(--control-h-touch);
     height: var(--control-h-touch);
@@ -390,8 +390,7 @@
     display: none;
   }
 
-  .sort-start-phone {
-    display: inline-flex;
+  .sort-start {
     order: 4;
     flex: 1 1 100%;
     justify-content: center;
@@ -425,20 +424,6 @@
   }
 }
 
-/* Touch: every control on the page is on the 44px rung. */
-@media (pointer: coarse), (hover: none) {
-  button[appButton],
-  a[appButton],
-  button[appChip],
-  a.topic-link {
-    min-height: 44px;
-  }
-
-  button[appIconButton] {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .search-icon {

@@ -1,0 +1,16 @@
+/* Shared by the Brain's pages: on a touch screen every button, chip and link
+   button is a 44px target (the control rung's touch step). A page lists this
+   file after its own stylesheet. */
+@media (pointer: coarse), (hover: none) {
+  button[appButton],
+  a[appButton],
+  button[appChip],
+  a.topic-link {
+    min-height: var(--control-h-touch);
+  }
+
+  button[appIconButton] {
+    min-width: var(--control-h-touch);
+    min-height: var(--control-h-touch);
+  }
+}

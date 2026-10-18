@@ -78,7 +78,7 @@ interface Choice {
   ],
   providers: [BrainTopicSuggestionsService, BrainNoteActionsService],
   templateUrl: './brain-sort.page.html',
-  styleUrls: ['./brain-sort.page.css'],
+  styleUrls: ['./brain-sort.page.css', './brain-touch.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown.escape)': 'onEscape($event)' },
 })

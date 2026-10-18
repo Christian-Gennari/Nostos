@@ -331,44 +331,49 @@ a.note-item-topic-name:focus-visible {
   }
 }
 
-/* Touch: every control is a 44px box. The small ones (chips, the remove
-   cross, the source link) keep their look; negative margins take back the
-   room the larger box would add. */
+/* Touch: every control answers a 44px tap. The small ones (chips, the remove
+   cross, the source link) keep their look and grow an invisible hit area
+   instead; the gaps between chips are wide enough that no two areas meet. */
 @media (pointer: coarse), (hover: none) {
   .note-item-topics {
-    row-gap: 1rem;
+    gap: 1rem 1.25rem;
   }
 
   .note-item-topic-name,
-  .note-item-add {
-    min-height: 44px;
-    margin-block: -9px;
-  }
-
-  .note-item-topic-name {
-    padding-block: 0;
-  }
-
-  /* `button.` out-weighs appIconButton's own xxs rung. */
-  button.note-item-topic-remove {
-    width: 44px;
-    height: 44px;
-    margin: -10px -10px -10px -12px;
-  }
-
+  .note-item-topic-remove,
+  .note-item-add,
   .note-item-source {
-    min-height: 44px;
-    margin-block: -12px;
+    position: relative;
+  }
+
+  .note-item-topic-name::after,
+  .note-item-topic-remove::after,
+  .note-item-add::after,
+  .note-item-source::after {
+    content: '';
+    position: absolute;
+    inset-block: calc(50% - 22px);
+    inset-inline: 0;
+  }
+
+  /* The cross reaches right, into the gap, never left over the name. */
+  .note-item-topic-remove::after {
+    inset-inline: 0 calc(100% - 44px);
+  }
+
+  .note-item-add::after {
+    inset-inline: min(0px, calc(50% - 22px));
   }
 
   .note-item-read,
-  .note-item-expand {
-    min-height: 44px;
+  .note-item-expand,
+  .note-item-edit-actions button {
+    min-height: var(--control-h-touch);
   }
 
   button.note-item-more {
-    width: 44px;
-    height: 44px;
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
     top: 0.6rem;
     right: -0.5rem;
   }
@@ -380,15 +385,18 @@ a.note-item-topic-name:focus-visible {
     padding: 0.6rem 0.5rem 0 0.75rem;
   }
 
+  /* The swatch is drawn inside a 44px button, its edge kept by an inset ring. */
   .note-item-pen {
     width: 44px;
     height: 44px;
     padding: 10px;
     border: 0;
     background-clip: content-box;
+    box-shadow: inset 0 0 0 10px var(--bg-body, var(--bg-surface)), inset 0 0 0 11px var(--border-color);
   }
 
-  .note-item-pen.is-active {
+  .note-item-pen.is-active,
+  .note-item-pen:focus-visible {
     outline-offset: -8px;
   }
 }

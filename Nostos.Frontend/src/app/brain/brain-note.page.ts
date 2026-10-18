@@ -23,7 +23,7 @@ import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service'
   imports: [RouterLink, ButtonComponent, NostosIconComponent, LoadingIndicatorComponent, NoteItemComponent, BrainNoteDialogsComponent],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-note.page.html',
-  styleUrls: ['./brain-note.page.css'],
+  styleUrls: ['./brain-note.page.css', './brain-touch.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BrainNotePage {
