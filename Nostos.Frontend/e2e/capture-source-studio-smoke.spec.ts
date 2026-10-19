@@ -80,18 +80,17 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
       content: writingContent,
     });
 
-    // Open the actual Brain inspector for the canonical saved note.
-    await page.goto(`${baseUrl}/second-brain?noteId=${created.id}`, {
+    // Open the canonical saved note's own page in the Brain.
+    await page.goto(`${baseUrl}/brain/notes/${created.id}`, {
       waitUntil: 'domcontentloaded',
     });
 
-    const inspector = page.getByTestId('brain-note-inspector');
+    const inspector = page.locator('app-brain-note-page app-note-item');
     await expect(inspector).toBeVisible();
-    await expect(inspector.getByRole('heading', { name: bookTitle })).toBeVisible();
+    await expect(inspector.locator('.note-item-book')).toHaveText(bookTitle);
 
-    await expect(inspector.locator('.note-text')).toContainText(rawCapture);
-    await expect(inspector.locator('.quote-text')).toContainText(selectedText);
-    await expect(inspector.locator('.source-badge')).toContainText(bookTitle);
+    await expect(inspector.locator('.note-item-thought')).toContainText(rawCapture);
+    await expect(inspector.locator('.note-item-quote')).toContainText(selectedText);
 
     const canonical = await apiGet<NoteSearchHit>(
       baseUrl,
@@ -146,9 +145,8 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
 
     // Exercise the actual Brain handoff UI rather than creating the writing-note
     // relation directly through the API.
-    await inspector
-      .getByRole('button', { name: 'Keep with writing…', exact: true })
-      .click();
+    await page.getByRole('button', { name: 'More actions for this note' }).click();
+    await page.getByRole('menuitem', { name: 'Keep with writing…' }).click();
 
     const picker = page.getByRole('dialog', {
       name: 'Keep with writing',

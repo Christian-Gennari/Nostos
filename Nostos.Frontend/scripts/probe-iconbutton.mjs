@@ -127,34 +127,16 @@ const SURFACES = [
   },
   {
     name: 'brain-note-edit',
-    route: '/second-brain',
-    // note-card's EDIT-MODE buttons (save / cancel) only exist while a note is
-    // being edited, so without this surface they would be migrated with no
-    // coverage at all — the probe would report "identical" while seeing none of
-    // them. Open a topic, then click the note's edit action.
+    route: '/brain',
+    // The Brain card's EDIT-MODE buttons (save / cancel) only exist while a note
+    // is being edited, so without this surface they would go uncaptured. Open
+    // the first card's ⋯ menu and choose Edit note.
     setup: async (page) => {
-      // The topic list is `.index-item` BUTTONS (no `.nav-item` here — that class
-      // matched the sidebar's NAV LINKS, so clicking it navigated to Library and the
-      // surface silently captured Library's buttons instead of note-card's).
-      const item = await page.waitForSelector('.index-item', { timeout: 10000 }).catch(() => null);
-      if (item) await item.click().catch(() => {});
-      // `:not([title])` is load-bearing: the sibling "Jump to location" button HAS a
-      // title and clicking it navigates to the reader, again swapping the capture.
-      //
-      // The click is dispatched in JS, not via `elementHandle.click()`. note-card
-      // reveals its actions on hover (`opacity: 0; pointer-events: none` at rest), so
-      // Playwright's real click is refused with "note-footer intercepts pointer
-      // events" and edit mode never opens — the two edit-mode buttons then went
-      // completely uncaptured while the run still reported success. Bypassing
-      // hit-testing is correct here: this probe measures computed style, it does not
-      // exercise pointer interaction, which is what the pixel gate and the specs are
-      // for. Verified: the same JS click opens edit mode and yields two 32px buttons.
-      const edit = await page
-        .waitForSelector('.note-actions .icon-btn:not(.delete):not([title])', { timeout: 8000 })
-        .catch(() => null);
-      if (edit) await edit.evaluate((e) => e.click()).catch(() => {});
-      // The two edit-mode buttons (save/cancel, 32px) only exist now.
-      await page.waitForSelector('.edit-actions .icon-btn', { timeout: 8000 }).catch(() => null);
+      const more = await page.waitForSelector('app-note-item .note-item-more', { timeout: 10000 }).catch(() => null);
+      if (more) await more.click().catch(() => {});
+      const edit = await page.waitForSelector('[role="menuitem"]:has-text("Edit note")', { timeout: 8000 }).catch(() => null);
+      if (edit) await edit.click().catch(() => {});
+      await page.waitForSelector('.note-item-edit-actions button', { timeout: 8000 }).catch(() => null);
     },
   },
   {
@@ -168,10 +150,11 @@ const SURFACES = [
   },
   {
     name: 'brain-notes',
-    route: '/second-brain',
-    // note-card's 5 buttons only render once a topic with notes is open.
+    route: '/brain',
+    // The Brain's cards and sidebar render on All notes; open the first topic so
+    // its row actions (Rename, Delete) show too.
     setup: async (page) => {
-      const item = await page.$('.index-item, .tree-row, .nav-item');
+      const item = await page.$('app-brain-sidebar .topic-row');
       if (item) { await item.click().catch(() => {}); await page.waitForTimeout(600); }
     },
   },

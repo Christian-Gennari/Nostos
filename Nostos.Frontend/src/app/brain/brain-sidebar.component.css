@@ -190,6 +190,8 @@
   padding-right: 4px;
   color: var(--color-text-light);
   font-size: 0.72rem;
+  /* The Library's count line box, so the two sidebars' rows match. */
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
   transition: opacity 0.15s;
 }

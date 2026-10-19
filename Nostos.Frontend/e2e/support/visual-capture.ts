@@ -874,13 +874,13 @@ function r1(value: number): number {
  * allowed to retain its own shell animation.
  */
 export async function checkBrainNoArrivalAnimation(page: Page): Promise<GeometryCheck> {
-  const pane = page.locator('.content-col');
-  await pane.locator('.topic-header').waitFor({ timeout: 30_000 });
-  await pane.locator('.note-card').first().waitFor({ timeout: 30_000 });
+  const pane = page.locator('.brain-main');
+  await pane.locator('.toolbar-title').waitFor({ timeout: 30_000 });
+  await pane.locator('app-note-item').first().waitFor({ timeout: 30_000 });
 
   const state = await pane.evaluate((element) => {
     const animationNames: Record<string, string> = {};
-    for (const selector of ['.topic-header', '.note-card']) {
+    for (const selector of ['.toolbar-title', 'app-note-item']) {
       const target = element.querySelector(selector);
       animationNames[selector] = target ? getComputedStyle(target).animationName : '<absent>';
     }
@@ -888,10 +888,13 @@ export async function checkBrainNoArrivalAnimation(page: Page): Promise<Geometry
     const waitElements = Array.from(element.querySelectorAll('.wait-field, .is-waiting')).map(
       (target) => `${target.tagName.toLowerCase()}.${target.className}`
     );
-    if (element.classList.contains('is-waiting')) waitElements.push('.content-col.is-waiting');
+    if (element.classList.contains('is-waiting')) waitElements.push('.brain-main.is-waiting');
 
     const runningAnimations = Array.from(document.getAnimations())
       .filter((animation) => animation.playState === 'running')
+      // Time-based only: a scroll-linked effect (the toolbar's edge appearing
+      // as the list scrolls) is not an arrival animation.
+      .filter((animation) => !animation.timeline || animation.timeline instanceof DocumentTimeline)
       .filter((animation) => {
         const effect = animation.effect as (AnimationEffect & { target?: Element | null }) | null;
         const target = effect?.target ?? null;
@@ -930,7 +933,7 @@ export async function checkBrainNoArrivalAnimation(page: Page): Promise<Geometry
 export async function checkBrainLayoutOverflow(page: Page): Promise<GeometryCheck> {
   const metrics = await page.evaluate(() => {
     const layout = document.querySelector<HTMLElement>('.brain-layout');
-    const selectors = ['.index-col', '.content-col'];
+    const selectors = ['.brain-sidebar-column', '.brain-main'];
     const tracks = selectors.map((selector) => {
       const element = document.querySelector<HTMLElement>(selector);
       if (!element) {
@@ -940,7 +943,8 @@ export async function checkBrainLayoutOverflow(page: Page): Promise<GeometryChec
       const rect = element.getBoundingClientRect();
       return {
         selector,
-        visible: style.display !== 'none',
+        // A closed drawer (the Brain's sidebar on a phone) is hidden, not gone.
+        visible: style.display !== 'none' && style.visibility !== 'hidden',
         clientWidth: element.clientWidth,
         scrollWidth: element.scrollWidth,
         left: rect.left,
@@ -1013,7 +1017,7 @@ export async function checkBrainMapGeometry(page: Page): Promise<GeometryCheck> 
   // so there are no per-node DOM elements to measure (the earlier SVG-based
   // version of this check read `circle.map-node-visual`, which no longer exists).
   const measured = await page.evaluate(() => {
-    const statsText = document.querySelector('.brain-header .index-stats')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const statsText = document.querySelector('.map-toolbar .page-count')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
     const topicCount = Number.parseInt(statsText.match(/(\d+)\s+topics?/i)?.[1] ?? '', 10);
 
     const globals = globalThis as unknown as {

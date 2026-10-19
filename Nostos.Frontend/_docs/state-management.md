@@ -95,6 +95,6 @@ There is no global application store. Each page manages its own data lifecycle:
 
 - **Library** — fetches on init, paginates via infinite scroll
 - **BookDetail** — `BookDetailStore.loadAllData(id)` on route change
-- **SecondBrain** — fetches topic list on init, detail on selection
+- **Brain** — `BrainStateService` (root) holds the topics and counts for every place; each list page reads its notes through `/api/notes`
 - **WritingStudio** — fetches full tree on init, individual documents on selection
 - **ReaderShell** — fetches book + notes on init, syncs progress on navigation

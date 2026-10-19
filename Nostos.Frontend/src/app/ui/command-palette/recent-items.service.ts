@@ -111,10 +111,8 @@ export function parseRecentTarget(url: string): { kind: RecentKind; id: string }
   const book = /^\/(?:library|read)\/([^/]+)$/.exec(path);
   if (book && book[1] !== 'to-read') return { kind: 'book', id: decodeURIComponent(book[1]) };
 
-  if (path === '/second-brain') {
-    const topicId = params.get('topicId');
-    if (topicId) return { kind: 'topic', id: topicId };
-  }
+  const topic = /^\/brain\/topics\/([^/]+)$/.exec(path);
+  if (topic) return { kind: 'topic', id: decodeURIComponent(topic[1]) };
 
   if (path === '/studio') {
     const writingId = params.get('writingId');

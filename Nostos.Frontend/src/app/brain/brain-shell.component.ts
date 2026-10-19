@@ -5,7 +5,7 @@ import { filter } from 'rxjs';
 
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
-import { BrainTopicPickerComponent } from '../second-brain/topic-picker/brain-topic-picker.component';
+import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
 import { BrainSidebarComponent } from './brain-sidebar.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';

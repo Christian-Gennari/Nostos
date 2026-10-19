@@ -115,19 +115,6 @@ export class NotesService {
   }
 
   /**
-   * Notes linked to no topic — an exception queue, not a second content type.
-   *
-   * Since issue #256 this is paged rather than a single capped list. The page
-   * carries the total, because review mode traverses the whole set and must never
-   * present the first 50 rows as "the unlinked notes". The caller passes the
-   * offset of the first row it does not already hold, so a queue that shrinks as
-   * the user resolves notes still asks for the right next row.
-   */
-  unlinkedPage(limit = 25, offset = 0): Observable<NoteSearchPage> {
-    return this.http.get<NoteSearchPage>('/api/notes/unlinked', { params: { limit, offset } });
-  }
-
-  /**
    * Assistant capture (issue #261 §4): the single call site that persists a
    * typed capture with its source anchor. It is deliberately separate from
    * `create` so 261-S2 can swap the implementation for the canonical

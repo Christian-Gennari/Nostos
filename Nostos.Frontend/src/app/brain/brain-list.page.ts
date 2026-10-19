@@ -30,7 +30,7 @@ import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
-import { BrainTopicRenameComponent } from '../second-brain/topic-rename/brain-topic-rename.component';
+import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';

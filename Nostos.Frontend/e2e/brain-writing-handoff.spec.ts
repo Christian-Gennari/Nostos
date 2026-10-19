@@ -23,15 +23,25 @@ async function seedNote(baseUrl: string, title: string, content: string): Promis
   return { bookId: book.id, noteId: note.id };
 }
 
+/**
+ * The note card's ⋯ menu → Keep with writing…; returns the ⋯ button, which is
+ * where focus goes back to when the dialog closes.
+ */
+async function openKeepWithWriting(page: import('@playwright/test').Page) {
+  const trigger = page.getByRole('button', { name: 'More actions for this note' }).first();
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  await page.getByRole('menuitem', { name: 'Keep with writing…' }).click();
+  return trigger;
+}
+
 async function openHandoff(
   page: import('@playwright/test').Page,
   baseUrl: string,
   noteId: string
 ) {
-  await page.goto(`${baseUrl}/second-brain?noteId=${noteId}`, { waitUntil: 'domcontentloaded' });
-  const trigger = page.getByRole('button', { name: 'Keep with writing…', exact: true });
-  await expect(trigger).toBeVisible();
-  await trigger.click();
+  await page.goto(`${baseUrl}/brain/notes/${noteId}`, { waitUntil: 'domcontentloaded' });
+  const trigger = await openKeepWithWriting(page);
 
   const dialog = page.getByRole('dialog', { name: 'Keep with writing', exact: true });
   await expect(dialog).toBeVisible();
@@ -336,7 +346,7 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
 
     await dialog.getByRole('button', { name: 'Keep with writing' }).click();
     await expect(page.locator('.toast-success')).toContainText(`Kept 1 source with “${writingTitle}”`);
-    await expectNoToastHeaderOverlap(page, '.brain-header-tools');
+    await expectNoToastHeaderOverlap(page, '.toolbar');
     const persisted = await apiGet<WritingSourceDto[]>(baseUrl, `/api/writings/${writing.id}/notes`);
     expect(persisted).toHaveLength(1);
     expect(persisted[0].id).toBe(note.noteId);
@@ -507,10 +517,8 @@ test('destination loading and retryable errors remain clear, then a recovered ke
   try {
     const note = await seedNote(baseUrl, `Handoff loading error ${stamp}`, 'A synthetic note for a retryable destination load.');
     bookId = note.bookId;
-    await page.goto(`${baseUrl}/second-brain?noteId=${note.noteId}`, { waitUntil: 'domcontentloaded' });
-    const trigger = page.getByRole('button', { name: 'Keep with writing…', exact: true });
-    await expect(trigger).toBeVisible();
-    await trigger.click();
+    await page.goto(`${baseUrl}/brain/notes/${note.noteId}`, { waitUntil: 'domcontentloaded' });
+    const trigger = await openKeepWithWriting(page);
     const dialog = page.getByRole('dialog', { name: 'Keep with writing', exact: true });
     await firstListStarted;
     await expect(dialog.getByRole('status', { name: 'Loading writings' })).toBeVisible();
@@ -519,7 +527,8 @@ test('destination loading and retryable errors remain clear, then a recovered ke
     await expect(dialog.getByRole('status', { name: 'Loading writings' })).toHaveCount(0);
 
     await dialog.getByRole('button', { name: 'Close writing picker' }).click();
-    await trigger.click();
+    await expect(trigger).toBeFocused();
+    await openKeepWithWriting(page);
     await expect(dialog.getByRole('alert')).toContainText('Writings could not be loaded.');
     await expect(dialog.getByRole('button', { name: 'Retry' })).toBeVisible();
     await page.screenshot({ path: '/tmp/804-handoff-error-1280x800-light.png', animations: 'disabled' });
@@ -530,7 +539,7 @@ test('destination loading and retryable errors remain clear, then a recovered ke
     await dialog.getByRole('textbox', { name: 'Title' }).fill(title);
     await dialog.getByRole('button', { name: 'Keep with writing' }).click();
     await expect(page.locator('.toast-success')).toContainText(`Kept 1 source with “${title}”`);
-    await expectNoToastHeaderOverlap(page, '.brain-header-tools');
+    await expectNoToastHeaderOverlap(page, '.toolbar');
 
     const writings = await apiGet<WritingDto[]>(baseUrl, '/api/writings');
     const created = writings.find((writing) => writing.name === title);

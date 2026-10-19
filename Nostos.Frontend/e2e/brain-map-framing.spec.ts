@@ -35,9 +35,7 @@ test('graph margins are balanced and the cluster is centred', async ({ browser }
 
   const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
   try {
-    await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-    await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-    await page.locator('.view-mode-control .vt-opt:last-child').click();
+    await page.goto(`${fixture.baseUrl}/brain/map`, { waitUntil: 'domcontentloaded' });
     await page.locator('.sigma-container canvas').first().waitFor({ timeout: 30_000 });
     await page.waitForTimeout(1200);
 

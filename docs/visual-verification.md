@@ -30,7 +30,7 @@ is 6 surfaces × 2 viewports × 2 themes = 24 PNGs, plus
 | --- | --- | --- |
 | Reader (audio route) | 1440×900, light + dark | 390×844, light + dark |
 | Library | 1440×900, light + dark | 390×844, light + dark |
-| Second Brain | 1440×900, light + dark | 390×844, light + dark |
+| Brain | 1440×900, light + dark | 390×844, light + dark |
 | Writing Studio | 1440×900, light + dark | 390×844, light + dark |
 | Settings | 1440×900, light + dark | 390×844, light + dark |
 | Home | 1440×900, light + dark | 390×844, light + dark |
@@ -161,7 +161,7 @@ The visual scenarios report geometry checks alongside their screenshots. The cur
 | --- | --- |
 | Writing Studio | Zen viewport fill, hidden chrome, balanced gutters |
 | Library | Toolbar control type, sidebar filter labels, sidebar rail geometry |
-| Second Brain | Empty state, layout overflow, map geometry, and arrival animation |
+| Brain | Empty state, layout overflow, map geometry, and arrival animation |
 | EPUB/PDF reader | Light EPUB iframe normalization and PDF final-page toolbar clearance |
 | Audio reader | Composition at desktop, portrait phone, and phone landscape sizes |
 | Book detail | Hero layout and fade |

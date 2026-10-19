@@ -180,7 +180,7 @@
   </div>
   }
 
-  <main class="brain-list" [attr.aria-busy]="loading()" aria-label="Notes">
+  <main class="brain-list" [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes">
     @if (topicMissing()) {
     <div class="empty-state" role="status">
       <p>This topic is gone. It may have been merged into another or deleted.</p>
@@ -258,8 +258,8 @@
   <button appButton variant="overlay" size="sm" type="button" class="selection-action"
     cdkOverlayOrigin #selectionOrigin="cdkOverlayOrigin"
     [disabled]="selected().size === 0" [attr.aria-expanded]="selectionPickerOpen()" aria-haspopup="dialog"
-    (click)="selectionPickerOpen.set(!selectionPickerOpen())">
-    <nostos-icon concept="topic" [size]="14" />Add topic…
+    aria-label="Add topic…" (click)="selectionPickerOpen.set(!selectionPickerOpen())">
+    <nostos-icon concept="topic" [size]="14" /><span class="selection-label">Add topic…</span>
   </button>
   <ng-template
     cdkConnectedOverlay
@@ -278,12 +278,12 @@
     />
   </ng-template>
   <button appButton variant="overlay" size="sm" type="button" class="selection-action"
-    [disabled]="selected().size === 0" (click)="keepSelectionWithWriting()">
-    <nostos-icon name="bookmark-simple" [size]="14" />Keep with writing…
+    [disabled]="selected().size === 0" aria-label="Keep with writing…" (click)="keepSelectionWithWriting()">
+    <nostos-icon name="bookmark-simple" [size]="14" /><span class="selection-label">Keep with writing…</span>
   </button>
   <button appButton variant="overlay" size="sm" type="button" class="selection-action"
-    [disabled]="selected().size === 0" (click)="deleteSelection()">
-    <nostos-icon name="trash" [size]="14" />Delete
+    [disabled]="selected().size === 0" aria-label="Delete" (click)="deleteSelection()">
+    <nostos-icon name="trash" [size]="14" /><span class="selection-label">Delete</span>
   </button>
   <button appIconButton type="button" icon="x" surface="overlay" class="selection-close" [glyphSize]="16"
     aria-label="Stop selecting" (click)="leaveSelection()"></button>

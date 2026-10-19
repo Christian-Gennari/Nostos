@@ -174,3 +174,20 @@
     min-height: var(--control-h-touch);
   }
 }
+
+/* A short screen (a phone on its side) keeps the toolbar to one slim row so
+   the graph has the height. */
+@media (max-height: 520px) {
+  .map-toolbar {
+    padding-block: 0.4rem;
+  }
+
+  .page-title {
+    font-size: 1.25rem;
+    line-height: 1.8rem;
+  }
+
+  .finder-input {
+    min-height: 0;
+  }
+}

@@ -50,7 +50,7 @@ Nostos.sln
 │       ├── library/         # Library view + sidebar collections
 │       ├── book-detail/     # Book detail page + store
 │       ├── reader/          # Multi-format reader (epub, pdf, audio)
-│       ├── second-brain/    # Topic explorer
+│       ├── brain/           # The Brain: places, topics, the sorter, the map (docs/brain.md)
 │       ├── writing-studio/  # Markdown writing environment
 │       ├── add-book-modal/  # Book create/edit modal
 │       └── home/            # Landing page

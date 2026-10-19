@@ -9,8 +9,8 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { rankTopicChoices, thoughtForDisplay, topicChoices } from '../ui/note-item/note-item.helpers';
 import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
-import { TopicMapComponent, type MapCamera } from '../second-brain/topic-map/topic-map.component';
-import { drawnTopics } from '../second-brain/topic-map/topic-map.helpers';
+import { TopicMapComponent, type MapCamera } from './topic-map/topic-map.component';
+import { drawnTopics } from './topic-map/topic-map.helpers';
 import { BrainStateService } from './brain-state.service';
 import { plural } from './brain.helpers';
 

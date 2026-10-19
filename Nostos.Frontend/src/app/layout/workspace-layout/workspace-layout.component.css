@@ -39,6 +39,12 @@
 }
 
 @media (max-width: 768px) {
+  /* The Brain's map is a canvas: it runs under the dock rail (its HUD keeps
+     the controls clear of the dock), so the shell reserves nothing there. */
+  .workspace-content:has(app-brain-map-page) {
+    padding-bottom: 0;
+  }
+
   /* Mobile library uses the workspace page scroll rather than a fixed-height
      nested scroller, so touch swipes can continue through the whole grid. */
   .workspace-layout:has(.settings-page) {
@@ -65,9 +71,13 @@
     padding-bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px));
   }
 
-  /* The drawer owns the mobile viewport while open; hide the bottom dock
-     so it never competes with or sits behind the drawer. */
-  .workspace-layout:has(.sidebar:not(.collapsed)) app-app-dock {
+  /* A drawer owns the mobile viewport while open (the Library's collections,
+     the Brain's places); hide the bottom dock so it never competes with or
+     sits behind it. Scoped to each drawer's own open state: the Brain's
+     sidebar reuses the Library's `.sidebar` markup but is never `.collapsed`,
+     so the bare selector hid the dock on every Brain page. */
+  .workspace-layout:has(app-sidebar-collections .sidebar:not(.collapsed)) app-app-dock,
+  .workspace-layout:has(.brain-layout.drawer-open) app-app-dock {
     opacity: 0;
     pointer-events: none;
     transform: translateY(100%);

@@ -39,9 +39,7 @@ test.afterAll(async () => {
 });
 
 async function openMap(page: Page): Promise<void> {
-  await page.goto(fixtureBaseUrl + '/second-brain', { waitUntil: 'domcontentloaded' });
-  await page.locator('.view-mode-control .vt-opt:last-child').waitFor({ timeout: 30_000 });
-  await page.locator('.view-mode-control .vt-opt:last-child').click();
+  await page.goto(fixtureBaseUrl + '/brain/map', { waitUntil: 'domcontentloaded' });
   await page.locator('.sigma-container canvas').first().waitFor({ timeout: 30_000 });
   await page.waitForFunction(
     () => document.querySelector('.topic-map')?.getAttribute('aria-busy') === 'false',
@@ -82,6 +80,9 @@ async function selectFocusAndFit(page: Page): Promise<void> {
   expect(point, 'the seeded Focus topic must be rendered').not.toBeNull();
   await page.mouse.click(point!.x, point!.y);
   await expect(page.locator('.map-card-title')).toHaveText('Focus');
+  // The card is complete once its line from the topic's notes is in; Fit
+  // frames the graph around the card as the reader sees it.
+  await expect(page.locator('.map-card .map-sample')).toBeVisible();
   await page.getByRole('button', { name: 'Fit to view' }).click();
   await page.waitForTimeout(450);
 }
@@ -108,7 +109,7 @@ async function readGeometry(page: Page) {
       Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
       Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
     const stageElement = document.querySelector('.map-stage') as HTMLElement | null;
-    const contentElement = document.querySelector('.content-col') as HTMLElement | null;
+    const contentElement = document.querySelector('app-brain-map-page') as HTMLElement | null;
     const stageStyle = stageElement ? getComputedStyle(stageElement) : null;
     const graph = (globalThis as unknown as {
       __nostosGraph?: {
@@ -151,8 +152,8 @@ async function readGeometry(page: Page) {
       .filter((rect) => rect.width > 0 && rect.height > 0);
 
     const stage = box('.map-stage');
-    const content = box('.content-col');
-    const header = box('.brain-header');
+    const content = box('app-brain-map-page');
+    const header = box('.map-toolbar');
     const overlayBoxes = [legend, card, actions].filter((item): item is Box => !!item);
     const overlayCollisions: string[] = [];
     const overlayNames = ['legend', 'card', 'actions'];
@@ -178,7 +179,8 @@ async function readGeometry(page: Page) {
       edgeDeltas: {
         left: stage && content ? stage.left - content.left : null,
         right: stage && content ? content.right - stage.right : null,
-        top: stage && content ? stage.top - content.top : null,
+        // The stage starts where the page's toolbar ends.
+        top: stage && content ? stage.top - (header ? header.bottom : content.top) : null,
         bottom: stage && content ? content.bottom - stage.bottom : null,
         header: stage && header ? stage.top - header.bottom : null,
       },

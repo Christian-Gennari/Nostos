@@ -37,8 +37,8 @@ export class NoteFormatPipe implements PipeTransform {
       const topic = topics.get(topicName.toLocaleLowerCase());
 
       if (topic) {
-        const href = `/second-brain?topicId=${encodeURIComponent(topic.id)}`;
-        return `<a class="topic-tag clickable" href="${href}" data-topic-id="${topic.id}" aria-label="${escapedName} — open topic evidence in Brain">${escapedName}</a>`;
+        const href = `/brain/topics/${encodeURIComponent(topic.id)}`;
+        return `<a class="topic-tag clickable" href="${href}" data-topic-id="${topic.id}" aria-label="${escapedName} — open the topic in Brain">${escapedName}</a>`;
       }
 
       // Keep the link identity visible even when its backing topic is missing.

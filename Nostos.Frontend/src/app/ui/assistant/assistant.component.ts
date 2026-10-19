@@ -59,7 +59,7 @@ export function starterPrompts(context: AssistantContext): StarterPrompt[] {
         { id: 'book-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
         { id: 'book-related', label: 'Which of my other books connect to this one?' },
       ];
-    case 'second-brain':
+    case 'brain':
       return [
         { id: 'brain-connections', label: 'What connects my topics?' },
         { id: 'brain-recent', label: 'Summarise my most recent notes' },
@@ -547,20 +547,14 @@ export class AssistantComponent {
     if (!this.router) return;
 
     if (evidence.handle.kind === 'note' && evidence.handle.noteId) {
-      void this.router.navigate(
-        ['/second-brain'],
-        { queryParams: { noteId: evidence.handle.noteId } },
-      ).then((navigated) => {
+      void this.router.navigate(['/brain/notes', evidence.handle.noteId]).then((navigated) => {
         if (navigated && this.isPhoneViewport()) this.close();
       });
       return;
     }
 
     if (evidence.handle.kind === 'topic' && evidence.handle.topicId) {
-      void this.router.navigate(
-        ['/second-brain'],
-        { queryParams: { topicId: evidence.handle.topicId } },
-      ).then((navigated) => {
+      void this.router.navigate(['/brain/topics', evidence.handle.topicId]).then((navigated) => {
         if (navigated && this.isPhoneViewport()) this.close();
       });
       return;

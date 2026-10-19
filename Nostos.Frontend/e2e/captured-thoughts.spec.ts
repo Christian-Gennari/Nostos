@@ -83,7 +83,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
           await before.close();
         }
 
-        await page.goto(`${baseUrl}/second-brain?noteId=${note.id}`);
+        await page.goto(`${baseUrl}/brain/notes/${note.id}`);
         await expect(page.getByTestId('note-capture-details')).toContainText('Light polish');
         const viewOriginal = page.getByRole('button', { name: 'View original', exact: true });
         const originalDialog = page.getByRole('dialog', { name: 'Original wording', exact: true });
@@ -117,7 +117,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         await expect(page.getByTestId('note-original-text')).toHaveText(raw);
         await page.getByRole('button', { name: 'Restore original', exact: true }).click();
         await expect(page.getByTestId('note-capture-details')).toContainText('Verbatim');
-        await expect(page.getByTestId('brain-note-inspector')).toBeVisible();
+        await expect(page.locator('app-brain-note-page app-note-item')).toBeVisible();
         const restored = await apiGet<NoteSearchHit>(baseUrl, `/api/notes/${note.id}`);
         expect(restored.content).toBe(raw);
         expect(restored.selectedText).toBe(note.selectedText);
@@ -151,12 +151,16 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         const manual = await apiPost<Note>(baseUrl, `/api/books/${book.id}/notes`, { content: 'My manual words.' });
         expect(manual.processingMode).toBe('verbatim');
         expect(providerCalls).toBe(1);
-        await page.goto(`${baseUrl}/second-brain?noteId=${manual.id}`);
-        await expect(page.getByTestId('brain-note-inspector')).toBeVisible();
+        await page.goto(`${baseUrl}/brain/notes/${manual.id}`);
+        await expect(page.locator('app-brain-note-page app-note-item')).toBeVisible();
         await expect(page.getByTestId('note-capture-details')).toHaveCount(0);
       } finally {
         try {
-          await put('/api/settings/ai-provider', { llm: { ...previousProvider.llm, apiKey: '' } });
+          // Unset values read back as ''; they go back as null (leave unset),
+          // which the server accepts, rather than '', which it refuses.
+          const unset = Object.fromEntries(Object.entries(previousProvider.llm)
+            .map(([key, value]) => [key, value === '' ? null : value]));
+          await put('/api/settings/ai-provider', { llm: { ...unset, apiKey: '' } });
           if (bookId) await cleanupBrain(baseUrl, { bookId, topicNames: [], beforeTopicIds });
         } finally {
           server.closeAllConnections();

@@ -1,6 +1,6 @@
 {
   "artifact": "brain-index-desktop.png",
-  "capturedAt": "2026-10-16T07:11:52.881Z",
+  "capturedAt": "2026-10-19T00:34:22.918Z",
   "name": "brain-index-desktop",
   "surface": "brain",
   "viewport": {
@@ -24,19 +24,19 @@
         "maxVisibleRight": 1440,
         "tracks": [
           {
-            "selector": ".index-col",
+            "selector": ".brain-sidebar-column",
             "visible": true,
-            "clientWidth": 319,
-            "scrollWidth": 319,
+            "clientWidth": 299,
+            "scrollWidth": 299,
             "left": 0,
-            "right": 320
+            "right": 300
           },
           {
-            "selector": ".content-col",
+            "selector": ".brain-main",
             "visible": true,
-            "clientWidth": 1120,
-            "scrollWidth": 1120,
-            "left": 320,
+            "clientWidth": 1140,
+            "scrollWidth": 1140,
+            "left": 300,
             "right": 1440
           }
         ],
