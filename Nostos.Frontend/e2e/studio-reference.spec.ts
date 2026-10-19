@@ -654,6 +654,10 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
     '/api/writings/' + writingId,
   );
   const editorBody = studioPage(page);
+  // The writing's words are on the page before the caret goes to its end:
+  // placed on the still-empty page, Control+End left the caret at the top
+  // and the quote went in above the existing one (a 1-in-3 flake).
+  await expect(editorBody.locator('blockquote').last()).toContainText('A sentence is not finished');
   await editorBody.click();
   await page.keyboard.press('Control+End');
   // The file list is a closed slide-over at rest (#1040); nothing to hide.
@@ -843,8 +847,10 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
   await openReferenceRailOnLoad(touchPage);
   await openWriting(touchPage, { width: 390, height: 844 });
-  const referenceToggle = touchPage.locator('.reference-toggle');
-  await referenceToggle.click();
+  // The rail was asked to open on load; on a phone it covers its own toggle.
+  if (!(await touchPage.locator('.sidebar-right').evaluate((element) => element.classList.contains('open')))) {
+    await touchPage.locator('.reference-toggle').click();
+  }
   await expect(touchPage.locator('.sidebar-right')).toHaveClass(/open/);
   await expect
     .poll(() =>
@@ -986,7 +992,12 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
   await openWriting(touchPage, { width: 390, height: 844 });
   await expectDarkEditor(touchPage);
-  await touchPage.locator('.reference-toggle').click();
+  // The Studio remembers an open rail, so the reload may already show it.
+  const darkReferenceDrawer = touchPage.locator('.sidebar-right');
+  if (!(await darkReferenceDrawer.evaluate((element) => element.classList.contains('open')))) {
+    await touchPage.locator('.reference-toggle').click();
+  }
+  await expect(darkReferenceDrawer).toHaveClass(/\bopen\b/);
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-dark.png');
   await touchContext.close();
 

@@ -63,7 +63,7 @@ import {
   type CaptureMeta,
   type GeometryCheck,
 } from './support/visual-capture';
-import { STUDIO_PAGE_SELECTOR } from './support/studio-editor';
+import { STUDIO_PAGE_SELECTOR, openFilesRail } from './support/studio-editor';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -105,19 +105,19 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
       await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
-      await page.locator('.editor-pane .empty-state').waitFor({ timeout: 30_000 });
-      await expect(page.locator('.editor-pane .empty-state h2')).toHaveText('Open a document to begin writing');
-      await expect(page.locator('.editor-pane .empty-subtext')).toHaveText(
-        'Choose one from Files, or start a new document.',
-      );
+      // With nothing to return to, the Studio is a blank page with the caret
+      // in it (#1059), not an empty state.
+      await expect(page.locator('.header-doc-title')).toHaveText('New page');
+      const pageBody = page.locator('app-markdown-editor .nostos-manuscript-body');
+      await expect(pageBody).toBeFocused();
       const png = await capturePng(page, 'studio-empty-desktop');
       await writeGeometryReport(
         'studio-empty-desktop',
         [
           {
-            id: 'studio-empty-state',
+            id: 'studio-blank-page',
             pass: true,
-            message: 'empty studio invites the user to open a document or start a new one',
+            message: 'a Studio with nothing open is a blank page, ready to type into',
             metrics: { png },
           },
         ],
@@ -147,6 +147,8 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
       await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
+      // The Studio opens on the page (#1059); the document is in the Files rail.
+      await openFilesRail(page);
       await page
         .locator('.file-list .tree-row', { hasText: DOC_TITLE })
         .waitFor({ timeout: 30_000 });
@@ -178,6 +180,7 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
       await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
+      await openFilesRail(page);
       await page.locator('.file-list .tree-row', { hasText: DOC_TITLE }).waitFor({ timeout: 30_000 });
       await page.locator('.file-list .tree-row', { hasText: DOC_TITLE }).click();
       await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
@@ -208,7 +211,7 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
       // silently skips the click, and leaves the row off-screen (the drawer is
       // translated -100% until it carries `.open`).
       const fileRow = page.locator('.file-list .tree-row', { hasText: DOC_TITLE });
-      await fileRow.waitFor({ timeout: 30_000 });
+      await page.locator('.files-toggle').waitFor({ timeout: 30_000 });
       const fileSidebar = page.locator('.sidebar-left');
       if (!(await fileSidebar.evaluate((el) => el.classList.contains('open')))) {
         // The persistent editor-header control opens the default-closed Files drawer.

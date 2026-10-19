@@ -1,6 +1,6 @@
 {
   "artifact": "studio-empty-desktop.png",
-  "capturedAt": "2026-10-16T07:10:54.179Z",
+  "capturedAt": "2026-10-19T04:44:56.681Z",
   "name": "studio-empty-desktop",
   "surface": "studio",
   "viewport": {
@@ -10,11 +10,11 @@
   "state": "no-document",
   "checks": [
     {
-      "id": "studio-empty-state",
+      "id": "studio-blank-page",
       "pass": true,
-      "message": "empty studio invites the user to open a document or start a new one",
+      "message": "a Studio with nothing open is a blank page, ready to type into",
       "metrics": {
-        "png": "/home/dev/coding/projects/nostos-rebirth/.claude/worktrees/bridge-cse_014MYNna6BUpRcycdTddfV5J/Nostos.Frontend/e2e/visual-evidence/studio-empty-desktop.png"
+        "png": "/home/dev/coding/projects/nostos-rebirth-studio-e2e-writing-room/Nostos.Frontend/e2e/visual-evidence/studio-empty-desktop.png"
       }
     }
   ],

@@ -1,6 +1,6 @@
 {
   "artifact": "studio-document-desktop.png",
-  "capturedAt": "2026-10-16T07:10:57.002Z",
+  "capturedAt": "2026-10-19T04:44:58.729Z",
   "name": "studio-document-desktop",
   "surface": "studio",
   "viewport": {
@@ -14,7 +14,7 @@
       "pass": true,
       "message": "document 'Visual QA Draft' open in the editor with normal chrome visible",
       "metrics": {
-        "png": "/home/dev/coding/projects/nostos-rebirth/.claude/worktrees/bridge-cse_014MYNna6BUpRcycdTddfV5J/Nostos.Frontend/e2e/visual-evidence/studio-document-desktop.png"
+        "png": "/home/dev/coding/projects/nostos-rebirth-studio-e2e-writing-room/Nostos.Frontend/e2e/visual-evidence/studio-document-desktop.png"
       }
     }
   ],
