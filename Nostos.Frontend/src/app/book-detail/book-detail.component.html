@@ -167,32 +167,20 @@
               title="Toggle Favorite"
               aria-label="Toggle favorite"
             ></button>
-          </div>
 
-          <!-- Format switcher (issue #1062): the ONLY place to switch edition.
-               It used to live on the rail's editions card, which stacks below
-               the whole notes feed on a phone; here it sits beside Read/Listen
-               at every width. Navigation, not a setting: a <nav> of
-               buttons with aria-current, not a radio group whose arrow keys
-               would navigate away on every press. The current chip is plain
-               text plus a check, so its state never rests on the fill alone. -->
-          @if (editionSwitchOptions().length > 0) {
-          <nav class="edition-switcher" aria-label="Switch edition">
-            @for (option of editionSwitchOptions(); track option.id) {
-              @if (option.current) {
-              <span class="edition-chip current" aria-current="true" [title]="option.title">
-                <nostos-icon name="check" [size]="12" aria-hidden="true"></nostos-icon>
-                <span>{{ option.label }}</span>
-              </span>
-              } @else {
-              <button type="button" class="edition-chip" [title]="option.title" (click)="switchEdition(option.id)">
-                <nostos-icon [name]="option.icon" [size]="12" aria-hidden="true"></nostos-icon>
-                <span>{{ option.label }}</span>
-              </button>
-              }
+            <!-- Edition switcher (issues #1062, #1086): the ONLY place to switch
+                 edition and the only list of the work's editions. A pill that
+                 opens a menu of every edition with its progress. Last in the
+                 row, so on a phone it is the one item that wraps to a line of
+                 its own. Absent for a single-edition book. -->
+            @if (editionSwitchOptions().length > 0) {
+            <nostos-edition-switcher
+              class="edition-switcher"
+              [options]="editionSwitchOptions()"
+              (switched)="switchEdition($event)"
+            ></nostos-edition-switcher>
             }
-          </nav>
-          }
+          </div>
 
           <div class="primary-actions">
             @if (store.isImporting()) {
@@ -277,10 +265,8 @@
                 <nostos-icon name="caret-down" [size]="12" class="edit-menu-chevron"></nostos-icon>
               </button>
 
-              <!-- The single Book Details entry point, which is also the only one
-                   a lone book gets: a book alone in its work has no editions card
-                   to host a management action, and that book is exactly the one
-                   that needs linking. -->
+              <!-- The single entry point to Book details and to managing the
+                   work's editions (grouping, splitting, linking a lone book). -->
               <ng-template #editMenu>
                 <nostos-menu>
                   <button
@@ -445,8 +431,7 @@
 
         <aside class="detail-side">
           <!-- The rail always carries the book's details, so the two-column body
-               never leaves an empty 320px gutter (the editions block below is
-               conditional and absent for single-edition books). -->
+               never leaves an empty 320px gutter. -->
           <div class="details-card">
             <h4 class="details-title">Details</h4>
 
@@ -566,111 +551,6 @@
               }
             </div>
           </div>
-
-          <!-- Multi-edition grouping. Sits in the rail as the same card as the
-               Details block above it; the rows are a list inside that card, not
-               a grid of cards. Single-edition books never render this. -->
-          @if (store.book()?.otherEditions && store.book()!.otherEditions!.length > 0) {
-          <section class="edition-section" aria-labelledby="editions-title">
-            <div class="edition-section-header">
-              <nostos-icon name="stack" [size]="13"></nostos-icon>
-              <h4 class="edition-section-title" id="editions-title">
-                Available Formats &amp; Editions
-              </h4>
-              <span class="edition-count-badge">{{ (store.book()?.otherEditions?.length || 0) + 1 }}</span>
-            </div>
-
-            <ul class="edition-list">
-              <!-- Status rows, not controls: switching lives in ONE place, the
-                   hero format switcher beside Read/Listen (issue #1062), so the
-                   rail only reports each edition's progress and Finished state.
-                   `aria-current` plus the "Current" pill mark the edition being
-                   read, so it is never read from the fill colour alone. -->
-              <li>
-                <div
-                  appChoiceRow
-                  [selected]="true"
-                  class="edition-select-card active"
-                  aria-current="true"
-                  [title]="getEditionLabel(store.book()!)"
-                >
-                  <span appIconTile tone="quiet" class="card-icon-frame">
-                    <nostos-icon
-                      [name]="isAudioBook(store.book()) ? 'headphones' : 'book-open'"
-                      [size]="16"></nostos-icon>
-                  </span>
-                  <span class="card-content nostos-choice-row__text">
-                    <span class="card-format-title nostos-choice-row__title">{{ getEditionFormat(store.book()!) }}</span>
-                    @if (getEditionSubtitle(store.book()!)) {
-                    <span class="card-format-sub nostos-choice-row__sub">{{ getEditionSubtitle(store.book()!) }}</span>
-                    }
-                    <span class="card-meta-line nostos-choice-row__meta">
-                      @if (store.book()?.progressPercent) {
-                      <span class="card-progress">{{ store.book()?.progressPercent }}% read</span>
-                      } @else {
-                      <span class="card-progress">Not started</span>
-                      }
-                      @if (store.book()?.finishedAt) {
-                      <span appBadge tone="success" class="card-status-pill finished">Finished</span>
-                      }
-                      <span appBadge class="card-status-pill current"><nostos-icon name="check" [size]="11" aria-hidden="true"></nostos-icon>Current</span>
-                    </span>
-                  </span>
-                </div>
-              </li>
-
-              @for (edition of store.book()!.otherEditions!; track edition.id) {
-              <li>
-                <div
-                  appChoiceRow
-                  class="edition-select-card"
-                  [title]="getSummaryEditionLabel(edition)"
-                >
-                  <span appIconTile tone="quiet" class="card-icon-frame">
-                    <nostos-icon
-                      [name]="edition.type === 'audiobook' ? 'headphones' : 'book-open'"
-                      [size]="16"></nostos-icon>
-                  </span>
-                  <span class="card-content nostos-choice-row__text">
-                    <span class="card-format-title nostos-choice-row__title">{{ getEditionFormat(edition) }}</span>
-                    @if (getEditionSubtitle(edition)) {
-                    <span class="card-format-sub nostos-choice-row__sub">{{ getEditionSubtitle(edition) }}</span>
-                    }
-                    <span class="card-meta-line nostos-choice-row__meta">
-                      @if (edition.progressPercent) {
-                      <span class="card-progress">{{ edition.progressPercent }}% read</span>
-                      } @else {
-                      <span class="card-progress">Not started</span>
-                      }
-                      @if (edition.finishedAt) {
-                      <span appBadge tone="success" class="card-status-pill finished">Finished</span>
-                      }
-                    </span>
-                  </span>
-                </div>
-              </li>
-              }
-            </ul>
-
-            <!-- The in-context entry to managing this work, as a FOOTER action
-                 below the rows and behind a divider. Placed after the list, not
-                 before it: as the first element in the stack it wore the same
-                 surface, border and radius as an edition row and read as item
-                 #1, which also made the "2" count look wrong against three
-                 bordered boxes (both defects caught in vision review). -->
-            <button type="button" appButton variant="link" class="edition-section-action" (click)="openEditions()">
-              <nostos-icon name="stack" [size]="13"></nostos-icon>
-              <span>Manage editions</span>
-            </button>
-          </section>
-          }
-
-          <!-- Work membership is managed in a modal, not here: it needs a search
-               field and a result list the rail has no room for, and it
-               restructures a relationship between books rather than editing
-               this one. Entry points below (Multi-edition books get one on the
-               editions card; every book, including a lone one, gets one through
-               Edit Book). -->
         </aside>
       </div>
     </div>

@@ -193,7 +193,9 @@ public static class MappingExtensions
             // The management UI names the book it will detach; the current
             // book's own title is NOT a valid substitute for a sibling's.
             Title: model.Title,
-            Author: model.Author);
+            Author: model.Author,
+            Publisher: model.Metadata.Publisher,
+            PublishedDate: model.Metadata.PublishedDate);
     }
 
     public static NoteDto ToDto(this NoteModel model) =>

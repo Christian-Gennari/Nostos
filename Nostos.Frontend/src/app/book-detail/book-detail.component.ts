@@ -45,16 +45,6 @@ interface PendingWorkAction {
   merge: boolean;
 }
 
-/** One chip of the hero format switcher. */
-interface EditionSwitchOption {
-  id: string;
-  label: string;
-  icon: 'headphones' | 'book-open';
-  current: boolean;
-  /** Full edition label (format plus narrator, duration, edition) for the tooltip. */
-  title: string;
-}
-
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
@@ -80,16 +70,14 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
-import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
-import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
+import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switcher.component';
+import { buildEditionSwitchOptions } from './edition-switch-options';
 
 @Component({
   standalone: true,
   selector: 'app-book-detail',
   imports: [
-    ChoiceRowComponent,
-    IconTileComponent,
     CommonModule,
     FormsModule,
     RouterLink,
@@ -108,6 +96,7 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
     DialogActionsComponent,
     ...NOSTOS_MENU,
     DropdownComponent,
+    EditionSwitcherComponent,
   ],
   providers: [BookDetailStore, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './book-detail.component.html',
@@ -545,51 +534,11 @@ export class BookDetail implements OnInit, OnDestroy {
   });
 
   /**
-   * The hero format switcher, the one place to switch edition (issue #1062). It
-   * replaced the switch rows on the rail's editions card, which on a phone stacks
-   * below the whole notes feed. Empty for a single-edition book, so nothing renders.
-   *
-   * Ordered by label then id, not current-first, so the chips hold still when the
-   * user switches. Two editions of one format are told apart by their edition
-   * detail, or failing that a number, since the chip carries the format only.
+   * The hero edition switcher, the one place to switch edition (issue #1062)
+   * and the only list of the work's editions on the page. Empty for a
+   * single-edition book, so nothing renders. Labels and order: #1086.
    */
-  readonly editionSwitchOptions = computed<EditionSwitchOption[]>(() => {
-    const book = this.store.book();
-    const others = book?.otherEditions ?? [];
-    if (!book || others.length === 0) return [];
-
-    const all = [
-      { id: book.id, type: book.type, fileName: book.fileName, format: undefined, edition: book.edition, current: true, title: this.getEditionLabel(book) },
-      ...others.map((edition) => ({
-        id: edition.id,
-        type: edition.type,
-        fileName: edition.fileName,
-        format: edition.format,
-        edition: edition.edition,
-        current: false,
-        title: `Switch to ${this.getSummaryEditionLabel(edition)}`,
-      })),
-    ].map((entry) => ({ ...entry, format: this.buildEditionLabel(entry.type, entry.fileName, entry.format) }));
-
-    all.sort((a, b) => a.format.localeCompare(b.format) || a.id.localeCompare(b.id));
-
-    const seen = new Map<string, number>();
-    return all.map((entry) => {
-      const sameFormat = all.filter((other) => other.format === entry.format).length;
-      const nth = (seen.get(entry.format) ?? 0) + 1;
-      seen.set(entry.format, nth);
-      const label =
-        sameFormat < 2 ? entry.format : entry.edition?.trim() ? `${entry.format} · ${entry.edition.trim()}` : `${entry.format} ${nth}`;
-      const isAudio = entry.type === 'audiobook' || entry.type === 'audio';
-      return {
-        id: entry.id,
-        label,
-        icon: isAudio ? ('headphones' as const) : ('book-open' as const),
-        current: entry.current,
-        title: entry.title,
-      };
-    });
-  });
+  readonly editionSwitchOptions = computed(() => buildEditionSwitchOptions(this.store.book()));
 
   /**
    * Candidates with their format named. A work of several editions has no one
@@ -747,22 +696,6 @@ export class BookDetail implements OnInit, OnDestroy {
   switchEdition(id: string): void {
     this.preferences.setActiveEditionId(this.store.book()?.workId, id);
     void this.router.navigate(['/library', id]);
-  }
-
-  getEditionFormat(book: Book | EditionSummaryDto): string {
-    const isAudio = book.type === 'audiobook' || book.type === 'audio';
-    if (isAudio) return 'Audiobook';
-    const fmt = 'format' in book ? book.format : undefined;
-    const formatLabel = this.getFormatLabel(book.type, book.fileName, fmt);
-    return formatLabel === 'EPUB' || formatLabel === 'PDF' ? formatLabel : 'EBook';
-  }
-
-  getEditionSubtitle(book: Book | EditionSummaryDto): string {
-    const isAudio = book.type === 'audiobook' || book.type === 'audio';
-    const details = isAudio
-      ? [book.duration, book.narrator, book.edition]
-      : [book.edition];
-    return details.filter((d): d is string => !!d?.trim()).join(' • ');
   }
 
   getEditionLabel(book: Book): string {

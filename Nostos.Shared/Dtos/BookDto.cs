@@ -38,7 +38,12 @@ public record EditionSummaryDto(
     // will detach, and a summary that carries only format metadata cannot: it
     // left the unlink row showing the current book's own title for its sibling.
     string Title = "",
-    string? Author = null
+    string? Author = null,
+    // APPENDED for the book page's edition switcher (#1086): two editions of
+    // one format are told apart by their edition, year or publisher, and a
+    // summary without the last two left them numbered "Physical 1"/"Physical 2".
+    string? Publisher = null,
+    string? PublishedDate = null
 );
 
 public record BookDto(

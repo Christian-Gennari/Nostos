@@ -360,132 +360,71 @@ describe('BookDetail reset progress', () => {
     expect(toast.toasts().some((t) => t.message === 'Reading progress reset' && t.type === 'success')).toBe(true);
   });
 
-  // ── Multi-edition grouping (Available Formats & Editions) ───────────────────
-  // The block sits in the details rail as a second card and lists every linked
-  // edition. It must not appear at all for a single-edition book.
+  // ── Hero edition switcher (issues #1062, #1086) ─────────────────────────────
+  // The one place to switch edition and the one list of the work's editions: a
+  // pill in the status row that opens a menu of every edition. The rail's
+  // "Available Formats & Editions" card, which stacked below the notes feed on a
+  // phone and read as a second switcher, is gone. Labelling and ordering are
+  // covered in edition-switch-options.spec.ts, the control in
+  // edition-switcher.component.spec.ts.
 
-  function editionRows(): HTMLElement[] {
-    return Array.from(fixture.nativeElement.querySelectorAll('.edition-select-card'));
+  function editionTrigger(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('.strip-meta .edition-switcher .es-trigger');
   }
 
-  it('renders edition rows as status, not a second way to switch', async () => {
-    const router = TestBed.inject(Router);
-    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-    await setup(multiEditionBook());
-
-    const rows = editionRows();
-    expect(rows.length).toBe(2);
-    expect(rows[0].textContent).toContain('EPUB');
-    expect(rows[1].textContent).toContain('Audiobook');
-
-    // Switching lives only in the hero format switcher (issue #1062).
-    expect(fixture.nativeElement.querySelector('.edition-list button')).toBeNull();
-    rows[1].click();
+  /** Opens the edition menu; its items and each as "label · hint". */
+  function editionMenu(): { items: HTMLButtonElement[]; text: string[] } {
+    editionTrigger()!.click();
     fixture.detectChanges();
-    expect(navigateSpy).not.toHaveBeenCalled();
-  });
-
-  it('renders the editions section as a rail card with the page eyebrow heading', async () => {
-    await setup(multiEditionBook());
-
-    const section = fixture.nativeElement.querySelector('.edition-section') as HTMLElement;
-    expect(section).toBeTruthy();
-    expect(section.parentElement?.classList.contains('detail-side')).toBe(true);
-
-    const heading = section.querySelector('.edition-section-title') as HTMLElement;
-    expect(heading.textContent).toContain('Available Formats & Editions');
-    // The section's accessible name is the heading, not just a floating span.
-    expect(section.getAttribute('aria-labelledby')).toBe(heading.id);
-
-    // The count is every edition in the work, the current one included.
-    expect(section.querySelector('.edition-count-badge')?.textContent).toContain('2');
-  });
-
-  it('marks the current edition with aria-current and a visible Current pill', async () => {
-    await setup(multiEditionBook());
-
-    const current = editionRows()[0];
-    expect(current.classList.contains('active')).toBe(true);
-    expect(current.getAttribute('aria-current')).toBe('true');
-    // State is not carried by the fill alone: the row says it in words too.
-    expect(current.querySelector('.card-status-pill.current')?.textContent).toContain('Current');
-    // Exactly one row is marked current.
-    expect(editionRows().filter((row) => row.getAttribute('aria-current') === 'true').length).toBe(1);
-  });
-
-  it('keeps each edition progress and finished state on its own row', async () => {
-    const multi = readableBook({
-      progressPercent: 42,
-      finishedAt: '2026-08-09T08:00:00+02:00',
-      otherEditions: [
-        {
-          id: 'b2',
-          type: 'audiobook',
-          format: 'AUDIO',
-          progressPercent: 15,
-          hasFile: true,
-          finishedAt: '2026-08-02T08:00:00+02:00',
-        },
-      ],
+    const items = Array.from(document.querySelectorAll('.nostos-menu-item')) as HTMLButtonElement[];
+    const text = items.map((item) => {
+      const part = (selector: string) => item.querySelector(selector)?.textContent?.trim();
+      return `${part('.nostos-menu-item__label')} · ${part('.nostos-menu-item__hint')}`;
     });
-    await setup(multi);
-
-    const [current, other] = editionRows();
-    expect(current.querySelector('.card-progress')?.textContent).toContain('42% read');
-    expect(other.querySelector('.card-progress')?.textContent).toContain('15% read');
-
-    // A finished state has to survive on BOTH grounds: the current row's fill is
-    // the dark selection surface, where a pill that kept its light-theme success
-    // ink measured 1.35:1 and was effectively invisible.
-    expect(current.querySelector('.card-status-pill.finished')?.textContent).toContain('Finished');
-    expect(other.querySelector('.card-status-pill.finished')?.textContent).toContain('Finished');
-  });
-
-  it('renders no editions section at all for a single-edition book', async () => {
-    await setup(readableBook());
-
-    expect(fixture.nativeElement.querySelector('.edition-section')).toBeNull();
-    expect(editionRows().length).toBe(0);
-  });
-
-  // ── Hero format switcher (issue #1062) ──────────────────────────────────────
-  // On a phone the rail stacks below the notes feed, so the switch also sits in
-  // the hero beside Read/Listen.
-
-  function editionChips(): HTMLElement[] {
-    return Array.from(fixture.nativeElement.querySelectorAll('.edition-switcher .edition-chip'));
+    return { items, text };
   }
 
-  it('puts a format switcher in the hero action area that switches on click', async () => {
+  it('puts an edition pill in the hero status row that switches from its menu', async () => {
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
 
-    const nav = fixture.nativeElement.querySelector('.stage-strip nav.edition-switcher') as HTMLElement;
-    expect(nav).not.toBeNull();
+    const nav = fixture.nativeElement.querySelector('.stage-strip .edition-switcher nav') as HTMLElement;
     expect(nav.getAttribute('aria-label')).toBe('Switch edition');
     // It precedes the notes feed in document order, so no scrolling past notes.
     expect(nav.compareDocumentPosition(fixture.nativeElement.querySelector('.detail-grid')))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(editionTrigger()!.textContent?.trim()).toBe('EPUB');
 
-    const chips = editionChips();
-    expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['Audiobook', 'EPUB']);
-
-    const audio = chips[0] as HTMLButtonElement;
-    expect(audio.tagName).toBe('BUTTON');
-    audio.click();
+    editionMenu().items[0].click();
     expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
   });
 
-  it('marks the current chip with aria-current and a check, not as a control', async () => {
-    await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
+  it('lists every edition with its progress, the current one marked aria-current', async () => {
+    await setup(
+      readableBook({
+        fileName: 'book.epub',
+        progressPercent: 42,
+        otherEditions: [
+          { id: 'b2', type: 'audiobook', format: 'AUDIO', progressPercent: 15, hasFile: true },
+          { id: 'b3', type: 'ebook', fileName: 'book.pdf', progressPercent: 100, hasFile: true, finishedAt: '2026-08-02T08:00:00+02:00' },
+        ],
+      }),
+    );
 
-    const current = editionChips().find((chip) => chip.getAttribute('aria-current') === 'true')!;
-    expect(current.textContent?.trim()).toBe('EPUB');
-    expect(current.tagName).toBe('SPAN');
-    // The state is carried by a glyph as well as the fill.
-    expect(current.querySelector('nostos-icon')).not.toBeNull();
-    expect(editionChips().filter((chip) => chip.getAttribute('aria-current') === 'true').length).toBe(1);
+    const { items, text } = editionMenu();
+    expect(text).toEqual(['Audiobook · 15% read', 'EPUB · 42% read', 'PDF · Finished']);
+    expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, 'page', null]);
+    // The strip keeps the current edition's own figure.
+    expect(fixture.nativeElement.querySelector('.strip-progress')?.textContent?.trim()).toBe('42%');
+  });
+
+  it('renders no second editions list in the rail', async () => {
+    await setup(multiEditionBook());
+
+    expect(editionTrigger()).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.detail-side')?.textContent).not.toContain('Available Formats');
+    expect(fixture.nativeElement.querySelector('.edition-section')).toBeNull();
   });
 
   it('tells apart two editions of one format by their edition detail', async () => {
@@ -493,11 +432,13 @@ describe('BookDetail reset progress', () => {
       readableBook({
         fileName: 'book.epub',
         edition: '1st',
+        progressPercent: 42,
         otherEditions: [{ id: 'b2', type: 'ebook', fileName: 'other.epub', edition: '2nd', progressPercent: 0, hasFile: true }],
       }),
     );
 
-    expect(editionChips().map((chip) => chip.textContent?.trim())).toEqual(['EPUB · 1st', 'EPUB · 2nd']);
+    expect(editionTrigger()!.textContent?.trim()).toBe('EPUB · 1st edition');
+    expect(editionMenu().text).toEqual(['EPUB · 1st edition · 42% read', 'EPUB · 2nd edition · Not started']);
   });
 
   // ── Collapsed notes feed (issue #1062) ──────────────────────────────────────
@@ -568,11 +509,6 @@ describe('BookDetail reset progress', () => {
   // is created — and every mutation goes through the service, never a direct
   // WorkId write.
 
-  /** The in-context entry point on the editions card. */
-  function manageToggle(): HTMLButtonElement {
-    return fixture.nativeElement.querySelector('.edition-section-action') as HTMLButtonElement;
-  }
-
   /** The hero Edit chooser button. */
   function editButton(): HTMLButtonElement {
     return fixture.nativeElement.querySelector('.edit-metadata-btn') as HTMLButtonElement;
@@ -611,20 +547,11 @@ describe('BookDetail reset progress', () => {
   }
 
   /**
-   * Open the membership modal through its in-context entry point (the editions
-   * card action). Callers own the candidate-query flush, because several of them
-   * assert on the request itself.
+   * Open the membership modal through its one entry point, the Editions item on
+   * the hero Edit chooser. Callers own the candidate-query flush, because several
+   * of them assert on the request itself.
    */
   function openManage(): void {
-    manageToggle().click();
-    fixture.detectChanges();
-  }
-
-  /**
-   * Open the membership modal the way a lone book must: through the hero Edit
-   * chooser, since that book has no editions card to host an action.
-   */
-  function openManageViaEdit(): void {
     editButton().click();
     fixture.detectChanges();
     editMenuItem('Editions')!.click();
@@ -639,22 +566,18 @@ describe('BookDetail reset progress', () => {
     fixture.detectChanges();
   }
 
-  it('opens the membership modal from the editions card, and not before', async () => {
+  it('opens the membership modal from the Edit menu, and not before', async () => {
     await setup(multiEditionBook());
 
     // Nothing of the working surface rests on the page: no modal, no picker, so
     // the ordinary reading flow is uncluttered by construction.
-    expect(manageToggle()).toBeTruthy();
     expect(editionsModal()).toBeNull();
     expect(fixture.nativeElement.querySelector('.manage-link-search')).toBeNull();
 
-    manageToggle().click();
-    fixture.detectChanges();
+    openManage();
 
     expect(editionsModal()).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.manage-link-search')).toBeTruthy();
-    // No stray candidate query is fired by merely clicking the card action —
-    // openManage/polling tests flush it explicitly.
     httpMock.expectOne((req) => req.url === '/api/books' && req.method === 'GET')
       .flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
   });
@@ -662,11 +585,8 @@ describe('BookDetail reset progress', () => {
   it('offers a route to managing editions for a single-edition book too', async () => {
     await setup(readableBook());
 
-    // The editions card is (correctly) absent for this book, so the card action
-    // does not exist — and linking a lone book is exactly what it needs.
-    expect(fixture.nativeElement.querySelector('.edition-section')).toBeNull();
-
-    // The hero Edit chooser is the route, and it is present for every book.
+    // A lone book has no format switcher, and linking it is exactly what it
+    // needs: the hero Edit chooser is the route, and it is present for every book.
     expect(editButton()).toBeTruthy();
     editButton().click();
     fixture.detectChanges();
@@ -704,7 +624,7 @@ describe('BookDetail reset progress', () => {
   it('loads link candidates when the membership modal is opened', async () => {
     await setup(readableBook());
 
-    openManageViaEdit();
+    openManage();
 
     // Candidates come from the canonical list endpoint, grouped-by-work off so a
     // collapsed work still yields its individual books.
@@ -729,7 +649,7 @@ describe('BookDetail reset progress', () => {
 
   it('labels the candidate row with an explicit Link action', async () => {
     await setup(readableBook());
-    openManageViaEdit();
+    openManage();
     httpMock.expectOne((req) => req.url === '/api/books').flush({
       items: [{ id: 'b2', title: 'Something Else', author: 'Another Author', workId: 'w2', editionCount: 1 }],
       totalCount: 1, page: 1, pageSize: 20,
@@ -751,7 +671,7 @@ describe('BookDetail reset progress', () => {
 
   it('offers each candidate WORK once, however many editions it has', async () => {
     await setup(readableBook());
-    openManageViaEdit();
+    openManage();
     httpMock.expectOne((req) => req.url === '/api/books').flush({
       items: [
         // One work with two editions — a group-level choice, so it is one row.
@@ -834,8 +754,7 @@ describe('BookDetail reset progress', () => {
 
   it('warns that a link merges both groups when either side is multi-edition', async () => {
     await setup(multiEditionBook());
-    manageToggle().click();
-    fixture.detectChanges();
+    openManage();
     httpMock.expectOne((req) => req.url === '/api/books').flush({
       items: [{ id: 'b9', title: 'Grouped Book', author: 'Someone', workId: 'w9', editionCount: 3 }],
       totalCount: 1, page: 1, pageSize: 20,
@@ -891,7 +810,7 @@ describe('BookDetail reset progress', () => {
 
   it('narrows candidates by the management search box', async () => {
     await setup(readableBook());
-    openManageViaEdit();
+    openManage();
     flushNoCandidates();
 
     const input = fixture.nativeElement.querySelector('.manage-link-search') as HTMLInputElement;
