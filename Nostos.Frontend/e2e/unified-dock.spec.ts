@@ -71,7 +71,7 @@ test('the selected destination wears the sliding pill', async ({ page }) => {
     .toBeLessThanOrEqual(1);
 
   await page.locator('app-app-dock .dock-item[title="The Brain"]').click();
-  await expect(page).toHaveURL(/second-brain/);
+  await expect(page).toHaveURL(/\/brain/);
   const brain = page.locator('app-app-dock .dock-item[title="The Brain"]');
   await expect
     .poll(async () => {

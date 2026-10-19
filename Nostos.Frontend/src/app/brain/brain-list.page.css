@@ -421,6 +421,16 @@
     padding-right: 16px;
   }
 
+  /* The shell already reserves the dock rail on a phone, so the list ends
+     with a normal margin, not another dock's worth of empty band. */
+  .brain-list {
+    padding-bottom: 1rem;
+  }
+
+  .list-end {
+    padding: 0.75rem 0;
+  }
+
   .selection-bar {
     bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px) + 12px);
     padding-left: 0.75rem;
