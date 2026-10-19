@@ -16,6 +16,7 @@ import {
       [options]="options"
       [value]="value"
       [appearance]="appearance()"
+      [detail]="detail()"
       [disabled]="disabled()"
       (valueChange)="value = $event"
     />
@@ -25,6 +26,7 @@ class DropdownHarnessComponent {
   value = 'epub';
   readonly appearance = signal<DropdownAppearance>('field');
   readonly disabled = signal(false);
+  readonly detail = signal<string | null>(null);
   readonly options: readonly DropdownOption[] = [
     { value: 'epub', label: 'EPUB' },
     { value: 'disabled', label: 'Unavailable', disabled: true },
@@ -66,6 +68,18 @@ describe('DropdownComponent', () => {
     expect(host.classList.contains('nostos-dropdown--subtle')).toBe(true);
     expect(trigger.getAttribute('role')).toBe('combobox');
     expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+  });
+
+  it('shows a pill detail after the value, and only on a pill', () => {
+    fixture.componentInstance.detail.set('70%');
+    fixture.detectChanges();
+    const detail = () => fixture.nativeElement.querySelector('.nostos-dropdown__detail') as HTMLElement | null;
+    expect(detail()).toBeNull();
+
+    fixture.componentInstance.appearance.set('pill');
+    fixture.detectChanges();
+    expect(detail()?.textContent?.trim()).toBe('· 70%');
+    expect(detail()?.previousElementSibling?.classList.contains('nostos-dropdown__value')).toBe(true);
   });
 
   it('shows only its glyph in the icon appearance, and keeps the value in the list', () => {

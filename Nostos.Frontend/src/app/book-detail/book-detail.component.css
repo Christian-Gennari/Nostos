@@ -308,16 +308,27 @@
   padding-bottom: 0.5rem;
   min-width: 0;
 }
-.strip-meta {
+/* Three rows, one job each: verdict (stars, heart), state (edition and
+   reading-status pills), actions. The verdict and state rows sit close
+   together; the action row takes a little more air above it. */
+.strip-verdict,
+.strip-state {
   display: flex;
   align-items: center;
-  gap: 1rem;
   flex-wrap: wrap;
 }
-.strip-progress {
-  font-size: 0.85rem;
-  font-weight: var(--fw-medium);
-  color: var(--color-text-muted);
+.strip-verdict {
+  gap: 0.5rem;
+}
+.strip-state {
+  gap: 0.5rem;
+  margin-top: -0.25rem;
+}
+.strip-rule {
+  width: 1px;
+  height: 18px;
+  margin: 0 0.25rem;
+  background: var(--border-color);
 }
 
 .container.md,
@@ -550,29 +561,25 @@
   text-shadow: 0 2px 26px rgba(0, 0, 0, 0.42);
   overflow-wrap: anywhere;
 }
+/* The heart is a glyph beside the stars, the same size and as quiet: it is
+   part of your verdict, not a button of its own. The box stays 36px so it is
+   still an easy target. */
 .favorite-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-round);
+  background: transparent;
   color: var(--color-text-muted);
-  transition:
-    transform 0.2s,
-    color 0.2s,
-    border-color 0.2s,
-    background 0.2s;
+  transition: color 0.2s;
   flex-shrink: 0;
+  /* Pull the box's own padding back so the glyph, not the box, sits as far
+     from the rule as the last star does. */
+  margin-left: -8px;
 }
-.favorite-btn:hover {
-  transform: translateY(-1px);
-  color: var(--color-danger-vivid);
-  border-color: var(--color-danger-vivid);
-}
+.favorite-btn:hover,
 .favorite-btn.active {
   color: var(--color-danger-vivid);
-  border-color: color-mix(in srgb, var(--color-danger-vivid) 45%, var(--border-color));
-  background: color-mix(in srgb, var(--color-danger-vivid) 8%, var(--bg-surface));
 }
 .book-subtitle {
   font-size: 1.15rem;
@@ -686,8 +693,31 @@
 /* Inside the hero strip the action row is the last element, so it owns no
    bottom margin and may wrap once the viewport narrows. */
 .stage-strip .primary-actions {
+  margin-top: 0.25rem;
   margin-bottom: 0;
   flex-wrap: wrap;
+}
+/* On a phone the one thing you came to do takes the row: the primary action
+   stretches, and Download and Edit shrink to square glyph buttons (their names
+   stay as aria-labels and titles). The row is touch height throughout. */
+@media (max-width: 600px) {
+  .stage-strip .primary-actions > .primary-action,
+  .stage-strip .primary-actions .secondary-action {
+    min-height: var(--control-h-touch);
+  }
+  .stage-strip .primary-actions > .primary-action {
+    flex: 1 1 auto;
+  }
+  .stage-strip .primary-actions .secondary-action {
+    flex: none;
+    width: var(--control-h-touch);
+    padding: 0;
+  }
+  .stage-strip .secondary-action .action-label,
+  .stage-strip .secondary-action .download-hint,
+  .stage-strip .edit-menu-chevron {
+    display: none;
+  }
 }
 .divider {
   border: none;
@@ -1052,7 +1082,8 @@
     align-items: center;
     text-align: center;
   }
-  .strip-meta {
+  .strip-verdict,
+  .strip-state {
     justify-content: center;
   }
   .stage-strip .primary-actions {
