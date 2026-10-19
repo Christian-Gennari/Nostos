@@ -9,8 +9,8 @@
  * DECISION, the MARKUP and the STATE TRANSITIONS.
  *
  * The geometry itself (how many lines a given review occupies at a given width,
- * and that a clamped paragraph still measures its full height) is measured in a
- * real browser: e2e/book-detail-review.spec.ts.
+ * and that a clamped paragraph still measures its full height) needs a real
+ * browser and is not covered here.
  */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';

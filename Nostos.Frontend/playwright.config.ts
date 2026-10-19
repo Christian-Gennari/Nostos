@@ -55,9 +55,6 @@ export default defineConfig({
         deviceScaleFactor: 2,
       },
       testMatch: [/[\\/]mobile[^\\/]*\.spec\.ts$/],
-      // The mobile-webkit acceptance spec belongs to the library-transfer
-      // config (own fixture), not to the default single-backend smoke suite.
-      testIgnore: [/[\\/]mobile-library-transfer\.spec\.ts$/],
     },
   ],
 });

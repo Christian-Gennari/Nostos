@@ -7,8 +7,7 @@ Reusable components and utilities shared across pages.
 This is the **implementation reference** for shared UI. The measured visual language
 and the reasons behind it live in [`docs/design/design-language.md`](../docs/design/design-language.md);
 the CSS/token graph remains the visual source of truth. The live fixture is available
-at **`/ui-catalogue`** and is covered by `e2e/ui-catalogue.spec.ts` at desktop/mobile
-widths in both light and dark themes.
+at **`/ui-catalogue`**.
 
 Nostos UI v1 has four layers:
 
@@ -358,8 +357,7 @@ dialog.
 ## UI catalogue / visual fixture
 
 **Route:** `/ui-catalogue`  
-**Component:** `src/app/ui/ui-catalogue/`  
-**Playwright:** `e2e/ui-catalogue.spec.ts`
+**Component:** `src/app/ui/ui-catalogue/`
 
 The catalogue renders the canonical Button/IconButton variants and sizes, native form
 controls, FormField help/error states, Switch, Chip, Badge/Status, segmented semantics,
