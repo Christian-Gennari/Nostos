@@ -93,11 +93,15 @@ export interface EditionSwitcherOption {
 
     <ng-template #body let-option>
       <span class="es-head">
-        <nostos-icon [concept]="option.concept" [size]="14" aria-hidden="true" />
-        <span class="es-format">{{ option.format }}</span>
+        <!-- The check takes the format glyph's place on the current edition:
+             the format is still named in words, and a third-width phone tile
+             has no room for both. -->
         @if (option.current) {
-          <nostos-icon class="es-check" name="check" [size]="12" aria-hidden="true" />
+          <nostos-icon class="es-check" name="check" [size]="14" aria-hidden="true" />
+        } @else {
+          <nostos-icon [concept]="option.concept" [size]="14" aria-hidden="true" />
         }
+        <span class="es-format">{{ option.format }}</span>
       </span>
       <span class="es-meta">
         @if (option.detail) {
@@ -153,6 +157,7 @@ export interface EditionSwitcherOption {
       }
       .es-option {
         flex: 0 1 auto;
+        justify-content: flex-start;
         max-width: 15rem;
       }
 
@@ -197,10 +202,6 @@ export interface EditionSwitcherOption {
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .es-check {
-        margin-inline-start: auto;
-        padding-inline-start: 0.35rem;
-      }
 
       /* Muted, not light: this line is information, and has to read as such. */
       .es-meta {
@@ -227,8 +228,13 @@ export interface EditionSwitcherOption {
         font-weight: var(--fw-medium);
       }
 
+      /* Pinned to the tile's foot, so the bars line up across tiles whose
+         meta runs to one line or two. */
       .es-bar {
-        margin-top: 4px;
+        margin-top: auto;
+      }
+      .es-meta {
+        margin-bottom: 4px;
       }
 
       .es-more {
@@ -242,11 +248,22 @@ export interface EditionSwitcherOption {
         white-space: nowrap;
       }
 
-      /* On a phone the row takes the full width and shares it evenly. */
+      /* On a phone the row takes the full width and shares it evenly. A third
+         of it cannot hold "1990 · Not started" on one line, so the detail
+         gets its own line and the status sits under it. */
       @media (max-width: 768px) {
         .es-option {
           flex: 1 1 0;
           max-width: none;
+        }
+        .es-meta {
+          flex-wrap: wrap;
+        }
+        .es-detail {
+          flex-basis: 100%;
+        }
+        .es-dot {
+          display: none;
         }
       }
     `,
