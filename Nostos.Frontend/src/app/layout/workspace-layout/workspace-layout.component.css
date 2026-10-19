@@ -39,6 +39,12 @@
 }
 
 @media (max-width: 768px) {
+  /* The Brain's map is a canvas: it runs under the dock rail (its HUD keeps
+     the controls clear of the dock), so the shell reserves nothing there. */
+  .workspace-content:has(app-brain-map-page) {
+    padding-bottom: 0;
+  }
+
   /* Mobile library uses the workspace page scroll rather than a fixed-height
      nested scroller, so touch swipes can continue through the whole grid. */
   .workspace-layout:has(.settings-page) {

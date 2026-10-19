@@ -1,5 +1,5 @@
 /**
- * Mobile polish geometry — Studio and Second Brain at phone width.
+ * Mobile polish geometry — Studio and the Brain at phone width.
  *
  * Geometry-only assertions (no pixel snapshots), matching the approach in
  * `mobile-dock.spec.ts`: stable across styling work, loud when layout regresses.
@@ -14,10 +14,8 @@
  *    control stayed in the document.
  *  - The Studio's document tree is the only way to open a document, but its
  *    chevrons were 12x20px and its row actions 22x22px.
- *  - Brain's "Back to Index" is the only exit from the topic detail sheet
- *    (the index column is display:none while a topic is open) yet it was a
- *    static block at the top of the scrolling column, so it left the viewport
- *    permanently once the sheet was scrolled.
+ *  - In the Brain, the place switch (the way to the other places on a phone)
+ *    must stay in reach after scrolling a long topic.
  *
  * The spec runs in the mobile-chromium project (playwright.config.ts matches
  * `mobile.*.spec.ts`).

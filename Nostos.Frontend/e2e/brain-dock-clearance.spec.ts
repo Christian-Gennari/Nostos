@@ -67,6 +67,8 @@ test('the sidebar clears the dock and its controls are 44px on touch', async ({ 
         // On a phone the sidebar is a drawer.
         await page.locator('.place-switch').click();
         await expect(page.locator('.brain-layout.drawer-open')).toHaveCount(1);
+        // The dock fades out of the drawer's way.
+        await expect(page.locator('app-app-dock')).toHaveCSS('opacity', '0');
       }
       const rows = page.locator('app-brain-sidebar .topic-row');
       await expect(rows.first()).toBeVisible();
@@ -80,7 +82,14 @@ test('the sidebar clears the dock and its controls are 44px on touch', async ({ 
         const dockVisible = !!dock && dock.height > 0 && getComputedStyle(document.querySelector('app-app-dock')!).opacity !== '0';
         return dockVisible ? Math.round(dock!.top - last.bottom) : null;
       });
-      if (gap !== null && gap < 0) failures.push(`${viewport.width}x${viewport.height}: last topic ${-gap}px under the dock`);
+      if (viewport.width <= 768) {
+        // The open drawer owns the phone screen: the dock steps aside for it.
+        if (gap !== null) failures.push(`${viewport.width}x${viewport.height}: the dock shows over the open drawer`);
+      } else if (gap === null) {
+        failures.push(`${viewport.width}x${viewport.height}: no dock to clear`);
+      } else if (gap < 0) {
+        failures.push(`${viewport.width}x${viewport.height}: last topic ${-gap}px under the dock`);
+      }
       const small = await smallControls(page);
       if (small.length) failures.push(`${viewport.width}x${viewport.height}: ${small.join('; ')}`);
       if (viewport.width <= 768) {

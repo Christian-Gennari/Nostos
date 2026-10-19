@@ -180,7 +180,7 @@
   </div>
   }
 
-  <main class="brain-list" [attr.aria-busy]="loading()" aria-label="Notes">
+  <main class="brain-list" [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes">
     @if (topicMissing()) {
     <div class="empty-state" role="status">
       <p>This topic is gone. It may have been merged into another or deleted.</p>

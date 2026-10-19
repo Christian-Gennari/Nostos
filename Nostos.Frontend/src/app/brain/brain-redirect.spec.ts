@@ -23,8 +23,13 @@ describe('the /second-brain redirect', () => {
     expect(landsOn({ conceptId: 'c1', mode: 'topics' })).toBe('/brain/topics/c1');
   });
 
-  it('sends a note to its page', () => {
+  it('sends a note to its page, ahead of a topic', () => {
     expect(landsOn({ noteId: 'n1' })).toBe('/brain/notes/n1');
+    expect(landsOn({ noteId: 'n1', topicId: 't1' })).toBe('/brain/notes/n1');
+  });
+
+  it('takes the first of a repeated parameter', () => {
+    expect(landsOn({ topicId: ['t1', 't2'] } as unknown as Record<string, string>)).toBe('/brain/topics/t1');
   });
 
   it('sends anything else to All notes', () => {

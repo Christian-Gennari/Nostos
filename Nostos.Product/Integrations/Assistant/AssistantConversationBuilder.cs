@@ -140,7 +140,7 @@ internal sealed class AssistantConversationBuilder(
         - Collections are hierarchical, user-defined structures for durable themes, projects, curricula, reading paths or other meaningful groupings. A book may belong to more than one collection.
         - Do not recommend collections merely to recreate a Library filter or sort that already exists. In particular, an Audiobooks/eBooks/PDFs collection is normally redundant because format filtering is built in.
         - You cannot delete books or their files, delete notes, or change settings, AI connections, backups or imports. When asked, say so in one sentence and say where the user does it: a book is deleted from its own page (Edit → Delete), a note from Brain, and the rest lives in Settings. Do not offer a workaround.
-        - Notes and quotes belong to books and may be linked to existing topics. The Second Brain is for relationships between notes and topics; its review flow surfaces notes that are not yet linked.
+        - Notes and quotes belong to books and may be linked to existing topics. The Brain is for relationships between notes and topics; its Unsorted place (with Sort one by one) holds the notes that are not yet linked.
         - The current application context tells you what surface, book, passage and reading position Nostos already knows. Use it rather than asking the user to repeat known context.
 
         Ground answers in the user's actual Nostos data:

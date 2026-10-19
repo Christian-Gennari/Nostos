@@ -16,14 +16,6 @@ export interface TopicDto {
   description?: string | null;
 }
 
-export interface TopicStatsDto {
-  totalTopics: number;
-  totalReferences: number;
-  singleNoteTopics: number;
-  mostUsedName: string | null;
-  mostUsedCount: number;
-}
-
 export interface RelatedTopicDto {
   id: string;
   name: string;
@@ -85,20 +77,6 @@ export class TopicsService {
 
   list(): Observable<TopicDto[]> {
     return this.http.get<TopicDto[]>('/api/topics');
-  }
-
-  /**
-   * Note-text search for the index (issue #158). `GET /api/topics` carries no
-   * note text at all, so the term is matched server-side against note content,
-   * quote text and book title — the same three fields the note-level search inside
-   * a topic already matches.
-   */
-  searchNotes(term: string): Observable<TopicDto[]> {
-    return this.http.get<TopicDto[]>('/api/topics', { params: { search: term } });
-  }
-
-  getStats(): Observable<TopicStatsDto> {
-    return this.http.get<TopicStatsDto>('/api/topics/stats');
   }
 
   get(id: string): Observable<TopicDetailDto> {

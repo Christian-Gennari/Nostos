@@ -175,15 +175,6 @@
   }
 }
 
-/* Phone: the graph continues under the dock rail, as a canvas should (the
-   shell reserves the rail's height for pages that scroll; the map's HUD keeps
-   its own controls clear of the dock). */
-@media (max-width: 768px) {
-  :host {
-    height: calc(100% + var(--dock-rail-h) + env(safe-area-inset-bottom, 0px));
-  }
-}
-
 /* A short screen (a phone on its side) keeps the toolbar to one slim row so
    the graph has the height. */
 @media (max-height: 520px) {

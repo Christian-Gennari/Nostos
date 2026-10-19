@@ -178,7 +178,11 @@ for (const variant of [
       expect(await collectionNames(baseUrl, run)).toEqual(before);
     } finally {
       try {
-        await put({ llm: { ...previous.llm, apiKey: '' } });
+        // Unset values read back as ''; they go back as null (leave unset),
+        // which the server accepts, rather than '', which it refuses.
+        const unset = Object.fromEntries(Object.entries(previous.llm)
+          .map(([key, value]) => [key, value === '' ? null : value]));
+        await put({ llm: { ...unset, apiKey: '' } });
       } finally {
         server.closeAllConnections();
         await new Promise<void>((resolve) => server.close(() => resolve()));

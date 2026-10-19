@@ -64,6 +64,7 @@ import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
 import { BrainStateService } from '../brain/brain-state.service';
+import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
@@ -123,6 +124,7 @@ export class BookDetail implements OnInit, OnDestroy {
   readonly brain = inject(BrainStateService);
   readonly noteActions = inject(BrainNoteActionsService);
   readonly suggestions = inject(BrainTopicSuggestionsService);
+  private readonly topicAutocomplete = inject(TopicAutocompleteService);
   private preferences = inject(LibraryPreferencesService);
   private booksService = inject(BooksService);
   private toast = inject(ToastService);
@@ -196,6 +198,9 @@ export class BookDetail implements OnInit, OnDestroy {
    */
   constructor() {
     this.brain.ensureLoaded();
+    // The add-note field's [[ autocomplete offers the Brain's topics, kept
+    // current by every change the cards make.
+    effect(() => this.topicAutocomplete.setTopics(this.brain.topics()));
     this.noteActions.attach({
       replace: (note) => this.store.replaceNote(note),
       remove: (noteId) => this.store.removeNote(noteId),

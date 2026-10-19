@@ -8,12 +8,9 @@ import { finalize } from 'rxjs';
 import { Book, LinkableBookDto } from '../core/dtos/book.dtos';
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
-import { TopicDto } from '../core/services/topics.service';
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { CollectionsService } from '../core/services/collections.service';
-import { TopicsService } from '../core/services/topics.service';
-import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 import { ImportService } from '../core/services/import.service';
 import { isImportInFlight, importStageLabel } from '../core/dtos/import.dtos';
 
@@ -23,8 +20,6 @@ export class BookDetailStore {
   private booksService = inject(BooksService);
   private notesService = inject(NotesService);
   private collectionsService = inject(CollectionsService);
-  private topicsService = inject(TopicsService);
-  private autocompleteService = inject(TopicAutocompleteService);
   private toast = inject(ToastService);
   private imports = inject(ImportService);
   private destroyRef = inject(DestroyRef);
@@ -37,7 +32,6 @@ export class BookDetailStore {
   readonly book = signal<Book | null>(null);
   readonly notes = signal<NoteSearchHit[]>([]);
   readonly collections = signal<Collection[]>([]);
-  readonly topicMap = signal<Map<string, TopicDto>>(new Map());
 
   /** The same per-book import feed that supplies the Library cover and row. */
   readonly importActivity = computed(() => {
@@ -93,7 +87,6 @@ export class BookDetailStore {
     this.loadBook(id);
     this.loadNotes(id);
     this.loadCollections();
-    this.loadTopics();
   }
 
   loadBook(id: string, options: { forceImageRefresh?: boolean; background?: boolean } = {}) {
@@ -158,17 +151,6 @@ export class BookDetailStore {
   loadCollections() {
     this.collectionsService.list().subscribe({
       next: (data) => this.collections.set(data),
-    });
-  }
-
-  loadTopics() {
-    this.topicsService.list().subscribe({
-      next: (topics) => {
-        const map = new Map<string, TopicDto>();
-        topics.forEach((c) => map.set(c.name.trim().toLowerCase(), c));
-        this.topicMap.set(map);
-        this.autocompleteService.setTopics(topics);
-      },
     });
   }
 
@@ -372,7 +354,6 @@ export class BookDetailStore {
     this.notesService.create(b.id, { content }).subscribe({
       next: () => {
         this.loadNotes(b.id);
-        this.loadTopics(); // Refresh topics as note might have added new ones
         saved?.();
       },
     });

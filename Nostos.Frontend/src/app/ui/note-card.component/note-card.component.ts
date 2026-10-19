@@ -51,14 +51,6 @@ export class NoteCardComponent {
   @Input() sourceNavigation: NoteSourceNavigation | null = null;
   @Input() showDate = true;
   /**
-   * `card` is the boxed card used in lists and panels. `passage` sets the note
-   * as running text for a reading column: an upright quotation without marks,
-   * the commentary beside it when there is room, no book title in the footer
-   * (the column groups passages under their book), and no collapse short of a
-   * quotation several pages long.
-   */
-  @Input() layout: 'card' | 'passage' = 'card';
-  /**
    * The playback time an audiobook note was taken at, in seconds (issue #906).
    * Set by the audio reader only; null shows nothing.
    */
@@ -150,7 +142,6 @@ export class NoteCardComponent {
   readonly QUOTE_COLLAPSE_THRESHOLD = 1000;
   // A reading column has no neighbours for a long passage to distort, so only a
   // quotation of several pages collapses there.
-  readonly PASSAGE_COLLAPSE_THRESHOLD = 4000;
   get shouldShowExpandBtn(): boolean {
     if (this.isEditing) return false;
     // A passage shows only its opening; the viewer is where it is read.
@@ -163,8 +154,6 @@ export class NoteCardComponent {
     // expanding it is one click away.
     const totalLength =
       (this.note.selectedText?.length || 0) + (this.note.content?.length || 0);
-
-    if (this.layout === 'passage') return totalLength > this.PASSAGE_COLLAPSE_THRESHOLD;
 
     if (this.note.selectedText) {
       return totalLength > this.QUOTE_COLLAPSE_THRESHOLD;

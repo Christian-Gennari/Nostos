@@ -427,6 +427,11 @@
     padding-bottom: 1rem;
   }
 
+  /* While selecting, the bar floats over the list's end: leave room for it. */
+  .brain-list.is-selecting {
+    padding-bottom: calc(var(--control-h-touch) + 2rem);
+  }
+
   .list-end {
     padding: 0.75rem 0;
   }

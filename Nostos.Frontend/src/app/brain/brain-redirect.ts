@@ -9,9 +9,15 @@ import { Router, type RedirectFunction } from '@angular/router';
  */
 export const secondBrainRedirect: RedirectFunction = ({ queryParams }) => {
   const router = inject(Router);
-  const topicId = queryParams['topicId'] ?? queryParams['conceptId'];
-  if (typeof topicId === 'string' && topicId) return router.createUrlTree(['/brain/topics', topicId]);
-  const noteId = queryParams['noteId'];
-  if (typeof noteId === 'string' && noteId) return router.createUrlTree(['/brain/notes', noteId]);
+  // A repeated parameter arrives as a list; the first one counts, as before.
+  const first = (value: unknown): string | null => {
+    const one = Array.isArray(value) ? value[0] : value;
+    return typeof one === 'string' && one ? one : null;
+  };
+  // A note is the more specific address, so it wins, as it did in the old Brain.
+  const noteId = first(queryParams['noteId']);
+  if (noteId) return router.createUrlTree(['/brain/notes', noteId]);
+  const topicId = first(queryParams['topicId']) ?? first(queryParams['conceptId']);
+  if (topicId) return router.createUrlTree(['/brain/topics', topicId]);
   return router.createUrlTree(['/brain']);
 };

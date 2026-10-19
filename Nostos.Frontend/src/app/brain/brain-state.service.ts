@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 
 import type { NoteSummary } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
 import type { MapCamera } from './topic-map/topic-map.helpers';
 import { topicLookup } from '../ui/note-item/note-item.helpers';
@@ -19,6 +20,9 @@ export interface BrainMapView {
   focus: string | null;
 }
 
+/** Ask Nostos capabilities that change notes or their topics. */
+const NOTE_WRITING_CAPABILITIES = new Set(['notes_capture', 'notes_link_existing_topic']);
+
 /**
  * What every place of the Brain shares: the topics and the counts the sidebar
  * shows. Kept for the app's lifetime so moving between places, or leaving the
@@ -29,6 +33,14 @@ export interface BrainMapView {
 export class BrainStateService {
   private readonly topicsService = inject(TopicsService);
   private readonly notesService = inject(NotesService);
+
+  constructor() {
+    // Ask Nostos can capture a note or link a topic: the Brain's lists and
+    // counts are read again, wherever the reader is.
+    inject(AssistantService).actionExecuted.subscribe(({ capability }) => {
+      if (NOTE_WRITING_CAPABILITIES.has(capability)) this.topicsChanged();
+    });
+  }
 
   readonly topics = signal<TopicDto[]>([], { equal: sameTopics });
   readonly topicsLoaded = signal(false);
