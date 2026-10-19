@@ -50,6 +50,9 @@ export interface EditionSummaryDto {
   /** The book's own title, so a sibling can be named rather than inferred. */
   title?: string;
   author?: string | null;
+  /** Lets the book page's edition switcher tell two editions of one format apart. */
+  publisher?: string | null;
+  publishedDate?: string | null;
 }
 
 export interface Book {

@@ -151,7 +151,7 @@
               (valueChange)="selectStatusOption($event)"
             ></app-dropdown>
 
-            @if (store.book()?.progressPercent) {
+            @if (store.book()?.progressPercent && editionSwitchOptions().length === 0) {
             <span class="strip-progress">{{ store.book()?.progressPercent }}%</span>
             }
 
@@ -169,34 +169,17 @@
             ></button>
           </div>
 
-          <!-- Format switcher (issue #1062): the ONLY place to switch edition,
-               and the only place the page lists a work's editions. The rail
-               used to carry a second "Available Formats & Editions" card, which
-               stacked below the whole notes feed on a phone and read as a second
-               switcher; its per-edition progress now rides on the chips, and its
-               "Manage editions" action is the Edit menu's Editions item. Navigation, not a setting: a <nav> of
-               buttons with aria-current, not a radio group whose arrow keys
-               would navigate away on every press. The current chip is plain
-               text plus a check, so its state never rests on the fill alone. -->
+          <!-- Edition switcher (issues #1062, #1086): the ONLY place to switch
+               edition, and the only place the page lists a work's editions.
+               Each option, the current one included, carries its own progress,
+               so the strip's progress figure steps aside while it shows. -->
           @if (editionSwitchOptions().length > 0) {
-          <nav class="edition-switcher" aria-label="Switch edition">
-            @for (option of editionSwitchOptions(); track option.id) {
-              @if (option.current) {
-              <span class="edition-chip current" aria-current="true" [title]="option.title">
-                <nostos-icon name="check" [size]="12" aria-hidden="true"></nostos-icon>
-                <span>{{ option.label }}</span>
-              </span>
-              } @else {
-              <button type="button" class="edition-chip" [title]="option.title" (click)="switchEdition(option.id)">
-                <nostos-icon [name]="option.icon" [size]="12" aria-hidden="true"></nostos-icon>
-                <span>{{ option.label }}</span>
-                @if (option.status) {
-                <span class="edition-chip-status">{{ option.status }}</span>
-                }
-              </button>
-              }
-            }
-          </nav>
+          <nostos-edition-switcher
+            class="edition-switcher"
+            label="Switch edition"
+            [options]="editionSwitchOptions()"
+            (switched)="switchEdition($event)"
+          ></nostos-edition-switcher>
           }
 
           <div class="primary-actions">
