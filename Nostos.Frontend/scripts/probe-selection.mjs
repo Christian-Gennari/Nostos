@@ -40,15 +40,15 @@ try {
     await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' });
     await page.evaluate((t) => localStorage.setItem('nostos.theme', t), theme);
 
-    // ---- Brain topic index: .index-item.active, hover + focus-within ----
-    await page.goto(BASE + '/second-brain', { waitUntil: 'networkidle' });
+    // ---- Brain sidebar topics: .topic-row.active, hover + focus-within ----
+    await page.goto(BASE + '/brain', { waitUntil: 'networkidle' });
     await page.waitForTimeout(1200);
 
-    const activeSel = '.index-item.active';
+    const activeSel = '.topic-row.active';
     const haveActive = await page.locator(activeSel).count();
     if (!haveActive) {
       console.log(`  [${theme}] no topic selected; selecting the first index row`);
-      await page.locator('.index-item').first().click();
+      await page.locator('.topic-row').first().click();
       await page.waitForTimeout(600);
     }
 
@@ -62,7 +62,7 @@ try {
 
     // focus-within: focus a descendant button inside the shell
     await page.evaluate(() => {
-      const row = document.querySelector('.index-item.active');
+      const row = document.querySelector('.topic-row.active');
       const shell = row?.closest('.index-row-shell') ?? row?.parentElement;
       const btn = shell?.querySelector('button, .row-action, [tabindex]');
       if (btn) btn.focus();
@@ -73,8 +73,8 @@ try {
     const values = { rest: rest?.own, hover: hover?.own, focus: focus?.own };
     const distinct = new Set(Object.values(values));
     const ok = distinct.size === 1;
-    console.log(`  [${theme}] brain .index-item.active  rest=${values.rest}  hover=${values.hover}  focus=${values.focus}  ${ok ? 'STABLE' : 'DIVERGED'}`);
-    if (!ok) failures.push({ theme, surface: 'brain .index-item.active', values });
+    console.log(`  [${theme}] brain .topic-row.active  rest=${values.rest}  hover=${values.hover}  focus=${values.focus}  ${ok ? 'STABLE' : 'DIVERGED'}`);
+    if (!ok) failures.push({ theme, surface: 'brain .topic-row.active', values });
 
     // ---- Library sidebar: .nav-item.active::before ----
     await page.goto(BASE + '/library', { waitUntil: 'networkidle' });

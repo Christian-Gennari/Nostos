@@ -21,9 +21,8 @@
   opacity: 1;
 }
 
-/* The surface header, in the app's own rhythm: `.brain-header` in
-   second-brain.component.css is the reference — same hairline, same
-   title baseline, same tools gap. A reader is a surface, not a mode, so it
+/* The surface header, in the app's own rhythm (the Library's and the
+   Brain's toolbars): same hairline, same title baseline, same tools gap. A reader is a surface, not a mode, so it
    announces itself the way every other surface does. */
 .reader-header {
   display: flex;

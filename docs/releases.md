@@ -11,7 +11,11 @@ Merges remain continuous. Releases are published automatically on a weekly
 schedule using CalVer tags and GitHub Releases, or manually when cutting an off-schedule release.
 The maintainer can also trigger the release workflow on-demand via `workflow_dispatch`.
 The existing `latest` and `selfhosted-sha-<commit>` container tags
-keep their current meaning.
+keep their current meaning. A release also tags the image built from its
+revision as `ghcr.io/christian-gennari/nostos:vYYYY.MM.DD`, so the git tag,
+the GitHub Release and the image tag always name the same revision. Each image
+also carries its commit in the assemblies' informational version
+(`1.0.0+<commit>`).
 
 ## Generator choice
 
@@ -35,7 +39,14 @@ included. No tags, releases, commits, or pushes are created by the generator.
 
 ## Writing notes in a PR
 
-Use a Conventional Commit title describing the reader's outcome. The generator
+Every PR title must be a Conventional Commit: `type(scope): outcome`, or
+`type(scope)!: outcome` for a breaking change. The required `PR title` check
+(`.github/workflows/pr-title.yml`) rejects any other title, with these types:
+`feat`, `fix`, `perf`, `ux`, `revert`, `refactor`, `docs`, `test`, `ci`,
+`build`, `chore`, `style`. Only the title is checked: commits on the branch
+never reach the notes, because the generator reads each merged PR's title.
+
+Describe the reader's outcome in the title. The generator
 removes the type/scope prefix and trailing PR number. For wording that needs more
 care, add a short prose paragraph to the PR body:
 
@@ -56,6 +67,7 @@ every historical PR title is suitable editorial copy.
 
 | Section | Scopes or `area:` labels |
 | --- | --- |
+| ⚠️ Before you upgrade | Any breaking change: `!` in the title, a `BREAKING CHANGE:` line in the body, or a `breaking-change` label |
 | 📖 Reader & Notes | `reader`, `reading`, `epub`, `pdf`, `notes`, `brain`, `concepts` |
 | 📚 Library & Discovery | `library`, `discovery`, `book`, `books`, `collections`, `upload`, `opds` |
 | 🤖 Ask Nostos | `assistant`, `ask-nostos`, `ai` |
@@ -66,8 +78,13 @@ the table's section order breaks the tie. `area: reading` and `area:reading` bot
 work. PRs without conventional titles need a recognized area label or the
 `release-note` label. Internal `chore`, `test`, `ci`, `build`, `docs`, `style`, and
 `refactor` changes, plus fixes scoped to tests, CI, dependencies, agent tooling,
-or release tooling, are omitted. A `release-note:skip`, `release-note:none`, or
-`skip-changelog` label explicitly suppresses an entry. Empty sections are omitted.
+or release tooling, are omitted. A breaking change is listed whatever its type or scope, because a
+`build!` that needs a newer database matters to every self-hoster. Its entry
+uses, in order, the first paragraph under a `## Before you upgrade` heading in
+the PR body, the text after `BREAKING CHANGE:`, then the usual sources. Say
+what the reader must do before upgrading, not only what changed. A
+`release-note:skip`, `release-note:none`, or `skip-changelog` label explicitly
+suppresses an entry, breaking or not. Empty sections are omitted.
 Every GitHub PR entry links to its source.
 
 ## Automated weekly release workflow
@@ -81,7 +98,12 @@ It executes the following steps:
 3. If no changes exist, it exits cleanly without publishing an empty release.
 4. Generates reader-facing release notes using `scripts/generate-release-notes.py`.
 5. Computes the release version `vYYYY.MM.DD` (or `.1`, `.2` for same-day releases).
-6. Creates and pushes the tag, and publishes the GitHub Release with the notes.
+6. Stops if the SelfHosted image for that revision (`selfhosted-sha-<commit>`)
+   is not published yet. Re-run the workflow once `Publish SelfHosted container`
+   has finished.
+7. Creates and pushes the tag, and publishes the GitHub Release with the notes.
+8. Adds the `vYYYY.MM.DD` tag to that image. The digest stays the same, nothing
+   is rebuilt.
 
 ## Manual release
 
@@ -97,6 +119,9 @@ git tag -a vYYYY.MM.DD <target-main-sha> -m "Nostos vYYYY.MM.DD"
 git push origin refs/tags/vYYYY.MM.DD
 gh release create vYYYY.MM.DD --verify-tag \
   --title "Nostos vYYYY.MM.DD" --notes-file /tmp/release-notes.md
+docker buildx imagetools create \
+  --tag ghcr.io/christian-gennari/nostos:vYYYY.MM.DD \
+  ghcr.io/christian-gennari/nostos:selfhosted-sha-<target-main-sha>
 ```
 
 ```bash
@@ -106,6 +131,4 @@ cd Nostos.Frontend && npm run check
 dotnet build Nostos.sln
 ```
 
-The script tests run in public CI. Publishing remains an explicit maintainer
-action; automated tagging, container aliases, an in-app view, and private Cloud
-release orchestration are future work.
+The script tests run in public CI.

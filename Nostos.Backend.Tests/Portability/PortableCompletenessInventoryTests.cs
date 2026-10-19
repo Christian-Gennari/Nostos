@@ -223,6 +223,9 @@ public sealed class PortableCompletenessInventoryTests
                 [
                     "Id",
                     "Topic",
+                    // The reader's own words: a restore that dropped them
+                    // would lose writing the notes do not hold.
+                    "Description",
                 ],
                 excludedNavigations:
                 [

@@ -8,6 +8,7 @@ import { of } from 'rxjs';
 import { BookDetail } from './book-detail.component';
 import { Book } from '../core/dtos/book.dtos';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { bookNotes, brainReads, notesPage } from './book-detail.testing';
 
 const book = {
   id: 'b1',
@@ -35,9 +36,9 @@ describe('BookDetail linked external media', () => {
     fixture.detectChanges();
 
     httpMock.expectOne('/api/books/b1').flush(book);
-    httpMock.expectOne('/api/books/b1/notes').flush([]);
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
     fixture.detectChanges();
 
     if (external) {
@@ -69,7 +70,7 @@ describe('BookDetail linked external media', () => {
   });
 
   afterEach(() => {
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
     httpMock.verify();
   });
 

@@ -373,10 +373,10 @@ export class CommandPalette {
         return;
       case 'topic':
         this.remember(entry);
-        this.router.navigate(['/second-brain'], { queryParams: { topicId: entry.id } });
+        this.router.navigate(['/brain/topics', entry.id]);
         return;
       case 'note':
-        this.router.navigate(['/second-brain'], { queryParams: { noteId: entry.id } });
+        this.router.navigate(['/brain/notes', entry.id]);
         return;
       case 'document':
         this.remember(entry);
@@ -402,7 +402,7 @@ export class CommandPalette {
         this.router.navigate(['/library']);
         return;
       case 'go-brain':
-        this.router.navigate(['/second-brain']);
+        this.router.navigate(['/brain']);
         return;
       case 'go-studio':
         this.router.navigate(['/studio']);

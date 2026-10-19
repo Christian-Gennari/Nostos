@@ -34,10 +34,10 @@
   --on-primary: #FFFFFF;    /* text sitting ON a primary fill */
 
   /* ── Selection surface ──
-     The ONE owner of "this row is selected" across the app. Two consumers:
-     `.index-item.active` (Brain topic index) and `.nav-item.active::before`
-     (Library sidebar). Both are selection states, so they must resolve
-     identically — and they are the only two sites; every other `--primary-fill`
+     A filled "this row is selected" surface. The sidebars (the Library's
+     `.nav-item.active`, the Brain's `.topic-row.active`) no longer use it:
+     they take the quiet hover ground, so one fill holds through rest, hover
+     and focus. Every other `--primary-fill`
      use in the codebase is a button, CTA, badge or active tool state that is
      bright in BOTH themes, not a selection.
 
@@ -520,7 +520,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
-  .index-col,
   .sidebar-left,
   .sidebar-right {
     animation: none;
@@ -798,7 +797,7 @@
      component's value kept winning, and the winning rules were listed from the
      CSSOM. This is the THIRD instance of this class in the repo (after
      `.book-grid .book-card:hover .cover-wrapper` and
-     `.index-list .index-row-shell:focus-within .index-item.active`), and like
+     the old Brain's `.index-row-shell:focus-within .index-item.active`), and like
      those two it was fixed by hand by padding a selector. The token removes the
      need to win at all: the component rule reads it directly, so there is
      nothing to out-specify.
@@ -1125,9 +1124,10 @@
    focus-within the spruce fill (the green the user reported). A token cannot lose
    that race.
 
-   The two component rules that own the state:
-     second-brain.component.css  .index-item.active / :hover / :focus-within
-     sidebar-collections         .nav-item.active::before */
+   The rows that show the state today, the Library's `.nav-item.active` and
+   the Brain's `.topic-row.active`, use the quiet hover ground instead of this
+   token (sidebar-collections.component.css explains why), so one fill holds
+   through rest, hover and focus; `scripts/probe-selection.mjs` measures it. */
 
 /* Elevation, not a glow: `--shadow-glow` is a mint-tinted bloom and painted a
    green halo around a selected row (it is the accent re-used as light).
@@ -1135,7 +1135,7 @@
    BOTH rules that used to sit here are gone, and this is the clearest no-op pair
    in the file — worth stating so nobody re-adds them:
      `:root[data-theme='dark'] .nav-item.active::before { box-shadow: none }`
-     `:root[data-theme='dark'] .index-item.active        { box-shadow: none }`
+     `:root[data-theme='dark'] .index-item.active        { box-shadow: none }` (the old Brain's row)
    Neither element ever had a box-shadow on dark to suppress. The sidebar pill
    takes its shadow from `.nav-item::before`'s base rule (which declares
    `background: transparent` and no shadow), and `.index-item.active`'s base rule
@@ -1440,7 +1440,7 @@ p {
    --------------------------------------------------------------------------- */
 
 /* Screen-reader-only. Declared ONCE, globally: it was duplicated in
-   second-brain.component.css and topic-map.component.css with byte-identical
+   the old Brain's stylesheet and topic-map.component.css with byte-identical
    bodies. Duplicated utilities are a drift risk with no upside — the copies do
    not vary per surface, and Angular's encapsulation means a global rule is
    exactly how a shared utility should be expressed. `check:design` fails if a

@@ -434,6 +434,10 @@ public class NostosDbContext : DbContext
             .HasForeignKey(w => w.ParentId)
             .OnDelete(DeleteBehavior.Cascade); // If you delete a folder, delete its contents
 
+        modelBuilder.Entity<TopicModel>()
+            .Property(t => t.Description)
+            .HasMaxLength(TopicModel.MaxDescriptionLength);
+
         // Configure Many-to-Many for Notes <-> Topics
         modelBuilder.Entity<NoteTopicModel>().HasKey(nc => new { nc.NoteId, nc.TopicId });
 

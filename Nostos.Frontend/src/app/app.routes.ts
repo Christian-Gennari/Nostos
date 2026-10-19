@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { WorkspaceLayout } from './layout/workspace-layout/workspace-layout.component';
+import { secondBrainRedirect } from './brain/brain-redirect';
 
 export const routes: Routes = [
   {
@@ -21,6 +22,12 @@ export const routes: Routes = [
       import('./ui/ui-catalogue/ui-catalogue.component').then((m) => m.UiCatalogueComponent),
   },
 
+  // Sort one by one: a whole screen for one unsorted note, outside the dock.
+  {
+    path: 'brain/unsorted/sort',
+    loadComponent: () => import('./brain/brain-sort.page').then((m) => m.BrainSortPage),
+  },
+
   // Dedicated Reader Route (full-screen immersive mode)
   {
     path: 'read/:id',
@@ -36,11 +43,13 @@ export const routes: Routes = [
         path: 'library',
         loadComponent: () => import('./library/library.component').then((m) => m.Library),
       },
+      // The Brain (docs/brain.md): places, topics and the map.
       {
-        path: 'second-brain',
-        loadComponent: () =>
-          import('./second-brain/second-brain.component').then((m) => m.SecondBrain),
+        path: 'brain',
+        loadChildren: () => import('./brain/brain.routes').then((m) => m.BRAIN_ROUTES),
       },
+      // The old Brain's address: saved links and history land in the new one.
+      { path: 'second-brain', pathMatch: 'full', redirectTo: secondBrainRedirect },
       {
         path: 'studio',
         loadComponent: () =>

@@ -2,7 +2,7 @@
 import { Component, EventEmitter, Input, Output, TemplateRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 export interface NoteSourceNavigation {
   commands: Array<string | number>;
@@ -25,6 +25,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { TextareaDirective } from '../form-control/form-control.directive';
+import { inlineTopicHref } from '../note-item/note-item.helpers';
 
 @Component({
   selector: 'app-note-card',
@@ -51,14 +52,6 @@ export class NoteCardComponent {
   @Input() sourceNavigation: NoteSourceNavigation | null = null;
   @Input() showDate = true;
   /**
-   * `card` is the boxed card used in lists and panels. `passage` sets the note
-   * as running text for a reading column: an upright quotation without marks,
-   * the commentary beside it when there is room, no book title in the footer
-   * (the column groups passages under their book), and no collapse short of a
-   * quotation several pages long.
-   */
-  @Input() layout: 'card' | 'passage' = 'card';
-  /**
    * The playback time an audiobook note was taken at, in seconds (issue #906).
    * Set by the audio reader only; null shows nothing.
    */
@@ -83,11 +76,11 @@ export class NoteCardComponent {
     passageTitle?: string;
   }>();
   @Output() delete = new EventEmitter<string>();
-  @Output() topicClick = new EventEmitter<string>();
   @Output() quoteClick = new EventEmitter<void>();
   @Output() cardClick = new EventEmitter<void>();
 
   private readonly passageViewer = inject(PassageViewerService);
+  private readonly router = inject(Router);
 
   isEditing = false;
   editContent = '';
@@ -150,7 +143,6 @@ export class NoteCardComponent {
   readonly QUOTE_COLLAPSE_THRESHOLD = 1000;
   // A reading column has no neighbours for a long passage to distort, so only a
   // quotation of several pages collapses there.
-  readonly PASSAGE_COLLAPSE_THRESHOLD = 4000;
   get shouldShowExpandBtn(): boolean {
     if (this.isEditing) return false;
     // A passage shows only its opening; the viewer is where it is read.
@@ -163,8 +155,6 @@ export class NoteCardComponent {
     // expanding it is one click away.
     const totalLength =
       (this.note.selectedText?.length || 0) + (this.note.content?.length || 0);
-
-    if (this.layout === 'passage') return totalLength > this.PASSAGE_COLLAPSE_THRESHOLD;
 
     if (this.note.selectedText) {
       return totalLength > this.QUOTE_COLLAPSE_THRESHOLD;
@@ -249,15 +239,15 @@ export class NoteCardComponent {
     this.cardClick.emit();
   }
 
+  /**
+   * An inline `[[topic]]` link opens its topic in the Brain without a page
+   * load (the sanitizer keeps the link's address, not a data attribute).
+   */
   onContentClick(event: MouseEvent) {
-    const target = event.target as HTMLElement;
-    if (target.classList.contains('topic-tag')) {
-      const id = target.getAttribute('data-topic-id');
-      if (id) {
-        event.preventDefault();
-        event.stopPropagation();
-        this.topicClick.emit(id);
-      }
-    }
+    const href = inlineTopicHref(event);
+    if (!href) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void this.router.navigateByUrl(href);
   }
 }

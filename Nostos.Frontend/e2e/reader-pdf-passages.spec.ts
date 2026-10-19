@@ -113,7 +113,8 @@ test('away from the reader the viewer loads pdf.js itself, and the reader still 
   expect(created.status).toBe(201);
 
   await page.goto(`${baseUrl}/library/${bookId}`, { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('passage-card-read-button').click();
+  // Book Detail's notes are the Brain's cards: a passage opens from Read passage.
+  await page.locator('app-note-item').getByRole('button', { name: 'Read passage' }).click();
   await expect(page.getByTestId('passage-viewer-pdf-page')).toHaveClass(/is-ready/, { timeout: 30_000 });
   await expect(page.getByTestId('passage-viewer-page')).toHaveText('Page 1 of 2 · p. 3');
   // The private copy leaves no global behind for the reader to trip on.

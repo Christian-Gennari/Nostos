@@ -69,6 +69,9 @@ import folderLight from '@phosphor-icons/core/light/folder-light.svg';
 import folderOpenLight from '@phosphor-icons/core/light/folder-open-light.svg';
 import gearSixLight from '@phosphor-icons/core/light/gear-six-light.svg';
 import hashLight from '@phosphor-icons/core/light/hash-light.svg';
+import noteLight from '@phosphor-icons/core/light/note-light.svg';
+import scrollLight from '@phosphor-icons/core/light/scroll-light.svg';
+import graphLight from '@phosphor-icons/core/light/graph-light.svg';
 import headphonesLight from '@phosphor-icons/core/light/headphones-light.svg';
 import heartLight from '@phosphor-icons/core/light/heart-light.svg';
 import listBulletsLight from '@phosphor-icons/core/light/list-bullets-light.svg';
@@ -149,6 +152,8 @@ import microphone from '@phosphor-icons/core/regular/microphone.svg';
 import minus from '@phosphor-icons/core/regular/minus.svg';
 import moon from '@phosphor-icons/core/regular/moon.svg';
 import note from '@phosphor-icons/core/regular/note.svg';
+import checkSquare from '@phosphor-icons/core/regular/check-square.svg';
+import arrowsDownUp from '@phosphor-icons/core/regular/arrows-down-up.svg';
 import notebook from '@phosphor-icons/core/regular/notebook.svg';
 import palette from '@phosphor-icons/core/regular/palette.svg';
 import paperPlaneTilt from '@phosphor-icons/core/regular/paper-plane-tilt.svg';
@@ -159,6 +164,7 @@ import play from '@phosphor-icons/core/regular/play.svg';
 import plus from '@phosphor-icons/core/regular/plus.svg';
 import quotes from '@phosphor-icons/core/regular/quotes.svg';
 import scroll from '@phosphor-icons/core/regular/scroll.svg';
+import graph from '@phosphor-icons/core/regular/graph.svg';
 import scan from '@phosphor-icons/core/regular/scan.svg';
 import sidebarSimple from '@phosphor-icons/core/regular/sidebar-simple.svg';
 import slidersHorizontal from '@phosphor-icons/core/regular/sliders-horizontal.svg';
@@ -226,6 +232,7 @@ export const NOSTOS_ICONS = {
   'arrows-clockwise': { regular: arrowsClockwise, },
   'arrows-in': { regular: arrowsIn, },
   'arrows-out': { regular: arrowsOut, },
+  'arrows-down-up': { regular: arrowsDownUp, },
   'binoculars': { regular: binoculars, },
   'book': { regular: book, thin: bookThin, light: bookLight, },
   'book-open': { regular: bookOpen, thin: bookOpenThin, light: bookOpenLight, },
@@ -239,6 +246,7 @@ export const NOSTOS_ICONS = {
   'caret-right': { regular: caretRight, },
   'caret-up': { regular: caretUp, },
   'check': { regular: check, },
+  'check-square': { regular: checkSquare, },
   'check-circle': { regular: checkCircle, light: checkCircleLight, fill: checkCircleFill, },
   'circle-dashed': { regular: circleDashed, light: circleDashedLight, },
   'circle-notch': { regular: circleNotch, },
@@ -274,7 +282,7 @@ export const NOSTOS_ICONS = {
   'microphone': { regular: microphone, },
   'minus': { regular: minus, },
   'moon': { regular: moon, },
-  'note': { regular: note, },
+  'note': { regular: note, light: noteLight, },
   'notebook': { regular: notebook, },
   'palette': { regular: palette, light: paletteLight, },
   'paper-plane-tilt': { regular: paperPlaneTilt, light: paperPlaneTiltLight, },
@@ -284,7 +292,8 @@ export const NOSTOS_ICONS = {
   'play': { regular: play, fill: playFill, },
   'plus': { regular: plus, thin: plusThin, light: plusLight, },
   'quotes': { regular: quotes, },
-  'scroll': { regular: scroll, },
+  'scroll': { regular: scroll, light: scrollLight, },
+  'graph': { regular: graph, light: graphLight, },
   'scan': { regular: scan, },
   'sidebar-simple': { regular: sidebarSimple, },
   'sliders-horizontal': { regular: slidersHorizontal, },

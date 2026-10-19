@@ -315,7 +315,7 @@ test.describe('visual matrix — Library (fixture-served)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Second Brain — fixture-served
+// Brain — fixture-served
 // ---------------------------------------------------------------------------
 
 interface BrainSeed {
@@ -349,25 +349,25 @@ async function seedBrainFixture(): Promise<BrainSeed> {
   return brainSeed;
 }
 
-test.describe('visual matrix — Second Brain (fixture-served)', () => {
+test.describe('visual matrix — Brain (fixture-served)', () => {
   test('brain-empty-desktop', async ({ browser }) => {
     // This runs before Brain seeding in the serial matrix, so the empty state
     // proves the real fresh fixture rather than a client-side fake.
     fixture = loadFixture();
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
-      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-      const empty = page.locator('.empty-index-state');
+      await page.goto(`${fixture.baseUrl}/brain`, { waitUntil: 'domcontentloaded' });
+      const empty = page.locator('.brain-list .empty-state');
       await empty.waitFor({ timeout: 30_000 });
-      await expect(empty).toContainText('The index is quiet');
-      await expect(page.locator('.index-item')).toHaveCount(0);
-      await page.waitForTimeout(400); // let the allowed index shell entrance settle
+      await expect(page.locator('app-brain-sidebar .topics-empty')).toContainText('Topics appear when you add one to a note.');
+      await expect(page.locator('.topic-row')).toHaveCount(0);
+      await page.waitForTimeout(400);
 
       const checks: GeometryCheck[] = [
         {
           id: 'brain-empty-state',
           pass: await empty.isVisible(),
-          message: 'fresh fixture shows the Second Brain [[ ]] empty state',
+          message: 'fresh fixture shows the Brain empty state',
         },
         await checkBrainLayoutOverflow(page),
       ];
@@ -387,10 +387,10 @@ test.describe('visual matrix — Second Brain (fixture-served)', () => {
     await seedBrainFixture();
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
-      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-      await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-      await expect(page.locator('.index-item')).toHaveCount(3);
-      await expect(page.locator('.index-stats')).toContainText('3 topics');
+      await page.goto(`${fixture.baseUrl}/brain`, { waitUntil: 'domcontentloaded' });
+      await page.locator('.topic-row').first().waitFor({ timeout: 30_000 });
+      await expect(page.locator('.topic-row')).toHaveCount(3);
+      await expect(page.locator('.brain-list app-note-item')).toHaveCount(3);
       await page.waitForTimeout(250);
 
       const checks: GeometryCheck[] = [await checkBrainLayoutOverflow(page)];
@@ -410,10 +410,11 @@ test.describe('visual matrix — Second Brain (fixture-served)', () => {
     expect(brainSeed, 'brain-index-desktop must seed the fixture first').not.toBeNull();
     const { context, page } = await newCapturePage(browser, MOBILE_VIEWPORT, true);
     try {
-      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-      await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-      await expect(page.locator('.index-col')).toBeVisible();
-      await expect(page.locator('.content-col')).toBeHidden();
+      await page.goto(`${fixture.baseUrl}/brain`, { waitUntil: 'domcontentloaded' });
+      await page.locator('.brain-list app-note-item').first().waitFor({ timeout: 30_000 });
+      // On a phone the list owns the screen; the sidebar is a closed drawer.
+      await expect(page.locator('.place-switch')).toBeVisible();
+      await expect(page.locator('.topic-row').first()).toBeHidden();
       await page.waitForTimeout(250);
 
       const checks: GeometryCheck[] = [await checkBrainLayoutOverflow(page)];
@@ -433,16 +434,14 @@ test.describe('visual matrix — Second Brain (fixture-served)', () => {
     expect(brainSeed, 'brain-index-desktop must seed the fixture first').not.toBeNull();
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
-      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-      const firstRow = page.locator('.index-item').first();
+      await page.goto(`${fixture.baseUrl}/brain`, { waitUntil: 'domcontentloaded' });
+      const firstRow = page.locator('.topic-row').first();
       await firstRow.waitFor({ timeout: 30_000 });
-      // Hover is part of the supported interaction: it prefetches the detail,
-      // so the captured click exercises the no-flash, cache-hit path.
       await firstRow.hover();
       await page.waitForTimeout(250);
       await firstRow.click();
-      await page.locator('.topic-header').waitFor({ timeout: 30_000 });
-      await page.locator('.note-card').first().waitFor({ timeout: 30_000 });
+      await page.locator('.toolbar.is-topic').waitFor({ timeout: 30_000 });
+      await page.locator('.brain-list app-note-item').first().waitFor({ timeout: 30_000 });
       await page.waitForTimeout(250);
 
       const paneCheck = await checkBrainNoArrivalAnimation(page);
@@ -455,11 +454,12 @@ test.describe('visual matrix — Second Brain (fixture-served)', () => {
       const probeStyle = await page.addStyleTag({
         content:
           '@keyframes brain-pane-regression-probe { from { opacity: .9; } to { opacity: 1; } }' +
-          '.content-col .topic-header { animation: brain-pane-regression-probe 1s linear !important; }',
+          '.brain-main .toolbar-title { animation: brain-pane-regression-probe 1s linear !important; }',
       });
       const tampered = await checkBrainNoArrivalAnimation(page);
       await probeStyle.evaluate((element) => element.remove());
-      await page.waitForTimeout(50);
+      // Let any transition the probe's removal started finish.
+      await page.waitForTimeout(400);
       const restored = await checkBrainNoArrivalAnimation(page);
       expect(tampered.pass, 'flash guard must reject a temporary pane animation').toBe(false);
       expect(restored.pass, 'flash guard must pass after the temporary animation is removed').toBe(true);
@@ -488,9 +488,7 @@ test.describe('visual matrix — Second Brain (fixture-served)', () => {
     expect(brainSeed, 'brain-index-desktop must seed the fixture first').not.toBeNull();
     const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
     try {
-      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-      await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-      await page.getByRole('button', { name: 'Map view' }).click();
+      await page.goto(`${fixture.baseUrl}/brain/map`, { waitUntil: 'domcontentloaded' });
       await page.locator('.topic-map').waitFor({ timeout: 30_000 });
       // Wait on the Sigma renderer, not the pre-rewrite SVG node elements
       // (`.map-node` no longer exists and made this wait impossible to satisfy).

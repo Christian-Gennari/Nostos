@@ -189,7 +189,7 @@ test('client routes are still served from the app-shell cache (exclusions are no
   // app's own routes (e.g. `!/**`), this navigation fails instead.
   await context.setOffline(true);
   try {
-    const response = await page.goto(appUrl('/second-brain'));
+    const response = await page.goto(appUrl('/brain'));
     expect(response?.status(), 'offline client-route status').toBe(200);
     expect(response!.headers()['content-type'] ?? '', 'the cached shell is HTML').toContain('text/html');
     await expect(page.locator('app-root')).toHaveCount(1);

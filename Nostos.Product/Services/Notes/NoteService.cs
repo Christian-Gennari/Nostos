@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data;
@@ -98,17 +97,104 @@ public sealed class NoteService : INoteService
     }
 
     public async Task<NoteSearchPageDto> BrowseAsync(
-        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst,
-        int limit, int offset, CancellationToken ct = default, string? kind = null)
+        NoteBrowseQuery query, int limit, int offset, CancellationToken ct = default)
     {
         var take = Clamp(limit);
         var skip = Math.Max(offset, 0);
-        // An unknown kind matches nothing rather than everything.
-        var only = string.IsNullOrWhiteSpace(kind) ? null : NoteKinds.Normalize(kind) ?? "unknown";
-        var (items, total) = await _notes.BrowseAsync(
-            query, bookId, withoutTopics, oldestFirst, take, skip, only);
-        return new NoteSearchPageDto(items.Select(n => ByText(n, query?.Trim())).ToList(), total, skip, take);
+        var (items, total) = await _notes.BrowseAsync(Normalized(query), take, skip);
+        return new NoteSearchPageDto(items.Select(n => ByText(n, query.Text?.Trim())).ToList(), total, skip, take);
     }
+
+    public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(
+        NoteBrowseQuery query, CancellationToken ct = default)
+    {
+        return await _notes.GetBookFacetsAsync(Normalized(query));
+    }
+
+    public async Task<NoteSummaryDto> GetSummaryAsync(CancellationToken ct = default)
+    {
+        return await _notes.GetSummaryAsync();
+    }
+
+    // An unknown kind matches nothing rather than everything.
+    private static NoteBrowseQuery Normalized(NoteBrowseQuery query) =>
+        string.IsNullOrWhiteSpace(query.Kind)
+            ? query with { Kind = null }
+            : query with { Kind = NoteKinds.Normalize(query.Kind) ?? "unknown" };
+
+    public Task<NoteCommandResult<TopicLinkResultDto>> LinkTopicsAsync(
+        IReadOnlyList<string> topics, IReadOnlyList<Guid> noteIds, CancellationToken ct = default) =>
+        ChangeTopicReferencesAsync(topics, noteIds, TopicReferences.Append, unlink: false, ct);
+
+    public Task<NoteCommandResult<TopicLinkResultDto>> UnlinkTopicsAsync(
+        IReadOnlyList<string> topics, IReadOnlyList<Guid> noteIds, CancellationToken ct = default) =>
+        ChangeTopicReferencesAsync(topics, noteIds, TopicReferences.Remove, unlink: true, ct);
+
+    private const int MaxTopicsPerLink = 20;
+    private const int MaxNotesPerLink = 200;
+
+    /// <summary>
+    /// Rewrites each listed note's body with <paramref name="change"/> for every
+    /// named topic, re-derives its links, and saves all of it at once: either
+    /// every note changes or none does.
+    /// </summary>
+    private async Task<NoteCommandResult<TopicLinkResultDto>> ChangeTopicReferencesAsync(
+        IReadOnlyList<string>? topics,
+        IReadOnlyList<Guid>? noteIds,
+        Func<string, string, string> change,
+        bool unlink,
+        CancellationToken ct)
+    {
+        var names = (topics ?? [])
+            .Select(name => name?.Trim() ?? string.Empty)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var ids = (noteIds ?? []).Distinct().ToList();
+
+        if (names.Count == 0 || ids.Count == 0)
+            return InvalidTopicLink("Name at least one topic and one note.");
+        if (names.Count > MaxTopicsPerLink || ids.Count > MaxNotesPerLink)
+            return InvalidTopicLink($"At most {MaxTopicsPerLink} topics and {MaxNotesPerLink} notes at once.");
+        if (!names.All(TopicReferences.IsValidName))
+            return InvalidTopicLink(TopicReferences.InvalidNameMessage);
+
+        var notes = await _db.Notes
+            .Include(n => n.Book)
+            .Include(n => n.NoteTopics).ThenInclude(link => link.Topic)
+            .Where(n => ids.Contains(n.Id))
+            .ToListAsync(ct);
+        if (notes.Count != ids.Count)
+            return NoteCommandResult<TopicLinkResultDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
+
+        var byId = notes.ToDictionary(n => n.Id);
+        var ordered = ids.Select(id => byId[id]).ToList();
+        var changed = new List<Guid>();
+        foreach (var note in ordered)
+        {
+            var content = names.Aggregate(note.Content, change);
+            // A link-only topic (no reference in the text) changes the links,
+            // not the text, so the links are compared too.
+            var linked = note.NoteTopics
+                .Select(link => link.Topic?.Topic)
+                .OfType<string>()
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var linksChange = unlink ? names.Any(linked.Contains) : names.Any(name => !linked.Contains(name));
+            if (content == note.Content && !linksChange) continue;
+
+            note.Content = content;
+            await _processor.ProcessNoteAsync(note, unlink ? names : null);
+            changed.Add(note.Id);
+        }
+
+        if (changed.Count > 0)
+            await _db.SaveChangesAsync(ct);
+
+        return NoteCommandResult<TopicLinkResultDto>.Ok(
+            new TopicLinkResultDto(changed, ordered.Select(n => ByText(n, null)).ToList()));
+    }
+
+    private static NoteCommandResult<TopicLinkResultDto> InvalidTopicLink(string message) =>
+        NoteCommandResult<TopicLinkResultDto>.Fail(NoteErrorCodes.InvalidTopicLink, message);
 
     public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,
@@ -583,17 +669,9 @@ public sealed class NoteService : INoteService
         // edit. A join-only Act link would disappear when UpdateAsync reprocesses
         // that body. Normalize older join-only links on this note as well, so
         // accepting a new proposal does not make those disappear on the next edit.
-        var references = Regex.Matches(note.Content, @"\[\[(.*?)\]\]").Cast<Match>()
-            .Select(match => match.Groups[1].Value.Trim())
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var contentChanged = false;
-        foreach (var name in existingNames.Select(link => link.Name).Append(topic.Topic))
-        {
-            if (!references.Add(name)) continue;
-            var body = note.Content.TrimEnd();
-            note.Content = body.Length == 0 ? $"[[{name}]]" : $"{body}\n\n[[{name}]]";
-            contentChanged = true;
-        }
+        var before = note.Content;
+        note.Content = TopicReferences.AppendAll(note.Content, existingNames.Select(link => link.Name).Append(topic.Topic));
+        var contentChanged = note.Content != before;
 
         if (!alreadyLinked)
         {
@@ -845,7 +923,8 @@ public sealed class NoteService : INoteService
         n.PassageTitle,
         n.PassageEnd,
         n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null,
-        n.Book?.Author);
+        n.Book?.Author,
+        n.HighlightColour);
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here

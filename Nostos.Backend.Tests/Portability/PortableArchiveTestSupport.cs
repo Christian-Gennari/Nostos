@@ -270,6 +270,8 @@ internal static class PortableArchiveTestSupport
         {
             Id = Guid.NewGuid(),
             Topic = "Portability",
+            // The reader's own words, so a round trip proves they travel.
+            Description = "Moving a library between hosts without losing anything.",
         };
 
         var studioFolder = new WritingModel

@@ -10,6 +10,8 @@ permissions:
   contents: write
   # Reads Public product CI runs to find the newest green main revision.
   actions: read
+  # Adds the CalVer tag to the SelfHosted image already built for that revision.
+  packages: write
 
 jobs:
   release:
@@ -87,6 +89,29 @@ jobs:
           echo "version=$CALVER" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
 
+      - name: Sign in to GHCR
+        if: steps.notes.outputs.has_changes == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A release is the tag, the GitHub Release and the image together. The
+      # image for this exact revision must exist before anything is tagged, so
+      # a release can never point at a revision nobody can run.
+      - name: Require the SelfHosted image for the release revision
+        if: steps.notes.outputs.has_changes == 'true'
+        env:
+          HEAD_REF: ${{ steps.notes.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/christian-gennari/nostos:selfhosted-sha-$HEAD_REF"
+          if ! docker buildx imagetools inspect "$image" >/dev/null; then
+            echo "No published image $image yet; Publish SelfHosted container may still be running. Re-run this release once it has finished." >&2
+            exit 1
+          fi
+
       - name: Publish tag and GitHub Release
         if: steps.notes.outputs.has_changes == 'true'
         env:
@@ -107,3 +132,15 @@ jobs:
             --verify-tag \
             --title "Nostos $VERSION" \
             --notes-file /tmp/release-notes.md
+
+      - name: Tag the SelfHosted image with the release version
+        if: steps.notes.outputs.has_changes == 'true'
+        env:
+          VERSION: ${{ steps.notes.outputs.version }}
+          HEAD_REF: ${{ steps.notes.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          # Same digest, one more name: nothing is rebuilt.
+          docker buildx imagetools create \
+            --tag "ghcr.io/christian-gennari/nostos:$VERSION" \
+            "ghcr.io/christian-gennari/nostos:selfhosted-sha-$HEAD_REF"

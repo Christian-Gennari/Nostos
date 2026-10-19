@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 
 import { NoteCardComponent } from './note-card.component';
 import type { Note } from '../../core/dtos/note.dtos';
@@ -176,58 +176,19 @@ describe('NoteCard highlight pen (issue #861)', () => {
     });
   });
 
-  describe('the passage layout', () => {
-    async function show(note: Note, layout: 'card' | 'passage' = 'passage') {
-      await TestBed.configureTestingModule({
-        imports: [NoteCardComponent],
-        providers: [provideRouter([])],
-      }).compileComponents();
-      fixture = TestBed.createComponent(NoteCardComponent);
-      fixture.componentInstance.note = note;
-      fixture.componentInstance.layout = layout;
-      fixture.componentInstance.showSource = true;
-      fixture.detectChanges();
-      return fixture.nativeElement as HTMLElement;
-    }
+  it('shows the quotation in quotation marks and names the book', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoteCardComponent],
+      providers: [provideRouter([])],
+    }).compileComponents();
+    fixture = TestBed.createComponent(NoteCardComponent);
+    fixture.componentInstance.note = { ...highlight, bookTitle: 'Meditations' };
+    fixture.componentInstance.showSource = true;
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
 
-    it('sets the quotation without quotation marks and names no book', async () => {
-      const el = await show({ ...highlight, bookTitle: 'Meditations' });
-
-      expect(el.querySelector('.note-card-container')?.classList.contains('is-passage')).toBe(true);
-      expect(el.querySelector('.quote-text')?.textContent).toBe(highlight.selectedText);
-      expect(el.querySelector('.source-book-title')).toBeNull();
-      expect(el.querySelector('.source-nav-label')).toBeTruthy();
-    });
-
-    it('keeps the card as it was: quotation marks and the book title', async () => {
-      const el = await show({ ...highlight, bookTitle: 'Meditations' }, 'card');
-
-      expect(el.querySelector('.note-card-container')?.classList.contains('is-passage')).toBe(false);
-      expect(el.querySelector('.quote-text')?.textContent).toBe(`\u201c${highlight.selectedText}\u201d`);
-      expect(el.querySelector('.source-book-title')?.textContent).toBe('Meditations');
-    });
-
-    it('does not say "No additional comment" under a bare quotation', async () => {
-      const el = await show({ ...highlight, content: '' });
-
-      expect(el.querySelector('.note-meta-placeholder')).toBeNull();
-    });
-
-    it('runs a quotation the card would collapse at full length', async () => {
-      const long = { ...highlight, selectedText: 'a'.repeat(1500), content: '' };
-
-      await show(long, 'card');
-      expect(fixture.componentInstance.shouldShowExpandBtn).toBe(true);
-
-      fixture.componentInstance.layout = 'passage';
-      expect(fixture.componentInstance.shouldShowExpandBtn).toBe(false);
-    });
-
-    it('still collapses a quotation of several pages', async () => {
-      await show({ ...highlight, selectedText: 'a'.repeat(4001), content: '' });
-
-      expect(fixture.componentInstance.shouldShowExpandBtn).toBe(true);
-    });
+    expect(el.querySelector('.quote-text')?.textContent).toBe(`\u201c${highlight.selectedText}\u201d`);
+    expect(el.querySelector('.source-book-title')?.textContent).toBe('Meditations');
   });
 
   it('shows no pens for a note that is not a highlight', async () => {
@@ -367,5 +328,30 @@ describe('NoteCard passage (issue #1014)', () => {
     fixture.componentInstance.saveEdit();
 
     expect(emitted).toEqual([{ id: 'passage-1', content: 'Reread every year.', passageTitle: 'The Inquisitor' }]);
+  });
+});
+
+describe('NoteCard inline topic links', () => {
+  it('opens a [[topic]] in the Brain without a page load', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoteCardComponent],
+      providers: [provideRouter([])],
+    }).compileComponents();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(NoteCardComponent);
+    fixture.componentInstance.note = {
+      id: 'n1', bookId: 'b1', content: 'See [[Virtue]] here.', createdAt: '2026-08-01T08:00:00Z',
+    } as Note;
+    fixture.componentInstance.topicMap = new Map([['virtue', { id: 't1', name: 'Virtue', usageCount: 1 }]]);
+    fixture.detectChanges();
+
+    const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a.topic-tag')!;
+    expect(link.getAttribute('href')).toBe('/brain/topics/t1');
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(click);
+
+    expect(navigate).toHaveBeenCalledWith('/brain/topics/t1');
+    expect(click.defaultPrevented).toBe(true);
   });
 });

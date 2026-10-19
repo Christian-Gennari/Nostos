@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import type { TopicLinkResult } from '../dtos/note.dtos';
 
 export interface TopicDto {
   id: string;
@@ -11,14 +12,8 @@ export interface TopicDto {
   // these carry what matched, and are absent on the unfiltered list.
   noteMatchCount?: number;
   noteMatchSnippet?: string | null;
-}
-
-export interface TopicStatsDto {
-  totalTopics: number;
-  totalReferences: number;
-  singleNoteTopics: number;
-  mostUsedName: string | null;
-  mostUsedCount: number;
+  /** Appended: the reader's own words about the topic, if any. */
+  description?: string | null;
 }
 
 export interface RelatedTopicDto {
@@ -84,20 +79,6 @@ export class TopicsService {
     return this.http.get<TopicDto[]>('/api/topics');
   }
 
-  /**
-   * Note-text search for the index (issue #158). `GET /api/topics` carries no
-   * note text at all, so the term is matched server-side against note content,
-   * quote text and book title — the same three fields the note-level search inside
-   * a topic already matches.
-   */
-  searchNotes(term: string): Observable<TopicDto[]> {
-    return this.http.get<TopicDto[]>('/api/topics', { params: { search: term } });
-  }
-
-  getStats(): Observable<TopicStatsDto> {
-    return this.http.get<TopicStatsDto>('/api/topics/stats');
-  }
-
   get(id: string): Observable<TopicDetailDto> {
     return this.http.get<TopicDetailDto>(`/api/topics/${id}`);
   }
@@ -114,8 +95,23 @@ export class TopicsService {
     return this.http.put<TopicDto>(`/api/topics/${id}`, { topic });
   }
 
+  /** Sets the topic's own words; an empty value clears them. */
+  setDescription(id: string, description: string | null): Observable<TopicDto> {
+    return this.http.put<TopicDto>(`/api/topics/${id}/description`, { description });
+  }
+
   merge(sourceId: string, targetId: string): Observable<TopicDto> {
     return this.http.post<TopicDto>(`/api/topics/${sourceId}/merge`, { targetId });
+  }
+
+  /** Adds the named topics to every listed note, creating new topics; one unit of work. */
+  link(topics: string[], noteIds: string[]): Observable<TopicLinkResult> {
+    return this.http.post<TopicLinkResult>('/api/topics/link', { topics, noteIds });
+  }
+
+  /** Removes the named topics from every listed note; also how a link is undone. */
+  unlink(topics: string[], noteIds: string[]): Observable<TopicLinkResult> {
+    return this.http.post<TopicLinkResult>('/api/topics/unlink', { topics, noteIds });
   }
 
   delete(id: string): Observable<void> {

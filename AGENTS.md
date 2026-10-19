@@ -92,6 +92,11 @@ Conventional Commits, always: `type(scope): summary`.
 Seen in this repo: `fix(ui):`, `feat(brand):`, `refactor(theme):`,
 `docs(readme):`, `test(visual-qa):`, `chore:`.
 
+The PR title follows the same format and a required check enforces it: the
+release notes are built from PR titles (`docs/releases.md`). Mark a breaking
+change with `!` (`feat(library)!: …`) and say what self-hosters must do under
+a `## Before you upgrade` heading in the PR body.
+
 Write the body to explain **why**, and record what you actually verified —
 measured numbers, not adjectives. See `git log` for the house style: commits
 here routinely cite before/after values and the exact command run.

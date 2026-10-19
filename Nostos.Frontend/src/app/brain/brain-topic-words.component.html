@@ -1,0 +1,36 @@
+@if (editing()) {
+<div class="words-edit">
+  <textarea
+    #field
+    appTextarea
+    class="words-field"
+    rows="4"
+    [attr.maxlength]="max"
+    [attr.aria-label]="'Your own words about ' + topic().name"
+    placeholder="What this topic means to you…"
+    [value]="draft()"
+    [readOnly]="saving()"
+    [attr.aria-busy]="saving()"
+    (input)="draft.set($any($event.target).value)"
+    (keydown)="onKeydown($event)"
+  ></textarea>
+  <div class="words-actions">
+    <button appButton variant="primary" size="sm" type="button" [disabled]="saving()" (click)="save()">
+      {{ saving() ? 'Saving…' : 'Save' }}
+    </button>
+    <button appButton variant="ghost" size="sm" type="button" [disabled]="saving()" (click)="cancel()">Cancel</button>
+    <span class="words-hint">⌘/Ctrl + Enter saves</span>
+  </div>
+</div>
+} @else if (paragraphs().length) {
+<!-- The words read as text; a click on them, or Edit, opens them for editing. -->
+<div class="words-text" (click)="onTextClick()">
+  @for (paragraph of paragraphs(); track $index) {
+  <p class="words-paragraph">{{ paragraph }}</p>
+  }
+</div>
+<button #opener appButton variant="link" size="sm" type="button" class="words-edit-link"
+  [attr.aria-label]="'Edit your words about ' + topic().name" (click)="edit()">Edit</button>
+} @else {
+<button #opener type="button" class="words-add" (click)="edit()">Add your own words…</button>
+}

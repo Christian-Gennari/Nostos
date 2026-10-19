@@ -27,7 +27,7 @@ App (app-root)
     │       │   │       └── TopicAutocompletePanel
     │       │   └── AddBookModal (edit mode)
     │       │
-    │       ├── SecondBrain (app-brain)          [route: /second-brain]
+    │       ├── Brain (app-brain-shell)         [route: /brain]
     │       │   └── NoteCardComponent (many)
     │       │
     │       └── WritingStudio (app-writing-studio) [route: /studio]
@@ -76,14 +76,14 @@ Full book detail with metadata, notes, and file management. Uses `BookDetailStor
 - **Metadata edit** via `AddBookModal` in edit mode
 - **Reader navigation** (opens `/read/:id`)
 
-### SecondBrain (`/second-brain`)
+### Brain (`/brain`, `brain/`)
 
-Master-detail topic explorer. Features:
+Built like the Library (see `docs/brain.md`):
 
-- **Left pane:** Searchable topic index (sorted by usage count)
-- **Right pane:** All notes linked to selected topic
-- **Topic tag navigation** — clicking a tag in a note switches to that topic
-- **Note card actions** — navigate to source book
+- **Shell** (`BrainShellComponent`): the sidebar of places and topics (`BrainSidebarComponent`), a drawer on a phone
+- **List page** (`BrainListPage`): All notes, Passages, Unsorted and every topic, one toolbar (search, book, order, Select), the note cards
+- **Note card** (`ui/note-item`): quote, thought, topic chips with the picker, the ⋯ menu; also used on Book Detail
+- **Sort one by one** (`BrainSortPage`, `/brain/unsorted/sort`), **the map** (`BrainMapPage`), **a note** (`BrainNotePage`)
 
 ### WritingStudio (`/studio`)
 

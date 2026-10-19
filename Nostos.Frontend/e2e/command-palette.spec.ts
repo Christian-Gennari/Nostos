@@ -67,18 +67,18 @@ test('finds a topic, its notes and a document by one word, and opens each', asyn
 
   // The highlight starts on the first row: the topic.
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(new RegExp(`second-brain\\?topicId=${topicId}`));
+  await expect(page).toHaveURL(new RegExp(`/brain/topics/${topicId}`));
   await expect(page.getByTestId('command-palette')).toHaveCount(0);
 
-  await openPalette(page, '/second-brain');
+  await openPalette(page, '/brain');
   await page.keyboard.type(word);
   await expect(page.getByTestId('palette-item-note')).toHaveCount(2);
   await page.keyboard.press('ArrowDown');
   await expect(page.getByTestId('palette-input')).toHaveAttribute('aria-activedescendant', 'palette-option-1');
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/second-brain\?noteId=/);
+  await expect(page).toHaveURL(/\/brain\/notes\//);
 
-  await openPalette(page, '/second-brain');
+  await openPalette(page, '/brain');
   await page.keyboard.type(word);
   await page.getByTestId('palette-item-document').click();
   await expect(page).toHaveURL(new RegExp(`studio\\?writingId=${documentId}`));
@@ -86,9 +86,9 @@ test('finds a topic, its notes and a document by one word, and opens each', asyn
 
 test('remembers what was opened, and offers it before anything is typed', async ({ page }) => {
   const { baseUrl } = loadFixture();
-  await page.goto(`${baseUrl}/second-brain?topicId=${topicId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/brain/topics/${topicId}`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('app-app-dock')).toBeVisible();
-  await openPalette(page, '/second-brain');
+  await openPalette(page, '/brain');
 
   await expect(headings(page).first()).toHaveText('Recent');
   await expect(page.locator('.palette-section').first()).toContainText(word);

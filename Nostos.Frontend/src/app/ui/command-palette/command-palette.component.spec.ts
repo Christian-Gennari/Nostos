@@ -356,10 +356,10 @@ describe('CommandPalette', () => {
 
     it('deep-links a topic, a note and a document', () => {
       component.run(entry('topic'));
-      expect(router.navigate).toHaveBeenCalledWith(['/second-brain'], { queryParams: { topicId: 't2' } });
+      expect(router.navigate).toHaveBeenCalledWith(['/brain/topics', 't2']);
 
       component.run(entry('note'));
-      expect(router.navigate).toHaveBeenCalledWith(['/second-brain'], { queryParams: { noteId: 'n1' } });
+      expect(router.navigate).toHaveBeenCalledWith(['/brain/notes', 'n1']);
 
       component.run(entry('document'));
       expect(router.navigate).toHaveBeenCalledWith(['/studio'], { queryParams: { writingId: 'w1' } });
