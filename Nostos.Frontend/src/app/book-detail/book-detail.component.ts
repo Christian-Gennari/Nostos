@@ -53,6 +53,8 @@ interface EditionSwitchOption {
   current: boolean;
   /** Full edition label (format plus narrator, duration, edition) for the tooltip. */
   title: string;
+  /** "Finished" or "42%" for another edition; null when unstarted or current. */
+  status: string | null;
 }
 
 // UI Components
@@ -80,16 +82,12 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
-import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
-import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 
 @Component({
   standalone: true,
   selector: 'app-book-detail',
   imports: [
-    ChoiceRowComponent,
-    IconTileComponent,
     CommonModule,
     FormsModule,
     RouterLink,
@@ -545,9 +543,13 @@ export class BookDetail implements OnInit, OnDestroy {
   });
 
   /**
-   * The hero format switcher, the one place to switch edition (issue #1062). It
-   * replaced the switch rows on the rail's editions card, which on a phone stacks
-   * below the whole notes feed. Empty for a single-edition book, so nothing renders.
+   * The hero format switcher, the one place to switch edition (issue #1062) and
+   * the only list of the work's editions on the page. It replaced the rail's
+   * editions card, which on a phone stacked below the whole notes feed and read
+   * as a second switcher. Empty for a single-edition book, so nothing renders.
+   *
+   * Each other edition's chip carries its own progress, which that card used to
+   * show; the current edition's progress is already the stage strip's figure.
    *
    * Ordered by label then id, not current-first, so the chips hold still when the
    * user switches. Two editions of one format are told apart by their edition
@@ -559,7 +561,7 @@ export class BookDetail implements OnInit, OnDestroy {
     if (!book || others.length === 0) return [];
 
     const all = [
-      { id: book.id, type: book.type, fileName: book.fileName, format: undefined, edition: book.edition, current: true, title: this.getEditionLabel(book) },
+      { id: book.id, type: book.type, fileName: book.fileName, format: undefined, edition: book.edition, current: true, title: this.getEditionLabel(book), status: null },
       ...others.map((edition) => ({
         id: edition.id,
         type: edition.type,
@@ -568,6 +570,7 @@ export class BookDetail implements OnInit, OnDestroy {
         edition: edition.edition,
         current: false,
         title: `Switch to ${this.getSummaryEditionLabel(edition)}`,
+        status: edition.finishedAt ? 'Finished' : edition.progressPercent ? `${edition.progressPercent}%` : null,
       })),
     ].map((entry) => ({ ...entry, format: this.buildEditionLabel(entry.type, entry.fileName, entry.format) }));
 
@@ -586,7 +589,8 @@ export class BookDetail implements OnInit, OnDestroy {
         label,
         icon: isAudio ? ('headphones' as const) : ('book-open' as const),
         current: entry.current,
-        title: entry.title,
+        title: entry.status ? `${entry.title} (${entry.status === 'Finished' ? 'finished' : `${entry.status} read`})` : entry.title,
+        status: entry.status,
       };
     });
   });
@@ -747,22 +751,6 @@ export class BookDetail implements OnInit, OnDestroy {
   switchEdition(id: string): void {
     this.preferences.setActiveEditionId(this.store.book()?.workId, id);
     void this.router.navigate(['/library', id]);
-  }
-
-  getEditionFormat(book: Book | EditionSummaryDto): string {
-    const isAudio = book.type === 'audiobook' || book.type === 'audio';
-    if (isAudio) return 'Audiobook';
-    const fmt = 'format' in book ? book.format : undefined;
-    const formatLabel = this.getFormatLabel(book.type, book.fileName, fmt);
-    return formatLabel === 'EPUB' || formatLabel === 'PDF' ? formatLabel : 'EBook';
-  }
-
-  getEditionSubtitle(book: Book | EditionSummaryDto): string {
-    const isAudio = book.type === 'audiobook' || book.type === 'audio';
-    const details = isAudio
-      ? [book.duration, book.narrator, book.edition]
-      : [book.edition];
-    return details.filter((d): d is string => !!d?.trim()).join(' • ');
   }
 
   getEditionLabel(book: Book): string {

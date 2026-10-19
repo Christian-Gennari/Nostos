@@ -365,10 +365,7 @@
   padding-left: 2rem;
   border-left: 1px solid var(--border-color);
 }
-/* Details and editions are sections of the rail, separated by space and their
-   own labels. One rule owns both, so the two stay in step. */
-.details-card,
-.edition-section {
+.details-card {
   margin-bottom: 2.5rem;
 }
 /* The strip and grid were laid out for the wide synopsis card; in the narrow rail
@@ -591,131 +588,6 @@
   overflow-wrap: anywhere;
 }
 
-/* ── Multi-edition grouping ───────────────────────────────────────────────
-   The section IS a rail card (see the shared `.details-card, .edition-section`
-   rule above): the same surface, hairline, 12px radius and padding as the
-   Details block it sits under. It used to be a translucent `--glass-border`
-   panel with a 4px radius, which read as a legacy widget bolted next to an
-   opaque card.
-
-   Inside it the rows are a LIST, not a grid of cards. The old
-   `repeat(auto-fill, minmax(200px, 1fr))` grid only ever resolved to one column
-   in this 320px rail (measured: 3 columns of 258px only once the rail goes
-   full-width under 900px), so it produced a busier nested-card frame — every
-   row its own border AND its own 1px lift on hover — for no layout gain.
-
-   Same eyebrow as `.details-title` / `.synopsis-content h4`: the page's single
-   section-label style. The previous 0.78rem/0.05em/`--color-text-muted` heading
-   was a third variant of the same idea and matched nothing else on the page. */
-.edition-section-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
-  font-size: 0.75rem;
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-light);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-/* The heading is an <h4> for the section's accessible name; the eyebrow styling
-   above is what it wears. The global `h4` rule sets Newsreader + `--primary-ink`,
-   neither of which suits a 12px tracked label (measured: the serif is 256px at
-   this size against a 278px content box, so it would also be near the wrap
-   point), so the family is re-declared here. */
-.edition-section-title {
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
-  color: inherit;
-  margin: 0;
-  line-height: 1.2;
-}
-
-/* Pushed to the card's right edge, so it terminates the header rule instead of
-   leaving the right side ragged against full-width rows below it. */
-.edition-count-badge {
-  margin-left: auto;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--bg-hover);
-  color: var(--color-text-light);
-  font-size: 0.72rem;
-  font-weight: var(--fw-medium);
-  line-height: 1;
-}
-
-.edition-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* Out of a card, the rows need no box of their own: only the current edition
-   keeps its fill, and another edition shows a fill under the pointer. A border
-   on every row, inside the rail, was the box inside a box this page is
-   dropping. The Editions and Switch edition dialogs keep the bordered row. */
-.edition-list .edition-select-card:not(.nostos-choice-row--selected) {
-  border-color: transparent;
-  background: transparent;
-}
-
-/* The format glyph alone, with no square drawn behind it. */
-.edition-list .edition-select-card .card-icon-frame {
-  background: transparent;
-}
-
-/* The row itself (box, text tiers, hover, focus, the selected fill) is the
-   shared `appChoiceRow`. What stays here is what only this page's rows have. */
-.card-format-sub {
-  white-space: normal;
-}
-
-.card-meta-line {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-/* Both pills are the shared `appBadge` capsule (Finished in its success tone);
-   this page only supplies the selection-role colours below. They were a
-   0.65rem, 4px-padded, square-cornered local recipe, which read as a sticker
-   next to the app's rounded status pills. */
-.card-status-pill {
-  line-height: 1.3;
-}
-
-/* The finished pill on the filled row takes the selection BADGE role — the same
-   pair the sidebar and the tree use for a count sitting on a filled (selected)
-   row. Without this it kept `--color-success-dark` ink over a 15% success tint
-   laid on the dark forest fill and measured **1.35:1 in light**: an invisible
-   label, not a subtle one. The old row was accent-tinted and light enough to
-   hide the bug. (The "Current" pill is already selection-role at its base, so it
-   needs no counterpart here.) */
-.edition-select-card.active .card-status-pill.finished.nostos-badge {
-  background: var(--selection-badge-bg);
-  color: var(--selection-ink);
-}
-
-/* "You are here". State that is only a fill colour is unreadable to someone who
-   cannot separate the two fills, so the active row also says it in words. */
-.card-status-pill.current.nostos-badge {
-  gap: 4px;
-  padding-left: 6px;
-  background: var(--selection-badge-bg);
-  color: var(--selection-ink);
-}
-
 /* The reading status is the shared dropdown in its `pill` appearance; this
    page only says what colour each status is. */
 .status-dropdown.finished {
@@ -730,26 +602,9 @@
   --dropdown-pill-ink: var(--color-brand-accent);
 }
 
-/* ── Editions card: the entry to managing this work ───────────────────────
-   A footer action BELOW the rows, behind a divider, and centred so it cannot be
-   mistaken for another edition row (as the first item in the stack it shared the
-   rows' surface, border and radius and read as item #1). */
-/* appButton variant="link", laid out as a full-width footer behind a divider.
-   `button.` lifts these over the variant's own box rules. */
-button.edition-section-action {
-  display: flex;
-  width: 100%;
-  min-height: var(--control-h-touch);
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--border-color);
-  border-radius: 0;
-  font-size: 0.78rem;
-}
-
-/* The Edit chooser. It exists because 'metadata' is no longer the whole story —
-   the Edit Book form already carries collections, files and personal notes — and
-   because a book alone in its work has no editions card to host an entry point. */
+/* The Edit chooser. It exists because 'metadata' is no longer the whole story:
+   the Edit Book form carries collections, files and personal notes, and the
+   Editions item is the page's one entry to managing the work's editions. */
 .edit-menu-container {
   position: relative;
 }
@@ -876,6 +731,14 @@ button.edition-chip:hover {
 button.edition-chip:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
+}
+/* Another edition's progress, so the chips also say where each one stands.
+   Quieter than the label: the format is what you are choosing between. */
+.edition-chip-status {
+  font-size: 0.72rem;
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 .edition-chip.current {
   background: var(--control-active-fill);
@@ -1268,19 +1131,6 @@ button.edition-chip:focus-visible {
     border-left: none;
     padding-top: 2rem;
     border-top: 1px solid var(--border-color);
-  }
-  /* Below this width the rail is no longer a 320px column — it is the full body
-     width — so one row per line would leave ~540px of empty space to the right
-     of every row. Two columns is what the content actually needs here; the row
-     itself is unchanged. `auto-fit` keeps a single column again as the width
-     falls (measured at 390px: 310px of content, one column).
-
-     The minimum is `min(300px, 100%)` and not a bare `300px`: a bare minimum is
-     a hard floor, so at the mobile width where the content box is 278px the
-     track stayed 300px and every row overflowed the card by 22px. */
-  .edition-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   }
   .detail-cover-col {
     width: 100%;

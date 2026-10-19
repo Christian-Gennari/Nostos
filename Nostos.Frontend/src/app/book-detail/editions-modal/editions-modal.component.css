@@ -3,15 +3,12 @@
    `app-modal-shell` (see `ui/modal-shell`); this file styles the header and the
    working area inside it.
 
-   Every recipe below is COPIED from the surface this dialog is opened from
-   (`book-detail.component.css`: `.edition-select-card`, `.edition-section-header`,
-   `.edition-count-badge`, `.card-status-pill.current`, `.card-meta-line`), and the
-   origin is named in each block. That is the point of this pass: the modal used to
-   be a near-copy of the page's edition row that had drifted off it — serif
-   micro-labels, a 12.8px/400 row title, square 44px text buttons, "you are here"
-   as an uppercase text line — so the same book read two different ways depending
-   on which surface you were looking at. A copy that names its origin can be
-   re-synced; a copy that does not is how it drifted the first time. */
+   These recipes were first copied from the book page's "Available Formats &
+   Editions" rail card, which has since been removed (the hero format switcher
+   is now the page's only list of editions), so this dialog is now where they
+   live. The rows themselves are the shared `appChoiceRow` and the pills the
+   shared `appBadge`, so an edition still reads the same way on every surface
+   that lists one. */
 
 :host {
   display: contents;
@@ -94,8 +91,7 @@
 
 /* --- Section header ---------------------------------------------------- */
 
-/* `.edition-section-header`, verbatim. The page's comment explains why the h3
-   needs its family re-declared: the global `h1..h4` rule paints Newsreader, and a
+/* The app's tracked eyebrow label. The h3 needs its family re-declared: the global `h1..h4` rule paints Newsreader, and a
    tracked 12px label in a serif was explicitly rejected there (measured: the serif
    is 256px wide at this size against a 278px content box, so it is also near the
    wrap point). This modal was the last place still wearing the serif version. */
@@ -143,7 +139,7 @@
 
 /* --- Rows -------------------------------------------------------------- */
 
-/* `.edition-list`'s 0.4rem rhythm, so the two lists read as one family of rows. */
+/* One rhythm for both lists, so they read as one family of rows. */
 .manage-members,
 .manage-link-list {
   display: flex;
@@ -154,9 +150,8 @@
   list-style: none;
 }
 
-/* Member and candidate rows are the shared `appChoiceRow`, the same row as the
-   edition rows on the book page: box, text tiers, hover, focus and the
-   "you are here" fill. State that is only a fill colour is unreadable to
+/* Member and candidate rows are the shared `appChoiceRow`: box, text tiers,
+   hover, focus and the "you are here" fill. State that is only a fill colour is unreadable to
    someone who cannot separate the two fills, which is why the current row ALSO
    carries the Current badge. What stays here is what only these rows have. */
 /* A long title or author is cut, not wrapped: the row's action must stay put. */
@@ -180,9 +175,8 @@
   white-space: nowrap;
 }
 
-/* The shared `appBadge` in the selection role, as `.card-status-pill.current` on
-   the page — the same pill for the same state. It sits in the row's trailing slot, where the Unlink button
-   sits on a member row: the slot has to be one or the other, or the title's
+/* The shared `appBadge` in the selection role, for "you are here". It sits in
+   the row's trailing slot, where the Unlink button sits on a member row: the slot has to be one or the other, or the title's
    truncation point moves from row to row. */
 .manage-member-flag.nostos-badge {
   flex-shrink: 0;
