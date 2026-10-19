@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 
 import { NoteCardComponent } from './note-card.component';
 import type { Note } from '../../core/dtos/note.dtos';
@@ -328,5 +328,30 @@ describe('NoteCard passage (issue #1014)', () => {
     fixture.componentInstance.saveEdit();
 
     expect(emitted).toEqual([{ id: 'passage-1', content: 'Reread every year.', passageTitle: 'The Inquisitor' }]);
+  });
+});
+
+describe('NoteCard inline topic links', () => {
+  it('opens a [[topic]] in the Brain without a page load', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoteCardComponent],
+      providers: [provideRouter([])],
+    }).compileComponents();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(NoteCardComponent);
+    fixture.componentInstance.note = {
+      id: 'n1', bookId: 'b1', content: 'See [[Virtue]] here.', createdAt: '2026-08-01T08:00:00Z',
+    } as Note;
+    fixture.componentInstance.topicMap = new Map([['virtue', { id: 't1', name: 'Virtue', usageCount: 1 }]]);
+    fixture.detectChanges();
+
+    const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a.topic-tag')!;
+    expect(link.getAttribute('href')).toBe('/brain/topics/t1');
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(click);
+
+    expect(navigate).toHaveBeenCalledWith('/brain/topics/t1');
+    expect(click.defaultPrevented).toBe(true);
   });
 });
