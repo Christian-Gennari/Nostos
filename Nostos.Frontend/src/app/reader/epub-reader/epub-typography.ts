@@ -175,7 +175,8 @@ const PROSE_LINE_HEIGHT_SELECTOR = [
  * Nostos face overrides normal reading text and headings, while special
  * descendants such as code and icon glyphs keep their direct fonts. Text size
  * is also deliberately absent: epub.js owns that setting through
- * `rendition.themes.fontSize()`.
+ * `rendition.themes.fontSize()`, and epub-text-size.ts carries it to text the
+ * publisher sized absolutely.
  *
  * Margins are deliberately NOT here — see {@link marginInsetPercent}: they are
  * padding on our own viewer, because epub.js's own inline-important body
