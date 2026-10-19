@@ -2,7 +2,7 @@
 import { Component, EventEmitter, Input, Output, TemplateRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 export interface NoteSourceNavigation {
   commands: Array<string | number>;
@@ -25,6 +25,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { TextareaDirective } from '../form-control/form-control.directive';
+import { inlineTopicHref } from '../note-item/note-item.helpers';
 
 @Component({
   selector: 'app-note-card',
@@ -75,11 +76,11 @@ export class NoteCardComponent {
     passageTitle?: string;
   }>();
   @Output() delete = new EventEmitter<string>();
-  @Output() topicClick = new EventEmitter<string>();
   @Output() quoteClick = new EventEmitter<void>();
   @Output() cardClick = new EventEmitter<void>();
 
   private readonly passageViewer = inject(PassageViewerService);
+  private readonly router = inject(Router);
 
   isEditing = false;
   editContent = '';
@@ -238,15 +239,15 @@ export class NoteCardComponent {
     this.cardClick.emit();
   }
 
+  /**
+   * An inline `[[topic]]` link opens its topic in the Brain without a page
+   * load (the sanitizer keeps the link's address, not a data attribute).
+   */
   onContentClick(event: MouseEvent) {
-    const target = event.target as HTMLElement;
-    if (target.classList.contains('topic-tag')) {
-      const id = target.getAttribute('data-topic-id');
-      if (id) {
-        event.preventDefault();
-        event.stopPropagation();
-        this.topicClick.emit(id);
-      }
-    }
+    const href = inlineTopicHref(event);
+    if (!href) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void this.router.navigateByUrl(href);
   }
 }
