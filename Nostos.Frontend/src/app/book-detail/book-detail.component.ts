@@ -442,6 +442,13 @@ export class BookDetail implements OnInit, OnDestroy {
     { value: 'finished', label: 'Finished', icon: 'check-circle' },
   ];
 
+  /** How far in, shown inside the Reading pill ("70%"). Only while reading:
+   *  "Finished · 100%" would say the same thing twice. */
+  readonly statusDetail = computed(() => {
+    const percent = this.store.book()?.progressPercent ?? 0;
+    return this.readingStatus().modifier === 'reading' && percent > 0 ? `${percent}%` : null;
+  });
+
   /** The current status as a dropdown value. */
   readonly statusValue = computed(() => {
     const modifier = this.readingStatus().modifier;

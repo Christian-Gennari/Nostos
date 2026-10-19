@@ -28,7 +28,9 @@ export type DropdownAlignment = 'start' | 'end';
  * `pill` is a status capsule that opens a choice (a book's reading status):
  * a leading dot, the value and a caret, in the colours the call site sets
  * through `--dropdown-pill-bg`, `--dropdown-pill-bg-hover` and
- * `--dropdown-pill-ink`.
+ * `--dropdown-pill-ink`. A pill may carry a `detail` after its value
+ * ("Reading · 70%"), so a figure that qualifies the status rides inside it
+ * instead of floating loose beside it.
  */
 export type DropdownAppearance = 'field' | 'subtle' | 'pill' | 'icon';
 
@@ -87,6 +89,9 @@ let nextDropdownId = 0;
         <nostos-icon class="nostos-dropdown__trigger-icon" [name]="triggerIcon()" [size]="20" />
       } @else {
         <span class="nostos-dropdown__value">{{ selectedOption()?.label ?? placeholder() }}</span>
+        @if (appearance() === 'pill' && detail(); as detail) {
+          <span class="nostos-dropdown__detail">· {{ detail }}</span>
+        }
         <nostos-icon
           class="nostos-dropdown__chevron"
           name="caret-down"
@@ -297,6 +302,13 @@ let nextDropdownId = 0;
         transition: transform var(--motion-fast) var(--ease-plain);
       }
 
+      .nostos-dropdown__detail {
+        flex: 0 0 auto;
+        font-weight: var(--fw-regular);
+        opacity: 0.8;
+        white-space: nowrap;
+      }
+
       .nostos-dropdown__chevron--open {
         transform: rotate(180deg);
       }
@@ -420,6 +432,8 @@ export class DropdownComponent {
   readonly controlId = input<string | null>(null);
   readonly controlSize = input<DropdownSize>('normal');
   readonly appearance = input<DropdownAppearance>('field');
+  /** `pill` only: a short figure shown after the value, e.g. "70%". */
+  readonly detail = input<string | null>(null);
   readonly align = input<DropdownAlignment>('start');
   /** The glyph an `icon` appearance shows in place of the value. */
   readonly triggerIcon = input<NostosIconName>('sliders-horizontal');

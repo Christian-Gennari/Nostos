@@ -139,6 +139,33 @@ describe('BookDetail reset progress', () => {
     expect(chip!.textContent).toContain('Reading');
   });
 
+  it('carries the reading figure inside the status pill, not beside it', async () => {
+    await setup(readableBook({ progressPercent: 42 }));
+    const chip = statusChipButton()!;
+    expect(chip.querySelector('.nostos-dropdown__detail')?.textContent?.trim()).toBe('· 42%');
+    expect(chip.getAttribute('aria-label')).toBe('Reading status, 42% read');
+    expect(fixture.nativeElement.querySelector('.strip-progress')).toBeNull();
+  });
+
+  it('shows no figure on a finished book, where it would only repeat the status', async () => {
+    await setup(readableBook({ progressPercent: 100, finishedAt: '2026-08-02T08:00:00+02:00' }));
+    const chip = statusChipButton()!;
+    expect(chip.textContent).toContain('Finished');
+    expect(chip.querySelector('.nostos-dropdown__detail')).toBeNull();
+    expect(chip.getAttribute('aria-label')).toBe('Reading status');
+  });
+
+  it('groups the hero strip into verdict, state and action rows', async () => {
+    await setup(readableBook({ progressPercent: 42, otherEditions: multiEditionBook().otherEditions }));
+    const strip = fixture.nativeElement.querySelector('.stage-strip') as HTMLElement;
+    const rows = Array.from(strip.children).map((row) => row.className.split(' ')[0]);
+    expect(rows).toEqual(['strip-verdict', 'strip-state', 'primary-actions']);
+    expect(strip.querySelector('.strip-verdict app-star-rating')).toBeTruthy();
+    expect(strip.querySelector('.strip-verdict .favorite-btn')).toBeTruthy();
+    expect(strip.querySelector('.strip-state .edition-switcher')).toBeTruthy();
+    expect(strip.querySelector('.strip-state .status-dropdown')).toBeTruthy();
+  });
+
   it('prompts to write the first note when the feed is empty', async () => {
     await setup(readableBook());
 
@@ -369,7 +396,7 @@ describe('BookDetail reset progress', () => {
   // edition-switcher.component.spec.ts.
 
   function editionTrigger(): HTMLButtonElement | null {
-    return fixture.nativeElement.querySelector('.strip-meta .edition-switcher .es-trigger');
+    return fixture.nativeElement.querySelector('.strip-state .edition-switcher .es-trigger');
   }
 
   /** Opens the edition menu; its items and each as "label · hint". */
@@ -415,8 +442,8 @@ describe('BookDetail reset progress', () => {
     const { items, text } = editionMenu();
     expect(text).toEqual(['Audiobook · 15% read', 'EPUB · 42% read', 'PDF · Finished']);
     expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, 'page', null]);
-    // The strip keeps the current edition's own figure.
-    expect(fixture.nativeElement.querySelector('.strip-progress')?.textContent?.trim()).toBe('42%');
+    // The status pill keeps the current edition's own figure.
+    expect(statusChipButton()?.querySelector('.nostos-dropdown__detail')?.textContent?.trim()).toBe('· 42%');
   });
 
   it('renders no second editions list in the rail', async () => {

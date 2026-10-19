@@ -132,33 +132,23 @@
         </aside>
 
         <div class="stage-strip">
-          <div class="strip-meta">
+          <!-- The strip is three rows, each with one job: your verdict on the
+               book, where you stand in it, and what you can do with it. A new
+               control joins the row whose job it shares instead of starting a
+               line of its own. -->
+          <div class="strip-verdict">
             <app-star-rating
               [rating]="store.book()?.rating || 0"
               [size]="20"
               (ratingChange)="onRate($event)"
             ></app-star-rating>
 
-            <app-dropdown
-              class="status-dropdown"
-              [class.finished]="readingStatus().modifier === 'finished'"
-              [class.reading]="readingStatus().modifier === 'reading'"
-              appearance="pill"
-              ariaLabel="Reading status"
-              title="Change reading status"
-              [options]="statusOptions"
-              [value]="statusValue()"
-              (valueChange)="selectStatusOption($event)"
-            ></app-dropdown>
-
-            @if (store.book()?.progressPercent) {
-            <span class="strip-progress">{{ store.book()?.progressPercent }}%</span>
-            }
+            <span class="strip-rule" aria-hidden="true"></span>
 
             <button
               appIconButton
               icon="heart"
-              [glyphSize]="22"
+              [glyphSize]="20"
               [weight]="store.book()?.isFavorite ? 'fill' : 'regular'"
               [pressed]="store.book()?.isFavorite ?? false"
               class="favorite-btn"
@@ -167,12 +157,14 @@
               title="Toggle Favorite"
               aria-label="Toggle favorite"
             ></button>
+          </div>
 
+          <div class="strip-state">
             <!-- Edition switcher (issues #1062, #1086): the ONLY place to switch
                  edition and the only list of the work's editions. A pill that
-                 opens a menu of every edition with its progress. Last in the
-                 row, so on a phone it is the one item that wraps to a line of
-                 its own. Absent for a single-edition book. -->
+                 opens a menu of every edition with its progress, set beside the
+                 reading-status pill it resembles. Absent for a single-edition
+                 book. -->
             @if (editionSwitchOptions().length > 0) {
             <nostos-edition-switcher
               class="edition-switcher"
@@ -180,6 +172,20 @@
               (switched)="switchEdition($event)"
             ></nostos-edition-switcher>
             }
+
+            <!-- The figure qualifies the status, so it rides inside the pill. -->
+            <app-dropdown
+              class="status-dropdown"
+              [class.finished]="readingStatus().modifier === 'finished'"
+              [class.reading]="readingStatus().modifier === 'reading'"
+              appearance="pill"
+              [detail]="statusDetail()"
+              [ariaLabel]="statusDetail() ? 'Reading status, ' + statusDetail() + ' read' : 'Reading status'"
+              title="Change reading status"
+              [options]="statusOptions"
+              [value]="statusValue()"
+              (valueChange)="selectStatusOption($event)"
+            ></app-dropdown>
           </div>
 
           <div class="primary-actions">
@@ -207,12 +213,12 @@
               }
             </div>
             } @else if (store.book()?.hasFile) { @if (isAudioBook(store.book())) {
-            <button appButton variant="primary" size="lg" (click)="openReader()">
+            <button appButton variant="primary" size="lg" class="primary-action" (click)="openReader()">
               <nostos-icon name="headphones" [size]="18"></nostos-icon>
               <span>Listen</span>
             </button>
             } @else {
-            <button appButton variant="primary" size="lg" (click)="openReader()">
+            <button appButton variant="primary" size="lg" class="primary-action" (click)="openReader()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
               <span>Read Book</span>
             </button>
@@ -222,17 +228,19 @@
               appButton
               variant="secondary"
               size="lg"
+              class="secondary-action"
+              aria-label="Download"
               (click)="downloadFile()"
               [attr.title]="downloadHint(store.book())"
             >
               <nostos-icon name="download-simple" [size]="18"></nostos-icon>
-              <span>Download</span>
+              <span class="action-label">Download</span>
               @if (downloadHint(store.book()); as hint) {
               <span class="download-hint">{{ hint }}</span>
               }
             </button>
             } @else if (store.book()?.type !== 'physical') {
-            <button appButton variant="primary" size="lg" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
+            <button appButton variant="primary" size="lg" class="primary-action" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
               <span>Upload File</span>
             </button>
@@ -256,12 +264,13 @@
                 appButton
                 variant="secondary"
                 size="lg"
-                class="edit-metadata-btn"
+                class="edit-metadata-btn secondary-action"
                 title="Edit"
+                aria-label="Edit"
                 [nostosMenuTriggerFor]="editMenu"
               >
-                <nostos-icon name="pencil-simple" [size]="16"></nostos-icon>
-                <span>Edit</span>
+                <nostos-icon name="pencil-simple" [size]="18"></nostos-icon>
+                <span class="action-label">Edit</span>
                 <nostos-icon name="caret-down" [size]="12" class="edit-menu-chevron"></nostos-icon>
               </button>
 
