@@ -82,6 +82,7 @@ import {
   type EpubTypography,
 } from './epub-typography';
 import { visibleEpubExcerpt } from './epub-visible-excerpt';
+import { scaleAbsoluteFontSizes, setTextScale } from './epub-text-size';
 import {
   cfiRangeEnds,
   cfiSpineIndex,
@@ -1502,6 +1503,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const size = this.currentFontSize();
     if (this.rendition && this.appliedFontSize !== size) {
       this.appliedFontSize = size;
+      // Set the scale first so the re-layout epub.js starts for the body size
+      // already sees the publisher's absolute sizes at the new scale.
+      for (const c of this.renderedContents()) {
+        if (c?.document) this.applyTextScale(c.document);
+      }
       this.rendition.themes.fontSize(`${size}%`);
     }
     this.persistFontSize();
@@ -2028,6 +2034,21 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // a reader setting. Libron is bundled with the app; Sans/Mono use
     // dependable local/system stacks.
     this.upsertTypographyStyle(contents.document);
+    try {
+      scaleAbsoluteFontSizes(contents.document);
+    } catch {
+      // A section mid-teardown has no stylesheets to read — skip it.
+    }
+    this.applyTextScale(contents.document);
+  }
+
+  /** See epub-text-size.ts: the share of the text size epub.js cannot reach. */
+  private applyTextScale(doc: Document): void {
+    try {
+      setTextScale(doc, this.currentFontSize());
+    } catch {
+      // A section mid-teardown has no root to write to — skip it.
+    }
   }
 
   /** Merge a patch into the typography, persist it, and repaint open sections. */
