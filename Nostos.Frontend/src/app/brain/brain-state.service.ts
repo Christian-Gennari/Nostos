@@ -3,7 +3,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import type { NoteSummary } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
-import type { MapCamera } from '../second-brain/topic-map/topic-map.helpers';
+import type { MapCamera } from './topic-map/topic-map.helpers';
 import { topicLookup } from '../ui/note-item/note-item.helpers';
 import {
   TOPIC_SORT_KEY,

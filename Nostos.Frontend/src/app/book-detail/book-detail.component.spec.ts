@@ -9,6 +9,7 @@ import { Book } from '../core/dtos/book.dtos';
 import { ToastService } from '../core/services/toast.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
+import { bookNotes, brainReads, cardNote, notesPage } from './book-detail.testing';
 
 const book: Book = {
   id: 'b1',
@@ -71,9 +72,9 @@ describe('BookDetail reset progress', () => {
     fixture.detectChanges();
 
     httpMock.expectOne('/api/books/b1').flush(initial);
-    httpMock.expectOne('/api/books/b1/notes').flush([]);
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
     fixture.detectChanges();
   }
 
@@ -127,7 +128,7 @@ describe('BookDetail reset progress', () => {
   });
 
   afterEach(() => {
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
     httpMock.verify();
   });
 
@@ -503,9 +504,8 @@ describe('BookDetail reset progress', () => {
 
   function seedNotes(count: number): void {
     component.store.notes.set(
-      Array.from({ length: count }, (_, i) => ({
+      Array.from({ length: count }, (_, i) => cardNote({
         id: `n${i}`,
-        bookId: 'b1',
         content: `Note ${i}`,
         createdAt: `2026-08-${String(i + 1).padStart(2, '0')}T08:00:00Z`,
       })),
@@ -525,7 +525,7 @@ describe('BookDetail reset progress', () => {
     await setup();
     seedNotes(25);
 
-    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(10);
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-item').length).toBe(10);
     // The latest ones, still oldest-first.
     expect(renderedNoteIds()).toEqual(Array.from({ length: 10 }, (_, i) => `n${i + 15}`));
     // The header count is still every note.
@@ -536,7 +536,7 @@ describe('BookDetail reset progress', () => {
     reveal.click();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(25);
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-item').length).toBe(25);
     expect(showEarlierButton()).toBeNull();
   });
 
@@ -544,7 +544,7 @@ describe('BookDetail reset progress', () => {
     await setup();
     seedNotes(10);
 
-    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-card').length).toBe(10);
+    expect(fixture.nativeElement.querySelectorAll('.notes-feed app-note-item').length).toBe(10);
     expect(showEarlierButton()).toBeNull();
   });
 
@@ -1077,9 +1077,9 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne('/api/books/b1').flush(initial);
-    httpMock.expectOne('/api/books/b1/notes').flush([note]);
+    httpMock.expectOne(bookNotes).flush(notesPage([note]));
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
     fixture.detectChanges();
   }
 
@@ -1090,7 +1090,7 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
   /** The detail page reloads topics on several paths; drain stragglers so
       httpMock.verify() only judges the requests each test cares about. */
   function drainTopics(): void {
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
   }
 
   beforeEach(async () => {
@@ -1116,31 +1116,32 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
 
   it('note delete opens the modal and only deletes on confirm', async () => {
     await setup();
+    expect(component.store.notes().map((n) => n.id)).toEqual(['n1']);
 
-    component.onDeleteNote('n1');
+    component.noteActions.askDelete(['n1']);
     fixture.detectChanges();
-    expect(component.pendingNoteDelete()).toBe('n1');
     expect(openModals().length).toBe(1);
     httpMock.expectNone('/api/notes/n1');
 
-    component.confirmNoteDelete();
+    component.noteActions.confirmDelete();
     httpMock.expectOne('/api/notes/n1').flush(null);
-    // The store reloads notes + topics after the delete.
-    httpMock.expectOne('/api/books/b1/notes').flush([]);
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
-    expect(component.pendingNoteDelete()).toBeNull();
+    // The note leaves the page; the Brain's counts and topics reload.
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
+    fixture.detectChanges();
+    expect(component.store.notes()).toEqual([]);
+    expect(openModals().length).toBe(0);
     drainTopics();
   });
 
   it('cancelling note delete performs nothing', async () => {
     await setup();
 
-    component.onDeleteNote('n1');
-    component.cancelNoteDelete();
+    component.noteActions.askDelete(['n1']);
+    component.noteActions.cancelDelete();
     fixture.detectChanges();
-    expect(component.pendingNoteDelete()).toBeNull();
     expect(openModals().length).toBe(0);
     httpMock.expectNone('/api/notes/n1');
+    expect(component.store.notes().map((n) => n.id)).toEqual(['n1']);
     drainTopics();
   });
 
@@ -1179,9 +1180,9 @@ describe('BookDetail live library changes', () => {
     fixture.detectChanges();
 
     httpMock.expectOne('/api/books/b1').flush(book);
-    httpMock.expectOne('/api/books/b1/notes').flush([]);
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/topics').forEach((request) => request.flush([]));
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
     fixture.detectChanges();
   }
 
@@ -1189,7 +1190,7 @@ describe('BookDetail live library changes', () => {
   function bookReads(reply: Book = book): number {
     const reads = httpMock.match('/api/books/b1');
     reads.forEach((request) => request.flush(reply));
-    httpMock.match('/api/books/b1/notes').forEach((request) => request.flush([]));
+    httpMock.match(bookNotes).forEach((request) => request.flush(notesPage([])));
     httpMock.match('/api/collections').forEach((request) => request.flush([]));
     return reads.length;
   }
@@ -1246,7 +1247,7 @@ describe('BookDetail live library changes', () => {
     httpMock
       .expectOne('/api/books/b1')
       .flush('gone', { status: 404, statusText: 'Not Found' });
-    httpMock.match('/api/books/b1/notes').forEach((request) => request.flush([]));
+    httpMock.match(bookNotes).forEach((request) => request.flush(notesPage([])));
     httpMock.match('/api/collections').forEach((request) => request.flush([]));
 
     expect(component.store.book()?.id).toBe('b1');

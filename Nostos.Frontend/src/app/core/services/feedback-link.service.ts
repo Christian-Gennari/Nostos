@@ -27,7 +27,7 @@ export function feedbackOriginForUrl(url: string): FeedbackOrigin | null {
   const path = url.split(/[?#]/, 1)[0];
   if (path === '/library' || path.startsWith('/library/')) return 'library';
   if (path.startsWith('/read/')) return 'reader';
-  if (path === '/second-brain') return 'brain';
+  if (path === '/brain' || path.startsWith('/brain/')) return 'brain';
   if (path === '/studio') return 'studio';
   if (path === '/settings') return 'settings';
   return null;

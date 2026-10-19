@@ -6,7 +6,7 @@ import { finalize } from 'rxjs';
 
 // DTOs & Services
 import { Book, LinkableBookDto } from '../core/dtos/book.dtos';
-import { Note } from '../core/dtos/note.dtos';
+import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
 import { TopicDto } from '../core/services/topics.service';
 import { BooksService } from '../core/services/books.service';
@@ -35,7 +35,7 @@ export class BookDetailStore {
   readonly error = signal<string | null>(null);
 
   readonly book = signal<Book | null>(null);
-  readonly notes = signal<Note[]>([]);
+  readonly notes = signal<NoteSearchHit[]>([]);
   readonly collections = signal<Collection[]>([]);
   readonly topicMap = signal<Map<string, TopicDto>>(new Map());
 
@@ -135,10 +135,24 @@ export class BookDetailStore {
     this.loadCollections();
   }
 
+  private notesSeq = 0;
+
+  /**
+   * Every note of the book, oldest first, as the Brain's cards show them (with
+   * their topics); read 200 at a time until all are in.
+   */
   loadNotes(id: string) {
-    this.notesService.list(id).subscribe({
-      next: (data) => this.notes.set(data),
-    });
+    const seq = ++this.notesSeq;
+    const page = (held: NoteSearchHit[]) =>
+      this.notesService.browse({ bookId: id, order: 'oldest', limit: 200, offset: held.length }).subscribe({
+        next: (result) => {
+          if (seq !== this.notesSeq) return;
+          const all = [...held, ...result.items];
+          if (result.items.length && all.length < result.totalCount) page(all);
+          else this.notes.set(all);
+        },
+      });
+    page([]);
   }
 
   loadCollections() {
@@ -350,7 +364,8 @@ export class BookDetailStore {
 
   // --- NOTES ---
 
-  addNote(content: string) {
+  /** Saves a new note; `saved` runs once it exists (new [[topics]] included). */
+  addNote(content: string, saved?: () => void) {
     const b = this.book();
     if (!b || !content.trim()) return;
 
@@ -358,40 +373,19 @@ export class BookDetailStore {
       next: () => {
         this.loadNotes(b.id);
         this.loadTopics(); // Refresh topics as note might have added new ones
+        saved?.();
       },
     });
   }
 
-  updateNote(
-    id: string,
-    content: string,
-    selectedText?: string,
-    highlightColour?: string,
-    passageTitle?: string,
-  ) {
-    const b = this.book();
-    if (!b) return;
-
-    this.notesService.update(id, { content, selectedText, highlightColour, passageTitle }).subscribe({
-      next: () => {
-        this.loadNotes(b.id);
-        this.loadTopics();
-      },
-    });
+  /** A note changed elsewhere on the page (topics, words): show this version. */
+  replaceNote(note: NoteSearchHit) {
+    this.notes.update((notes) => notes.map((held) => (held.id === note.id ? note : held)));
   }
 
-  deleteNote(noteId: string) {
-    // Confirmed by the caller through ConfirmModal (book-detail.component);
-    // the store only performs the delete.
-    const b = this.book();
-    if (!b) return;
-
-    this.notesService.delete(noteId).subscribe({
-      next: () => {
-        this.loadNotes(b.id);
-        this.loadTopics();
-      },
-    });
+  /** A note was deleted from the page. */
+  removeNote(noteId: string) {
+    this.notes.update((notes) => notes.filter((held) => held.id !== noteId));
   }
 
   // --- FILES ---

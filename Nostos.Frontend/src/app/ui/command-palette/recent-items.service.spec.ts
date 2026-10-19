@@ -14,12 +14,12 @@ describe('parseRecentTarget', () => {
   });
 
   it('reads topics and documents from their deep-link parameters', () => {
-    expect(parseRecentTarget('/second-brain?topicId=t1&x=1')).toEqual({ kind: 'topic', id: 't1' });
+    expect(parseRecentTarget('/brain/topics/t1?with=x')).toEqual({ kind: 'topic', id: 't1' });
     expect(parseRecentTarget('/studio?writingId=w1#top')).toEqual({ kind: 'document', id: 'w1' });
   });
 
   it('ignores everything else, including the reading list', () => {
-    for (const url of ['/library', '/library/to-read', '/second-brain', '/second-brain?noteId=n1', '/studio', '/settings']) {
+    for (const url of ['/library', '/library/to-read', '/brain', '/brain/notes/n1', '/brain/map?focus=t1', '/studio', '/settings']) {
       expect(parseRecentTarget(url)).toBeNull();
     }
   });
@@ -107,7 +107,7 @@ describe('RecentItemsService', () => {
     const events = new Subject<unknown>();
     recent.watch({ events } as unknown as Router);
 
-    events.next(new NavigationEnd(1, '/second-brain?topicId=gone', '/second-brain?topicId=gone'));
+    events.next(new NavigationEnd(1, '/brain/topics/gone', '/brain/topics/gone'));
     expect(recent.items()).toEqual([]);
   });
 
@@ -118,7 +118,7 @@ describe('RecentItemsService', () => {
     const events = new Subject<unknown>();
     recent.watch({ events } as unknown as Router);
 
-    events.next(new NavigationEnd(1, '/second-brain?topicId=t1', '/second-brain?topicId=t1'));
+    events.next(new NavigationEnd(1, '/brain/topics/t1', '/brain/topics/t1'));
     events.next(new NavigationEnd(2, '/studio?writingId=w1', '/studio?writingId=w1'));
 
     expect(recent.items()).toEqual([

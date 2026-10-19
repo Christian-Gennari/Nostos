@@ -417,14 +417,25 @@
 
             <div class="notes-feed">
               @for (note of visibleNotes(); track note.id) {
-              <app-note-card
-                layout="passage"
+              <app-note-item
                 [note]="note"
-                [topicMap]="store.topicMap()"
-                (update)="onUpdateNote($event)"
-                (delete)="onDeleteNote($event)"
-                (topicClick)="onTopicClick($event)"
-              ></app-note-card>
+                [topics]="brain.topics()"
+                [topicMap]="brain.lookup()"
+                [showBook]="false"
+                [showMoreFromBook]="false"
+                [canSelect]="false"
+                [busy]="noteActions.busy().has(note.id)"
+                [suggestions]="suggestions.namesFor(note.id)"
+                [suggestionState]="suggestions.stateFor(note.id)"
+                (topicAdded)="noteActions.addTopic(note, $event)"
+                (topicRemoved)="noteActions.removeTopic(note, $event)"
+                (pickerOpened)="suggestions.request(note)"
+                (pickerClosed)="suggestions.closeFor(note.id)"
+                (edited)="noteActions.edit($event)"
+                (keepWithWriting)="noteActions.keepWithWriting([note.id])"
+                (deleteRequested)="noteActions.askDelete([note.id])"
+                (restored)="noteActions.restored($event)"
+              />
               } @empty {
               <p class="notes-empty">No notes yet — jot down your first thought above.</p>
               }
@@ -756,15 +767,8 @@
 
   <!-- Note delete + cover remove ask through the shared modal instead of
        window.confirm(), which cannot carry theme tokens. -->
-  <app-confirm-modal
-    [isOpen]="!!pendingNoteDelete()"
-    heading="Delete this note?"
-    description="The note and its highlight link are removed. This cannot be undone."
-    confirmLabel="Delete"
-    (confirm)="confirmNoteDelete()"
-    (cancel)="cancelNoteDelete()"
-  >
-  </app-confirm-modal>
+  <!-- Delete and Keep with writing for the notes: the Brain's own dialogs. -->
+  <app-brain-note-dialogs />
 
   <app-confirm-modal
     [isOpen]="coverDeletePending()"

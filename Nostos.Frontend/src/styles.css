@@ -1126,7 +1126,7 @@
    that race.
 
    The two component rules that own the state:
-     second-brain.component.css  .index-item.active / :hover / :focus-within
+     brain-sidebar.component.css .topic-row.active / :hover / :focus-within
      sidebar-collections         .nav-item.active::before */
 
 /* Elevation, not a glow: `--shadow-glow` is a mint-tinted bloom and painted a
@@ -1440,7 +1440,7 @@ p {
    --------------------------------------------------------------------------- */
 
 /* Screen-reader-only. Declared ONCE, globally: it was duplicated in
-   second-brain.component.css and topic-map.component.css with byte-identical
+   the old Brain's stylesheet and topic-map.component.css with byte-identical
    bodies. Duplicated utilities are a drift risk with no upside — the copies do
    not vary per surface, and Angular's encapsulation means a global rule is
    exactly how a shared utility should be expressed. `check:design` fails if a

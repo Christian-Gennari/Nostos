@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { WorkspaceLayout } from './layout/workspace-layout/workspace-layout.component';
+import { secondBrainRedirect } from './brain/brain-redirect';
 
 export const routes: Routes = [
   {
@@ -42,17 +43,13 @@ export const routes: Routes = [
         path: 'library',
         loadComponent: () => import('./library/library.component').then((m) => m.Library),
       },
-      // The rebuilt Brain (docs/brain.md). Not in the dock until the old Brain
-      // below is retired.
+      // The Brain (docs/brain.md): places, topics and the map.
       {
         path: 'brain',
         loadChildren: () => import('./brain/brain.routes').then((m) => m.BRAIN_ROUTES),
       },
-      {
-        path: 'second-brain',
-        loadComponent: () =>
-          import('./second-brain/second-brain.component').then((m) => m.SecondBrain),
-      },
+      // The old Brain's address: saved links and history land in the new one.
+      { path: 'second-brain', pathMatch: 'full', redirectTo: secondBrainRedirect },
       {
         path: 'studio',
         loadComponent: () =>

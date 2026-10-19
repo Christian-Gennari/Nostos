@@ -30,7 +30,7 @@ export type AssistantSurface =
   | 'reader'
   | 'library'
   | 'book-detail'
-  | 'second-brain'
+  | 'brain'
   | 'studio'
   | 'settings'
   | 'home'
@@ -214,7 +214,7 @@ export class AssistantContextService {
     else if (path.startsWith('/read')) surface = 'reader';
     else if (path.startsWith('/library/')) surface = 'book-detail';
     else if (path.startsWith('/library')) surface = 'library';
-    else if (path.startsWith('/second-brain')) surface = 'second-brain';
+    else if (path === '/brain' || path.startsWith('/brain/')) surface = 'brain';
     else if (path.startsWith('/studio')) surface = 'studio';
     else if (path.startsWith('/settings')) surface = 'settings';
 

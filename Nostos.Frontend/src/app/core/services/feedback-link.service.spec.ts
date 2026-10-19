@@ -48,8 +48,9 @@ describe('feedbackOriginForUrl', () => {
     expect(feedbackOriginForUrl('/library/2f4b')).toBe('library');
     expect(feedbackOriginForUrl('/library/2f4b?tab=notes')).toBe('library');
     expect(feedbackOriginForUrl('/read/2f4b')).toBe('reader');
-    expect(feedbackOriginForUrl('/second-brain')).toBe('brain');
-    expect(feedbackOriginForUrl('/second-brain?topicId=abc')).toBe('brain');
+    expect(feedbackOriginForUrl('/brain')).toBe('brain');
+    expect(feedbackOriginForUrl('/brain/topics/abc?with=def')).toBe('brain');
+    expect(feedbackOriginForUrl('/brainstorm')).toBeNull();
     expect(feedbackOriginForUrl('/studio')).toBe('studio');
     expect(feedbackOriginForUrl('/settings')).toBe('settings');
   });

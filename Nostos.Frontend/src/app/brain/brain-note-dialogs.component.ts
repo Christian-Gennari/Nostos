@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { BrainWritingHandoffComponent } from '../second-brain/writing-handoff/brain-writing-handoff.component';
+import { BrainWritingHandoffComponent } from './writing-handoff/brain-writing-handoff.component';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 
 /** The dialogs a page's note actions open: delete, and keep with a writing. */

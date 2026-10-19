@@ -60,7 +60,11 @@ import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
-import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteItemComponent } from '../ui/note-item/note-item.component';
+import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
+import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
+import { BrainStateService } from '../brain/brain-state.service';
+import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { BooksService } from '../core/services/books.service';
@@ -94,7 +98,8 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
     EditionsModal,
     ConfirmModal,
     TopicInputComponent,
-    NoteCardComponent,
+    NoteItemComponent,
+    BrainNoteDialogsComponent,
     StarRatingComponent,
     ButtonComponent,
     IconButtonComponent,
@@ -103,7 +108,7 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
     ...NOSTOS_MENU,
     DropdownComponent,
   ],
-  providers: [BookDetailStore],
+  providers: [BookDetailStore, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './book-detail.component.html',
   styleUrls: ['./book-detail.component.css'],
 })
@@ -114,6 +119,10 @@ export class BookDetail implements OnInit, OnDestroy {
 
   // Inject the Store
   readonly store = inject(BookDetailStore);
+  /** The book's notes are the Brain's cards, with the Brain's actions. */
+  readonly brain = inject(BrainStateService);
+  readonly noteActions = inject(BrainNoteActionsService);
+  readonly suggestions = inject(BrainTopicSuggestionsService);
   private preferences = inject(LibraryPreferencesService);
   private booksService = inject(BooksService);
   private toast = inject(ToastService);
@@ -186,6 +195,11 @@ export class BookDetail implements OnInit, OnDestroy {
    * still collapses when the window narrows — and expands again when it grows.
    */
   constructor() {
+    this.brain.ensureLoaded();
+    this.noteActions.attach({
+      replace: (note) => this.store.replaceNote(note),
+      remove: (noteId) => this.store.removeNote(noteId),
+    });
     this.libraryChanges
       .watch()
       .pipe(takeUntilDestroyed())
@@ -467,44 +481,12 @@ export class BookDetail implements OnInit, OnDestroy {
   addNote(): void {
     const content = this.newNote().trim();
     if (!content) return;
-    this.store.addNote(content);
+    this.store.addNote(content, () => this.brain.refresh());
     this.newNote.set('');
   }
 
-  onUpdateNote(event: {
-    id: string;
-    content: string;
-    selectedText?: string;
-    highlightColour?: string;
-    passageTitle?: string;
-  }): void {
-    this.store.updateNote(event.id, event.content, event.selectedText, event.highlightColour, event.passageTitle);
-  }
-
-  onDeleteNote(id: string): void {
-    this.pendingNoteDelete.set(id);
-  }
-
-  cancelNoteDelete(): void {
-    this.pendingNoteDelete.set(null);
-  }
-
-  confirmNoteDelete(): void {
-    const id = this.pendingNoteDelete();
-    if (!id) return;
-    this.pendingNoteDelete.set(null);
-    this.store.deleteNote(id);
-  }
-
-  /** Note id awaiting delete confirmation (asked through ConfirmModal). */
-  readonly pendingNoteDelete = signal<string | null>(null);
-
   /** True while the cover-remove question is up (asked through ConfirmModal). */
   readonly coverDeletePending = signal(false);
-
-  onTopicClick(topicId: string): void {
-    this.goToTopic(topicId);
-  }
 
   // --- MANUAL WORK MEMBERSHIP (issue #143) ---
   // The surface itself is a modal (EditionsModal); this component owns the state
@@ -756,10 +738,6 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   // --- Navigation & Helpers ---
-
-  goToTopic(topicId: string): void {
-    this.router.navigate(['/second-brain'], { queryParams: { topicId } });
-  }
 
   switchEdition(id: string): void {
     this.preferences.setActiveEditionId(this.store.book()?.workId, id);
