@@ -414,15 +414,28 @@ export async function checkZenChromeHidden(page: Page): Promise<GeometryCheck> {
     '.editor-status',
     'app-markdown-editor .editor-toolbar',
   ];
+  // Hidden means not on screen, however the surface hides it: display none,
+  // visibility hidden, fully transparent, or slid out of the viewport (the
+  // writing room's rails slide away rather than leave the layout).
   const displays = await page.evaluate((sels) => {
     const out: Record<string, string> = {};
     for (const sel of sels) {
       const el = document.querySelector(sel);
-      out[sel] = el ? getComputedStyle(el).display : '<absent>';
+      if (!el) {
+        out[sel] = '<absent>';
+        continue;
+      }
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      const onScreen = rect.width > 0 && rect.height > 0
+        && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight;
+      out[sel] = style.display === 'none' ? 'none'
+        : style.visibility === 'hidden' || Number(style.opacity) === 0 || !onScreen ? 'off-screen'
+        : style.display;
     }
     return out;
   }, selectors);
-  const violations = Object.entries(displays).filter(([, d]) => d !== 'none' && d !== '<absent>');
+  const violations = Object.entries(displays).filter(([, d]) => d !== 'none' && d !== 'off-screen' && d !== '<absent>');
   const metrics = { displays };
   return violations.length === 0
     ? passCheck('zen-chrome-hidden', `zen hides all chrome: ${selectors.join(', ')}`, metrics)

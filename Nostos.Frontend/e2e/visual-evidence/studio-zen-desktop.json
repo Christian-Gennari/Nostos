@@ -1,6 +1,6 @@
 {
   "artifact": "studio-zen-desktop.png",
-  "capturedAt": "2026-10-16T07:10:59.797Z",
+  "capturedAt": "2026-10-19T12:47:47.262Z",
   "name": "studio-zen-desktop",
   "surface": "studio",
   "viewport": {
@@ -21,15 +21,14 @@
     {
       "id": "zen-chrome-hidden",
       "pass": true,
-      "message": "zen hides all chrome: .sidebar-left, .sidebar-right, .editor-header, .editor-status, .tox-menubar, .tox-toolbar-overlord",
+      "message": "zen hides all chrome: .sidebar-left, .sidebar-right, .editor-header, .editor-status, app-markdown-editor .editor-toolbar",
       "metrics": {
         "displays": {
-          ".sidebar-left": "none",
+          ".sidebar-left": "off-screen",
           ".sidebar-right": "none",
           ".editor-header": "none",
           ".editor-status": "<absent>",
-          ".tox-menubar": "<absent>",
-          ".tox-toolbar-overlord": "none"
+          "app-markdown-editor .editor-toolbar": "<absent>"
         }
       }
     },
