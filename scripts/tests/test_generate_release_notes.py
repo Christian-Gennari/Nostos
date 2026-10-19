@@ -78,7 +78,30 @@ class EditorialTests(unittest.TestCase):
     def test_breaking_prefix_pr_suffix_and_link(self):
         self.assertEqual(notes.entry(change("feat(reader)!: read offline (#32)", number=32,
                                            url="https://github.com/example/nostos/pull/32")),
-                         ("reader", "Read offline. ([#32](https://github.com/example/nostos/pull/32))"))
+                         ("breaking", "Read offline. ([#32](https://github.com/example/nostos/pull/32))"))
+
+    def test_breaking_changes_surface_whatever_their_type_scope_or_area(self):
+        for title, labels, body in (("build!: require PostgreSQL 17", (), ""),
+                                    ("chore(deps): drop the legacy importer", ("breaking-change",), ""),
+                                    ("feat(library): new storage layout", ("area: library",),
+                                     "Moves files.\n\nBREAKING CHANGE: books move to /data/library")):
+            with self.subTest(title=title):
+                self.assertEqual(notes.entry(change(title, labels, body))[0], "breaking")
+        self.assertIsNone(notes.entry(change("build!: require PostgreSQL 17", ["release-note:skip"])))
+
+    def test_upgrade_note_beats_release_notes(self):
+        body = ("## Release notes\n\nFaster sync.\n\n## Before you upgrade\n\n"
+                "Back up /data, then set NOSTOS_SYNC_MODE.\n\n## Tests\n\nDone.")
+        self.assertEqual(notes.entry(change("feat(sync)!: new sync engine", body=body)),
+                         ("breaking", "Back up /data, then set NOSTOS_SYNC_MODE."))
+        self.assertEqual(notes.entry(change("fix!: rename setting",
+                                            body="BREAKING CHANGE: rename LIBRARY_ROOT to Storage__BooksRoot")),
+                         ("breaking", "Rename LIBRARY_ROOT to Storage__BooksRoot."))
+
+    def test_breaking_section_comes_first(self):
+        rendered = notes.render([change("feat(reader): read offline"), change("fix!: rename setting")],
+                                "Unreleased", "a", "b", None)
+        self.assertLess(rendered.index("Before you upgrade"), rendered.index("Reader & Notes"))
 
     def test_empty_sections_deduplication_and_order(self):
         rendered = notes.render([change("fix(ui): clearer settings"), change("feat(reader): read offline"),

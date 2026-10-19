@@ -15,6 +15,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SECTIONS = OrderedDict([
+    ("breaking", "⚠️ Before you upgrade"),
     ("reader", "📖 Reader & Notes"),
     ("library", "📚 Library & Discovery"),
     ("assistant", "🤖 Ask Nostos"),
@@ -31,7 +32,9 @@ INTERNAL_SCOPES = {
 }
 PUBLIC_TYPES = {"feat", "fix", "perf", "ux", "revert"}
 SKIP_LABELS = {"release-note:skip", "release-note:none", "skip-changelog"}
-CONVENTIONAL = re.compile(r"^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$", re.DOTALL)
+BREAKING_LABELS = {"breaking-change", "breaking"}
+CONVENTIONAL = re.compile(r"^(\w+)(?:\(([^)]+)\))?(!)?:\s*(.+)$", re.DOTALL)
+BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:[ \t]*(.*)$", re.MULTILINE | re.DOTALL)
 PR_NUMBER = re.compile(r"^Merge pull request #(\d+)\b|\(#(\d+)\)\s*$")
 CALVER = re.compile(r"^v(\d{4})\.(\d{2})\.(\d{2})(?:\.([1-9]\d*))?$")
 INTRO = (
@@ -109,6 +112,16 @@ def paragraph(text: str) -> str:
     return re.split(r"\n\s*\n|\n(?=[#>|]|[-*] |```|<!--)", text, maxsplit=1)[0].strip()
 
 
+def upgrade_note(body: str) -> str:
+    """What a self-hoster must do before upgrading, when the PR spells it out."""
+    match = re.search(r"^#{1,6}\s+Before you upgrade\s*\n(.*?)(?=^#{1,6}\s|\Z)",
+                      body, re.DOTALL | re.MULTILINE | re.IGNORECASE)
+    if match and paragraph(match[1]):
+        return paragraph(match[1])
+    footer = BREAKING_FOOTER.search(body)
+    return paragraph(footer[1]) if footer else ""
+
+
 def summary(body: str) -> str:
     explicit = re.search(r"<!--\s*release-note\s*-->(.*?)<!--\s*/release-note\s*-->",
                          body, re.DOTALL | re.IGNORECASE)
@@ -130,21 +143,27 @@ def entry(change: dict) -> tuple[str, str] | None:
     if labels & SKIP_LABELS:
         return None
     match = CONVENTIONAL.match(change["title"])
-    kind, scope, title = (match[1].lower(), (match[2] or "").lower(), match[3]) if match else (
+    kind, scope, title = (match[1].lower(), (match[2] or "").lower(), match[4]) if match else (
         "", "", change["title"])
-    if scope in INTERNAL_SCOPES or (match and kind not in PUBLIC_TYPES):
+    body = change.get("body", "") or ""
+    # A breaking change is reader-facing whatever its type or scope: a removed
+    # setting or a required migration matters most to the people upgrading.
+    breaking = bool(match and match[3]) or bool(BREAKING_FOOTER.search(body)) or bool(
+        labels & BREAKING_LABELS)
+    if not breaking and (scope in INTERNAL_SCOPES or (match and kind not in PUBLIC_TYPES)):
         return None
-    area = ""
+    area = "breaking" if breaking else ""
     # Product-area labels take precedence over commit scopes. Section order breaks ties.
-    for key, scopes in SCOPES.items():
-        if any(re.sub(r"^area:\s*", "", label) in scopes for label in labels if label.startswith("area:")):
-            area = key
-            break
+    if not area:
+        for key, scopes in SCOPES.items():
+            if any(re.sub(r"^area:\s*", "", label) in scopes for label in labels if label.startswith("area:")):
+                area = key
+                break
     if not match and not area and "release-note" not in labels:
         return None
     if not area:
         area = next((key for key, scopes in SCOPES.items() if scope in scopes), "other")
-    title = summary(change.get("body", "")) or title
+    title = (upgrade_note(body) if breaking else "") or summary(body) or title
     title = re.sub(r"\s*\(#\d+\)\s*$", "", title)
     title = re.sub(r"\s+", " ", title).strip()
     if not title:

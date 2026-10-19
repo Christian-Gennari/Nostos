@@ -17,12 +17,17 @@ COPY Nostos.Backend/ Nostos.Backend/
 COPY Nostos.Product/ Nostos.Product/
 COPY Nostos.Shared/ Nostos.Shared/
 COPY --from=frontend /src/Nostos.Frontend/dist/Nostos.Frontend/browser/ Nostos.Backend/wwwroot/
+# The commit this image is built from, stamped into the assemblies'
+# informational version (1.0.0+<sha>). Declared here, after restore, so a new
+# revision only rebuilds the publish layer.
+ARG SOURCE_REVISION=""
 RUN dotnet publish Nostos.Backend/Nostos.Backend.csproj \
     --configuration Release \
     --output /app/publish \
     --no-restore \
     -p:SkipFrontendBuild=true \
-    -p:UseAppHost=false
+    -p:UseAppHost=false \
+    -p:SourceRevisionId="$SOURCE_REVISION"
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS runtime
 WORKDIR /app
