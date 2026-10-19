@@ -154,6 +154,10 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
         .waitFor({ timeout: 30_000 });
       await page.locator('.file-list .tree-row', { hasText: DOC_TITLE }).click();
       await page.locator(STUDIO_PAGE_SELECTOR).waitFor({ timeout: 45_000 });
+      // The blank page matches STUDIO_PAGE_SELECTOR too, so wait for the
+      // document's own words before capturing, or the capture can show the
+      // page between documents with the rail still closing over it.
+      await expect(page.locator('app-markdown-editor')).toContainText('representative prose');
       await page.waitForTimeout(800); // let the editor's fonts and layout settle
       await expect(page.locator('.editor-header .zen-toggle')).toBeVisible();
 
