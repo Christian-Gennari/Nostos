@@ -84,9 +84,7 @@ async function ensureSeed(fixture: ReturnType<typeof loadFixture>) {
 }
 
 async function openMap(page: import('@playwright/test').Page, baseUrl: string) {
-  await page.goto(`${baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-  await page.locator('.view-mode-control .vt-opt').last().waitFor({ timeout: 30_000 });
-  await page.locator('.view-mode-control .vt-opt:last-child').click();
+  await page.goto(`${baseUrl}/brain/map`, { waitUntil: 'domcontentloaded' });
   await page.locator('.sigma-container canvas').first().waitFor({ timeout: 30_000 });
   await page.waitForFunction(
     () => document.querySelector('.topic-map')?.getAttribute('aria-busy') === 'false',
@@ -125,198 +123,6 @@ async function nodeScreenPosition(
     return found;
   }, label);
 }
-
-test('map view closes the index rail and hands its space to the graph', async ({ browser }) => {
-  const fixture = loadFixture();
-  await ensureSeed(fixture);
-  const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
-  try {
-    await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-    await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-
-    // List view: the rail is on screen and holds a real track.
-    const before = await page.evaluate(() => {
-      const index = document.querySelector('.index-col') as HTMLElement | null;
-      const layout = document.querySelector('.brain-layout') as HTMLElement | null;
-      const box = (sel: string) => {
-        const el = document.querySelector(sel) as HTMLElement | null;
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
-      };
-      return {
-        indexWidth: index ? Math.round(index.getBoundingClientRect().width) : 0,
-        columns: layout ? getComputedStyle(layout).gridTemplateColumns : '',
-        // Captured in list view so the map view below can be compared against it
-        // control-for-control.
-        headerBox: box('.brain-header'),
-        searchBox: box('.brain-header .search-box'),
-        toggleBox: box('.brain-header .view-mode-control'),
-      };
-    });
-    expect(before.indexWidth, 'list view shows the index rail').toBeGreaterThan(200);
-    expect(before.headerBox, 'the header exists in list view').not.toBeNull();
-
-    await openMap(page, fixture.baseUrl);
-
-    const after = await page.evaluate(() => {
-      const index = document.querySelector('.index-col') as HTMLElement | null;
-      const layout = document.querySelector('.brain-layout') as HTMLElement | null;
-      const col = document.querySelector('.content-col') as HTMLElement | null;
-      const header = document.querySelector('.brain-header') as HTMLElement | null;
-      const search = document.querySelector('.brain-header .search-box') as HTMLElement | null;
-      const toggle = document.querySelector('.brain-header .view-mode-control') as HTMLElement | null;
-      const box = (el: HTMLElement | null) =>
-        el ? { x: Math.round(el.getBoundingClientRect().x), y: Math.round(el.getBoundingClientRect().y), w: Math.round(el.getBoundingClientRect().width), h: Math.round(el.getBoundingClientRect().height) } : null;
-      return {
-        indexDisplay: index ? getComputedStyle(index).display : 'absent',
-        columns: layout ? getComputedStyle(layout).gridTemplateColumns : '',
-        colWidth: col ? Math.round(col.getBoundingClientRect().width) : 0,
-        headerBox: box(header),
-        searchBox: box(search),
-        toggleBox: box(toggle),
-        // The header must be the ONLY home for the switch and the search.
-        modeSwitchCount: document.querySelectorAll('[aria-label="Topic view"]').length,
-        searchInputCount: document.querySelectorAll('input[aria-label="Search topics and notes"]').length,
-        mapToolbarCount: document.querySelectorAll('.map-toolbar').length,
-      };
-    });
-    console.log('MAP FOCUS GEOMETRY:', JSON.stringify({ before, after }, null, 1));
-    await capturePng(page, 'brain-map-focus-desktop');
-
-    // The rail is CLOSED, and the grid track it occupied is gone with it.
-    // Hiding the aside alone would leave an empty 280-320px column and the
-    // graph would still sit in the remainder beside nothing.
-    expect(after.indexDisplay, 'the index rail must close in map view').toBe('none');
-    expect(
-      gridTrackCount(after.columns),
-      `the layout must collapse to ONE track (got "${after.columns}")`
-    ).toBe(1);
-    expect(
-      after.colWidth,
-      'the graph column must claim the width the rail gave up'
-    ).toBeGreaterThan(before.indexWidth + 200);
-
-    // Map view must still be escapable — but via the persistent header, which
-    // does NOT disappear with the rail. This is the whole point of the change:
-    // the control the user clicked to enter the map is still there, in the same
-    // place, so the map no longer needs a second copy of it.
-    expect(after.headerBox, 'the surface header stays in map view').not.toBeNull();
-    expect(after.modeSwitchCount, 'exactly one mode switch, not one per mode').toBe(1);
-    expect(after.searchInputCount, 'exactly one topic search').toBe(1);
-    expect(after.mapToolbarCount, 'the map must not carry a duplicate toolbar').toBe(0);
-    expect(after.headerBox!.y, 'the header stays pinned at the top').toBe(0);
-
-    // The acceptance criterion, measured rather than assumed: the header and its
-    // controls occupy the SAME pixels in both modes. If the switch moved when the
-    // mode changed, these would differ — which is the bug being fixed.
-    expect(after.headerBox, 'header geometry is unchanged by the mode switch').toEqual(before.headerBox);
-    expect(after.searchBox, 'search geometry is unchanged by the mode switch').toEqual(before.searchBox);
-    expect(after.toggleBox, 'mode switch geometry is unchanged by the mode switch').toEqual(before.toggleBox);
-  } finally {
-    await context.close();
-  }
-});
-
-test('the header\'s mode switch returns to the list view with the rail restored', async ({ browser }) => {
-  const fixture = loadFixture();
-  await ensureSeed(fixture);
-  const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
-  try {
-    await openMap(page, fixture.baseUrl);
-    // The switch lives in the persistent header now, and there is exactly one of
-    // it — the map's duplicate `.map-view-exit` is gone, so no disambiguation is
-    // needed here any more.
-    await page.locator('.brain-header .view-mode-control [aria-label="Topic view"]').click();
-
-    await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-    const restored = await page.evaluate(() => {
-      const index = document.querySelector('.index-col') as HTMLElement | null;
-      const layout = document.querySelector('.brain-layout') as HTMLElement | null;
-      return {
-        indexWidth: index ? Math.round(index.getBoundingClientRect().width) : 0,
-        indexDisplay: index ? getComputedStyle(index).display : 'absent',
-        columns: layout ? getComputedStyle(layout).gridTemplateColumns : '',
-        mapGone: !document.querySelector('app-topic-map'),
-      };
-    });
-    console.log('MAP FOCUS RESTORED:', JSON.stringify(restored, null, 1));
-
-    expect(restored.mapGone, 'the map must be gone in list view').toBe(true);
-    expect(restored.indexDisplay, 'the rail must come back').not.toBe('none');
-    expect(restored.indexWidth, 'the rail must reclaim its track').toBeGreaterThan(200);
-    expect(
-      gridTrackCount(restored.columns),
-      `the two-column grid must be restored (got "${restored.columns}")`
-    ).toBe(2);
-  } finally {
-    await context.close();
-  }
-});
-
-test('the mode switch is reachable and tappable on a phone in both modes', async ({ browser }) => {
-  const fixture = loadFixture();
-  await ensureSeed(fixture);
-  const { context, page } = await newCapturePage(browser, MOBILE_VIEWPORT, true);
-  try {
-    await openMap(page, fixture.baseUrl);
-
-    const measured = await page.evaluate(() => {
-      const box = (selector: string) => {
-        const element = document.querySelector(selector);
-        if (!element) return null;
-        const r = element.getBoundingClientRect();
-        return { w: Math.round(r.width), h: Math.round(r.height) };
-      };
-      return {
-        exit: box('.brain-header .view-mode-control [aria-label="Topic view"]'),
-        search: box('.brain-header input[aria-label="Search topics and notes"]'),
-        indexHidden:
-          getComputedStyle(document.querySelector('.index-col') as HTMLElement).display === 'none',
-        overflowX: document.documentElement.scrollWidth > window.innerWidth,
-        headerBottom: Math.round(
-          (document.querySelector('.brain-header') as HTMLElement).getBoundingClientRect().bottom
-        ),
-      };
-    });
-    console.log('BRAIN HEADER (mobile):', JSON.stringify(measured, null, 1));
-
-    // The header is the ONLY way out of map view on a phone, so the control must
-    // be reachable, not clipped, and meet the 44px coarse-pointer target.
-    expect(measured.exit, 'the mode switch must render on a phone').not.toBeNull();
-    expect(
-      measured.exit!.h,
-      'the switch must meet the 44px touch target',
-    ).toBeGreaterThanOrEqual(44);
-    expect(
-      measured.exit!.w,
-      'the switch must meet the 44px touch target',
-    ).toBeGreaterThanOrEqual(44);
-    expect(measured.search, 'the search must be reachable where the rail is closed').not.toBeNull();
-    expect(measured.indexHidden, 'the rail must be closed on a phone too').toBe(true);
-    expect(measured.overflowX, 'the header must not overflow a 390px viewport').toBe(false);
-
-    // And it actually works from this layout.
-    await page.locator('.brain-header .view-mode-control [aria-label="Topic view"]').click();
-    await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-    expect(await page.locator('app-topic-map').count(), 'the map must be gone').toBe(0);
-
-    // Back on the list, the same control is still there — the rail it lives
-    // beside is the rail it must not disappear with.
-    const stillThere = await page.evaluate(() => {
-      const toggle = document.querySelector(
-        '.brain-header .view-mode-control [aria-label="Map view"]'
-      ) as HTMLElement | null;
-      if (!toggle) return null;
-      const r = toggle.getBoundingClientRect();
-      return { w: Math.round(r.width), h: Math.round(r.height) };
-    });
-    expect(stillThere, 'the switch survives the trip back').not.toBeNull();
-    expect(stillThere!.h, 'and keeps the 44px touch target in list view').toBeGreaterThanOrEqual(44);
-  } finally {
-    await context.close();
-  }
-});
 
 test('clicking empty space clears the selection', async ({ browser }) => {
   const fixture = loadFixture();
@@ -468,21 +274,14 @@ test('double-clicking a node opens that topic\'s notes', async ({ browser }) => 
     await page.mouse.click(point!.x, point!.y);
     await page.mouse.click(point!.x, point!.y);
 
-    await page.locator('.topic-title').waitFor({ timeout: 30_000 });
-    const result = await page.evaluate(() => ({
-      title: document.querySelector('.topic-title')?.textContent?.trim() ?? '',
-      mapGone: !document.querySelector('app-topic-map'),
-      indexVisible: !!document.querySelector('.index-col') &&
-        getComputedStyle(document.querySelector('.index-col') as HTMLElement).display !== 'none',
-    }));
-    console.log('MAP DOUBLE-CLICK:', JSON.stringify(result, null, 1));
+    await page.waitForURL(/\/brain\/topics\//, { timeout: 30_000 });
+    const title = page.getByRole('heading', { level: 1 });
+    await expect(title).toHaveText(target);
     await capturePng(page, 'brain-map-focus-double-click');
 
-    // The topic's notes are the destination — exactly where an index row
-    // click lands, which is the parity the request asked for.
-    expect(result.title, 'double-click must open the topic that was clicked').toBe(target);
-    expect(result.mapGone, 'opening a topic leaves map view').toBe(true);
-    expect(result.indexVisible, 'the list view is back behind the detail').toBe(true);
+    // The topic's page is the destination, as the card's Open topic is, and
+    // the map is gone behind it (Back returns to it).
+    await expect(page.locator('app-topic-map')).toHaveCount(0);
   } finally {
     await context.close();
     if (seed) await cleanupBrain(fixture.baseUrl, seed);
