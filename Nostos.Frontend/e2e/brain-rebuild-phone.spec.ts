@@ -155,3 +155,24 @@ test('the place switch opens the sidebar as a drawer', async ({ browser }) => {
     await context.close();
   }
 });
+
+test('the selection bar fits a phone, close button included', async ({ browser }) => {
+  const { baseUrl } = loadFixture();
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, serviceWorkers: 'block' });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${baseUrl}/brain?q=${encodeURIComponent(run)}`);
+    await expect(page.locator('app-note-item')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Select notes' }).click();
+    const boxes = page.locator('app-note-item input[type=checkbox]');
+    await boxes.nth(0).check();
+    await boxes.nth(1).check();
+    const bar = page.getByRole('toolbar', { name: 'Selected notes' });
+    await expect(bar).toContainText('2 selected');
+    for (const name of ['Add topic…', 'Keep with writing…', 'Delete', 'Stop selecting']) {
+      await expect(bar.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
+    }
+  } finally {
+    await context.close();
+  }
+});

@@ -436,8 +436,16 @@
     padding-left: 0.75rem;
   }
 
+  /* On a phone the actions are icons (their names stay as labels), so the
+     bar fits the width with its close button. */
   .selection-action {
+    min-width: var(--control-h-touch);
     padding-inline: 0.5rem;
+    justify-content: center;
+  }
+
+  .selection-label {
+    display: none;
   }
 }
 
