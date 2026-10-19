@@ -297,6 +297,71 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
         (await GetTopicsAsync()).Should().NotContain(t => t.Name == name);
     }
 
+    [Fact]
+    public async Task A_topic_takes_the_readers_own_words_and_an_empty_value_clears_them()
+    {
+        var name = $"Described {Guid.NewGuid():N}";
+        await CreateBookWithNotesAsync($"A note [[{name}]]");
+        var id = (await GetTopicsAsync()).Single(t => t.Name == name).Id;
+
+        var set = await Client.PutAsJsonAsync($"/api/topics/{id}/description",
+            new UpdateTopicDescriptionDto("  Living well, as I understand it.  "));
+        set.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await set.Content.ReadFromJsonAsync<TopicDto>())!.Description.Should().Be("Living well, as I understand it.");
+        (await GetTopicsAsync()).Single(t => t.Id == id).Description.Should().Be("Living well, as I understand it.");
+
+        var cleared = await Client.PutAsJsonAsync($"/api/topics/{id}/description", new UpdateTopicDescriptionDto("   "));
+        cleared.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await GetTopicsAsync()).Single(t => t.Id == id).Description.Should().BeNull();
+
+        var tooLong = await Client.PutAsJsonAsync($"/api/topics/{id}/description",
+            new UpdateTopicDescriptionDto(new string('a', 4001)));
+        tooLong.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var missing = await Client.PutAsJsonAsync($"/api/topics/{Guid.NewGuid()}/description",
+            new UpdateTopicDescriptionDto("Words"));
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Merging_topics_keeps_both_sets_of_words()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var source = $"Merge Source {suffix}";
+        var target = $"Merge Target {suffix}";
+        await CreateBookWithNotesAsync($"One [[{source}]]", $"Two [[{target}]]");
+        var topics = await GetTopicsAsync();
+        var sourceId = topics.Single(t => t.Name == source).Id;
+        var targetId = topics.Single(t => t.Name == target).Id;
+        await Client.PutAsJsonAsync($"/api/topics/{targetId}/description", new UpdateTopicDescriptionDto("Kept first."));
+        await Client.PutAsJsonAsync($"/api/topics/{sourceId}/description", new UpdateTopicDescriptionDto("Added after."));
+
+        var merged = await Client.PostAsJsonAsync($"/api/topics/{sourceId}/merge", new MergeTopicDto(targetId));
+        merged.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await GetTopicsAsync()).Single(t => t.Id == targetId).Description.Should().Be("Kept first.\n\nAdded after.");
+    }
+
+    [Fact]
+    public async Task The_cleanup_keeps_a_described_topic_that_no_note_carries()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var described = $"Kept {suffix}";
+        var bare = $"Swept {suffix}";
+        await using (var db = await OpenDbAsync())
+        {
+            db.Topics.Add(new Nostos.Backend.Data.Models.TopicModel { Topic = described, Description = "Mine." });
+            db.Topics.Add(new Nostos.Backend.Data.Models.TopicModel { Topic = bare });
+            await db.SaveChangesAsync();
+
+            await new Nostos.Backend.Data.Repositories.TopicRepository(db).DeleteOrphanedAsync();
+        }
+
+        var names = (await GetTopicsAsync()).Select(t => t.Name).ToList();
+        names.Should().Contain(described);
+        names.Should().NotContain(bare);
+    }
+
     private async Task<NoteSearchPageDto> BrowseAsync(string query) =>
         (await Client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?limit=50&{query}"))!;
 

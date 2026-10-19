@@ -1,0 +1,88 @@
+/* A topic's own words: serif paragraphs under the title, or a quiet line that
+   invites them. The whole text is the way to edit it. */
+:host {
+  display: block;
+}
+
+.words-text,
+.words-add {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  margin-inline: -0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.words-text:hover,
+.words-add:hover {
+  background: var(--bg-hover);
+}
+
+.words-add:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.words-paragraph {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.words-paragraph + .words-paragraph {
+  margin-top: 0.7rem;
+}
+
+.words-add {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+.words-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 40rem;
+}
+
+.words-field {
+  width: 100%;
+  font-family: 'Newsreader', serif;
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.words-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.words-hint {
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+@media (pointer: coarse), (hover: none) {
+  .words-add,
+  .words-edit-link,
+  .words-actions button {
+    min-height: var(--control-h-touch);
+  }
+
+  .words-hint {
+    display: none;
+  }
+}

@@ -59,7 +59,9 @@
     (openTopic)="openTopic($event)"
     (cameraKept)="keepCamera($event)"
   >
-    @if (sample(); as line) {
+    @if (focusedWords(); as words) {
+    <p mapCardDetail class="map-sample map-words">{{ words }}</p>
+    } @else if (sample(); as line) {
     <p mapCardDetail class="map-sample" [class.is-quote]="line.quote">{{ line.text }}</p>
     }
   </app-topic-map>

@@ -108,6 +108,15 @@ export class BrainStateService {
     writeStored(TOPIC_SORT_KEY, sort);
   }
 
+  /**
+   * Shows a topic as the server now has it, then reloads: the reload also
+   * supersedes any list still in flight from before the change.
+   */
+  replaceTopic(changed: TopicDto): void {
+    this.topics.update((topics) => topics.map((topic) => (topic.id === changed.id ? { ...topic, ...changed } : topic)));
+    this.refresh();
+  }
+
   topicById(id: string | null): TopicDto | null {
     return id ? this.topics().find((topic) => topic.id === id) ?? null : null;
   }
@@ -116,5 +125,6 @@ export class BrainStateService {
 /** An unchanged list keeps its identity, so every card's lookup is not rebuilt. */
 function sameTopics(a: readonly TopicDto[], b: readonly TopicDto[]): boolean {
   return a.length === b.length && a.every((topic, i) =>
-    topic.id === b[i].id && topic.name === b[i].name && topic.usageCount === b[i].usageCount);
+    topic.id === b[i].id && topic.name === b[i].name && topic.usageCount === b[i].usageCount
+    && (topic.description ?? null) === (b[i].description ?? null));
 }

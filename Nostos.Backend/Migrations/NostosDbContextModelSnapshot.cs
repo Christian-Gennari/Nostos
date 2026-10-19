@@ -1107,6 +1107,10 @@ namespace Nostos.Backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Topic")
                         .IsRequired()
                         .HasColumnType("TEXT");

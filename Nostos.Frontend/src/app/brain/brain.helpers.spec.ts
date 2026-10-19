@@ -3,6 +3,7 @@ import type { TopicDto } from '../core/services/topics.service';
 import {
   countLabel,
   defaultOrder,
+  isListedTopic,
   isOrder,
   placeTitle,
   sidebarTopics,
@@ -35,6 +36,14 @@ describe('brain helpers', () => {
     const topics = [topic('beta', 1), topic('Alpha', 3), topic('gone', 0), topic('alpha two', 3)];
     expect(sidebarTopics(topics, 'usage').map((t) => t.name)).toEqual(['Alpha', 'alpha two', 'beta']);
     expect(sidebarTopics(topics, 'az').map((t) => t.name)).toEqual(['Alpha', 'alpha two', 'beta']);
+  });
+
+  it('keeps a topic the reader described even when no note carries it', () => {
+    const kept = { ...topic('mine', 0), description: 'In my words.' };
+    const blank = { ...topic('blank', 0), description: '   ' };
+    expect(isListedTopic(kept)).toBe(true);
+    expect(isListedTopic(blank)).toBe(false);
+    expect(sidebarTopics([kept, blank, topic('used', 1)], 'az').map((t) => t.name)).toEqual(['mine', 'used']);
   });
 
   it('finds topics by name for a search, ignoring accents, most used first', () => {

@@ -54,6 +54,12 @@ public interface ITopicRepository
     Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId);
 
     /// <summary>
+    /// Sets the topic's description, or clears it when empty. Returns the topic,
+    /// or null when it is not found.
+    /// </summary>
+    Task<TopicModel?> SetDescriptionAsync(Guid id, string? description);
+
+    /// <summary>
     /// Deletes a topic and its note links. Returns false when it is not found.
     /// </summary>
     Task<bool> DeleteAsync(Guid id);

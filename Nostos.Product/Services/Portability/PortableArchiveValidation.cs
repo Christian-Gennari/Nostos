@@ -788,6 +788,12 @@ internal static class PortableArchiveValidation
                     "duplicate_topic",
                     $"Portable archive contains duplicate topic '{topic.Topic}'.");
             }
+            if (topic.Description is { Length: > TopicModel.MaxDescriptionLength })
+            {
+                throw new PortableArchiveException(
+                    "invalid_topic_description",
+                    $"Topic '{topic.Topic}' has a description longer than {TopicModel.MaxDescriptionLength} characters.");
+            }
         }
 
         var noteTopicKeys = new HashSet<(Guid NoteId, Guid TopicId)>();

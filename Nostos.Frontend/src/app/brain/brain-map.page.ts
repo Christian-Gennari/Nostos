@@ -54,6 +54,8 @@ export class BrainMapPage {
   })();
 
   readonly topics = this.state.topics;
+  /** The selected topic's own words, which the card shows before a line from its notes. */
+  readonly focusedWords = computed(() => this.state.topicById(this.focus())?.description?.trim() || null);
   readonly countText = computed(() => plural(this.state.sidebarTopics().length, 'topic'));
 
   readonly finder = signal('');
@@ -71,7 +73,8 @@ export class BrainMapPage {
   /** A line from the selected topic's newest note, so the card says what the topic holds. */
   readonly sample = toSignal(
     toObservable(this.focus).pipe(
-      switchMap((topicId) => !topicId
+      // A topic with its own words shows those instead, so its notes are not asked for.
+      switchMap((topicId) => !topicId || this.state.topicById(topicId)?.description?.trim()
         ? of(null)
         : this.notes.browse({ topicId, order: 'newest', limit: 1, offset: 0 }).pipe(
           map((page) => {

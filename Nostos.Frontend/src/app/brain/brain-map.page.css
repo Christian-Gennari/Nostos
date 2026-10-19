@@ -131,6 +131,12 @@
   -webkit-line-clamp: 3;
 }
 
+.map-words {
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 0.95rem;
+}
+
 .map-sample.is-quote {
   padding-left: 0.6rem;
   border-left: 2px solid var(--border-color);
