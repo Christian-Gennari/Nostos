@@ -5,9 +5,6 @@ Library on purpose: a sidebar of places on the left, a toolbar and one column
 on the right. Every control whose equivalent exists in the Library uses the
 Library's component, geometry, colour roles and motion. Divergence is a bug.
 
-`e2e/brain-library-parity.spec.ts` measures both pages and fails when they
-drift; `e2e/brain-row-hover.spec.ts` guards the sidebar row's states.
-
 **Before building anything, find the component the Library itself uses.** The
 Library's toolbar controls are shared primitives (`appInput`,
 `app-dropdown`, `appButton`, `appChip`); the Brain uses the same ones. Copying

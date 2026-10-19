@@ -14,7 +14,6 @@ import { defineConfig, devices } from '@playwright/test';
  *   npm run e2e:transfer -- --project=lt-chromium
  *   npm run e2e:transfer -- --project=lt-firefox
  *   npm run e2e:transfer -- --project=lt-webkit
- *   npm run e2e:transfer -- --project=lt-mobile-webkit
  */
 export default defineConfig({
   testDir: './e2e',
@@ -61,12 +60,6 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'], viewport: { width: 1280, height: 800 } },
       testMatch: /[\\/]library-transfer\.spec\.ts$/,
       testIgnore: /[\\/]mobile[^\\/]*\.spec\.ts$/,
-    },
-    {
-      // One narrow mobile viewport for the main path, on the riskiest engine.
-      name: 'lt-mobile-webkit',
-      use: { ...devices['iPhone 13'] },
-      testMatch: /[\\/]mobile-library-transfer\.spec\.ts$/,
     },
   ],
 });

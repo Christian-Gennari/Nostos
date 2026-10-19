@@ -758,10 +758,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     });
     sigma.on('afterRender', () => this.drawLabels());
 
-    // Keep the renderer and the simulation reachable for diagnostics and for the
-    // visual-verification harness, which measures graph geometry through the live
-    // instances. Read-only introspection: no application behaviour depends on
-    // these handles.
+    // Keep the renderer and the simulation reachable for diagnostics.
+    // Read-only introspection: no application behaviour depends on these
+    // handles.
     //
     // `__nostosLayout` is the d3 simulation, which is where the physics questions
     // are answered from — alpha, whether the loop is still running, and each

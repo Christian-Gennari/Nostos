@@ -48,4 +48,3 @@ The production build registers the Angular service worker (`ngsw-config.json`, `
 `ngsw-config.json` therefore declares `navigationUrls` explicitly: the Angular defaults plus `!/api` and `!/opds` (bare path **and** `/**`). This mirrors the backend rule that the SPA shell never answers those namespaces (`Program.cs`).
 
 - Adding a backend namespace under a new root path means adding an exclusion pair here too.
-- The policy is guarded by `e2e/service-worker-navigation.spec.ts` (real production build, real backend): API navigations must download the exact file bytes, and client routes must still be answered from the app-shell cache.

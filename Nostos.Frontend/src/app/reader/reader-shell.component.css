@@ -306,8 +306,7 @@
 }
 
 /* The pager. Deliberately the only chrome at the bottom: page turns are what a
-   thumb reaches for, and this is what the PDF reader's bottom clearance is
-   measured against (e2e/support/visual-capture.ts). */
+   thumb reaches for, and the PDF reader's last page must clear it. */
 .reader-toolbar {
   min-height: var(--toolbar-height);
   background: var(--bg-surface);

@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-import { apiGet, apiPost, loadFixture } from './support/fixture';
+import { apiGet, apiPost, apiPut, loadFixture } from './support/fixture';
 import { apiDelete, cleanupBrain, snapshotTopicIds } from './support/brain-fixture';
-import { apiPut } from './support/visual-capture';
 import type { Note, NoteSearchHit } from '../src/app/core/dtos/note.dtos';
 import type {
   WritingContentDto,

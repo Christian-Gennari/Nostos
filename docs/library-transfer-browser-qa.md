@@ -13,7 +13,6 @@ cd Nostos.Frontend
 npm run e2e:transfer -- --project=lt-chromium
 npm run e2e:transfer -- --project=lt-firefox
 npm run e2e:transfer -- --project=lt-webkit
-npm run e2e:transfer -- --project=lt-mobile-webkit
 ```
 
 Run **one browser per invocation**: the global setup builds once and starts a
@@ -178,5 +177,5 @@ system dependencies to every push, while `frontend.yml` currently installs
 Chromium only. A scheduled/manual Chromium lane
 (`.github/workflows/library-transfer-browser-qa.yml`, weekly cron plus
 `workflow_dispatch`) runs the whole Chromium desktop suite on the real
-backend. Firefox, WebKit and mobile WebKit remain the local acceptance runs
+backend. Firefox and WebKit remain the local acceptance runs
 above; the default `npm test`/`npm run e2e` and their runtimes are unchanged.

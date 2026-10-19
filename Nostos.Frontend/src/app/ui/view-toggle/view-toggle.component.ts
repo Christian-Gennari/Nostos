@@ -70,9 +70,8 @@ const GLYPH_SIZE = 18;
  * in the Brain). That is load-bearing, not cosmetic:
  *
  *  - the two surface stylesheets and their specs select the track by those
- *    classes, and so does `e2e/brain-library-parity.spec.ts`, which exists to
- *    assert the two surfaces render the SAME control — with one component that
- *    parity is now structural instead of a CSS coincidence;
+ *    classes; with one component, the two surfaces rendering the SAME control
+ *    is structural instead of a CSS coincidence;
  *  - it lets a surface keep a LAYOUT-only declaration (the Brain pins
  *    `flex: 0 0 auto` so the toolbar cannot squeeze the track) while the control
  *    itself owns its chrome.

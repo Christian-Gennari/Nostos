@@ -1,14 +1,10 @@
 /**
- * Seed/cleanup helpers for the Second Brain specs.
+ * Seed/cleanup helpers for specs that create topics.
  *
  * Why this exists: every Playwright spec shares ONE fixture instance
- * (`workers: 1`, a single global setup), and `visual-regression.spec.ts`'s
- * `brain-empty-desktop` deliberately asserts the *pristine* empty state. A spec
- * that seeds topics into that shared database therefore poisons it for every
- * later spec — the empty-state test fails and, because the Second Brain matrix
- * is `mode: 'serial'`, its 8 remaining tests never run.
- *
- * So any spec that seeds a brain must put the fixture back the way it found it.
+ * (`workers: 1`, a single global setup), so topics one spec leaves behind show
+ * up in every later spec. Any spec that seeds topics must put the fixture back
+ * the way it found it.
  * Snapshots are taken by topic id rather than by name: two specs may legitimately
  * use the same topic names ("Attention", "Memory"), and deleting by name could
  * remove a topic another spec is relying on.

@@ -118,10 +118,4 @@ centred on it.
 
 | What | Where |
 | --- | --- |
-| Lists, topics, Undo, selection, Back | `e2e/brain-rebuild-lists.spec.ts` |
-| Sort one by one | `e2e/brain-rebuild-sort.spec.ts` |
-| The map as a place | `e2e/brain-rebuild-map.spec.ts`, `e2e/brain-map-*.spec.ts` |
-| Phone and touch | `e2e/brain-rebuild-phone.spec.ts`, `e2e/brain-dock-clearance.spec.ts` |
-| Your own words | `e2e/brain-rebuild-topic-words.spec.ts` |
-| Library parity | `e2e/brain-library-parity.spec.ts`, `e2e/brain-row-hover.spec.ts` |
 | Screenshots | `Nostos.Frontend/e2e/visual-evidence/brain-rebuild/` (`part7-*`: every place, the sorter, selection and the map at 1280 and 390, light and dark, SelfHosted and Cloud) |
