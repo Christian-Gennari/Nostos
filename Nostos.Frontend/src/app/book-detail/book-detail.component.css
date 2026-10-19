@@ -229,6 +229,10 @@
   padding: 1.5rem 2rem 0;
   display: flex;
   flex-direction: column;
+  /* The copy's `margin-top: auto` pushes it to the bottom of the band, but that
+     margin collapses to nothing once a long title + subtitle fill the band. The
+     gap is the floor, so the back button never sits flush on the eyebrow. */
+  gap: 1.5rem;
 }
 .hero-copy {
   margin-top: auto;
@@ -998,14 +1002,20 @@
     --book-hero-min-height: 340px;
   }
   .hero-inner {
-    padding: 1.1rem 1.25rem 0;
+    padding: 1.4rem 1.25rem 0;
+    gap: 1.25rem;
   }
   .hero-copy {
-    /* Overhang is 6rem here; keep the same clearance rule as desktop. */
-    padding-bottom: 7.5rem;
+    /* Overhang is 6rem here, plus a 1rem gap — a little tighter than desktop so
+       a long title's taller band does not push the actions below the fold. */
+    padding-bottom: 7rem;
   }
   .book-title {
     font-size: 2.5rem;
+  }
+  .book-subtitle {
+    font-size: 1.02rem;
+    line-height: 1.4;
   }
   .book-author {
     font-size: 1.15rem;
