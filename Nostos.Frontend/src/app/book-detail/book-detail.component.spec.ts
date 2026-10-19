@@ -361,62 +361,46 @@ describe('BookDetail reset progress', () => {
   });
 
   // ── Hero edition switcher (issues #1062, #1086) ─────────────────────────────
-  // The one place to switch edition and the one list of the work's editions. The
-  // rail's "Available Formats & Editions" card, which stacked below the notes
-  // feed on a phone and read as a second switcher, is gone. Labelling and
-  // ordering are covered in edition-switch-options.spec.ts, the control itself in
+  // The one place to switch edition and the one list of the work's editions: a
+  // pill in the status row that opens a menu of every edition. The rail's
+  // "Available Formats & Editions" card, which stacked below the notes feed on a
+  // phone and read as a second switcher, is gone. Labelling and ordering are
+  // covered in edition-switch-options.spec.ts, the control in
   // edition-switcher.component.spec.ts.
 
-  function editionOptions(): HTMLElement[] {
-    return Array.from(fixture.nativeElement.querySelectorAll('.edition-switcher .es-option'));
+  function editionTrigger(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('.strip-meta .edition-switcher .es-trigger');
   }
 
-  /** "Audiobook · 15% read": the format, then the status line. */
-  function optionText(option: HTMLElement): string {
-    const text = (selector: string) => option.querySelector(selector)?.textContent?.trim();
-    return `${text('.es-format')} · ${text('.es-status')}`;
+  /** Opens the edition menu; its items and each as "label · hint". */
+  function editionMenu(): { items: HTMLButtonElement[]; text: string[] } {
+    editionTrigger()!.click();
+    fixture.detectChanges();
+    const items = Array.from(document.querySelectorAll('.nostos-menu-item')) as HTMLButtonElement[];
+    const text = items.map((item) => {
+      const part = (selector: string) => item.querySelector(selector)?.textContent?.trim();
+      return `${part('.nostos-menu-item__label')} · ${part('.nostos-menu-item__hint')}`;
+    });
+    return { items, text };
   }
 
-  it('puts an edition switcher in the hero action area that switches on click', async () => {
+  it('puts an edition pill in the hero status row that switches from its menu', async () => {
     const router = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
 
     const nav = fixture.nativeElement.querySelector('.stage-strip .edition-switcher nav') as HTMLElement;
-    expect(nav).not.toBeNull();
     expect(nav.getAttribute('aria-label')).toBe('Switch edition');
     // It precedes the notes feed in document order, so no scrolling past notes.
     expect(nav.compareDocumentPosition(fixture.nativeElement.querySelector('.detail-grid')))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(editionTrigger()!.textContent?.trim()).toBe('EPUB');
 
-    const options = editionOptions();
-    expect(options.map((option) => option.querySelector('.es-format')?.textContent?.trim())).toEqual(['Audiobook', 'EPUB']);
-    expect(options[0].querySelector('.es-status')?.textContent?.trim()).toBe('15% read');
-
-    const audio = options[0] as HTMLButtonElement;
-    expect(audio.tagName).toBe('BUTTON');
-    audio.click();
+    editionMenu().items[0].click();
     expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
   });
 
-  it('marks the current edition with aria-current, not as a control', async () => {
-    await setup(readableBook({ fileName: 'book.epub', otherEditions: multiEditionBook().otherEditions }));
-
-    const current = editionOptions().filter((option) => option.getAttribute('aria-current') === 'page');
-    expect(current.length).toBe(1);
-    expect(current[0].tagName).toBe('SPAN');
-    expect(current[0].querySelector('.es-format')?.textContent?.trim()).toBe('EPUB');
-  });
-
-  it('renders no second editions list in the rail', async () => {
-    await setup(multiEditionBook());
-
-    expect(editionOptions().length).toBe(2);
-    expect(fixture.nativeElement.querySelector('.detail-side')?.textContent).not.toContain('Available Formats');
-    expect(fixture.nativeElement.querySelector('.edition-section')).toBeNull();
-  });
-
-  it('shows every edition progress on its option, the current one included', async () => {
+  it('lists every edition with its progress, the current one marked aria-current', async () => {
     await setup(
       readableBook({
         fileName: 'book.epub',
@@ -428,16 +412,19 @@ describe('BookDetail reset progress', () => {
       }),
     );
 
-    expect(editionOptions().map(optionText)).toEqual(['Audiobook · 15% read', 'EPUB · 42% read', 'PDF · Finished']);
-    // The current edition's figure now lives on its option, so the strip's
-    // copy of it steps aside rather than say it twice.
-    expect(fixture.nativeElement.querySelector('.strip-progress')).toBeNull();
+    const { items, text } = editionMenu();
+    expect(text).toEqual(['Audiobook · 15% read', 'EPUB · 42% read', 'PDF · Finished']);
+    expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, 'page', null]);
+    // The strip keeps the current edition's own figure.
+    expect(fixture.nativeElement.querySelector('.strip-progress')?.textContent?.trim()).toBe('42%');
   });
 
-  it('keeps the strip progress figure for a single-edition book', async () => {
-    await setup(readableBook({ progressPercent: 42 }));
+  it('renders no second editions list in the rail', async () => {
+    await setup(multiEditionBook());
 
-    expect(fixture.nativeElement.querySelector('.strip-progress')?.textContent?.trim()).toBe('42%');
+    expect(editionTrigger()).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.detail-side')?.textContent).not.toContain('Available Formats');
+    expect(fixture.nativeElement.querySelector('.edition-section')).toBeNull();
   });
 
   it('tells apart two editions of one format by their edition detail', async () => {
@@ -445,12 +432,13 @@ describe('BookDetail reset progress', () => {
       readableBook({
         fileName: 'book.epub',
         edition: '1st',
+        progressPercent: 42,
         otherEditions: [{ id: 'b2', type: 'ebook', fileName: 'other.epub', edition: '2nd', progressPercent: 0, hasFile: true }],
       }),
     );
 
-    expect(editionOptions().map((option) => option.querySelector('.es-detail')?.textContent?.trim()))
-      .toEqual(['1st edition', '2nd edition']);
+    expect(editionTrigger()!.textContent?.trim()).toBe('EPUB · 1st edition');
+    expect(editionMenu().text).toEqual(['EPUB · 1st edition · 42% read', 'EPUB · 2nd edition · Not started']);
   });
 
   // ── Collapsed notes feed (issue #1062) ──────────────────────────────────────

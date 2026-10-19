@@ -18,14 +18,12 @@ function option(overrides: Partial<EditionSwitcherOption> & { id: string }): Edi
 @Component({
   standalone: true,
   imports: [EditionSwitcherComponent],
-  template: `
-    <nostos-edition-switcher label="Switch edition" [options]="options()" (switched)="opened.push($event)" />
-  `,
+  template: `<nostos-edition-switcher [options]="options()" (switched)="opened.push($event)" />`,
 })
 class HostComponent {
   readonly options = signal<EditionSwitcherOption[]>([
-    option({ id: 'a', format: 'Audiobook', concept: 'audiobook', progress: 37, description: 'Audiobook, 37% read' }),
-    option({ id: 'e', current: true, progress: 12, detail: '2nd edition' }),
+    option({ id: 'a', format: 'Audiobook', concept: 'audiobook', progress: 37 }),
+    option({ id: 'e', current: true, progress: 12, detail: '2nd edition', description: 'EPUB (2nd edition), 12% read' }),
     option({ id: 'p', format: 'PDF', concept: 'pdf', finished: true, progress: 100 }),
   ]);
   readonly opened: string[] = [];
@@ -39,74 +37,68 @@ describe('EditionSwitcherComponent', () => {
     await f.whenStable();
     f.detectChanges();
     const host = f.nativeElement as HTMLElement;
-    const nav = () => host.querySelector('nav') as HTMLElement;
-    const options = () => Array.from(host.querySelectorAll('.es-option')) as HTMLElement[];
-    const text = (el: Element, selector: string) => el.querySelector(selector)?.textContent?.trim() ?? null;
-    return { f, host, nav, options, text };
+    const trigger = () => host.querySelector('nav .es-trigger') as HTMLButtonElement;
+    const openMenu = () => {
+      trigger().click();
+      f.detectChanges();
+      return Array.from(document.querySelectorAll('.nostos-menu-item')) as HTMLButtonElement[];
+    };
+    const label = (item: Element) => item.querySelector('.nostos-menu-item__label')?.textContent?.trim();
+    return { f, host, trigger, openMenu, label };
   }
 
-  it('is a labelled nav of buttons with the current edition as plain text', async () => {
-    const { nav, options } = await setup();
+  it('is a labelled nav holding one pill that names the current edition', async () => {
+    const { host, trigger } = await setup();
 
-    expect(nav().getAttribute('aria-label')).toBe('Switch edition');
-    expect(options().map((o) => o.tagName)).toEqual(['BUTTON', 'SPAN', 'BUTTON']);
-    expect(options().map((o) => o.getAttribute('aria-current'))).toEqual([null, 'page', null]);
-    // Nothing in the row uses roving tabindex: Tab walks the editions.
-    expect(options().every((o) => !o.hasAttribute('tabindex'))).toBe(true);
+    expect(host.querySelector('nav')?.getAttribute('aria-label')).toBe('Switch edition');
+    expect(trigger().querySelector('.es-value')?.textContent?.trim()).toBe('EPUB · 2nd edition');
+    expect(trigger().getAttribute('aria-label')).toBe('Edition: EPUB · 2nd edition. Switch edition');
+    expect(trigger().title).toBe('EPUB (2nd edition), 12% read');
   });
 
-  it('marks the current edition with a check as well as its border', async () => {
-    const { options } = await setup();
+  it('lists every edition with its status, the current one checked and aria-current', async () => {
+    const { openMenu, label } = await setup();
+    const items = openMenu();
 
-    expect(options()[1].querySelector('.es-check')).not.toBeNull();
-    expect(options()[0].querySelector('.es-check')).toBeNull();
-  });
-
-  it('shows status for every edition, the current one included', async () => {
-    const { options, text } = await setup();
-
-    expect(options().map((o) => text(o, '.es-status'))).toEqual(['37% read', '12% read', 'Finished']);
-    expect(text(options()[1], '.es-detail')).toBe('2nd edition');
+    expect(items.map(label)).toEqual(['Audiobook', 'EPUB · 2nd edition', 'PDF']);
+    expect(items.map((i) => i.querySelector('.nostos-menu-item__hint')?.textContent?.trim()))
+      .toEqual(['37% read', '12% read', 'Finished']);
+    expect(items.map((i) => i.getAttribute('aria-current'))).toEqual([null, 'page', null]);
   });
 
   it('says "Not started" rather than 0%', async () => {
-    const { f, options, text } = await setup();
+    const { f, openMenu } = await setup();
     f.componentInstance.options.set([option({ id: 'a', format: 'Audiobook' }), option({ id: 'e', current: true })]);
     f.detectChanges();
 
-    expect(text(options()[0], '.es-status')).toBe('Not started');
+    expect(openMenu()[0].querySelector('.nostos-menu-item__hint')?.textContent?.trim()).toBe('Not started');
   });
 
-  it('emits the edition id on click and names the edition in the tooltip', async () => {
-    const { f, options } = await setup();
+  it('emits another edition on choice and nothing for the current one', async () => {
+    const { f, openMenu } = await setup();
 
-    expect(options()[0].title).toBe('Switch to Audiobook, 37% read');
-    options()[0].click();
-    expect(f.componentInstance.opened).toEqual(['a']);
+    openMenu()[1].click();
+    expect(f.componentInstance.opened).toEqual([]);
+
+    openMenu()[2].click();
+    expect(f.componentInstance.opened).toEqual(['p']);
   });
 
-  it('collapses past three editions into the current one plus a menu, never wrapping', async () => {
-    const { f, host, options } = await setup();
-    f.componentInstance.options.set([
-      option({ id: 'a', format: 'Audiobook' }),
-      option({ id: 'e', current: true }),
-      option({ id: 'p', format: 'PDF' }),
-      option({ id: 'x', format: 'Physical', detail: '1990' }),
-    ]);
+  it('stays one pill however many editions there are', async () => {
+    const { f, host } = await setup();
+    f.componentInstance.options.set(
+      Array.from({ length: 8 }, (_, i) => option({ id: `e${i}`, current: i === 3, detail: `${i + 1}` })),
+    );
     f.detectChanges();
 
-    expect(options().map((o) => o.getAttribute('aria-current'))).toEqual(['page']);
-    const more = host.querySelector('.es-more') as HTMLButtonElement;
-    expect(more.textContent?.trim()).toBe('3 more');
-    expect(more.getAttribute('aria-label')).toBe('3 more editions');
+    expect(host.querySelectorAll('button').length).toBe(1);
+  });
 
-    more.click();
+  it('renders nothing when no option is current', async () => {
+    const { f, host } = await setup();
+    f.componentInstance.options.set([option({ id: 'a' })]);
     f.detectChanges();
-    const items = Array.from(document.querySelectorAll('.nostos-menu-item')) as HTMLButtonElement[];
-    expect(items.map((i) => i.querySelector('.nostos-menu-item__label')?.textContent?.trim()))
-      .toEqual(['Audiobook', 'PDF', 'Physical · 1990']);
 
-    items[2].click();
-    expect(f.componentInstance.opened).toEqual(['x']);
+    expect(host.querySelector('nav')).toBeNull();
   });
 });

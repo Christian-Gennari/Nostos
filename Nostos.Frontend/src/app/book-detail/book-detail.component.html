@@ -151,7 +151,7 @@
               (valueChange)="selectStatusOption($event)"
             ></app-dropdown>
 
-            @if (store.book()?.progressPercent && editionSwitchOptions().length === 0) {
+            @if (store.book()?.progressPercent) {
             <span class="strip-progress">{{ store.book()?.progressPercent }}%</span>
             }
 
@@ -167,20 +167,20 @@
               title="Toggle Favorite"
               aria-label="Toggle favorite"
             ></button>
-          </div>
 
-          <!-- Edition switcher (issues #1062, #1086): the ONLY place to switch
-               edition, and the only place the page lists a work's editions.
-               Each option, the current one included, carries its own progress,
-               so the strip's progress figure steps aside while it shows. -->
-          @if (editionSwitchOptions().length > 0) {
-          <nostos-edition-switcher
-            class="edition-switcher"
-            label="Switch edition"
-            [options]="editionSwitchOptions()"
-            (switched)="switchEdition($event)"
-          ></nostos-edition-switcher>
-          }
+            <!-- Edition switcher (issues #1062, #1086): the ONLY place to switch
+                 edition and the only list of the work's editions. A pill that
+                 opens a menu of every edition with its progress. Last in the
+                 row, so on a phone it is the one item that wraps to a line of
+                 its own. Absent for a single-edition book. -->
+            @if (editionSwitchOptions().length > 0) {
+            <nostos-edition-switcher
+              class="edition-switcher"
+              [options]="editionSwitchOptions()"
+              (switched)="switchEdition($event)"
+            ></nostos-edition-switcher>
+            }
+          </div>
 
           <div class="primary-actions">
             @if (store.isImporting()) {

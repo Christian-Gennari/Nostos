@@ -685,11 +685,6 @@
   margin-bottom: 0;
   flex-wrap: wrap;
 }
-/* Hero edition switcher (#1086). The control owns its chrome; the page only
-   places it: start-aligned beside the cover, full width under it on a phone. */
-.edition-switcher {
-  align-self: flex-start;
-}
 .divider {
   border: none;
   border-bottom: 1px solid var(--border-color);
@@ -1052,9 +1047,6 @@
   }
   .stage-strip .primary-actions {
     justify-content: center;
-  }
-  .edition-switcher {
-    align-self: stretch;
   }
 
   .detail-grid {
