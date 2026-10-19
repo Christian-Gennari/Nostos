@@ -86,6 +86,8 @@ jobs:
           # Written by the SelfHosted container job in CI, which has just
           # built this revision on main.
           cache-from: type=gha,scope=selfhosted-image
+          build-args: |
+            SOURCE_REVISION=${{ steps.source.outputs.sha }}
           tags: |
             ghcr.io/christian-gennari/nostos:latest
             ghcr.io/christian-gennari/nostos:${{ steps.source.outputs.tag }}
