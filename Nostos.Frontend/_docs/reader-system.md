@@ -186,4 +186,4 @@ Features:
 - **Jump to note:** Clicking a note with a `cfiRange` navigates the epub; clicking one with a page number navigates the PDF; an audiobook note jumps to its time, from the arrow or from the time shown on the card
 - **Edit inline:** Uses `NoteCardComponent` with topic tag support
 - **Delete:** With confirmation
-- **Topic tags:** `[[Topic]]` links rendered via `NoteFormatPipe`, clickable to navigate to Second Brain
+- **Topic tags:** `[[Topic]]` links rendered via `NoteFormatPipe`, clickable to open the topic in the Brain

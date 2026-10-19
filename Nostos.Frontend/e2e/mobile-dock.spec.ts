@@ -16,7 +16,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { loadFixture, apiPost } from './support/fixture';
+import { loadFixture, apiGet, apiPost } from './support/fixture';
 import { cleanupBrain, seedBrain } from './support/brain-fixture';
 
 const MIN_TAP_TARGET = 44; // CSS px, Apple HIG / Material minimum
@@ -414,7 +414,7 @@ test('the shell reserves exactly the dock height, leaving no dead band', async (
 
 test('the Brain dock restores a remembered query-param deep-link', async ({ page }) => {
   const topicId = '11111111-1111-1111-1111-111111111111';
-  const brainUrl = `${fixture.baseUrl}/second-brain?topicId=${topicId}`;
+  const brainUrl = `${fixture.baseUrl}/brain/map?focus=${topicId}`;
 
   await page.goto(brainUrl);
   await expect(page.locator('app-app-dock')).toBeVisible();
@@ -437,35 +437,30 @@ test('content can be scrolled clear of the dock on the reading view', async ({ p
       'On [[Attention]] and [[Memory]].',
       'On [[Attention]] and [[Practice]].',
       'On [[Memory]] and [[Practice]].',
+      // Enough cards that the topic's list scrolls past the dock.
+      ...Array.from({ length: 8 }, (_, i) => `More on [[Attention]], part ${i + 1}.`),
     ],
     ['Attention', 'Memory', 'Practice']
   );
 
   try {
-  await page.goto(`${fixture.baseUrl}/second-brain`);
-  await expect(page.locator('.index-item').first()).toBeVisible();
   // Open a topic this test seeded rather than whatever happens to sort first:
-  // the fixture is shared, and an unrelated leftover topic with no notes would
-  // render the empty state instead of cards.
-  await page.locator('.index-item', { hasText: 'Attention' }).first().click();
+  // the fixture is shared.
+  const attention = (await apiGet<Array<{ id: string; name: string }>>(fixture.baseUrl, '/api/topics'))
+    .find((topic) => topic.name === 'Attention')!;
+  await page.goto(`${fixture.baseUrl}/brain/topics/${attention.id}`);
 
-  // Wait for the detail pane to actually render its cards before measuring:
-  // reading the DOM straight after the click catches the empty state mid-transition.
-  await expect(page.locator('.content-col .reading-column .note-card').first()).toBeVisible({ timeout: 15_000 });
+  // Wait for the cards before measuring.
+  await expect(page.locator('.brain-list app-note-item').first()).toBeVisible({ timeout: 15_000 });
 
-  // Scroll the reading column to its end and confirm the last card is above the dock.
+  // Scroll the list to its end and confirm the last card is above the dock.
   const result = await page.evaluate(async () => {
-    const col = document.querySelector('.content-col') as HTMLElement | null;
+    const col = document.querySelector('.brain-scroller') as HTMLElement | null;
     const dock = document.querySelector('app-app-dock') as HTMLElement | null;
     if (!col || !dock) return null;
     col.scrollTop = col.scrollHeight;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
-    // The last BLOCK in the column, not the last note: since the detail leads
-    // with its notes, "Related through shared notes" and "Manage topic" sit
-    // below them, and measuring the last note reported their height as a gap.
-    const blocks = col.querySelectorAll(
-      '.reading-column .note-card, .related-section, .topic-management',
-    );
+    const blocks = col.querySelectorAll('.brain-list app-note-item');
     const last = blocks.length ? blocks[blocks.length - 1] : null;
     if (!last) return null;
     return {

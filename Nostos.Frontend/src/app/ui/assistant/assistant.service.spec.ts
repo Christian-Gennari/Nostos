@@ -1189,7 +1189,7 @@ describe('AssistantService voice transcript alignment', () => {
   });
 
   it('runs inline Brain proposals and accepted links without synthetic conversation entries', () => {
-    fake.set({ surface: 'second-brain', route: '/second-brain', brainReviewNoteId: 'note-1' });
+    fake.set({ surface: 'brain', route: '/brain', brainReviewNoteId: 'note-1' });
 
     const proposalTurn = service.requestTopicProposals('note-1');
     expect(proposalTurn).toBeTruthy();
@@ -1228,7 +1228,7 @@ describe('AssistantService voice transcript alignment', () => {
   });
 
   it('does not restore an internal inline request into the visible composer or transcript', () => {
-    fake.set({ surface: 'second-brain', route: '/second-brain', brainReviewNoteId: 'note-1' });
+    fake.set({ surface: 'brain', route: '/brain', brainReviewNoteId: 'note-1' });
     service.requestTopicProposals('note-1');
     const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.context.brainReviewNoteId).toBe('note-1');
@@ -1236,7 +1236,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     http.verify();
     TestBed.resetTestingModule();
-    configureService({ surface: 'second-brain', route: '/second-brain', brainReviewNoteId: 'note-1' });
+    configureService({ surface: 'brain', route: '/brain', brainReviewNoteId: 'note-1' });
 
     expect(service.draft()).toBe('');
     expect(service.entries()).toEqual([]);

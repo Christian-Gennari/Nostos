@@ -1,0 +1,216 @@
+@if (selectable()) {
+<label class="note-item-select">
+  <input
+    type="checkbox"
+    appCheckbox
+    [checked]="selected()"
+    [attr.aria-label]="'Select note from ' + (note().bookTitle || 'an unknown book')"
+    (change)="toggleSelected($any($event.target).checked)"
+  />
+</label>
+}
+
+<article class="note-item-body" [attr.aria-label]="'Note from ' + (note().bookTitle || 'an unknown book')">
+  @if (editing()) {
+  <form class="note-item-edit" (ngSubmit)="saveEdit()" (keydown.escape)="cancelEdit()">
+    @if (isPassage()) {
+    <label class="note-item-label" [attr.for]="'note-item-title-' + note().id">Passage title</label>
+    <input
+      appInput
+      controlSize="compact"
+      maxlength="300"
+      [id]="'note-item-title-' + note().id"
+      [ngModel]="editTitle()"
+      (ngModelChange)="editTitle.set($event)"
+      name="passageTitle"
+    />
+    } @else if (note().selectedText) {
+    <label class="note-item-label" [attr.for]="'note-item-quote-' + note().id">Quote</label>
+    <textarea
+      appTextarea
+      controlSize="compact"
+      rows="3"
+      [id]="'note-item-quote-' + note().id"
+      [ngModel]="editQuote()"
+      (ngModelChange)="editQuote.set($event)"
+      name="quote"
+    ></textarea>
+    }
+
+    @if (hasPen()) {
+    <div class="note-item-pens" role="group" aria-label="Highlight colour">
+      @for (pen of highlightColours; track pen.id) {
+      <button
+        type="button"
+        class="note-item-pen"
+        [style.background-color]="fillRef(pen.id)"
+        [class.is-active]="editColour() === pen.id"
+        [attr.aria-pressed]="editColour() === pen.id"
+        [attr.aria-label]="pen.label + ' highlighter'"
+        [title]="pen.label"
+        (click)="editColour.set(pen.id)"
+      ></button>
+      }
+    </div>
+    }
+
+    <span class="note-item-label">Your words</span>
+    <app-topic-input
+      [ngModel]="editContent()"
+      (ngModelChange)="editContent.set($event)"
+      name="content"
+      [rows]="4"
+      placeholder="Write your thought, or link a [[Topic]]"
+      (submitTrigger)="saveEdit()"
+    ></app-topic-input>
+
+    <div class="note-item-edit-actions">
+      <button appButton variant="primary" size="sm" type="submit">Save</button>
+      <button appButton variant="ghost" size="sm" type="button" (click)="cancelEdit()">Cancel</button>
+    </div>
+  </form>
+  } @else {
+
+  @if (isPassage()) {
+  <header class="note-item-passage">
+    <span class="note-item-passage-glyph" aria-hidden="true">
+      <nostos-icon concept="passage" [size]="16" />
+    </span>
+    <span class="note-item-passage-heading">
+      <span class="note-item-passage-title">{{ note().passageTitle || 'Passage' }}</span>
+      <span class="note-item-passage-size">{{ passageSize() }}</span>
+    </span>
+    <button appButton variant="secondary" size="sm" type="button" class="note-item-read" (click)="readPassage()">
+      Read passage <nostos-icon name="arrow-right" [size]="14" />
+    </button>
+  </header>
+  }
+
+  @if (quote()) {
+  <blockquote
+    class="note-item-quote nostos-accent-rail"
+    [class.is-opening]="isPassage()"
+    [class.is-clamped]="long() && !expanded()"
+    [style.--nostos-accent-rail-color]="penFill()"
+  >{{ quote() }}</blockquote>
+  }
+
+  @if (thought()) {
+  <div
+    class="note-item-thought"
+    [class.is-lead]="!quote()"
+    [class.is-clamped]="long() && !expanded()"
+    [innerHTML]="thought() | noteFormat : lookup()"
+    (click)="onThoughtClick($event)"
+  ></div>
+  }
+
+  @if (long()) {
+  <button appButton variant="link" size="sm" type="button" class="note-item-expand"
+    [attr.aria-expanded]="expanded()" (click)="expanded.set(!expanded())">
+    {{ expanded() ? 'Show less' : 'Show all' }}
+  </button>
+  }
+
+  <div class="note-item-topics" role="group" aria-label="Topics">
+    @for (chip of chips(); track chip.name) {
+    <span class="note-item-topic">
+      @if (chip.id) {
+      <a class="note-item-topic-name" [routerLink]="['/brain/topics', chip.id]">
+        <nostos-icon concept="topic" [size]="12" />{{ chip.name }}
+      </a>
+      } @else {
+      <span class="note-item-topic-name"><nostos-icon concept="topic" [size]="12" />{{ chip.name }}</span>
+      }
+      <button
+        appIconButton
+        size="xxs"
+        type="button"
+        icon="x"
+        class="note-item-topic-remove"
+        [glyphSize]="11"
+        [disabled]="busy()"
+        [attr.aria-label]="'Remove topic ' + chip.name"
+        [title]="'Remove ' + chip.name"
+        (click)="topicRemoved.emit(chip.name)"
+      ></button>
+    </span>
+    }
+    <button
+      type="button"
+      class="note-item-add"
+      [class.is-first]="topicNames().length === 0"
+      cdkOverlayOrigin
+      #addOrigin="cdkOverlayOrigin"
+      [disabled]="busy()"
+      [attr.aria-expanded]="pickerOpen()"
+      aria-haspopup="dialog"
+      (click)="pickerOpen() ? closePicker() : openPicker()"
+    >
+      <nostos-icon name="plus" [size]="12" />{{ topicNames().length === 0 ? 'Add a topic' : 'Topic' }}
+    </button>
+    <ng-template
+      cdkConnectedOverlay
+      [cdkConnectedOverlayOrigin]="addOrigin"
+      [cdkConnectedOverlayOpen]="pickerOpen()"
+      [cdkConnectedOverlayPositions]="pickerPositions"
+      [cdkConnectedOverlayPush]="true"
+      (overlayOutsideClick)="closePicker()"
+      (detach)="closePicker()"
+    >
+      <app-topic-picker-popover
+        [topics]="topics()"
+        [exclude]="topicNames()"
+        [suggestions]="suggestions()"
+        [suggestionState]="suggestionState()"
+        [label]="'Add a topic to this note'"
+        (chosen)="chooseTopic($event)"
+        (closed)="closePicker()"
+      />
+    </ng-template>
+  </div>
+
+  <app-note-capture-details [note]="note()" (restored)="restored.emit($event)" />
+
+  <footer class="note-item-meta">
+    @if (showBook()) {
+    <span class="note-item-book">{{ note().bookTitle || 'Unknown book' }}</span>
+    @if (note().bookAuthor) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ note().bookAuthor }}</span> }
+    <span class="note-item-dot" aria-hidden="true">·</span>
+    }
+    <time [attr.datetime]="note().createdAt">{{ note().createdAt | date: 'd MMM y' }}</time>
+    @if (location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
+    <a class="note-item-source" [routerLink]="source().commands" [queryParams]="source().queryParams">
+      Open in book <nostos-icon name="arrow-right" [size]="12" />
+    </a>
+  </footer>
+  }
+</article>
+
+@if (!editing()) {
+<button
+  appIconButton
+  type="button"
+  icon="dots-three"
+  size="xs"
+  class="note-item-more"
+  [glyphSize]="18"
+  aria-label="More actions for this note"
+  [nostosMenuTriggerFor]="noteMenu"
+></button>
+}
+
+<ng-template #noteMenu>
+  <nostos-menu aria-label="Note actions">
+    <button nostosMenuItem icon="pencil-simple" (triggered)="startEdit()">Edit note</button>
+    <button nostosMenuItem icon="bookmark-simple" (triggered)="keepWithWriting.emit()">Keep with writing…</button>
+    @if (showMoreFromBook()) {
+    <button nostosMenuItem icon="books" (triggered)="moreFromBook.emit()">More from this book</button>
+    }
+    @if (canSelect()) {
+    <button nostosMenuItem icon="check-square" (triggered)="selectRequested.emit()">Select</button>
+    }
+    <hr nostosMenuSeparator />
+    <button nostosMenuItem icon="trash" tone="danger" (triggered)="deleteRequested.emit()">Delete note</button>
+  </nostos-menu>
+</ng-template>

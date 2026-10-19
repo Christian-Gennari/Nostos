@@ -54,6 +54,12 @@ public interface ITopicRepository
     Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId);
 
     /// <summary>
+    /// Sets the topic's description, or clears it when empty. Returns the topic,
+    /// or null when it is not found.
+    /// </summary>
+    Task<TopicModel?> SetDescriptionAsync(Guid id, string? description);
+
+    /// <summary>
     /// Deletes a topic and its note links. Returns false when it is not found.
     /// </summary>
     Task<bool> DeleteAsync(Guid id);
@@ -71,10 +77,12 @@ public interface ITopicRepository
     void AddRange(IEnumerable<TopicModel> topics);
 
     /// <summary>
-    /// Removes all NoteTopicModel links for a given note.
+    /// Removes all NoteTopicModel links for a given note, and returns the names
+    /// of the linked topics its STORED text did not declare (link-only links:
+    /// older data, imports), so the processor can keep them.
     /// Loads then removes so changes stay in the current unit-of-work.
     /// </summary>
-    Task ClearNoteLinksAsync(Guid noteId);
+    Task<IReadOnlyList<string>> ClearNoteLinksAsync(NoteModel note);
 
     /// <summary>
     /// Stages a single note–topic link for insertion (does NOT call SaveChanges).

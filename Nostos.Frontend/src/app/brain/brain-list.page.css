@@ -1,0 +1,462 @@
+/* One Brain list: the Library's sticky glass toolbar (title | search |
+   controls), an optional topic strip and filter row, then one reading column
+   of note cards. The page owns its scroll. */
+:host {
+  display: block;
+  height: 100%;
+}
+
+.brain-scroller {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* --- Toolbar (the Library's) ---------------------------------------------- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 420px) minmax(max-content, 1fr);
+  grid-template-rows: minmax(2.4rem, auto);
+  align-items: center;
+  column-gap: 2rem;
+  padding: 1.5rem 3rem 1.25rem;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+@supports (animation-timeline: scroll()) {
+  .toolbar {
+    border-bottom-color: transparent;
+    animation: brain-toolbar-edge linear both;
+    animation-timeline: scroll();
+    animation-range: 0 24px;
+  }
+}
+
+@keyframes brain-toolbar-edge {
+  to {
+    border-bottom-color: var(--glass-border);
+  }
+}
+
+.place-switch,
+.order-select-phone,
+.book-select-phone {
+  display: none;
+}
+
+.toolbar-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.75rem;
+  row-gap: 0.1rem;
+  min-width: 0;
+}
+
+.toolbar.is-topic .toolbar-title {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--color-text-light);
+  font-size: 0.7rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 1.75rem;
+  font-weight: var(--fw-medium);
+  line-height: 2.4rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.toolbar.is-topic .page-title {
+  font-size: 2.1rem;
+}
+
+.page-count {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.search-bar-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  color: var(--color-text-light);
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.search-input {
+  width: 100%;
+  padding-left: 2.5rem;
+}
+
+.search-bar-container:has(.search-input:focus-visible) .search-icon {
+  color: var(--color-text-main);
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 0.75rem;
+}
+
+.book-select {
+  max-width: 14rem;
+  color: var(--color-text-muted);
+}
+
+.order-select {
+  min-width: 9.5rem;
+}
+
+.select-toggle[aria-pressed='true'] {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+/* --- Topic strip and filters ---------------------------------------------- */
+.topic-words,
+.often-with,
+.filter-bar,
+.narrow-notice {
+  max-width: calc(46rem + 6rem);
+  margin: 0;
+  padding: 0 3rem;
+}
+
+.topic-words {
+  padding-top: 0.75rem;
+  padding-bottom: 0.5rem;
+}
+
+.often-with {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.5rem;
+}
+
+.often-label {
+  margin-right: 0.25rem;
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+}
+
+.often-chip[aria-pressed='false'] {
+  background: transparent;
+}
+
+.narrow-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.narrow-notice > span:first-child {
+  flex: 1 1 18rem;
+}
+
+.narrow-notice strong {
+  color: var(--color-text-main);
+  font-weight: var(--fw-semibold);
+}
+
+.narrow-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.25rem;
+}
+
+.filter-chip {
+  padding-right: 0.4rem;
+}
+
+.matching-topics {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin-left: 0.25rem;
+}
+
+.topic-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-text-main);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-decoration-color: var(--border-color);
+  text-underline-offset: 3px;
+}
+
+.topic-link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* --- The reading column --------------------------------------------------- */
+.brain-list {
+  display: block;
+  max-width: calc(46rem + 6rem);
+  padding: 0.5rem 3rem 8rem;
+}
+
+.book-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 1.75rem 0 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.book-group-title {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 1.3rem;
+  font-weight: var(--fw-regular);
+}
+
+.book-group-meta {
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+.list-loading {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 0;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+  padding: 3rem 0;
+  color: var(--color-text-muted);
+}
+
+.empty-state p {
+  max-width: 38rem;
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.list-end {
+  display: flex;
+  justify-content: center;
+  min-height: 1px;
+  padding: 1.5rem 0;
+}
+
+/* --- Selection bar -------------------------------------------------------- */
+.selection-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + var(--dock-rail-h) + 16px);
+  z-index: var(--layer-system);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.45rem 0.5rem 0.45rem 1rem;
+  transform: translateX(-50%);
+  border-radius: var(--radius-surface);
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.selection-count {
+  margin-right: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Phone ---------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 4px;
+    padding: 10px 14px;
+  }
+
+  .place-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    max-width: 60%;
+    min-height: var(--control-h-touch);
+    padding: 0 0.6rem;
+    color: var(--color-text-main);
+    font-size: 1.05rem;
+    font-weight: var(--fw-semibold);
+  }
+
+  .place-switch-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toolbar-title {
+    display: none;
+  }
+
+  /* One row: the place on the left (its name ellipsizes), the page's
+     controls on the right, all on the touch rung; the search takes the next
+     row and Unsorted's Sort one by one the row after, as in the Library.
+     The controls' wrapper steps aside so each can take its own row. */
+  .toolbar-right {
+    display: contents;
+  }
+
+  .place-switch {
+    flex: 1 1 0;
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .book-select,
+  .order-select {
+    display: none;
+  }
+
+  .order-select-phone,
+  .book-select-phone {
+    display: inline-block;
+    flex: none;
+    /* The square follows the touch rung even under a fine pointer, like its neighbours. */
+    --control-h-field: var(--control-h-touch);
+  }
+
+  .select-toggle,
+  .topic-more {
+    flex: none;
+    width: var(--control-h-touch);
+    min-width: var(--control-h-touch);
+    height: var(--control-h-touch);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .select-label {
+    display: none;
+  }
+
+  .sort-start {
+    order: 4;
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: var(--control-h-touch);
+  }
+
+  .search-bar-container {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .search-bar-container .search-input {
+    min-height: var(--control-h-touch);
+  }
+
+  .topic-words,
+  .often-with,
+  .filter-bar,
+  .narrow-notice,
+  .brain-list {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* The shell already reserves the dock rail on a phone, so the list ends
+     with a normal margin, not another dock's worth of empty band. */
+  .brain-list {
+    padding-bottom: 1rem;
+  }
+
+  /* While selecting, the bar floats over the list's end: leave room for it. */
+  .brain-list.is-selecting {
+    padding-bottom: calc(var(--control-h-touch) + 2rem);
+  }
+
+  .list-end {
+    padding: 0.75rem 0;
+  }
+
+  .selection-bar {
+    bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px) + 12px);
+    padding-left: 0.75rem;
+  }
+
+  /* On a phone the actions are icons (their names stay as labels), so the
+     bar fits the width with its close button. */
+  .selection-action {
+    min-width: var(--control-h-touch);
+    padding-inline: 0.5rem;
+    justify-content: center;
+  }
+
+  .selection-label {
+    display: none;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .search-icon {
+    transition: none;
+  }
+}

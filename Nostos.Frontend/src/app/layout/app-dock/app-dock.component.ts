@@ -62,11 +62,11 @@ function isNarrowViewport(): boolean {
         </a>
 
         <a
-          [routerLink]="getLink('/second-brain')"
-          (click)="handleDockClick('/second-brain', $event)"
+          [routerLink]="getLink('/brain')"
+          (click)="handleDockClick('/brain', $event)"
           routerLinkActive="active"
           #brainRla="routerLinkActive"
-          [class.pending]="pendingDestination() === '/second-brain'"
+          [class.pending]="pendingDestination() === '/brain'"
           class="dock-item"
           title="The Brain"
         >
@@ -74,7 +74,7 @@ function isNarrowViewport(): boolean {
             <nostos-icon
               name="brain"
               [size]="20"
-              [weight]="isSelected('/second-brain', brainRla.isActive) ? 'fill' : 'regular'"
+              [weight]="isSelected('/brain', brainRla.isActive) ? 'fill' : 'regular'"
             ></nostos-icon>
           </span>
           <span class="label">Brain</span>
@@ -692,7 +692,7 @@ export class AppDockComponent {
 
   getLink(prefix: string): UrlTree {
     // History stores the complete URL so Brain can restore evidence deep-links
-    // such as /second-brain?topicId=.... RouterLink interprets a plain string
+    // such as /brain/topics/<id> or /brain/map?focus=<id>. RouterLink interprets a plain string
     // as navigation commands, so parse the remembered URL first to preserve its
     // path, query params and fragment as URL structure.
     return this.router.parseUrl(this.historyService.getLastUrl(prefix));

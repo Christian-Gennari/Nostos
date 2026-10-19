@@ -37,11 +37,7 @@ async function ensureSeed(fixture: ReturnType<typeof loadFixture>) {
 }
 
 async function openMap(page: import('@playwright/test').Page, baseUrl: string) {
-  await page.goto(`${baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-  // Wait for the view-mode control rather than an index row: a landscape phone
-  // hides the index list, so `.index-item` never becomes visible there.
-  await page.locator('.view-mode-control .vt-opt').last().waitFor({ timeout: 30_000 });
-  await page.locator('.view-mode-control .vt-opt:last-child').click();
+  await page.goto(`${baseUrl}/brain/map`, { waitUntil: 'domcontentloaded' });
   await page.locator('.sigma-container canvas').first().waitFor({ timeout: 30_000 });
   await page.waitForTimeout(900);
 }
@@ -57,8 +53,8 @@ test('map fills the main stage on desktop', async ({ browser }) => {
       const map = document.querySelector('app-topic-map') as HTMLElement;
       const stage = document.querySelector('app-topic-map .map-stage') as HTMLElement;
       const container = document.querySelector('app-topic-map .sigma-container') as HTMLElement;
-      const index = document.querySelector('.index-col') as HTMLElement;
-      const col = document.querySelector('.content-col') as HTMLElement;
+      const index = document.querySelector('app-brain-sidebar') as HTMLElement;
+      const col = document.querySelector('app-brain-map-page') as HTMLElement;
       const dock = document.querySelector('app-app-dock') as HTMLElement | null;
       // The rail is display:none in map view, so its measured width is 0 — the
       // "wider than the rail" guard has to compare against the track the grid
@@ -81,8 +77,8 @@ test('map fills the main stage on desktop', async ({ browser }) => {
       const dockRect = dock ? dock.getBoundingClientRect() : null;
 
       return {
-        inContentCol: !!map.closest('.content-col'),
-        inIndexCol: !!map.closest('.index-col'),
+        inContentCol: !!map.closest('app-brain-map-page'),
+        inIndexCol: !!map.closest('app-brain-sidebar'),
         mapWidth: Math.round(map.getBoundingClientRect().width),
         stageWidth: Math.round(stage.getBoundingClientRect().width),
         stageHeight: Math.round(stageRect.height),
@@ -91,7 +87,6 @@ test('map fills the main stage on desktop', async ({ browser }) => {
         canvasCount: document.querySelectorAll('.sigma-container canvas').length,
         railWidth: RAIL_TRACK_MAX_PX,
         indexHidden: !!index && getComputedStyle(index).display === 'none',
-        layoutColumns: getComputedStyle(col.parentElement as HTMLElement).gridTemplateColumns,
         widerThanRail: containerRect.width > RAIL_TRACK_MAX_PX * 2,
         graphOrder: graph?.order ?? 0,
         graphSize: graph?.size ?? 0,
@@ -117,13 +112,8 @@ test('map fills the main stage on desktop', async ({ browser }) => {
 
     expect(geo.inContentCol, 'map must be on the main stage').toBe(true);
     expect(geo.inIndexCol, 'map must not be in the index rail').toBe(false);
-    // Map view is a whole-surface mode: the index rail closes so the graph is
-    // not competing with a list view it already replaced.
-    expect(geo.indexHidden, 'the index rail must close in map view').toBe(true);
-    expect(
-      geo.layoutColumns,
-      `the rail's grid track must collapse too, not just the rail (got ${geo.layoutColumns})`
-    ).not.toContain('280px');
+    // The map is a place: the sidebar stays beside it, and the graph takes
+    // the rest of the column.
     expect(geo.widerThanRail, 'graph must be far wider than the old sidebar rail').toBe(true);
     expect(geo.containerHeight).toBeGreaterThanOrEqual(400);
     expect(geo.canvasCount, 'Sigma renders its layer canvases').toBeGreaterThan(0);
@@ -327,7 +317,7 @@ test('map fills the stage on mobile', async ({ browser }) => {
       const map = document.querySelector('app-topic-map') as HTMLElement;
       const stage = document.querySelector('app-topic-map .map-stage') as HTMLElement;
       const container = document.querySelector('app-topic-map .sigma-container') as HTMLElement;
-      const index = document.querySelector('.index-col') as HTMLElement;
+      const index = document.querySelector('app-brain-sidebar') as HTMLElement;
       const rect = container.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
 
@@ -363,14 +353,14 @@ test('map fills the stage on mobile', async ({ browser }) => {
       }
 
       return {
-        inContentCol: !!map.closest('.content-col'),
+        inContentCol: !!map.closest('app-brain-map-page'),
         rendered: rect.width > 0 && rect.height > 0,
         // Rendered is not enough: the bug this guards against was the map being
         // laid out *below* a full-height index rail, i.e. off-screen entirely.
         onScreen: rect.width > 0 && rect.height > 0 && rect.top < viewportHeight && rect.bottom > 0,
         visibleHeightPx: Math.round(Math.max(0, Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0))),
         viewportHeight: Math.round(viewportHeight),
-        indexHidden: !!index && getComputedStyle(index).display === 'none',
+        indexHidden: getComputedStyle(document.querySelector('.brain-sidebar-column') as HTMLElement).visibility === 'hidden',
         stageHeight: Math.round(stage.getBoundingClientRect().height),
         docScrollWidth: document.documentElement.scrollWidth,
         clientWidth: document.documentElement.clientWidth,
@@ -390,7 +380,7 @@ test('map fills the stage on mobile', async ({ browser }) => {
     expect(geo.visibleHeightPx, 'map should occupy most of the visible viewport height').toBeGreaterThanOrEqual(
       Math.round(geo.viewportHeight * 0.5)
     );
-    expect(geo.indexHidden, 'index rail must be hidden so the map owns the screen').toBe(true);
+    expect(geo.indexHidden, 'the sidebar is a closed drawer on a phone, so the map owns the screen').toBe(true);
     expect(geo.docScrollWidth, 'no horizontal overflow on mobile').toBeLessThanOrEqual(geo.clientWidth);
 
     // The map used to inherit the topic-reading layout, which reserved 96px

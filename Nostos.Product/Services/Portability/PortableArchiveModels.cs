@@ -186,7 +186,11 @@ internal sealed record PortableNote(
 
 internal sealed record PortableTopic(
     Guid Id,
-    [property: JsonPropertyName("concept")] string Topic);
+    [property: JsonPropertyName("concept")] string Topic,
+    // The reader's own words about the topic. Appended and optional, with no
+    // data version bump: an archive written before it imports every topic
+    // without a description.
+    [property: JsonPropertyName("description")] string? Description = null);
 
 internal sealed record PortableNoteTopic(
     Guid NoteId,

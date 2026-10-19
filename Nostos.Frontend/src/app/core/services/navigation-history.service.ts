@@ -11,7 +11,7 @@ export class NavigationHistoryService {
   // Default entry points for each app
   private history: Record<string, string> = {
     '/library': '/library',
-    '/second-brain': '/second-brain',
+    '/brain': '/brain',
     '/studio': '/studio',
   };
 
@@ -24,8 +24,9 @@ export class NavigationHistoryService {
         // Remember the specific path for each "App"
         if (url.startsWith('/library')) {
           this.history['/library'] = url;
-        } else if (url.startsWith('/second-brain')) {
-          this.history['/second-brain'] = url;
+        } else if (url === '/brain' || url.startsWith('/brain/') || url.startsWith('/brain?')) {
+          // The sorter is a screen of its own; the Brain reopens on the list it sorts.
+          this.history['/brain'] = url.startsWith('/brain/unsorted/sort') ? url.replace('/unsorted/sort', '/unsorted') : url;
         } else if (url.startsWith('/studio')) {
           this.history['/studio'] = url;
         }

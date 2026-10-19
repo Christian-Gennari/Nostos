@@ -1,0 +1,307 @@
+/* The Brain's sidebar, built like the Library's (sidebar-collections): the same
+   brand header, scroll area, groups, section label and place rows. Topic rows
+   are the Library's collection-row geometry (docs/brain-library-parity.md):
+   34px, count at the right, hover rename/delete overlaid on the count. */
+:host {
+  display: block;
+  height: 100%;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-body);
+}
+
+.sidebar-header {
+  flex: none;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+}
+
+.brand-lockup {
+  display: block;
+  flex: none;
+  height: 40px;
+  width: auto;
+}
+
+.brand-lockup__tile {
+  fill: var(--brand-shape);
+}
+
+.brand-lockup__arch {
+  fill: var(--brand-doorway);
+}
+
+.brand-lockup__word {
+  fill: var(--color-text-main);
+  font-family: 'Hanken Grotesk', sans-serif;
+}
+
+.nav-scroll-area {
+  flex: 1;
+  min-height: 0;
+  padding: 0.75rem 1rem 6rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0 0.25rem 0.75rem;
+  margin-bottom: 0.15rem;
+}
+
+.section-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.topic-sort {
+  color: var(--color-text-light);
+}
+
+/* --- Place rows (the Library's .nav-item) --------------------------------- */
+.nav-item {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-row);
+  color: var(--color-text-muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  text-wrap: nowrap;
+  transition: color 0.12s ease;
+}
+
+.nav-item::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: var(--radius-row);
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+
+.nav-item:hover,
+.nav-item.active {
+  color: var(--color-text-main);
+}
+
+.nav-item:hover::before,
+.nav-item.active::before {
+  background: var(--bg-hover);
+}
+
+.nav-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.nav-item .count-badge {
+  margin-left: auto;
+  padding-right: 4px;
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* --- Topic rows (the Library's collection row) ---------------------------- */
+.topic-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.topic-row-shell {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  margin-bottom: 2px;
+  --actions-w: 64px;
+}
+
+.topic-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 8px 0 12px;
+  border-radius: var(--radius-row);
+  color: var(--color-text-muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.topic-row--renaming {
+  padding: 2px 4px;
+}
+
+.topic-glyph {
+  flex: none;
+  color: var(--color-text-light);
+}
+
+.topic-row .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-row .count {
+  flex: none;
+  padding-right: 4px;
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  /* The Library's count line box, so the two sidebars' rows match. */
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.15s;
+}
+
+.topic-row-shell:hover .topic-row,
+.topic-row-shell:focus-within .topic-row,
+.topic-row.active {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.topic-row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* The actions are an overlay on the count's slot, so the name never reflows. */
+.row-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s, visibility 0s linear 0.15s;
+}
+
+.topic-row-shell:hover .row-actions,
+.topic-row-shell:focus-within .row-actions {
+  opacity: 1;
+  visibility: inherit;
+  pointer-events: auto;
+  transition: opacity 0.15s, visibility 0s;
+}
+
+.topic-row-shell:hover .topic-row .count,
+.topic-row-shell:focus-within .topic-row .count {
+  opacity: 0;
+}
+
+.topic-row-shell:hover .topic-row .name,
+.topic-row-shell:focus-within .topic-row .name {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - var(--actions-w)), transparent calc(100% - var(--actions-w) + 24px));
+  mask-image: linear-gradient(to right, black calc(100% - var(--actions-w)), transparent calc(100% - var(--actions-w) + 24px));
+}
+
+.row-action {
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
+
+.row-action:hover {
+  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  color: var(--color-text-main);
+}
+
+.row-action.danger:hover {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+}
+
+/* On touch there is no hover: the selected row shows its actions. */
+@media (hover: none) {
+  .topic-row-shell:has(.topic-row.active) .row-actions {
+    opacity: 1;
+    visibility: inherit;
+    pointer-events: auto;
+  }
+
+  .topic-row-shell:has(.topic-row.active) .topic-row .count {
+    opacity: 0;
+  }
+}
+
+/* Touch: rows and their actions on the 44px rung, as the old index had. */
+@media (pointer: coarse), (hover: none) {
+  .nav-item,
+  .topic-row-shell,
+  .topic-row {
+    min-height: 44px;
+  }
+
+  .topic-row-shell {
+    --actions-w: 96px;
+  }
+
+  /* `button.` out-weighs appIconButton's own xs rung. */
+  button.row-action {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.topics-empty {
+  margin: 0.25rem 0.75rem;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-item,
+  .nav-item::before,
+  .topic-row,
+  .row-actions {
+    transition: none;
+  }
+}

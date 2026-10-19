@@ -1,0 +1,80 @@
+/* The Library's frame (library.component.css): the page ground, a 300px
+   sidebar column with one hairline, and the page beside it. Each page owns its
+   own scroll, so the toolbar can stay at the top of it. */
+:host {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.brain-layout {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-body);
+}
+
+.brain-sidebar-column {
+  flex: 0 0 300px;
+  width: 300px;
+  height: 100%;
+  overflow: clip;
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-body);
+  z-index: 10;
+}
+
+.brain-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+}
+
+.brain-backdrop {
+  display: none;
+}
+
+/* Phone: the sidebar is a drawer, opened from the page's title. */
+@media (max-width: 768px) {
+  .brain-sidebar-column {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--layer-drawer);
+    width: min(300px, 86vw);
+    height: 100%;
+    border-right: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 220ms;
+  }
+
+  .drawer-open .brain-sidebar-column {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s;
+  }
+
+  .brain-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--layer-backdrop);
+    background: var(--overlay-medium);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brain-sidebar-column,
+  .drawer-open .brain-sidebar-column {
+    transition: none;
+  }
+}

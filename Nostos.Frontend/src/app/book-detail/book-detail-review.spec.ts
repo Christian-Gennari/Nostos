@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookDetail, REVIEW_COLLAPSE_LINES } from './book-detail.component';
 import { Book } from '../core/dtos/book.dtos';
 import { ToastService } from '../core/services/toast.service';
+import { bookNotes, brainReads, notesPage } from './book-detail.testing';
 
 /** Matches the component stylesheet (`line-height: 1.6` at `font-size: 1rem`). */
 const LINE_HEIGHT_PX = 25.6;
@@ -140,9 +141,9 @@ describe('Book Details — long review collapse (issue #159)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne('/api/books/b1').flush({ ...book, personalReview: review, description });
-    httpMock.expectOne('/api/books/b1/notes').flush([]);
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/topics').forEach((r) => r.flush([]));
+    httpMock.match(brainReads).forEach((r) => r.flush([]));
 
     // Settle the `afterNextRender` measurement pass and the render it triggers.
     await fixture.whenStable();
@@ -179,7 +180,7 @@ describe('Book Details — long review collapse (issue #159)', () => {
   });
 
   afterEach(() => {
-    httpMock.match('/api/topics').forEach((r) => r.flush([]));
+    httpMock.match(brainReads).forEach((r) => r.flush([]));
     httpMock.verify();
     restoreLayoutStubs();
   });
@@ -295,9 +296,9 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
     fixture.detectChanges();
 
     httpMock.expectOne('/api/books/b1').flush({ ...book, personalReview: review, description });
-    httpMock.expectOne('/api/books/b1/notes').flush([]);
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/topics').forEach((r) => r.flush([]));
+    httpMock.match(brainReads).forEach((r) => r.flush([]));
 
     await fixture.whenStable();
     fixture.detectChanges();
@@ -330,7 +331,7 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
   });
 
   afterEach(() => {
-    httpMock.match('/api/topics').forEach((r) => r.flush([]));
+    httpMock.match(brainReads).forEach((r) => r.flush([]));
     httpMock.verify();
     restoreLayoutStubs();
   });

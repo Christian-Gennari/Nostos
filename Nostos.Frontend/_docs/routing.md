@@ -8,7 +8,7 @@
 | `"read/:id"`     | `ReaderShell`          | Yes  | Full-screen reader (outside workspace layout) |
 | `""` (parent)    | `WorkspaceLayout`      | No   | Shell with router-outlet + dock bar           |
 | `"library"`      | `Library`              | Yes  | Book grid / list                              |
-| `"second-brain"` | `SecondBrain`          | Yes  | Topic explorer                              |
+| `"brain"` | `BRAIN_ROUTES` (lazy)  | Yes  | The Brain: places, topics, the map (docs/brain.md); `"second-brain"` redirects here |
 | `"studio"`       | `WritingStudio`        | Yes  | Writing environment                           |
 | `"library/:id"`  | `BookDetail`           | Yes  | Single book detail                            |
 | `"**"`           | redirect → `"library"` | —    | Catch-all wildcard                            |
@@ -22,7 +22,7 @@
 - `<router-outlet>` for child page views
 - `<app-app-dock>` fixed bottom navigation bar
 
-All workspace routes (`library`, `second-brain`, `studio`, `library/:id`) render inside this shell. The reader route (`read/:id`) renders **outside** the workspace layout for a distraction-free experience.
+All workspace routes (`library`, `brain`, `studio`, `library/:id`) render inside this shell. The reader route (`read/:id`) renders **outside** the workspace layout for a distraction-free experience.
 
 ## Scroll Position Restoration
 
@@ -30,7 +30,7 @@ The router is configured with `scrollPositionRestoration: 'enabled'` (via `withR
 
 ## Navigation History (Deep-Link Memory)
 
-`NavigationHistoryService` tracks the last visited URL within each section prefix (`/library`, `/second-brain`, `/studio`).
+`NavigationHistoryService` tracks the last visited URL within each section prefix (`/library`, `/brain`, `/studio`).
 
 The `AppDockComponent` uses this to restore context:
 

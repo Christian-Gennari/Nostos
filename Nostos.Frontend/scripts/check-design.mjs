@@ -849,7 +849,13 @@ const MIGRATED_UI_V1_TEMPLATES = [
   'src/app/add-book-modal/add-book-modal.component.html',
   'src/app/ui/assistant/assistant.component.html',
   'src/app/library/library.component.html',
-  'src/app/second-brain/second-brain.component.html',
+  'src/app/brain/brain-list.page.html',
+  'src/app/brain/brain-note.page.html',
+  'src/app/brain/brain-sort.page.html',
+  'src/app/brain/brain-map.page.html',
+  'src/app/brain/brain-sidebar.component.html',
+  'src/app/brain/brain-shell.component.html',
+  'src/app/brain/brain-topic-words.component.html',
   'src/app/book-detail/book-detail.component.html',
   'src/app/book-detail/editions-modal/editions-modal.component.html',
   'src/app/reader/reader-shell.component.html',
@@ -943,7 +949,14 @@ const MIGRATED_UI_V1_STYLES = [
   'src/app/add-book-modal/add-book-modal.component.css',
   'src/app/ui/assistant/assistant.component.css',
   'src/app/library/library.component.css',
-  'src/app/second-brain/second-brain.component.css',
+  'src/app/brain/brain-list.page.css',
+  'src/app/brain/brain-note.page.css',
+  'src/app/brain/brain-sort.page.css',
+  'src/app/brain/brain-map.page.css',
+  'src/app/brain/brain-sidebar.component.css',
+  'src/app/brain/brain-shell.component.css',
+  'src/app/brain/brain-topic-words.component.css',
+  'src/app/brain/brain-touch.css',
   'src/app/book-detail/book-detail.component.css',
   'src/app/book-detail/editions-modal/editions-modal.component.css',
   'src/app/reader/reader-shell.component.css',
@@ -1015,14 +1028,10 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
     // `nostos-view-toggle` now, so this template renders no raw toggle buttons.
     new Set(['item-action', 'finished-btn-list', 'fav-btn-list',
       'finished-btn-grid', 'fav-btn-grid', 'action-circle'])],
-  ['src/app/second-brain/second-brain.component.html',
-    // The icon-only list/map switch is the shared nostos-view-toggle component.
-    // brain-area is different: visible-text section navigation (Notes / Topics)
-    // with nav + aria-current semantics, so it deliberately consumes the shared
-    // toggle-opt TAB recipe rather than pretending to be an ordinary action button.
-    new Set(['brain-area', 'note-row-item', 'review-load-more', 'index-item', 'row-action',
-      'rail-foot-action', 'mobile-nav-header', 'topic-action', 'merge-picker-close',
-      'merge-target', 'merge-picker-cancel', 'merge-picker-confirm', 'related-chip', 'related-more'])],
+  ['src/app/brain/brain-topic-words.component.html',
+    // "Add your own words…" reads as a quiet line of text under the topic's
+    // title and turns into the editor in place: not an ordinary action button.
+    new Set(['words-add'])],
   ['src/app/book-detail/book-detail.component.html',
     // Gone from this ledger: 'edit-menu-item' (the Edit menu is `nostos-menu`)
     // and 'status-chip' / 'status-dropdown-item' (the status is `app-dropdown`),
@@ -1087,9 +1096,10 @@ function rawOrdinaryFieldWithoutPrimitive(html, relativePath) {
     // composition, and Brain rename/picker fields own inline commit/Escape flows.
     if (relativePath === 'src/app/ui/assistant/assistant.component.html' &&
         classes.includes('composer-field')) continue;
-    if (relativePath === 'src/app/second-brain/second-brain.component.html' &&
-        (classes.includes('inline-rename-input') ||
-         /aria-label\s*=\s*["']Search (?:topics to link|merge targets)["']/.test(raw))) continue;
+    // The sorter's topic field is a chip combobox: Enter adds a chip or saves,
+    // the arrows move through the queue on an empty field.
+    if (relativePath === 'src/app/brain/brain-sort.page.html' &&
+        /id\s*=\s*["']sort-topic-field["']/.test(raw)) continue;
 
     out.push({ tag: raw, index: tag.index });
   }

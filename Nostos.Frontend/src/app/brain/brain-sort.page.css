@@ -1,0 +1,329 @@
+/* Sort one by one: a whole screen for one note (no sidebar, no dock). A top
+   bar with the way out and where you are, the note in the reading measure,
+   the topic field under it, and the moves at the bottom. */
+:host {
+  display: block;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-surface);
+}
+
+.sort-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sort-top {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 1rem;
+  min-height: 64px;
+  padding: 0 1.5rem;
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sort-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.sort-position {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.sort-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+}
+
+.sort-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 3.5rem 1.5rem 2rem;
+}
+
+.sort-note,
+.sort-topics,
+.sort-finished {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+.sort-note {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.sort-source {
+  margin: 0;
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sort-passage-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.35rem;
+  font-weight: var(--fw-medium);
+}
+
+.sort-quote {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: clamp(1.3rem, 2.4vw, 1.75rem);
+  line-height: 1.45;
+  white-space: pre-line;
+  text-wrap: pretty;
+}
+
+.sort-quote.is-opening {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+}
+
+.sort-thought {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.sort-links {
+  display: flex;
+  gap: 1rem;
+}
+
+.sort-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 1.75rem;
+}
+
+.sort-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 3.25rem;
+  padding: 0.45rem 0.75rem;
+  border: 1.5px solid var(--color-text-main);
+  border-radius: var(--radius-field);
+  background: var(--bg-input);
+  cursor: text;
+}
+
+.sort-field:focus-within {
+  box-shadow: 0 0 0 3px var(--color-accent-faint);
+}
+
+.sort-input {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-main);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.sort-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.2rem 0.2rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+}
+
+.sort-matches {
+  margin: -0.4rem 0 0;
+  padding: 0.3rem;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.sort-match {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.6rem;
+  border-radius: var(--radius-popover-item);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.sort-match.is-active {
+  background: var(--bg-hover);
+}
+
+.sort-count {
+  margin-left: auto;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+.sort-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.sort-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 6rem;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.sort-quiet {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.sort-finished {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 4rem;
+}
+
+.sort-finished h1 {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: var(--fw-regular);
+}
+
+.sort-finished p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.sort-finished-links {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sort-loading {
+  display: flex;
+  justify-content: center;
+  padding: 4rem 0;
+}
+
+.sort-foot {
+  flex: none;
+  padding: 0.9rem 1.5rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-color);
+}
+
+.sort-foot-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+.sort-spacer {
+  flex: 1;
+}
+
+.sort-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 1.25rem;
+  margin: 0.7rem 0 0;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+kbd {
+  margin-right: 0.25rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--color-text-muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+}
+
+@media (max-width: 768px) {
+  .sort-title,
+  .sort-keys,
+  .sort-previous {
+    display: none;
+  }
+
+  .sort-body {
+    padding: 1.5rem 18px 1rem;
+  }
+
+  .sort-topics {
+    margin-top: 1.25rem;
+  }
+
+  .sort-skip,
+  .sort-save {
+    flex: 1;
+    min-height: var(--control-h-touch);
+    justify-content: center;
+  }
+
+  .sort-save {
+    flex: 2;
+  }
+
+  .sort-spacer {
+    display: none;
+  }
+}
+
+@media (pointer: coarse), (hover: none) {
+  /* The chip keeps its size; the cross's larger box reaches past it. */
+  button.sort-chip-remove {
+    margin: -10px -10px -10px -6px;
+  }
+
+  .sort-field input {
+    min-height: var(--control-h-touch);
+  }
+}

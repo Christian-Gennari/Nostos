@@ -221,6 +221,41 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
+    public async Task Archive_written_before_topic_descriptions_imports_its_topics_without_one()
+    {
+        // The description was appended to the topic record without a data
+        // version bump, so an archive of the current version may not have it.
+        using var fixture = await CreateFixtureAsync(
+            "portable-format1-data2.nostos",
+            CurrentDataVersion);
+
+        var entries = ReadEntries(fixture.Bytes);
+
+        MutateJsonEntry(entries, DataPath, root =>
+        {
+            foreach (var topic in root["concepts"]!.AsArray())
+            {
+                topic!.AsObject().Remove("description").Should().BeTrue(
+                    "the current writer carries the description, so the fixture has it to remove");
+            }
+        });
+
+        RehashDataDescriptor(entries);
+
+        using var archive = new MemoryStream(BuildArchive(entries));
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        destination.Db.ChangeTracker.Clear();
+
+        var topics = await destination.Db.Topics.AsNoTracking().ToListAsync();
+        topics.Should().NotBeEmpty();
+        topics.Should().OnlyContain(topic => topic.Description == null);
+    }
+
+    [Fact]
     public async Task Archive_written_before_highlight_colours_imports_its_notes_with_no_pen()
     {
         // The pen (issue #861) was appended to the note record without a data

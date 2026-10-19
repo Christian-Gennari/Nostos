@@ -3,9 +3,9 @@
  *
  * Regression: the row is a <button>, so the action buttons cannot be nested
  * inside it the way the Library's tree nests them inside a <div role="treeitem">
- * — they are a sibling. The fill was therefore driven by `.index-item:hover`,
+ * — they are a sibling. The fill was therefore driven by `.topic-row:hover`,
  * which only matched while the pointer was over the ROW itself. Moving onto the
- * icons left only `.index-row-shell:hover` matching, and the only thing that
+ * icons left only `.topic-row-shell:hover` matching, and the only thing that
  * painted was the ::after fade layer, so a background appeared over the right
  * third of the row. Two competing hover effects on one row.
  *
@@ -54,13 +54,13 @@ test('the row has ONE hover fill, from the name to the icons', async ({ browser 
   expect(context, 'shared context').not.toBeNull();
   const page = await context!.newPage();
   try {
-    await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-    await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
+    await page.goto(`${fixture.baseUrl}/brain`, { waitUntil: 'domcontentloaded' });
+    await page.locator('.topic-row').first().waitFor({ timeout: 30_000 });
     await page.waitForTimeout(400);
 
     const boxes = await page.evaluate(() => {
-      const shell = document.querySelector('.index-row-shell') as HTMLElement;
-      const name = shell.querySelector('.index-item .name') as HTMLElement;
+      const shell = document.querySelector('.topic-row-shell') as HTMLElement;
+      const name = shell.querySelector('.topic-row .name') as HTMLElement;
       const acts = shell.querySelector('.row-actions') as HTMLElement;
       const n = name.getBoundingClientRect();
       const a = acts.getBoundingClientRect();
@@ -74,10 +74,10 @@ test('the row has ONE hover fill, from the name to the icons', async ({ browser 
 
     const read = () =>
       page.evaluate(() => {
-        const shell = document.querySelector('.index-row-shell') as HTMLElement;
-        const item = shell.querySelector('.index-item') as HTMLElement;
-        const name = shell.querySelector('.index-item .name') as HTMLElement;
-        const badge = shell.querySelector('.index-item .count') as HTMLElement;
+        const shell = document.querySelector('.topic-row-shell') as HTMLElement;
+        const item = shell.querySelector('.topic-row') as HTMLElement;
+        const name = shell.querySelector('.topic-row .name') as HTMLElement;
+        const badge = shell.querySelector('.topic-row .count') as HTMLElement;
         const acts = shell.querySelector('.row-actions') as HTMLElement;
         const cs = (el: HTMLElement) => getComputedStyle(el);
         return {
@@ -142,121 +142,25 @@ test('the row has ONE hover fill, from the name to the icons', async ({ browser 
   }
 });
 
-test('a selected note keeps its selection fill through focus and hover in light mode', async () => {
-  const fixture = loadFixture();
-  expect(context, 'shared context').not.toBeNull();
-  const page = await context!.newPage();
-  try {
-    await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(() => {
-      document.documentElement.setAttribute('data-theme', 'light');
-      try {
-        localStorage.setItem('nostos.theme', 'light');
-      } catch {
-        /* ignore */
-      }
-    });
-
-    await page.getByRole('button', { name: 'Notes', exact: true }).click();
-    const row = page.locator('.note-row-item').first();
-    await row.waitFor({ timeout: 30_000 });
-    await row.click();
-    await expect(row).toHaveClass(/active/);
-
-    const read = () =>
-      page.evaluate(() => {
-        const active = document.querySelector('.note-row-item.active') as HTMLElement | null;
-        if (!active) return null;
-
-        const probe = document.createElement('span');
-        probe.style.background = 'var(--selection-surface)';
-        probe.style.color = 'var(--selection-ink)';
-        document.body.appendChild(probe);
-        const expectedBg = getComputedStyle(probe).backgroundColor;
-        const expectedInk = getComputedStyle(probe).color;
-        probe.remove();
-
-        const snippet = active.querySelector('.note-row-snippet') as HTMLElement | null;
-        const book = active.querySelector('.note-row-book') as HTMLElement | null;
-        return {
-          bg: getComputedStyle(active).backgroundColor,
-          ink: getComputedStyle(active).color,
-          snippetInk: snippet ? getComputedStyle(snippet).color : null,
-          bookInk: book ? getComputedStyle(book).color : null,
-          expectedBg,
-          expectedInk,
-        };
-      });
-
-    // Click leaves the row focused. Focus-within must not demote the selected
-    // surface to the pale hover fill.
-    const focusedInitial = await read();
-    expect(focusedInitial, 'selected note exists after click').not.toBeNull();
-    // The row animates from transparent to its selected fill. Wait for the
-    // computed style to reach the token value before asserting the ink pair.
-    await expect.poll(async () => (await read())?.bg, {
-      message: 'focused selected row reaches selection fill',
-    }).toBe(focusedInitial!.expectedBg);
-    const focusedAfterClick = await read();
-    expect(focusedAfterClick!.bg, 'focused selected row keeps selection fill').toBe(
-      focusedAfterClick!.expectedBg
-    );
-    expect(focusedAfterClick!.ink, 'focused selected row keeps selection ink').toBe(
-      focusedAfterClick!.expectedInk
-    );
-
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-    await moveMouse(page, [Math.round(DESKTOP_VIEWPORT.width - 40), 40]);
-    const atRest = await read();
-    expect(atRest!.bg, 'selected row at rest uses selection fill').toBe(atRest!.expectedBg);
-
-    const rowPt = await row.evaluate((el) => {
-      const r = (el as HTMLElement).getBoundingClientRect();
-      return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)] as [
-        number,
-        number,
-      ];
-    });
-    await moveMouse(page, rowPt);
-    const hovered = await read();
-    expect(hovered!.bg, 'hover must not replace a selected row fill').toBe(hovered!.expectedBg);
-    expect(hovered!.ink, 'hover must not replace selected row ink').toBe(hovered!.expectedInk);
-    expect(hovered!.snippetInk, 'selected snippet ink is stable on hover').toBe(
-      atRest!.snippetInk
-    );
-    expect(hovered!.bookInk, 'selected source ink is stable on hover').toBe(atRest!.bookInk);
-
-    await moveMouse(page, [Math.round(DESKTOP_VIEWPORT.width - 40), 40]);
-    await row.focus();
-    const keyboardFocused = await read();
-    expect(keyboardFocused!.bg, 'keyboard focus must not replace a selected row fill').toBe(
-      keyboardFocused!.expectedBg
-    );
-  } finally {
-    await page.close();
-  }
-});
-
 test('a long name dissolves into the actions instead of hard-cutting', async ({ browser }) => {
   const fixture = loadFixture();
   expect(context, 'shared context').not.toBeNull();
   const page = await context!.newPage();
   try {
-    await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${fixture.baseUrl}/brain`, { waitUntil: 'domcontentloaded' });
     // Earlier tests share this context and may leave Notes selected. Make the
     // Topics precondition explicit before measuring its index row.
-    await page.getByRole('button', { name: 'Topics', exact: true }).click();
-    await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
+    await page.locator('.topic-row').first().waitFor({ timeout: 30_000 });
 
     // A name long enough to run into the actions slot — the case the fade is for.
     await page.evaluate(() => {
-      const n = document.querySelector('.index-item .name') as HTMLElement;
+      const n = document.querySelector('.topic-row .name') as HTMLElement;
       n.textContent = 'A Very Long Topic Name That Overflows The Rail';
     });
     await page.waitForTimeout(200);
 
     const geom = await page.evaluate(() => {
-      const name = document.querySelector('.index-item .name') as HTMLElement;
+      const name = document.querySelector('.topic-row .name') as HTMLElement;
       const acts = document.querySelector('.row-actions') as HTMLElement;
       const n = name.getBoundingClientRect();
       const a = acts.getBoundingClientRect();
@@ -280,7 +184,7 @@ test('a long name dissolves into the actions instead of hard-cutting', async ({ 
     // The mask only exists WHILE hovered, so hover first — reading it at rest
     // returns 'none' and would fail for the wrong reason.
     const namePt = await page.evaluate(() => {
-      const n = document.querySelector('.index-item .name') as HTMLElement;
+      const n = document.querySelector('.topic-row .name') as HTMLElement;
       const b = n.getBoundingClientRect();
       return [Math.round(b.left + 14), Math.round(b.top + b.height / 2)] as [number, number];
     });
@@ -293,7 +197,7 @@ test('a long name dissolves into the actions instead of hard-cutting', async ({ 
     // name's own edge therefore leaves ~48px of fully-opaque glyphs underneath the
     // icons — the text is painted over instead of receding.
     const mask = await page.evaluate(() => {
-      const name = document.querySelector('.index-item .name') as HTMLElement;
+      const name = document.querySelector('.topic-row .name') as HTMLElement;
       const cs = getComputedStyle(name);
       return cs.maskImage !== 'none' ? cs.maskImage : (cs as any).webkitMaskImage;
     });
@@ -310,7 +214,7 @@ test('a long name dissolves into the actions instead of hard-cutting', async ({ 
     // transparent stop past the buttons, leaving opaque glyphs underneath them —
     // which is the bug this pins.
     const fadeStartPx = await page.evaluate(() => {
-      const name = document.querySelector('.index-item .name') as HTMLElement;
+      const name = document.querySelector('.topic-row .name') as HTMLElement;
       const raw = getComputedStyle(name).maskImage;
       // Pull the first `calc(100% - <n>px)` offset, i.e. how far LEFT of the
       // name's right edge the fade begins.

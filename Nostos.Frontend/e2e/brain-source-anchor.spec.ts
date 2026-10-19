@@ -4,7 +4,7 @@ import { apiGet, apiPost, loadFixture } from './support/fixture';
 import { cleanupBrain, snapshotTopicIds } from './support/brain-fixture';
 import type { NoteSearchHit } from '../src/app/core/dtos/note.dtos';
 
-test('Brain Topic evidence preserves a verified PDF page destination', async ({ page }) => {
+test('a Brain topic card keeps a verified PDF page destination', async ({ page }) => {
   const { baseUrl } = loadFixture();
   const beforeTopicIds = await snapshotTopicIds(baseUrl);
   const stamp = Date.now().toString(36);
@@ -30,13 +30,13 @@ test('Brain Topic evidence preserves a verified PDF page destination', async ({ 
     expect(durable.anchorVerified).toBe(true);
 
     await page.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
-    await page.goto(`${baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-    const topic = page.locator('.index-item').filter({ hasText: topicName }).first();
-    await topic.waitFor({ timeout: 30_000 });
-    await topic.click();
-    const source = page.locator('[data-testid="topic-evidence"] .source-badge').first();
+    const topicId = (await apiGet<Array<{ id: string; name: string }>>(baseUrl, '/api/topics'))
+      .find((t) => t.name === topicName)!.id;
+    await page.goto(`${baseUrl}/brain/topics/${topicId}`, { waitUntil: 'domcontentloaded' });
+    // The card's way back to the page it was noted on.
+    const source = page.locator('app-note-item .note-item-source').first();
     await expect(source).toBeVisible();
-    await expect(source).toContainText('Return to passage');
+    await expect(source).toContainText('Open in book');
     const href = await source.getAttribute('href');
     expect(href).toBeTruthy();
     const destination = new URL(href!, baseUrl);

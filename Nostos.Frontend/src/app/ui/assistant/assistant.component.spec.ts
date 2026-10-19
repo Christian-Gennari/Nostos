@@ -163,7 +163,7 @@ describe('starterPrompts', () => {
   });
 
   it('gives every surface at least two questions with unique ids', () => {
-    for (const surface of ['reader', 'book-detail', 'second-brain', 'studio', 'library'] as const) {
+    for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library'] as const) {
       const prompts = starterPrompts(ctx({ surface }));
       expect(prompts.length).toBeGreaterThanOrEqual(2);
       expect(new Set(prompts.map((p) => p.id)).size).toBe(prompts.length);
@@ -298,17 +298,11 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     expect(fixture.componentInstance.canOpenEvidence(note)).toBe(true);
     fixture.componentInstance.openEvidence(note);
-    expect(router.navigate).toHaveBeenCalledWith(
-      ['/second-brain'],
-      { queryParams: { noteId: 'note-42' } },
-    );
+    expect(router.navigate).toHaveBeenCalledWith(['/brain/notes', 'note-42']);
 
     expect(fixture.componentInstance.canOpenEvidence(topic)).toBe(true);
     fixture.componentInstance.openEvidence(topic);
-    expect(router.navigate).toHaveBeenCalledWith(
-      ['/second-brain'],
-      { queryParams: { topicId: 'topic-7' } },
-    );
+    expect(router.navigate).toHaveBeenCalledWith(['/brain/topics', 'topic-7']);
   });
 
   describe('grounded source grouping (issue #634)', () => {
@@ -581,10 +575,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
       (sourceItems()[0] as HTMLButtonElement).click();
 
-      expect(router.navigate).toHaveBeenCalledWith(
-        ['/second-brain'],
-        { queryParams: { noteId: 'note-grounded' } },
-      );
+      expect(router.navigate).toHaveBeenCalledWith(['/brain/notes', 'note-grounded']);
     });
   });
 
@@ -1124,7 +1115,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
   describe('empty conversation', () => {
     it('offers starter questions worded for the page', () => {
-      fake.set({ surface: 'second-brain', route: '/second-brain' });
+      fake.set({ surface: 'brain', route: '/brain' });
       assistant.open();
       fixture.detectChanges();
 

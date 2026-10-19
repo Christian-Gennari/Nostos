@@ -53,24 +53,21 @@ test.afterEach(async () => {
   await cleanupBrain(loadFixture().baseUrl, seed);
 });
 
-test('the Passages filter lists passages, and one opens in the viewer over Brain', async ({ page }) => {
+test('the Passages place lists passages, and one opens in the viewer over Brain', async ({ page }) => {
   const { baseUrl } = loadFixture();
-  await page.goto(`${baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Notes', exact: true }).click();
-  await page.getByTestId('brain-passages-filter').click();
+  await page.goto(`${baseUrl}/brain/passages?q=${encodeURIComponent('Grand Inquisitor')}`, { waitUntil: 'domcontentloaded' });
 
-  await expect(page.locator('.brain-section-title')).toHaveText('Passages');
-  const rows = page.getByTestId('brain-passage-row');
-  await expect(rows.first()).toContainText('The Grand Inquisitor');
-  await expect(page.locator('.note-row-item').filter({ hasText: 'A short thought about' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Passages', level: 1 })).toBeVisible();
+  const card = page.locator('app-note-item', { hasText: 'The Grand Inquisitor' }).first();
+  await expect(card.locator('.note-item-passage-title')).toHaveText('The Grand Inquisitor');
+  await expect(card.locator('.note-item-passage-size')).toContainText('words');
+  // Notes that are not passages stay out of the place.
+  await expect(page.locator('app-note-item', { hasText: 'A short thought about' })).toHaveCount(0);
 
-  await rows.first().click();
-  await expect(page.getByTestId('passage-card-title')).toHaveText('The Grand Inquisitor');
-  await page.getByTestId('passage-card-read-button').click();
-
+  await card.getByRole('button', { name: 'Read passage' }).click();
   await expect(page.getByRole('dialog', { name: 'The Grand Inquisitor' })).toBeVisible();
   await expect(page.getByTestId('passage-viewer-text')).toContainText('Even this must have a preface');
-  await expect(page).toHaveURL(/second-brain/);
+  await expect(page).toHaveURL(/\/brain\/passages/);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: 'The Grand Inquisitor' })).toHaveCount(0);
 });
@@ -79,11 +76,11 @@ test('a passage in a topic is a passage card that opens the viewer', async ({ pa
   const { baseUrl } = loadFixture();
   const topicId = await findTopicId(baseUrl, topic);
   expect(topicId).not.toBeNull();
-  await page.goto(`${baseUrl}/second-brain?topicId=${topicId}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseUrl}/brain/topics/${topicId}`, { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('passage-card-title')).toHaveText('The Grand Inquisitor');
-  await expect(page.locator('.passage-size').first()).toContainText('words');
-  await page.getByTestId('passage-card-read-button').click();
+  const card = page.locator('app-note-item', { hasText: 'The Grand Inquisitor' }).first();
+  await expect(card.locator('.note-item-passage-title')).toHaveText('The Grand Inquisitor');
+  await card.getByRole('button', { name: 'Read passage' }).click();
   await expect(page.getByTestId('passage-viewer-page')).toHaveText(/Page 1 of \d+/);
   await page.getByTestId('passage-viewer-next').click();
   await expect(page.getByTestId('passage-viewer-page')).toHaveText(/Page 2 of \d+/);

@@ -74,11 +74,12 @@ You can use the hosted service, [Nostos Cloud](https://nostos.page), or run it y
 
 The Brain is where notes from different books meet.
 
-- **Topics:** link ideas with `[[Topic]]` in any note, and browse them as a list or an interactive map.
-- **Back to the source:** every topic leads back to the notes, passages and books behind it.
+- **Topics:** link ideas with `[[Topic]]` in any note or with a tap on its card, and sort new notes one by one.
+- **Places, like the Library:** all notes, passages, unsorted notes, the topic map, and every topic, in one sidebar.
+- **Back to the source:** every topic leads back to the notes, passages and books behind it, and can carry your own words.
 
 <div align="center">
-  <img width="3800" height="1820" alt="Nostos Brain interactive topic graph" src="docs/screenshots/brain-graph.png" />
+  <img width="3800" height="1820" alt="Nostos Brain topic map with a selected topic" src="docs/screenshots/brain-graph.png" />
 </div>
 
 ### Writing Studio
@@ -110,7 +111,7 @@ The Brain is where notes from different books meet.
     <tr>
       <td colspan="2">
         <strong>Brain topics and notes</strong><br /><br />
-        <img width="2880" height="1800" alt="Nostos Brain topic index and linked notes" src="docs/screenshots/brain-list.png" />
+        <img width="2880" height="1800" alt="Nostos Brain: a topic and its notes, with the sidebar of places and topics" src="docs/screenshots/brain-list.png" />
       </td>
     </tr>
   </table>

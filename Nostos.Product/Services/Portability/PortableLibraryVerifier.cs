@@ -2249,6 +2249,10 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             nameof(PortableTopic.Topic),
             Ef(("TopicModel", nameof(TopicModel.Topic))),
             (context, failures) => CompareField(failures, "topic", context.Row.Id, nameof(PortableTopic.Topic), context.Row.Topic, context.Expected.Topic)),
+        Entry<TopicContext>(
+            nameof(PortableTopic.Description),
+            Ef(("TopicModel", nameof(TopicModel.Description))),
+            (context, failures) => CompareField(failures, "topic", context.Row.Id, nameof(PortableTopic.Description), context.Row.Description, context.Expected.Description)),
     ];
 
     private static readonly IReadOnlyList<ComparisonEntry<WritingContext>> WritingComparisons =

@@ -132,7 +132,7 @@ interface TopicDetailDto {
 | ------------ | -------------------------------- | ------------------------------------- |
 | `getLastUrl` | `(appPrefix: string)` → `string` | Returns last visited URL in a section |
 
-Subscribes to `NavigationEnd` router events. Maintains a `Record<string, string>` mapping section prefixes (`/library`, `/second-brain`, `/studio`) to their last-visited URLs. Used by `AppDockComponent` to deep-link back into the last page within each section.
+Subscribes to `NavigationEnd` router events. Maintains a `Record<string, string>` mapping section prefixes (`/library`, `/brain`, `/studio`) to their last-visited URLs. Used by `AppDockComponent` to deep-link back into the last page within each section.
 
 ---
 

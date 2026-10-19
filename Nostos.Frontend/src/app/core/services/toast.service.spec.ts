@@ -47,4 +47,23 @@ describe('ToastService', () => {
 
     expect(service.toasts()).toEqual([]);
   });
+
+  it('runs a toast’s action once and dismisses it', () => {
+    const run = vi.fn();
+    service.success('Added virtue to 3 notes', { label: 'Undo', run });
+    const toast = service.toasts()[0];
+
+    expect(toast.action?.label).toBe('Undo');
+    service.runAction(toast);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(service.toasts()).toEqual([]);
+  });
+
+  it('keeps two identical toasts that each carry an action', () => {
+    service.success('Topic added', { label: 'Undo', run: vi.fn() });
+    service.success('Topic added', { label: 'Undo', run: vi.fn() });
+
+    expect(service.toasts().length).toBe(2);
+  });
 });

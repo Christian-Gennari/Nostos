@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Shared.Dtos;
@@ -49,13 +50,38 @@ public static class NotesEndpoints
                 Results.Ok(await notes.SearchAsync(query ?? string.Empty, limit ?? 50))
         );
 
-        // A paged, searchable home for every saved note, whether or not it has a topic.
+        // A paged, searchable home for every saved note, whether or not it has a
+        // topic: each place of the Brain is one combination of these filters.
+        // `order` is newest | oldest | book; `oldestFirst` is the older spelling.
         group.MapGet(
             "/notes",
             async (INoteService notes, string? query, Guid? bookId, bool? withoutTopics,
-                bool? oldestFirst, int? limit, int? offset, string? kind) =>
-                Results.Ok(await notes.BrowseAsync(query, bookId, withoutTopics ?? false,
-                    oldestFirst ?? false, limit ?? 25, offset ?? 0, kind: kind))
+                bool? oldestFirst, int? limit, int? offset, string? kind, Guid? topicId,
+                Guid? withTopicId, string? order) =>
+            {
+                if (!TryParseOrder(order, oldestFirst ?? false, out var parsed))
+                    return Results.BadRequest(new { error = "order is newest, oldest or book." });
+
+                var browse = new NoteBrowseQuery(query, bookId, withoutTopics ?? false, kind,
+                    topicId, withTopicId, parsed);
+                return Results.Ok(await notes.BrowseAsync(browse, limit ?? 25, offset ?? 0));
+            }
+        );
+
+        // How many notes the Brain's fixed places hold: All notes, Passages, Unsorted.
+        group.MapGet(
+            "/notes/summary",
+            async (INoteService notes) => Results.Ok(await notes.GetSummaryAsync())
+        );
+
+        // The books that have notes in one place (the same filters as /notes,
+        // without bookId), for the Brain's Book filter.
+        group.MapGet(
+            "/notes/books",
+            async (INoteService notes, string? query, bool? withoutTopics, string? kind,
+                Guid? topicId, Guid? withTopicId) =>
+                Results.Ok(await notes.GetBookFacetsAsync(new NoteBrowseQuery(
+                    query, null, withoutTopics ?? false, kind, topicId, withTopicId)))
         );
 
         // Notes linked to no topic, so they can be read at all.
@@ -255,4 +281,24 @@ public static class NotesEndpoints
         request.Headers.TryGetValue(name, out var values) && values.Count > 0
             ? values[0]
             : null;
+    private static bool TryParseOrder(string? value, bool oldestFirst, out NoteBrowseOrder order)
+    {
+        order = oldestFirst ? NoteBrowseOrder.Oldest : NoteBrowseOrder.Newest;
+        switch (value?.Trim().ToLowerInvariant())
+        {
+            case null or "":
+                return true;
+            case "newest":
+                order = NoteBrowseOrder.Newest;
+                return true;
+            case "oldest":
+                order = NoteBrowseOrder.Oldest;
+                return true;
+            case "book":
+                order = NoteBrowseOrder.Book;
+                return true;
+            default:
+                return false;
+        }
+    }
 }

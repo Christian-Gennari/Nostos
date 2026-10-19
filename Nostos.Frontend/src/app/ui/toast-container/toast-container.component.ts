@@ -1,12 +1,13 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { ToastService } from '../../core/services/toast.service';
+import { ButtonComponent } from '../button/button.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 
 @Component({
   selector: 'app-toast-container',
   standalone: true,
-  imports: [IconButtonComponent, NostosIconComponent],
+  imports: [ButtonComponent, IconButtonComponent, NostosIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="toast-container">
@@ -39,6 +40,11 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
             />
             <span class="toast-message">{{ toast.message }}</span>
           </div>
+
+          @if (toast.action; as action) {
+            <button appButton variant="ghost" size="sm" class="toast-action" type="button"
+              (click)="toastService.runAction(toast)">{{ action.label }}</button>
+          }
 
           <button
             appIconButton
@@ -120,6 +126,10 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
         min-width: 0;
         overflow-wrap: anywhere;
         line-height: 1.45;
+      }
+
+      .toast-action {
+        flex: 0 0 auto;
       }
 
       .toast-dismiss {

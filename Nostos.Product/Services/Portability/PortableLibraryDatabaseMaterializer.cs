@@ -268,6 +268,7 @@ internal static class PortableLibraryDatabaseMaterializer
             {
                 Id = x.Id,
                 Topic = x.Topic,
+                Description = x.Description,
             });
         db.Topics.AddRange(topics.Values);
 

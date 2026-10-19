@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Search;
+using Nostos.Backend.Services;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Repositories;
@@ -20,7 +21,7 @@ public class TopicRepository : ITopicRepository
         return await _db
             .Topics.OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
-            .Select(c => new TopicDto(c.Id, c.Topic, c.NoteTopics.Count()))
+            .Select(c => new TopicDto(c.Id, c.Topic, c.NoteTopics.Count(), 0, null, c.Description))
             .ToListAsync();
     }
 
@@ -109,6 +110,7 @@ public class TopicRepository : ITopicRepository
             {
                 nc.TopicId,
                 TopicName = nc.Topic.Topic,
+                nc.Topic.Description,
                 TotalUsageCount = nc.Topic.NoteTopics.Count(),
                 nc.NoteId,
                 nc.Note.Content,
@@ -122,7 +124,7 @@ public class TopicRepository : ITopicRepository
             return [];
 
         return matchingRows
-            .GroupBy(row => new { row.TopicId, row.TopicName, row.TotalUsageCount })
+            .GroupBy(row => new { row.TopicId, row.TopicName, row.Description, row.TotalUsageCount })
             .Select(group =>
             {
                 var noteGroups = group.GroupBy(row => row.NoteId).ToList();
@@ -140,7 +142,8 @@ public class TopicRepository : ITopicRepository
                     group.Key.TopicName,
                     group.Key.TotalUsageCount,
                     noteGroups.Count,
-                    snippet);
+                    snippet,
+                    group.Key.Description);
             })
             .OrderByDescending(topic => topic.NoteMatchCount)
             .ThenBy(topic => topic.Name)
@@ -354,9 +357,7 @@ public class TopicRepository : ITopicRepository
 
     public async Task<TopicModel?> RenameAsync(Guid id, string name)
     {
-        var source = await _db
-            .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id);
 
         if (source is null)
             return null;
@@ -365,24 +366,21 @@ public class TopicRepository : ITopicRepository
             .Topics.Include(c => c.NoteTopics)
             .FirstOrDefaultAsync(c => c.Id != id && c.Topic == name);
 
-        if (target is null)
-        {
-            source.Topic = name;
-            await _db.SaveChangesAsync();
-            return source;
-        }
+        if (target is not null)
+            return await MergeIntoAsync(source, target);
 
-        MoveLinks(source, target);
-        _db.Topics.Remove(source);
+        // A note's body is what every later save re-derives its links from, so
+        // the body follows the rename; otherwise the old name comes back on the
+        // note's next edit.
+        RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, name));
+        source.Topic = name;
         await _db.SaveChangesAsync();
-        return target;
+        return source;
     }
 
     public async Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId)
     {
-        var source = await _db
-            .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == sourceId);
+        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == sourceId);
         var target = await _db
             .Topics.Include(c => c.NoteTopics)
             .FirstOrDefaultAsync(c => c.Id == targetId);
@@ -390,25 +388,83 @@ public class TopicRepository : ITopicRepository
         if (source is null || target is null)
             return null;
 
+        return await MergeIntoAsync(source, target);
+    }
+
+    /// <summary>
+    /// Moves <paramref name="source"/>'s notes to <paramref name="target"/>, text
+    /// and links, and removes the source: a merge, or a rename onto a name that
+    /// is already a topic.
+    /// </summary>
+    private async Task<TopicModel> MergeIntoAsync(TopicModel source, TopicModel target)
+    {
+        RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target.Topic));
         MoveLinks(source, target);
+        target.Description = MergeDescriptions(target.Description, source.Description);
         _db.Topics.Remove(source);
         await _db.SaveChangesAsync();
         return target;
     }
 
+    /// <summary>
+    /// Deletes a topic and its links, and turns its references in the notes'
+    /// text into plain words, so the topic stays deleted when a note is next
+    /// saved.
+    /// </summary>
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var topic = await _db
-            .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var topic = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id);
 
         if (topic is null)
             return false;
 
+        RewriteReferences(topic, content => TopicReferences.Remove(content, topic.Topic));
         _db.NoteTopics.RemoveRange(topic.NoteTopics);
         _db.Topics.Remove(topic);
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    /// <summary>
+    /// The survivor's words, then the merged topic's after a blank line; either
+    /// alone when the other has none. Cut to the length a description may have,
+    /// never inside a character.
+    /// </summary>
+    internal static string? MergeDescriptions(string? target, string? source)
+    {
+        var kept = TopicModel.NormalizeDescription(target);
+        var added = TopicModel.NormalizeDescription(source);
+        var merged = kept is null ? added : added is null ? kept : $"{kept}\n\n{added}";
+        if (merged is not { Length: > TopicModel.MaxDescriptionLength })
+            return merged;
+        var length = TopicModel.MaxDescriptionLength;
+        if (char.IsHighSurrogate(merged[length - 1]))
+            length--;
+        return merged[..length].TrimEnd();
+    }
+
+    /// <summary>
+    /// Sets or clears a topic's description. Returns the topic, or null when it
+    /// is not found.
+    /// </summary>
+    public async Task<TopicModel?> SetDescriptionAsync(Guid id, string? description)
+    {
+        var topic = await _db.Topics.Include(c => c.NoteTopics).FirstOrDefaultAsync(c => c.Id == id);
+        if (topic is null)
+            return null;
+        topic.Description = TopicModel.NormalizeDescription(description);
+        await _db.SaveChangesAsync();
+        return topic;
+    }
+
+    private IQueryable<TopicModel> WithLinkedNotes() =>
+        _db.Topics.Include(c => c.NoteTopics).ThenInclude(link => link.Note);
+
+    private static void RewriteReferences(TopicModel topic, Func<string, string> rewrite)
+    {
+        // Setting an equal value leaves the property unmodified to EF.
+        foreach (var note in topic.NoteTopics.Select(link => link.Note).OfType<NoteModel>())
+            note.Content = rewrite(note.Content);
     }
 
     private void MoveLinks(TopicModel source, TopicModel target)
@@ -439,7 +495,29 @@ public class TopicRepository : ITopicRepository
     public async Task<List<TopicModel>> GetByNamesAsync(IEnumerable<string> names)
     {
         var nameList = names.ToList();
-        return await _db.Topics.Where(c => nameList.Contains(c.Topic)).ToListAsync();
+        var stored = await _db.Topics.Where(c => nameList.Contains(c.Topic)).ToListAsync();
+
+        // Topics created earlier in this same unit of work are not in the
+        // database yet. Linking one new topic to several notes at once must
+        // reuse it, or the second note creates a duplicate the unique index
+        // rejects. Matched exactly, as the stored lookup above is.
+        // Entries() would run DetectChanges over every tracked entity on each
+        // call; an Added topic is already marked Added without it.
+        var detect = _db.ChangeTracker.AutoDetectChangesEnabled;
+        _db.ChangeTracker.AutoDetectChangesEnabled = false;
+        try
+        {
+            var pending = _db.ChangeTracker.Entries<TopicModel>()
+                .Where(entry => entry.State == EntityState.Added
+                    && nameList.Contains(entry.Entity.Topic, StringComparer.Ordinal))
+                .Select(entry => entry.Entity)
+                .Where(topic => !stored.Contains(topic));
+            return stored.Concat(pending).ToList();
+        }
+        finally
+        {
+            _db.ChangeTracker.AutoDetectChangesEnabled = detect;
+        }
     }
 
     public void AddRange(IEnumerable<TopicModel> topics)
@@ -447,14 +525,31 @@ public class TopicRepository : ITopicRepository
         _db.Topics.AddRange(topics);
     }
 
-    public async Task ClearNoteLinksAsync(Guid noteId)
+    public async Task<IReadOnlyList<string>> ClearNoteLinksAsync(NoteModel note)
     {
-        var currentLinks = await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ToListAsync();
+        var currentLinks = await _db.NoteTopics
+            .Include(link => link.Topic)
+            .Where(nc => nc.NoteId == note.Id)
+            .ToListAsync();
 
-        if (currentLinks.Count != 0)
-        {
-            _db.NoteTopics.RemoveRange(currentLinks);
-        }
+        if (currentLinks.Count == 0)
+            return [];
+
+        _db.NoteTopics.RemoveRange(currentLinks);
+
+        // What the note said before this unit of work changed it: a link whose
+        // name that text never declared was made some other way, and must not
+        // vanish because the text was edited.
+        var entry = _db.Entry(note);
+        var stored = entry.State is EntityState.Unchanged or EntityState.Modified
+            ? entry.Property(n => n.Content).OriginalValue
+            : note.Content;
+        var declared = TopicReferences.Names(stored).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return currentLinks
+            .Select(link => link.Topic?.Topic)
+            .OfType<string>()
+            .Where(name => !declared.Contains(name))
+            .ToList();
     }
 
     public void AddNoteLink(NoteTopicModel link)
@@ -471,7 +566,10 @@ public class TopicRepository : ITopicRepository
         // takes the singleton lock in the same order (issue #679 Slice 11).
         await using var transaction = await _db.Database.BeginTransactionAsync(ct);
         await LibraryRevision.AdvanceAndGetAsync(_db, ct);
-        var deleted = await _db.Topics.Where(c => !c.NoteTopics.Any()).ExecuteDeleteAsync(ct);
+        // A topic the reader described is kept: its words are theirs to delete.
+        var deleted = await _db.Topics
+            .Where(c => !c.NoteTopics.Any() && (c.Description == null || c.Description.Trim() == ""))
+            .ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
         return deleted;
     }

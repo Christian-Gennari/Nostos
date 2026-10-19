@@ -1,3 +1,4 @@
+using Nostos.Backend.Data.Interfaces;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Notes;
@@ -15,9 +16,29 @@ public interface INoteService
     /// <summary>A passage in full for the passage viewer; null when the note is not one.</summary>
     Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default);
     Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default);
+    /// <summary>
+    /// One page of a place in the Brain. An unknown <see cref="NoteBrowseQuery.Kind"/>
+    /// matches nothing rather than everything.
+    /// </summary>
     Task<NoteSearchPageDto> BrowseAsync(
-        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst,
-        int limit, int offset, CancellationToken ct = default, string? kind = null);
+        NoteBrowseQuery query, int limit, int offset, CancellationToken ct = default);
+    Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(NoteBrowseQuery query, CancellationToken ct = default);
+    Task<NoteSummaryDto> GetSummaryAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds a <c>[[Topic]]</c> reference for each named topic to each listed note,
+    /// creating topics that do not exist yet, in one unit of work. Notes that
+    /// already declare a topic are left as they are.
+    /// </summary>
+    Task<NoteCommandResult<TopicLinkResultDto>> LinkTopicsAsync(
+        IReadOnlyList<string> topics, IReadOnlyList<Guid> noteIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes each named topic's references from each listed note
+    /// (<see cref="TopicReferences.Remove"/>), in one unit of work.
+    /// </summary>
+    Task<NoteCommandResult<TopicLinkResultDto>> UnlinkTopicsAsync(
+        IReadOnlyList<string> topics, IReadOnlyList<Guid> noteIds, CancellationToken ct = default);
     Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(string query, int limit, CancellationToken ct = default);
     Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,

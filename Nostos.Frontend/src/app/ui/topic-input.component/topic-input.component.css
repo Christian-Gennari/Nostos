@@ -78,3 +78,10 @@ textarea::-webkit-scrollbar-thumb:hover {
     font-size: 0.85rem;
   }
 }
+
+/* A touch screen wider than a phone (a tablet) needs the same target. */
+@media (pointer: coarse), (hover: none) {
+  .topic-link-action {
+    min-height: var(--control-h-touch);
+  }
+}
