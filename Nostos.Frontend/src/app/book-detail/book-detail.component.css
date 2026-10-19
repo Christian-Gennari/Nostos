@@ -824,6 +824,10 @@
   font-size: 1.0625rem;
   line-height: 1.65;
   color: var(--color-text-main);
+  /* Keep the line breaks and blank lines the description was written with.
+     pre-line rather than the review's pre-wrap: imported metadata often
+     carries indentation and runs of spaces that should still collapse. */
+  white-space: pre-line;
   display: -webkit-box;
   line-clamp: 3;
   -webkit-line-clamp: 3;
