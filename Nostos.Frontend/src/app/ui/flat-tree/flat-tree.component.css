@@ -90,8 +90,15 @@
 
 /* Keyboard focus with no hover: the row has no hover ground yet, so the fade
    must paint the sidebar's own ground. Declared BEFORE the :hover rule so that
-   when both apply the hover ground (later, same specificity) wins. */
-.tree-row:focus-within {
+   when both apply the hover ground (later, same specificity) wins.
+
+   Every focus trigger in this file is `:focus-visible` (on the row or a
+   control inside it), never `:focus-within`. A mouse click leaves the row
+   focused, so `:focus-within` kept the actions and the fade on screen after the
+   pointer had left — a dark smear across the selected collection's name. The
+   browser only sets `:focus-visible` for keyboard focus, so a click selects
+   cleanly while Tab/arrow navigation still reveals the actions. */
+.tree-row:is(:focus-visible, :has(:focus-visible)) {
   --row-ground: var(--bg-sidebar);
 }
 
@@ -146,7 +153,7 @@
 
 /* Collapsed: revealed by hover or keyboard focus on the row. */
 .tree-row:hover .toggle-btn,
-.tree-row:focus-within .toggle-btn {
+.tree-row:is(:focus-visible, :has(:focus-visible)) .toggle-btn {
   opacity: 1;
 }
 
@@ -257,7 +264,7 @@
    the row's ground would be wiped across the name's tail with nothing drawn
    over it. Keep this trigger list in step with `.node-actions`' own. */
 .tree-row:hover::after,
-.tree-row:focus-within::after {
+.tree-row:is(:focus-visible, :has(:focus-visible))::after {
   opacity: 1;
   visibility: visible;
   transition:
@@ -326,7 +333,7 @@
 }
 
 .tree-row:hover .node-actions,
-.tree-row:focus-within .node-actions {
+.tree-row:is(:focus-visible, :has(:focus-visible)) .node-actions {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -484,7 +491,7 @@ input.inline-rename-input {
    rest.
 
    On touch the row's SELECTION is the reveal instead of hover. A row that is
-   `:focus-within` (keyboard/assistive) or `.active` (the selected collection)
+   keyboard-focused (`:focus-visible`) or `.active` (the selected collection)
    shows its actions; every other row stays clean like desktop. Selection
    persists, so this is a stable state rather than a hover that a later tap
    elsewhere steals.
@@ -494,7 +501,7 @@ input.inline-rename-input {
    nesting unreachable on the rows that need it. */
 @media (hover: none) {
   .tree-row.active .node-actions,
-  .tree-row:focus-within .node-actions {
+  .tree-row:is(:focus-visible, :has(:focus-visible)) .node-actions {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -506,7 +513,7 @@ input.inline-rename-input {
   /* Same pairing as the hover/focus triggers above: the fade paints only while
      the actions that occlude the name are actually drawn. */
   .tree-row.active::after,
-  .tree-row:focus-within::after {
+  .tree-row:is(:focus-visible, :has(:focus-visible))::after {
     opacity: 1;
     visibility: visible;
     transition:
@@ -517,7 +524,7 @@ input.inline-rename-input {
   /* The badge yields to the actions in the one state where they share the
      slot. Mirrors the `:hover` rule, which does the same on pointer devices. */
   .tree-row.active .count-badge,
-  .tree-row:focus-within .count-badge {
+  .tree-row:is(:focus-visible, :has(:focus-visible)) .count-badge {
     opacity: 0;
   }
 }
@@ -581,8 +588,12 @@ input.inline-rename-input {
    sidebar). Selection is the soft tint those rows use rather than the filled
    pill, and the count is a plain number rather than a chip. Everything else —
    geometry, the action slot, the fade — is the default tree's. The fade's
-   ground follows each state, so the name still fades into what is behind it. */
-:host(.flat-tree--quiet) .tree-row:focus-within {
+   ground follows each state, so the name still fades into what is behind it.
+
+   The focus ground skips hovered and selected rows: `:host()` makes this rule
+   out-rank both `.active` and `:hover`, so without the `:not()` a focused
+   selected row faded its name into the page ground across the tint. */
+:host(.flat-tree--quiet) .tree-row:not(:hover, .active):is(:focus-visible, :has(:focus-visible)) {
   --row-ground: var(--bg-body);
 }
 
