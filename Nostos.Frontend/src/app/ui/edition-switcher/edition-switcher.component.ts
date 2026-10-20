@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2026 Christian Gennari
- * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { NostosIconComponent } from '../icon/nostos-icon.component';

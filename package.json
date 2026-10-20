@@ -1,7 +1,7 @@
 {
   "name": "nostos",
   "private": true,
-  "license": "GPL-3.0-or-later",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "concurrently --kill-others-on-fail --prefix-colors cyan.bold,magenta.bold --names \"🔧 BACKEND\",\"🎨 FRONTEND\" --timestamp-format HH:mm:ss -p \"[{time} {name}]\" \"npm run backend\" \"npm run frontend\"",
     "prod": "cd Nostos.Backend && dotnet run -c Release",

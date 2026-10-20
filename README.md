@@ -204,14 +204,14 @@ Nostos/
 - **For developers and agents:** [REST API](Nostos.Backend/_docs/endpoints.md) · [Library skill for agents](.agents/skills/nostos-library/SKILL.md) · [Deployment capabilities](docs/cloud/deployment-modes.md) · [PostgreSQL compatibility](docs/cloud/postgresql-compatibility-spike.md)
 - **[Security policy](SECURITY.md):** how to report a vulnerability.
 
-Work in progress is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues).
+Work in progress is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues). Before your first pull request is merged, a bot asks you to accept the [Contributor License Agreement](CLA.md) with one comment.
 
 ---
 
 ## License & Trademark
 
-Nostos is licensed under the **[GNU General Public License v3.0 or later](./LICENSE)**. You may run, study, modify, and redistribute the software under those terms.
+Nostos is licensed under the **[GNU Affero General Public License v3.0 or later](./LICENSE)**. You may run, study, modify, and redistribute the software under those terms. If you run a modified version as a network service, you must offer its source code to the people who use it.
 
-The Nostos name, related word marks, and official visual identity are not granted by the GPL. Distributed forks and derivative builds must use independent naming and branding. See [TRADEMARK.md](./TRADEMARK.md) for the full policy.
+The Nostos name, related word marks, and official visual identity are not granted by the AGPL. Distributed forks and derivative builds must use independent naming and branding. See [TRADEMARK.md](./TRADEMARK.md) for the full policy.
 
 The EPUB reader bundles the **[Libron](https://github.com/nicoverbruggen/libron)** typeface (© Nico Verbruggen, derived from Readerly and Newsreader), licensed separately under the [SIL Open Font License 1.1](./Nostos.Frontend/public/fonts/libron/OFL.txt).
