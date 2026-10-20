@@ -87,6 +87,8 @@ export interface Book {
   hasFile: boolean;
   fileName: string | null;
   coverUrl: string | null;
+  /** Changes whenever the cover's bytes change; build image URLs with `coverImageUrl`. */
+  coverVersion?: string | null;
 
   /**
    * Every collection this book belongs to. The sole source of truth — the

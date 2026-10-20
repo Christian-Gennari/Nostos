@@ -141,6 +141,38 @@ public sealed class BackupServiceTests
     }
 
     [Fact]
+    public async Task RestoreBackup_GivesEveryRestoredCoverANewVersion()
+    {
+        // A browser may hold the backed-up version's URL cached with other
+        // bytes (the cover was replaced after the backup, or the backup carries
+        // no book files), so a restored cover must not reuse that URL.
+        using var h = BackupHarness.Create();
+        var withCover = await AddBookAsync(h, "Candide", "Voltaire");
+        var withoutCover = await AddBookAsync(h, "Nicomachean Ethics", "Aristotle");
+        string backedUpVersion;
+        await using (var db = h.NewDbContext())
+        {
+            var book = await db.Books.SingleAsync(b => b.Id == withCover);
+            book.FileDetails.SetCover("cover.png");
+            await db.SaveChangesAsync();
+            backedUpVersion = book.FileDetails.CoverVersion!;
+        }
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        await using var after = h.NewDbContext();
+        var restoredCover = await after.Books.AsNoTracking().SingleAsync(b => b.Id == withCover);
+        restoredCover.FileDetails.CoverFileName.Should().Be("cover.png");
+        restoredCover.FileDetails.CoverVersion.Should().NotBeNullOrEmpty().And.NotBe(backedUpVersion);
+        (await after.Books.AsNoTracking().SingleAsync(b => b.Id == withoutCover))
+            .FileDetails.CoverVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task RestoreBackup_WithConfiguredDatabasePath_ReplacesThatDatabaseAndLeavesContentRootDecoyUntouched()
     {
         var volume = Path.Combine(

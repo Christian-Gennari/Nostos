@@ -1373,6 +1373,9 @@ namespace Nostos.Backend.Migrations
                             b1.Property<string>("CoverFileName")
                                 .HasColumnType("TEXT");
 
+                            b1.Property<string>("CoverVersion")
+                                .HasColumnType("TEXT");
+
                             b1.Property<string>("FileName")
                                 .HasColumnType("TEXT");
 

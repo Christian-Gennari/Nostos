@@ -210,6 +210,46 @@ public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>
         (await Client.SendAsync(unchanged)).StatusCode.Should().Be(HttpStatusCode.NotModified);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("/thumbnail?width=320")]
+    public async Task Versioned_cover_url_is_cached_for_good_and_a_replace_moves_it(string suffix)
+    {
+        // The book names its cover's version; a URL carrying it can be cached
+        // without revalidation because a replaced cover gets a new version.
+        var created = await Client.PostAsJsonAsync("/api/books", new
+        {
+            type = "ebook",
+            title = $"Versioned Cover {Guid.NewGuid():N}",
+        });
+        var book = (await created.Content.ReadFromJsonAsync<BookDto>())!;
+        book.CoverVersion.Should().BeNull("a book without a cover has no cover version");
+
+        (await UploadCoverAsync(book.Id, red: 255, blue: 0)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstVersion = (await Client.GetFromJsonAsync<BookDto>($"/api/books/{book.Id}"))!.CoverVersion;
+        firstVersion.Should().NotBeNullOrEmpty();
+
+        var first = await Client.GetAsync(VersionedCoverUrl(book.Id, suffix, firstVersion!));
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        first.Headers.CacheControl!.NoCache.Should().BeFalse();
+        first.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromDays(365));
+        var oldBytes = await first.Content.ReadAsByteArrayAsync();
+
+        (await UploadCoverAsync(book.Id, red: 0, blue: 255)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondVersion = (await Client.GetFromJsonAsync<BookDto>($"/api/books/{book.Id}"))!.CoverVersion;
+        secondVersion.Should().NotBeNullOrEmpty().And.NotBe(firstVersion);
+
+        var second = await Client.GetAsync(VersionedCoverUrl(book.Id, suffix, secondVersion!));
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await second.Content.ReadAsByteArrayAsync()).Should().NotEqual(oldBytes);
+
+        (await Client.DeleteAsync($"/api/books/{book.Id}/cover")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await Client.GetFromJsonAsync<BookDto>($"/api/books/{book.Id}"))!.CoverVersion.Should().BeNull();
+    }
+
+    private static string VersionedCoverUrl(Guid bookId, string suffix, string version) =>
+        $"/api/books/{bookId}/cover{suffix}{(suffix.Contains('?') ? '&' : '?')}v={version}";
+
     private async Task<HttpResponseMessage> UploadCoverAsync(Guid bookId, byte red, byte blue)
     {
         var png = TestImages.Create(".png", red: red, blue: blue);

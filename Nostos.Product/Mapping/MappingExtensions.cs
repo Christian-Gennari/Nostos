@@ -147,7 +147,8 @@ public static class MappingExtensions
                     AcquiredAt: model.Acquisition.AcquiredAt),
             Status: model.Status,
             StatusMessage: model.StatusMessage,
-            Tracks: ToTrackDtos(model.FileDetails.TracksJson)
+            Tracks: ToTrackDtos(model.FileDetails.TracksJson),
+            CoverVersion: coverUrl is null ? null : model.FileDetails.CoverVersion
         );
     }
 

@@ -261,7 +261,7 @@ public sealed class ExternalMediaImportService(
             book.FileDetails.ChaptersJson = media.Chapters is { Count: > 0 }
                 ? JsonSerializer.Serialize(media.Chapters.Select(c => new { c.Title, StartTime = c.StartSeconds }))
                 : null;
-            book.FileDetails.CoverFileName = coverFileName;
+            book.FileDetails.SetCover(coverFileName);
             book.Status = BookStatus.Ready;
             book.StatusMessage = null;
 

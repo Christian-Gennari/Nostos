@@ -89,7 +89,7 @@ export class BookDetailStore {
     this.loadCollections();
   }
 
-  loadBook(id: string, options: { forceImageRefresh?: boolean; background?: boolean } = {}) {
+  loadBook(id: string, options: { background?: boolean } = {}) {
     if (!options.background) this.loading.set(true);
 
     this.booksService
@@ -97,9 +97,6 @@ export class BookDetailStore {
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
         next: (data) => {
-          if (options.forceImageRefresh && data.coverUrl) {
-            data.coverUrl += `?t=${Date.now()}`;
-          }
           this.book.set(data);
           // Direct navigation and refresh must discover the import even when
           // the Library has never mounted in this browser session.
@@ -378,7 +375,9 @@ export class BookDetailStore {
     this.booksService.uploadCover(b.id, file).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.Response) {
-          this.loadBook(b.id, { forceImageRefresh: true, background: true });
+          // The re-read book carries the new cover version, so every cover
+          // URL changes with it and no cached copy of the old cover is used.
+          this.loadBook(b.id, { background: true });
         }
       },
       error: () => this.toast.error('Failed to upload cover'),

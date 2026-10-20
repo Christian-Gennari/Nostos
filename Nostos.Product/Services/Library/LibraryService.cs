@@ -665,7 +665,7 @@ public sealed partial class LibraryService : ILibraryService
         // its name: the cover URL is derived from this column, and writing only
         // the file left imported books with a cover nothing could display.
         if (!string.IsNullOrWhiteSpace(request.CoverFileName))
-            book.FileDetails.CoverFileName = request.CoverFileName;
+            book.FileDetails.SetCover(request.CoverFileName);
         // A different file invalidates the cached epub locations, exactly as a
         // manual re-upload does.
         book.FileDetails.LocationsJson = null;

@@ -26,7 +26,16 @@ internal static class LaterBookColumns
             "ALTER TABLE \"Notes\" ADD COLUMN \"HighlightColour\" TEXT NULL");
         await RestorePassageColumnsAsync(db);
         await RestoreTopicDescriptionAsync(db);
+        await RestoreCoverVersionAsync(db);
     }
+
+    /// <summary>
+    /// AddCoverVersion: the cover cache token the current model reads and
+    /// writes on every book.
+    /// </summary>
+    public static async Task RestoreCoverVersionAsync(NostosDbContext db) =>
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Books\" ADD COLUMN \"FileDetails_CoverVersion\" TEXT NULL");
 
     /// <summary>
     /// AddNotePassages (issue #1014): the passage columns the current model

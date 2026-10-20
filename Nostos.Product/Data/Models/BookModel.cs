@@ -113,6 +113,28 @@ public class FileInfoDetails
     public string? FileName { get; set; }
     public string? CoverFileName { get; set; }
 
+    /// <summary>
+    /// An opaque token that changes whenever the cover's bytes change, and is
+    /// null when there is no cover. Clients put it in the cover URL, so a
+    /// versioned URL can be cached for good: a replaced cover gets a new URL
+    /// instead of reverting to a cached copy. Derived, never exported; set it
+    /// through <see cref="SetCover"/>.
+    /// </summary>
+    public string? CoverVersion { get; set; }
+
+    /// <summary>
+    /// Records that the cover was written (or removed, with null). Every path
+    /// that writes cover bytes goes through here, so the version always moves
+    /// with the bytes, even when the file name stays the same.
+    /// </summary>
+    public void SetCover(string? coverFileName)
+    {
+        CoverFileName = coverFileName;
+        CoverVersion = coverFileName is null ? null : NewCoverVersion();
+    }
+
+    public static string NewCoverVersion() => Guid.NewGuid().ToString("N")[..16];
+
     // Store chapters as a JSON string
     public string? ChaptersJson { get; set; }
 

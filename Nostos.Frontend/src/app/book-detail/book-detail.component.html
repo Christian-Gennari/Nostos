@@ -73,7 +73,7 @@
           <div class="cover-frame">
             @if (store.book()?.coverUrl) {
             <img
-              [src]="store.book()?.coverUrl"
+              [src]="coverSrc()"
               alt="Book cover"
               class="cover-img"
               [class.loaded]="coverLoaded()"

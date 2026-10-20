@@ -1,8 +1,8 @@
 <div class="audio-container">
   <div class="cover-section">
     <div class="cover-art">
-      @if (book()?.coverUrl) {
-      <img [src]="book()?.coverUrl" alt="Book Cover" appBloomArt class="cover-img" />
+      @if (coverSrc(); as cover) {
+      <img [src]="cover" alt="Book Cover" appBloomArt class="cover-img" />
       } @else {
       <div class="placeholder-art">
         <nostos-icon name="waveform" [size]="48" class="placeholder-icon"></nostos-icon>

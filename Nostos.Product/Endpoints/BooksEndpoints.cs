@@ -20,6 +20,15 @@ public static class BooksEndpoints
     // so an unchanged cover still costs only a 304.
     private const string CoverCacheControl = "private, no-cache";
 
+    // A URL carrying ?v= (BookDto.CoverVersion) names one version of the
+    // cover: a replace moves the book to a new version and so to a new URL,
+    // and the old one is never shown again. That URL can be cached for good,
+    // which spares a revalidation round trip per cover per view.
+    private const string VersionedCoverCacheControl = "private, max-age=31536000, immutable";
+
+    private static string CoverCacheControlFor(HttpContext http) =>
+        string.IsNullOrEmpty(http.Request.Query["v"]) ? CoverCacheControl : VersionedCoverCacheControl;
+
     public static IEndpointRouteBuilder MapBooksEndpoints(
         this IEndpointRouteBuilder routes,
         NostosProductEndpointPolicies? policies = null)
@@ -561,7 +570,7 @@ public static class BooksEndpoints
                 }
 
                 var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-                book.FileDetails.CoverFileName = $"cover{ext}";
+                book.FileDetails.SetCover($"cover{ext}");
 
                 await repo.UpdateAsync(book);
 
@@ -587,7 +596,7 @@ public static class BooksEndpoints
                     (_, token) => storage.OpenBookCoverThumbnailAsync(id, safeWidth, token),
                     attachment: false,
                     enableRanges: false,
-                    cacheControl: CoverCacheControl,
+                    cacheControl: CoverCacheControlFor(http),
                     ct);
             }
         );
@@ -607,7 +616,7 @@ public static class BooksEndpoints
                     (_, token) => storage.OpenBookCoverAsync(id, token),
                     attachment: false,
                     enableRanges: false,
-                    cacheControl: CoverCacheControl,
+                    cacheControl: CoverCacheControlFor(http),
                     ct)
         );
 
@@ -623,7 +632,7 @@ public static class BooksEndpoints
                 if (!await storage.DeleteCoverAsync(id, ct))
                     return Results.NotFound();
 
-                book.FileDetails.CoverFileName = null;
+                book.FileDetails.SetCover(null);
                 await repo.UpdateAsync(book);
 
                 return Results.NoContent();
