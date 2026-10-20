@@ -21,6 +21,17 @@ public class NostosDbContext : DbContext
         : base(options)
     {
     }
+
+    /// <summary>
+    /// Every host's contexts announce committed revision advances to the
+    /// library change feed, however the host builds its options.
+    /// </summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.AddInterceptors(LibraryChangeCommitInterceptor.Instance);
+        base.OnConfiguring(optionsBuilder);
+    }
+
     public DbSet<BookModel> Books => Set<BookModel>();
     public DbSet<AlignmentAnchorModel> AlignmentAnchors => Set<AlignmentAnchorModel>();
     public DbSet<WorkModel> Works => Set<WorkModel>();
@@ -113,6 +124,7 @@ public class NostosDbContext : DbContext
             try
             {
                 LibraryRevision.AdvanceAndGet(this);
+                NoteLibraryChangeKind();
                 var result = base.SaveChanges(acceptAllChangesOnSuccess);
                 owned.Commit();
                 return result;
@@ -157,6 +169,7 @@ public class NostosDbContext : DbContext
             try
             {
                 await LibraryRevision.AdvanceAndGetAsync(this, cancellationToken);
+                NoteLibraryChangeKind();
                 var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
                 await owned.CommitAsync(cancellationToken);
                 return result;
@@ -186,6 +199,7 @@ public class NostosDbContext : DbContext
         try
         {
             LibraryRevision.AdvanceAndGet(this);
+            NoteLibraryChangeKind();
             var result = base.SaveChanges(acceptAllChangesOnSuccess);
             ambient.ReleaseSavepoint(savepoint);
             return result;
@@ -221,6 +235,7 @@ public class NostosDbContext : DbContext
         try
         {
             await LibraryRevision.AdvanceAndGetAsync(this, cancellationToken);
+            NoteLibraryChangeKind();
             var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             await ambient.ReleaseSavepointAsync(savepoint, cancellationToken);
             return result;
@@ -326,6 +341,73 @@ public class NostosDbContext : DbContext
         _libraryRevisionTransaction = null;
         _libraryRevisionValue = null;
     }
+
+    /// <summary>The transaction whose portable saves <see cref="_libraryChangeHasMoreThanPosition"/> describes.</summary>
+    private Guid? _libraryChangeTransactionId;
+
+    /// <summary>True once a portable save in that transaction changed more than the reading position.</summary>
+    private bool _libraryChangeHasMoreThanPosition;
+
+    private static readonly HashSet<string> ReadingPositionProperties = new(StringComparer.Ordinal)
+    {
+        nameof(ReadingProgress.LastLocation),
+        nameof(ReadingProgress.ProgressPercent),
+        nameof(ReadingProgress.LastReadAt),
+    };
+
+    /// <summary>
+    /// Records, for the change feed, whether the portable save about to run
+    /// moves the reading position only. Called inside the transaction that
+    /// advanced the revision.
+    /// </summary>
+    private void NoteLibraryChangeKind()
+    {
+        if (Database.CurrentTransaction?.TransactionId is not { } transactionId)
+            return;
+
+        if (_libraryChangeTransactionId != transactionId)
+        {
+            _libraryChangeTransactionId = transactionId;
+            _libraryChangeHasMoreThanPosition = false;
+        }
+
+        var positionOnly = ChangeTracker.Entries()
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+                && PortableEntitySet.IsPortableType(entry.Metadata.ClrType))
+            .All(entry => entry.State == EntityState.Modified
+                && entry.Metadata.ClrType == typeof(ReadingProgress)
+                && entry.Properties.Where(p => p.IsModified).All(p => ReadingPositionProperties.Contains(p.Metadata.Name)));
+
+        if (!positionOnly)
+            _libraryChangeHasMoreThanPosition = true;
+    }
+
+    /// <summary>
+    /// For <see cref="LibraryChangeCommitInterceptor"/>: true, once, when the
+    /// committed transaction <paramref name="transactionId"/> advanced the
+    /// library revision. A transaction that advanced it without a tracked
+    /// portable save (a bulk operation) is never reported as position-only.
+    /// </summary>
+    internal bool TryTakeCommittedLibraryChange(Guid transactionId, out LibraryChange change)
+    {
+        change = default;
+        if (_libraryRevisionValue is null
+            || _libraryRevisionTransaction?.TransactionId != transactionId
+            || _libraryChangeAnnouncedTransactionId == transactionId)
+        {
+            return false;
+        }
+
+        change = new LibraryChange(
+            ProgressOnly: _libraryChangeTransactionId == transactionId && !_libraryChangeHasMoreThanPosition);
+        _libraryChangeAnnouncedTransactionId = transactionId;
+        _libraryChangeTransactionId = null;
+        _libraryChangeHasMoreThanPosition = false;
+        return true;
+    }
+
+    /// <summary>The last committed transaction already announced, so it is announced once.</summary>
+    private Guid? _libraryChangeAnnouncedTransactionId;
 
     private void AssignMissingWorks()
     {

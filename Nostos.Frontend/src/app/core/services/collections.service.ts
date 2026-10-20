@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, finalize, share } from 'rxjs';
 import {
   Collection,
   CollectionCountDto,
@@ -16,8 +16,21 @@ export class CollectionsService {
 
   sidebarExpanded = signal(true);
 
+  /** The read in flight, shared by everyone who asks while it runs. */
+  private listInFlight: Observable<Collection[]> | null = null;
+
+  /**
+   * The collections. The Library and its sidebar both read them on mount and
+   * after every library change; callers that ask while a read is in flight
+   * share it instead of sending the same request twice. Nothing is cached
+   * once it answers, so a later call always reads fresh.
+   */
   list(): Observable<Collection[]> {
-    return this.http.get<Collection[]>('/api/collections');
+    this.listInFlight ??= this.http.get<Collection[]>('/api/collections').pipe(
+      finalize(() => (this.listInFlight = null)),
+      share(),
+    );
+    return this.listInFlight;
   }
 
   /** Descendant-inclusive book counts per collection (REST-only, see CollectionCountDto). */

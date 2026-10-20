@@ -1,7 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
 import { Subscription } from 'rxjs';
-import { LibraryChangesService } from './library-changes.service';
+import { LibraryChangesService, POSITION_SETTLE_MS } from './library-changes.service';
 
 /**
  * The library change feed's rules, driven through a fake EventSource: when the
@@ -30,9 +30,10 @@ describe('LibraryChangesService', () => {
       this.closed = true;
     }
 
-    announce(stateVersion: string): void {
+    announce(stateVersion: string, progressOnly = false): void {
+      const data = progressOnly ? { stateVersion, progressOnly } : { stateVersion };
       for (const listener of this.listeners.get('library') ?? []) {
-        listener({ data: JSON.stringify({ stateVersion }) } as MessageEvent);
+        listener({ data: JSON.stringify(data) } as MessageEvent);
       }
     }
   }
@@ -102,6 +103,34 @@ describe('LibraryChangesService', () => {
     latest().announce('2');
     latest().announce('3');
     latest().announce('4');
+    vi.advanceTimersByTime(300);
+
+    expect(watcher.count()).toBe(1);
+    watcher.subscription.unsubscribe();
+  });
+
+  it('gathers reading-position changes for half a minute before one re-read', () => {
+    const watcher = watch();
+    latest().announce('1');
+
+    // An audiobook saving its position every two seconds.
+    for (let revision = 2; revision <= 10; revision++) {
+      latest().announce(String(revision), true);
+      vi.advanceTimersByTime(2_000);
+    }
+    expect(watcher.count()).toBe(0);
+
+    vi.advanceTimersByTime(POSITION_SETTLE_MS);
+    expect(watcher.count()).toBe(1);
+    watcher.subscription.unsubscribe();
+  });
+
+  it('re-reads at once when a change is more than a reading position', () => {
+    const watcher = watch();
+    latest().announce('1');
+
+    latest().announce('2', true);
+    latest().announce('3');
     vi.advanceTimersByTime(300);
 
     expect(watcher.count()).toBe(1);

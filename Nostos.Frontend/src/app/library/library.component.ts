@@ -89,6 +89,9 @@ function formatFilterLabel(value: string | null | undefined): string | null {
  */
 const SWAP_OUT_MS = 200;
 
+/** The largest page GET /api/books serves (LibraryReadService clamps to it). */
+const MAX_SERVER_PAGE_SIZE = 100;
+
 /** True when the OS asks for reduced motion; the swap then commits instantly. */
 function prefersReducedMotion(): boolean {
   return (
@@ -444,9 +447,16 @@ export class Library implements OnInit, OnDestroy {
     if (this.loading() || this.loadingMore() || this.swapping()) return;
 
     const seq = ++this.requestSeq;
-    const pages = Array.from({ length: Math.max(1, this.currentPage()) }, (_, i) =>
-      this.booksService.list(this.listQuery(i + 1)),
-    );
+    // Everything already loaded, in one request when the server's page limit
+    // allows: the grouped list costs a full library read per request, so one
+    // request per loaded page multiplied that by how far the user scrolled.
+    const loadedPages = Math.max(1, this.currentPage());
+    const firstPage = this.listQuery(1);
+    const loaded = loadedPages * firstPage.pageSize!;
+    const pages =
+      loaded <= MAX_SERVER_PAGE_SIZE
+        ? [this.booksService.list({ ...firstPage, pageSize: loaded })]
+        : Array.from({ length: loadedPages }, (_, i) => this.booksService.list(this.listQuery(i + 1)));
 
     forkJoin(pages).subscribe({
       next: (results) => {

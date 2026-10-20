@@ -94,14 +94,63 @@ public sealed partial class LibraryChangesEndpointTests : IClassFixture<LibraryE
         RevisionPattern().Matches(feed.Text).Should().NotBeEmpty();
     }
 
+    [Fact]
+    public async Task A_write_wakes_the_feed_without_waiting_for_the_slow_re_read()
+    {
+        // The re-read is ten minutes away: only the commit signal can announce
+        // this write inside the budget.
+        using var factory = FastFeed(pollMilliseconds: 600_000);
+        using var watcher = factory.CreateClient();
+        using var writer = factory.CreateClient();
+        using var response = await OpenAsync(watcher);
+        await using var feed = await Feed.OpenAsync(response);
+        var before = (await feed.ReadRevisionsAsync(count: 1, Budget)).Single();
+
+        (await writer.PostAsJsonAsync("/api/collections", new CreateCollectionDto($"Signal {Guid.NewGuid():N}", null)))
+            .EnsureSuccessStatusCode();
+
+        var after = (await feed.ReadRevisionsAsync(count: 1, Budget)).Single();
+        long.Parse(after).Should().BeGreaterThan(long.Parse(before));
+        feed.Text.Should().NotContain("progressOnly", "a new collection is not a reading position");
+    }
+
+    [Fact]
+    public async Task A_reading_position_save_is_announced_as_progress_only()
+    {
+        using var factory = FastFeed(pollMilliseconds: 600_000);
+        using var watcher = factory.CreateClient();
+        using var writer = factory.CreateClient();
+        var created = await writer.PostAsJsonAsync("/api/books", new { type = "ebook", title = $"Feed Book {Guid.NewGuid():N}" });
+        var book = (await created.Content.ReadFromJsonAsync<BookDto>())!;
+
+        using var response = await OpenAsync(watcher);
+        await using var feed = await Feed.OpenAsync(response);
+        await feed.ReadRevisionsAsync(count: 1, Budget);
+
+        (await writer.PutAsJsonAsync($"/api/books/{book.Id}/progress", new { location = "epubcfi(/6/4)", percentage = 12 }))
+            .EnsureSuccessStatusCode();
+        await feed.ReadRevisionsAsync(count: 1, Budget);
+        LastFrame(feed.Text).Should().Contain("\"progressOnly\":true");
+
+        // Finishing the book changes its status, not just its position.
+        (await writer.PutAsJsonAsync($"/api/books/{book.Id}/progress", new { location = "end", percentage = 100 }))
+            .EnsureSuccessStatusCode();
+        await feed.ReadRevisionsAsync(count: 1, Budget);
+        LastFrame(feed.Text).Should().NotContain("progressOnly");
+    }
+
+    private static string LastFrame(string text) =>
+        RevisionPattern().Matches(text).Last().Value;
+
     private Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> FastFeed(
         int heartbeatSeconds = 15,
-        int lifetimeSeconds = 600) =>
+        int lifetimeSeconds = 600,
+        int pollMilliseconds = 50) =>
         _factory.WithWebHostBuilder(builder =>
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
-                    [LibraryChangesEndpoints.PollMillisecondsKey] = "50",
+                    [LibraryChangesEndpoints.PollMillisecondsKey] = pollMilliseconds.ToString(),
                     [LibraryChangesEndpoints.HeartbeatSecondsKey] = heartbeatSeconds.ToString(),
                     [LibraryChangesEndpoints.MaxLifetimeSecondsKey] = lifetimeSeconds.ToString(),
                 })));
@@ -112,7 +161,7 @@ public sealed partial class LibraryChangesEndpointTests : IClassFixture<LibraryE
         return client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
     }
 
-    [GeneratedRegex("event: library\ndata: \\{\"stateVersion\":\"([0-9]+)\"\\}")]
+    [GeneratedRegex("event: library\ndata: \\{\"stateVersion\":\"([0-9]+)\"(,\"progressOnly\":true)?\\}")]
     private static partial Regex RevisionPattern();
 
     /// <summary>

@@ -28,7 +28,12 @@ public static class LibraryChangesEndpoints
 {
     public const string Route = "/api/library/changes";
 
-    /// <summary>How often the stream re-reads the revision.</summary>
+    /// <summary>
+    /// How often the stream re-reads the revision without being woken. A write
+    /// in this process wakes it at once (<see cref="LibraryChangeSignal"/>); the
+    /// re-read only catches what the process cannot see (another instance, a
+    /// restored or activated database), so it can be slow.
+    /// </summary>
     public const string PollMillisecondsKey = "Library:ChangesPollMilliseconds";
 
     /// <summary>How long the stream may go quiet before it writes a comment line.</summary>
@@ -42,7 +47,7 @@ public static class LibraryChangesEndpoints
     /// </summary>
     public const string MaxLifetimeSecondsKey = "Library:ChangesMaxLifetimeSeconds";
 
-    private const int DefaultPollMilliseconds = 1000;
+    private const int DefaultPollMilliseconds = 60_000;
     private const int DefaultHeartbeatSeconds = 15;
     private const int DefaultMaxLifetimeSeconds = 600;
 
@@ -75,7 +80,7 @@ public static class LibraryChangesEndpoints
         http.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
 
         var poll = TimeSpan.FromMilliseconds(Math.Clamp(
-            configuration.GetValue(PollMillisecondsKey, DefaultPollMilliseconds), 50, 60_000));
+            configuration.GetValue(PollMillisecondsKey, DefaultPollMilliseconds), 50, 600_000));
         var heartbeat = TimeSpan.FromSeconds(Math.Clamp(
             configuration.GetValue(HeartbeatSecondsKey, DefaultHeartbeatSeconds), 1, 300));
         var lifetime = TimeSpan.FromSeconds(Math.Clamp(
@@ -83,35 +88,77 @@ public static class LibraryChangesEndpoints
 
         var openedAt = DateTime.UtcNow;
         var lastWriteAt = DateTime.UtcNow;
-        string? announced = null;
 
         try
         {
             await WriteAsync(response, $"retry: {RetryMilliseconds}\n\n", ct);
 
-            while (!ct.IsCancellationRequested && DateTime.UtcNow - openedAt < lifetime)
+            // Wait first, then read: a change that commits while the revision is
+            // being read still completes this wait, so it cannot be missed.
+            string key;
+            Task<LibraryChange> wake;
+            string announced;
+            await using (var db = await contexts.CreateDbContextAsync(ct))
             {
-                var revision = await ReadRevisionAsync(contexts, ct);
+                key = LibraryChangeSignal.KeyFor(db);
+                wake = LibraryChangeSignal.NextAsync(key);
+                announced = await ReadRevisionAsync(db, ct);
+            }
 
-                // The first frame always carries the current revision, so a client
-                // that reconnects after a gap compares it with the last one it saw
-                // and re-reads when it missed a change.
-                if (revision != announced)
-                {
-                    announced = revision;
-                    await WriteAsync(
-                        response,
-                        $"event: library\ndata: {{\"stateVersion\":\"{revision}\"}}\n\n",
-                        ct);
-                    lastWriteAt = DateTime.UtcNow;
-                }
-                else if (DateTime.UtcNow - lastWriteAt >= heartbeat)
+            // The first frame always carries the current revision, so a client
+            // that reconnects after a gap compares it with the last one it saw
+            // and re-reads when it missed a change.
+            var lastReadAt = DateTime.UtcNow;
+            await WriteRevisionAsync(response, announced, progressOnly: false, ct);
+            lastWriteAt = DateTime.UtcNow;
+
+            // True while every change since the last announcement only moved a
+            // reading position; null when nothing is pending.
+            bool? pendingPositionOnly = null;
+
+            while (!ct.IsCancellationRequested)
+            {
+                var remaining = lifetime - (DateTime.UtcNow - openedAt);
+                if (remaining <= TimeSpan.Zero)
+                    break;
+
+                if (DateTime.UtcNow - lastWriteAt >= heartbeat)
                 {
                     await WriteAsync(response, ": ping\n\n", ct);
                     lastWriteAt = DateTime.UtcNow;
                 }
 
-                await Task.Delay(poll, ct);
+                if (DateTime.UtcNow - lastReadAt < poll)
+                {
+                    // Sleep until a change, the next heartbeat, the slow re-read
+                    // or the end of the stream, whichever comes first. Nothing is
+                    // read while the library is quiet.
+                    var now = DateTime.UtcNow;
+                    var wait = Min(remaining, Min(poll - (now - lastReadAt), heartbeat - (now - lastWriteAt)));
+                    using var timer = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    var first = await Task.WhenAny(wake, Task.Delay(Max(wait, TimeSpan.Zero), timer.Token));
+                    timer.Cancel();
+                    ct.ThrowIfCancellationRequested();
+
+                    if (first != wake)
+                        continue;
+
+                    var change = await wake;
+                    wake = LibraryChangeSignal.NextAsync(key);
+                    pendingPositionOnly = (pendingPositionOnly ?? true) && change.ProgressOnly;
+                }
+
+                // Woken by a change, or the slow re-read is due.
+                var revision = await ReadRevisionAsync(contexts, ct);
+                lastReadAt = DateTime.UtcNow;
+                if (revision != announced)
+                {
+                    announced = revision;
+                    // A change found by the re-read alone is of unknown kind.
+                    await WriteRevisionAsync(response, revision, pendingPositionOnly == true, ct);
+                    lastWriteAt = DateTime.UtcNow;
+                    pendingPositionOnly = null;
+                }
             }
         }
         catch (OperationCanceledException)
@@ -137,6 +184,11 @@ public static class LibraryChangesEndpoints
         CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
+        return await ReadRevisionAsync(db, ct);
+    }
+
+    private static async Task<string> ReadRevisionAsync(NostosDbContext db, CancellationToken ct)
+    {
         var revision = await db.LibraryStates
             .AsNoTracking()
             .Select(state => state.StateVersion)
@@ -148,6 +200,27 @@ public static class LibraryChangesEndpoints
             ? "0"
             : revision;
     }
+
+    /// <summary>
+    /// One "library changed" frame. <c>progressOnly</c> is added only when every
+    /// change it covers moved a reading position and nothing else, so a screen
+    /// may pick it up lazily; its absence means "re-read now".
+    /// </summary>
+    private static Task WriteRevisionAsync(
+        HttpResponse response,
+        string revision,
+        bool progressOnly,
+        CancellationToken ct) =>
+        WriteAsync(
+            response,
+            progressOnly
+                ? $"event: library\ndata: {{\"stateVersion\":\"{revision}\",\"progressOnly\":true}}\n\n"
+                : $"event: library\ndata: {{\"stateVersion\":\"{revision}\"}}\n\n",
+            ct);
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
+
+    private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 
     private static async Task WriteAsync(HttpResponse response, string frame, CancellationToken ct)
     {
