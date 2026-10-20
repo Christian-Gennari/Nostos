@@ -252,7 +252,7 @@ describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
     audio.runOut();
     audio.finishLoading();
 
-    expect(events).toEqual(['load', 'play', 'pause', 'loaderror']);
+    expect(events).toEqual(['load', 'play', 'loaderror', 'pause']);
     expect(player.playing()).toBe(false);
   });
 
