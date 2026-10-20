@@ -39,6 +39,18 @@ internal static class AssistantEvidenceProjection
         }
     }
 
+    /// <summary>The evidence a retrieval capability's result carries, or none for any other capability.</summary>
+    public static IEnumerable<AssistantEvidenceReferenceDto> ExtractEvidence(string capability, JsonElement? data) =>
+        capability switch
+        {
+            "book_text_search" => ExtractBookTextEvidence(data),
+            "knowledge_search" => ExtractKnowledgeSearchEvidence(data),
+            "knowledge_read_evidence" => ExtractKnowledgeReadEvidence(data),
+            "notes_list_for_book" => ExtractNoteListForBookEvidence(data),
+            "notes_search" => ExtractNoteSearchEvidence(data),
+            _ => [],
+        };
+
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeSearchEvidence(
         JsonElement? data)
     {
@@ -348,7 +360,7 @@ internal static class AssistantEvidenceProjection
         }
     }
 
-    private static string EvidenceKey(AssistantEvidenceHandleDto handle) =>
+    internal static string EvidenceKey(AssistantEvidenceHandleDto handle) =>
         string.Join(
             "|",
             handle.Kind,

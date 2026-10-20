@@ -582,7 +582,25 @@ public sealed class AssistantOrchestrator(
                     mutationLease?.Dispose();
                 }
 
-                messages.Add(LlmMessage.Tool(call.Id, ToolJson(result)));
+                // Evidence joins the turn's list before the model reads it, so
+                // each item can carry its citation number (issue #1002).
+                var evidenceBeforeCall = evidenceReferences.Count;
+                var modelResult = result;
+                if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
+                {
+                    var callEvidence = AssistantEvidenceProjection
+                        .ExtractEvidence(capability.Name, result.Data)
+                        .ToList();
+                    AssistantEvidenceProjection.MergeEvidenceReferences(
+                        evidenceReferences,
+                        callEvidence,
+                        MaxEvidenceArtifacts);
+                    if (AssistantCitations.Annotate(
+                            capability.Name, result.Data, callEvidence, evidenceReferences) is { } annotated)
+                        modelResult = result with { Data = annotated };
+                }
+
+                messages.Add(LlmMessage.Tool(call.Id, ToolJson(modelResult)));
 
                 if (result.Success)
                 {
@@ -641,10 +659,6 @@ public sealed class AssistantOrchestrator(
                             .ToList();
                         sourceReferences.AddRange(sources);
                         retrieval.RecordSources(sources);
-                        AssistantEvidenceProjection.MergeEvidenceReferences(
-                            evidenceReferences,
-                            AssistantEvidenceProjection.ExtractBookTextEvidence(result.Data),
-                            MaxEvidenceArtifacts);
                     }
                     else if (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
@@ -653,38 +667,15 @@ public sealed class AssistantOrchestrator(
                             .ToList();
                         sourceReferences.AddRange(sources);
                         retrieval.RecordSources(sources);
-                        AssistantEvidenceProjection.MergeEvidenceReferences(
-                            evidenceReferences,
-                            AssistantEvidenceProjection.ExtractKnowledgeSearchEvidence(result.Data),
-                            MaxEvidenceArtifacts);
-                    }
-                    else if (string.Equals(capability.Name, NotesListForBookCapability, StringComparison.Ordinal))
-                    {
-                        AssistantEvidenceProjection.MergeEvidenceReferences(
-                            evidenceReferences,
-                            AssistantEvidenceProjection.ExtractNoteListForBookEvidence(result.Data),
-                            MaxEvidenceArtifacts);
-                    }
-                    else if (string.Equals(capability.Name, NotesSearchCapability, StringComparison.Ordinal))
-                    {
-                        AssistantEvidenceProjection.MergeEvidenceReferences(
-                            evidenceReferences,
-                            AssistantEvidenceProjection.ExtractNoteSearchEvidence(result.Data),
-                            MaxEvidenceArtifacts);
                     }
                     else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
                     {
-                        var beforeEvidence = evidenceReferences.Count;
                         var sources = AssistantEvidenceProjection
                             .ExtractKnowledgeReadSources(result.Data)
                             .ToList();
                         sourceReferences.AddRange(sources);
                         retrieval.RecordSources(sources);
-                        AssistantEvidenceProjection.MergeEvidenceReferences(
-                            evidenceReferences,
-                            AssistantEvidenceProjection.ExtractKnowledgeReadEvidence(result.Data),
-                            MaxEvidenceArtifacts);
-                        if (evidenceReferences.Count > beforeEvidence)
+                        if (evidenceReferences.Count > evidenceBeforeCall)
                             retrieval.MarkExactEvidenceAvailable();
                     }
                 }
@@ -858,6 +849,9 @@ public sealed class AssistantOrchestrator(
                 "Assistant identity guard replaced a self-asserted vendor/model mention; reply content is not logged.");
             reply = AssistantIdentityGuard.Apply(reply);
         }
+
+        // A citation marker only survives when it points at this turn's evidence.
+        reply = AssistantCitations.Normalize(reply, evidenceReferences.Count);
 
         var finalMetrics = executionMeter.Finish(stopReason);
         LogExecutionMetrics(finalMetrics);
