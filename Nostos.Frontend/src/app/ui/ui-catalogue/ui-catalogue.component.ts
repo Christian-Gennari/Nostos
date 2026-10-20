@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2026 Christian Gennari
- * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { NOSTOS_MENU } from '../menu/menu.component';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';

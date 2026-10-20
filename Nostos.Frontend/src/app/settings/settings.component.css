@@ -26,6 +26,13 @@
   align-items: start;
 }
 
+.settings-license-note {
+  margin: 40px 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
 .settings-nav {
   position: sticky;
   top: 24px;

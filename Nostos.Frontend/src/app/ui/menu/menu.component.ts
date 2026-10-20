@@ -1,6 +1,6 @@
 /**
  * Copyright (C) 2026 Christian Gennari
- * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger, MENU_SCROLL_STRATEGY } from '@angular/cdk/menu';
 import type { ConnectedPosition, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';

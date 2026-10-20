@@ -1050,6 +1050,17 @@ describe('SettingsComponent backup-only surface', () => {
     expect(cloudAuthServiceMock.logout).toHaveBeenCalledTimes(1);
   });
 
+  it('links the AGPL licence and the source code', () => {
+    fixture.detectChanges();
+
+    const note = fixture.nativeElement.querySelector('[data-testid="settings-license-note"]');
+    const hrefs = Array.from(note.querySelectorAll('a')).map((a) => (a as HTMLAnchorElement).href);
+    expect(hrefs).toEqual([
+      'https://www.gnu.org/licenses/agpl-3.0.html',
+      'https://github.com/Christian-Gennari/Nostos',
+    ]);
+  });
+
   it('renders the General surface with a working Light/Dark choice', () => {
     fixture.componentInstance.setSettingsSection('general');
     fixture.detectChanges();

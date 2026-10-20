@@ -6,7 +6,7 @@ Copyright (C) 2026 Christian Gennari. All rights reserved.
 
 ## 1. Overview
 
-The source code of the **Nostos** project is distributed under the GNU General Public License v3.0 (GPLv3). 
+The source code of the **Nostos** project is distributed under the GNU Affero General Public License v3.0 (AGPLv3). 
 
 While the software license grants broad freedoms to inspect, modify, and redistribute the underlying code, **it does not grant any right or license to use the trademarks, service marks, logos, trade dress, or brand identity** of Nostos.
 

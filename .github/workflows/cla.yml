@@ -1,0 +1,45 @@
+# Asks each new contributor to accept CLA.md once, by commenting on their PR.
+#
+# Nostos is AGPL, and the hosted Nostos Cloud builds on it. The CLA lets the
+# maintainer ship contributed code there too (CLA.md §2).
+#
+# Signatures are committed to signatures/cla.json on the unprotected
+# cla-signatures branch, so the action can write with GITHUB_TOKEN.
+#
+# pull_request_target so it can comment on fork PRs. It never checks out or
+# runs the PR's code. The action is pinned to the v2.6.1 commit.
+name: CLA
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  cla:
+    name: CLA signed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+        (github.event.comment.body == 'recheck' ||
+         github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    steps:
+      - uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: https://github.com/Christian-Gennari/Nostos/blob/main/CLA.md
+          path-to-signatures: signatures/cla.json
+          branch: cla-signatures
+          allowlist: Christian-Gennari,*[bot]
+          signed-commit-message: "chore(cla): $contributorName signed the CLA in #$pullRequestNo"
+          create-file-commit-message: "chore(cla): create signatures file"
