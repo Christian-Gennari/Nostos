@@ -1,9 +1,16 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
-import { Observable, Subject, auditTime, defer, finalize } from 'rxjs';
+import { Observable, Subject, auditTime, defer, finalize, merge } from 'rxjs';
 
 /** How long a burst of changes is gathered into one re-read. */
 const SETTLE_MS = 250;
+
+/**
+ * How long reading-position changes are gathered into one re-read. An
+ * audiobook saves its position every two seconds; a screen elsewhere showing
+ * progress bars catches up at this pace instead of re-reading every time.
+ */
+export const POSITION_SETTLE_MS = 30_000;
 
 /**
  * "The library changed somewhere else" — Ask Nostos, another tab, an
@@ -26,11 +33,16 @@ const SETTLE_MS = 250;
  *
  * A subscriber's own edits are announced too. Re-reads must therefore be quiet
  * and in place, never a reset of what the user is looking at.
+ *
+ * A change the server marks `progressOnly` (a reading position moved, nothing
+ * else) is gathered for `POSITION_SETTLE_MS` before it asks for a re-read; any
+ * other change asks at once.
  */
 @Injectable({ providedIn: 'root' })
 export class LibraryChangesService {
   private readonly document = inject(DOCUMENT);
   private readonly changed = new Subject<void>();
+  private readonly positionMoved = new Subject<void>();
 
   private source: EventSource | null = null;
   private lastRevision: string | null = null;
@@ -45,10 +57,10 @@ export class LibraryChangesService {
   watch(): Observable<void> {
     return defer(() => {
       this.addWatcher();
-      return this.changed.pipe(
-        auditTime(SETTLE_MS),
-        finalize(() => this.removeWatcher()),
-      );
+      return merge(
+        this.changed.pipe(auditTime(SETTLE_MS)),
+        this.positionMoved.pipe(auditTime(POSITION_SETTLE_MS)),
+      ).pipe(finalize(() => this.removeWatcher()));
     });
   }
 
@@ -105,12 +117,14 @@ export class LibraryChangesService {
     // The browser reconnects by itself when the server ends a stream, honouring
     // the server's retry delay; nothing to do on error.
     source.addEventListener('library', (event) => {
-      const revision = readRevision((event as MessageEvent).data);
-      if (revision === null) return;
+      const announced = readRevision((event as MessageEvent).data);
+      if (announced === null) return;
 
       const previous = this.lastRevision;
-      this.lastRevision = revision;
-      if (previous !== null && previous !== revision) this.changed.next();
+      this.lastRevision = announced.revision;
+      if (previous === null || previous === announced.revision) return;
+      if (announced.progressOnly) this.positionMoved.next();
+      else this.changed.next();
     });
   }
 
@@ -120,11 +134,13 @@ export class LibraryChangesService {
   }
 }
 
-function readRevision(data: unknown): string | null {
+function readRevision(data: unknown): { revision: string; progressOnly: boolean } | null {
   if (typeof data !== 'string') return null;
   try {
-    const parsed = JSON.parse(data) as { stateVersion?: unknown };
-    return typeof parsed.stateVersion === 'string' ? parsed.stateVersion : null;
+    const parsed = JSON.parse(data) as { stateVersion?: unknown; progressOnly?: unknown };
+    return typeof parsed.stateVersion === 'string'
+      ? { revision: parsed.stateVersion, progressOnly: parsed.progressOnly === true }
+      : null;
   } catch {
     return null;
   }

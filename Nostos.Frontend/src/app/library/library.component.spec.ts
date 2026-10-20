@@ -355,16 +355,14 @@ describe('Library', () => {
     };
     collections.list.mockClear();
 
-    listSpy.mockImplementation((query: { page: number }) =>
-      of({
-        items: page(query.page).map((book) => ({ ...book, title: `${book.title} (renamed)` })),
-        totalCount: 60,
-      } as PaginatedResponse<Book>),
-    );
+    listSpy.mockImplementation(renamedBooks);
     libraryChanged.next();
 
-    // Both pages the reader had loaded, not a reset to the first one.
-    expect(listSpy.mock.calls.map((args: unknown[]) => (args[0] as { page: number }).page)).toEqual([1, 2]);
+    // Both pages the reader had loaded, in one request, not a reset to the
+    // first page.
+    expect(listSpy.mock.calls.map((args: unknown[]) => args[0])).toEqual([
+      expect.objectContaining({ page: 1, pageSize: 40 }),
+    ]);
     expect(component.currentPage()).toBe(2);
     expect(component.rawBooks()).toHaveLength(40);
     expect(component.rawBooks()[25].title).toBe('Book 2.5 (renamed)');
@@ -373,6 +371,36 @@ describe('Library', () => {
     expect(component.loading()).toBe(false);
     expect(collections.list).toHaveBeenCalledTimes(1);
   });
+
+  it('re-reads page by page when more is loaded than one request may carry', () => {
+    component.rawBooks.set(
+      Array.from({ length: 120 }, (_, k) => ({ id: `b${k}`, title: `Book ${k}` }) as Book),
+    );
+    component.totalItems.set(200);
+    component.currentPage.set(6);
+    listSpy.mockClear();
+    listSpy.mockImplementation(renamedBooks);
+
+    libraryChanged.next();
+
+    expect(listSpy.mock.calls.map((args: unknown[]) => (args[0] as { page: number }).page)).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ]);
+    expect(component.rawBooks()).toHaveLength(120);
+  });
+
+  /** Books as the server would page them (20 to a reader's page), every title renamed. */
+  function renamedBooks(query: { page: number; pageSize: number }) {
+    return of({
+      items: Array.from({ length: query.pageSize }, (_, k) => {
+        const index = (query.page - 1) * query.pageSize + k;
+        const n = Math.floor(index / 20) + 1;
+        const i = index % 20;
+        return { id: `p${n}-${i}`, title: `Book ${n}.${i} (renamed)` } as Book;
+      }),
+      totalCount: 200,
+    } as PaginatedResponse<Book>);
+  }
 
   it('leaves a read the user started alone when the library changes', () => {
     component.loadingMore.set(true);
