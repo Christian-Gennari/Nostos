@@ -34,12 +34,18 @@ export interface CloudEntryView {
 }
 
 /**
+ * The deployment mode this browser last saw. Only a timing hint: it decides
+ * whether the session is read alongside the capabilities, never what is shown.
+ */
+const DEPLOYMENT_MODE_KEY = 'nostos.deployment-mode';
+
+/**
  * Single browser orchestration boundary for hosted Cloud entry.
  *
  * The backend remains authoritative for authentication, entitlement and
  * provisioning. Browser persistence is used only for the optional first-run
- * welcome/import choice after this browser has initiated provisioning; it
- * never selects a tenant or controls access.
+ * welcome/import choice after this browser has initiated provisioning, and for
+ * the deployment-mode timing hint; it never selects a tenant or controls access.
  */
 @Injectable({ providedIn: 'root' })
 export class CloudEntryService {
@@ -118,8 +124,19 @@ export class CloudEntryService {
     this.view.set({ kind: 'loading' });
 
     try {
-      const capabilities = await firstValueFrom(this.capabilities.get(force));
+      const capabilitiesRequest = firstValueFrom(this.capabilities.get(force));
+      // A browser that last talked to a Cloud host asks for the session at the
+      // same time instead of after the capabilities answer: one round trip
+      // fewer before the app appears. The session read answers signed-out
+      // visitors too, so it never trips the 401 handling; a SelfHosted browser
+      // never sends it.
+      const earlySession = this.lastSawCloud()
+        ? firstValueFrom(this.auth.getSession(force)).catch(() => null)
+        : null;
+
+      const capabilities = await capabilitiesRequest;
       this.deploymentCapabilities.set(capabilities);
+      this.rememberDeploymentMode(capabilities.deploymentMode);
       if (capabilities.deploymentMode === 'SelfHosted') {
         this.session.set(null);
         this.view.set({ kind: 'product' });
@@ -128,7 +145,7 @@ export class CloudEntryService {
 
       this.requestedOffer.set(this.readOfferFromLocation());
 
-      const session = await firstValueFrom(this.auth.getSession(force));
+      const session = (await earlySession) ?? (await firstValueFrom(this.auth.getSession(force)));
       this.session.set(session);
 
       if (!session.authenticated || !session.account) {
@@ -576,6 +593,23 @@ export class CloudEntryService {
     if (this.pollHandle !== undefined) {
       clearTimeout(this.pollHandle);
       this.pollHandle = undefined;
+    }
+  }
+
+  /** Whether this browser last talked to a Cloud host (see `initialize`). */
+  private lastSawCloud(): boolean {
+    try {
+      return localStorage.getItem(DEPLOYMENT_MODE_KEY) === 'Cloud';
+    } catch {
+      return false;
+    }
+  }
+
+  private rememberDeploymentMode(mode: string): void {
+    try {
+      localStorage.setItem(DEPLOYMENT_MODE_KEY, mode);
+    } catch {
+      // Optional: without it the session is read after the capabilities.
     }
   }
 

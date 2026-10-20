@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { BooksService } from './books.service';
@@ -104,6 +104,59 @@ describe('CloudEntryService', () => {
     expect(auth.getSession).not.toHaveBeenCalled();
     expect(onboarding.getState).not.toHaveBeenCalled();
     expect(books.getStatusCounts).not.toHaveBeenCalled();
+  });
+
+  describe('the session read on a returning Cloud browser', () => {
+    it('starts alongside the capabilities, not after them', async () => {
+      localStorage.setItem('nostos.deployment-mode', 'Cloud');
+      const pendingCapabilities = new Subject<typeof cloudCapabilities>();
+      capabilities.get.mockReturnValue(pendingCapabilities);
+      auth.getSession.mockReturnValue(of({ authenticated: false, accountState: null, account: null }));
+      auth.loginUrl.mockReturnValue('/api/auth/login');
+
+      const done = service.initialize();
+      expect(auth.getSession).toHaveBeenCalledTimes(1);
+
+      pendingCapabilities.next(cloudCapabilities);
+      pendingCapabilities.complete();
+      await done;
+      expect(auth.getSession).toHaveBeenCalledTimes(1);
+      expect(service.view().kind).toBe('signed_out');
+    });
+
+    it('is never sent by a browser that last saw a SelfHosted server', async () => {
+      localStorage.setItem('nostos.deployment-mode', 'SelfHosted');
+      capabilities.get.mockReturnValue(of({ ...cloudCapabilities, deploymentMode: 'SelfHosted' }));
+
+      await service.initialize();
+
+      expect(auth.getSession).not.toHaveBeenCalled();
+      expect(localStorage.getItem('nostos.deployment-mode')).toBe('SelfHosted');
+    });
+
+    it('is read again in order when the early read failed', async () => {
+      localStorage.setItem('nostos.deployment-mode', 'Cloud');
+      capabilities.get.mockReturnValue(of(cloudCapabilities));
+      auth.getSession
+        .mockReturnValueOnce(throwError(() => new Error('network')))
+        .mockReturnValue(of({ authenticated: false, accountState: null, account: null }));
+      auth.loginUrl.mockReturnValue('/api/auth/login');
+
+      await service.initialize();
+
+      expect(auth.getSession).toHaveBeenCalledTimes(2);
+      expect(service.view().kind).toBe('signed_out');
+    });
+
+    it('is remembered once a Cloud host has answered', async () => {
+      capabilities.get.mockReturnValue(of(cloudCapabilities));
+      auth.getSession.mockReturnValue(of({ authenticated: false, accountState: null, account: null }));
+      auth.loginUrl.mockReturnValue('/api/auth/login');
+
+      await service.initialize();
+
+      expect(localStorage.getItem('nostos.deployment-mode')).toBe('Cloud');
+    });
   });
 
   it('shows the hosted sign-in path for a signed-out Cloud user', async () => {
