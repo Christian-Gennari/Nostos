@@ -11,7 +11,8 @@
   z-index: 60;
   box-sizing: border-box;
   width: min(440px, calc(100vw - 24px));
-  max-height: min(420px, 60vh);
+  /* The height is set once per open by the component (issue #1111). */
+  max-height: calc(100vh - 24px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -24,18 +25,60 @@
   font-family: 'Hanken Grotesk', system-ui, sans-serif;
 }
 
+.source-palette.has-side-preview {
+  width: min(740px, calc(100vw - 24px));
+}
+
 .source-palette.is-sheet {
   left: 8px;
   right: 8px;
   width: auto;
-  max-height: min(55vh, 420px);
 }
 
+/* Always there, so the list starts at the same place in every state. */
 .sp-heading {
-  padding: 10px 14px 4px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 1.1rem;
+  padding: 8px 14px 2px;
   color: var(--manuscript-ink-faint);
   font-size: 0.74rem;
   letter-spacing: 0.02em;
+}
+
+.sp-heading-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* While a new query is answered the old results stay; this says so quietly. */
+.sp-searching {
+  flex: 0 0 auto;
+  font-style: italic;
+}
+
+.sp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-palette.has-side-preview .sp-body {
+  flex-direction: row;
+}
+
+.sp-results {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .sp-list {
@@ -85,18 +128,74 @@
   font-style: italic;
 }
 
-/* The active row shows the whole quotation, so a long one can be read before
-   it goes in. A passage shows more of its opening, not all of it: its
-   sentences are chosen in the viewer. */
-.sp-row.active .sp-lead {
-  -webkit-line-clamp: 12;
+/* Every row keeps its two lines when it is highlighted: moving through the
+   list changes the highlight only. The whole quotation is read in the
+   preview (issue #1111). */
+
+/* The highlighted source in full. A fixed box with its own scroll: under the
+   list (the strip), or beside it on a wide window (the column). */
+.sp-preview {
+  flex: 0 0 150px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--manuscript-rule);
 }
 
-.sp-row.active[data-kind='passage'] .sp-lead {
-  -webkit-line-clamp: 4;
+.source-palette.has-side-preview .sp-preview {
+  flex: 0 0 300px;
+  border-top: 0;
+  border-left: 1px solid var(--manuscript-rule);
+}
+
+.sp-preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: sp-preview-in 120ms ease-out;
+}
+
+/* The text scrolls; the insert options under it stay in view. */
+.sp-preview-text {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 8px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@keyframes sp-preview-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-preview-body {
+    animation: none;
+  }
+}
+
+.sp-preview-lead {
+  margin: 0;
+  color: var(--manuscript-ink);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.sp-preview-lead.is-quote {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 0.98rem;
+  font-style: italic;
 }
 
 .sp-note {
+  margin: 0;
   color: var(--manuscript-ink-soft);
   font-size: 0.8rem;
   line-height: 1.4;
@@ -157,10 +256,16 @@
 }
 
 .sp-more-actions {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  padding: 6px 14px 8px;
+}
+
+/* ⋯ on a row points here, so the options it opened are easy to find. */
+.sp-preview-body.show-actions .sp-more-action {
+  border-color: var(--manuscript-ink-soft);
 }
 
 .sp-more-action,
@@ -187,6 +292,7 @@
 }
 
 .sp-hint {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
@@ -230,4 +336,18 @@
   .sp-hint {
     display: none;
   }
+
+  .sp-preview {
+    flex-basis: 150px;
+  }
+}
+
+/* One line each in a row, so a long title or byline cannot add a line when
+   the row is highlighted; the preview shows them whole. */
+.sp-row .sp-byline,
+.sp-row .sp-passage-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
