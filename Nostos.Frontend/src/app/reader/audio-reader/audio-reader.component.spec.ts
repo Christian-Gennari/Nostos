@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
-import { AudioReader, parseTimeString } from './audio-reader.component';
+import { AudioReader, PLAYING_SAVE_INTERVAL_MS, parseTimeString } from './audio-reader.component';
 import { BooksService } from '../../core/services/books.service';
 import { Book } from '../../core/dtos/book.dtos';
 
@@ -1168,6 +1168,13 @@ describe('AudioReader keeps its place when the player loses it', () => {
 
     expect(component.currentTime()).toBe(2580);
     expect(savedLocations()).not.toContain('0');
+  });
+
+  it('saves a playing position every ten seconds, not every tick', () => {
+    howl.config.onplay();
+    vi.advanceTimersByTime(30_000);
+
+    expect(booksServiceMock.updateProgress).toHaveBeenCalledTimes(30_000 / PLAYING_SAVE_INTERVAL_MS);
   });
 
   it('a seek to the start that the listener made is kept and saved', () => {

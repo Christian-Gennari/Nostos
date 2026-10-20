@@ -38,6 +38,9 @@ import { formatAudioTime } from '../../core/dtos/note.dtos';
 import { PASSAGE_CLIP_PLAY_EVENT } from '../../ui/passage-viewer/clip-player';
 import { coverImageUrl } from '../../core/cover-url';
 
+/** How often a playing audiobook saves its position (see the constructor). */
+export const PLAYING_SAVE_INTERVAL_MS = 10_000;
+
 @Component({
   selector: 'app-audio-reader',
   standalone: true,
@@ -207,8 +210,13 @@ export class AudioReader implements OnDestroy, IReader {
       { explicit: true },
     );
 
+    // While audio plays, the position is saved at most every ten seconds.
+    // Pause, seek, hiding the tab, leaving the reader and unloading the page
+    // each save at once, so this only bounds what a crash or a dropped
+    // connection can lose; every save is a database write (and, on Cloud, a
+    // tenant lookup), so it is not done every two seconds.
     this.progressSubscription = this.progressSubject.pipe(
-      sampleTime(2000),
+      sampleTime(PLAYING_SAVE_INTERVAL_MS),
       filter(() => this.isInitialized),
     ).subscribe((data) => {
       this.booksService
@@ -454,7 +462,19 @@ export class AudioReader implements OnDestroy, IReader {
       this.rearmChapterSleepTarget();
       this.updateProgressState();
       this.updateMediaSessionPositionState();
+      // A jump is the listener's choice, so it is saved at once, 0:00 included
+      // (the periodic save runs only every PLAYING_SAVE_INTERVAL_MS). Restoring
+      // the saved place on open happens before initialisation and is not saved.
+      if (this.isInitialized) this.savePosition(seconds);
     }
+  }
+
+  /** Saves `seconds` as the place, even 0:00: only for positions the listener chose. */
+  private savePosition(seconds: number) {
+    const duration = this.duration();
+    this.booksService
+      .updateProgress(this.bookId(), seconds.toString(), duration > 0 ? Math.floor((seconds / duration) * 100) : 0)
+      .subscribe({ error: (err) => console.error('Failed to save progress:', err) });
   }
 
   // Speed Logic
