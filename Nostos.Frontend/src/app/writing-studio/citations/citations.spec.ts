@@ -60,7 +60,7 @@ describe('citation styles (issue #1109): book metadata as CSL', () => {
       'publisher-place': 'New York',
     });
     expect(missingForStyle(item)).toEqual([]);
-    expect(missingForStyle(bookToCslItem(book({ publishedDate: null, publisher: null })))).toEqual(['the year', 'the publisher']);
+    expect(missingForStyle(bookToCslItem(book({ publishedDate: null, publisher: null })))).toEqual(['year', 'publisher']);
   });
 });
 

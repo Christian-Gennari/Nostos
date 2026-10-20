@@ -66,11 +66,11 @@ export function bookToCslItem(book: Book): CslItem {
   return item;
 }
 
-/** What a style will miss for this book, so the settings can say "APA needs the year". */
+/** The details citations will lack for this book, for the hint under the style list. */
 export function missingForStyle(item: CslItem): string[] {
   const missing: string[] = [];
-  if (!item.author && !item.editor) missing.push('the author');
-  if (!item.issued) missing.push('the year');
-  if (!item.publisher) missing.push('the publisher');
+  if (!item.author && !item.editor) missing.push('author');
+  if (!item.issued) missing.push('year');
+  if (!item.publisher) missing.push('publisher');
   return missing;
 }

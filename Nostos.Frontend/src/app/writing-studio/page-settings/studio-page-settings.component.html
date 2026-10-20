@@ -60,7 +60,7 @@
       }
     </div>
     @if (exampleMissing().length && exampleBook(); as book) {
-      <p class="ps-citation-missing">“{{ book.title }}” has no {{ exampleMissing().join(' or ') }}. Add it in Book details for complete citations.</p>
+      <p class="ps-citation-missing">“{{ book.title }}” has no {{ exampleMissing().join(' or ') }} in its details. Add it in Book details so its citations are complete.</p>
     }
   } @else {
     <!-- The app theme (issue #1074): the same setting as Settings → Colour
