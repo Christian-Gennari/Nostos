@@ -39,9 +39,13 @@ public sealed class BookTextWorkSignalTests
 
         await scheduler.ScheduleAsync(Guid.NewGuid(), "cover.png");
 
-        var idle = signal.WaitAsync(TimeSpan.FromMilliseconds(200), CancellationToken.None);
-        await Task.Delay(50);
+        // No signal is pending: a wait sleeps until its timeout or until it is
+        // cancelled. (No short timers here, so a loaded machine cannot race it.)
+        using var stop = new CancellationTokenSource();
+        var idle = signal.WaitAsync(TimeSpan.FromMinutes(5), stop.Token);
+        await Task.Delay(100);
         idle.IsCompleted.Should().BeFalse();
-        await idle.WaitAsync(TimeSpan.FromSeconds(5));
+        stop.Cancel();
+        await FluentActions.Awaiting(() => idle).Should().ThrowAsync<OperationCanceledException>();
     }
 }

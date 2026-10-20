@@ -30,10 +30,13 @@ public sealed class MigrationWorkerWakeupTests
         await wakeup.WaitAsync(TimeSpan.FromMinutes(5), TimeProvider.System, CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Signals coalesce: the second wait sleeps until its timeout.
-        var second = wakeup.WaitAsync(TimeSpan.FromMilliseconds(200), TimeProvider.System, CancellationToken.None);
-        await Task.Delay(50);
+        // Signals coalesce: the second wait sleeps until its timeout or until it
+        // is cancelled. (No short timers here, so a loaded machine cannot race it.)
+        using var stop = new CancellationTokenSource();
+        var second = wakeup.WaitAsync(TimeSpan.FromMinutes(5), TimeProvider.System, stop.Token);
+        await Task.Delay(100);
         second.IsCompleted.Should().BeFalse();
-        await second.WaitAsync(TimeSpan.FromSeconds(5));
+        stop.Cancel();
+        await FluentActions.Awaiting(() => second).Should().ThrowAsync<OperationCanceledException>();
     }
 }
