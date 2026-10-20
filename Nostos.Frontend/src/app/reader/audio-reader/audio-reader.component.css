@@ -547,11 +547,12 @@
   gap: 0.5rem;
 }
 
-/* The steps are appButton sm; the menu keeps them square. */
+/* The steps are appButton sm; the menu keeps them square. The glyphs are SVG
+   icons, not "−"/"+" text, because text glyphs sit on the font's math axis and
+   never land in the box's optical center. */
 .rate-step {
   min-width: 30px;
   padding: 0;
-  font-size: 1rem;
 }
 
 .rate-step:focus-visible,

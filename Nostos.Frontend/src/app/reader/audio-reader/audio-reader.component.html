@@ -164,9 +164,9 @@
             <div class="playback-section">
               <span class="playback-section-label" id="playback-speed-label">Speed</span>
               <div class="rate-steps" role="group" aria-labelledby="playback-speed-label">
-                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(-0.05)" aria-label="Slower" data-testid="audio-rate-down">−</button>
+                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(-0.05)" aria-label="Slower" data-testid="audio-rate-down"><nostos-icon name="minus" [size]="14" /></button>
                 <span class="rate-readout">{{ formatRate(currentRate()) }}</span>
-                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(0.05)" aria-label="Faster" data-testid="audio-rate-up">+</button>
+                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(0.05)" aria-label="Faster" data-testid="audio-rate-up"><nostos-icon name="plus" [size]="14" /></button>
               </div>
               <nostos-segmented
                 class="rate-options"
