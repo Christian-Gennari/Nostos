@@ -25,6 +25,7 @@ import {
   PdfLoadedEvent,
   ScrollModeType,
 } from 'ngx-extended-pdf-viewer';
+import './pdf-defaults';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
