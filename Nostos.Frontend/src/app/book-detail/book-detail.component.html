@@ -186,6 +186,54 @@
               [value]="statusValue()"
               (valueChange)="selectStatusOption($event)"
             ></app-dropdown>
+
+            <!-- Paper books (issue #1091): where you are, set by hand. A pill
+                 like the status beside it, not a new panel. -->
+            @if (isPaperBook()) {
+            <div class="page-stepper" role="group" aria-label="Current page">
+              <button
+                appIconButton
+                icon="minus"
+                size="xs"
+                [glyphSize]="12"
+                aria-label="Previous page"
+                [disabled]="paperPage() === null || paperPage() === 1"
+                (click)="stepPaperPage(-1)"
+              ></button>
+              <label class="page-stepper-field">
+                <span>page</span>
+                <input
+                  #pageInput
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  [attr.max]="paperPageCount()"
+                  autocomplete="off"
+                  aria-label="Current page"
+                  placeholder="–"
+                  [style.width.ch]="(paperPageCount()?.toString()?.length ?? 3) + 1"
+                  [value]="paperPage() ?? ''"
+                  (keydown.enter)="pageInput.blur()"
+                  (blur)="commitPaperPage(pageInput)"
+                />
+                @if (paperPageCount(); as count) {
+                <span>of {{ count }}</span>
+                }
+              </label>
+              <button
+                appIconButton
+                icon="plus"
+                size="xs"
+                [glyphSize]="12"
+                aria-label="Next page"
+                [disabled]="paperPage() !== null && paperPage() === paperPageCount()"
+                (click)="stepPaperPage(1)"
+              ></button>
+            </div>
+            @if (paperPage() !== null && !paperPageCount()) {
+            <span class="page-stepper-hint">Add a page count in Book details to see how far.</span>
+            }
+            }
           </div>
 
           <div class="primary-actions">
