@@ -172,11 +172,11 @@
         </div>
 
         @for (book of books(); track book.id) {
-        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book.coverUrl)">
+        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)">
           <div class="col title">
             <div class="list-cover-frame">
               @if (book.coverUrl) {
-                <img [src]="getLibraryCoverUrl(book.coverUrl)" [alt]="book.title" appBloomArt class="list-cover-img" loading="lazy" decoding="async" />
+                <img [src]="getLibraryCoverUrl(book)" [alt]="book.title" appBloomArt class="list-cover-img" loading="lazy" decoding="async" />
               } @else {
                 <div class="list-cover-placeholder">
                   <nostos-icon name="book" [size]="16" weight="light"></nostos-icon>
@@ -361,7 +361,7 @@
       <div class="book-grid">
         @for (book of books(); track book.id) {
 
-        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book.coverUrl)">
+        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)">
           <div class="cover-wrapper">
             @if (book.status === 1 || book.status === 2) {
               <!-- In flight: the progress lives ON the card, at the top of the cover
@@ -392,7 +392,7 @@
 
             @if (book.coverUrl) {
             <img
-              [src]="getLibraryCoverUrl(book.coverUrl)"
+              [src]="getLibraryCoverUrl(book)"
               appBloomArt
               class="cover-image"
               alt="{{ book.title }} cover"

@@ -36,6 +36,7 @@ import { SegmentedComponent } from '../../ui/segmented/segmented.component';
 import { PassageDraft, PassageMark } from '../passage/passage-mark';
 import { formatAudioTime } from '../../core/dtos/note.dtos';
 import { PASSAGE_CLIP_PLAY_EVENT } from '../../ui/passage-viewer/clip-player';
+import { coverImageUrl } from '../../core/cover-url';
 
 @Component({
   selector: 'app-audio-reader',
@@ -59,6 +60,8 @@ export class AudioReader implements OnDestroy, IReader {
   // The already-loaded book is passed in by the reader shell so this component
   // never issues a second GET /api/books/{id} (issue #7).
   book = input<Book | null>(null);
+  /** The cover under its version, so the browser can keep it between visits. */
+  readonly coverSrc = computed(() => coverImageUrl(this.book()));
 
   // The chapter line asks the shell for its Contents panel instead of carrying
   // a second chapter list inside the player (issue #904).
@@ -898,7 +901,7 @@ export class AudioReader implements OnDestroy, IReader {
       title: chapter ?? book.title,
       artist: book.author || book.narrator || undefined,
       album: chapter ? book.title : book.series || undefined,
-      artwork: book.coverUrl ? [{ src: book.coverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
+      artwork: book.coverUrl ? [{ src: coverImageUrl(book)!, sizes: '512x512', type: 'image/jpeg' }] : [],
     });
   }
 

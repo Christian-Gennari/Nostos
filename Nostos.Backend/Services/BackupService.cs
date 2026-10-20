@@ -640,6 +640,7 @@ public class BackupService : IBackupService
                 await Task.Delay(200, ct);
 
                 File.Copy(dbPath, activeDbPath, true);
+                await RenewCoverVersionsAsync(activeDbPath, ct);
             }
 
             var booksSrcDir = Path.Combine(tempDir, "books");
@@ -667,6 +668,34 @@ public class BackupService : IBackupService
         {
             try { Directory.Delete(tempDir, true); } catch { /* cleanup */ }
         }
+    }
+
+    /// <summary>
+    /// A restored database brings back cover versions the browser may already
+    /// hold cached for different bytes (a cover replaced after the backup, or a
+    /// backup taken without book files). Fresh tokens give every restored cover
+    /// a URL no browser has seen. A backup older than the CoverVersion column
+    /// has none to renew: the migration that adds it on start-up stamps them.
+    /// </summary>
+    private static async Task RenewCoverVersionsAsync(string databasePath, CancellationToken ct)
+    {
+        await using var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = databasePath, Pooling = false }.ToString());
+        await connection.OpenAsync(ct);
+
+        await using (var probe = connection.CreateCommand())
+        {
+            probe.CommandText =
+                "SELECT COUNT(*) FROM pragma_table_info('Books') WHERE name = 'FileDetails_CoverVersion'";
+            if (Convert.ToInt64(await probe.ExecuteScalarAsync(ct)) == 0)
+                return;
+        }
+
+        await using var renew = connection.CreateCommand();
+        renew.CommandText =
+            "UPDATE \"Books\" SET \"FileDetails_CoverVersion\" = lower(hex(randomblob(8))) " +
+            "WHERE \"FileDetails_CoverFileName\" IS NOT NULL";
+        await renew.ExecuteNonQueryAsync(ct);
     }
 
     private string ResolveActiveDatabasePath()

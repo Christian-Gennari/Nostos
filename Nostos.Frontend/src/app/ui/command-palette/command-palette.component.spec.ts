@@ -190,7 +190,7 @@ describe('CommandPalette', () => {
   describe('searching', () => {
     beforeEach(() => {
       booksList.mockReturnValue(
-        of({ items: [{ id: 'b1', title: 'Attention Merchants', author: 'Tim Wu', coverUrl: '/covers/b1.jpg' }], totalCount: 1 }),
+        of({ items: [{ id: 'b1', title: 'Attention Merchants', author: 'Tim Wu', coverUrl: '/api/books/b1/cover', coverVersion: 'v1' }], totalCount: 1 }),
       );
       notesSearch.mockReturnValue(
         of([
@@ -220,14 +220,14 @@ describe('CommandPalette', () => {
       expect(entry('topic')).toMatchObject({ id: 't2', sub: '1 note' });
       expect(component.entries().filter((e) => e.kind === 'document').map((e) => e.id)).toEqual(['w1']);
       expect(entry('note').label).toBe('Fear is the mind-killer.');
-      expect(entry('book').coverUrl).toBe('/covers/b1.jpg');
+      expect(entry('book').coverUrl).toBe('/api/books/b1/cover/thumbnail?width=120&v=v1');
     });
 
     it('shows a book cover in place of the glyph', () => {
       openPalette();
       type('attention');
       const book = fixture.nativeElement.querySelector('[data-testid="palette-item-book"] img');
-      expect(book?.getAttribute('src')).toBe('/covers/b1.jpg');
+      expect(book?.getAttribute('src')).toBe('/api/books/b1/cover/thumbnail?width=120&v=v1');
     });
 
     it('matches actions by their keywords as well as their label', () => {

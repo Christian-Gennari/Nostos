@@ -107,6 +107,8 @@ public sealed class BookTracksMigrationTests : IDisposable
         // 4. Existing books are single-file books, and the model works.
         await using (var db = new NostosDbContext(options))
         {
+            // The current model also reads the later cover column.
+            await LaterBookColumns.RestoreCoverVersionAsync(db);
             var books = await db.Books.AsNoTracking().OrderBy(b => b.Title).ToListAsync();
             books.Should().OnlyContain(b => b.FileDetails.TracksJson == null);
             books.Select(b => b.FileDetails.FileName).Should().Equal("book.epub", "book.m4b");

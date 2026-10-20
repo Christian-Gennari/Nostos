@@ -98,7 +98,11 @@ public record BookDto(
     // The ordered tracks of a multi-track audiobook; null for a single-file
     // book. Such a book reports HasFile = true with no FileName: the tracks are
     // its media. APPENDED to preserve positional record stability.
-    IEnumerable<BookTrackDto>? Tracks = null
+    IEnumerable<BookTrackDto>? Tracks = null,
+    // Changes whenever the cover's bytes change; null without a cover. A client
+    // adds it to the cover URL as ?v= so the image can be cached for good.
+    // APPENDED to preserve positional record stability.
+    string? CoverVersion = null
 );
 
 /// <summary>

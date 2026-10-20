@@ -35,6 +35,7 @@ import { AssistantService } from '../assistant/assistant.service';
 import { AssistantLauncherService } from '../assistant/assistant-launcher.service';
 import { CommandPaletteService } from './command-palette.service';
 import { RecentItem, RecentItemsService, notesLabel } from './recent-items.service';
+import { coverImageUrl } from '../../core/cover-url';
 
 export type PaletteEntryKind =
   | 'book'
@@ -592,7 +593,8 @@ export class CommandPalette {
 }
 
 function bookEntry(b: Book): PaletteEntry {
-  return { kind: 'book', id: b.id, label: b.title, sub: b.author || 'Unknown author', icon: 'book', coverUrl: b.coverUrl };
+  // A 22px-wide chip: the smallest thumbnail, not the full-size cover.
+  return { kind: 'book', id: b.id, label: b.title, sub: b.author || 'Unknown author', icon: 'book', coverUrl: coverImageUrl(b, 120) };
 }
 
 function topicEntry(t: TopicDto): PaletteEntry {

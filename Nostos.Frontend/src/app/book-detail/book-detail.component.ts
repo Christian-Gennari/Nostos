@@ -73,6 +73,7 @@ import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switcher.component';
 import { buildEditionSwitchOptions } from './edition-switch-options';
+import { coverImageUrl } from '../core/cover-url';
 
 @Component({
   standalone: true,
@@ -301,10 +302,10 @@ export class BookDetail implements OnInit, OnDestroy {
    * full-bleed layers cheap. Null when the book has no cover, which drops the
    * band back to a gradient.
    */
-  readonly heroArtUrl = computed<string | null>(() => {
-    const cover = this.store.book()?.coverUrl;
-    return cover ? `${cover}/thumbnail?width=640` : null;
-  });
+  readonly heroArtUrl = computed<string | null>(() => coverImageUrl(this.store.book(), 640));
+
+  /** The full-size cover, under its version so the browser can keep it. */
+  readonly coverSrc = computed<string | null>(() => coverImageUrl(this.store.book()));
 
   newNote = model<string>('');
 

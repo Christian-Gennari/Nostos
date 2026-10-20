@@ -137,6 +137,9 @@ public sealed class PortableCompletenessInventoryTests
                     Excluded(
                         "LocationsJson",
                         "Reconstructible client-side epub.js CFI locations cache; it is regenerated from the book."),
+                    Excluded(
+                        "CoverVersion",
+                        "Cover cache-busting token; a fresh one is minted whenever a cover is written, including on import."),
                 ]),
 
             ["WorkModel"] = PortableEntity(

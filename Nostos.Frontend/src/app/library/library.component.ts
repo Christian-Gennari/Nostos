@@ -43,6 +43,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/vi
 import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
 import { ProgressComponent } from '../ui/progress/progress.component';
+import { coverImageUrl } from '../core/cover-url';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -775,9 +776,8 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
-  getLibraryCoverUrl(coverUrl: string | null): string | null {
-    if (!coverUrl) return null;
-    return `${coverUrl}/thumbnail?width=320`;
+  getLibraryCoverUrl(book: Book): string | null {
+    return coverImageUrl(book, 320);
   }
 
   /** Hero art in flight, keyed by URL, so a hover does not re-request it. */
@@ -793,11 +793,9 @@ export class Library implements OnInit, OnDestroy {
    * thumbnail is in flight or already cached and the band paints on its first
    * frame. Costs nothing unless the user actually hovers.
    */
-  prefetchHeroCover(coverUrl: string | null): void {
-    if (!coverUrl) return;
-
-    const url = `${coverUrl}/thumbnail?width=640`;
-    if (this.prefetchedCovers.has(url)) return;
+  prefetchHeroCover(book: Book): void {
+    const url = coverImageUrl(book, 640);
+    if (!url || this.prefetchedCovers.has(url)) return;
 
     const img = new Image();
     img.decoding = 'async';

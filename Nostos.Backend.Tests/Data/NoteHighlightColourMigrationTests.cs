@@ -62,6 +62,8 @@ public sealed class NoteHighlightColourMigrationTests : IDisposable
         Guid bookId;
         await using (var db = new NostosDbContext(options))
         {
+            // The current model writes the later cover column on every book.
+            await LaterBookColumns.RestoreCoverVersionAsync(db);
             var work = new WorkModel
             {
                 Id = Guid.NewGuid(),

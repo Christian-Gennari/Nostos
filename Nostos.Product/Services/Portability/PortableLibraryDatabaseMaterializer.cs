@@ -207,6 +207,10 @@ internal static class PortableLibraryDatabaseMaterializer
                 FileName = bookMedia?.Descriptor.FileName,
                 TracksJson = string.IsNullOrWhiteSpace(source.TracksJson) ? null : source.TracksJson,
                 CoverFileName = coverMedia?.Descriptor.FileName,
+                // Not carried by the archive: derived from the cover's own
+                // digest, so the token moves exactly when the bytes do and a
+                // rebuild of the same archive produces the same row.
+                CoverVersion = coverMedia is null ? null : CoverVersionFromDigest(coverMedia.Descriptor.Sha256),
                 // Chapter metadata is portable and retained because there is
                 // no lazy server-side re-extraction path today. epub.js
                 // locations are a client-generated cache and are rebuilt.
@@ -369,6 +373,9 @@ internal static class PortableLibraryDatabaseMaterializer
             existing.UpdatedAtUtc = assistant.UpdatedAtUtc;
         }
     }
+
+    private static string CoverVersionFromDigest(string sha256) =>
+        sha256.Length >= 16 ? sha256[..16].ToLowerInvariant() : FileInfoDetails.NewCoverVersion();
 }
 
 /// <summary>
