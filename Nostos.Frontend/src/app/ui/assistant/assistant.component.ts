@@ -3,6 +3,7 @@ import {
   DestroyRef,
   ElementRef,
   HostListener,
+  afterNextRender,
   afterRenderEffect,
   computed,
   inject,
@@ -463,6 +464,18 @@ export class AssistantComponent {
     // A launcher outside this component (the dock) toggles through the
     // launcher service; the lifecycle stays here.
     const launcherSubscription = this.launcher.toggleRequested.subscribe(() => this.toggle());
+
+    // This shell loads lazily (app.component.html). A launcher press or a
+    // surface's open request made before it existed was kept; act on it once
+    // the shell has rendered.
+    const pendingOpen = this.assistant.takePendingSurfaceOpen();
+    const pendingToggle = this.launcher.takePendingToggle();
+    if (pendingOpen || pendingToggle) {
+      afterNextRender(() => {
+        if (pendingOpen) this.open();
+        else this.toggle();
+      });
+    }
 
     this.destroyRef.onDestroy(() => {
       surfaceOpenSubscription.unsubscribe();

@@ -1,4 +1,4 @@
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import {
   NavigationCancel,
   NavigationEnd,
@@ -13,6 +13,9 @@ import { CommandPaletteService } from './ui/command-palette/command-palette.serv
 import { RecentItemsService } from './ui/command-palette/recent-items.service';
 import { HighlightImportModal } from './ui/highlight-import-modal/highlight-import-modal.component';
 import { AssistantComponent } from './ui/assistant/assistant.component';
+import { AssistantService } from './ui/assistant/assistant.service';
+import { AssistantLauncherService } from './ui/assistant/assistant-launcher.service';
+import { HighlightImportService } from './core/services/highlight-import.service';
 import { PassageViewerComponent } from './ui/passage-viewer/passage-viewer.component';
 import { PassageViewerService } from './ui/passage-viewer/passage-viewer.service';
 import { SwUpdateService } from './core/services/sw-update.service';
@@ -49,6 +52,20 @@ export class App {
   /** Opens the deferred command palette; see app.component.html. */
   readonly palette = inject(CommandPaletteService);
   readonly passageViewer = inject(PassageViewerService);
+  readonly highlightImport = inject(HighlightImportService);
+  private readonly assistant = inject(AssistantService);
+  private readonly assistantLauncher = inject(AssistantLauncherService);
+  /** True once the first navigation has rendered, so the dock's presence is known. */
+  private readonly routed = signal(false);
+
+  /** When the deferred Ask Nostos shell must load before the browser is idle. */
+  readonly assistantWanted = computed(
+    () =>
+      this.assistant.surfaceWanted() ||
+      this.assistant.isOpen() ||
+      // A route without the dock shows the shell's own launcher capsule.
+      (this.routed() && this.assistantLauncher.available() && !this.assistantLauncher.dockHosted()),
+  );
 
   constructor() {
     // Applies the persisted theme immediately. `index.html` already set the
@@ -66,6 +83,8 @@ export class App {
     // Cmd/Ctrl+K and the palette's Recent list both work before the palette
     // itself has loaded (it is deferred until first opened).
     this.palette.start();
+    // Likewise Cmd/Ctrl+J before the deferred Ask Nostos shell has loaded.
+    this.assistantLauncher.start();
     inject(RecentItemsService).watch(this.router);
     void this.cloudEntry.initialize();
 
@@ -83,6 +102,7 @@ export class App {
       ) {
         this.navigationPending.set(false);
       }
+      if (event instanceof NavigationEnd) this.routed.set(true);
     });
   }
 }

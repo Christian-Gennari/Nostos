@@ -708,9 +708,30 @@ export class AssistantService {
    */
   readonly surfaceOpenRequested = new Subject<void>();
 
+  /**
+   * The assistant shell is loaded lazily (app.component.html): true once
+   * something asked for it, which loads it at once instead of when the browser
+   * is idle. A request made before it exists is kept and handed over when it
+   * attaches (`takePendingSurfaceOpen`).
+   */
+  readonly surfaceWanted = signal(false);
+  private pendingSurfaceOpen = false;
+
   requestSurfaceOpen(): void {
     if (!this.surfaceAvailable()) return;
-    this.surfaceOpenRequested.next();
+    if (this.surfaceOpenRequested.observed) {
+      this.surfaceOpenRequested.next();
+      return;
+    }
+    this.pendingSurfaceOpen = true;
+    this.surfaceWanted.set(true);
+  }
+
+  /** For the shell when it attaches: whether an open was requested before it existed. */
+  takePendingSurfaceOpen(): boolean {
+    const pending = this.pendingSurfaceOpen;
+    this.pendingSurfaceOpen = false;
+    return pending;
   }
 
   open(): void {
