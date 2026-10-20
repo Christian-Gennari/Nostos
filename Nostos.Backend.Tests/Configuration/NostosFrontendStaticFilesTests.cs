@@ -33,4 +33,30 @@ public class NostosFrontendStaticFilesTests
         options.ContentTypeProvider!.TryGetContentType(path, out var contentType).Should().BeTrue();
         contentType.Should().Be(expected);
     }
+
+    [Theory]
+    [InlineData("main-UG2TJAJM.js")]
+    [InlineData("chunk-J553T4TW.js")]
+    [InlineData("styles-JJ4MLHCO.css")]
+    [InlineData("worker-VBGNI7MH.js")]
+    public void HashedBundlesAreCachedForGood(string fileName) =>
+        NostosFrontendStaticFiles.CacheControlFor(fileName)
+            .Should().Be("public, max-age=31536000, immutable");
+
+    [Theory]
+    [InlineData("index.html")]
+    [InlineData("ngsw.json")]
+    [InlineData("ngsw-worker.js")]
+    [InlineData("safety-worker.js")]
+    [InlineData("manifest.webmanifest")]
+    public void EntryPointsAreAlwaysRevalidated(string fileName) =>
+        NostosFrontendStaticFiles.CacheControlFor(fileName).Should().Be("no-cache");
+
+    [Theory]
+    [InlineData("favicon.ico")]
+    [InlineData("pwa-192.png")]
+    [InlineData("viewer-5.4.149.min.mjs")]
+    [InlineData("main.js")]
+    public void OtherFilesKeepTheHostDefault(string fileName) =>
+        NostosFrontendStaticFiles.CacheControlFor(fileName).Should().BeNull();
 }

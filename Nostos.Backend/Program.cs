@@ -513,6 +513,8 @@ RequestDelegate serveClientRoute = async context =>
     }
 
     context.Response.ContentType = "text/html";
+    // The entry point names the hashed bundles: always revalidate it.
+    context.Response.Headers.CacheControl = Nostos.Product.Http.NostosFrontendStaticFiles.EntryFileCacheControl;
     await context.Response.SendFileAsync(indexHtml);
 };
 
