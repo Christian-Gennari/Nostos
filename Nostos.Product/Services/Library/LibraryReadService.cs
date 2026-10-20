@@ -125,28 +125,59 @@ internal sealed class LibraryReadService(
             // pagination. A work therefore occupies one page slot while the
             // primary still reflects the filtered result (for example, a
             // favorites query can select a favorite edition).
+            //
+            // Grouping, choosing each work's primary edition, sorting and paging
+            // need only a few columns, so they run on a narrow projection of the
+            // whole filtered set. Full books, with their collections, provenance
+            // and sibling editions, are loaded for the one page that is returned:
+            // materialising the whole library per page was what made the default
+            // (grouped) Library slow on a large library.
             var candidates = await query
-                .Include(b => b.Work)
-                .Include(b => b.BookCollections)
-                .Include(b => b.Acquisition)
+                .Select(b => new GroupCandidate(
+                    b.Id,
+                    b.WorkId,
+                    b.Status,
+                    b.Title,
+                    b.CreatedAt,
+                    b.Progress.LastReadAt,
+                    b.Progress.ProgressPercent,
+                    b.Progress.Rating))
                 .ToListAsync(ct);
 
-            var candidateWorkIds = candidates.Select(c => c.WorkId).Distinct().ToList();
-            var siblingBooks = await CountableBooks(db)
-                .Include(b => b.Acquisition)
-                .Where(b => candidateWorkIds.Contains(b.WorkId))
-                .ToListAsync(ct);
-            var siblingsByWork = siblingBooks
+            var primaries = SortGroupedBooks(
+                    candidates.GroupBy(c => c.WorkId).Select(SelectPrimaryEdition),
+                    sort)
+                .ToList();
+            totalCount = primaries.Count;
+            var pageIds = primaries
+                .Skip((safePage - 1) * safePageSize)
+                .Take(safePageSize)
+                .Select(p => p.Id)
+                .ToList();
+
+            var pageBooks = (await CountableBooks(db)
+                    .Include(b => b.Work)
+                    .Include(b => b.BookCollections)
+                    .Include(b => b.Acquisition)
+                    .Where(b => pageIds.Contains(b.Id))
+                    .ToListAsync(ct))
+                .ToDictionary(b => b.Id);
+
+            var pageWorkIds = pageBooks.Values.Select(b => b.WorkId).Distinct().ToList();
+            var siblingsByWork = (await CountableBooks(db)
+                    .Include(b => b.Acquisition)
+                    .Where(b => pageWorkIds.Contains(b.WorkId))
+                    .ToListAsync(ct))
                 .GroupBy(b => b.WorkId)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            var grouped = candidates
-                .GroupBy(b => b.WorkId)
-                .Select(g =>
+            var dtos = pageIds
+                .Where(pageBooks.ContainsKey)
+                .Select(id =>
                 {
-                    var primary = SelectPrimaryEdition(g);
-                    var allEditions = siblingsByWork.GetValueOrDefault(primary.WorkId) ?? g.ToList();
-                    var dto = primary.ToDto() with
+                    var primary = pageBooks[id];
+                    var allEditions = siblingsByWork.GetValueOrDefault(primary.WorkId) ?? [primary];
+                    return primary.ToDto() with
                     {
                         WorkId = primary.WorkId,
                         EditionCount = allEditions.Count,
@@ -155,17 +186,11 @@ internal sealed class LibraryReadService(
                             .Select(MappingExtensions.ToEditionSummary)
                             .ToList(),
                     };
-                    return new GroupedBook(primary, dto);
                 })
                 .ToList();
 
-            grouped = SortGroupedBooks(grouped, sort).ToList();
-            totalCount = grouped.Count;
             pageResult = new PaginatedResponse<BookDto>(
-                grouped
-                    .Skip((safePage - 1) * safePageSize)
-                    .Take(safePageSize)
-                    .Select(g => g.Dto),
+                dtos,
                 totalCount,
                 safePage,
                 safePageSize);
@@ -476,7 +501,16 @@ internal sealed class LibraryReadService(
             book is AudioBookModel a ? a.Asin : null,
             reason);
 
-    private sealed record GroupedBook(BookModel Primary, BookDto Dto);
+    /// <summary>The columns that group, rank and sort a book in the grouped list.</summary>
+    private sealed record GroupCandidate(
+        Guid Id,
+        Guid WorkId,
+        BookStatus Status,
+        string Title,
+        DateTime CreatedAt,
+        DateTime? LastReadAt,
+        int ProgressPercent,
+        int Rating);
 
     /// <summary>
     /// The edition that stands for a work in the list.
@@ -487,26 +521,26 @@ internal sealed class LibraryReadService(
     /// be represented by the print copy's card, with nothing on it to watch. Reading
     /// history decides again the moment the import ends.
     /// </summary>
-    private static BookModel SelectPrimaryEdition(IEnumerable<BookModel> editions) => editions
+    private static GroupCandidate SelectPrimaryEdition(IEnumerable<GroupCandidate> editions) => editions
         .OrderByDescending(b => b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding)
-        .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
-        .ThenByDescending(b => b.Progress.LastReadAt)
-        .ThenByDescending(b => b.Progress.ProgressPercent)
+        .ThenByDescending(b => b.LastReadAt.HasValue)
+        .ThenByDescending(b => b.LastReadAt)
+        .ThenByDescending(b => b.ProgressPercent)
         .ThenBy(b => b.CreatedAt)
         .ThenBy(b => b.Id)
         .First();
 
-    private static IEnumerable<GroupedBook> SortGroupedBooks(
-        IEnumerable<GroupedBook> books,
+    private static IEnumerable<GroupCandidate> SortGroupedBooks(
+        IEnumerable<GroupCandidate> books,
         BookSort sort) => sort switch
         {
-            BookSort.Title => ImportingFirst(books).ThenBy(b => b.Primary.Title).ThenBy(b => b.Primary.Id),
-            BookSort.Rating => ImportingFirst(books).ThenByDescending(b => b.Primary.Progress.Rating).ThenBy(b => b.Primary.Id),
+            BookSort.Title => ImportingFirst(books).ThenBy(b => b.Title).ThenBy(b => b.Id),
+            BookSort.Rating => ImportingFirst(books).ThenByDescending(b => b.Rating).ThenBy(b => b.Id),
             BookSort.LastRead => ImportingFirst(books)
-                .ThenByDescending(b => b.Primary.Progress.LastReadAt.HasValue)
-                .ThenByDescending(b => b.Primary.Progress.LastReadAt)
-                .ThenBy(b => b.Primary.Id),
-            _ => ImportingFirst(books).ThenByDescending(b => b.Primary.CreatedAt).ThenBy(b => b.Primary.Id),
+                .ThenByDescending(b => b.LastReadAt.HasValue)
+                .ThenByDescending(b => b.LastReadAt)
+                .ThenBy(b => b.Id),
+            _ => ImportingFirst(books).ThenByDescending(b => b.CreatedAt).ThenBy(b => b.Id),
         };
 
     /// <summary>
@@ -515,9 +549,9 @@ internal sealed class LibraryReadService(
     /// has no reading history to sort on, so every user-facing sort would bury it
     /// behind the books they have actually read.
     /// </summary>
-    private static IOrderedEnumerable<GroupedBook> ImportingFirst(IEnumerable<GroupedBook> books) =>
+    private static IOrderedEnumerable<GroupCandidate> ImportingFirst(IEnumerable<GroupCandidate> books) =>
         books.OrderByDescending(b =>
-            b.Primary.Status == BookStatus.Downloading || b.Primary.Status == BookStatus.Transcoding);
+            b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding);
 
     private static LibraryCommandResultDto Result(string reply, object? data, string version) =>
         new(reply, data, version);
