@@ -34,6 +34,27 @@ public static class MigrationEndpoints
     /// to <c>false</c>: no route in this group is created and endpoint mapping
     /// succeeds without those services.
     /// </summary>
+    /// <summary>
+    /// After any write to the migration API (a job created, a part uploaded, a
+    /// session completed, a retry or resume), wake the job worker so it does
+    /// not have to poll for the work. Hosts without the worker ignore it.
+    /// </summary>
+    internal static async ValueTask<object?> WakeWorkerAfterWrites(
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        var result = await next(context);
+        if (!HttpMethods.IsGet(context.HttpContext.Request.Method)
+            && !HttpMethods.IsHead(context.HttpContext.Request.Method))
+        {
+            context.HttpContext.RequestServices
+                .GetService<Nostos.Backend.Services.Portability.Migration.MigrationWorkerWakeup>()
+                ?.Signal();
+        }
+
+        return result;
+    }
+
     public static IEndpointRouteBuilder MapMigrationEndpoints(
         this IEndpointRouteBuilder routes,
         NostosProductEndpointPolicies? policies = null)
@@ -44,6 +65,7 @@ public static class MigrationEndpoints
             return routes;
 
         var group = routes.MapGroup(BasePath);
+        group.AddEndpointFilter(WakeWorkerAfterWrites);
         if (!string.IsNullOrWhiteSpace(policies.LargeTransferRateLimitPolicy))
             group.RequireRateLimiting(policies.LargeTransferRateLimitPolicy);
         if (!string.IsNullOrWhiteSpace(policies.MigrationAuthorizationPolicy))

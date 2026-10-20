@@ -283,7 +283,8 @@ public sealed class NoOpBookTextIngestionScheduler : IBookTextIngestionScheduler
 public sealed class BookTextIngestionScheduler(
     IBookTextIndex index,
     IBookDerivedArtifactStorage artifacts,
-    ILogger<BookTextIngestionScheduler> logger) : IBookTextIngestionScheduler
+    ILogger<BookTextIngestionScheduler> logger,
+    BookTextWorkSignal? workSignal = null) : IBookTextIngestionScheduler
 {
     public async Task ScheduleAsync(Guid bookId, string sourceFileName, CancellationToken ct = default)
     {
@@ -296,6 +297,7 @@ public sealed class BookTextIngestionScheduler(
             // temporarily unavailable, a replaced source must still stop serving
             // chunks from the previous revision immediately.
             await index.ScheduleAsync(bookId, sourceFileName, format, ct);
+            workSignal?.Signal();
             await artifacts.DeleteBookArtifactsAsync(bookId, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

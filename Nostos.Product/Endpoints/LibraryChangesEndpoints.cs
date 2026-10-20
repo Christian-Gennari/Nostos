@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
+using Nostos.Backend.Middleware;
+using Nostos.Backend.Services.Portability.Migration;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -56,12 +58,39 @@ public static class LibraryChangesEndpoints
 
     public static IEndpointRouteBuilder MapLibraryChangesEndpoints(this IEndpointRouteBuilder routes)
     {
+        // The stream lives for minutes, so it must not hold the host's request-
+        // wide maintenance lease: an open tab would keep a restore or an
+        // activation from draining. It takes a short lease around each read
+        // instead, and ends when maintenance begins (the browser reconnects).
         routes.MapGet(
-            Route,
-            (HttpContext http, IDbContextFactory<NostosDbContext> contexts, IConfiguration configuration) =>
-                StreamAsync(http, contexts, configuration));
+                Route,
+                (HttpContext http, IDbContextFactory<NostosDbContext> contexts, IConfiguration configuration) =>
+                    StreamAsync(http, contexts, configuration))
+            .WithMetadata(new LibraryMaintenanceMemorySafe());
 
         return routes;
+    }
+
+    /// <summary>Ends the stream when the host has library maintenance under way.</summary>
+    private sealed class MaintenanceStarted : Exception;
+
+    /// <summary>
+    /// Runs one database read under a short maintenance lease, or throws
+    /// <see cref="MaintenanceStarted"/> when maintenance is already requested.
+    /// Hosts without the barrier read directly.
+    /// </summary>
+    private static async Task<T> UnderLeaseAsync<T>(
+        IMigrationMaintenanceGate? gate,
+        Func<Task<T>> read,
+        CancellationToken ct)
+    {
+        if (gate is null)
+            return await read();
+        if (gate.IsMaintenanceRequested)
+            throw new MaintenanceStarted();
+
+        await using var lease = await gate.EnterAsync(ct);
+        return await read();
     }
 
     private static async Task StreamAsync(
@@ -88,6 +117,7 @@ public static class LibraryChangesEndpoints
 
         var openedAt = DateTime.UtcNow;
         var lastWriteAt = DateTime.UtcNow;
+        var gate = http.RequestServices.GetService<IMigrationMaintenanceGate>();
 
         try
         {
@@ -95,15 +125,15 @@ public static class LibraryChangesEndpoints
 
             // Wait first, then read: a change that commits while the revision is
             // being read still completes this wait, so it cannot be missed.
-            string key;
-            Task<LibraryChange> wake;
-            string announced;
-            await using (var db = await contexts.CreateDbContextAsync(ct))
+            string key = "";
+            Task<LibraryChange> wake = Task.FromResult(default(LibraryChange));
+            var announced = await UnderLeaseAsync(gate, async () =>
             {
+                await using var db = await contexts.CreateDbContextAsync(ct);
                 key = LibraryChangeSignal.KeyFor(db);
                 wake = LibraryChangeSignal.NextAsync(key);
-                announced = await ReadRevisionAsync(db, ct);
-            }
+                return await ReadRevisionAsync(db, ct);
+            }, ct);
 
             // The first frame always carries the current revision, so a client
             // that reconnects after a gap compares it with the last one it saw
@@ -149,7 +179,7 @@ public static class LibraryChangesEndpoints
                 }
 
                 // Woken by a change, or the slow re-read is due.
-                var revision = await ReadRevisionAsync(contexts, ct);
+                var revision = await UnderLeaseAsync(gate, () => ReadRevisionAsync(contexts, ct), ct);
                 lastReadAt = DateTime.UtcNow;
                 if (revision != announced)
                 {
@@ -164,6 +194,12 @@ public static class LibraryChangesEndpoints
         catch (OperationCanceledException)
         {
             // The reader went away. Not an error: it is how every SSE stream ends.
+        }
+        catch (MaintenanceStarted)
+        {
+            // A restore or an activation is under way. End the stream; the client
+            // reconnects after the retry delay and, once maintenance is over,
+            // compares the revision it then receives with the last one it saw.
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {

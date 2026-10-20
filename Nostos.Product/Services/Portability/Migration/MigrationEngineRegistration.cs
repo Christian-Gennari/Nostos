@@ -64,9 +64,11 @@ public static class MigrationEngineRegistration
         services.AddScoped<IMigrationPhaseHandler, ImportPreparationPhaseHandler>();
         services.AddScoped<IMigrationPhaseHandler, ExportArtifactPhaseHandler>();
         services.AddScoped<MigrationJobProcessor>();
+        services.AddSingleton<MigrationWorkerWakeup>();
         services.AddHostedService(s => new MigrationJobWorker(s.GetRequiredService<IServiceScopeFactory>(),
             s.GetRequiredService<TimeProvider>(), s.GetRequiredService<MigrationJobCancellationRegistry>(),
-            s.GetRequiredService<MigrationProcessingSlots>(), s.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MigrationJobWorker>>(), s.GetRequiredService<IMigrationMaintenanceGate>()));
+            s.GetRequiredService<MigrationProcessingSlots>(), s.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MigrationJobWorker>>(), s.GetRequiredService<IMigrationMaintenanceGate>(),
+            s.GetRequiredService<MigrationWorkerWakeup>()));
         services.AddHostedService<MigrationTransferCleanupWorker>();
         return services;
     }

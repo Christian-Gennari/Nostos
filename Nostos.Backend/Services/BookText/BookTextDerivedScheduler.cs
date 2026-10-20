@@ -36,7 +36,8 @@ internal interface IBookTextDerivedScheduler
 /// </summary>
 internal sealed class StrictBookTextDerivedScheduler(
     IBookTextIndex index,
-    IBookDerivedArtifactStorage artifacts) : IBookTextDerivedScheduler
+    IBookDerivedArtifactStorage artifacts,
+    BookTextWorkSignal? workSignal = null) : IBookTextDerivedScheduler
 {
     public async Task<DerivedScheduleOutcome> ScheduleAsync(
         Guid bookId,
@@ -50,6 +51,7 @@ internal sealed class StrictBookTextDerivedScheduler(
 
         await artifacts.DeleteBookArtifactsAsync(bookId, ct);
         await index.ScheduleAsync(bookId, fileName, format, ct);
+        workSignal?.Signal();
         return DerivedScheduleOutcome.Scheduled;
     }
 }
