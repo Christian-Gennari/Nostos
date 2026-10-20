@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 
 import { AssistantLauncherService } from './assistant-launcher.service';
+import { AssistantService } from './assistant.service';
 import { AssistantStatusService } from './assistant-status.service';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 
@@ -61,5 +62,44 @@ describe('AssistantLauncherService', () => {
 
   it('labels the shortcut for the platform', () => {
     expect(launcher.shortcutLabel).toMatch(/^(⌘ J|Ctrl J)$/);
+  });
+
+  describe('before the deferred shell has loaded', () => {
+    it('keeps a launcher press and asks for the shell', () => {
+      const assistant = TestBed.inject(AssistantService);
+      makeAvailable();
+
+      launcher.toggle();
+
+      expect(assistant.surfaceWanted()).toBe(true);
+      expect(launcher.takePendingToggle()).toBe(true);
+      // Taken once.
+      expect(launcher.takePendingToggle()).toBe(false);
+    });
+
+    it('answers Cmd/Ctrl+J itself, and stands aside once the shell listens', () => {
+      makeAvailable();
+      launcher.start();
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
+      expect(launcher.takePendingToggle()).toBe(true);
+
+      const toggles: number[] = [];
+      launcher.toggleRequested.subscribe(() => toggles.push(1));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
+      expect(toggles.length).toBe(0);
+      expect(launcher.takePendingToggle()).toBe(false);
+    });
+
+    it('keeps a surface open request until the shell attaches', () => {
+      const assistant = TestBed.inject(AssistantService);
+      makeAvailable();
+
+      assistant.requestSurfaceOpen();
+
+      expect(assistant.surfaceWanted()).toBe(true);
+      expect(assistant.takePendingSurfaceOpen()).toBe(true);
+      expect(assistant.takePendingSurfaceOpen()).toBe(false);
+    });
   });
 });

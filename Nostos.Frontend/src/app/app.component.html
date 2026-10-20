@@ -8,13 +8,22 @@
   @defer (when palette.isOpen(); prefetch on idle) {
     <app-command-palette />
   }
-  <app-highlight-import-modal />
+  <!-- Loaded on first open; HighlightImportService holds the open state. -->
+  @defer (when highlightImport.isOpen(); prefetch on idle) {
+    <app-highlight-import-modal />
+  }
   <!-- The passage viewer (issue #1014), opened from any note list through
        PassageViewerService. Loaded on first open. -->
   @defer (when passageViewer.request(); prefetch on idle) {
     <app-passage-viewer />
   }
-  <app-assistant />
+  <!-- Ask Nostos is not part of first paint: it loads when the browser is
+       idle, or at once when it is wanted first (a launcher, Cmd/Ctrl+J or a
+       surface asked for it, or a route without the dock needs its capsule).
+       Requests made before it exists are handed over when it attaches. -->
+  @defer (on idle; when assistantWanted()) {
+    <app-assistant />
+  }
 } @else {
   <app-cloud-entry />
 }
@@ -22,7 +31,12 @@
   cloudEntry.supportsLibraryMigration() &&
   (cloudEntry.productReady() || cloudEntry.view().kind === 'first_run')
 ) {
-  <app-library-transfer-indicator />
+  <!-- It only reports a transfer started in Settings (whose chunk already holds
+       the transfer machinery) or one left resumable in this browser, so it and
+       that machinery wait for the browser to be idle. -->
+  @defer (on idle) {
+    <app-library-transfer-indicator />
+  }
 }
 <!-- Root-level interaction boundary: activation can continue after leaving
      Settings, so the cutover must block the whole app, not just one host. -->

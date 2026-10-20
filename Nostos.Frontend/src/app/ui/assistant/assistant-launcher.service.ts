@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Subject } from 'rxjs';
 
 import { AssistantService } from './assistant.service';
+import { AssistantStatusService } from './assistant-status.service';
 
 /** Marks an element that opens Ask Nostos, so its press is not an outside click. */
 export const ASSISTANT_LAUNCHER_ATTR = 'data-assistant-launcher';
@@ -18,6 +19,7 @@ export const ASSISTANT_LAUNCHER_ATTR = 'data-assistant-launcher';
 @Injectable({ providedIn: 'root' })
 export class AssistantLauncherService {
   private readonly assistant = inject(AssistantService);
+  private readonly status = inject(AssistantStatusService);
 
   /**
    * Whether Ask Nostos exists at all: the user wants it (preference on) AND the
@@ -53,7 +55,44 @@ export class AssistantLauncherService {
 
   toggle(): void {
     if (!this.available()) return;
-    this.toggleRequested.next();
+    if (this.toggleRequested.observed) {
+      this.toggleRequested.next();
+      return;
+    }
+    // The shell has not loaded yet (it is deferred): keep the press and ask
+    // for the shell now; it takes the press when it attaches.
+    this.pendingToggle = !this.pendingToggle;
+    this.assistant.surfaceWanted.set(true);
+  }
+
+  private pendingToggle = false;
+  private started = false;
+
+  /** For the shell when it attaches: whether a launcher was pressed before it existed. */
+  takePendingToggle(): boolean {
+    const pending = this.pendingToggle;
+    this.pendingToggle = false;
+    return pending;
+  }
+
+  /**
+   * Cmd/Ctrl+J works before the assistant shell has loaded. Once the shell is
+   * on screen it owns the shortcut itself, and this listener stands aside.
+   */
+  start(): void {
+    if (this.started || typeof document === 'undefined') return;
+    this.started = true;
+    // The launchers (the dock's, the shell's capsule) show only once the
+    // server says it can run the assistant; ask at boot, not when the
+    // deferred shell happens to load.
+    this.status.ensureLoaded();
+    document.addEventListener('keydown', (event) => {
+      if (this.toggleRequested.observed) return;
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod || event.altKey || event.key.toLowerCase() !== 'j' || !this.available()) return;
+      event.preventDefault();
+      this.toggle();
+    });
   }
 }
 
