@@ -31,9 +31,22 @@ public sealed class MigrationJobWorker : BackgroundService
     private readonly ILogger<MigrationJobWorker> _logger;
     private readonly IMigrationMaintenanceGate _maintenance;
 
+    private readonly MigrationWorkerWakeup _wakeup;
+
+    /// <summary>
+    /// How long an idle worker waits before scanning anyway. Work arriving
+    /// through the API wakes it at once (<see cref="MigrationWorkerWakeup"/>);
+    /// the scan only recovers expired leases and missed signals.
+    /// </summary>
+    internal static readonly TimeSpan IdleScanInterval = TimeSpan.FromSeconds(60);
+
     internal MigrationJobWorker(IServiceScopeFactory scopes, TimeProvider clock, MigrationJobCancellationRegistry cancellations,
-        MigrationProcessingSlots slots, ILogger<MigrationJobWorker> logger, IMigrationMaintenanceGate maintenance)
-    { _scopes = scopes; _clock = clock; _cancellations = cancellations; _slots = slots; _logger = logger; _maintenance = maintenance; }
+        MigrationProcessingSlots slots, ILogger<MigrationJobWorker> logger, IMigrationMaintenanceGate maintenance,
+        MigrationWorkerWakeup? wakeup = null)
+    {
+        _scopes = scopes; _clock = clock; _cancellations = cancellations; _slots = slots; _logger = logger; _maintenance = maintenance;
+        _wakeup = wakeup ?? new MigrationWorkerWakeup();
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -43,7 +56,11 @@ public sealed class MigrationJobWorker : BackgroundService
             try { count = await RunCycleAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex) { _logger.LogError(ex, "Migration worker cycle failed; recovery will retry"); }
-            try { await Task.Delay(TimeSpan.FromSeconds(count > 0 ? 2 : 10), _clock, stoppingToken); }
+            try
+            {
+                if (count > 0) await Task.Delay(TimeSpan.FromSeconds(2), _clock, stoppingToken);
+                else await _wakeup.WaitAsync(IdleScanInterval, _clock, stoppingToken);
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }

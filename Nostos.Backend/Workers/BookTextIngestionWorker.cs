@@ -7,9 +7,20 @@ public sealed class BookTextIngestionWorker(
     IServiceScopeFactory scopes,
     BookTextOptions options,
     ILogger<BookTextIngestionWorker> logger,
-    ILibraryMaintenanceCoordinator? maintenance = null) : BackgroundService
+    ILibraryMaintenanceCoordinator? maintenance = null,
+    BookTextWorkSignal? workSignal = null) : BackgroundService
 {
+    /// <summary>Back-off after a failed cycle.</summary>
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// How long an idle worker waits before looking at the queue anyway. A book
+    /// scheduled in this process wakes it at once (<see cref="BookTextWorkSignal"/>);
+    /// the scan recovers stale claims and work queued by another process.
+    /// </summary>
+    internal static readonly TimeSpan IdleScanInterval = TimeSpan.FromSeconds(60);
+
+    private readonly BookTextWorkSignal _workSignal = workSignal ?? new BookTextWorkSignal();
 
     // Embedding is the low-priority second stage: it is only attempted when no
     // extraction work is waiting, and after an idle or failed pass it is left
@@ -47,7 +58,13 @@ public sealed class BookTextIngestionWorker(
                 var didWork = await ProcessOneAsync(stoppingToken)
                     || await ProcessEmbeddingsWhenDueAsync(stoppingToken);
                 if (!didWork)
-                    await Task.Delay(IdleDelay, stoppingToken);
+                {
+                    // Sleep until a book is scheduled, the next embedding pass
+                    // is due, or the slow scan, whichever comes first.
+                    var untilEmbedding = _nextEmbeddingPassUtc - DateTime.UtcNow;
+                    var wait = untilEmbedding < IdleScanInterval ? untilEmbedding : IdleScanInterval;
+                    await _workSignal.WaitAsync(wait < IdleDelay ? IdleDelay : wait, stoppingToken);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

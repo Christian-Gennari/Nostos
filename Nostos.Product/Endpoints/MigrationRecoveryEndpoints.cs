@@ -29,6 +29,7 @@ public static class MigrationRecoveryEndpoints
         }
 
         var group = routes.MapGroup(MigrationEndpoints.BasePath);
+        group.AddEndpointFilter(MigrationEndpoints.WakeWorkerAfterWrites);
         if (!string.IsNullOrWhiteSpace(policies.LargeTransferRateLimitPolicy))
         {
             group.RequireRateLimiting(policies.LargeTransferRateLimitPolicy);

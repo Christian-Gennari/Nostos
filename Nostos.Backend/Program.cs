@@ -53,6 +53,8 @@ builder.Services.AddScoped<IBookTextIndex>(sp => sp.GetRequiredService<SqliteBoo
 builder.Services.AddScoped<IBookTextEmbeddingIndex>(sp => sp.GetRequiredService<SqliteBookTextIndex>());
 builder.Services.AddScoped<IBookDerivedArtifactStorage, FileBookTextArtifactStorage>();
 builder.Services.AddScoped<IBookTextIngestionScheduler, BookTextIngestionScheduler>();
+// Scheduling a book wakes the in-process ingestion worker instead of it polling.
+builder.Services.AddSingleton<BookTextWorkSignal>();
 
 // Passage embeddings (issue #683): BYOK and optional. Registered here for the
 // same reason — it must win over the product's no-op provider. While the

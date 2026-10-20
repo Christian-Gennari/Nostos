@@ -4,7 +4,10 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Nostos.Backend.Data;
 using Nostos.Backend.Endpoints;
+using Nostos.Backend.Services;
 using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
 using Xunit;
@@ -137,6 +140,42 @@ public sealed partial class LibraryChangesEndpointTests : IClassFixture<LibraryE
             .EnsureSuccessStatusCode();
         await feed.ReadRevisionsAsync(count: 1, Budget);
         LastFrame(feed.Text).Should().NotContain("progressOnly");
+    }
+
+    [Fact]
+    public async Task An_open_feed_does_not_hold_off_maintenance_and_ends_when_it_starts()
+    {
+        // Before: the stream held the request-wide lease for its whole life, so
+        // a restore or an activation waited out the drain timeout and failed.
+        using var factory = FastFeed(pollMilliseconds: 600_000);
+        using var client = factory.CreateClient();
+        using var response = await OpenAsync(client);
+        await using var feed = await Feed.OpenAsync(response);
+        await feed.ReadRevisionsAsync(count: 1, Budget);
+
+        var maintenance = factory.Services.GetRequiredService<ILibraryMaintenanceCoordinator>();
+        var entered = maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.BackupRestore);
+        var exclusive = await entered.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            // A write in another tab wakes the feed, which sees maintenance and ends.
+            LibraryChangeSignal.Publish(
+                await KeyOfAsync(factory),
+                new LibraryChange(ProgressOnly: false));
+            (await feed.ReadToEndAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+        }
+        finally
+        {
+            await exclusive.DisposeAsync();
+        }
+    }
+
+    private static async Task<string> KeyOfAsync(Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var contexts = scope.ServiceProvider.GetRequiredService<Microsoft.EntityFrameworkCore.IDbContextFactory<NostosDbContext>>();
+        await using var db = await contexts.CreateDbContextAsync();
+        return LibraryChangeSignal.KeyFor(db);
     }
 
     private static string LastFrame(string text) =>
