@@ -274,6 +274,7 @@ internal static class PortableLibraryDatabaseMaterializer
                 Topic = x.Topic,
                 Description = x.Description,
             });
+        ParkCaseVariants(topics.Values, data.NoteTopics);
         db.Topics.AddRange(topics.Values);
 
         foreach (var source in data.NoteTopics)
@@ -376,6 +377,28 @@ internal static class PortableLibraryDatabaseMaterializer
 
     private static string CoverVersionFromDigest(string sha256) =>
         sha256.Length >= 16 ? sha256[..16].ToLowerInvariant() : FileInfoDetails.NewCoverVersion();
+
+    /// <summary>
+    /// An archive made before topic names compared in any case can hold names
+    /// that differ only in case. They are restored exactly as archived, so the
+    /// restore still verifies row for row; the variant on the most notes (then
+    /// the first in ordinal order) keeps the key, and the others wait under
+    /// <see cref="TopicModel.PendingMergeKey"/> until the merge pass joins them.
+    /// </summary>
+    private static void ParkCaseVariants(IEnumerable<TopicModel> topics, IEnumerable<PortableNoteTopic> links)
+    {
+        var linkCounts = links.GroupBy(link => link.TopicId).ToDictionary(group => group.Key, group => group.Count());
+        foreach (var group in topics.GroupBy(topic => topic.NormalizedName, StringComparer.Ordinal))
+        {
+            foreach (var variant in group
+                .OrderByDescending(topic => linkCounts.GetValueOrDefault(topic.Id))
+                .ThenBy(topic => topic.Topic, StringComparer.Ordinal)
+                .Skip(1))
+            {
+                variant.NormalizedName = TopicModel.PendingMergeKey(variant.Topic, variant.Id);
+            }
+        }
+    }
 }
 
 /// <summary>

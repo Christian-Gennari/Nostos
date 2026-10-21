@@ -443,6 +443,22 @@ public sealed class PortableArchiveService(
                 await transaction.CommitAsync(cancellationToken);
                 committed = true;
 
+                // An older archive can hold topic names that differ only in
+                // case; restored exactly and verified, they are joined now. A
+                // failure here leaves them to the next merge pass, not a failed
+                // restore.
+                try
+                {
+                    await new Nostos.Backend.Data.Repositories.TopicRepository(_db)
+                        .MergeCaseVariantsAsync(CancellationToken.None);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(
+                        "Portable import could not merge topic case variants; exception type {ExceptionType}.",
+                        exception.GetType().Name);
+                }
+
                 // Derived text/indexes are intentionally excluded from portable
                 // archives. Rebuild them from the authoritative imported source
                 // only after the archive transaction and media verification have

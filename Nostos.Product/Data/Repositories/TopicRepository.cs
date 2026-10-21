@@ -362,9 +362,11 @@ public class TopicRepository : ITopicRepository
         if (source is null)
             return null;
 
+        // A name another topic already has, in any case, is that topic.
+        var key = TopicModel.NormalizeName(name);
         var target = await _db
             .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id != id && c.Topic == name);
+            .FirstOrDefaultAsync(c => c.Id != id && c.NormalizedName == key);
 
         if (target is not null)
             return await MergeIntoAsync(source, target);
@@ -494,13 +496,16 @@ public class TopicRepository : ITopicRepository
 
     public async Task<List<TopicModel>> GetByNamesAsync(IEnumerable<string> names)
     {
-        var nameList = names.ToList();
-        var stored = await _db.Topics.Where(c => nameList.Contains(c.Topic)).ToListAsync();
+        var keys = names.Select(TopicModel.NormalizeName).Distinct(StringComparer.Ordinal).ToList();
+        if (keys.Count == 0)
+            return [];
+
+        var stored = await _db.Topics.Where(c => keys.Contains(c.NormalizedName)).ToListAsync();
 
         // Topics created earlier in this same unit of work are not in the
         // database yet. Linking one new topic to several notes at once must
         // reuse it, or the second note creates a duplicate the unique index
-        // rejects. Matched exactly, as the stored lookup above is.
+        // rejects. Matched by key, as the stored lookup above is.
         // Entries() would run DetectChanges over every tracked entity on each
         // call; an Added topic is already marked Added without it.
         var detect = _db.ChangeTracker.AutoDetectChangesEnabled;
@@ -509,7 +514,7 @@ public class TopicRepository : ITopicRepository
         {
             var pending = _db.ChangeTracker.Entries<TopicModel>()
                 .Where(entry => entry.State == EntityState.Added
-                    && nameList.Contains(entry.Entity.Topic, StringComparer.Ordinal))
+                    && keys.Contains(entry.Entity.NormalizedName, StringComparer.Ordinal))
                 .Select(entry => entry.Entity)
                 .Where(topic => !stored.Contains(topic));
             return stored.Concat(pending).ToList();
@@ -518,6 +523,52 @@ public class TopicRepository : ITopicRepository
         {
             _db.ChangeTracker.AutoDetectChangesEnabled = detect;
         }
+    }
+
+    /// <summary>
+    /// Merges each topic whose key is not its name's folded form into the topic
+    /// that has that name in another case, then gives every topic its key.
+    /// Such rows come from an archive made before names compared in any case,
+    /// or from the migration, which folds ASCII only. Returns how many topics
+    /// were merged away.
+    /// </summary>
+    public async Task<int> MergeCaseVariantsAsync(CancellationToken ct = default)
+    {
+        var rows = await _db.Topics
+            .Select(c => new { c.Id, c.Topic, c.NormalizedName, Links = c.NoteTopics.Count() })
+            .ToListAsync(ct);
+        var stale = rows
+            .Where(row => row.NormalizedName != TopicModel.NormalizeName(row.Topic))
+            .Select(row => TopicModel.NormalizeName(row.Topic))
+            .ToHashSet(StringComparer.Ordinal);
+        if (stale.Count == 0)
+            return 0;
+
+        var merged = 0;
+        foreach (var group in rows
+            .GroupBy(row => TopicModel.NormalizeName(row.Topic), StringComparer.Ordinal)
+            .Where(group => stale.Contains(group.Key)))
+        {
+            // The variant on the most notes keeps its name, then the first in
+            // ordinal order (capitals first), so every run picks the same one.
+            var ordered = group
+                .OrderByDescending(row => row.Links)
+                .ThenBy(row => row.Topic, StringComparer.Ordinal)
+                .ToList();
+            foreach (var variant in ordered.Skip(1))
+            {
+                var source = await WithLinkedNotes().FirstAsync(c => c.Id == variant.Id, ct);
+                var target = await _db.Topics.Include(c => c.NoteTopics).FirstAsync(c => c.Id == ordered[0].Id, ct);
+                await MergeIntoAsync(source, target);
+                merged++;
+            }
+
+            // Every other variant is gone, so the survivor's key is free to take.
+            var survivor = await _db.Topics.FirstAsync(c => c.Id == ordered[0].Id, ct);
+            survivor.NormalizedName = group.Key;
+            await _db.SaveChangesAsync(ct);
+        }
+        return merged;
     }
 
     public void AddRange(IEnumerable<TopicModel> topics)

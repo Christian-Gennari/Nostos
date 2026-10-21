@@ -230,6 +230,12 @@ public sealed class PortableCompletenessInventoryTests
                     // would lose writing the notes do not hold.
                     "Description",
                 ],
+                excluded:
+                [
+                    Excluded(
+                        "NormalizedName",
+                        "Derived identity key; recomputed from Topic on import/save (case variants from an older archive wait under a pending key until merged)."),
+                ],
                 excludedNavigations:
                 [
                     Excluded("NoteTopics", NavigationReason),

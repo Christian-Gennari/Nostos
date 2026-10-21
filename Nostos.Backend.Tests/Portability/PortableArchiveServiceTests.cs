@@ -181,6 +181,48 @@ public sealed class PortableArchiveServiceTests
     }
 
     [Fact]
+    public async Task Import_restores_topic_case_variants_from_an_older_library_then_merges_them()
+    {
+        // A library from before topics compared in any case: "Portability" and
+        // "portability" as two topics (the variant parked under a pending key,
+        // as the upgrade leaves it until its merge pass runs).
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var ids = await PortableArchiveTestSupport.PopulateRepresentativeAsync(source.Db, source.Storage);
+        var note = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = ids.EpubBookId,
+            Content = "Again [[portability]]",
+            CreatedAt = DateTime.UtcNow,
+        };
+        var variant = new TopicModel { Id = Guid.NewGuid(), Topic = "portability" };
+        variant.NormalizedName = TopicModel.PendingMergeKey(variant.Topic, variant.Id);
+        source.Db.Notes.Add(note);
+        source.Db.Topics.Add(variant);
+        source.Db.NoteTopics.Add(new NoteTopicModel { NoteId = note.Id, TopicId = variant.Id });
+        await source.Db.SaveChangesAsync();
+
+        using var archive = new MemoryStream();
+        await source.Portability().ExportAsync(archive);
+        archive.Position = 0;
+
+        // The restore is exact and verifies row for row; then the variants join.
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.Counts.Topics.Should().Be(2);
+        destination.Db.ChangeTracker.Clear();
+        var topic = await destination.Db.Topics.AsNoTracking().Include(t => t.NoteTopics).SingleAsync();
+        topic.Id.Should().Be(ids.TopicId);
+        topic.Topic.Should().Be("Portability");
+        topic.NormalizedName.Should().Be("PORTABILITY");
+        topic.NoteTopics.Select(link => link.NoteId).Should().BeEquivalentTo([ids.NoteId, note.Id]);
+        (await destination.Db.Notes.AsNoTracking().SingleAsync(n => n.Id == note.Id))
+            .Content.Should().Be("Again [[Portability]]");
+    }
+
+    [Fact]
     public async Task Export_to_non_seekable_stream_avoids_synchronous_io()
     {
         // Regression for #554: Kestrel's response stream is non-seekable and

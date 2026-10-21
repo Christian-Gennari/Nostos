@@ -57,13 +57,22 @@ public class TopicCleanupWorker(
     }
 
     /// <summary>
-    /// Periodically cleans up orphaned topics (topics with no links to notes).
+    /// Merges topic case variants still waiting under a pending key (a restore
+    /// activated since startup can bring them; startup itself merges them in
+    /// DatabaseBootstrapService), then cleans up orphaned topics (topics with
+    /// no links to notes).
     /// </summary>
     private async Task DoWorkAsync(CancellationToken stoppingToken)
     {
         await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(stoppingToken);
         using var scope = scopeFactory.CreateScope();
         var topicRepo = scope.ServiceProvider.GetRequiredService<ITopicRepository>();
+
+        var mergedCount = await topicRepo.MergeCaseVariantsAsync(stoppingToken);
+        if (mergedCount > 0)
+        {
+            logger.LogInformation("Merged {Count} topics that differed from another only in case.", mergedCount);
+        }
 
         logger.LogInformation("Scanning for orphaned topics...");
 

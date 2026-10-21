@@ -362,6 +362,105 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
         names.Should().NotContain(bare);
     }
 
+    [Fact]
+    public async Task A_name_in_another_case_is_the_same_topic()
+    {
+        var name = $"Stoicism {Guid.NewGuid():N}";
+        var lower = name.ToLowerInvariant();
+        var (_, notes) = await CreateBookWithNotesAsync($"On [[{name}]].", $"Also [[{lower}]].");
+
+        var topic = (await GetTopicsAsync())
+            .Where(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Should().ContainSingle().Which;
+        topic.Name.Should().Be(name);
+        topic.UsageCount.Should().Be(2);
+
+        // Linking by name in yet another case reuses it too.
+        var upper = name.ToUpperInvariant();
+        var (_, more) = await CreateBookWithNotesAsync("Unlinked thought.");
+        await Client.PostAsJsonAsync("/api/topics/link", new TopicLinkRequestDto([upper], [more[0].Id]));
+        (await GetTopicsAsync())
+            .Where(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Should().ContainSingle().Which.UsageCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Renaming_onto_another_topics_name_in_another_case_merges_them()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var source = $"Ethics {suffix}";
+        var target = $"Virtue {suffix}";
+        await CreateBookWithNotesAsync($"[[{source}]]", $"[[{target}]]");
+        var topics = await GetTopicsAsync();
+        var sourceId = topics.Single(t => t.Name == source).Id;
+        var targetId = topics.Single(t => t.Name == target).Id;
+
+        var response = await Client.PutAsJsonAsync($"/api/topics/{sourceId}", new UpdateTopicDto(target.ToUpperInvariant()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<TopicDto>())!.Id.Should().Be(targetId);
+        (await GetTopicsAsync()).Should().NotContain(t => t.Id == sourceId);
+    }
+
+    [Fact]
+    public async Task Renaming_a_topic_to_its_own_name_in_another_case_renames_it()
+    {
+        var name = $"logic {Guid.NewGuid():N}";
+        var (_, notes) = await CreateBookWithNotesAsync($"On [[{name}]].");
+        var topic = (await GetTopicsAsync()).Single(t => t.Name == name);
+        var capitalised = char.ToUpperInvariant(name[0]) + name[1..];
+
+        (await Client.PutAsJsonAsync($"/api/topics/{topic.Id}", new UpdateTopicDto(capitalised)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await GetTopicsAsync()).Single(t => t.Id == topic.Id).Name.Should().Be(capitalised);
+        (await GetNoteAsync(notes[0].Id)).Content.Should().Be($"On [[{capitalised}]].");
+    }
+
+    [Fact]
+    public async Task The_merge_pass_joins_a_case_variant_waiting_under_a_pending_key()
+    {
+        var name = $"Ärende {Guid.NewGuid():N}";
+        var (_, notes) = await CreateBookWithNotesAsync($"On [[{name}]].", $"Again [[{name}]].");
+        var survivorId = (await GetTopicsAsync()).Single(t => t.Name == name).Id;
+
+        // A variant made before names compared in any case, on a third note:
+        // parked under a pending key, as the migration and an old archive leave it.
+        var variant = name.ToLowerInvariant();
+        var (_, more) = await CreateBookWithNotesAsync("Plain.");
+        await using (var db = await OpenDbAsync())
+        {
+            var topic = new Nostos.Backend.Data.Models.TopicModel { Topic = variant, Description = "Mine." };
+            topic.NormalizedName = Nostos.Backend.Data.Models.TopicModel.PendingMergeKey(variant, topic.Id);
+            db.Topics.Add(topic);
+            var note = await db.Notes.SingleAsync(n => n.Id == more[0].Id);
+            note.Content = $"Plain. [[{variant}]]";
+            db.NoteTopics.Add(new Nostos.Backend.Data.Models.NoteTopicModel { NoteId = note.Id, TopicId = topic.Id });
+            await db.SaveChangesAsync();
+
+            (await new Nostos.Backend.Data.Repositories.TopicRepository(db).MergeCaseVariantsAsync()).Should().Be(1);
+        }
+
+        var survivor = (await GetTopicsAsync())
+            .Where(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Should().ContainSingle().Which;
+        survivor.Id.Should().Be(survivorId);
+        survivor.UsageCount.Should().Be(3);
+        survivor.Description.Should().Be("Mine.");
+        (await GetNoteAsync(more[0].Id)).Content.Should().Be($"Plain. [[{name}]]");
+    }
+
+    [Fact]
+    public async Task The_database_refuses_a_second_topic_with_the_same_name_in_another_case()
+    {
+        var name = $"Gulligt {Guid.NewGuid():N}";
+        await using var db = await OpenDbAsync();
+        db.Topics.Add(new Nostos.Backend.Data.Models.TopicModel { Topic = name });
+        db.Topics.Add(new Nostos.Backend.Data.Models.TopicModel { Topic = name.ToLowerInvariant() });
+
+        await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
+    }
+
     private async Task<NoteSearchPageDto> BrowseAsync(string query) =>
         (await Client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?limit=50&{query}"))!;
 

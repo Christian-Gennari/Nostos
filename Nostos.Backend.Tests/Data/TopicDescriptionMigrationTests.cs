@@ -87,6 +87,8 @@ public sealed class TopicDescriptionMigrationTests : IDisposable
 
         await using (var db = new NostosDbContext(options))
         {
+            // A later migration's column the current model reads (LaterBookColumns).
+            await LaterBookColumns.RestoreTopicNormalizedNameAsync(db);
             (await db.Topics.AsNoTracking().ToListAsync()).Should().OnlyContain(t => t.Description == null);
             var virtue = await db.Topics.SingleAsync(t => t.Topic == "Virtue");
             virtue.Description = "Living well.";

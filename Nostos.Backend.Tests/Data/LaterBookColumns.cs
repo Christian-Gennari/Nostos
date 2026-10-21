@@ -27,7 +27,16 @@ internal static class LaterBookColumns
         await RestorePassageColumnsAsync(db);
         await RestoreTopicDescriptionAsync(db);
         await RestoreCoverVersionAsync(db);
+        await RestoreTopicNormalizedNameAsync(db);
     }
+
+    /// <summary>
+    /// AddTopicNormalizedName (issue #1116): the key the current model writes
+    /// on every topic it saves.
+    /// </summary>
+    public static async Task RestoreTopicNormalizedNameAsync(NostosDbContext db) =>
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Topics\" ADD COLUMN \"NormalizedName\" TEXT NOT NULL DEFAULT ''");
 
     /// <summary>
     /// AddCoverVersion: the cover cache token the current model reads and
