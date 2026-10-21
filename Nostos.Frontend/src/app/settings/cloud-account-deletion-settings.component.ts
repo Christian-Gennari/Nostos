@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
-import { AfterViewChecked, Component, ElementRef, inject, output, signal, ViewChild } from '@angular/core';
+import { AfterViewChecked, Component, ElementRef, inject, output, signal, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
@@ -15,6 +15,7 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
   standalone: true,
   imports: [InputDirective, CommonModule, FormsModule, ButtonComponent, ConfirmModal],
   templateUrl: './cloud-account-deletion-settings.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './cloud-account-deletion-settings.component.css',
 })
 export class CloudAccountDeletionSettingsComponent implements AfterViewChecked {

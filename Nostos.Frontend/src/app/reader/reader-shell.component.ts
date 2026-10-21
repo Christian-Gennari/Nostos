@@ -1,4 +1,4 @@
-import { Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef } from '@angular/core';
+import { Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -184,6 +184,7 @@ function readAloudFallbackNotice(code: string | null): string {
   ],
   providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './reader-shell.component.css',
 })
 export class ReaderShell implements OnInit, OnDestroy {

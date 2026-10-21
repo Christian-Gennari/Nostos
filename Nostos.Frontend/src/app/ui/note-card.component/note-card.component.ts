@@ -1,5 +1,5 @@
 // Nostos.Frontend/src/app/ui/note-card.component/note-card.component.ts
-import { Component, EventEmitter, Input, Output, TemplateRef, inject } from '@angular/core';
+import { Component, EventEmitter, Input, Output, TemplateRef, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -40,6 +40,7 @@ import { inlineTopicHref } from '../note-item/note-item.helpers';
     RouterLink,
   ],
   templateUrl: './note-card.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./note-card.component.css'],
 })
 export class NoteCardComponent {

@@ -9,6 +9,7 @@ import {
   output,
   signal,
   untracked,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, catchError, debounceTime, map, of, switchMap } from 'rxjs';
@@ -79,6 +80,7 @@ interface PalettePlacement {
   imports: [IconButtonComponent],
   templateUrl: './source-palette.component.html',
   styleUrl: './source-palette.component.css',
+  changeDetection: ChangeDetectionStrategy.Eager,
   host: {
     '[class.is-open]': 'open()',
   },

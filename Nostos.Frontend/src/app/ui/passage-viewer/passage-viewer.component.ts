@@ -10,6 +10,7 @@ import {
   inject,
   signal,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
@@ -53,6 +54,7 @@ let libronInjected = false;
   standalone: true,
   imports: [ModalShell, ButtonComponent, IconButtonComponent, NostosIconComponent],
   templateUrl: './passage-viewer.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './passage-viewer.component.css',
 })
 export class PassageViewerComponent {

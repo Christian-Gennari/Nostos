@@ -13,6 +13,7 @@ import {
   untracked,
   OnDestroy,
   HostListener,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -56,6 +57,7 @@ export const PLAYING_SAVE_INTERVAL_MS = 10_000;
     SegmentedComponent,
   ],
   templateUrl: './audio-reader.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './audio-reader.component.css',
 })
 export class AudioReader implements OnDestroy, IReader {

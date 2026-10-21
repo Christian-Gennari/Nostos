@@ -10,6 +10,7 @@ import {
   input,
   output,
   signal,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { Editor, Range, createDocument } from '@tiptap/core';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
@@ -74,6 +75,7 @@ type BlockKind = 'paragraph' | 'h1' | 'h2' | 'h3' | 'blockquote' | 'codeBlock';
   // ProseMirror renders the page's nodes itself, so emulated encapsulation
   // could never reach them. Every rule is scoped under `.nostos-manuscript`
   // or `.editor-toolbar` instead.
+  changeDetection: ChangeDetectionStrategy.Eager,
   encapsulation: ViewEncapsulation.None,
 })
 export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {

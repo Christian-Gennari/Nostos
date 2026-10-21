@@ -10,6 +10,7 @@ import {
   signal,
   untracked,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, Subject, catchError, debounceTime, forkJoin, map, of, switchMap } from 'rxjs';
@@ -128,6 +129,7 @@ const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
   standalone: true,
   imports: [LoadingIndicatorComponent, NostosIconComponent],
   templateUrl: './command-palette.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './command-palette.component.css',
 })
 export class CommandPalette {

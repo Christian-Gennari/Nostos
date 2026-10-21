@@ -9,6 +9,7 @@ import {
   inject,
   signal,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 
 import { ButtonComponent } from '../button/button.component';
@@ -288,6 +289,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
   imports: [IconTileComponent, NostosIconComponent, AssistantMarkdownPipe, ButtonComponent, IconButtonComponent, AssistantChangesetCardComponent],
   templateUrl: './assistant.component.html',
   styleUrl: './assistant.component.css',
+  changeDetection: ChangeDetectionStrategy.Eager,
   host: {
     '[class.is-open]': 'assistant.isOpen()',
   },

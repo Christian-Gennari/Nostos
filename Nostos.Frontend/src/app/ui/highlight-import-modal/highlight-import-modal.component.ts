@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
@@ -72,6 +72,7 @@ interface FileFailure {
     InputDirective,
   ],
   templateUrl: './highlight-import-modal.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './highlight-import-modal.component.css',
 })
 export class HighlightImportModal {

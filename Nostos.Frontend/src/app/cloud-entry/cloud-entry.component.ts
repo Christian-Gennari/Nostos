@@ -1,4 +1,4 @@
-import { Component, effect, inject } from '@angular/core';
+import { Component, effect, inject, ChangeDetectionStrategy } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -18,6 +18,7 @@ import { CloudSignInComponent } from './cloud-sign-in.component';
     CloudSignInComponent,
   ],
   templateUrl: './cloud-entry.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './cloud-entry.component.css',
 })
 export class CloudEntryComponent {

@@ -8,6 +8,7 @@ import {
   HostListener,
   ElementRef,
   effect,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -44,6 +45,7 @@ import { InputDirective } from '../../ui/form-control/form-control.directive';
     ConfirmModal,
   ],
   templateUrl: './sidebar-collections.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./sidebar-collections.component.css'],
 })
 export class SidebarCollections implements OnInit {

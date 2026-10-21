@@ -6,6 +6,7 @@ import {
   model,
   output,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 
 import { InputDirective } from '../../ui/form-control/form-control.directive';
@@ -28,6 +29,7 @@ let nextErrorId = 0;
   selector: 'app-brain-topic-rename',
   imports: [InputDirective, IconButtonComponent],
   templateUrl: './brain-topic-rename.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './brain-topic-rename.component.css',
 })
 export class BrainTopicRenameComponent {

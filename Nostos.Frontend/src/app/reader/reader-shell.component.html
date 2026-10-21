@@ -249,7 +249,7 @@
       } @else if (!loading()) { @switch (fileType()) { @case ('pdf') {
       <app-pdf-reader
         [bookId]="book()!.id"
-        [initialLocation]="book()?.lastLocation"
+        [initialLocation]="$safeNavigationMigration(book()?.lastLocation)"
         [sidebarVisible]="tocOpen()"
         [highlightColour]="highlightColour()"
         [language]="book()?.language ?? null"
@@ -832,7 +832,7 @@
           <input
             type="number"
             class="page-input"
-            [value]="progressState()?.pageNumber"
+            [value]="$safeNavigationMigration(progressState()?.pageNumber)"
             (keyup.enter)="onPageInput($event)"
             (focus)="onPageFocus($event)"
             (blur)="onPageBlur($event)"

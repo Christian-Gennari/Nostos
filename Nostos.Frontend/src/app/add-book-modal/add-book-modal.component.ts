@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
@@ -75,6 +75,7 @@ export interface AddBookPrefill {
     SegmentedComponent,
   ],
   templateUrl: './add-book-modal.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './add-book-modal.component.css',
 })
 export class AddBookModal {

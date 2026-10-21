@@ -13,6 +13,7 @@ import {
   input,
   untracked,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { Overlay, OverlayConfig, OverlayRef } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
@@ -41,6 +42,7 @@ import { TopicAutocompleteService, TopicPickerMode } from './topic-autocomplete.
   selector: 'topic-autocomplete-panel',
   imports: [NgTemplateOutlet, ModalShell, InputDirective, IconButtonComponent, NostosIconComponent],
   templateUrl: './topic-autocomplete-panel.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./topic-autocomplete-panel.css'],
 })
 export class TopicAutocompletePanel implements OnDestroy {

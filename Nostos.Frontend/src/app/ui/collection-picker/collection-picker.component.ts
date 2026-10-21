@@ -1,4 +1,4 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, input, output, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { buildFlatTree } from '../flat-tree/flat-tree.helper';
@@ -23,6 +23,7 @@ import { ButtonComponent } from '../button/button.component';
   standalone: true,
   imports: [CommonModule, NostosIconComponent, ButtonComponent],
   templateUrl: './collection-picker.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './collection-picker.component.css',
 })
 export class CollectionPickerComponent {

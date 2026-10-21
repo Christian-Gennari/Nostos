@@ -12,6 +12,7 @@ import {
   input,
   output,
   signal,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { catchError, forkJoin, map, of } from 'rxjs';
@@ -48,6 +49,7 @@ export interface BrainWritingHandoffResult {
     NostosIconComponent,
   ],
   templateUrl: './brain-writing-handoff.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./brain-writing-handoff.component.css'],
 })
 export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {

@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import {
   NavigationCancel,
   NavigationEnd,
@@ -41,6 +41,7 @@ import { LibraryActivationController } from './library-transfer/services/library
     LibraryTransferIndicatorComponent,
   ],
   templateUrl: './app.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './app.component.css',
 })
 export class App {

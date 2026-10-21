@@ -1,4 +1,4 @@
-import { Component, input, model, output } from '@angular/core';
+import { Component, input, model, output, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import type { TopicDto } from '../../core/services/topics.service';
@@ -23,6 +23,7 @@ import { IconButtonComponent } from '../../ui/icon-button/icon-button.component'
   selector: 'app-brain-topic-picker',
   imports: [FormsModule, ButtonComponent, IconButtonComponent, InputDirective],
   templateUrl: './brain-topic-picker.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './brain-topic-picker.component.css',
 })
 export class BrainTopicPickerComponent {
