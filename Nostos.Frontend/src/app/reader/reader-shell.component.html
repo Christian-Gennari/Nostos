@@ -901,8 +901,8 @@
         fill
         aria-labelledby="pdf-colours"
         [options]="pageColourOptions"
-        [value]="pdfReader?.pageInverted() ? 'inverted' : 'printed'"
-        (valueChange)="pdfReader?.setPageInverted($event === 'inverted')"
+        [value]="pdfReader.pageInverted() ? 'inverted' : 'printed'"
+        (valueChange)="pdfReader.setPageInverted($event === 'inverted')"
       />
     </div>
     }
