@@ -13,7 +13,13 @@
            player below never moves when they come and go. They used to be a row
            above the scrubber: while it was there the whole column re-centred and
            the transport jumped by that row's height. -->
-      @if (loading()) {
+      @if (reconnecting()) {
+      <div class="cover-overlay" role="status" data-testid="audio-reconnecting">
+        <nostos-loading-indicator size="lg" [decorative]="true" />
+        <span>Reconnecting…</span>
+        <button appButton variant="overlay" size="sm" type="button" (click)="retryLoad()">Retry now</button>
+      </div>
+      } @else if (loading()) {
       <div class="cover-overlay" role="status" data-testid="audio-loading">
         <nostos-loading-indicator size="lg" [decorative]="true" />
         <span>Loading audio…</span>
@@ -21,6 +27,7 @@
       } @if (loadError()) {
       <div class="cover-overlay cover-overlay-error" role="alert" data-testid="audio-load-error">
         <span>{{ loadError() }}</span>
+        <button appButton variant="overlay" size="sm" type="button" (click)="retryLoad()">Retry</button>
       </div>
       }
     </div>

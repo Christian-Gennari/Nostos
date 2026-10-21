@@ -1194,3 +1194,182 @@ describe('AudioReader keeps its place when the player loses it', () => {
     expect(howl.seek()).toBe(0);
   });
 });
+
+describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
+  let fixture: ComponentFixture<AudioReader>;
+  let component: AudioReader;
+  let online: boolean;
+  const booksServiceMock = { updateProgress: vi.fn(() => of(null)) };
+
+  /** Gives the current player a working position, as a loaded Howl has. */
+  function withPosition(howl: any, start = 0): any {
+    let position = start;
+    howl.seek = vi.fn((seconds?: number) => {
+      if (seconds === undefined) return position;
+      position = seconds;
+      return howl;
+    });
+    return howl;
+  }
+
+  /** Loads the book and starts playback 43 minutes in. */
+  function startPlaying(): any {
+    const howl = withPosition(mockPlayer(component));
+    howl.config.onload();
+    component.goToTime(2580);
+    howl.config.onplay();
+    fixture.detectChanges();
+    expect(component.isPlaying()).toBe(true);
+    return howl;
+  }
+
+  beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    booksServiceMock.updateProgress.mockClear();
+    online = true;
+    vi.spyOn(navigator, 'onLine', 'get').mockImplementation(() => online);
+
+    await TestBed.configureTestingModule({
+      imports: [AudioReader],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AudioReader);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.componentRef.setInput('book', makeBook({ lastLocation: '60' }));
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    component.ngOnDestroy();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('shows play, not pause, and "Reconnecting…" when the stream dies mid-book', () => {
+    const howl = startPlaying();
+
+    howl.config.onloaderror();
+    fixture.detectChanges();
+
+    expect(component.isPlaying()).toBe(false);
+    expect(component.loadError()).toBeNull();
+    expect(component.reconnecting()).toBe(true);
+    const status = fixture.nativeElement.querySelector('[data-testid="audio-reconnecting"]') as HTMLElement;
+    expect(status.textContent).toContain('Reconnecting');
+    expect(fixture.nativeElement.querySelector('[data-testid="audio-load-error"]')).toBeNull();
+  });
+
+  it('reloads after a wait and resumes playing at the same place', () => {
+    const howl = startPlaying();
+    howl.config.onloaderror();
+
+    vi.advanceTimersByTime(AudioReader.RELOAD_DELAYS_MS[0]);
+    const reloaded = withPosition(mockPlayer(component));
+    expect(reloaded).not.toBe(howl);
+    expect(howl.unload).toHaveBeenCalled();
+
+    reloaded.config.onload();
+    fixture.detectChanges();
+
+    expect(reloaded.seek()).toBe(2580);
+    expect(component.currentTime()).toBe(2580);
+    expect(reloaded.play).toHaveBeenCalled();
+    expect(component.reconnecting()).toBe(false);
+    expect(component.loadError()).toBeNull();
+  });
+
+  it('stays paused after the reload when the drop happened while paused', () => {
+    const howl = withPosition(mockPlayer(component));
+    howl.config.onload();
+    component.goToTime(2580);
+
+    howl.config.onloaderror();
+    vi.advanceTimersByTime(AudioReader.RELOAD_DELAYS_MS[0]);
+    const reloaded = withPosition(mockPlayer(component));
+    reloaded.config.onload();
+
+    expect(reloaded.seek()).toBe(2580);
+    expect(reloaded.play).not.toHaveBeenCalled();
+  });
+
+  it('waits for the connection while offline, then reloads at once when it is back', () => {
+    const howl = startPlaying();
+    online = false;
+    howl.config.onloaderror();
+
+    vi.advanceTimersByTime(60_000);
+    expect(mockPlayer(component)).toBe(howl);
+    expect(component.reconnecting()).toBe(true);
+
+    online = true;
+    window.dispatchEvent(new Event('online'));
+    const reloaded = withPosition(mockPlayer(component));
+    expect(reloaded).not.toBe(howl);
+
+    reloaded.config.onload();
+    expect(reloaded.seek()).toBe(2580);
+    expect(reloaded.play).toHaveBeenCalled();
+  });
+
+  it('shows the error with a Retry action once the reloads run out', () => {
+    let howl = startPlaying();
+    howl.config.onloaderror();
+    for (const delay of AudioReader.RELOAD_DELAYS_MS) {
+      vi.advanceTimersByTime(delay);
+      howl = mockPlayer(component);
+      howl.config.onloaderror();
+    }
+    fixture.detectChanges();
+
+    expect(component.reconnecting()).toBe(false);
+    expect(component.loadError()).toBe('Unable to load audio.');
+    const error = fixture.nativeElement.querySelector('[data-testid="audio-load-error"]') as HTMLElement;
+    const retry = error.querySelector('button') as HTMLButtonElement;
+    expect(retry.textContent).toContain('Retry');
+
+    retry.click();
+    const reloaded = withPosition(mockPlayer(component));
+    expect(reloaded).not.toBe(howl);
+    reloaded.config.onload();
+
+    // Still at the place the listener was, and still meant to be playing.
+    expect(reloaded.seek()).toBe(2580);
+    expect(reloaded.play).toHaveBeenCalled();
+  });
+
+  it('pressing play while reconnecting reloads now instead of waiting', () => {
+    const howl = withPosition(mockPlayer(component));
+    howl.config.onload();
+    howl.config.onloaderror();
+
+    component.togglePlay();
+    const reloaded = withPosition(mockPlayer(component));
+    expect(reloaded).not.toBe(howl);
+    reloaded.config.onload();
+
+    expect(reloaded.play).toHaveBeenCalled();
+  });
+
+  it('shows the error at once when a book that never loaded fails while online', () => {
+    const howl = mockPlayer(component);
+    howl.config.onloaderror();
+    vi.advanceTimersByTime(60_000);
+
+    expect(mockPlayer(component)).toBe(howl);
+    expect(component.reconnecting()).toBe(false);
+    expect(component.loadError()).toBe('Unable to load audio.');
+  });
+
+  it('stops trying once the reader is closed', () => {
+    const howl = startPlaying();
+    howl.config.onloaderror();
+    component.ngOnDestroy();
+
+    vi.advanceTimersByTime(60_000);
+    window.dispatchEvent(new Event('online'));
+
+    expect(mockPlayer(component)).toBe(howl);
+  });
+});

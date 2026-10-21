@@ -133,6 +133,9 @@ export class AudioReader implements OnDestroy, IReader {
   // so the UI can show a visible loading state instead of a dead-looking player.
   loading = signal(true);
   loadError = signal<string | null>(null);
+  // A dropped connection (issue #1058): the audio is being reloaded, or waits
+  // for the connection to come back, before the dead-end error is shown.
+  reconnecting = signal(false);
 
   // --- Sleep timer (issue #47) ---
   // Armed preset in minutes; null means the timer is off. Session-only state:
@@ -191,6 +194,16 @@ export class AudioReader implements OnDestroy, IReader {
   private static readonly LOST_POSITION_MAX = 1;
   /** Only a real place in the book is protected; the first seconds have nothing to lose. */
   private static readonly LOST_POSITION_MIN_KNOWN = 5;
+  /** Waits before each automatic reload after the audio stopped loading mid-book. */
+  static readonly RELOAD_DELAYS_MS = [2_000, 5_000, 15_000];
+
+  // Recovery from a dropped connection (issue #1058).
+  private hasLoaded = false;
+  private reloadAttempts = 0;
+  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private resumeAt: number | null = null;
+  private resumeAfterReload = false;
+  private onOnline = this.handleOnline.bind(this);
 
   private progressSubject = new Subject<{ timestamp: number; percent: number }>();
   private progressSubscription!: Subscription;
@@ -229,6 +242,7 @@ export class AudioReader implements OnDestroy, IReader {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     window.addEventListener('beforeunload', this.onBeforeUnload);
     window.addEventListener('pagehide', this.onPageHide);
+    window.addEventListener('online', this.onOnline);
 
     effect(() => {
       const id = this.bookId();
@@ -285,9 +299,10 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   // --- Audio Logic ---
-  initPlayer(id: string) {
+  initPlayer(id: string, recovering = false) {
     if (this.player) this.player.unload();
 
+    if (!recovering) this.resetRecovery();
     this.loading.set(true);
     this.loadError.set(null);
     // Show the remembered speed immediately; applied to Howl on load.
@@ -302,20 +317,28 @@ export class AudioReader implements OnDestroy, IReader {
         this.loading.set(false);
         this.duration.set(this.player?.duration() || 0);
         this.player?.rate(this.currentRate());
-        this.restoreProgress();
+        const resumeAt = this.resumeAt;
+        const resumePlaying = this.resumeAfterReload;
+        this.hasLoaded = true;
+        this.resetRecovery();
+        if (resumeAt !== null) {
+          // Back after a drop: the place the listener was at, not the saved one,
+          // which can be up to a save interval older.
+          this.player?.seek(resumeAt);
+          this.currentTime.set(resumeAt);
+          this.updateProgressState();
+        } else {
+          this.restoreProgress();
+        }
         if (this.pendingSourceTime !== null) {
           const sourceTime = this.pendingSourceTime;
           this.pendingSourceTime = null;
           this.goToTime(Math.min(sourceTime, this.duration()));
         }
         this.updateMediaSessionMetadata();
+        if (resumePlaying) this.play();
       },
-      onloaderror: () => {
-        // Loading failed; drop the loading state so the UI can surface the error
-        // instead of appearing stuck forever.
-        this.loading.set(false);
-        this.loadError.set('Unable to load audio.');
-      },
+      onloaderror: () => this.handleLoadError(),
       onplay: () => {
         this.isPlaying.set(true);
         this.startProgressTracking();
@@ -355,6 +378,72 @@ export class AudioReader implements OnDestroy, IReader {
     });
   }
 
+  /**
+   * The audio stopped loading (issue #1058). A dead stream fires no pause, so
+   * the player is marked paused here. After the book has played once, the
+   * failure is most likely the connection: the audio is reloaded a few times
+   * with growing waits, and at once when the browser reports it is back online.
+   * While offline nothing is tried until then. Only when that runs out, or the
+   * book never loaded while online, does the dead-end error show.
+   */
+  private handleLoadError() {
+    if (this.isPlaying()) this.resumeAfterReload = true;
+    if (this.hasLoaded && this.resumeAt === null) this.resumeAt = this.currentTime();
+    this.isPlaying.set(false);
+    this.stopProgressTracking();
+    this.updateMediaSessionPlaybackState('paused');
+    this.loading.set(false);
+    this.clearReloadTimer();
+
+    const offline = navigator.onLine === false;
+    const canRetry = this.hasLoaded && this.reloadAttempts < AudioReader.RELOAD_DELAYS_MS.length;
+    if (offline || canRetry) {
+      this.reconnecting.set(true);
+      this.loadError.set(null);
+      if (offline) return;
+      const delay = AudioReader.RELOAD_DELAYS_MS[this.reloadAttempts++];
+      this.reloadTimer = setTimeout(() => this.reloadAudio(), delay);
+      return;
+    }
+
+    this.reconnecting.set(false);
+    this.loadError.set('Unable to load audio.');
+  }
+
+  private handleOnline() {
+    if (!this.reconnecting() && !this.loadError()) return;
+    this.retryLoad();
+  }
+
+  /** The Retry action, and play while the audio is down: reload now, with a fresh set of attempts. */
+  retryLoad() {
+    this.reloadAttempts = 0;
+    this.reloadAudio();
+  }
+
+  private reloadAudio() {
+    this.clearReloadTimer();
+    const id = this.bookId();
+    if (!id) return;
+    this.reconnecting.set(true);
+    this.initPlayer(id, true);
+  }
+
+  private clearReloadTimer() {
+    if (this.reloadTimer !== null) {
+      clearTimeout(this.reloadTimer);
+      this.reloadTimer = null;
+    }
+  }
+
+  private resetRecovery() {
+    this.clearReloadTimer();
+    this.reloadAttempts = 0;
+    this.resumeAt = null;
+    this.resumeAfterReload = false;
+    this.reconnecting.set(false);
+  }
+
   restoreProgress() {
     // The book (with its lastLocation) is passed in by the reader shell —
     // no second GET /api/books/{id} (issue #7). If the book has not arrived
@@ -375,6 +464,12 @@ export class AudioReader implements OnDestroy, IReader {
   /** Every play request goes through here, so a lost position is restored before sound starts. */
   private play() {
     if (!this.player) return;
+    if (this.reconnecting() || this.loadError()) {
+      // The element is dead: play means "try again, and keep playing once it's back".
+      this.resumeAfterReload = true;
+      this.retryLoad();
+      return;
+    }
     this.recoverLostPosition();
     this.player.play();
   }
@@ -991,6 +1086,8 @@ export class AudioReader implements OnDestroy, IReader {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     window.removeEventListener('beforeunload', this.onBeforeUnload);
     window.removeEventListener('pagehide', this.onPageHide);
+    window.removeEventListener('online', this.onOnline);
+    this.clearReloadTimer();
 
     // Clean up Media Session
     if ('mediaSession' in navigator) {
