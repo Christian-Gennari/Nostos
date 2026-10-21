@@ -38,7 +38,9 @@ import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-p
 import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
 import { StudioPreferencesService } from './page-settings/studio-preferences.service';
-import { CitableSource, CitationService } from './citations/citation.service';
+import { CitableSource, CitationService, citationLocator } from './citations/citation.service';
+import { bookToCslItem, missingForStyle, missingPhrase } from './citations/csl-item';
+import { CitationRole, citationMarkdown } from '../ui/markdown-editor/citation.extension';
 import { StyledInsertion, bibliographyMarkdown, styledNote, styledQuote, styledReference } from './citations/styled-insertion';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
@@ -107,7 +109,16 @@ function readStudioValue(key: string): string | null {
 export function titleFromMarkdown(markdown: string): string {
   const line = (markdown ?? '')
     .split('\n')
-    .map((l) => l.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '').replace(/[*_`~]/g, '').trim())
+    .map((l) =>
+      l
+        // A live citation reads as its words; a footnote marker as nothing (#1157).
+        .replace(/\[((?:\\.|[^\\\]])*)\]\(nostos:cite\/[^)\s]+\)/g, '$1')
+        .replace(/\[\^\d{1,4}\]:?/g, '')
+        .replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, '')
+        .replace(/\\([\\*_`[\]])/g, '$1')
+        .replace(/[*_`~]/g, '')
+        .trim(),
+    )
     // A line of only markers or punctuation ("#", "---") names nothing.
     .find((l) => /[\p{L}\p{N}]/u.test(l));
   if (!line) return '';
@@ -115,6 +126,11 @@ export function titleFromMarkdown(markdown: string): string {
   const cut = line.slice(0, 80);
   const space = cut.lastIndexOf(' ');
   return (space > 40 ? cut.slice(0, space) : cut).trim() + '…';
+}
+
+/** The footnote a styled insertion brings, as the editor takes it. */
+function footnoteOf(styled: StyledInsertion | null): { number: number; markdown: string } | null {
+  return styled?.footnote ? { number: styled.footnote.number, markdown: styled.footnote.text } : null;
 }
 
 interface RememberedCaret {
@@ -295,6 +311,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
   readonly pagePrefs = inject(StudioPreferencesService);
   private readonly citations = inject(CitationService);
   pageSettingsOpen = signal(false);
+  /** Where the settings open: the page, or the Citations list at a book missing details (#1157). */
+  readonly pageSettingsStart = signal<{ view: 'main' | 'citations'; book: string | null }>({ view: 'main', book: null });
+  /** The books this writing cites, for the Citations list's missing details. */
+  readonly citedBookIds = signal<string[]>([]);
   /** The Aa button: the settings popover hangs under it (#1060). */
   @ViewChild('pageSettingsButton', { read: ElementRef }) pageSettingsButton?: ElementRef<HTMLElement>;
 
@@ -313,6 +333,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   togglePageSettings(): void {
     const open = !this.pageSettingsOpen();
+    if (open) {
+      this.pageSettingsStart.set({ view: 'main', book: null });
+      this.citedBookIds.set(this.writingBooks());
+    }
     // One layer over the page at a time: the settings replace a slide-over.
     if (open && this.drawerOpen()) {
       this.showFileSidebar.set(false);
@@ -1041,7 +1065,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.palettePassageSource = source;
       this.passageViewer.open(source.id, this.palettePassageOptions);
       return;
-    } else if (this.pagePrefs.citationStyle().kind !== 'house') {
+    } else if (source.bookId) {
       void this.insertStyledFromPalette(source, mode);
       return;
     } else {
@@ -1062,7 +1086,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   // --- Citation styles (issue #1109) ---
 
-  /** The palette's choice in the writer's citation style; the house format when the book cannot be read. */
+  /** The palette's choice as a live citation in the writer's style; plain house text when the book cannot be read. */
   private async insertStyledFromPalette(source: PaletteChoice['source'], mode: PaletteChoice['mode']): Promise<void> {
     const editor = this.markdownEditor;
     if (!editor) return;
@@ -1073,40 +1097,45 @@ export class WritingStudio implements OnInit, AfterViewInit {
         : mode === 'note'
           ? (buildNoteMarkdown(source) ?? buildQuoteMarkdown(source))
           : (buildQuoteMarkdown(source) ?? buildNoteMarkdown(source)));
-    if (!markdown || !editor.replaceSourceQuery(markdown, mode === 'reference' ? 'inline' : 'block')) {
+    if (!markdown || !editor.replaceSourceQuery(markdown, mode === 'reference' ? 'inline' : 'block', footnoteOf(styled))) {
       this.toast.error('The editor is not ready for insertion yet');
       return;
     }
-    if (styled?.footnote) editor.appendFootnote(styled.footnote.number, styled.footnote.text);
     this.keepNote(source.id);
     this.sourcePalette?.remember(source);
+    if (styled) void this.warnIfIncomplete(source.bookId);
   }
 
   /**
-   * A quote, note or reference in the chosen style, or null to fall back to
-   * the house format (the style is "Nostos", or the book cannot be read). A
-   * note style gives a book's first citation in full and later ones short.
+   * A quote, note or reference as a live citation in the chosen style
+   * (issues #1109, #1157), or null to fall back to plain house text (the book
+   * cannot be read). A note style gives a book's first citation in full and
+   * later ones short; the refresh that follows keeps that true as notes move.
    */
   private async styledInsertion(
     source: CitableSource & { id?: string },
     mode: 'quote' | 'note' | 'reference',
   ): Promise<StyledInsertion | null> {
     const style = this.pagePrefs.citationStyle();
-    if (style.kind === 'house' || !this.markdownEditor) return null;
-    // A book already kept with this writing has been cited in it, so a note
-    // style gives the short form; the first citation of a book is in full.
-    const subsequent =
-      style.kind === 'note' && !!source.bookId && this.keptSources().some((kept) => kept.bookId === source.bookId);
-    let citation: string | null = null;
+    if (!this.markdownEditor || !source.bookId) return null;
+    const subsequent = style.kind === 'note' && this.markdownEditor.citedBooks().includes(source.bookId);
+    const role: CitationRole = mode;
+    let text: string | null = null;
     try {
-      citation = await this.citations.cite(source, style, subsequent);
+      text = await this.citations.cite(source, style, subsequent, role);
     } catch {
-      citation = null;
+      text = null;
     }
-    if (!citation) {
-      this.toast.error(`Could not format this source in ${style.label}; it went in as Nostos writes it`);
+    if (!text) {
+      if (style.kind !== 'house') this.toast.error(`Could not format this source in ${style.label}; it went in as Nostos writes it`);
       return null;
     }
+    const citation = citationMarkdown(text, {
+      book: source.bookId,
+      page: citationLocator(source)?.page ?? null,
+      src: source.id ?? null,
+      as: role,
+    });
     const footnote = this.markdownEditor.nextFootnoteNumber();
     if (mode === 'reference') return styledReference(citation, style, footnote);
     if (mode === 'note') {
@@ -1115,25 +1144,146 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return styledQuote(source.selectedText, citation, style, footnote) ?? styledNote(source.content, citation, style, footnote);
   }
 
-  /** `/` → Bibliography: every book cited in this writing, in the chosen style. */
+  /**
+   * `/` → Bibliography: every book cited in this writing, in the chosen
+   * style. Its entries are live (issue #1157): they follow the style, the
+   * books' details and what the writing goes on to cite.
+   */
   async insertBibliography(): Promise<void> {
     const editor = this.markdownEditor;
     if (!editor) return;
+    if (editor.hasBibliography()) {
+      this.toast.info('This writing already has a bibliography. It keeps itself up to date.');
+      return;
+    }
     const style = this.pagePrefs.citationStyle();
-    const bookIds = this.keptSources().map((source) => source.bookId);
-    let entries: string[] = [];
+    const books = this.writingBooks();
+    let entries: { book: string; text: string }[] = [];
     try {
-      entries = await this.citations.bibliography(bookIds, style);
+      entries = await this.citations.bibliographyEntries(books, style);
     } catch {
       this.toast.error('Could not build the bibliography');
       return;
     }
-    const markdown = bibliographyMarkdown(entries, style);
+    const markdown = bibliographyMarkdown(
+      entries.map((entry) => citationMarkdown(entry.text, { book: entry.book, page: null, src: null, as: 'bib' })),
+      style,
+    );
     if (!markdown) {
       this.toast.info('Nothing is cited in this writing yet');
       return;
     }
-    if (!editor.insertBlockMarkdown(markdown)) this.toast.error('The editor is not ready for insertion yet');
+    if (!editor.insertBlockMarkdown(markdown)) {
+      this.toast.error('The editor is not ready for insertion yet');
+      return;
+    }
+    void this.warnIncompleteBibliography(entries.map((entry) => entry.book));
+  }
+
+  /** Every book this writing cites or keeps, cited ones first. */
+  private writingBooks(): string[] {
+    const cited = this.markdownEditor?.citedBooks() ?? [];
+    return [...new Set([...cited, ...this.keptSources().map((source) => source.bookId)].filter(Boolean))];
+  }
+
+  // --- Live citations (issue #1157) ---
+
+  private citationRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private citationRefreshRun = 0;
+  /** "writing:book" pairs already told about missing details, so each is said once. */
+  private readonly toldIncomplete = new Set<string>();
+
+  /** The style, a book's details or the kept sources changed: the open writing's citations follow. */
+  protected readonly followCitationInputs = effect(() => {
+    this.pagePrefs.citationStyle();
+    this.citations.revision();
+    this.keptSources();
+    untracked(() => this.scheduleCitationRefresh());
+  });
+
+  /** The editor's citations changed (one went in, moved or out, or a writing opened). */
+  onCitationsChange(): void {
+    this.scheduleCitationRefresh();
+  }
+
+  private scheduleCitationRefresh(delay = 250): void {
+    if (this.citationRefreshTimer) clearTimeout(this.citationRefreshTimer);
+    this.citationRefreshTimer = setTimeout(() => {
+      this.citationRefreshTimer = null;
+      void this.refreshCitations();
+    }, delay);
+  }
+
+  /** Writes the open writing's citations again from the books' details, in the chosen style. */
+  async refreshCitations(): Promise<boolean> {
+    const editor = this.markdownEditor;
+    const writing = this.activeItem()?.id;
+    if (!editor || !writing) return false;
+    const books = editor.citedBooks();
+    if (!books.length) return false;
+    const run = ++this.citationRefreshRun;
+    let renderer;
+    try {
+      renderer = await this.citations.renderer(this.pagePrefs.citationStyle(), books, this.keptSources());
+    } catch {
+      return false;
+    }
+    // The writer may have switched writings, or a newer refresh started.
+    if (run !== this.citationRefreshRun || this.activeItem()?.id !== writing || this.markdownEditor !== editor) return false;
+    return editor.refreshCitations(renderer);
+  }
+
+  /** Opens the Citations settings at the books missing details, this one first. */
+  openCitationDetails(bookId: string | null = null): void {
+    if (this.drawerOpen()) {
+      this.showFileSidebar.set(false);
+      if (this.isDrawer('reference')) this.showBrainSidebar.set(false);
+    }
+    this.citedBookIds.set(this.writingBooks());
+    this.pageSettingsStart.set({ view: 'citations', book: bookId });
+    // Reopened, so a toast's action lands on the Citations list even when the settings were open.
+    this.pageSettingsOpen.set(false);
+    queueMicrotask(() => this.pageSettingsOpen.set(true));
+  }
+
+  /**
+   * A book was cited without a detail the style needs: say so once per
+   * writing, with the way to add it. The citation is in already, written as
+   * the style writes a missing detail ("n.d."), and follows once it is added.
+   */
+  private async warnIfIncomplete(bookId: string | null | undefined): Promise<void> {
+    const writing = this.activeItem()?.id;
+    if (!bookId || !writing || this.toldIncomplete.has(`${writing}:${bookId}`)) return;
+    const style = this.pagePrefs.citationStyle();
+    const book = await this.citations.book(bookId);
+    if (!book) return;
+    const missing = missingForStyle(bookToCslItem(book), style);
+    if (!missing.length) return;
+    this.toldIncomplete.add(`${writing}:${bookId}`);
+    this.toast.show(
+      `“${book.title}” has no ${missingPhrase(missing)} in its details, so ${style.label} cites it without.`,
+      'info',
+      8000,
+      { label: 'Add', run: () => this.openCitationDetails(bookId) },
+    );
+  }
+
+  /** A bibliography went in: name the books whose entries lack details, once. */
+  private async warnIncompleteBibliography(bookIds: readonly string[]): Promise<void> {
+    const style = this.pagePrefs.citationStyle();
+    const books = await Promise.all(bookIds.map((id) => this.citations.book(id)));
+    const incomplete = books.filter((book) => !!book && missingForStyle(bookToCslItem(book), style).length);
+    if (!incomplete.length) return;
+    const message =
+      incomplete.length === 1
+        ? `“${incomplete[0]!.title}” has no ${missingPhrase(missingForStyle(bookToCslItem(incomplete[0]!), style))} in its details, so its entry is incomplete.`
+        : `${incomplete.length} sources lack details ${style.label} needs, so their entries are incomplete.`;
+    this.toast.show(message, 'info', 8000, { label: 'Fix', run: () => this.openCitationDetails(incomplete[0]!.id) });
+  }
+
+  /** A book's details were saved from the Citations list. */
+  onCitationBookUpdated(): void {
+    this.scheduleCitationRefresh(0);
   }
 
   /** A book from this writing, for the citation style examples. */
@@ -1153,11 +1303,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The viewer opened from the palette puts its quote after the caret's paragraph. */
   private readonly palettePassageOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) =>
-      this.pagePrefs.citationStyle().kind === 'house'
-        ? this.quoteFromPalettePassage(text, passage, null)
-        : this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id }, 'quote').then((styled) =>
-            this.quoteFromPalettePassage(text, passage, styled),
-          ),
+      passage.bookId
+        ? this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title }, 'quote').then(
+            (styled) => this.quoteFromPalettePassage(text, passage, styled),
+          )
+        : this.quoteFromPalettePassage(text, passage, null),
   };
 
   /** Puts a quote from a passage opened from the palette after the caret's paragraph. */
@@ -1168,8 +1318,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       bookAuthor: passage.bookAuthor,
       passageTitle: passage.title,
     });
-    if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown)) {
-      if (styled?.footnote) this.markdownEditor.appendFootnote(styled.footnote.number, styled.footnote.text);
+    if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown, footnoteOf(styled))) {
+      if (styled) void this.warnIfIncomplete(passage.bookId);
       this.keepNote(passage.id);
       const source = this.palettePassageSource;
       if (source?.id === passage.id) this.sourcePalette?.remember(source);
@@ -1645,7 +1795,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** Whether the quote went in; the viewer confirms success on its own button. */
   private async quotePassageSelection(text: string, passage: Passage): Promise<boolean> {
-    const styled = await this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id }, 'quote');
+    const styled = await this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title }, 'quote');
     const markdown = styled?.markdown ?? buildQuoteMarkdown({
       selectedText: text,
       bookTitle: passage.bookTitle,
@@ -1656,8 +1806,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.toast.error('Open a writing and place the cursor in the editor first');
       return false;
     }
-    if (await this.markdownEditor.insertMarkdown(markdown)) {
-      if (styled?.footnote) this.markdownEditor.appendFootnote(styled.footnote.number, styled.footnote.text);
+    if (await this.markdownEditor.insertMarkdown(markdown, footnoteOf(styled))) {
+      if (styled) void this.warnIfIncomplete(passage.bookId);
       return true;
     }
     this.toast.error('The editor is not ready for insertion yet');
@@ -1674,17 +1824,17 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   async insertQuote(source: Note): Promise<void> {
     const styled = await this.styledInsertion(source, 'quote');
-    await this.insertSourceMarkdown(styled?.markdown ?? buildQuoteMarkdown(source), styled);
+    await this.insertSourceMarkdown(styled?.markdown ?? buildQuoteMarkdown(source), styled, source.bookId);
   }
 
   async insertNote(source: Note): Promise<void> {
     const styled = await this.styledInsertion(source, 'note');
-    await this.insertSourceMarkdown(styled?.markdown ?? buildNoteMarkdown(source), styled);
+    await this.insertSourceMarkdown(styled?.markdown ?? buildNoteMarkdown(source), styled, source.bookId);
   }
 
   async insertReference(source: Note): Promise<void> {
     const styled = await this.styledInsertion(source, 'reference');
-    await this.insertSourceMarkdown(styled?.markdown ?? buildReferenceMarkdown(source), styled);
+    await this.insertSourceMarkdown(styled?.markdown ?? buildReferenceMarkdown(source), styled, source.bookId);
   }
 
   /** The title a passage row leads with, or null for any other source. */
@@ -1692,19 +1842,19 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return isPassage(note) ? note.passageTitle?.trim() || 'Passage' : null;
   }
 
-  private async insertSourceMarkdown(markdown: string | null, styled: StyledInsertion | null = null): Promise<void> {
+  private async insertSourceMarkdown(markdown: string | null, styled: StyledInsertion | null = null, bookId: string | null = null): Promise<void> {
     if (!markdown) return;
     if (!this.activeItem() || !this.markdownEditor) {
       this.toast.error('Open a writing and place the cursor in the editor first');
       return;
     }
 
-    const inserted = await this.markdownEditor.insertMarkdown(markdown);
+    const inserted = await this.markdownEditor.insertMarkdown(markdown, footnoteOf(styled));
     if (!inserted) {
       this.toast.error('The editor is not ready for insertion yet');
       return;
     }
-    if (styled?.footnote) this.markdownEditor.appendFootnote(styled.footnote.number, styled.footnote.text);
+    if (styled) void this.warnIfIncomplete(bookId);
 
     if (this.isCompact()) this.setRailOpen('reference', false, false, false);
   }

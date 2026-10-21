@@ -739,7 +739,7 @@ app-markdown-editor .nostos-manuscript-body img.ProseMirror-selectednode {
 }
 
 /* A footnote marker (issue #1109): a raised number in the ink of the page. */
-:host ::ng-deep .ProseMirror sup.footnote-ref {
+app-markdown-editor .ProseMirror sup.footnote-ref {
   padding: 0 0.1em;
   color: var(--manuscript-ink-soft, inherit);
   font-size: 0.72em;
@@ -748,7 +748,28 @@ app-markdown-editor .nostos-manuscript-body img.ProseMirror-selectednode {
   vertical-align: super;
 }
 
-:host ::ng-deep .ProseMirror sup.footnote-ref.ProseMirror-selectednode {
+app-markdown-editor .ProseMirror sup.footnote-ref.ProseMirror-selectednode {
   border-radius: var(--radius-sm, 3px);
   outline: 1px solid var(--manuscript-rule-strong, currentColor);
+}
+
+/*
+ * A live citation (issue #1157): it reads as the words around it. Its one
+ * sign of life is a faint underline under the pointer, saying the words are
+ * the Studio's and follow the book's details and the style.
+ */
+app-markdown-editor .ProseMirror cite.citation {
+  font-style: normal;
+  border-radius: var(--radius-sm, 3px);
+  text-decoration: none;
+}
+
+app-markdown-editor .ProseMirror cite.citation:hover {
+  text-decoration: underline dotted var(--manuscript-rule-strong, currentColor);
+  text-underline-offset: 0.2em;
+}
+
+app-markdown-editor .ProseMirror cite.citation.ProseMirror-selectednode {
+  outline: 1px solid var(--manuscript-rule-strong, currentColor);
+  outline-offset: 1px;
 }

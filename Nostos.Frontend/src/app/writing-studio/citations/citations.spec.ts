@@ -7,11 +7,17 @@ import mlaCsl from '../../../../public/csl/styles/modern-language-association.cs
 import enUs from '../../../../public/csl/locales/locales-en-US.xml' with { loader: 'text' };
 import enGb from '../../../../public/csl/locales/locales-en-GB.xml' with { loader: 'text' };
 
+import { TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
+
 import { Book } from '../../core/dtos/book.dtos';
+import { BooksService } from '../../core/services/books.service';
+import { MarkdownEditorComponent } from '../../ui/markdown-editor/markdown-editor.component';
+import { CitationService, houseText } from './citation.service';
 import { htmlToMarkdown, markdownToHtml } from '../../ui/markdown-editor/markdown-conversion';
 import { CitationEngine, cslHtmlToMarkdown } from './citation-engine';
 import { CITATION_STYLES, citationStyle } from './citation-styles';
-import { bookToCslItem, missingForStyle, parseNames, publishedYear } from './csl-item';
+import { bookToCslItem, missingForStyle, missingPhrase, parseNames, publishedYear } from './csl-item';
 import { bibliographyMarkdown, styledNote, styledQuote, styledReference } from './styled-insertion';
 
 function book(overrides: Partial<Book> = {}): Book {
@@ -39,6 +45,11 @@ describe('citation styles (issue #1109): book metadata as CSL', () => {
       { family: 'Guattari', given: 'Félix' },
     ]);
     expect(parseNames('Homer')).toEqual([{ literal: 'Homer' }]);
+    // An epithet is not a family name, and a placeholder names nobody (#1157).
+    expect(parseNames('Seneca the Younger')).toEqual([{ literal: 'Seneca the Younger' }]);
+    expect(parseNames('Saint Augustine')).toEqual([{ literal: 'Saint Augustine' }]);
+    expect(parseNames('Multiple Authors')).toBeUndefined();
+    expect(parseNames('Various')).toBeUndefined();
     expect(parseNames('  ')).toBeUndefined();
   });
 
@@ -172,5 +183,87 @@ describe('citation styles (issue #1109): the bundled CSL styles format a real bo
   it('never invents a page: no locator, no page', async () => {
     const engine = await CitationEngine.create(citationStyle('apa'));
     expect(engine.cite(item, null)).toBe('(Schopenhauer, 1851)');
+  });
+
+  it('says which book each reference entry is for, in the style’s order (#1157)', async () => {
+    const engine = await CitationEngine.create(citationStyle('apa'));
+    const weil = bookToCslItem(book({ id: 'b2', author: 'Simone Weil', title: 'Gravity and Grace', publishedDate: '1947' }));
+    expect(engine.bibliographyEntries([weil, item]).map((entry) => entry.id)).toEqual(['b1', 'b2']);
+  });
+
+  describe('live citations through the real styles (#1157)', () => {
+    const candide = { id: 'c1', title: 'Candide', subtitle: null, author: 'Voltaire', editor: null, translator: null, publisher: 'Cramer', placeOfPublication: null, publishedDate: null, edition: null } as unknown as Book;
+    let service: CitationService;
+
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        imports: [MarkdownEditorComponent],
+        providers: [{ provide: BooksService, useValue: { get: vi.fn((id: string) => (id === 'c1' ? of(candide) : throwError(() => new Error('gone')))) } }],
+      });
+      service = TestBed.inject(CitationService);
+    });
+
+    it('cites a book with no year as the style does, and with its year once it has one', async () => {
+      const ref = { book: 'c1', page: 12, src: null, as: 'quote' as const };
+      expect((await service.renderer(citationStyle('apa'), ['c1'], [])).inText(ref)).toBe('(Voltaire, n.d., p. 12)');
+
+      service.updated({ ...candide, publishedDate: '1759' });
+      const renderer = await service.renderer(citationStyle('apa'), ['c1'], []);
+      expect(renderer.inText(ref)).toBe('(Voltaire, 1759, p. 12)');
+      expect(renderer.bibliography(['c1'])).toEqual([{ book: 'c1', text: 'Voltaire. (1759). *Candide*. Cramer.' }]);
+      // A book that cannot be read leaves the list as it is.
+      expect(renderer.bibliography(['c1', 'gone'])).toBeNull();
+      expect(renderer.inText({ ...ref, book: 'gone' })).toBeNull();
+    });
+
+    it('moves an APA citation into a Chicago footnote in a real writing, and back', async () => {
+      service.updated({ ...candide, publishedDate: '1759' });
+      const fixture = TestBed.createComponent(MarkdownEditorComponent);
+      const start = 'Optimism [(Voltaire, n.d.)](nostos:cite/c1?as=reference) is mocked.\n\n## References\n\n[Voltaire. (n.d.). *Candide*. Cramer.](nostos:cite/c1?as=bib)';
+      fixture.componentRef.setInput('initialContent', start);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const editor = fixture.componentInstance;
+
+      editor.refreshCitations(await service.renderer(citationStyle('apa'), editor.citedBooks(), []));
+      expect(editor.currentMarkdown().trim()).toBe(
+        'Optimism [(Voltaire, 1759)](nostos:cite/c1?as=reference) is mocked.\n\n## References\n\n[Voltaire. (1759). *Candide*. Cramer.](nostos:cite/c1?as=bib)',
+      );
+
+      editor.refreshCitations(await service.renderer(citationStyle('chicago-notes'), editor.citedBooks(), []));
+      expect(editor.currentMarkdown().trim()).toBe(
+        [
+          'Optimism[^1] is mocked.',
+          '[^1]: [Voltaire, *Candide* (Cramer, 1759).](nostos:cite/c1?as=reference)',
+          '## Bibliography',
+          '[Voltaire. *Candide*. Cramer, 1759.](nostos:cite/c1?as=bib)',
+        ].join('\n\n'),
+      );
+
+      editor.refreshCitations(await service.renderer(citationStyle('apa'), editor.citedBooks(), []));
+      expect(editor.currentMarkdown().trim()).toContain('Optimism [(Voltaire, 1759)](nostos:cite/c1?as=reference) is mocked.');
+      fixture.destroy();
+    });
+  });
+});
+
+describe('the house format and missing details (#1157)', () => {
+  const house = citationStyle('nostos');
+  const voltaire = { id: 'b1', title: 'Candide', author: 'Voltaire' } as Book;
+
+  it('writes the house format from the book, framed by where it stands', () => {
+    expect(houseText(voltaire, { book: 'b1', page: 4, src: null, as: 'quote' }, null)).toBe('— Voltaire, *Candide*, p. 4');
+    expect(houseText(voltaire, { book: 'b1', page: null, src: null, as: 'note' }, null)).toBe('*Source: Voltaire, Candide*');
+    expect(houseText(voltaire, { book: 'b1', page: 4, src: 'p1', as: 'reference' }, 'On Hope')).toBe('*See: Voltaire, Candide, “On Hope”*');
+    expect(houseText({ ...voltaire, author: null, title: 'A [b]' } as Book, { book: 'b1', page: null, src: null, as: 'quote' }, null)).toBe('— *A \\[b\\]*');
+  });
+
+  it('asks the house format only for an author, and names what is missing', () => {
+    const bare = bookToCslItem(book({ author: null, publishedDate: null, publisher: null }));
+    expect(missingForStyle(bare, house)).toEqual(['author']);
+    expect(missingForStyle(bare, citationStyle('mla'))).toEqual(['author', 'year', 'publisher']);
+    expect(missingPhrase(['year'])).toBe('year');
+    expect(missingPhrase(['year', 'publisher'])).toBe('year and publisher');
+    expect(missingPhrase(['author', 'year', 'publisher'])).toBe('author, year and publisher');
   });
 });

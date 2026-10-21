@@ -24,10 +24,27 @@ import BubbleMenu from '@tiptap/extension-bubble-menu';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
-import { FootnoteRef } from './footnote.extension';
+import { FootnoteRef, tidyFootnotes } from './footnote.extension';
+import { Citation } from './citation.extension';
+import { CitationRenderer, citationBooks, citationSignature, footnoteInsertPosition, refreshCitations } from './live-citations';
 import { SoundPack, TypewriterSounds, soundForInput } from './typewriter-sounds';
 import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
 import { exitSuggestion } from '@tiptap/suggestion';
+
+/** A footnote that goes in with an insertion: its number and the note's Markdown. */
+export interface InsertedFootnote {
+  number: number;
+  markdown: string;
+}
+
+/**
+ * Marks `tr` as part of the undo step before it (prosemirror-history treats an
+ * appended transaction so), so a quote and the footnote it brings, or a
+ * renumbering, come out with one undo.
+ */
+function joinPreviousUndo<T extends { setMeta(key: string, value: unknown): T }>(tr: T): T {
+  return tr.setMeta('appendedTransaction', tr);
+}
 
 export interface MarkdownEditorTransientState {
   /** The selection, as ProseMirror document positions. */
@@ -106,6 +123,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   sourceSuggestion = output<SourceSuggestionState | null>();
   /** "Bibliography" from the `/` menu (issue #1109): the Studio builds it and inserts it here. */
   bibliographyRequested = output<void>();
+  /**
+   * The writing's live citations changed: one went in, moved or went out, or
+   * another writing opened (issue #1157). Carries a signature of them, so the
+   * Studio can tell a real change from an edit elsewhere.
+   */
+  citationsChange = output<string>();
   /** Keys pressed while an `@` query is open go here first; true consumes one. */
   sourceSuggestionKeyDown = input<((event: KeyboardEvent) => boolean) | null>(null);
   /** The palette's highlighted option, announced through the page's ARIA. */
@@ -167,6 +190,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   readonly urlValue = signal('');
 
   private editor: Editor | null = null;
+  /** True while an insertion puts a footnote marker and its note in. */
+  private footnotesPaused = false;
   /** The last Markdown this editor emitted, so a save echo costs nothing. */
   private lastEmittedMarkdown: string | null = null;
   private destroyed = false;
@@ -265,7 +290,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         // Writings saved under TinyMCE can hold pasted images as data URIs.
         Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),
-        FootnoteRef,
+        FootnoteRef.configure({ paused: () => this.footnotesPaused }),
+        Citation,
         BubbleMenu.configure({
           element: this.bubble.nativeElement,
           // Fixed to the viewport, following the page's own scroller: inside
@@ -329,6 +355,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       onUpdate: () => {
         this.emitMarkdown();
         this.emitWordCount();
+        this.emitCitations();
         this.followCaret();
       },
       onSelectionUpdate: () => this.followCaret(),
@@ -356,6 +383,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.editorStarting.set(false);
     this.refreshToolbar();
     this.emitWordCount();
+    this.emitCitations(true);
     this.tryApplyTransientRestore();
   }
 
@@ -387,14 +415,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * emits the resulting document through the normal HTML -> Markdown path.
    * If the editor is not ready, no fallback position is invented.
    */
-  async insertMarkdown(markdown: string): Promise<boolean> {
+  async insertMarkdown(markdown: string, footnote: InsertedFootnote | null = null): Promise<boolean> {
     const snippet = markdown.trim();
     const editor = this.editor;
     if (!snippet || !editor || editor.isDestroyed) return false;
 
     // onUpdate emits the resulting document.
-    editor.chain().focus().insertContent(markdownToHtml(snippet)).run();
-    return true;
+    return this.withFootnote(footnote, () => {
+      editor.chain().focus().insertContent(markdownToHtml(snippet)).run();
+      return true;
+    });
   }
 
   /**
@@ -402,12 +432,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * or a note) goes after the paragraph the query was typed in, so a sentence
    * is never split; an inline reference takes the query's place.
    */
-  replaceSourceQuery(markdown: string, placement: 'block' | 'inline'): boolean {
+  replaceSourceQuery(markdown: string, placement: 'block' | 'inline', footnote: InsertedFootnote | null = null): boolean {
     const editor = this.editor;
     const range = this.suggestionRange;
     const snippet = markdown.trim();
     if (!editor || editor.isDestroyed || !range || !snippet) return false;
+    return this.withFootnote(footnote, () => this.replaceQueryWith(editor, range, snippet, placement));
+  }
 
+  private replaceQueryWith(editor: Editor, range: Range, snippet: string, placement: 'block' | 'inline'): boolean {
     this.shortcutInserted = 0;
     editor.chain().focus().deleteRange(range).run();
     this.suggestionRange = null;
@@ -443,11 +476,34 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   }
 
   /** Insert Markdown as blocks after the caret's paragraph, never inside it. */
-  insertBlockMarkdown(markdown: string): boolean {
+  insertBlockMarkdown(markdown: string, footnote: InsertedFootnote | null = null): boolean {
     const snippet = markdown.trim();
     if (!snippet || !this.editor || this.editor.isDestroyed) return false;
-    this.insertBlockAtCaret(markdownToHtml(snippet));
-    return true;
+    return this.withFootnote(footnote, () => {
+      this.insertBlockAtCaret(markdownToHtml(snippet));
+      return true;
+    });
+  }
+
+  /**
+   * An insertion that brings its own footnote (issue #1109): the marker and
+   * its note go in together, are tidied together (renumbered in reading
+   * order), and come out with one undo.
+   */
+  private withFootnote(footnote: InsertedFootnote | null, insert: () => boolean): boolean {
+    if (!footnote) return insert();
+    this.footnotesPaused = true;
+    let inserted = false;
+    try {
+      inserted = insert();
+      if (inserted) this.appendFootnote(footnote.number, footnote.markdown);
+    } finally {
+      this.footnotesPaused = false;
+    }
+    const editor = this.editor;
+    const tidy = editor && !editor.isDestroyed ? tidyFootnotes(editor.state) : null;
+    if (tidy) editor!.view.dispatch(joinPreviousUndo(tidy));
+    return inserted;
   }
 
   /** The number for a new footnote: one past the highest marker in the writing. */
@@ -468,8 +524,46 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const editor = this.editor;
     const text = markdown.trim();
     if (!editor || editor.isDestroyed || !text) return false;
-    const end = editor.state.doc.content.size;
-    editor.commands.insertContentAt(end, markdownToHtml(`[^${number}]: ${text}`), { updateSelection: false });
+    // After the other notes, ahead of a bibliography at the end (issue #1157).
+    const at = footnoteInsertPosition(editor.state.doc);
+    editor
+      .chain()
+      .command(({ tr }) => {
+        joinPreviousUndo(tr);
+        return true;
+      })
+      .insertContentAt(at, markdownToHtml(`[^${number}]: ${text}`), { updateSelection: false })
+      .run();
+    return true;
+  }
+
+  /** Whether the writing holds a bibliography the Studio wrote (issue #1157). */
+  hasBibliography(): boolean {
+    let found = false;
+    this.editor?.state.doc.descendants((node) => {
+      if (found) return false;
+      if (node.type.name === 'citation' && node.attrs['as'] === 'bib') found = true;
+      return !found;
+    });
+    return found;
+  }
+
+  /** The books the writing's live citations point at (issue #1157). */
+  citedBooks(): string[] {
+    return this.editor && !this.editor.isDestroyed ? citationBooks(this.editor.state.doc) : [];
+  }
+
+  /**
+   * Write every live citation again for `renderer` (issue #1157). Kept out of
+   * the undo history: it follows the book's details and the chosen style,
+   * which an undo of the writer's own typing should not reverse.
+   */
+  refreshCitations(renderer: CitationRenderer): boolean {
+    const editor = this.editor;
+    if (!editor || editor.isDestroyed) return false;
+    const tr = refreshCitations(editor.state, renderer);
+    if (!tr) return false;
+    editor.view.dispatch(tr.setMeta('addToHistory', false));
     return true;
   }
 
@@ -941,6 +1035,18 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.lastEmittedMarkdown = null;
     this.refreshToolbar();
     this.emitWordCount();
+    this.emitCitations(true);
+  }
+
+  /** The last citation signature emitted; `force` emits even an unchanged one (another writing opened). */
+  private lastCitations: string | null = null;
+
+  private emitCitations(force = false): void {
+    if (!this.editor || this.editor.isDestroyed) return;
+    const signature = citationSignature(this.editor.state.doc);
+    if (!force && signature === this.lastCitations) return;
+    this.lastCitations = signature;
+    this.citationsChange.emit(signature);
   }
 
   /**

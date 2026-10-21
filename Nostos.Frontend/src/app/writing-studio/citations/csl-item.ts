@@ -20,6 +20,9 @@ export interface CslItem {
   edition?: string;
 }
 
+const PLACEHOLDER_NAMES = /^(multiple authors|various( authors)?|unknown( author)?)$/i;
+const EPITHET = /\bthe\b|^(saint|st\.?) /i;
+
 /**
  * Names as Nostos stores them: one string, possibly several people. "Marcus
  * Aurelius", "Aurelius, Marcus", "Deleuze & Guattari", "A and B; C" all come
@@ -28,7 +31,8 @@ export interface CslItem {
  */
 export function parseNames(value: string | null | undefined): CslName[] | undefined {
   const text = (value ?? '').replace(/\s+/g, ' ').trim();
-  if (!text) return undefined;
+  // A library's placeholder names nobody: the style cites by title (issue #1157).
+  if (!text || PLACEHOLDER_NAMES.test(text)) return undefined;
 
   const parts = text.split(/\s*(?:;|&|\band\b)\s*/i).map((p) => p.trim()).filter(Boolean);
   if (parts.length === 1 && /,/.test(parts[0])) {
@@ -38,7 +42,8 @@ export function parseNames(value: string | null | undefined): CslName[] | undefi
   const people = parts.length === 1 ? parts[0].split(/\s*,\s*/) : parts;
   return people.map((person) => {
     const words = person.split(' ');
-    if (words.length === 1) return { literal: person };
+    // "Seneca the Younger", "Saint Augustine": an epithet, not a family name.
+    if (words.length === 1 || EPITHET.test(person)) return { literal: person };
     return { family: words[words.length - 1], given: words.slice(0, -1).join(' ') };
   });
 }
@@ -66,11 +71,24 @@ export function bookToCslItem(book: Book): CslItem {
   return item;
 }
 
-/** The details citations will lack for this book, for the hint under the style list. */
-export function missingForStyle(item: CslItem): string[] {
-  const missing: string[] = [];
+/** A detail a citation can lack, as Book details names it. */
+export type CitationDetail = 'author' | 'year' | 'publisher';
+
+/**
+ * The details citations will lack for this book. The house format names only
+ * the author and title; every CSL style also wants the year and publisher.
+ */
+export function missingForStyle(item: CslItem, style: { kind: string } | null = null): CitationDetail[] {
+  const missing: CitationDetail[] = [];
   if (!item.author && !item.editor) missing.push('author');
+  if (style?.kind === 'house') return missing;
   if (!item.issued) missing.push('year');
   if (!item.publisher) missing.push('publisher');
   return missing;
+}
+
+/** "the year", "the year and publisher", "the author, year and publisher". */
+export function missingPhrase(missing: readonly CitationDetail[]): string {
+  if (missing.length <= 1) return missing.join('');
+  return `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
 }

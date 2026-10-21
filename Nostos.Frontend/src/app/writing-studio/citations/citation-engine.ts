@@ -6,7 +6,7 @@ interface CiteprocEngine {
   setOutputFormat(format: 'html' | 'text'): void;
   updateItems(ids: string[]): void;
   makeCitationCluster(items: { id: string; locator?: string; label?: string; position?: number }[]): string;
-  makeBibliography(): [unknown, string[]] | false;
+  makeBibliography(): [{ entry_ids?: string[][] }, string[]] | false;
 }
 
 interface CiteprocModule {
@@ -92,11 +92,19 @@ export class CitationEngine {
 
   /** The reference list for these items, sorted as the style sorts it. */
   bibliography(items: readonly CslItem[]): string[] {
+    return this.bibliographyEntries(items).map((entry) => entry.text);
+  }
+
+  /** The reference list with the item each entry is for (issue #1157). */
+  bibliographyEntries(items: readonly CslItem[]): { id: string; text: string }[] {
     if (!items.length) return [];
     this.register(items, true);
     const result = this.engine.makeBibliography();
     if (!result) return [];
-    return result[1].map((entry) => cslHtmlToMarkdown(entry)).filter(Boolean);
+    const ids = result[0].entry_ids ?? [];
+    return result[1]
+      .map((entry, index) => ({ id: String(ids[index]?.[0] ?? items[index]?.id ?? ''), text: cslHtmlToMarkdown(entry) }))
+      .filter((entry) => entry.id && entry.text);
   }
 
   private register(items: readonly CslItem[], only = false): void {
