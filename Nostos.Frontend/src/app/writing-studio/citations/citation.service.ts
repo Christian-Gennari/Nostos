@@ -60,7 +60,9 @@ export class CitationService {
     if (!bookId) return Promise.resolve(null);
     let book = this.loaded.get(bookId);
     if (!book) {
-      book = firstValueFrom(this.books.get(bookId)).then(
+      book = Promise.resolve()
+        .then(() => firstValueFrom(this.books.get(bookId)))
+        .then(
         (value: Book) => value,
         () => {
           this.loaded.delete(bookId);

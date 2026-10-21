@@ -1303,9 +1303,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The viewer opened from the palette puts its quote after the caret's paragraph. */
   private readonly palettePassageOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) =>
-      this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title }, 'quote').then(
-        (styled) => this.quoteFromPalettePassage(text, passage, styled),
-      ),
+      passage.bookId
+        ? this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title }, 'quote').then(
+            (styled) => this.quoteFromPalettePassage(text, passage, styled),
+          )
+        : this.quoteFromPalettePassage(text, passage, null),
   };
 
   /** Puts a quote from a passage opened from the palette after the caret's paragraph. */
