@@ -26,6 +26,7 @@
                 [id]="'source-option-' + i"
                 [class.active]="i === active()"
                 [attr.aria-selected]="i === active()"
+                [attr.aria-describedby]="i === active() && item.note ? 'source-preview-note' : null"
                 [attr.data-kind]="item.kind"
                 (mousedown)="$event.preventDefault()"
                 (mouseenter)="active.set(i)"
@@ -78,7 +79,9 @@
       </div>
 
       <!-- The highlighted source in full, in a box of its own size that
-           scrolls by itself, so a long quotation never pushes the list. -->
+           scrolls by itself, so a long quotation never pushes the list.
+           Hidden from screen readers: the option already reads the whole
+           quotation and byline, and describes itself with the note. -->
       <div class="sp-preview" data-testid="source-preview" aria-hidden="true" (mousedown)="$event.preventDefault()">
         @if (activeItem(); as item) {
           @for (shown of [item]; track shown.id) {
@@ -92,7 +95,7 @@
                 }
                 <p class="sp-preview-lead" [class.is-quote]="!!shown.selectedText">{{ shown.lead }}</p>
                 @if (shown.note) {
-                  <p class="sp-note">{{ shown.note }}</p>
+                  <p class="sp-note" id="source-preview-note">{{ shown.note }}</p>
                 }
                 <span class="sp-byline">{{ byline(shown) }}</span>
               </div>

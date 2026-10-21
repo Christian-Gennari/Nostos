@@ -214,6 +214,26 @@ describe('SourcePaletteComponent (issue #1039)', () => {
       expect(fixture.nativeElement.querySelector('.sp-list .sp-note')).toBeNull();
     });
 
+    it('describes the active option with the note shown in the preview', async () => {
+      search.mockReturnValue(of([{ ...hits[0], id: 'bare', content: null }, ...results()]));
+      await typeQuery('schopenhauer');
+      const describedBy = () =>
+        Array.from(fixture.nativeElement.querySelectorAll('.sp-row') as NodeListOf<HTMLElement>).map((r) =>
+          r.getAttribute('aria-describedby'),
+        );
+      const note = () => fixture.nativeElement.querySelector('#source-preview-note') as HTMLElement | null;
+
+      expect(describedBy()).toEqual([null, null, null, null]);
+      expect(note()).toBeNull();
+
+      component.handleKey(key('ArrowDown'));
+      component.handleKey(key('ArrowDown'));
+      fixture.detectChanges();
+
+      expect(describedBy()).toEqual([null, null, 'source-preview-note', null]);
+      expect(note()?.textContent).toBe('My own note on it.');
+    });
+
     it('offers the other insert options in the preview, and ⋯ highlights a row without inserting it', async () => {
       search.mockReturnValue(of(results()));
       await typeQuery('schopenhauer');
