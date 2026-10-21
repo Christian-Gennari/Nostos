@@ -157,7 +157,7 @@ function startServer({ cloud, port, host }) {
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(fixture));
         return;
       }
-      http
+      const upstreamRequest = http
         .get(
           { host: API.hostname, port: API.port, path: req.url, headers: { accept: 'application/json' } },
           (upstream) => {
@@ -167,7 +167,13 @@ function startServer({ cloud, port, host }) {
             upstream.pipe(res);
           },
         )
-        .on('error', () => res.writeHead(502).end());
+        .on('error', () => {
+          if (!res.headersSent) res.writeHead(502);
+          res.end();
+        });
+      // A stream the page holds open (the library's live changes) must end
+      // upstream when the page goes away, or `shots` never exits.
+      res.on('close', () => upstreamRequest.destroy());
       return;
     }
 
@@ -239,6 +245,7 @@ async function shots(options) {
     }
   } finally {
     await browser.close();
+    server.closeAllConnections();
     server.close();
   }
 
