@@ -27,17 +27,6 @@ public class TopicCleanupWorker(
 
         try
         {
-            // One pass at start, so case variants made before topic names
-            // compared in any case are merged without waiting an hour.
-            try
-            {
-                await DoWorkAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "An error occurred during the Topic Cleanup cycle.");
-            }
-
             // Loop until the app stops
             while (await _timer.WaitForNextTickAsync(stoppingToken))
             {
@@ -68,8 +57,10 @@ public class TopicCleanupWorker(
     }
 
     /// <summary>
-    /// Merges topics whose names differ only in case, then cleans up orphaned
-    /// topics (topics with no links to notes).
+    /// Merges topic case variants still waiting under a pending key (a restore
+    /// activated since startup can bring them; startup itself merges them in
+    /// DatabaseBootstrapService), then cleans up orphaned topics (topics with
+    /// no links to notes).
     /// </summary>
     private async Task DoWorkAsync(CancellationToken stoppingToken)
     {
