@@ -46,7 +46,7 @@
     "@angular/forms": "^21.2.19",
     "@angular/platform-browser": "^21.2.19",
     "@angular/router": "^21.2.19",
-    "@angular/service-worker": "^21.2.19",
+    "@angular/service-worker": "^22.2.3",
     "@phosphor-icons/core": "^2.1.1",
     "@tiptap/core": "3.31.4",
     "@tiptap/extension-bubble-menu": "3.31.4",
