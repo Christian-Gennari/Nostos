@@ -1277,3 +1277,41 @@
 .entry-source-list .entry-source-status {
   width: 100%;
 }
+
+/* Numbered citations (issue #1002): a small marker in the reply, and the same
+   number on its source in the row under it. */
+:host ::ng-deep .entry-markdown .assistant-cite {
+  /* Keeps the line's height: a superscript would otherwise push it open. */
+  line-height: 1;
+  font-size: 0.68em;
+  font-weight: var(--fw-medium);
+  vertical-align: super;
+}
+
+:host ::ng-deep .entry-markdown .assistant-cite-link {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0.1em 0.3em;
+  line-height: 1.2;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  color: var(--color-text-muted);
+  text-align: center;
+  text-decoration: none;
+}
+
+:host ::ng-deep .entry-markdown .assistant-cite-link:hover,
+:host ::ng-deep .entry-markdown .assistant-cite-link:focus-visible {
+  color: var(--color-text-main);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--bg-hover));
+}
+
+.entry-source-number {
+  flex: 0 0 auto;
+  min-width: 1.3em;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

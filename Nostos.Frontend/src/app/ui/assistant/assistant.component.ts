@@ -92,6 +92,8 @@ export type EntrySourceItem =
   | {
       kind: 'evidence';
       key: string;
+      /** Its citation number: the place of this evidence in the turn's list (issue #1002). */
+      number: number;
       bookId: string | null;
       bookTitle: string;
       excerpt: string;
@@ -160,7 +162,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
   if (evidenceArtifacts.length > 0) {
     const seen = new Set<string>();
 
-    for (const artifact of evidenceArtifacts) {
+    for (const [index, artifact] of evidenceArtifacts.entries()) {
       const evidence = artifact.evidence;
       const dedupeKey = canonicalEvidenceKey(evidence);
       if (seen.has(dedupeKey)) continue;
@@ -170,6 +172,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
       sourceItems.push({
         kind: 'evidence',
         key: `evidence:${dedupeKey}`,
+        number: index + 1,
         bookId,
         bookTitle: evidence.bookTitle?.trim() || evidence.label,
         excerpt: evidence.excerpt ?? '',
@@ -512,6 +515,41 @@ export class AssistantComponent {
 
   sourceView(entry: AssistantEntry): EntrySourceView {
     return buildEntrySourceView(entry);
+  }
+
+  // --- Numbered citations (issue #1002) ---
+
+  private readonly citationPreviewCache = new WeakMap<AssistantEntry, readonly string[]>();
+
+  /** Whether the reply cites its sources by number, so the sources row shows the numbers. */
+  citesSources(entry: AssistantEntry): boolean {
+    return entry.kind === 'assistant' && /\[\^\d+\]/.test(entry.text);
+  }
+
+  /** The hover preview for each citation number: where it is from and how it starts. */
+  citationPreviews(entry: AssistantEntry): readonly string[] {
+    const cached = this.citationPreviewCache.get(entry);
+    if (cached) return cached;
+    const previews = this.citedEvidence(entry).map((evidence) => {
+      const excerpt = this.sourceExcerpt(evidence.excerpt);
+      return excerpt ? `${this.evidenceLabel(evidence)} — ${excerpt}` : this.evidenceLabel(evidence);
+    });
+    this.citationPreviewCache.set(entry, previews);
+    return previews;
+  }
+
+  /** A click on a citation marker opens its source, as the sources row does. */
+  onReplyClick(event: MouseEvent, entry: AssistantEntry): void {
+    const link = (event.target as Element | null)?.closest?.('a.assistant-cite-link');
+    if (!link) return;
+    event.preventDefault();
+    const number = Number(link.textContent?.trim());
+    const evidence = this.citedEvidence(entry)[number - 1];
+    if (evidence && this.canOpenEvidence(evidence)) this.openEvidence(evidence);
+  }
+
+  private citedEvidence(entry: AssistantEntry): AssistantEvidenceReferenceDto[] {
+    return (entry.artifacts ?? []).flatMap((artifact) => (artifact.kind === 'evidence' ? [artifact.evidence] : []));
   }
 
   sourceGroupId(entryId: string, bookId: string): string {
