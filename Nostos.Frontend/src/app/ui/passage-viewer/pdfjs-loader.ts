@@ -29,10 +29,10 @@ export interface PdfLoadingTask {
   destroy(): Promise<void>;
 }
 
+/** No `destroy()`: pdf.js 6 closes a document only through its loading task. */
 export interface PdfDocument {
   numPages: number;
   getPage(pageNumber: number): Promise<PdfPage>;
-  destroy(): Promise<void>;
 }
 
 export interface PdfPage {

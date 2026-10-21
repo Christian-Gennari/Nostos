@@ -395,7 +395,9 @@ export class PassageViewerComponent {
         this.pdfTask = task;
         const doc = await task.promise;
         if (this.pdfTask !== task) {
-          void doc.destroy();
+          // pdf.js 6 dropped PDFDocumentProxy.destroy(); a document is closed
+          // through its loading task (idempotent if closePdf already did).
+          void task.destroy().catch(() => undefined);
           return;
         }
         this.pdfDoc = doc;

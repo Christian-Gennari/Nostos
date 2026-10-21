@@ -67,8 +67,8 @@ class PdfViewerStub {
   showTextEditor = input<boolean>(true);
   showDrawEditor = input<boolean>(true);
   showStampEditor = input<boolean>(true);
-  pageChange = output<number>();
-  sidebarVisibleChange = output<boolean>();
+  pageChange = output<number | undefined>();
+  sidebarVisibleChange = output<boolean | undefined>();
   scrollModeChange = output<number>();
   pagesLoaded = output<any>();
   pageRender = output<any>();
