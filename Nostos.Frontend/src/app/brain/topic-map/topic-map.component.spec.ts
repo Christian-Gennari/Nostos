@@ -13,14 +13,13 @@ vi.mock('sigma', () => {
     y: 0.5,
     angle: 0,
     ratio: 1,
-    animatedReset: vi.fn(),
-    animatedZoom: vi.fn(),
-    animatedUnzoom: vi.fn(),
-    animate: vi.fn(),
+    /** Sigma 4's camera is held by this flag; there is no enable()/disable(). */
+    enabled: true,
+    zoomIn: vi.fn(() => Promise.resolve()),
+    zoomOut: vi.fn(() => Promise.resolve()),
+    animate: vi.fn(() => Promise.resolve()),
     setState: vi.fn(),
     getState: vi.fn(() => ({ x: camera.x, y: camera.y, angle: 0, ratio: camera.ratio })),
-    disable: vi.fn(),
-    enable: vi.fn(),
   };
 
   /**
@@ -62,11 +61,33 @@ vi.mock('sigma', () => {
   // configuration the component actually ships rather than re-declaring it.
   const lastSettings: Record<string, unknown> = {};
 
+  /** Layers the component added with `createCanvas`, keyed by id. */
+  const layers: Record<string, { element: HTMLCanvasElement; options: Record<string, unknown> }> = {};
+
+  /**
+   * Sigma 4's constructor takes `{ settings, styles, nodeReducer, edgeReducer }`;
+   * the reducers are options, not settings.
+   */
   class MockSigma {
     settings: Record<string, unknown>;
-    constructor(_graph: unknown, _container: unknown, settings: Record<string, unknown> = {}) {
-      Object.assign(lastSettings, settings);
+    styles: unknown;
+    nodeReducer: unknown;
+    edgeReducer: unknown;
+    constructor(
+      _graph: unknown,
+      _container: unknown,
+      options: {
+        settings?: Record<string, unknown>;
+        styles?: unknown;
+        nodeReducer?: unknown;
+        edgeReducer?: unknown;
+      } = {}
+    ) {
+      Object.assign(lastSettings, options.settings ?? {});
       this.settings = lastSettings;
+      this.styles = options.styles;
+      this.nodeReducer = options.nodeReducer;
+      this.edgeReducer = options.edgeReducer;
     }
     on(event: string, handler: (payload?: unknown) => void) {
       sigmaHandlers[event] = handler;
@@ -75,6 +96,17 @@ vi.mock('sigma', () => {
     setSetting(key: string, value: unknown) {
       lastSettings[key] = value;
       return this;
+    }
+    getSetting(key: string) {
+      return lastSettings[key];
+    }
+    createCanvas(id: string, options: Record<string, unknown> = {}) {
+      const element = document.createElement('canvas');
+      layers[id] = { element, options };
+      return element;
+    }
+    scaleSize(size: number) {
+      return size;
     }
     refresh() {}
     kill() {}
@@ -107,11 +139,19 @@ vi.mock('sigma', () => {
   // settings the component actually shipped, without importing the mock.
   (globalThis as unknown as { __camera: unknown }).__camera = camera;
   (globalThis as unknown as { __settings: unknown }).__settings = lastSettings;
+  (globalThis as unknown as { __layers: unknown }).__layers = layers;
   (globalThis as unknown as { __captor: unknown }).__captor = captorHandlers;
   (globalThis as unknown as { __sigmaHandlers: unknown }).__sigmaHandlers = sigmaHandlers;
   (globalThis as unknown as { __touchCaptor: unknown }).__touchCaptor = touchHandlers;
 
-  return { default: MockSigma, __camera: camera, __settings: lastSettings };
+  // Enough of Sigma's default styles for the component to layer onto: the
+  // default hover backdrop is visible (and white), which the component turns off.
+  const DEFAULT_STYLES = {
+    nodes: { backdropVisibility: 'visible', backdropColor: '#ffffff' },
+    edges: {},
+  };
+
+  return { default: MockSigma, DEFAULT_STYLES, __camera: camera, __settings: lastSettings };
 });
 
 vi.mock('graphology', () => {
@@ -155,6 +195,11 @@ vi.mock('graphology', () => {
       for (const e of this.edges) {
         callback(e.key, e.attrs, e.source, e.target);
       }
+    }
+    areNeighbors(node: string, neighbor: string) {
+      return this.edges.some(
+        (e) => (e.source === node && e.target === neighbor) || (e.target === node && e.source === neighbor)
+      );
     }
     forEachNeighbor(node: string, callback: (neighbor: string) => void) {
       for (const e of this.edges) {
@@ -778,7 +823,6 @@ describe('TopicMapComponent', () => {
       // autoRescale remaps the whole extent on every change, so dragging one
       // node shrinks all the others (measured 57% -> 6.4% of stage width).
       expect(settings['autoRescale']).toBe(false);
-      expect(settings['autoCenter']).toBe(false);
     });
 
     it('keeps unconnected nodes and their labels readable when one is selected', () => {
@@ -786,10 +830,14 @@ describe('TopicMapComponent', () => {
       flushGraph();
 
       const sigma = (globalThis as {
-        __nostosSigma?: { settings: Record<string, unknown>; nodeReducer?: unknown };
+        __nostosSigma?: { nodeReducer?: unknown };
       }).__nostosSigma!;
-      const reducer = sigma.settings['nodeReducer'] as
-        | ((node: string, data: Record<string, unknown>) => Record<string, unknown>)
+      const reducer = sigma.nodeReducer as
+        | ((
+            node: string,
+            data: Record<string, unknown>,
+            attrs: Record<string, unknown>
+          ) => Record<string, unknown>)
         | undefined;
       expect(typeof reducer, 'a nodeReducer must be installed').toBe('function');
 
@@ -799,10 +847,12 @@ describe('TopicMapComponent', () => {
 
       // 'gamma' IS connected to alpha, so use a node the graph has that is not:
       // add a fourth topic with no edges.
-      const unconnected = reducer!('lonely', { label: 'Lonely', color: '#000000' });
+      const data: Record<string, unknown> = { label: 'Lonely', color: '#000000' };
+      // Sigma 4 merges a reducer's PARTIAL result over the display data.
+      const unconnected = { ...data, ...reducer!('lonely', data, { label: 'Lonely' }) };
 
       // The node must not be erased: it keeps a colour and keeps its label.
-      expect(unconnected['label'], 'unconnected node must keep its label').not.toBe('');
+      expect(unconnected['label'], 'unconnected node must keep its label').toBe('Lonely');
       const color = String(unconnected['color']);
       const alpha = Number(color.match(/,\s*([\d.]+)\)$/)?.[1] ?? '1');
       // 0.55 measured 1.66:1 (21% of undimmed contrast) in the light theme.
@@ -818,24 +868,28 @@ describe('TopicMapComponent', () => {
       flushGraph();
 
       const settings = (globalThis as { __settings?: Record<string, unknown> }).__settings!;
+      const sigma = (globalThis as { __nostosSigma?: { styles?: { nodes?: unknown } } })
+        .__nostosSigma!;
+      const layers = (globalThis as unknown as {
+        __layers: Record<string, { element: HTMLCanvasElement; options: Record<string, unknown> }>;
+      }).__layers;
 
-      // Sigma reads a per-node colour ONLY when `labelColor.attribute` is set;
-      // without it every per-node labelColor the component writes is dead and
-      // the label falls back to one static colour. On dark that colour is
-      // #c4c7d0, which measured 1.66:1 on Sigma's hardcoded #FFF hover box. The
-      // label box now paints --graph-label-box, so the ink has a dark ground.
-      const labelColor = settings['labelColor'] as { attribute?: string } | undefined;
-      expect(
-        labelColor?.attribute,
-        'Sigma must be told which node attribute carries the label colour'
-      ).toBe('labelColor');
+      // Sigma's own hover backdrop is `#ffffff` in both themes; on dark that put
+      // #c4c7d0 ink on white (1.66:1). It must be off, so the only plate drawn
+      // is the component's, which paints --graph-label-box.
+      const nodeStyles = ([] as unknown[]).concat(sigma.styles?.nodes ?? []);
+      const lastBackdrop = nodeStyles
+        .map((rule) => (rule as { backdropVisibility?: unknown }).backdropVisibility)
+        .filter((value) => value !== undefined)
+        .at(-1);
+      expect(lastBackdrop, 'Sigma\'s white hover backdrop must be switched off').toBe('hidden');
 
-      // And the hover plate must not be Sigma's own drawer, which fills with a
-      // literal "#FFF" in both themes.
-      expect(
-        typeof settings['defaultDrawNodeHover'],
-        'a theme-aware hover drawer must replace Sigma\'s white one'
-      ).toBe('function');
+      // Labels are the component's job: Sigma's are off, and a label layer sits
+      // under Sigma's mouse layer so pointer events still reach the graph.
+      expect(settings['renderLabels'], 'Sigma must not draw labels itself').toBe(false);
+      const labelLayer = Object.values(layers).at(-1);
+      expect(labelLayer, 'a label canvas must be layered over the stage').toBeTruthy();
+      expect(labelLayer!.options['beforeLayer']).toBe('mouse');
     });
 
     it('lays the graph out with enough repulsion to avoid an unreadable clump', () => {
@@ -894,9 +948,9 @@ describe('TopicMapComponent', () => {
       flushGraph();
 
       const sigma = (globalThis as {
-        __nostosSigma?: { settings: Record<string, unknown> };
+        __nostosSigma?: { edgeReducer?: unknown };
       }).__nostosSigma!;
-      const reducer = sigma.settings['edgeReducer'] as
+      const reducer = sigma.edgeReducer as
         | ((edge: string, data: Record<string, unknown>) => Record<string, unknown>)
         | undefined;
       expect(typeof reducer, 'an edgeReducer must be installed').toBe('function');
@@ -904,8 +958,10 @@ describe('TopicMapComponent', () => {
       // Select 'alpha'; its edges are alpha-beta and alpha-gamma.
       component.selectAccessibleNode('alpha');
 
-      const connected = reducer!('alpha->beta', { size: 1, color: 'rgba(138,134,128,0.8)' });
-      const unrelated = reducer!('beta->gamma', { size: 1, color: 'rgba(138,134,128,0.8)' });
+      // Sigma 4 merges a reducer's PARTIAL result over the display data.
+      const data = { size: 1, color: 'rgba(138,134,128,0.8)' };
+      const connected = { ...data, ...reducer!('alpha->beta', data) };
+      const unrelated = { ...data, ...reducer!('beta->gamma', data) };
 
       // The connected edge is drawn in the full-strength accent ink with no
       // alpha reduction. At alpha 0.72 it measured 5.09:1 against the field
@@ -1080,9 +1136,7 @@ describe('TopicMapComponent', () => {
       setTopics(topics);
       flushGraph();
 
-      const camera = (globalThis as unknown as {
-        __camera: { disable: ReturnType<typeof vi.fn>; enable: ReturnType<typeof vi.fn> };
-      }).__camera;
+      const camera = (globalThis as unknown as { __camera: { enabled: boolean } }).__camera;
       const sigmaHandlers = (globalThis as unknown as {
         __sigmaHandlers: Record<string, (payload?: unknown) => void>;
       }).__sigmaHandlers;
@@ -1090,13 +1144,12 @@ describe('TopicMapComponent', () => {
         __touchCaptor: Record<string, (payload?: unknown) => void>;
       }).__touchCaptor;
 
-      camera.disable.mockClear();
-      camera.enable.mockClear();
+      camera.enabled = true;
 
       // A finger lands on a node and lifts without travelling past the drag
       // threshold — i.e. a plain TAP to select.
       sigmaHandlers['downNode']!({ node: 'alpha', event: { x: 10, y: 10 } });
-      expect(camera.disable, 'the camera is held during the press').toHaveBeenCalled();
+      expect(camera.enabled, 'the camera is held during the press').toBe(false);
       // The pin is d3's `fx`/`fy` on the simulation node — the graph attribute
       // ForceAtlas2 used (`fixed`) no longer exists.
       expect(pinnedNode('alpha').fx).not.toBeNull();
@@ -1105,9 +1158,9 @@ describe('TopicMapComponent', () => {
       touch['touchup']!({ touches: [], previousTouches: [] });
 
       expect(
-        camera.enable,
+        camera.enabled,
         'a touch release must hand the camera back, or every control goes dead'
-      ).toHaveBeenCalled();
+      ).toBe(true);
       expect(
         pinnedNode('alpha').fx,
         'the touch release must also unpin the node'
@@ -1155,22 +1208,21 @@ describe('TopicMapComponent', () => {
       setTopics(topics);
       flushGraph();
 
-      const camera = (globalThis as unknown as {
-        __camera: { enable: ReturnType<typeof vi.fn> };
-      }).__camera;
+      const camera = (globalThis as unknown as { __camera: { enabled: boolean } }).__camera;
       const sigmaHandlers = (globalThis as unknown as {
         __sigmaHandlers: Record<string, (payload?: unknown) => void>;
       }).__sigmaHandlers;
 
-      camera.enable.mockClear();
+      camera.enabled = true;
       sigmaHandlers['downNode']!({ node: 'alpha', event: { x: 0, y: 0 } });
       expect(pinnedNode('alpha').fx).not.toBeNull();
+      expect(camera.enabled, 'the camera is held during the press').toBe(false);
 
       // Neither mouseup nor touchup fires: the pointer was released off-canvas
       // and only the window-level safety net sees it.
       window.dispatchEvent(new Event('pointercancel'));
 
-      expect(camera.enable, 'the safety net must hand the camera back').toHaveBeenCalled();
+      expect(camera.enabled, 'the safety net must hand the camera back').toBe(true);
       expect(pinnedNode('alpha').fx).toBeNull();
     });
 
@@ -1198,11 +1250,28 @@ describe('TopicMapComponent', () => {
   });
 
   describe('camera controls', () => {
+    it('zooms in and out through the camera, animated', () => {
+      setTopics(topics);
+      flushGraph();
+
+      const camera = (globalThis as unknown as {
+        __camera: { zoomIn: ReturnType<typeof vi.fn>; zoomOut: ReturnType<typeof vi.fn> };
+      }).__camera;
+      camera.zoomIn.mockClear();
+      camera.zoomOut.mockClear();
+
+      component.zoomIn();
+      component.zoomOut();
+
+      expect(camera.zoomIn).toHaveBeenCalledWith({ duration: 200 });
+      expect(camera.zoomOut).toHaveBeenCalledWith({ duration: 200 });
+    });
+
     it('fits the graph by computing a framing ratio, not by resetting', () => {
       setTopics(topics);
       flushGraph();
 
-      const camera = (globalThis as { __camera?: { animate: ReturnType<typeof vi.fn>; animatedReset: ReturnType<typeof vi.fn> } })
+      const camera = (globalThis as { __camera?: { animate: ReturnType<typeof vi.fn> } })
         .__camera!;
       camera.animate.mockClear();
 

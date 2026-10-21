@@ -17,7 +17,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import Graph from 'graphology';
-import Sigma from 'sigma';
+import Sigma, { DEFAULT_STYLES } from 'sigma';
 import {
   forceCollide,
   forceLink,
@@ -70,6 +70,8 @@ import {
   COMMUNITY_MIN_SIZE,
   LABEL_PRIORITY,
   type LabelCandidate,
+  type LabelSource,
+  selectLabelCandidates,
   placeLabels,
   drawPlacedLabels,
   logicalCanvasWidth,
@@ -87,6 +89,29 @@ export type { MapCamera } from './topic-map.helpers';
 
 /** How many related topics the selection card lists. */
 const SELECTION_RELATED_MAX = 4;
+
+/** The typeface every map label is drawn in. */
+const LABEL_FONT = "'Hanken Grotesk', sans-serif";
+
+/** A node's place in the focused neighbourhood. */
+type NodeEmphasis = 'active' | 'neighbour' | 'dimmed';
+
+/** How one node's label is drawn this frame. */
+interface LabelStyle {
+  color: string;
+  weight: string;
+  priority: number;
+  /** Always a label candidate (hubs, and the focused neighbourhood). */
+  forced: boolean;
+}
+
+/** A node as the label pass sees it, in viewport px. */
+interface LabelNode extends LabelSource {
+  style: LabelStyle;
+  nodeColor: string;
+  /** Drawn on a themed plate: the hovered node and the highlighted one. */
+  plate: boolean;
+}
 
 /**
  * How far from a node, in CSS px, a tap still selects it on a touch screen.
@@ -274,8 +299,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     };
   });
 
-  /** Label candidates Sigma offered during the frame being drawn. */
-  private labelCandidates: LabelCandidate[] = [];
+  /** The 2D canvas labels are drawn on, layered over Sigma's WebGL stage. */
+  private labelCanvas: HTMLCanvasElement | null = null;
 
   /* Icons for the action rail. Exposed as fields because the template reads
      them; `strokeWidth` stays at the app default of 2.
@@ -666,95 +691,131 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     });
 
     // Create Sigma renderer.
+    const component = this;
     const sigma = new Sigma(graph, container, {
-      renderLabels: true,
-      renderEdgeLabels: false,
-      labelRenderedSizeThreshold: LABEL_RENDER_MIN_SIZE,
-      labelFont: "'Hanken Grotesk', sans-serif",
-      // `attribute` is what makes Sigma honour the per-node `labelColor` this
-      // component sets. `drawDiscNodeLabel` reads `data[settings.labelColor
-      // .attribute]` only when that key is truthy:
-      //
-      //   color = settings.labelColor.attribute
-      //     ? data[settings.labelColor.attribute] || settings.labelColor.color
-      //     : settings.labelColor.color
-      //
-      // Without it, every per-node colour below was silently dead and the map
-      // was painted from the static `--color-text-muted` fallback — which on
-      // dark is #c4c7d0 drawn on Sigma's hardcoded white hover box (1.66:1).
-      labelColor: { attribute: 'labelColor', color: this.theme.label },
-      labelSize: LABEL_DRAW_SIZE,
-      defaultEdgeType: 'line',
-      enableEdgeEvents: false,
-      allowInvalidContainer: true,
-      // Node sizes are pixel sizes; the camera fit handles scale, so radii only
-      // need to follow the camera (see `zoomToSizeRatioFunction` below) and the
-      // visual scale does not collapse when the graph fills the stage.
-      itemSizesReference: 'screen',
-      // Node radii must scale with the camera, or zooming in makes the graph
-      // collide with itself.
-      //
-      // Sigma maps positions through the camera but, with `itemSizesReference:
-      // 'screen'`, draws radii at a fixed pixel size unless `zoomToSizeRatioFunction`
-      // says otherwise. The two then disagree: positions shrink as `1/ratio` while
-      // radii stay put, so the drawn gap between neighbours closes as you zoom in.
-      // Measured on the live graph: at `ratio 2.09` (a normal zoom-in on desktop)
-      // **30 of 53 nodes overlapped**; at the fitted `ratio 1.247`, none did.
-      //
-      // `Math.sqrt` is Sigma's OWN default for this setting, and it matches what
-      // Obsidian does — its renderer sets `nodeScale = Math.sqrt(1/scale)` and
-      // multiplies the node radius by it on every frame. So radii and distances
-      // now follow the same law, node spacing in graph units is preserved at any
-      // zoom, and the layout's guarantees (no overlaps, no collisions) hold
-      // zoomed-in as well as fitted.
-      zoomToSizeRatioFunction: Math.sqrt,
-      // Keep the user's layout authoritative.
-      //
-      // With autoRescale on, Sigma re-maps the whole graph onto the viewport
-      // whenever the extent changes, so dragging one node away shrinks every
-      // other node (measured: width fill 57% -> 6.4%) and the Fit/Reset buttons
-      // then return to an already-current camera and appear dead. Off, graph
-      // units map 1:1 to screen pixels and a drag moves only what was dragged.
-      autoRescale: false,
-      autoCenter: false,
-      // No stagePadding: Sigma's `getStagePadding()` returns 0 whenever
-      // `autoRescale` is false, which is this configuration — the setting is
-      // inert here. Room for labels comes from `fitOccupancy()` instead.
-      stagePadding: 0,
-      // Sigma's label grid only picks CANDIDATES now; overlaps are resolved by
-      // `placeLabels` after the frame. So the density can be generous — the
-      // collision pass, not the grid, decides what is drawn.
-      labelDensity: 3,
-      // Collect, don't draw. Sigma's own drawer paints each label the moment it
-      // is chosen, with no knowledge of the others, so labels overprinted each
-      // other and edges cut through them. The `afterRender` hook below lays the
-      // collected candidates out without overlaps and paints them over a halo.
-      defaultDrawNodeLabel: (_context, data) => {
-        if (!data.label) return;
-        const attrs = data as unknown as Record<string, unknown>;
-        this.labelCandidates.push({
-          key: String(attrs['key'] ?? data.label),
-          x: data.x,
-          y: data.y,
-          size: data.size,
-          label: data.label,
-          color: String(attrs['labelColor'] ?? this.theme.label),
-          weight: String(attrs['labelWeight'] ?? '400'),
-          priority: Number(attrs['labelPriority'] ?? LABEL_PRIORITY.normal),
-          // Sigma draws these on its hover plate; keep others off that box.
-          reserveOnly: attrs['highlighted'] === true || attrs['key'] === this.hoveredId(),
-        });
+      settings: {
+        // Sigma draws no labels; `drawLabels` does, after every frame, on the
+        // component's own canvas. Sigma's drawer painted each label the moment
+        // it was chosen, with no knowledge of the others, so labels overprinted
+        // each other and edges cut through them; the label pass lays the
+        // candidates out without overlaps and paints them over a halo, and draws
+        // the hovered or selected node on a themed plate (Sigma's hover box is
+        // white in both themes, which on dark put #c4c7d0 ink on #FFF — 1.66:1).
+        renderLabels: false,
+        renderEdgeLabels: false,
+        // Unused by Sigma with its labels off, but read back by the label pass
+        // (`selectLabelCandidates`) so it culls by Sigma's own rules: a node
+        // whose DRAWN radius is under the threshold gets no label unless forced,
+        // and each grid cell offers at most `labelDensity` candidates. Overlaps
+        // are resolved by `placeLabels`, so the density can be generous — the
+        // collision pass, not the grid, decides what is drawn.
+        labelRenderedSizeThreshold: LABEL_RENDER_MIN_SIZE,
+        labelDensity: 3,
+        enableEdgeEvents: false,
+        // Right-drag rotation is new in Sigma 4. The map has never rotated under
+        // a mouse, and the setting also swallows the context menu.
+        enableCameraMouseRotation: false,
+        allowInvalidContainer: true,
+        // Node sizes are pixel sizes; the camera fit handles scale, so radii only
+        // need to follow the camera (see `zoomToSizeRatioFunction` below) and the
+        // visual scale does not collapse when the graph fills the stage.
+        itemSizesReference: 'screen',
+        // Node radii must scale with the camera, or zooming in makes the graph
+        // collide with itself.
+        //
+        // Sigma maps positions through the camera but, with `itemSizesReference:
+        // 'screen'`, draws radii at a fixed pixel size unless `zoomToSizeRatioFunction`
+        // says otherwise. The two then disagree: positions shrink as `1/ratio` while
+        // radii stay put, so the drawn gap between neighbours closes as you zoom in.
+        // Measured on the live graph: at `ratio 2.09` (a normal zoom-in on desktop)
+        // **30 of 53 nodes overlapped**; at the fitted `ratio 1.247`, none did.
+        //
+        // `Math.sqrt` is Sigma's OWN default for this setting, and it matches what
+        // Obsidian does — its renderer sets `nodeScale = Math.sqrt(1/scale)` and
+        // multiplies the node radius by it on every frame. So radii and distances
+        // now follow the same law, node spacing in graph units is preserved at any
+        // zoom, and the layout's guarantees (no overlaps, no collisions) hold
+        // zoomed-in as well as fitted.
+        zoomToSizeRatioFunction: Math.sqrt,
+        // Keep the user's layout authoritative.
+        //
+        // With autoRescale on, Sigma re-maps the whole graph onto the viewport
+        // whenever the extent changes, so dragging one node away shrinks every
+        // other node (measured: width fill 57% -> 6.4%) and the Fit/Reset buttons
+        // then return to an already-current camera and appear dead. Off, graph
+        // units map 1:1 to screen pixels, the origin sits at the stage centre, and
+        // a drag moves only what was dragged.
+        autoRescale: false,
+        // No stagePadding: Sigma's `getStagePadding()` returns 0 whenever
+        // `autoRescale` is false, which is this configuration — the setting is
+        // inert here. Room for labels comes from `fitOccupancy()` instead.
+        stagePadding: 0,
       },
-      // Replace Sigma's `drawDiscNodeHover`, whose label box is a hardcoded
-      // `#FFF`. Geometry is unchanged; only the fill follows the theme.
-      defaultDrawNodeHover: (context, data, settings) =>
-        drawThemeNodeHover(context, data, settings, this.theme.labelBox),
+      styles: {
+        // Sigma's defaults, minus its hover backdrop: a `#ffffff` plate in both
+        // themes. The label pass draws a themed one instead.
+        nodes: [DEFAULT_STYLES.nodes, { backdropVisibility: 'hidden' }],
+      },
+      // Hover/selection highlighting. The label fields mirror what the label
+      // pass draws (`labelStyleOf`), so Sigma's display data tells the truth.
+      nodeReducer: (node, _data, attrs) => {
+        const emphasis = component.emphasisOf(node);
+        if (!emphasis) return {};
+        const label = component.labelStyleOf(attrs, emphasis);
+        const labelFields = {
+          labelColor: label.color,
+          labelVisibility: label.forced ? ('visible' as const) : ('auto' as const),
+        };
+        switch (emphasis) {
+          case 'active':
+            return { ...labelFields, color: component.theme.nodeHead, zIndex: 2, highlighted: true };
+          case 'neighbour':
+            return { ...labelFields, zIndex: 1 };
+          case 'dimmed':
+            // Keep unconnected nodes visible AND labelled.
+            //
+            // Setting `label: ''` here erased them entirely, which is the other
+            // half of the "everything else melts into the background" report: the
+            // user loses both the dot and its name, so the map reads as if those
+            // topics do not exist rather than that they are merely not the
+            // active neighbourhood.
+            return { ...labelFields, color: hexToRgba(component.theme.node, NODE_ALPHA_DIM), zIndex: 0 };
+        }
+      },
+      edgeReducer: (edge, data) => {
+        const activeId = component.activeNodeId();
+        if (!activeId) return {};
+        const source = graph.source(edge);
+        const target = graph.target(edge);
+        if (source === activeId || target === activeId) {
+          // Full-strength accent ink. At alpha 0.72 the pine washed toward the
+          // normal edge grey in the light theme (5.09:1 against the field vs
+          // 3.44:1 for a normal edge — indistinguishable in practice, and the
+          // pixel classification found zero pixels bright enough to separate
+          // them). At full alpha it is 11.90:1 against 3.44:1, so a line that
+          // touches the focused node is unmistakable.
+          //
+          // A node in a coloured cluster lights its edges in the cluster's hue
+          // (opaque, so the contrast above still holds); a neutral one in ink.
+          const activeHue = graph.getNodeAttributes(activeId)['hue'];
+          return {
+            color:
+              typeof activeHue === 'string' && activeHue ? activeHue : component.theme.edgeActive,
+            size: Math.max(data.size, 2) * 1.6,
+            zIndex: 1,
+          };
+        }
+        return { color: hexToRgba(component.theme.edge, EDGE_ALPHA_DIM), zIndex: 0 };
+      },
     });
 
     this.sigma = sigma;
 
-    sigma.on('beforeRender', () => {
-      this.labelCandidates = [];
+    // The label layer: a 2D canvas between Sigma's WebGL stage and its mouse
+    // layer, so labels sit over the graph and pointer events still reach Sigma.
+    this.labelCanvas = sigma.createCanvas('nostosLabels', {
+      beforeLayer: 'mouse',
+      style: { pointerEvents: 'none' },
     });
     sigma.on('afterRender', () => this.drawLabels());
 
@@ -773,89 +834,6 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     globals.__nostosSigma = sigma;
     globals.__nostosGraph = graph;
     globals.__nostosLayout = this.layout;
-
-    // Set up node reducers for hover/selection highlighting.
-    const component = this;
-
-    sigma.setSetting('nodeReducer', (node: string, data: Record<string, unknown>) => {
-      const res = { ...data };
-      const hoveredId = component.hoveredId();
-      const selectedId = component.selectedNodeId();
-      const activeId = hoveredId ?? selectedId;
-
-      if (activeId) {
-        const neighbors = new Set<string>();
-        try {
-          graph.forEachNeighbor(activeId, (n) => neighbors.add(n));
-        } catch {
-          // activeId might not be in graph
-        }
-        neighbors.add(activeId);
-
-        if (node === activeId) {
-          res['color'] = component.theme.nodeHead;
-          res['zIndex'] = 2;
-          res['highlighted'] = true;
-          res['labelColor'] = component.theme.labelActive;
-          res['labelWeight'] = '600';
-          res['labelPriority'] = LABEL_PRIORITY.active;
-          res['forceLabel'] = true;
-        } else if (neighbors.has(node)) {
-          res['zIndex'] = 1;
-          res['labelColor'] = component.theme.labelActive;
-          res['labelPriority'] = LABEL_PRIORITY.active;
-          res['forceLabel'] = true;
-        } else {
-          // Keep unconnected nodes visible AND labelled.
-          //
-          // Setting `label: ''` here erased them entirely, which is the other
-          // half of the "everything else melts into the background" report: the
-          // user loses both the dot and its name, so the map reads as if those
-          // topics do not exist rather than that they are merely not the
-          // active neighbourhood.
-          res['color'] = hexToRgba(component.theme.node, NODE_ALPHA_DIM);
-          res['labelColor'] = hexToRgba(component.theme.label, 0.62);
-          res['labelWeight'] = '400';
-          res['labelPriority'] = LABEL_PRIORITY.dimmed;
-          res['zIndex'] = 0;
-        }
-      }
-
-      return res;
-    });
-
-    sigma.setSetting('edgeReducer', (edge: string, data: Record<string, unknown>) => {
-      const res = { ...data };
-      const hoveredId = component.hoveredId();
-      const selectedId = component.selectedNodeId();
-      const activeId = hoveredId ?? selectedId;
-
-      if (activeId) {
-        const source = graph.source(edge);
-        const target = graph.target(edge);
-        if (source === activeId || target === activeId) {
-          // Full-strength accent ink. At alpha 0.72 the pine washed toward the
-          // normal edge grey in the light theme (5.09:1 against the field vs
-          // 3.44:1 for a normal edge — indistinguishable in practice, and the
-          // pixel classification found zero pixels bright enough to separate
-          // them). At full alpha it is 11.90:1 against 3.44:1, so a line that
-          // touches the focused node is unmistakable.
-          //
-          // A node in a coloured cluster lights its edges in the cluster's hue
-          // (opaque, so the contrast above still holds); a neutral one in ink.
-          const activeHue = graph.getNodeAttributes(activeId)['hue'];
-          res['color'] =
-            typeof activeHue === 'string' && activeHue ? activeHue : component.theme.edgeActive;
-          res['size'] = Math.max((data['size'] as number) ?? 1, 2) * 1.6;
-          res['zIndex'] = 1;
-        } else {
-          res['color'] = hexToRgba(component.theme.edge, EDGE_ALPHA_DIM);
-          res['zIndex'] = 0;
-        }
-      }
-
-      return res;
-    });
 
     // Event listeners.
     sigma.on('enterNode', ({ node }) => {
@@ -970,10 +948,10 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       component.draggedNode = null;
       component.dragStart = null;
       component.draggingActive = false;
-      // Always hand the camera back. `enable()` is idempotent, so calling it on
+      // Always hand the camera back. Re-enabling is idempotent, so doing it on
       // a drag that never disabled it is harmless — but MISSING it once froze
       // the whole camera permanently.
-      sigma.getCamera().enable();
+      sigma.getCamera().enabled = true;
       container.classList.remove('dragging');
       // Reset the drag flag after Sigma has dispatched the click that follows
       // the release, so a genuine drag never also selects the node it moved.
@@ -993,7 +971,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       // contract Obsidian's worker implements when it receives
       // `forceNode: { x, y }`.
       component.pinNodeForDrag(node);
-      sigma.getCamera().disable();
+      // A disabled camera ignores every state change, so the pointer moves the
+      // node instead of panning the stage.
+      sigma.getCamera().enabled = false;
       container.classList.add('dragging');
     };
 
@@ -1028,7 +1008,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       beginDrag(e.node, e.event.x, e.event.y);
     });
 
-    // Mouse path. Sigma v3 fires 'mousemovebody' on every pointer-move.
+    // Mouse path. Sigma fires 'mousemovebody' on every pointer-move.
     sigma.getMouseCaptor().on('mousemovebody', (e) => {
       if (!component.draggedNode) return;
       moveDrag(component.draggedNode, e.x, e.y);
@@ -1269,6 +1249,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.sigma.kill();
       this.sigma = null;
     }
+    this.labelCanvas = null;
     this.graph = null;
     this.draggedNode = null;
     this.isDragging = false;
@@ -1283,39 +1264,158 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     this.layoutHome.clear();
   }
 
+  /** The hovered topic, else the selected one: the node the map is focused on. */
+  private activeNodeId(): string | null {
+    return this.hoveredId() ?? this.selectedNodeId();
+  }
+
   /**
-   * Lay out this frame's label candidates without overlaps and paint them.
+   * Where a node stands relative to the focused topic, or null when nothing is
+   * focused. The reducers and the label pass both ask this, so a node's dot
+   * and its label cannot disagree.
+   */
+  private emphasisOf(node: string): NodeEmphasis | null {
+    const activeId = this.activeNodeId();
+    if (!activeId) return null;
+    if (node === activeId) return 'active';
+    const graph = this.graph;
+    return graph?.hasNode(activeId) && graph.hasNode(node) && graph.areNeighbors(activeId, node)
+      ? 'neighbour'
+      : 'dimmed';
+  }
+
+  /**
+   * How a node's label is drawn: its resting look (the node attributes set when
+   * the graph was built), adjusted for the focused neighbourhood.
+   */
+  private labelStyleOf(attrs: Record<string, unknown>, emphasis: NodeEmphasis | null): LabelStyle {
+    const resting: LabelStyle = {
+      color: String(attrs['labelColor'] ?? this.theme.label),
+      weight: String(attrs['labelWeight'] ?? '400'),
+      priority: Number(attrs['labelPriority'] ?? LABEL_PRIORITY.normal),
+      forced: attrs['forceLabel'] === true,
+    };
+    switch (emphasis) {
+      case 'active':
+        return {
+          color: this.theme.labelActive,
+          weight: '600',
+          priority: LABEL_PRIORITY.active,
+          forced: true,
+        };
+      case 'neighbour':
+        return {
+          ...resting,
+          color: this.theme.labelActive,
+          priority: LABEL_PRIORITY.active,
+          forced: true,
+        };
+      case 'dimmed':
+        return {
+          ...resting,
+          color: hexToRgba(this.theme.label, 0.62),
+          weight: '400',
+          priority: LABEL_PRIORITY.dimmed,
+        };
+      default:
+        return resting;
+    }
+  }
+
+  /**
+   * Pick this frame's labels, lay them out without overlaps and paint them,
+   * then draw the hovered/selected node on its themed plate.
    *
-   * Runs on Sigma's `afterRender`, onto the label canvas Sigma has just cleared
-   * and filled with nothing (the collector above draws nothing itself).
+   * Runs on Sigma's `afterRender`, onto the component's own label canvas.
    */
   private drawLabels(): void {
-    const sigma = this.sigma as (Sigma & { getCanvases?: () => Record<string, HTMLCanvasElement> }) | null;
-    const canvas = sigma?.getCanvases?.()['labels'];
+    const sigma = this.sigma;
+    const graph = this.graph;
+    const canvas = this.labelCanvas;
     const context = canvas?.getContext('2d');
-    if (!sigma || !canvas || !context) return;
+    if (!sigma || !graph || !canvas || !context) return;
 
-    const font = "'Hanken Grotesk', sans-serif";
+    // The layer owner sizes the canvas. Sigma only restyles its layers when the
+    // container RESIZES, so a layer added after construction has no CSS size
+    // until then and would display its backing store 1:1 — twice too large on a
+    // 2x phone. The CSS box follows the stage; the backing store is that times
+    // the device pixel ratio, with the context scaled back to CSS pixels.
+    const { width, height } = sigma.getDimensions();
+    const pixelRatio = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+    const backingWidth = Math.round(width * pixelRatio);
+    const backingHeight = Math.round(height * pixelRatio);
+    if (canvas.style.width !== `${width}px`) canvas.style.width = `${width}px`;
+    if (canvas.style.height !== `${height}px`) canvas.style.height = `${height}px`;
+    if (canvas.width !== backingWidth) canvas.width = backingWidth;
+    if (canvas.height !== backingHeight) canvas.height = backingHeight;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    const hoveredId = this.hoveredId();
+    const nodes: LabelNode[] = [];
+    graph.forEachNode((key, attrs) => {
+      const display = sigma.getNodeDisplayData(key);
+      if (!display || display.visibility === 'hidden') return;
+      const point = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
+      const style = this.labelStyleOf(attrs, this.emphasisOf(key));
+      nodes.push({
+        key,
+        x: point.x,
+        y: point.y,
+        size: sigma.scaleSize(display.size),
+        label: display.label,
+        forced: style.forced,
+        style,
+        nodeColor: display.color,
+        plate: display.highlighted || key === hoveredId,
+      });
+    });
+
     const measure = (label: string, weight: string): number => {
-      context.font = `${weight} ${LABEL_DRAW_SIZE}px ${font}`;
+      context.font = `${weight} ${LABEL_DRAW_SIZE}px ${LABEL_FONT}`;
       return context.measureText(label).width;
     };
+    const candidates: LabelCandidate[] = selectLabelCandidates(nodes, {
+      width,
+      height,
+      cellSize: sigma.getSetting('labelGridCellSize'),
+      density: sigma.getSetting('labelDensity'),
+      threshold: sigma.getSetting('labelRenderedSizeThreshold'),
+    }).map((node) => ({
+      key: node.key,
+      x: node.x,
+      y: node.y,
+      size: node.size,
+      label: node.label ?? '',
+      color: node.style.color,
+      weight: node.style.weight,
+      priority: node.style.priority,
+      // Painted on its plate below; here it only keeps other labels off that box.
+      reserveOnly: node.plate,
+    }));
     // Every node disc on screen, so labels can steer around them.
-    const discs: DiscObstacle[] = [];
-    const scaleSize = (sigma as unknown as { scaleSize?: (size: number) => number }).scaleSize;
-    this.graph?.forEachNode((key, attrs) => {
-      const point = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
-      const size = Number(attrs['size']) || 0;
-      discs.push({ key, x: point.x, y: point.y, size: scaleSize ? scaleSize.call(sigma, size) : size });
-    });
-    const placed = placeLabels(
-      this.labelCandidates,
-      measure,
-      logicalCanvasWidth(canvas),
-      LABEL_DRAW_SIZE,
-      discs
-    );
-    drawPlacedLabels(context, placed, LABEL_DRAW_SIZE, font, hexToRgba(this.theme.field, 0.9));
+    const discs: DiscObstacle[] = nodes.map(({ key, x, y, size }) => ({ key, x, y, size }));
+    const placed = placeLabels(candidates, measure, logicalCanvasWidth(canvas), LABEL_DRAW_SIZE, discs);
+    drawPlacedLabels(context, placed, LABEL_DRAW_SIZE, LABEL_FONT, hexToRgba(this.theme.field, 0.9));
+
+    for (const node of nodes) {
+      if (!node.plate) continue;
+      drawThemeNodeHover(
+        context,
+        {
+          x: node.x,
+          y: node.y,
+          size: node.size,
+          label: node.label,
+          nodeColor: node.nodeColor,
+          labelColor: node.style.color,
+          labelWeight: node.style.weight,
+        },
+        LABEL_DRAW_SIZE,
+        LABEL_FONT,
+        this.theme.labelBox
+      );
+    }
   }
 
   /**
@@ -1680,14 +1780,14 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   zoomIn(): void {
     const camera = this.sigma?.getCamera();
     if (camera) {
-      camera.animatedZoom({ duration: 200 });
+      void camera.zoomIn({ duration: 200 });
     }
   }
 
   zoomOut(): void {
     const camera = this.sigma?.getCamera();
     if (camera) {
-      camera.animatedUnzoom({ duration: 200 });
+      void camera.zoomOut({ duration: 200 });
     }
   }
 

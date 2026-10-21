@@ -3,11 +3,14 @@ import {
   alignmentRotation,
   centerStrengths,
   detectCommunities,
+  drawThemeNodeHover,
   logicalCanvasWidth,
   pickHubs,
   placeLabels,
+  selectLabelCandidates,
   shelfPositions,
   type LabelCandidate,
+  type LabelSource,
   type PlacedLabel,
 } from './topic-map.helpers';
 
@@ -201,5 +204,110 @@ describe('shelfPositions', () => {
     const shelf = shelfPositions(5, { minX: 0, maxX: 200, minY: 0, maxY: 100 }, 100);
     const rows = new Set(shelf.map((p) => p.y));
     expect(rows.size).toBe(2);
+  });
+});
+
+describe('selectLabelCandidates', () => {
+  const stage = { width: 400, height: 300, cellSize: 100, density: 2, threshold: 2.4 };
+  const node = (partial: Partial<LabelSource> & { key: string }): LabelSource => ({
+    x: 50,
+    y: 50,
+    size: 4,
+    label: partial.key,
+    forced: false,
+    ...partial,
+  });
+  const keys = (nodes: LabelSource[]) => nodes.map((n) => n.key).sort();
+
+  it('keeps the largest nodes of each grid cell, up to the density', () => {
+    const chosen = selectLabelCandidates(
+      [
+        node({ key: 'small', size: 3 }),
+        node({ key: 'big', size: 9 }),
+        node({ key: 'mid', size: 6 }),
+        node({ key: 'elsewhere', x: 250, size: 3 }),
+      ],
+      stage
+    );
+    expect(keys(chosen)).toEqual(['big', 'elsewhere', 'mid']);
+  });
+
+  it('always offers forced labels, whatever their size or cell', () => {
+    const chosen = selectLabelCandidates(
+      [
+        node({ key: 'a', size: 9 }),
+        node({ key: 'b', size: 8 }),
+        node({ key: 'hub', size: 1, forced: true }),
+      ],
+      stage
+    );
+    expect(keys(chosen)).toEqual(['a', 'b', 'hub']);
+  });
+
+  it('drops nodes drawn under the threshold, without a label, or far off stage', () => {
+    const chosen = selectLabelCandidates(
+      [
+        node({ key: 'tiny', size: 2 }),
+        node({ key: 'blank', label: null }),
+        node({ key: 'gone', x: 900 }),
+        node({ key: 'edge', x: 420 }),
+      ],
+      stage
+    );
+    expect(keys(chosen)).toEqual(['edge']);
+  });
+});
+
+describe('drawThemeNodeHover', () => {
+  /** A 2D context stand-in that records each fill and the style it used. */
+  function recordingContext(width: number) {
+    const fills: string[] = [];
+    const texts: Array<{ text: string; style: string }> = [];
+    const context = {
+      canvas: { clientWidth: width, width },
+      font: '',
+      fillStyle: '',
+      textAlign: 'left',
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      shadowBlur: 0,
+      shadowColor: '',
+      measureText: (text: string) => ({ width: text.length * 7 }),
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      arc: () => {},
+      closePath: () => {},
+      fill() {
+        fills.push(String(this.fillStyle));
+      },
+      fillText(text: string) {
+        texts.push({ text, style: String(this.fillStyle) });
+      },
+    };
+    return { context: context as unknown as CanvasRenderingContext2D, fills, texts };
+  }
+
+  it('paints the plate in the theme fill, the node over it, then the label', () => {
+    const { context, fills, texts } = recordingContext(800);
+    drawThemeNodeHover(
+      context,
+      {
+        x: 100,
+        y: 100,
+        size: 6,
+        label: 'Seneca',
+        nodeColor: '#4a4d57',
+        labelColor: '#e8e9ec',
+        labelWeight: '600',
+      },
+      12,
+      'sans-serif',
+      '#1f2127'
+    );
+    // Never Sigma 3's hardcoded white box.
+    expect(fills).toEqual(['#1f2127', '#4a4d57']);
+    expect(texts).toEqual([{ text: 'Seneca', style: '#e8e9ec' }]);
+    expect(context.font).toContain('600');
   });
 });
