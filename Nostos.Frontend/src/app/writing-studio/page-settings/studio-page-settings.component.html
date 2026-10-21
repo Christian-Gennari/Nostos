@@ -28,6 +28,40 @@
         }
       }
     </div>
+  } @else if (view() === 'citations') {
+    <header class="ps-subhead">
+      <button appIconButton icon="caret-left" [glyphSize]="16" aria-label="Back to page settings" title="Back" (click)="backToMain()"></button>
+      <h2 class="ps-subhead-title">Citation style</h2>
+    </header>
+    <!-- How quotes, notes and references are cited (issue #1109), each shown
+         on a real book from the library. -->
+    <div class="ps-fonts ps-citation-list" role="radiogroup" aria-label="Citation style" data-testid="ps-citation-styles">
+      @for (style of citationStyles; track style.id) {
+        <button
+          type="button"
+          role="radio"
+          class="ps-font ps-citation"
+          [attr.aria-checked]="style.id === prefs.citationStyle().id"
+          [attr.tabindex]="style.id === prefs.citationStyle().id ? 0 : -1"
+          [attr.data-citation-option]="style.id"
+          (click)="pickCitationStyle(style)"
+          (keydown)="citationKey($event, style)"
+        >
+          <span class="ps-citation-text">
+            <span class="ps-font-name">{{ style.label }}@if (style.id === 'nostos') {<span class="ps-citation-default">&nbsp;· default</span>}</span>
+            @if (example(style); as shown) {
+              <span class="ps-citation-example" [innerHTML]="exampleHtml(style.kind === 'in-text' ? shown.citation + ' — ' + shown.reference : shown.citation)"></span>
+            }
+          </span>
+          @if (style.id === prefs.citationStyle().id) {
+            <nostos-icon class="ps-font-check" name="check" [size]="16" aria-hidden="true"></nostos-icon>
+          }
+        </button>
+      }
+    </div>
+    @if (exampleMissing().length && exampleBook(); as book) {
+      <p class="ps-citation-missing">“{{ book.title }}” has no {{ exampleMissing().join(' or ') }} in its details. Add it in Book details so its citations are complete.</p>
+    }
   } @else {
     <!-- The app theme (issue #1074): the same setting as Settings → Colour
          theme, so the Studio wears what every other screen does. -->
@@ -41,6 +75,12 @@
     <button type="button" class="ps-typeface" (click)="openFonts()">
       <span class="ps-label">Typeface</span>
       <span class="ps-typeface-name" [style.font-family]="prefs.font().stack">{{ prefs.font().label }}</span>
+      <span class="ps-chevron" aria-hidden="true">›</span>
+    </button>
+
+    <button type="button" class="ps-typeface ps-citations" (click)="openCitations()" data-testid="ps-citations">
+      <span class="ps-label">Citations</span>
+      <span class="ps-typeface-name">{{ prefs.citationStyle().label }}</span>
       <span class="ps-chevron" aria-hidden="true">›</span>
     </button>
 

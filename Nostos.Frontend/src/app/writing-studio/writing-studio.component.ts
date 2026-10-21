@@ -37,6 +37,8 @@ import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-p
 import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
 import { StudioPreferencesService } from './page-settings/studio-preferences.service';
+import { CitableSource, CitationService } from './citations/citation.service';
+import { StyledInsertion, bibliographyMarkdown, styledNote, styledQuote, styledReference } from './citations/styled-insertion';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -289,6 +291,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** The page's own settings (issue #1041): type, measure, behaviour. */
   readonly pagePrefs = inject(StudioPreferencesService);
+  private readonly citations = inject(CitationService);
   pageSettingsOpen = signal(false);
   /** The Aa button: the settings popover hangs under it (#1060). */
   @ViewChild('pageSettingsButton', { read: ElementRef }) pageSettingsButton?: ElementRef<HTMLElement>;
@@ -1036,6 +1039,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.palettePassageSource = source;
       this.passageViewer.open(source.id, this.palettePassageOptions);
       return;
+    } else if (this.pagePrefs.citationStyle().kind !== 'house') {
+      void this.insertStyledFromPalette(source, mode);
+      return;
     } else {
       const markdown =
         mode === 'reference'
@@ -1052,6 +1058,85 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.sourcePalette?.remember(source);
   }
 
+  // --- Citation styles (issue #1109) ---
+
+  /** The palette's choice in the writer's citation style; the house format when the book cannot be read. */
+  private async insertStyledFromPalette(source: PaletteChoice['source'], mode: PaletteChoice['mode']): Promise<void> {
+    const editor = this.markdownEditor;
+    if (!editor) return;
+    const styled = await this.styledInsertion(source, mode);
+    const markdown = styled?.markdown
+      ?? (mode === 'reference'
+        ? buildReferenceMarkdown(source)
+        : mode === 'note'
+          ? (buildNoteMarkdown(source) ?? buildQuoteMarkdown(source))
+          : (buildQuoteMarkdown(source) ?? buildNoteMarkdown(source)));
+    if (!markdown || !editor.replaceSourceQuery(markdown, mode === 'reference' ? 'inline' : 'block')) {
+      this.toast.error('The editor is not ready for insertion yet');
+      return;
+    }
+    if (styled?.footnote) editor.appendFootnote(styled.footnote.number, styled.footnote.text);
+    this.keepNote(source.id);
+    this.sourcePalette?.remember(source);
+  }
+
+  /**
+   * A quote, note or reference in the chosen style, or null to fall back to
+   * the house format (the style is "Nostos", or the book cannot be read). A
+   * note style gives a book's first citation in full and later ones short.
+   */
+  private async styledInsertion(
+    source: CitableSource & { id?: string },
+    mode: 'quote' | 'note' | 'reference',
+  ): Promise<StyledInsertion | null> {
+    const style = this.pagePrefs.citationStyle();
+    if (style.kind === 'house' || !this.markdownEditor) return null;
+    // A book already kept with this writing has been cited in it, so a note
+    // style gives the short form; the first citation of a book is in full.
+    const subsequent =
+      style.kind === 'note' && !!source.bookId && this.keptSources().some((kept) => kept.bookId === source.bookId);
+    let citation: string | null = null;
+    try {
+      citation = await this.citations.cite(source, style, subsequent);
+    } catch {
+      citation = null;
+    }
+    if (!citation) {
+      this.toast.error(`Could not format this source in ${style.label}; it went in as Nostos writes it`);
+      return null;
+    }
+    const footnote = this.markdownEditor.nextFootnoteNumber();
+    if (mode === 'reference') return styledReference(citation, style, footnote);
+    if (mode === 'note') {
+      return styledNote(source.content, citation, style, footnote) ?? styledQuote(source.selectedText, citation, style, footnote);
+    }
+    return styledQuote(source.selectedText, citation, style, footnote) ?? styledNote(source.content, citation, style, footnote);
+  }
+
+  /** `/` → Bibliography: every book cited in this writing, in the chosen style. */
+  async insertBibliography(): Promise<void> {
+    const editor = this.markdownEditor;
+    if (!editor) return;
+    const style = this.pagePrefs.citationStyle();
+    const bookIds = this.keptSources().map((source) => source.bookId);
+    let entries: string[] = [];
+    try {
+      entries = await this.citations.bibliography(bookIds, style);
+    } catch {
+      this.toast.error('Could not build the bibliography');
+      return;
+    }
+    const markdown = bibliographyMarkdown(entries, style);
+    if (!markdown) {
+      this.toast.info('Nothing is cited in this writing yet');
+      return;
+    }
+    if (!editor.insertBlockMarkdown(markdown)) this.toast.error('The editor is not ready for insertion yet');
+  }
+
+  /** A book from this writing, for the citation style examples. */
+  readonly citationExampleBookId = computed(() => this.keptSources()[0]?.bookId ?? null);
+
   private palettePassageSource: PaletteChoice['source'] | null = null;
 
   /** "Browse Reference" from an empty palette: the Books list, searched. */
@@ -1065,23 +1150,32 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** The viewer opened from the palette puts its quote after the caret's paragraph. */
   private readonly palettePassageOptions: Omit<PassageViewerRequest, 'noteId'> = {
-    quoteSelection: (text: string, passage: Passage) => {
-      const markdown = buildQuoteMarkdown({
-        selectedText: text,
-        bookTitle: passage.bookTitle,
-        bookAuthor: passage.bookAuthor,
-        passageTitle: passage.title,
-      });
-      if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown)) {
-        this.keepNote(passage.id);
-        const source = this.palettePassageSource;
-        if (source?.id === passage.id) this.sourcePalette?.remember(source);
-        return true;
-      }
-      this.toast.error('The editor is not ready for insertion yet');
-      return false;
-    },
+    quoteSelection: (text: string, passage: Passage) =>
+      this.pagePrefs.citationStyle().kind === 'house'
+        ? this.quoteFromPalettePassage(text, passage, null)
+        : this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id }, 'quote').then((styled) =>
+            this.quoteFromPalettePassage(text, passage, styled),
+          ),
   };
+
+  /** Puts a quote from a passage opened from the palette after the caret's paragraph. */
+  private quoteFromPalettePassage(text: string, passage: Passage, styled: StyledInsertion | null): boolean {
+    const markdown = styled?.markdown ?? buildQuoteMarkdown({
+      selectedText: text,
+      bookTitle: passage.bookTitle,
+      bookAuthor: passage.bookAuthor,
+      passageTitle: passage.title,
+    });
+    if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown)) {
+      if (styled?.footnote) this.markdownEditor.appendFootnote(styled.footnote.number, styled.footnote.text);
+      this.keepNote(passage.id);
+      const source = this.palettePassageSource;
+      if (source?.id === passage.id) this.sourcePalette?.remember(source);
+      return true;
+    }
+    this.toast.error('The editor is not ready for insertion yet');
+    return false;
+  }
 
   removeKeptSource(noteId: string, event?: Event) {
     event?.stopPropagation();
@@ -1549,7 +1643,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** Whether the quote went in; the viewer confirms success on its own button. */
   private async quotePassageSelection(text: string, passage: Passage): Promise<boolean> {
-    const markdown = buildQuoteMarkdown({
+    const styled = await this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id }, 'quote');
+    const markdown = styled?.markdown ?? buildQuoteMarkdown({
       selectedText: text,
       bookTitle: passage.bookTitle,
       bookAuthor: passage.bookAuthor,
@@ -1559,7 +1654,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.toast.error('Open a writing and place the cursor in the editor first');
       return false;
     }
-    if (await this.markdownEditor.insertMarkdown(markdown)) return true;
+    if (await this.markdownEditor.insertMarkdown(markdown)) {
+      if (styled?.footnote) this.markdownEditor.appendFootnote(styled.footnote.number, styled.footnote.text);
+      return true;
+    }
     this.toast.error('The editor is not ready for insertion yet');
     return false;
   }
@@ -1573,15 +1671,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   async insertQuote(source: Note): Promise<void> {
-    await this.insertSourceMarkdown(buildQuoteMarkdown(source));
+    const styled = await this.styledInsertion(source, 'quote');
+    await this.insertSourceMarkdown(styled?.markdown ?? buildQuoteMarkdown(source), styled);
   }
 
   async insertNote(source: Note): Promise<void> {
-    await this.insertSourceMarkdown(buildNoteMarkdown(source));
+    const styled = await this.styledInsertion(source, 'note');
+    await this.insertSourceMarkdown(styled?.markdown ?? buildNoteMarkdown(source), styled);
   }
 
   async insertReference(source: Note): Promise<void> {
-    await this.insertSourceMarkdown(buildReferenceMarkdown(source));
+    const styled = await this.styledInsertion(source, 'reference');
+    await this.insertSourceMarkdown(styled?.markdown ?? buildReferenceMarkdown(source), styled);
   }
 
   /** The title a passage row leads with, or null for any other source. */
@@ -1589,7 +1690,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return isPassage(note) ? note.passageTitle?.trim() || 'Passage' : null;
   }
 
-  private async insertSourceMarkdown(markdown: string | null): Promise<void> {
+  private async insertSourceMarkdown(markdown: string | null, styled: StyledInsertion | null = null): Promise<void> {
     if (!markdown) return;
     if (!this.activeItem() || !this.markdownEditor) {
       this.toast.error('Open a writing and place the cursor in the editor first');
@@ -1601,6 +1702,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.toast.error('The editor is not ready for insertion yet');
       return;
     }
+    if (styled?.footnote) this.markdownEditor.appendFootnote(styled.footnote.number, styled.footnote.text);
 
     if (this.isCompact()) this.setRailOpen('reference', false, false, false);
   }

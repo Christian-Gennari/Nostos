@@ -23,6 +23,7 @@ import BubbleMenu from '@tiptap/extension-bubble-menu';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
+import { FootnoteRef } from './footnote.extension';
 import { SoundPack, TypewriterSounds, soundForInput } from './typewriter-sounds';
 import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
 import { exitSuggestion } from '@tiptap/suggestion';
@@ -101,6 +102,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private keyRepeating = false;
   /** The `@` query while one is open, and null when it closes. */
   sourceSuggestion = output<SourceSuggestionState | null>();
+  /** "Bibliography" from the `/` menu (issue #1109): the Studio builds it and inserts it here. */
+  bibliographyRequested = output<void>();
   /** Keys pressed while an `@` query is open go here first; true consumes one. */
   sourceSuggestionKeyDown = input<((event: KeyboardEvent) => boolean) | null>(null);
   /** The palette's highlighted option, announced through the page's ARIA. */
@@ -260,6 +263,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         // Writings saved under TinyMCE can hold pasted images as data URIs.
         Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),
+        FootnoteRef,
         BubbleMenu.configure({
           element: this.bubble.nativeElement,
           // Fixed to the viewport, following the page's own scroller: inside
@@ -441,6 +445,29 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const snippet = markdown.trim();
     if (!snippet || !this.editor || this.editor.isDestroyed) return false;
     this.insertBlockAtCaret(markdownToHtml(snippet));
+    return true;
+  }
+
+  /** The number for a new footnote: one past the highest marker in the writing. */
+  nextFootnoteNumber(): number {
+    let highest = 0;
+    this.editor?.state.doc.descendants((node) => {
+      if (node.type.name === 'footnoteRef') highest = Math.max(highest, Number(node.attrs['number']) || 0);
+    });
+    return highest + 1;
+  }
+
+  /**
+   * Add a footnote's text at the end of the writing (issue #1109), where
+   * Markdown footnotes live, without moving the caret from where the marker
+   * went in.
+   */
+  appendFootnote(number: number, markdown: string): boolean {
+    const editor = this.editor;
+    const text = markdown.trim();
+    if (!editor || editor.isDestroyed || !text) return false;
+    const end = editor.state.doc.content.size;
+    editor.commands.insertContentAt(end, markdownToHtml(`[^${number}]: ${text}`), { updateSelection: false });
     return true;
   }
 
@@ -640,9 +667,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         // Hands over to the @ palette on the same line.
         chain.insertContent('@');
         break;
+      case 'bibliography':
+        // The emptied line is where the Studio puts the list.
+        break;
     }
     chain.run();
     this.closeBlockMenu();
+    if (action === 'bibliography') this.bibliographyRequested.emit();
   }
 
   applyBlockImage(): void {

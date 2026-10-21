@@ -57,6 +57,7 @@
     "@tiptap/pm": "3.31.4",
     "@tiptap/starter-kit": "3.31.4",
     "@tiptap/suggestion": "3.31.4",
+    "citeproc": "2.4.63",
     "d3-force": "^3.0.0",
     "epubjs": "^0.3.93",
     "graphology": "^0.26.0",

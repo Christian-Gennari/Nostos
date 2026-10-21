@@ -3,6 +3,8 @@ import { Component, input, output, Input } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
+import { StudioPreferencesService } from './page-settings/studio-preferences.service';
+import { CitationService } from './citations/citation.service';
 
 import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
 import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
@@ -46,6 +48,9 @@ class MarkdownEditorStub {
   readonly clearSourceQuery = vi.fn(() => true);
   readonly closeSourceQuery = vi.fn();
   readonly insertBlockMarkdown = vi.fn((_markdown: string) => true);
+  readonly nextFootnoteNumber = vi.fn(() => 1);
+  readonly appendFootnote = vi.fn((_number: number, _markdown: string) => true);
+  readonly bibliographyRequested = output<void>();
   readonly focus = vi.fn();
   readonly undo = vi.fn();
 }
@@ -1878,6 +1883,81 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(component.paletteQuery()).toBe('schop');
       component.onSourceSuggestion(null);
       expect(component.paletteQuery()).toBeNull();
+    });
+
+    describe('in a citation style (issue #1109)', () => {
+      let prefs: StudioPreferencesService;
+      let citations: CitationService;
+
+      beforeEach(() => {
+        prefs = TestBed.inject(StudioPreferencesService);
+        citations = TestBed.inject(CitationService);
+      });
+
+      afterEach(() => prefs.update({ citationStyle: 'nostos' }));
+
+      it('closes the quote with an in-text citation built from the book', async () => {
+        const editor = (component as any).markdownEditor as MarkdownEditorStub;
+        prefs.update({ citationStyle: 'apa' });
+        const cite = vi.spyOn(citations, 'cite').mockResolvedValue('(Schopenhauer, 1818, p. 3)');
+
+        component.insertFromPalette({ source: paletteQuote, mode: 'quote' });
+        await vi.waitFor(() => expect(editor.replaceSourceQuery).toHaveBeenCalled());
+
+        expect(cite).toHaveBeenCalledWith(paletteQuote, expect.objectContaining({ id: 'apa' }), false);
+        expect(editor.replaceSourceQuery).toHaveBeenCalledWith(
+          '> The world is my representation.\n>\n> (Schopenhauer, 1818, p. 3)',
+          'block',
+        );
+        expect(editor.appendFootnote).not.toHaveBeenCalled();
+        expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'note-gamma');
+      });
+
+      it('in a note style marks the quote and puts the note at the end; a later citation of the book is short', async () => {
+        const editor = (component as any).markdownEditor as MarkdownEditorStub;
+        prefs.update({ citationStyle: 'chicago-notes' });
+        editor.nextFootnoteNumber.mockReturnValue(4);
+        component.keptSources.set([{ ...paletteQuote, id: 'earlier', bookId: 'book-3' } as any]);
+        const cite = vi.spyOn(citations, 'cite').mockResolvedValue('Schopenhauer, *The World*, 3.');
+
+        component.insertFromPalette({ source: paletteQuote, mode: 'quote' });
+        await vi.waitFor(() => expect(editor.appendFootnote).toHaveBeenCalled());
+
+        expect(cite).toHaveBeenCalledWith(paletteQuote, expect.objectContaining({ id: 'chicago-notes' }), true);
+        expect(editor.replaceSourceQuery).toHaveBeenCalledWith('> The world is my representation.[^4]', 'block');
+        expect(editor.appendFootnote).toHaveBeenCalledWith(4, 'Schopenhauer, *The World*, 3.');
+      });
+
+      it('falls back to the Nostos format, and says so, when the book cannot be read', async () => {
+        const editor = (component as any).markdownEditor as MarkdownEditorStub;
+        prefs.update({ citationStyle: 'mla' });
+        vi.spyOn(citations, 'cite').mockResolvedValue(null);
+        const error = vi.spyOn(TestBed.inject(ToastService), 'error');
+
+        component.insertFromPalette({ source: paletteQuote, mode: 'reference' });
+        await vi.waitFor(() => expect(editor.replaceSourceQuery).toHaveBeenCalled());
+
+        expect(editor.replaceSourceQuery).toHaveBeenCalledWith(
+          '*See: Arthur Schopenhauer, The World as Will and Representation, p. 3*',
+          'inline',
+        );
+        expect(error).toHaveBeenCalledWith(expect.stringContaining('MLA 9'));
+      });
+
+      it('builds the bibliography from the books cited in this writing', async () => {
+        const editor = (component as any).markdownEditor as MarkdownEditorStub;
+        prefs.update({ citationStyle: 'mla' });
+        component.keptSources.set([
+          { ...paletteQuote, id: 'a', bookId: 'book-3' } as any,
+          { ...paletteQuote, id: 'b', bookId: 'book-4' } as any,
+        ]);
+        const bibliography = vi.spyOn(citations, 'bibliography').mockResolvedValue(['Entry one.', 'Entry two.']);
+
+        await component.insertBibliography();
+
+        expect(bibliography).toHaveBeenCalledWith(['book-3', 'book-4'], expect.objectContaining({ id: 'mla' }));
+        expect(editor.insertBlockMarkdown).toHaveBeenCalledWith('## Works Cited\n\nEntry one.\n\nEntry two.');
+      });
     });
 
     it('replaces the @ query with a quote that names the author, and keeps the source', () => {

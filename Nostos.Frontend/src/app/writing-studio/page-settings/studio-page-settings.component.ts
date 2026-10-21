@@ -11,6 +11,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
 import { ButtonComponent } from '../../ui/button/button.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
@@ -30,6 +31,11 @@ import {
   nearestLineSpacing,
   nearestTextWidth,
 } from './studio-preferences.service';
+import { Book } from '../../core/dtos/book.dtos';
+import { BooksService } from '../../core/services/books.service';
+import { CITATION_STYLES, CitationStyle } from '../citations/citation-styles';
+import { CitationService } from '../citations/citation.service';
+import { bookToCslItem, missingForStyle } from '../citations/csl-item';
 
 /** The segmented control needs a value per option; null is the standard measure. */
 const STANDARD_WIDTH_VALUE = 'standard';
@@ -58,9 +64,24 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   /** The Aa button: the popover hangs under it, and a click on it is its own toggle. */
   readonly anchor = input<HTMLElement | null>(null);
+  /** A book from the open writing, to show each citation style on; else the library's latest. */
+  readonly exampleBookId = input<string | null>(null);
   readonly closed = output<void>();
 
-  readonly view = signal<'main' | 'fonts'>('main');
+  readonly view = signal<'main' | 'fonts' | 'citations'>('main');
+
+  private readonly books = inject(BooksService);
+  private readonly citations = inject(CitationService);
+  readonly citationStyles = CITATION_STYLES;
+  /** The book the examples are built from, once loaded. */
+  readonly exampleBook = signal<Book | null>(null);
+  /** Each style's citation and reference entry for the example book. */
+  readonly examples = signal<Record<string, { citation: string; reference: string } | 'error'>>({});
+  /** What the example book lacks for proper citations, e.g. "the year". */
+  readonly exampleMissing = computed(() => {
+    const book = this.exampleBook();
+    return book ? missingForStyle(bookToCslItem(book)) : [];
+  });
 
   readonly fontGroups = [...new Set(STUDIO_FONTS.map((f) => f.group))].map((group) => ({
     group,
@@ -135,7 +156,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   /** In the typeface list Esc steps back; on the main view it is the Studio's to close. */
   escape(event: Event): void {
-    if (this.view() !== 'fonts') return;
+    if (this.view() === 'main') return;
     event.preventDefault();
     this.backToMain();
   }
@@ -174,8 +195,67 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   }
 
   backToMain(): void {
+    const from = this.view();
     this.view.set('main');
-    this.focusAfterRender('.ps-typeface');
+    this.focusAfterRender(from === 'citations' ? '.ps-citations' : '.ps-typeface');
+  }
+
+  openCitations(): void {
+    this.view.set('citations');
+    this.focusAfterRender('.ps-font[aria-checked="true"]');
+    void this.loadExamples();
+  }
+
+  pickCitationStyle(style: CitationStyle): void {
+    this.prefs.update({ citationStyle: style.id });
+    this.backToMain();
+  }
+
+  /** The style list is one radio group, like the typefaces. */
+  citationKey(event: KeyboardEvent, style: CitationStyle): void {
+    const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const index = CITATION_STYLES.indexOf(style);
+    const next = CITATION_STYLES[(index + step + CITATION_STYLES.length) % CITATION_STYLES.length];
+    this.prefs.update({ citationStyle: next.id });
+    queueMicrotask(() =>
+      (this.host.nativeElement.querySelector(`[data-citation-option="${next.id}"]`) as HTMLElement | null)?.focus(),
+    );
+  }
+
+  private async loadExamples(): Promise<void> {
+    if (this.exampleBook()) return;
+    try {
+      const id = this.exampleBookId();
+      const book = id
+        ? await firstValueFrom(this.books.get(id))
+        : (await firstValueFrom(this.books.list({ page: 1, pageSize: 1 }))).items[0];
+      if (!book) return;
+      this.exampleBook.set(book);
+      for (const style of CITATION_STYLES) {
+        this.citations.example(book, style).then(
+          (example) => this.examples.update((all) => ({ ...all, [style.id]: example })),
+          () => this.examples.update((all) => ({ ...all, [style.id]: 'error' })),
+        );
+      }
+    } catch {
+      // The list still works without examples.
+    }
+  }
+
+  example(style: CitationStyle): { citation: string; reference: string } | null {
+    const value = this.examples()[style.id];
+    return value && value !== 'error' ? value : null;
+  }
+
+  /** "*Title*" from an example as plain text with the italics kept. */
+  exampleHtml(markdown: string): string {
+    return markdown
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/\\([\\*_`[\]])/g, '$1')
+      .replace(/\*([^*]+)\*/g, '<i>$1</i>');
   }
 
   checkedFrom(event: Event): boolean {

@@ -1,6 +1,8 @@
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
-import { marked } from 'marked';
+import { Marked } from 'marked';
+
+import { FOOTNOTE_ATTRIBUTE, footnoteMarkedExtension } from './footnote.extension';
 
 /**
  * The Studio stores Markdown; the editor edits HTML. These two functions are
@@ -13,8 +15,11 @@ import { marked } from 'marked';
  * longer offers underline at all, because Markdown has no way to keep it.
  */
 
+/** The Studio's own Marked, so its footnote syntax does not reach other surfaces. */
+const studioMarked = new Marked(footnoteMarkedExtension);
+
 export function markdownToHtml(markdown: string, options: { breaks?: boolean } = {}): string {
-  return marked.parse(markdown ?? '', { async: false, gfm: true, breaks: options.breaks ?? false }) as string;
+  return studioMarked.parse(markdown ?? '', { async: false, gfm: true, breaks: options.breaks ?? false }) as string;
 }
 
 let sharedTurndown: TurndownService | null = null;
@@ -61,6 +66,12 @@ function createTurndown(): TurndownService {
       const next = (node as HTMLElement).nextElementSibling;
       return next?.nodeName === 'P' ? `${content}\n\n` : content;
     },
+  });
+
+  // A footnote marker (issue #1109) goes back to `[^n]`, unescaped.
+  service.addRule('footnoteRef', {
+    filter: (node) => node.nodeName === 'SUP' && (node as HTMLElement).hasAttribute(FOOTNOTE_ATTRIBUTE),
+    replacement: (_content, node) => `[^${(node as HTMLElement).getAttribute(FOOTNOTE_ATTRIBUTE)}]`,
   });
 
   return service;

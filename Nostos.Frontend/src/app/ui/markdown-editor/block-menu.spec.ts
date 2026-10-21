@@ -20,4 +20,9 @@ describe('the / menu items (issue #1043)', () => {
   it('matches nothing for nonsense', () => {
     expect(filterBlockMenu('zzzq')).toEqual([]);
   });
+
+  it('offers a bibliography (issue #1109)', () => {
+    expect(filterBlockMenu('bib')[0].action).toBe('bibliography');
+    expect(filterBlockMenu('works')[0]?.action).toBe('bibliography');
+  });
 });
