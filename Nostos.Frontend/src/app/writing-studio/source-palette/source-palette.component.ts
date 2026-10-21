@@ -55,13 +55,11 @@ const NEW_LINE_PX = 4;
 
 /**
  * Where the active source is read in full (issue #1111): a column beside the
- * list on a wide window, or a strip under it. The list itself never changes
+ * list when the window is wide enough for both, otherwise a strip under it
+ * (the owner chose the column for desktop). The list itself never changes
  * shape as the highlight moves.
  */
 export type PalettePreviewLayout = 'side' | 'strip';
-
-/** Which layout a wide desktop window gets; narrower ones always get the strip. */
-export const DESKTOP_PREVIEW_LAYOUT: PalettePreviewLayout = 'side';
 
 interface PalettePlacement {
   mode: 'popover' | 'sheet';
@@ -366,8 +364,7 @@ export class SourcePaletteComponent {
         style: { bottom: `${keyboard + 8}px`, height: `${Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, room, vh * 0.55))}px` },
       };
     }
-    const preview: PalettePreviewLayout =
-      DESKTOP_PREVIEW_LAYOUT === 'side' && vw >= DESKTOP_WIDTH + SIDE_PREVIEW_WIDTH + 48 ? 'side' : 'strip';
+    const preview: PalettePreviewLayout = vw >= DESKTOP_WIDTH + SIDE_PREVIEW_WIDTH + 48 ? 'side' : 'strip';
     const width = preview === 'side' ? DESKTOP_WIDTH + SIDE_PREVIEW_WIDTH : DESKTOP_WIDTH;
     if (!anchor) {
       return {
