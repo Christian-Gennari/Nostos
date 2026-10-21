@@ -67,7 +67,8 @@ public interface ITopicRepository
     // --- Methods for NoteProcessorService ---
 
     /// <summary>
-    /// Finds existing topics whose names match any in the given list (case-insensitive via DB collation).
+    /// Finds existing topics whose names match any in the given list, in any case:
+    /// one topic per name, the survivor when older data holds case variants.
     /// </summary>
     Task<List<TopicModel>> GetByNamesAsync(IEnumerable<string> names);
 
@@ -95,4 +96,10 @@ public interface ITopicRepository
     /// Bulk-deletes all topics that have zero note links. Returns the count deleted.
     /// </summary>
     Task<int> DeleteOrphanedAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Merges topics whose names differ only in case into one, keeping the one
+    /// on the most notes. Returns how many were merged away.
+    /// </summary>
+    Task<int> MergeCaseDuplicatesAsync(CancellationToken ct = default);
 }

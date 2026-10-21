@@ -27,6 +27,17 @@ public class TopicCleanupWorker(
 
         try
         {
+            // One pass at start, so case variants made before topic names
+            // compared in any case are merged without waiting an hour.
+            try
+            {
+                await DoWorkAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "An error occurred during the Topic Cleanup cycle.");
+            }
+
             // Loop until the app stops
             while (await _timer.WaitForNextTickAsync(stoppingToken))
             {
@@ -57,13 +68,20 @@ public class TopicCleanupWorker(
     }
 
     /// <summary>
-    /// Periodically cleans up orphaned topics (topics with no links to notes).
+    /// Merges topics whose names differ only in case, then cleans up orphaned
+    /// topics (topics with no links to notes).
     /// </summary>
     private async Task DoWorkAsync(CancellationToken stoppingToken)
     {
         await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(stoppingToken);
         using var scope = scopeFactory.CreateScope();
         var topicRepo = scope.ServiceProvider.GetRequiredService<ITopicRepository>();
+
+        var mergedCount = await topicRepo.MergeCaseDuplicatesAsync(stoppingToken);
+        if (mergedCount > 0)
+        {
+            logger.LogInformation("Merged {Count} topics that differed from another only in case.", mergedCount);
+        }
 
         logger.LogInformation("Scanning for orphaned topics...");
 
