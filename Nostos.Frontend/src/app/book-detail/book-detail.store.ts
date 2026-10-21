@@ -13,6 +13,7 @@ import { NotesService } from '../core/services/notes.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
 import { isImportInFlight, importStageLabel } from '../core/dtos/import.dtos';
+import { clampPaperPage, paperPagePercent, writePaperPage } from './paper-page-progress';
 
 @Injectable()
 export class BookDetailStore {
@@ -56,6 +57,8 @@ export class BookDetailStore {
   readonly uploadingFile = signal(false);
 
   constructor() {
+    // A page set just before leaving is still saved.
+    this.destroyRef.onDestroy(() => this.flushPaperPage());
     // Terminal import updates are already fetched by ImportService. Apply the
     // resulting single-book patch here as well as in Library, without a reload.
     this.imports.bookPatched.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((book) => {
@@ -205,6 +208,65 @@ export class BookDetailStore {
       error: () => {
         this.loadBook(b.id, { background: true });
         this.toast.error('Failed to update status');
+      },
+    });
+  }
+
+  // --- PAPER BOOK PAGE (issue #1091) ---
+
+  /** A run of −/+ taps or keystrokes is one save, sent this long after the last. */
+  static readonly PAPER_PAGE_SAVE_DELAY_MS = 600;
+  private paperPageSave: { bookId: string; location: string; percent: number } | null = null;
+  private paperPageTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Sets the page a paper book is open at. The page shows at once; the save goes
+   * through the readers' progress endpoint, so Last Read, the Reading filter and
+   * Finished (at the last page) behave as for EPUB and PDF.
+   */
+  setPaperPage(page: number) {
+    const b = this.book();
+    if (!b || b.type !== 'physical' || !Number.isFinite(page)) return;
+
+    const clamped = clampPaperPage(page, b.pageCount);
+    const percent = paperPagePercent(clamped, b.pageCount);
+    const location = writePaperPage(clamped);
+    const finishedAt = percent >= 100 ? (b.finishedAt ?? new Date().toISOString()) : null;
+
+    this.book.update((curr) =>
+      curr
+        ? {
+            ...curr,
+            lastLocation: location,
+            progressPercent: percent,
+            lastReadAt: new Date().toISOString(),
+            finishedAt,
+          }
+        : null,
+    );
+
+    this.paperPageSave = { bookId: b.id, location, percent };
+    if (this.paperPageTimer !== null) clearTimeout(this.paperPageTimer);
+    this.paperPageTimer = setTimeout(
+      () => this.flushPaperPage(),
+      BookDetailStore.PAPER_PAGE_SAVE_DELAY_MS,
+    );
+  }
+
+  /** Sends the pending page now: after the pause, and when the page is left. */
+  flushPaperPage() {
+    if (this.paperPageTimer !== null) {
+      clearTimeout(this.paperPageTimer);
+      this.paperPageTimer = null;
+    }
+    const pending = this.paperPageSave;
+    this.paperPageSave = null;
+    if (!pending) return;
+
+    this.booksService.updateProgress(pending.bookId, pending.location, pending.percent).subscribe({
+      error: () => {
+        if (this.book()?.id === pending.bookId) this.loadBook(pending.bookId, { background: true });
+        this.toast.error('Failed to save the page');
       },
     });
   }

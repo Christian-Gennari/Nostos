@@ -859,8 +859,11 @@ public sealed partial class LibraryService : ILibraryService
             case PhysicalBookModel p:
                 if (request.Isbn is not null)
                     p.Isbn = NullIfEmpty(request.Isbn);
-                if (request.PageCount.HasValue)
+                if (request.PageCount.HasValue && request.PageCount != p.PageCount)
+                {
                     p.PageCount = request.PageCount;
+                    PaperPageProgress.RecomputeAfterPageCountChange(p, Now);
+                }
                 break;
             case EBookModel e:
                 if (request.Isbn is not null)

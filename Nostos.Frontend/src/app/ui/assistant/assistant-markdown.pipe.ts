@@ -22,6 +22,42 @@ function escapeHtml(value: string): string {
  * silently change the other.
  */
 const assistantMarkdown = new Marked();
+
+/**
+ * The previews for the reply being rendered, by citation number. Set for the
+ * length of one synchronous parse; Marked renderers take no per-call options.
+ */
+let citationPreviews: readonly string[] = [];
+
+/**
+ * `[^n]` is a numbered citation (issue #1002): the server keeps a marker only
+ * when it points at the turn's evidence n. It renders as a small superscript
+ * link, previewed on hover through its title and opened by the transcript's
+ * click handler. Markers in code stay code.
+ */
+assistantMarkdown.use({
+  extensions: [
+    {
+      name: 'citation',
+      level: 'inline',
+      start(src: string) {
+        const index = src.indexOf('[^');
+        return index < 0 ? undefined : index;
+      },
+      tokenizer(src: string) {
+        const match = /^\[\^(\d{1,3})\]/.exec(src);
+        return match ? { type: 'citation', raw: match[0], number: Number(match[1]) } : undefined;
+      },
+      renderer(token) {
+        const number = Number(token['number']);
+        const preview = citationPreviews[number - 1];
+        const title = preview ? ` title="${escapeHtml(preview)}"` : '';
+        return `<sup class="assistant-cite"><a class="assistant-cite-link" href="#source-${number}"${title} aria-label="Source ${number}">${number}</a></sup>`;
+      },
+    },
+  ],
+});
+
 assistantMarkdown.use({
   gfm: true,
   breaks: true,
@@ -50,9 +86,14 @@ assistantMarkdown.use({
  * the string through Angular's [innerHTML] keeps Angular's sanitizer in the
  * path for links and every other generated attribute.
  */
-export function renderAssistantMarkdown(source: string): string {
-  const rendered = assistantMarkdown.parse(source);
-  return typeof rendered === 'string' ? rendered : escapeHtml(source);
+export function renderAssistantMarkdown(source: string, previews: readonly string[] = []): string {
+  citationPreviews = previews;
+  try {
+    const rendered = assistantMarkdown.parse(source);
+    return typeof rendered === 'string' ? rendered : escapeHtml(source);
+  } finally {
+    citationPreviews = [];
+  }
 }
 
 @Pipe({
@@ -61,7 +102,7 @@ export function renderAssistantMarkdown(source: string): string {
   pure: true,
 })
 export class AssistantMarkdownPipe implements PipeTransform {
-  transform(source: string): string {
-    return renderAssistantMarkdown(source);
+  transform(source: string, previews: readonly string[] = []): string {
+    return renderAssistantMarkdown(source, previews);
   }
 }

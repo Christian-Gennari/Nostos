@@ -2479,6 +2479,64 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Reply_cites_numbered_evidence_and_markers_that_point_at_nothing_are_removed()
+    {
+        var bookId = Guid.NewGuid();
+        var noteId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
+        var knowledge = new FakeKnowledgeRetrievalService(
+            new KnowledgeSearchResponse(
+                ["homecoming"],
+                [
+                    new KnowledgeNoteEvidence(
+                        new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Note, NoteId: noteId),
+                        noteId,
+                        bookId,
+                        "Nostos",
+                        "A note about homecoming.",
+                        ["Homecoming"],
+                        DateTime.UtcNow,
+                        null,
+                        "unknown",
+                        null,
+                        false),
+                ],
+                [
+                    new KnowledgeTopicEvidence(
+                        new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Topic, TopicId: topicId),
+                        topicId,
+                        "Homecoming",
+                        2,
+                        1,
+                        "A note about homecoming.",
+                        []),
+                ],
+                [],
+                [],
+                true));
+
+        var h = CreateHarness(knowledge: knowledge);
+        h.Llm
+            .CallsTool("knowledge_search", "{\"query\":\"homecoming\"}")
+            .Returns("Homecoming recurs in your note [^1], and the topic gathers it [^2]. An invented one [^7].\n\n[^1]: Note · Nostos");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("What do my notes say about homecoming?", Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().HaveCount(2);
+        response.Reply.Should().Be(
+            "Homecoming recurs in your note [^1], and the topic gathers it [^2]. An invented one.",
+            "a marker survives only when it points at this turn's evidence, and footnote definitions go");
+
+        // The model read each item with its number in the turn's evidence list.
+        var toolMessage = h.Llm.Requests[1].Messages.Single(message => message.Role == "tool");
+        using var toolJson = JsonDocument.Parse(toolMessage.Content!);
+        var data = toolJson.RootElement.GetProperty("data");
+        data.GetProperty("notes")[0].GetProperty("cite").GetInt32().Should().Be(1);
+        data.GetProperty("topics")[0].GetProperty("cite").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
     public async Task Notes_list_for_book_results_keep_canonical_note_handles()
     {
         var h = CreateHarness();

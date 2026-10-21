@@ -43,6 +43,7 @@
             ],
             "allowedCommonJsDependencies": [
               "@xmldom/xmldom",
+              "citeproc",
               "event-emitter",
               "events",
               "graphology-utils",

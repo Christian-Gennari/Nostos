@@ -20,7 +20,8 @@ export type BlockMenuAction =
   | 'codeBlock'
   | 'image'
   | 'table'
-  | 'source';
+  | 'source'
+  | 'bibliography';
 
 export interface BlockMenuItem {
   action: BlockMenuAction;
@@ -42,6 +43,7 @@ export const BLOCK_MENU_ITEMS: readonly BlockMenuItem[] = [
   { action: 'image', label: 'Image', hint: '![](url)', keywords: 'image picture photo img' },
   { action: 'table', label: 'Table', hint: '| a | b |', keywords: 'table grid columns' },
   { action: 'source', label: 'Insert source…', hint: '@', keywords: 'source quote note passage reference cite' },
+  { action: 'bibliography', label: 'Bibliography', hint: 'sources', keywords: 'bibliography references works cited sources list' },
 ];
 
 /** Items whose label or keywords hold every letter of the query, in order. */

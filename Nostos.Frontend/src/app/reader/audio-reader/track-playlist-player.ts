@@ -232,10 +232,11 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     if (this.disposed) return;
     this.switching = false;
     this.pendingOffset = null;
-    const wasPlaying = this.reportedPlaying;
     this.wantPlaying = false;
-    if (wasPlaying) this.reportPaused();
+    // The error is reported before the pause it causes, so the reader can tell
+    // a drop during playback (resume once the audio is back) from one while paused.
     this.callbacks.onloaderror();
+    this.reportPaused();
   }
 
   private reportPaused(): void {

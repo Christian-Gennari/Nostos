@@ -46,6 +46,31 @@ describe('MarkdownEditorComponent', () => {
     expect(component.editorStarting()).toBe(false);
   });
 
+  describe('footnotes (issue #1109)', () => {
+    it('keeps a writing\'s footnotes as markers and saves them back unchanged', async () => {
+      await create('A claim.[^1]\n\n[^1]: Ibid.');
+
+      const marker = page().querySelector('sup.footnote-ref');
+      expect(marker?.textContent).toBe('1');
+      expect(component.nextFootnoteNumber()).toBe(2);
+
+      await component.insertMarkdown('More.');
+      expect(emitted.at(-1)).toContain('A claim.[^1]');
+      expect(emitted.at(-1)).toContain('[^1]: Ibid.');
+    });
+
+    it('adds a footnote at the end of the writing without moving the caret', async () => {
+      await create('First paragraph.\n\nSecond paragraph.');
+
+      expect(component.nextFootnoteNumber()).toBe(1);
+      expect(component.appendFootnote(1, 'Arthur Schopenhauer, *The World*, 42.')).toBe(true);
+      const md = emitted.at(-1) ?? '';
+      expect(md.endsWith('[^1]: Arthur Schopenhauer, _The World_, 42.')).toBe(true);
+      expect(md.indexOf('Second paragraph.')).toBeLessThan(md.indexOf('[^1]:'));
+      expect(component.appendFootnote(2, '  ')).toBe(false);
+    });
+  });
+
   it('reports the word count on start', async () => {
     await create('One two three. Four.');
     expect(counts.at(-1)).toBe(4);

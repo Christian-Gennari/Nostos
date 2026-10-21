@@ -467,6 +467,55 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       );
     });
 
+    describe('numbered citations (issue #1002)', () => {
+      function markers(): HTMLAnchorElement[] {
+        return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="assistant-entry-markdown"] a.assistant-cite-link'));
+      }
+
+      it('renders each [^n] as a numbered marker that previews and opens evidence n', () => {
+        const pdf = pdfEvidence(1, 12);
+        const epub = epubEvidence(4, 'epubcfi(/6/8!/4/2:0)');
+        renderEntry(entry({
+          text: 'The page argues one thing[^1], the chapter another[^2].',
+          artifacts: evidenceArtifacts(pdf, epub),
+        }));
+
+        const links = markers();
+        expect(links.map((link) => link.textContent)).toEqual(['1', '2']);
+        expect(links[0].closest('sup')).not.toBeNull();
+        expect(links[0].getAttribute('title')).toContain('Grounded PDF · p. 12');
+        expect(links[0].getAttribute('title')).toContain('Evidence from page 12.');
+        expect(fixture.nativeElement.textContent).not.toContain('[^1]');
+
+        links[1].click();
+        expect(router.navigate).toHaveBeenCalledWith(
+          ['/read', 'east-of-eden'],
+          { queryParams: expect.objectContaining({ sourceCfi: 'epubcfi(/6/8!/4/2:0)' }) },
+        );
+      });
+
+      it('numbers the sources row to match, and only when the reply cites', () => {
+        renderEntry(entry({
+          text: 'Cited once[^2].',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 3), epubEvidence(1, 'epubcfi(/6/2!/4/2:0)')),
+        }));
+        const numbers = Array.from(sourceItems()).map((item) => item.querySelector('.entry-source-number')?.textContent?.trim());
+        expect(numbers).toEqual(['1', '2']);
+      });
+
+      it('leaves a reply without markers exactly as before', () => {
+        renderEntry(entry({ text: 'No citations here.', artifacts: evidenceArtifacts(pdfEvidence(1, 3)) }));
+        expect(markers()).toEqual([]);
+        expect(fixture.nativeElement.querySelector('.entry-source-number')).toBeNull();
+      });
+
+      it('keeps a marker inside code as code', () => {
+        renderEntry(entry({ text: 'Write `[^1]` for a footnote.', artifacts: evidenceArtifacts(pdfEvidence(1, 3)) }));
+        expect(markers()).toEqual([]);
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-entry-markdown"] code')?.textContent).toBe('[^1]');
+      });
+    });
+
     it('prefers canonical evidence over legacy sources when both are present', () => {
       const evidence = [
         epubEvidence(1, 'epubcfi(/6/2!/4/2:0)', 'Canonical passage one.'),

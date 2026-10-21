@@ -118,7 +118,8 @@
         <div
           class="entry-text entry-markdown"
           data-testid="assistant-entry-markdown"
-          [innerHTML]="entry.text | assistantMarkdown"
+          [innerHTML]="entry.text | assistantMarkdown: citationPreviews(entry)"
+          (click)="onReplyClick($event, entry)"
         ></div>
         } @else {
         <blockquote class="entry-text">{{ entry.text }}</blockquote>
@@ -165,6 +166,9 @@
                         [attr.title]="item.evidence.excerpt"
                         data-testid="assistant-source-item"
                       >
+                        @if (citesSources(entry)) {
+                        <span class="entry-source-number">{{ item.number }}</span>
+                        }
                         <nostos-icon name="book-open" [size]="12"></nostos-icon>
                         <span class="entry-source-label">{{ evidenceLabel(item.evidence) }}</span>
                         @if (sourceExcerpt(item.evidence.excerpt); as excerpt) {
@@ -177,6 +181,9 @@
                         [attr.title]="item.evidence.excerpt"
                         data-testid="assistant-source-item"
                       >
+                        @if (citesSources(entry)) {
+                        <span class="entry-source-number">{{ item.number }}</span>
+                        }
                         <span class="entry-source-label">Source · {{ evidenceLabel(item.evidence) }}</span>
                         @if (sourceExcerpt(item.evidence.excerpt); as excerpt) {
                         <span class="entry-source-excerpt">{{ excerpt }}</span>
@@ -232,6 +239,9 @@
                     [attr.title]="display.item.evidence.excerpt"
                     data-testid="assistant-source-item"
                   >
+                    @if (citesSources(entry)) {
+                    <span class="entry-source-number">{{ display.item.number }}</span>
+                    }
                     <nostos-icon name="book-open" [size]="12"></nostos-icon>
                     <span>{{ evidenceLabel(display.item.evidence) }}</span>
                   </button>
@@ -241,6 +251,9 @@
                     [attr.title]="display.item.evidence.excerpt"
                     data-testid="assistant-source-item"
                   >
+                    @if (citesSources(entry)) {
+                    <span class="entry-source-number">{{ display.item.number }}</span>
+                    }
                     Source · {{ evidenceLabel(display.item.evidence) }}
                   </span>
                   }

@@ -207,6 +207,41 @@
   outline-offset: -2px;
 }
 
+/* Citation styles (issue #1109): each option shows itself on a real book. */
+.ps-citation {
+  align-items: flex-start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-size: 0.95rem;
+}
+
+.ps-citation-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ps-citation-default {
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+}
+
+.ps-citation-example {
+  color: var(--color-text-light);
+  font-family: Newsreader, Georgia, serif;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.ps-citation-missing {
+  margin: 8px 16px 12px;
+  color: var(--color-text-light);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 /* --- Phone: a bottom sheet over the dock ---------------------------------- */
 
 @media (max-width: 640px) {

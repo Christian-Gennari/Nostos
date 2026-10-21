@@ -607,6 +607,58 @@
   --dropdown-pill-ink: var(--color-success-dark);
 }
 
+/* The page stepper (issue #1091): the status pill's shape and size, quiet ink. */
+.page-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 2px 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+}
+.page-stepper-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  padding: 0 0.15rem;
+  cursor: text;
+}
+.page-stepper-field input {
+  min-width: 2ch;
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-main);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  /* The − and + beside it are the steppers; the browser's spinner would be a third. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.page-stepper-field input::-webkit-inner-spin-button,
+.page-stepper-field input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+.page-stepper-field input:hover {
+  border-color: var(--border-color);
+}
+.page-stepper-field input:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-halo);
+}
+.page-stepper-hint {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
 .status-dropdown.reading {
   --dropdown-pill-bg: color-mix(in srgb, var(--color-brand-accent) 12%, transparent);
   --dropdown-pill-bg-hover: color-mix(in srgb, var(--color-brand-accent) 20%, transparent);
