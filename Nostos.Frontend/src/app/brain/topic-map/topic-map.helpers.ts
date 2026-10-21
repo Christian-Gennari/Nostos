@@ -26,13 +26,11 @@ export const EDGE_SIZE_MAX = 3;
  * Label font size, in px, for EVERY label.
  *
  * There is deliberately no per-node range here any more. The component used to
- * compute one (10-16) and store it as a node attribute, but Sigma renders every
- * label at `settings.labelSize` — `drawDiscNodeLabel` consults
- * `data[labelColor.attribute]` for the label's COLOUR and nothing for its size
- * (`sigma/dist/index-fad77a13.esm.js:643-650`). So the per-node value was dead
- * config, and `fitOccupancy()` was reserving gutter against a number no label
- * was ever drawn at. One named constant now feeds both the setting and the
- * gutter calculation, so they cannot disagree.
+ * compute one (10-16) and store it as a node attribute, but Sigma 3 rendered
+ * every label at `settings.labelSize` and ignored the per-node value, so it was
+ * dead config, and `fitOccupancy()` was reserving gutter against a number no
+ * label was ever drawn at. One named constant now feeds both the label drawer
+ * and the gutter calculation, so they cannot disagree.
  */
 export const LABEL_DRAW_SIZE = 12;
 
@@ -386,42 +384,48 @@ export function readTheme(): ThemeColors {
   };
 }
 
-/** Geometry shared with Sigma's own hover drawer, so only the fill changes. */
-export interface HoverDrawSettings {
-  labelSize: number;
-  labelFont: string;
+/** A node drawn on its hover plate: viewport px, and the ink to draw it in. */
+export interface PlateNode {
+  x: number;
+  y: number;
+  /** Drawn node radius, viewport px. */
+  size: number;
+  label: string | null;
+  /** The node disc's fill, as the renderer draws it. */
+  nodeColor: string;
+  labelColor: string;
+  /** The node's own weight (hubs and the active node are 600). */
   labelWeight: string;
-  /** Mirrors Sigma's own `labelColor` union, including the attribute form. */
-  labelColor: { attribute: string; color?: string } | { color: string; attribute?: undefined };
 }
 
 /**
- * Sigma's `drawDiscNodeHover`, with a theme-aware box fill and the same edge flip.
+ * A hovered or highlighted node on a themed label plate.
  *
- * The built-in version is `context.fillStyle = "#FFF"` unconditionally, which
- * is invisible-in-light but actively wrong on dark: it paints a white plate
- * under `--color-text-muted` ink. The geometry below is reproduced from
- * `sigma@3.0.3` (`drawDiscNodeHover`) and only `boxFill` is parameterised, so
- * light mode stays pixel-identical apart from the token (which is `#ffffff`
- * there) and dark mode stops drawing a white block.
+ * Sigma 3 drew this on its 2D hover layer with `drawDiscNodeHover`, whose box
+ * was a hardcoded `#FFF`: invisible-in-light but actively wrong on dark, where
+ * it painted a white plate under `--color-text-muted` ink. Sigma 4 renders
+ * everything in WebGL and has no 2D hover drawer, so the component draws the
+ * plate itself on its own label canvas. The geometry is reproduced from
+ * `sigma@3.0.3` (`drawDiscNodeHover`) with `boxFill` parameterised, so light
+ * mode is unchanged apart from the token (which is `#ffffff` there) and dark
+ * mode does not draw a white block.
+ *
+ * The label canvas sits ABOVE the WebGL stage, so the plate would cover the
+ * node's own disc. Sigma 3 drew the hovered node again on top of its plate;
+ * this does the same by repainting the disc after the plate.
  *
  * The flip matches `placeLabels`: without it the plate and the text
  * would part company on a node near the right edge.
- *
- * If Sigma is upgraded, re-check this against the new implementation.
  */
 export function drawThemeNodeHover(
   context: CanvasRenderingContext2D,
-  data: { x: number; y: number; size: number; label?: string | null },
-  settings: HoverDrawSettings,
+  data: PlateNode,
+  labelSize: number,
+  labelFont: string,
   boxFill: string
 ): void {
-  const { labelSize, labelFont } = settings;
-  // The node's own weight (hubs and the active node are 600), so the plate is
-  // measured for the text actually drawn on it.
-  const labelWeight =
-    String((data as unknown as Record<string, unknown>)['labelWeight'] ?? '') || settings.labelWeight;
-  context.font = `${labelWeight} ${labelSize}px ${labelFont}`;
+  // Measured in the node's own weight, so the plate fits the text drawn on it.
+  context.font = `${data.labelWeight} ${labelSize}px ${labelFont}`;
 
   context.fillStyle = boxFill;
   context.shadowOffsetX = 0;
@@ -466,13 +470,14 @@ export function drawThemeNodeHover(
   context.shadowBlur = 0;
   context.shadowColor = 'transparent';
 
-  // The label itself, in the same colour Sigma would have used. Sigma's own
-  // fallback order is `data[attribute] || labelColor.color || '#000'`.
-  const perNode = 'attribute' in settings.labelColor && settings.labelColor.attribute
-    ? (data as unknown as Record<string, unknown>)[settings.labelColor.attribute]
-    : undefined;
-  context.fillStyle =
-    (typeof perNode === 'string' && perNode) || settings.labelColor.color || '#000';
+  // The node itself, back on top of its plate.
+  context.fillStyle = data.nodeColor;
+  context.beginPath();
+  context.arc(data.x, data.y, data.size, 0, Math.PI * 2);
+  context.closePath();
+  context.fill();
+
+  context.fillStyle = data.labelColor;
   if (typeof data.label === 'string') {
     const textWidth = context.measureText(data.label).width;
     const overflowsRight =
@@ -505,13 +510,87 @@ export function compareTopics(a: TopicDto, b: TopicDto): number {
  * like "Seneca/Death" printed on top of each other, and every edge under a word
  * cut through it.
  *
- * So the component no longer lets Sigma draw labels. Its `defaultDrawNodeLabel`
- * only COLLECTS each candidate, and after the frame `placeLabels` lays them out
- * in priority order — the active neighbourhood first, then hub topics, then
- * the rest by size — skipping any label that would collide with one already
- * placed. `drawPlacedLabels` then paints each one over a halo in the field
- * colour, so edges pass behind words instead of through them.
+ * So the component does not let Sigma draw labels (`renderLabels: false`).
+ * After each frame `selectLabelCandidates` picks candidates the way Sigma's grid
+ * did, `placeLabels` lays them out in priority order — the active neighbourhood
+ * first, then hub topics, then the rest by size — skipping any label that would
+ * collide with one already placed, and `drawPlacedLabels` paints each one over
+ * a halo in the field colour, so edges pass behind words instead of through
+ * them. All of it lands on a 2D canvas the component layers over Sigma's stage.
  */
+
+/** A node as the label pass sees it: viewport px, drawn radius. */
+export interface LabelSource {
+  key: string;
+  x: number;
+  y: number;
+  /** Drawn node radius, viewport px (`sigma.scaleSize(size)`). */
+  size: number;
+  label: string | null;
+  /** Always a candidate, whatever its size or its cell's density. */
+  forced: boolean;
+}
+
+/** Sigma's label-culling settings, plus the stage they apply to. */
+export interface LabelSelectionOptions {
+  width: number;
+  height: number;
+  /** `labelGridCellSize`: side of one grid cell, px. */
+  cellSize: number;
+  /** `labelDensity`: candidates kept per cell. */
+  density: number;
+  /** `labelRenderedSizeThreshold`: smallest drawn radius that gets a label. */
+  threshold: number;
+}
+
+/** How far past the stage a node may sit and still offer a label (Sigma's margins). */
+const LABEL_SELECT_MARGIN_X = 150;
+const LABEL_SELECT_MARGIN_Y = 50;
+
+/**
+ * The nodes whose labels are candidates this frame, in Sigma's own terms.
+ *
+ * Sigma used to do this before calling the label drawer; with its labels off
+ * the component does it here. The rules are the ones in Sigma's
+ * `computeDisplayedNodeLabels`: a grid of `cellSize` cells keeps its `density`
+ * largest nodes (ties broken by key), forced nodes always qualify, and a node
+ * needs a label, a drawn radius of at least `threshold` unless forced, and a
+ * position on (or just off) the stage. Sigma's grid lives in un-zoomed graph
+ * space with a per-cell quota that grows as `1 / ratio²`; on screen that is
+ * `density` labels per `cellSize` square at any zoom, which is what this keeps.
+ */
+export function selectLabelCandidates<T extends LabelSource>(
+  nodes: readonly T[],
+  options: LabelSelectionOptions
+): T[] {
+  const { width, height, cellSize, density, threshold } = options;
+  const quota = Math.ceil(density);
+  const onStage = (node: T) =>
+    node.x >= -LABEL_SELECT_MARGIN_X - node.size &&
+    node.x <= width + LABEL_SELECT_MARGIN_X + node.size &&
+    node.y >= -LABEL_SELECT_MARGIN_Y - node.size &&
+    node.y <= height + LABEL_SELECT_MARGIN_Y + node.size;
+
+  const cells = new Map<string, T[]>();
+  const chosen: T[] = [];
+  for (const node of nodes) {
+    if (!node.label || !onStage(node)) continue;
+    if (node.forced) {
+      chosen.push(node);
+      continue;
+    }
+    if (node.size < threshold) continue;
+    const cell = `${Math.floor(node.x / cellSize)}:${Math.floor(node.y / cellSize)}`;
+    const members = cells.get(cell);
+    if (members) members.push(node);
+    else cells.set(cell, [node]);
+  }
+  for (const members of cells.values()) {
+    members.sort((a, b) => b.size - a.size || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    chosen.push(...members.slice(0, quota));
+  }
+  return chosen;
+}
 
 /** Label priority tiers. Higher wins a collision. */
 export const LABEL_PRIORITY = {
@@ -537,10 +616,10 @@ export const LABEL_HALO_WIDTH = 4;
 const LABEL_COLLISION_PAD = 2;
 
 /**
- * The canvas width in the units Sigma draws in.
+ * The canvas width in the units labels are drawn in.
  *
- * Sigma sizes each canvas's backing store at `width × pixelRatio` and then
- * scales the context, so node coordinates handed to a drawer are CSS pixels
+ * The label canvas's backing store is `width × pixelRatio` and its context is
+ * scaled to match, so node coordinates handed to a drawer are CSS pixels
  * while `canvas.width` is DEVICE pixels. Testing `x + textWidth > canvas.width`
  * therefore never fired on a 2x phone, the edge flip never ran, and right-edge
  * labels were cut off ("Epictetu", "Marcu") — while desktop at 1x looked fine.
@@ -565,9 +644,9 @@ export interface LabelCandidate {
   weight: string;
   priority: number;
   /**
-   * Drawn elsewhere — Sigma paints the hovered/selected node's label on its own
-   * plate on the hover layer — so this pass only RESERVES its box, keeping other
-   * labels off it, and does not paint it a second time.
+   * Drawn elsewhere — the hovered/selected node's label goes on its own plate
+   * (`drawThemeNodeHover`), painted after the others — so this pass only
+   * RESERVES its box, keeping other labels off it, and does not paint it twice.
    */
   reserveOnly?: boolean;
 }
