@@ -20,6 +20,7 @@ import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmente
 import { SwitchComponent } from '../../ui/switch/switch.component';
 import { RangeDirective } from '../../ui/range/range.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { ThemePickerComponent } from '../../ui/theme-picker/theme-picker.component';
 import { SoundPack, TypewriterSound, TypewriterSounds } from '../../ui/markdown-editor/typewriter-sounds';
 import {
@@ -32,11 +33,24 @@ import {
   nearestLineSpacing,
   nearestTextWidth,
 } from './studio-preferences.service';
-import { Book } from '../../core/dtos/book.dtos';
+import { Book, UpdateBookDto } from '../../core/dtos/book.dtos';
+import { ToastService } from '../../core/services/toast.service';
 import { BooksService } from '../../core/services/books.service';
 import { CITATION_STYLES, CitationStyle } from '../citations/citation-styles';
 import { CitationService } from '../citations/citation.service';
-import { bookToCslItem, missingForStyle } from '../citations/csl-item';
+import { CitationDetail, bookToCslItem, missingForStyle, publishedYear } from '../citations/csl-item';
+
+/** A book the writing cites, and what the chosen style misses in its details. */
+export interface IncompleteSource {
+  book: Book;
+  missing: CitationDetail[];
+}
+
+const DETAIL_FIELDS: Record<CitationDetail, { label: string; placeholder: string }> = {
+  author: { label: 'Author', placeholder: 'e.g. Simone Weil' },
+  year: { label: 'Year', placeholder: 'e.g. 1947' },
+  publisher: { label: 'Publisher', placeholder: 'e.g. Routledge' },
+};
 
 /** The segmented control needs a value per option; null is the standard measure. */
 const STANDARD_WIDTH_VALUE = 'standard';
@@ -49,7 +63,7 @@ const STANDARD_WIDTH_VALUE = 'standard';
 @Component({
   selector: 'app-studio-page-settings',
   standalone: true,
-  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent],
+  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent, InputDirective],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -68,12 +82,36 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   readonly anchor = input<HTMLElement | null>(null);
   /** A book from the open writing, to show each citation style on; else the library's latest. */
   readonly exampleBookId = input<string | null>(null);
+  /** Opened on the Citations list, e.g. from a toast about a book missing details (#1157). */
+  readonly startView = input<'main' | 'citations'>('main');
+  /** The book whose missing details take focus when opened on the Citations list. */
+  readonly focusBook = input<string | null>(null);
+  /** The books the open writing cites or keeps. */
+  readonly citedBookIds = input<readonly string[]>([]);
+  /** A book's details were saved here; its citations follow. */
+  readonly bookUpdated = output<Book>();
   readonly closed = output<void>();
 
   readonly view = signal<'main' | 'fonts' | 'citations'>('main');
 
   private readonly books = inject(BooksService);
   private readonly citations = inject(CitationService);
+  private readonly toast = inject(ToastService);
+  readonly detailFields = DETAIL_FIELDS;
+  /** The writing's books, once loaded. */
+  readonly citedBooks = signal<Book[] | null>(null);
+  /** The writing's books the chosen style lacks details for, the focused one first. */
+  readonly incomplete = computed<IncompleteSource[]>(() => {
+    const style = this.prefs.citationStyle();
+    const focus = this.focusBook();
+    return (this.citedBooks() ?? [])
+      .map((book) => ({ book, missing: missingForStyle(bookToCslItem(book), style) }))
+      .filter((entry) => entry.missing.length)
+      .sort((a, b) => Number(b.book.id === focus) - Number(a.book.id === focus));
+  });
+  /** The book being saved, and the one whose year could not be read. */
+  readonly saving = signal<string | null>(null);
+  readonly invalidYear = signal<string | null>(null);
   readonly citationStyles = CITATION_STYLES;
   /** The book the examples are built from, once loaded. */
   readonly exampleBook = signal<Book | null>(null);
@@ -82,7 +120,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   /** What the example book lacks for proper citations, e.g. "the year". */
   readonly exampleMissing = computed(() => {
     const book = this.exampleBook();
-    return book ? missingForStyle(bookToCslItem(book)) : [];
+    return book ? missingForStyle(bookToCslItem(book), this.prefs.citationStyle()) : [];
   });
 
   readonly fontGroups = [...new Set(STUDIO_FONTS.map((f) => f.group))].map((group) => ({
@@ -130,6 +168,10 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
 
   ngAfterViewInit(): void {
     document.addEventListener('pointerdown', this.onPointerDown, true);
+    if (this.startView() === 'citations') {
+      this.openCitations(true);
+      return;
+    }
     // Focus moves into the popover, onto the theme now chosen.
     queueMicrotask(() => this.focusTheme());
   }
@@ -202,10 +244,67 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     this.focusAfterRender(from === 'citations' ? '.ps-citations' : '.ps-typeface');
   }
 
-  openCitations(): void {
+  openCitations(toDetails = false): void {
     this.view.set('citations');
-    this.focusAfterRender('.ps-font[aria-checked="true"]');
     void this.loadExamples();
+    const loading = this.loadCitedBooks();
+    if (!toDetails) {
+      this.focusAfterRender('.ps-font[aria-checked="true"]');
+      return;
+    }
+    // From a toast: straight to the first missing detail of the book it named.
+    void loading.then(() => this.focusAfterRender('.ps-cite-source input', '.ps-font[aria-checked="true"]'));
+  }
+
+  private async loadCitedBooks(): Promise<void> {
+    const ids = [...new Set(this.citedBookIds())];
+    if (!ids.length) {
+      this.citedBooks.set([]);
+      return;
+    }
+    const books = await Promise.all(ids.map((id) => this.citations.book(id)));
+    this.citedBooks.set(books.filter((book): book is Book => !!book));
+  }
+
+  /** Saves the details typed for one book; its citations in the writing follow. */
+  async saveDetails(event: Event, entry: IncompleteSource): Promise<void> {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const value = (field: CitationDetail) =>
+      ((form.elements.namedItem(field) as HTMLInputElement | null)?.value ?? '').replace(/\s+/g, ' ').trim();
+    const dto: UpdateBookDto = {};
+    for (const field of entry.missing) {
+      const text = value(field);
+      if (!text) continue;
+      if (field === 'author') dto.author = text;
+      if (field === 'publisher') dto.publisher = text;
+      if (field === 'year') {
+        if (!publishedYear(text)) {
+          this.invalidYear.set(entry.book.id);
+          (form.elements.namedItem('year') as HTMLInputElement | null)?.focus();
+          return;
+        }
+        dto.publishedDate = text;
+      }
+    }
+    this.invalidYear.set(null);
+    if (!Object.keys(dto).length) return;
+    this.saving.set(entry.book.id);
+    try {
+      const saved = await firstValueFrom(this.books.update(entry.book.id, dto));
+      this.citations.updated(saved);
+      this.citedBooks.update((books) => (books ?? []).map((book) => (book.id === saved.id ? saved : book)));
+      if (this.exampleBook()?.id === saved.id) {
+        this.exampleBook.set(null);
+        void this.loadExamples(saved.id);
+      }
+      this.bookUpdated.emit(saved);
+      this.focusAfterRender('.ps-cite-source input', '.ps-font[aria-checked="true"]');
+    } catch {
+      this.toast.error('Could not save the book’s details');
+    } finally {
+      this.saving.set(null);
+    }
   }
 
   pickCitationStyle(style: CitationStyle): void {
@@ -226,10 +325,10 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     );
   }
 
-  private async loadExamples(): Promise<void> {
+  private async loadExamples(bookId: string | null = null): Promise<void> {
     if (this.exampleBook()) return;
     try {
-      const id = this.exampleBookId();
+      const id = bookId ?? this.exampleBookId();
       const book = id
         ? await firstValueFrom(this.books.get(id))
         : (await firstValueFrom(this.books.list({ page: 1, pageSize: 1 }))).items[0];
@@ -268,10 +367,14 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     return Number((event.target as HTMLInputElement).value);
   }
 
-  private focusAfterRender(selector: string): void {
-    afterNextRender(() => (this.host.nativeElement.querySelector(selector) as HTMLElement | null)?.focus(), {
-      injector: this.injector,
-    });
+  private focusAfterRender(selector: string, fallback: string | null = null): void {
+    afterNextRender(
+      () => {
+        const root = this.host.nativeElement;
+        ((root.querySelector(selector) ?? (fallback ? root.querySelector(fallback) : null)) as HTMLElement | null)?.focus();
+      },
+      { injector: this.injector },
+    );
   }
 
   private focusTheme(): void {

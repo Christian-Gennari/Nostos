@@ -3,6 +3,7 @@ import { gfm } from 'turndown-plugin-gfm';
 import { Marked } from 'marked';
 
 import { FOOTNOTE_ATTRIBUTE, footnoteMarkedExtension } from './footnote.extension';
+import { citationElementMarkdown, citationMarkedExtension } from './citation.extension';
 
 /**
  * The Studio stores Markdown; the editor edits HTML. These two functions are
@@ -15,8 +16,8 @@ import { FOOTNOTE_ATTRIBUTE, footnoteMarkedExtension } from './footnote.extensio
  * longer offers underline at all, because Markdown has no way to keep it.
  */
 
-/** The Studio's own Marked, so its footnote syntax does not reach other surfaces. */
-const studioMarked = new Marked(footnoteMarkedExtension);
+/** The Studio's own Marked, so its footnote and citation syntax do not reach other surfaces. */
+const studioMarked = new Marked(footnoteMarkedExtension, citationMarkedExtension);
 
 export function markdownToHtml(markdown: string, options: { breaks?: boolean } = {}): string {
   return studioMarked.parse(markdown ?? '', { async: false, gfm: true, breaks: options.breaks ?? false }) as string;
@@ -72,6 +73,13 @@ function createTurndown(): TurndownService {
   service.addRule('footnoteRef', {
     filter: (node) => node.nodeName === 'SUP' && (node as HTMLElement).hasAttribute(FOOTNOTE_ATTRIBUTE),
     replacement: (_content, node) => `[^${(node as HTMLElement).getAttribute(FOOTNOTE_ATTRIBUTE)}]`,
+  });
+
+  // A live citation (issue #1157) goes back to its `nostos:cite/` link, with
+  // the text the Studio last wrote for it.
+  service.addRule('citation', {
+    filter: (node) => node.nodeName === 'CITE' && (node as HTMLElement).hasAttribute('data-cite-book'),
+    replacement: (content, node) => citationElementMarkdown(node as HTMLElement) ?? content,
   });
 
   return service;

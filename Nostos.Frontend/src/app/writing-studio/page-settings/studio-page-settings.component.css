@@ -242,6 +242,61 @@
   line-height: 1.4;
 }
 
+/* Missing details (issue #1157): a book's missing fields, filled in place. */
+.ps-cite-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ps-cite-sources .ps-font-group {
+  margin: 0 0 2px;
+}
+
+.ps-cite-source {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 8px;
+}
+
+.ps-cite-source + .ps-cite-source {
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+}
+
+.ps-cite-source-title {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: Newsreader, Georgia, serif;
+  font-size: 0.92rem;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+.ps-cite-field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.ps-cite-field-label {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.ps-cite-error {
+  margin: 0 0 0 80px;
+  color: var(--color-danger, var(--color-text-main));
+  font-size: 0.76rem;
+}
+
+.ps-cite-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* --- Phone: a bottom sheet over the dock ---------------------------------- */
 
 @media (max-width: 640px) {

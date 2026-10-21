@@ -66,11 +66,24 @@ export function bookToCslItem(book: Book): CslItem {
   return item;
 }
 
-/** The details citations will lack for this book, for the hint under the style list. */
-export function missingForStyle(item: CslItem): string[] {
-  const missing: string[] = [];
+/** A detail a citation can lack, as Book details names it. */
+export type CitationDetail = 'author' | 'year' | 'publisher';
+
+/**
+ * The details citations will lack for this book. The house format names only
+ * the author and title; every CSL style also wants the year and publisher.
+ */
+export function missingForStyle(item: CslItem, style: { kind: string } | null = null): CitationDetail[] {
+  const missing: CitationDetail[] = [];
   if (!item.author && !item.editor) missing.push('author');
+  if (style?.kind === 'house') return missing;
   if (!item.issued) missing.push('year');
   if (!item.publisher) missing.push('publisher');
   return missing;
+}
+
+/** "the year", "the year and publisher", "the author, year and publisher". */
+export function missingPhrase(missing: readonly CitationDetail[]): string {
+  if (missing.length <= 1) return missing.join('');
+  return `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
 }

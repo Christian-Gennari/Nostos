@@ -171,6 +171,7 @@
           [sourceSuggestionActiveId]="sourcePalette.activeId()"
           (contentChange)="onEditorChange($event)"
           (bibliographyRequested)="insertBibliography()"
+          (citationsChange)="onCitationsChange()"
           (wordCountChange)="editorWordCount.set($event)"
           (characterCountChange)="editorCharacterCount.set($event)"
           (sourceSuggestion)="onSourceSuggestion($event)"
@@ -677,7 +678,14 @@
   </app-confirm-modal>
 
   @if (pageSettingsOpen()) {
-    <app-studio-page-settings [anchor]="pageSettingsButton?.nativeElement ?? null" [exampleBookId]="citationExampleBookId()" (closed)="pageSettingsOpen.set(false)" />
+    <app-studio-page-settings
+      [anchor]="pageSettingsButton?.nativeElement ?? null"
+      [exampleBookId]="citationExampleBookId()"
+      [startView]="pageSettingsStart().view"
+      [focusBook]="pageSettingsStart().book"
+      [citedBookIds]="citedBookIds()"
+      (bookUpdated)="onCitationBookUpdated()"
+      (closed)="pageSettingsOpen.set(false)" />
   }
 
   @if (shortcutsOpen()) {

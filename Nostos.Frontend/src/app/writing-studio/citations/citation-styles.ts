@@ -42,3 +42,8 @@ export function citationStyle(id: string | null | undefined): CitationStyle {
 export function isCitationStyleId(value: unknown): value is CitationStyleId {
   return CITATION_STYLES.some((style) => style.id === value);
 }
+
+/** What a style calls its reference list. */
+export function bibliographyHeading(style: CitationStyle): string {
+  return style.id === 'mla' ? 'Works Cited' : style.id === 'apa' || style.id === 'harvard' ? 'References' : 'Bibliography';
+}

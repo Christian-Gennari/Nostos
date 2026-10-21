@@ -33,6 +33,42 @@
       <button appIconButton icon="caret-left" [glyphSize]="16" aria-label="Back to page settings" title="Back" (click)="backToMain()"></button>
       <h2 class="ps-subhead-title">Citation style</h2>
     </header>
+    <!-- The writing's books that lack a detail the style needs (issue #1157):
+         filled in here, every citation of the book follows. -->
+    @if (incomplete().length) {
+      <div class="ps-cite-sources" data-testid="ps-citation-sources">
+        <p class="ps-font-group">Missing in this writing’s sources</p>
+        @for (entry of incomplete(); track entry.book.id) {
+          <form class="ps-cite-source" [attr.data-book]="entry.book.id" (submit)="saveDetails($event, entry)">
+            <p class="ps-cite-source-title">{{ entry.book.title }}</p>
+            @for (field of entry.missing; track field) {
+              <label class="ps-cite-field">
+                <span class="ps-cite-field-label">{{ detailFields[field].label }}</span>
+                <input
+                  appInput
+                  controlSize="compact"
+                  type="text"
+                  autocomplete="off"
+                  [name]="field"
+                  [attr.inputmode]="field === 'year' ? 'numeric' : null"
+                  [placeholder]="detailFields[field].placeholder"
+                  [invalid]="field === 'year' && invalidYear() === entry.book.id"
+                />
+              </label>
+            }
+            @if (invalidYear() === entry.book.id) {
+              <p class="ps-cite-error" role="alert">Give the year as four digits, like 1947.</p>
+            }
+            <div class="ps-cite-actions">
+              <button appButton size="sm" type="submit" [disabled]="saving() === entry.book.id">
+                {{ saving() === entry.book.id ? 'Saving…' : 'Save' }}
+              </button>
+            </div>
+          </form>
+        }
+      </div>
+      <div class="ps-rule" aria-hidden="true"></div>
+    }
     <!-- How quotes, notes and references are cited (issue #1109), each shown
          on a real book from the library. -->
     <div class="ps-fonts ps-citation-list" role="radiogroup" aria-label="Citation style" data-testid="ps-citation-styles">
@@ -59,7 +95,7 @@
         </button>
       }
     </div>
-    @if (exampleMissing().length && exampleBook(); as book) {
+    @if (!citedBookIds().length && exampleMissing().length && exampleBook(); as book) {
       <p class="ps-citation-missing">“{{ book.title }}” has no {{ exampleMissing().join(' or ') }} in its details. Add it in Book details so its citations are complete.</p>
     }
   } @else {
