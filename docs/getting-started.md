@@ -113,7 +113,7 @@ Kestrel and form options are configured for up to **100 GB** file uploads to sup
 | Path                            | Purpose                                  |
 | ------------------------------- | ---------------------------------------- |
 | `Nostos.Backend/`               | .NET 10 Web API                          |
-| `Nostos.Frontend/`              | Angular 21 SPA                           |
+| `Nostos.Frontend/`              | Angular 22 SPA                           |
 | `Nostos.Shared/`                | Shared DTOs/Enums between backend layers |
 | `Nostos.Backend/Storage/books/` | Book file storage (not committed)        |
 | `Nostos.Backend/nostos.db`      | SQLite database (auto-created)           |

@@ -12,7 +12,7 @@ Nostos is a self-hosted personal library and knowledge management platform. It c
 
 ```
 ┌─────────────────────────────────────┐
-│         Angular 21 Frontend         │
+│         Angular 22 Frontend         │
 │  (SPA served from wwwroot/)         │
 ├─────────────────────────────────────┤
 │         ASP.NET Core 10 API         │
@@ -42,7 +42,7 @@ Nostos.sln
 │   │   └── backups/         #   Backup archives (.nostos files)
 │   └── wwwroot/             # Built Angular app (production)
 │
-├── Nostos.Frontend/         # Angular 21 SPA
+├── Nostos.Frontend/         # Angular 22 SPA
 │   └── src/app/
 │       ├── core/            # Services, DTOs, directives, strategies
 │       ├── ui/              # Shared/reusable UI components

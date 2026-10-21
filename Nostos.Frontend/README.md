@@ -1,6 +1,6 @@
 # Nostos frontend
 
-The Angular 21 app shared by SelfHosted Nostos and Nostos Cloud: the library, readers, Brain, Writing Studio, Ask Nostos and Settings. For what Nostos is and how to run the whole product, see the [root README](../README.md).
+The Angular 22 app shared by SelfHosted Nostos and Nostos Cloud: the library, readers, Brain, Writing Studio, Ask Nostos and Settings. For what Nostos is and how to run the whole product, see the [root README](../README.md).
 
 ## Run it
 
