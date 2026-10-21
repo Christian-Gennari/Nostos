@@ -23,6 +23,11 @@ updates:
       prefix: chore
       include: scope
     groups:
+      # Angular's packages share one version and peer-depend on each other,
+      # so a major only installs when they all move together (#1132/#1133
+      # failed with ERESOLVE as single-package bumps).
+      angular:
+        patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular"]
       npm-minor-and-patch:
         update-types: [minor, patch]
 
@@ -37,6 +42,15 @@ updates:
     groups:
       nuget-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # FluentAssertions 8+ is under a paid commercial licence (Xceed);
+      # Nostos Cloud is commercial use. Stay on 7.x and below.
+      - dependency-name: FluentAssertions
+        versions: [">= 8.0.0"]
+      # Microsoft.OpenApi moves with Microsoft.AspNetCore.OpenApi: its source
+      # generator does not compile against a newer major (#1138).
+      - dependency-name: Microsoft.OpenApi
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: docker
     directory: /
@@ -45,3 +59,8 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # Node majors alternate LTS and short-lived releases (#1127 proposed 25).
+      # The image moves to the next LTS by hand.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
