@@ -5,54 +5,87 @@ namespace Nostos.Product.BookText;
 
 public sealed class PdfBookTextExtractor : IBookTextExtractor
 {
+    /// <summary>
+    /// How many pages are read from one open document before it is opened
+    /// again. PdfPig keeps every font it has parsed until the document is
+    /// closed, and a page-level font re-parses an embedded program even when
+    /// every page shares it: a scanned book with one OCR font per page kept a
+    /// copy per page and ran the extraction child out of memory. Reopening
+    /// bounds that to this many pages' worth.
+    /// </summary>
+    internal const int PagesPerOpen = 16;
+
+    /// <summary>Test seam: called after each page, with its number, while its document is still open.</summary>
+    internal Action<int>? AfterPage { get; init; }
+
     public BookTextSourceFormat Format => BookTextSourceFormat.Pdf;
 
     public Task<BookTextExtractedDocument> ExtractAsync(Stream source, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        if (source.CanSeek) source.Position = 0;
+        if (!source.CanSeek)
+        {
+            var buffered = new MemoryStream();
+            source.CopyTo(buffered);
+            source = buffered;
+        }
 
-        using var document = PdfDocument.Open(source);
-        var pageLabels = PdfPageLabelResolver.Read(document);
         var blocks = new List<BookTextArtifactBlock>();
         var order = 0;
+        IReadOnlyDictionary<int, string> pageLabels;
+        int pageCount;
 
-        foreach (var page in document.GetPages())
+        source.Position = 0;
+        using (var first = PdfDocument.Open(source))
         {
-            ct.ThrowIfCancellationRequested();
-            // Placed words, not `page.Text`: see PdfReadingOrder for why the raw
-            // glyph stream is not usable text.
-            var text = BookTextNormalization.Normalize(
-                PdfReadingOrder.Compose(
-                    page.GetWords()
-                        .Select(word => new PlacedWord(
-                            word.Text,
-                            word.BoundingBox.Left,
-                            word.BoundingBox.Right,
-                            word.BoundingBox.Bottom,
-                            word.BoundingBox.Height))
-                        .ToList(),
-                    page.CropBox.Bounds.Left,
-                    page.CropBox.Bounds.Right));
-            if (text.Length == 0)
-                continue;
+            pageLabels = PdfPageLabelResolver.Read(first);
+            pageCount = first.NumberOfPages;
+        }
 
-            blocks.Add(new BookTextArtifactBlock(
-                Order: order++,
-                Text: text,
-                HeadingPath: [],
-                SourceSegments:
-                [
-                    new BookTextSourceSegment(
-                        TextStart: 0,
-                        TextLength: text.Length,
-                        Locator: new PdfBookTextSourceLocator(
-                            PageIndex: Math.Max(0, page.Number - 1),
-                            PageLabel: pageLabels.GetValueOrDefault(
-                                Math.Max(0, page.Number - 1)),
-                            StartTextOffset: 0,
-                            EndTextOffset: text.Length)),
-                ]));
+        for (var start = 1; start <= pageCount; start += PagesPerOpen)
+        {
+            source.Position = 0;
+            using var document = PdfDocument.Open(source);
+            var end = Math.Min(pageCount, start + PagesPerOpen - 1);
+            for (var number = start; number <= end; number++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var page = document.GetPage(number);
+                // Placed words, not `page.Text`: see PdfReadingOrder for why the raw
+                // glyph stream is not usable text.
+                var text = BookTextNormalization.Normalize(
+                    PdfReadingOrder.Compose(
+                        page.GetWords()
+                            .Select(word => new PlacedWord(
+                                word.Text,
+                                word.BoundingBox.Left,
+                                word.BoundingBox.Right,
+                                word.BoundingBox.Bottom,
+                                word.BoundingBox.Height))
+                            .ToList(),
+                        page.CropBox.Bounds.Left,
+                        page.CropBox.Bounds.Right));
+                AfterPage?.Invoke(number);
+                if (text.Length == 0)
+                    continue;
+
+                blocks.Add(new BookTextArtifactBlock(
+                    Order: order++,
+                    Text: text,
+                    HeadingPath: [],
+                    SourceSegments:
+                    [
+                        new BookTextSourceSegment(
+                            TextStart: 0,
+                            TextLength: text.Length,
+                            Locator: new PdfBookTextSourceLocator(
+                                PageIndex: Math.Max(0, page.Number - 1),
+                                PageLabel: pageLabels.GetValueOrDefault(
+                                    Math.Max(0, page.Number - 1)),
+                                StartTextOffset: 0,
+                                EndTextOffset: text.Length)),
+                    ]));
+            }
         }
 
         return Task.FromResult(new BookTextExtractedDocument(Format, blocks));
