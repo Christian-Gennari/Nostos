@@ -1,4 +1,4 @@
-import { Component, HostListener, input, output } from '@angular/core';
+import { Component, HostListener, input, output, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 
@@ -42,6 +42,7 @@ export type ModalShellVariant = 'sheet' | 'dialog';
   standalone: true,
   imports: [CommonModule, CdkTrapFocus],
   templateUrl: './modal-shell.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './modal-shell.component.css',
 })
 export class ModalShell {

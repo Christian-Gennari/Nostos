@@ -10,6 +10,7 @@ import {
   ChangeDetectorRef,
   forwardRef,
   inject,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -35,6 +36,7 @@ import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-auto
   ],
   templateUrl: './topic-input.component.html',
   styleUrls: ['./topic-input.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,

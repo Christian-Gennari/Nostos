@@ -2,7 +2,7 @@
 
 ## Overview
 
-Nostos Frontend is an Angular 21 SPA using **standalone components** exclusively (no `NgModule`). State is managed via Angular **Signals**. Change detection uses `OnPush` where performance-critical.
+Nostos Frontend is an Angular 22 SPA using **standalone components** exclusively (no `NgModule`). State is managed via Angular **Signals**. Change detection uses `OnPush` where performance-critical.
 
 ## Component Hierarchy
 

@@ -26,14 +26,22 @@ updates:
       # Angular's packages share one version and peer-depend on each other,
       # so a major only installs when they all move together (#1132/#1133
       # failed with ERESOLVE as single-package bumps).
+      # ngx-extended-pdf-viewer caps its Angular peer range per major, so the
+      # Angular 22 bump (#1148) needed it moved in the same PR.
       angular:
-        patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular"]
+        patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "ngx-extended-pdf-viewer"]
       # Dependabot ranks a group with update-types as more specific than a
       # pattern-only one, so Angular has to be excluded here or its majors
       # fall out as single-package PRs again (#1140-#1143).
       npm-minor-and-patch:
         update-types: [minor, patch]
-        exclude-patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular"]
+        exclude-patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular", "ngx-extended-pdf-viewer"]
+    ignore:
+      # Angular's compiler pins a TypeScript range to a minor (Angular 22:
+      # >=6.0 <6.1), so a TypeScript major or minor never installs on its own
+      # (#1151 proposed 7.0). It moves by hand with an Angular major.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major, version-update:semver-minor]
 
   - package-ecosystem: nuget
     directory: /

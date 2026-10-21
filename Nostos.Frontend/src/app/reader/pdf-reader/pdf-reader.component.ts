@@ -13,6 +13,7 @@ import {
   OnDestroy,
   signal,
   HostListener,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import {
   NgxExtendedPdfViewerModule,
@@ -167,6 +168,7 @@ const PDF_PASSAGE_TEXT_PAGE_LIMIT = 400;
   // find bar's close control; with that gone the module is the whole list.
   imports: [NgxExtendedPdfViewerModule],
   templateUrl: './pdf-reader.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './pdf-reader.component.css',
 })
 export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
@@ -1055,7 +1057,10 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  onPageChange(newPage: number) {
+  onPageChange(newPage: number | undefined) {
+    // The viewer's `page` model is `number | undefined` (ngx-extended-pdf-viewer 26+);
+    // undefined means no document page yet, which is not a move.
+    if (newPage === undefined) return;
     if (newPage !== this.currentPage) {
       this.clearNativeSelection();
       this.highlightWarning.set(null);

@@ -10,6 +10,7 @@ import {
   input,
   output,
   signal,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
@@ -51,6 +52,7 @@ const STANDARD_WIDTH_VALUE = 'standard';
   imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
+  changeDetection: ChangeDetectionStrategy.Eager,
   host: {
     '[style.--ps-top.px]': 'top()',
     '(window:resize)': 'viewport.update((n) => n + 1)',

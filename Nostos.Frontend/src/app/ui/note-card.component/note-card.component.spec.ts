@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
 import { NoteCardComponent } from './note-card.component';
 import type { Note } from '../../core/dtos/note.dtos';
@@ -11,7 +13,7 @@ describe('NoteCard source navigation', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [NoteCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(NoteCardComponent);
@@ -62,7 +64,7 @@ describe('NoteCard highlight pen (issue #861)', () => {
   async function edit(note: Note) {
     await TestBed.configureTestingModule({
       imports: [NoteCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(NoteCardComponent);
     fixture.componentInstance.note = note;
@@ -138,7 +140,7 @@ describe('NoteCard highlight pen (issue #861)', () => {
     async function show(note: Note) {
       await TestBed.configureTestingModule({
         imports: [NoteCardComponent],
-        providers: [provideRouter([])],
+        providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
       }).compileComponents();
       fixture = TestBed.createComponent(NoteCardComponent);
       fixture.componentInstance.note = note;
@@ -179,7 +181,7 @@ describe('NoteCard highlight pen (issue #861)', () => {
   it('shows the quotation in quotation marks and names the book', async () => {
     await TestBed.configureTestingModule({
       imports: [NoteCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     fixture = TestBed.createComponent(NoteCardComponent);
     fixture.componentInstance.note = { ...highlight, bookTitle: 'Meditations' };
@@ -207,7 +209,7 @@ describe('NoteCard audio time (issue #906)', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [NoteCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(NoteCardComponent);
@@ -258,7 +260,7 @@ describe('NoteCard passage (issue #1014)', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [NoteCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
     viewer = TestBed.inject(PassageViewerService);
@@ -335,7 +337,7 @@ describe('NoteCard inline topic links', () => {
   it('opens a [[topic]] in the Brain without a page load', async () => {
     await TestBed.configureTestingModule({
       imports: [NoteCardComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);

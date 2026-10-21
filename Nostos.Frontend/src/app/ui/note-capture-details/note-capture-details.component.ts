@@ -1,4 +1,4 @@
-import { Component, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, effect, inject, input, output, signal, ChangeDetectionStrategy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Note, NoteSearchHit } from '../../core/dtos/note.dtos';
 import { NotesService } from '../../core/services/notes.service';
@@ -13,6 +13,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
   selector: 'app-note-capture-details',
   imports: [ButtonComponent, A11yModule, ModalShell, DialogActionsComponent, IconButtonComponent],
   templateUrl: './note-capture-details.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './note-capture-details.component.css',
 })
 export class NoteCaptureDetailsComponent {

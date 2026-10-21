@@ -1,4 +1,4 @@
-import { Component, input, output } from '@angular/core';
+import { Component, input, output, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
@@ -32,6 +32,7 @@ export type ConfirmTone = 'danger' | 'neutral';
   standalone: true,
   imports: [IconTileComponent, CommonModule, NostosIconComponent, ModalShell, ButtonComponent, DialogActionsComponent],
   templateUrl: './confirm-modal.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './confirm-modal.component.css',
 })
 export class ConfirmModal {

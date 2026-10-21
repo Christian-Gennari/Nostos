@@ -226,7 +226,7 @@ read-only scheduled-audit contract, see `.agents/README.md`.
 
 ## 5. Project specifics
 
-- **Stack:** .NET 10 + SQLite + EF Core (backend), Angular 21 standalone +
+- **Stack:** .NET 10 + SQLite + EF Core (backend), Angular 22 standalone +
   Signals (frontend).
 - **Run the app:** `npm start` (dev), `npm run prod` (production build).
 - **Brand:** the mark is forest tile + paper arch, **theme-invariant** — see

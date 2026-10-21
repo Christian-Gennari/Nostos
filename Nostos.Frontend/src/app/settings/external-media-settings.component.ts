@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -65,6 +65,7 @@ export const EXTERNAL_MEDIA_GUIDE_URL =
     ModalShell,
   ],
   templateUrl: './external-media-settings.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './external-media-settings.component.css',
 })
 export class ExternalMediaSettingsComponent implements OnInit {

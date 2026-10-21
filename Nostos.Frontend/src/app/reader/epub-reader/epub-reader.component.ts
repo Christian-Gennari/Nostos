@@ -11,6 +11,7 @@ import {
   Injector,
   ElementRef,
   untracked,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ButtonComponent } from '../../ui/button/button.component';
@@ -256,6 +257,7 @@ const PASSAGE_POINTER_TOLERANCE = 5000;
   standalone: true,
   imports: [CommonModule, ButtonComponent, LoadingIndicatorComponent],
   templateUrl: './epub-reader.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './epub-reader.component.css',
 })
 export class EpubReader implements OnInit, OnDestroy, IReader {

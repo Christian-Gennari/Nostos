@@ -7,6 +7,7 @@ import {
   inject,
   signal,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import {
   NavigationCancel,
@@ -206,6 +207,7 @@ function isNarrowViewport(): boolean {
       </div>
     </nav>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [
     `
       :host {

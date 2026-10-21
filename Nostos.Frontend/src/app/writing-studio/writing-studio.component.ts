@@ -10,6 +10,7 @@ import {
   untracked,
   ElementRef,
   ViewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -158,6 +159,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     ConfirmModal,
   ],
   templateUrl: './writing-studio.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./writing-studio.component.css'],
 })
 export class WritingStudio implements OnInit, AfterViewInit {

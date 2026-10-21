@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
@@ -58,6 +58,7 @@ interface DeclinedState {
     LoadingIndicatorComponent,
   ],
   templateUrl: './switch-edition-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './switch-edition-dialog.component.css',
 })
 export class SwitchEditionDialog {

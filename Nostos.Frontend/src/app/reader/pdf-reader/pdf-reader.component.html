@@ -25,7 +25,7 @@
       [src]="pdfSrc()"
       [height]="'100%'"
       [sidebarVisible]="sidebarVisible()"
-      (sidebarVisibleChange)="sidebarVisibleChange.emit($event)"
+      (sidebarVisibleChange)="sidebarVisibleChange.emit(!!$event)"
       [(page)]="currentPage"
       [backgroundColor]="pdfBgColor()"
       [theme]="pdfTheme()"

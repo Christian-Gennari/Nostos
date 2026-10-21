@@ -1,4 +1,4 @@
-import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef } from '@angular/core';
+import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -102,6 +102,7 @@ import { readPaperPage } from './paper-page-progress';
   ],
   providers: [BookDetailStore, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './book-detail.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./book-detail.component.css'],
 })
 export class BookDetail implements OnInit, OnDestroy {

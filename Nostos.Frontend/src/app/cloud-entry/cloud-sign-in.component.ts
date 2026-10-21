@@ -6,6 +6,7 @@ import {
   inject,
   signal,
   viewChild,
+  ChangeDetectionStrategy,
 } from '@angular/core';
 
 import { ButtonComponent } from '../ui/button/button.component';
@@ -69,6 +70,7 @@ const AUTO_CONTINUE_KEY = 'nostos.cloud.signIn.autoContinuedAt';
     }
     <div #form class="cloud-sign-in__form" [hidden]="state() !== 'form'"></div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: `
     :host {
       display: flex;

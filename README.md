@@ -190,7 +190,7 @@ Nostos/
 └── docs/              # product, architecture and operations docs
 ```
 
-**Stack:** [.NET 10](https://dotnet.microsoft.com/) Minimal APIs, EF Core 10 and SQLite · [Angular 21](https://angular.dev/) with Signals · epub.js · ngx-extended-pdf-viewer · Howler.js · Sigma.js and Graphology · TipTap with marked and Turndown · Phosphor icons · Newsreader and Hanken Grotesk.
+**Stack:** [.NET 10](https://dotnet.microsoft.com/) Minimal APIs, EF Core 10 and SQLite · [Angular 22](https://angular.dev/) with Signals · epub.js · ngx-extended-pdf-viewer · Howler.js · Sigma.js and Graphology · TipTap with marked and Turndown · Phosphor icons · Newsreader and Hanken Grotesk.
 
 **Design:** warm paper surfaces, a restrained forest green, literary type and quiet controls. The mark is a doorway and a lowercase `n`: a Forest Green (`#293E32`) tile with a White (`#FFFFFF`) arch, the same in light and dark themes. Read the [Design Manifesto](docs/design-manifesto.md) or browse the [brand assets](_brand-assets/README.md).
 

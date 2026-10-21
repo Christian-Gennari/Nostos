@@ -1,4 +1,4 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, input, output, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LinkableBookDto } from '../../core/dtos/book.dtos';
@@ -53,6 +53,7 @@ export interface LinkCandidate extends LinkableBookDto {
   standalone: true,
   imports: [BadgeComponent, ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
   templateUrl: './editions-modal.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './editions-modal.component.css',
 })
 export class EditionsModal {
