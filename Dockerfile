@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-bookworm-slim AS frontend
+FROM node:25-bookworm-slim AS frontend
 WORKDIR /src/Nostos.Frontend
 COPY Nostos.Frontend/package*.json ./
 RUN npm ci
