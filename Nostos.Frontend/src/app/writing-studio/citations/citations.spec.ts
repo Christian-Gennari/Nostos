@@ -45,6 +45,11 @@ describe('citation styles (issue #1109): book metadata as CSL', () => {
       { family: 'Guattari', given: 'Félix' },
     ]);
     expect(parseNames('Homer')).toEqual([{ literal: 'Homer' }]);
+    // An epithet is not a family name, and a placeholder names nobody (#1157).
+    expect(parseNames('Seneca the Younger')).toEqual([{ literal: 'Seneca the Younger' }]);
+    expect(parseNames('Saint Augustine')).toEqual([{ literal: 'Saint Augustine' }]);
+    expect(parseNames('Multiple Authors')).toBeUndefined();
+    expect(parseNames('Various')).toBeUndefined();
     expect(parseNames('  ')).toBeUndefined();
   });
 
