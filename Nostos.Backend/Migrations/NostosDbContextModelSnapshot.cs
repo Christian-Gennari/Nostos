@@ -1111,13 +1111,17 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Topic")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Topic")
+                    b.HasIndex("NormalizedName")
                         .IsUnique();
 
                     b.ToTable("Topics");

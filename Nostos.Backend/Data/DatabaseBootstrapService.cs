@@ -51,6 +51,9 @@ public sealed class DatabaseBootstrapService(NostosDbContext db) : IDatabaseBoot
             // is partial or unknown, MigrateAsync fails closed below.
             await db.Database.MigrateAsync(cancellationToken);
             await Services.Library.LibraryIdentityBackfill.BackfillAsync(db, cancellationToken);
+            // Topics whose key the migration could not fold in full, or that
+            // differ from another only in case, are merged into one.
+            await new Repositories.TopicRepository(db).MergeCaseVariantsAsync(cancellationToken);
             await EnsureLibraryStateRowAsync(cancellationToken);
             return;
         }

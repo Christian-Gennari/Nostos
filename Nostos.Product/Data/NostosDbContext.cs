@@ -736,7 +736,8 @@ public class NostosDbContext : DbContext
             e.HasIndex(l => new { l.RootId, l.RelativePath }).IsUnique();
         });
 
-        modelBuilder.Entity<TopicModel>().HasIndex(c => c.Topic).IsUnique();
+        // A topic is one per name in any case: the folded key is what is unique.
+        modelBuilder.Entity<TopicModel>().HasIndex(c => c.NormalizedName).IsUnique();
 
         // Idempotent receipt with bounded inputs (SQLite enforces the limits
         // via the CHECK constraint, not the metadata-only MaxLength). The

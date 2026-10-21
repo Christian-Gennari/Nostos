@@ -77,7 +77,7 @@ public class TopicCleanupWorker(
         using var scope = scopeFactory.CreateScope();
         var topicRepo = scope.ServiceProvider.GetRequiredService<ITopicRepository>();
 
-        var mergedCount = await topicRepo.MergeCaseDuplicatesAsync(stoppingToken);
+        var mergedCount = await topicRepo.MergeCaseVariantsAsync(stoppingToken);
         if (mergedCount > 0)
         {
             logger.LogInformation("Merged {Count} topics that differed from another only in case.", mergedCount);

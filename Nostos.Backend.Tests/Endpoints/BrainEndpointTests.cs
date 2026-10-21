@@ -418,25 +418,27 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     [Fact]
-    public async Task The_cleanup_merges_topics_that_differ_only_in_case()
+    public async Task The_merge_pass_joins_a_case_variant_waiting_under_a_pending_key()
     {
         var name = $"Ärende {Guid.NewGuid():N}";
         var (_, notes) = await CreateBookWithNotesAsync($"On [[{name}]].", $"Again [[{name}]].");
         var survivorId = (await GetTopicsAsync()).Single(t => t.Name == name).Id;
 
-        // A variant made before names compared in any case, on a third note.
+        // A variant made before names compared in any case, on a third note:
+        // parked under a pending key, as the migration and an old archive leave it.
         var variant = name.ToLowerInvariant();
         var (_, more) = await CreateBookWithNotesAsync("Plain.");
         await using (var db = await OpenDbAsync())
         {
             var topic = new Nostos.Backend.Data.Models.TopicModel { Topic = variant, Description = "Mine." };
+            topic.NormalizedName = Nostos.Backend.Data.Models.TopicModel.PendingMergeKey(variant, topic.Id);
             db.Topics.Add(topic);
             var note = await db.Notes.SingleAsync(n => n.Id == more[0].Id);
             note.Content = $"Plain. [[{variant}]]";
             db.NoteTopics.Add(new Nostos.Backend.Data.Models.NoteTopicModel { NoteId = note.Id, TopicId = topic.Id });
             await db.SaveChangesAsync();
 
-            (await new Nostos.Backend.Data.Repositories.TopicRepository(db).MergeCaseDuplicatesAsync()).Should().Be(1);
+            (await new Nostos.Backend.Data.Repositories.TopicRepository(db).MergeCaseVariantsAsync()).Should().Be(1);
         }
 
         var survivor = (await GetTopicsAsync())
@@ -446,6 +448,17 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
         survivor.UsageCount.Should().Be(3);
         survivor.Description.Should().Be("Mine.");
         (await GetNoteAsync(more[0].Id)).Content.Should().Be($"Plain. [[{name}]]");
+    }
+
+    [Fact]
+    public async Task The_database_refuses_a_second_topic_with_the_same_name_in_another_case()
+    {
+        var name = $"Gulligt {Guid.NewGuid():N}";
+        await using var db = await OpenDbAsync();
+        db.Topics.Add(new Nostos.Backend.Data.Models.TopicModel { Topic = name });
+        db.Topics.Add(new Nostos.Backend.Data.Models.TopicModel { Topic = name.ToLowerInvariant() });
+
+        await db.Invoking(d => d.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
     }
 
     private async Task<NoteSearchPageDto> BrowseAsync(string query) =>
