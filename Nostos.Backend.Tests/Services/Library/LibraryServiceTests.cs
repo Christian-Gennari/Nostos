@@ -368,6 +368,106 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         data.Title.Should().Be("Fictions", "unset fields are untouched");
     }
 
+    // ------------------------------------------------------------------
+    // Paper book page (issue #1091)
+    // ------------------------------------------------------------------
+
+    private async Task<Guid> CreatePaperBookAsync(TestHarness h, string key, int? pageCount)
+    {
+        var created = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Paper " + key, Key: key), strictConfirmation: false);
+        var bookId = ((LibraryCreateOrMatchResultDto)created.Data!).BookId!.Value;
+        if (pageCount is not null)
+            await h.Service.UpdateBookAsync(new(Client, key + "-pc", bookId, PageCount: pageCount));
+        return bookId;
+    }
+
+    [Fact]
+    public async Task Paper_book_page_saves_through_the_progress_path()
+    {
+        var h = Harness();
+        var bookId = await CreatePaperBookAsync(h, "paper-1", pageCount: 880);
+
+        await h.Service.UpdateProgressAsync(bookId, """{"page":143}""", PaperPageProgress.Percent(143, 880));
+
+        var book = await GetBookAsync(h, bookId);
+        book.LastLocation.Should().Be("""{"page":143}""");
+        book.ProgressPercent.Should().Be(16);
+        book.LastReadAt.Should().NotBeNull("the page moves the book to the top of Last Read");
+        book.FinishedAt.Should().BeNull();
+
+        await h.Service.UpdateProgressAsync(bookId, """{"page":880}""", PaperPageProgress.Percent(880, 880));
+        (await GetBookAsync(h, bookId)).FinishedAt.Should().NotBeNull("the last page finishes the book");
+
+        await h.Service.UpdateProgressAsync(bookId, """{"page":700}""", PaperPageProgress.Percent(700, 880));
+        var reopened = await GetBookAsync(h, bookId);
+        reopened.FinishedAt.Should().BeNull("a lower page un-finishes it, as for EPUB and PDF");
+        reopened.ProgressPercent.Should().Be(79);
+    }
+
+    [Fact]
+    public async Task Paper_book_page_count_change_recomputes_the_percentage_without_touching_last_read()
+    {
+        var h = Harness();
+        var bookId = await CreatePaperBookAsync(h, "paper-2", pageCount: null);
+        await h.Service.UpdateProgressAsync(bookId, """{"page":100}""", PaperPageProgress.Percent(100, null));
+        var before = await GetBookAsync(h, bookId);
+        before.ProgressPercent.Should().Be(1, "without a page count the book counts as Reading");
+
+        await h.Service.UpdateBookAsync(new(Client, "paper-2-pc2", bookId, PageCount: 400));
+
+        var after = await GetBookAsync(h, bookId);
+        after.ProgressPercent.Should().Be(25);
+        after.LastReadAt.Should().Be(before.LastReadAt, "editing details is not reading");
+        after.FinishedAt.Should().BeNull();
+
+        await h.Service.UpdateBookAsync(new(Client, "paper-2-pc3", bookId, PageCount: 100));
+        var finished = await GetBookAsync(h, bookId);
+        finished.ProgressPercent.Should().Be(100);
+        finished.FinishedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Paper_book_page_count_change_leaves_a_finished_book_and_a_book_without_a_page_alone()
+    {
+        var h = Harness();
+        var finishedId = await CreatePaperBookAsync(h, "paper-3", pageCount: 300);
+        await h.Service.UpdateProgressAsync(finishedId, """{"page":10}""", PaperPageProgress.Percent(10, 300));
+        await h.Service.UpdateBookAsync(new(Client, "paper-3-done", finishedId, IsFinished: true));
+        await h.Service.UpdateBookAsync(new(Client, "paper-3-pc", finishedId, PageCount: 900));
+        var finished = await GetBookAsync(h, finishedId);
+        finished.ProgressPercent.Should().Be(100);
+        finished.FinishedAt.Should().NotBeNull();
+
+        var untouchedId = await CreatePaperBookAsync(h, "paper-4", pageCount: 300);
+        await h.Service.UpdateBookAsync(new(Client, "paper-4-pc", untouchedId, PageCount: 500));
+        var untouched = await GetBookAsync(h, untouchedId);
+        untouched.ProgressPercent.Should().Be(0);
+        untouched.LastLocation.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""{"page":143}""", 143)]
+    [InlineData("""{"pageNumber":3}""", null)]
+    [InlineData("""{"page":0}""", null)]
+    [InlineData("""{"page":"7"}""", null)]
+    [InlineData("1234.5", null)]
+    [InlineData("epubcfi(/6/4!/4/2)", null)]
+    [InlineData("{not json", null)]
+    [InlineData(null, null)]
+    public void Paper_page_reads_only_a_paper_location(string? location, int? expected) =>
+        PaperPageProgress.ReadPage(location).Should().Be(expected);
+
+    [Theory]
+    [InlineData(143, 880, 16)]
+    [InlineData(880, 880, 100)]
+    [InlineData(1, 880, 1)]
+    [InlineData(1000, 880, 100)]
+    [InlineData(50, null, 1)]
+    [InlineData(50, 0, 1)]
+    public void Paper_page_percent_follows_the_pdf_rule(int page, int? pageCount, int expected) =>
+        PaperPageProgress.Percent(page, pageCount).Should().Be(expected);
+
     [Fact]
     public async Task Update_moves_and_clears_collection()
     {

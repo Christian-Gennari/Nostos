@@ -74,6 +74,7 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
 import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switcher.component';
 import { buildEditionSwitchOptions } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
+import { readPaperPage } from './paper-page-progress';
 
 @Component({
   standalone: true,
@@ -446,9 +447,45 @@ export class BookDetail implements OnInit, OnDestroy {
   /** How far in, shown inside the Reading pill ("70%"). Only while reading:
    *  "Finished · 100%" would say the same thing twice. */
   readonly statusDetail = computed(() => {
-    const percent = this.store.book()?.progressPercent ?? 0;
+    const book = this.store.book();
+    const percent = book?.progressPercent ?? 0;
+    // A paper book without a page count has a page, not a percentage: its 1%
+    // only exists so the Library counts it as Reading (issue #1091).
+    if (book?.type === 'physical' && !book.pageCount && this.paperPage() !== null) return null;
     return this.readingStatus().modifier === 'reading' && percent > 0 ? `${percent}%` : null;
   });
+
+  // --- PAPER BOOK PAGE (issue #1091) ---
+
+  /** True on a paper book's page, where the page stepper shows. */
+  readonly isPaperBook = computed(() => this.store.book()?.type === 'physical');
+
+  /** The page the reader is at, or null before one is set. */
+  readonly paperPage = computed(() => readPaperPage(this.store.book()?.lastLocation));
+
+  readonly paperPageCount = computed(() => {
+    const count = this.store.book()?.pageCount;
+    return count && count > 0 ? count : null;
+  });
+
+  stepPaperPage(delta: number): void {
+    const current = this.paperPage();
+    // The first + from no page opens the book at page 1.
+    const next = current === null ? 1 : current + delta;
+    this.store.setPaperPage(next);
+  }
+
+  /** Enter or blur in the page field. An empty or zero entry changes nothing. */
+  commitPaperPage(input: HTMLInputElement): void {
+    const typed = Number.parseInt(input.value, 10);
+    if (!Number.isFinite(typed) || typed < 1) {
+      input.value = this.paperPage()?.toString() ?? '';
+      return;
+    }
+    if (typed !== this.paperPage()) this.store.setPaperPage(typed);
+    // Show the clamped value even when the store kept the same page.
+    input.value = this.paperPage()?.toString() ?? '';
+  }
 
   /** The current status as a dropdown value. */
   readonly statusValue = computed(() => {
