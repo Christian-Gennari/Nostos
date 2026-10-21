@@ -28,8 +28,12 @@ updates:
       # failed with ERESOLVE as single-package bumps).
       angular:
         patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular"]
+      # Dependabot ranks a group with update-types as more specific than a
+      # pattern-only one, so Angular has to be excluded here or its majors
+      # fall out as single-package PRs again (#1140-#1143).
       npm-minor-and-patch:
         update-types: [minor, patch]
+        exclude-patterns: ["@angular/*", "@angular-devkit/*", "@schematics/angular"]
 
   - package-ecosystem: nuget
     directory: /
