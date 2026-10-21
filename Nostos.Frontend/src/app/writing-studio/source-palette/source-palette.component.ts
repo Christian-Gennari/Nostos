@@ -44,9 +44,28 @@ export interface PaletteAnchor {
 const VISIBLE_ROWS = 6;
 const SEARCH_LIMIT = 20;
 const DESKTOP_WIDTH = 440;
+/** The preview column beside the list, when the window is wide enough for both. */
+const SIDE_PREVIEW_WIDTH = 300;
 const MAX_HEIGHT = 420;
+const MIN_HEIGHT = 220;
 /** The floating dock and its margin, which the palette never covers. */
 const DOCK_CLEARANCE = 104;
+/** The caret moved to another line when the anchor moves more than this. */
+const NEW_LINE_PX = 4;
+
+/**
+ * Where the active source is read in full (issue #1111): a column beside the
+ * list when the window is wide enough for both, otherwise a strip under it
+ * (the owner chose the column for desktop). The list itself never changes
+ * shape as the highlight moves.
+ */
+export type PalettePreviewLayout = 'side' | 'strip';
+
+interface PalettePlacement {
+  mode: 'popover' | 'sheet';
+  preview: PalettePreviewLayout;
+  style: Record<string, string>;
+}
 
 /**
  * The `@` source palette (issue #1039): a small list at the caret that finds
@@ -99,7 +118,14 @@ export class SourcePaletteComponent {
     const corrected = this.answered();
     return corrected && corrected !== q.toLowerCase() && corrected !== q ? `Showing results for “${corrected}”` : '';
   });
-  readonly position = computed(() => this.place(this.anchor()));
+  /** The source being read in the preview: the highlighted row. */
+  readonly activeItem = computed(() => this.items()[this.active()] ?? null);
+  /**
+   * Decided when the palette opens, and again only when the caret moves to
+   * another line or the window changes; never because the results did.
+   */
+  readonly position = signal<PalettePlacement>(this.place(null));
+  private placedFor: PaletteAnchor | null = null;
 
   private vocabulary: Set<string> | null = null;
   private vocabularyLoading = false;
@@ -152,6 +178,38 @@ export class SourcePaletteComponent {
         const first = this.items()[0];
         if (pending && first) this.pick(first, pending);
       });
+
+    effect(() => {
+      const anchor = this.anchor();
+      const open = this.open();
+      untracked(() => {
+        if (!open) {
+          this.placedFor = null;
+          return;
+        }
+        const placed = this.placedFor;
+        const moved =
+          !placed ||
+          !anchor ||
+          Math.abs(anchor.top - placed.top) > NEW_LINE_PX ||
+          Math.abs(anchor.bottom - placed.bottom) > NEW_LINE_PX;
+        if (!moved) return;
+        this.placedFor = anchor;
+        this.position.set(this.place(anchor));
+      });
+    });
+
+    if (typeof window !== 'undefined') {
+      const replace = () => {
+        if (this.open()) this.position.set(this.place(this.anchor()));
+      };
+      window.addEventListener('resize', replace);
+      window.visualViewport?.addEventListener('resize', replace);
+      destroyRef.onDestroy(() => {
+        window.removeEventListener('resize', replace);
+        window.visualViewport?.removeEventListener('resize', replace);
+      });
+    }
 
     effect(() => {
       const query = this.query();
@@ -233,8 +291,11 @@ export class SourcePaletteComponent {
     this.browse.emit((this.query() ?? '').trim());
   }
 
+  /** ⋯ on a row: read it in the preview, where its other insert options are, without inserting it. */
   toggleMore(item: PaletteSource, event: Event): void {
     event.stopPropagation();
+    const index = this.items().findIndex((candidate) => candidate.id === item.id);
+    if (index >= 0) this.setActive(index);
     this.moreFor.update((id) => (id === item.id ? null : item.id));
   }
 
@@ -258,6 +319,7 @@ export class SourcePaletteComponent {
   private setItems(items: PaletteSource[]): void {
     this.items.set(items);
     this.active.set(0);
+    this.moreFor.set(null);
   }
 
   private emptyQueryItems(): PaletteSource[] {
@@ -285,30 +347,47 @@ export class SourcePaletteComponent {
 
   /**
    * Below the `@` when it fits, above it near the bottom of the window. On a
-   * narrow screen it is a sheet just above the soft keyboard.
+   * narrow screen it is a sheet just above the soft keyboard. The palette gets
+   * a fixed height for as long as it is open, so loading, empty and result
+   * states share one frame and an above-the-caret palette's top edge stays put.
    */
-  private place(anchor: PaletteAnchor | null): { mode: 'popover' | 'sheet'; style: Record<string, string> } {
+  private place(anchor: PaletteAnchor | null): PalettePlacement {
     const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
     const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
     if (vw <= 640) {
       const vv = typeof window === 'undefined' ? null : window.visualViewport;
       const keyboard = vv ? Math.max(0, vh - vv.height - vv.offsetTop) : 0;
-      return { mode: 'sheet', style: { bottom: `${keyboard + 8}px` } };
+      const room = vh - keyboard - 16 - 64;
+      return {
+        mode: 'sheet',
+        preview: 'strip',
+        style: { bottom: `${keyboard + 8}px`, height: `${Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, room, vh * 0.55))}px` },
+      };
     }
-    if (!anchor) return { mode: 'popover', style: { top: '25vh', left: `${Math.max(16, (vw - DESKTOP_WIDTH) / 2)}px` } };
-    const left = Math.min(Math.max(12, anchor.left - 8), vw - DESKTOP_WIDTH - 12);
+    const preview: PalettePreviewLayout = vw >= DESKTOP_WIDTH + SIDE_PREVIEW_WIDTH + 48 ? 'side' : 'strip';
+    const width = preview === 'side' ? DESKTOP_WIDTH + SIDE_PREVIEW_WIDTH : DESKTOP_WIDTH;
+    if (!anchor) {
+      return {
+        mode: 'popover',
+        preview,
+        style: { top: '25vh', left: `${Math.max(16, (vw - width) / 2)}px`, height: `${MAX_HEIGHT}px` },
+      };
+    }
+    const left = Math.min(Math.max(12, anchor.left - 8), vw - width - 12);
     // Room below the `@` stops short of the floating dock; above, of the header.
     const below = vh - anchor.bottom - DOCK_CLEARANCE;
     const above = anchor.top - 24;
     if (below >= Math.min(MAX_HEIGHT, 260) || below >= above) {
       return {
         mode: 'popover',
-        style: { top: `${anchor.bottom + 6}px`, left: `${left}px`, 'max-height': `${Math.max(160, Math.min(MAX_HEIGHT, below))}px` },
+        preview,
+        style: { top: `${anchor.bottom + 6}px`, left: `${left}px`, height: `${Math.max(160, Math.min(MAX_HEIGHT, below))}px` },
       };
     }
     return {
       mode: 'popover',
-      style: { bottom: `${vh - anchor.top + 6}px`, left: `${left}px`, 'max-height': `${Math.min(MAX_HEIGHT, above)}px` },
+      preview,
+      style: { bottom: `${vh - anchor.top + 6}px`, left: `${left}px`, height: `${Math.min(MAX_HEIGHT, above)}px` },
     };
   }
 }

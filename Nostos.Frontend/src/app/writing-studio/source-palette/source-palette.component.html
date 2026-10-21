@@ -2,80 +2,109 @@
   <div
     class="source-palette"
     [class.is-sheet]="position().mode === 'sheet'"
+    [class.has-side-preview]="position().preview === 'side'"
     [style]="position().style"
     data-testid="source-palette"
   >
-    @if (heading()) {
-      <div class="sp-heading">{{ heading() }}</div>
-    }
+    <!-- One frame for every state (issue #1111): the heading row, the list
+         with its preview, the key hints. Only what is inside them changes. -->
+    <div class="sp-heading">
+      <span class="sp-heading-text">{{ heading() }}</span>
+      @if (loading() && items().length) {
+        <span class="sp-searching" aria-hidden="true">Searching…</span>
+      }
+    </div>
 
-    @if (items().length) {
-      <ul class="sp-list" role="listbox" id="source-palette-list" aria-label="Sources">
-        @for (item of items(); track item.id; let i = $index) {
-          <li
-            class="sp-row"
-            role="option"
-            [id]="'source-option-' + i"
-            [class.active]="i === active()"
-            [attr.aria-selected]="i === active()"
-            [attr.data-kind]="item.kind"
-            (mousedown)="$event.preventDefault()"
-            (mouseenter)="active.set(i)"
-            (click)="pick(item)"
-          >
-            <div class="sp-row-main">
-              @if (item.kind === 'passage') {
-                <span class="sp-passage">
-                  <span class="sp-kind">Passage</span>
-                  <span class="sp-passage-title">
-                    @for (seg of segments(item.passageTitle ?? 'Passage'); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
+    <div class="sp-body">
+      <div class="sp-results">
+        @if (items().length) {
+          <ul class="sp-list" role="listbox" id="source-palette-list" aria-label="Sources">
+            @for (item of items(); track item.id; let i = $index) {
+              <li
+                class="sp-row"
+                role="option"
+                [id]="'source-option-' + i"
+                [class.active]="i === active()"
+                [attr.aria-selected]="i === active()"
+                [attr.data-kind]="item.kind"
+                (mousedown)="$event.preventDefault()"
+                (mouseenter)="active.set(i)"
+                (click)="pick(item)"
+              >
+                <div class="sp-row-main">
+                  @if (item.kind === 'passage') {
+                    <span class="sp-passage">
+                      <span class="sp-kind">Passage</span>
+                      <span class="sp-passage-title">
+                        @for (seg of segments(item.passageTitle ?? 'Passage'); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
+                      </span>
+                    </span>
+                  }
+                  <span class="sp-lead" [class.is-quote]="!!item.selectedText">
+                    @for (seg of segments(item.lead); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
                   </span>
-                </span>
-              }
-              <span class="sp-lead" [class.is-quote]="!!item.selectedText">
-                @for (seg of segments(item.lead); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
-              </span>
-              @if (item.note && i === active()) {
-                <span class="sp-note">{{ item.note }}</span>
-              }
-              <span class="sp-byline">
-                @for (seg of segments(byline(item)); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
-                @if (item.kept) {
-                  <span class="sp-kept">· kept</span>
-                }
-              </span>
-              @if (moreFor() === item.id) {
-                <span class="sp-more-actions" (click)="$event.stopPropagation()">
-                  <button type="button" class="sp-more-action" (mousedown)="$event.preventDefault()" (click)="pick(item, 'note')">Insert as note</button>
-                  <button type="button" class="sp-more-action" (mousedown)="$event.preventDefault()" (click)="pick(item, 'reference')">Insert as reference</button>
-                </span>
-              }
-            </div>
-            <button
-              appIconButton
-              class="sp-more"
-              icon="dots-three"
-              [glyphSize]="16"
-              title="Other ways to insert"
-              aria-label="Other ways to insert"
-              (mousedown)="$event.preventDefault()"
-              (click)="toggleMore(item, $event)"
-            ></button>
-          </li>
+                  <span class="sp-byline">
+                    @for (seg of segments(byline(item)); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
+                    @if (item.kept) {
+                      <span class="sp-kept">· kept</span>
+                    }
+                  </span>
+                </div>
+                <button
+                  appIconButton
+                  class="sp-more"
+                  icon="dots-three"
+                  [glyphSize]="16"
+                  title="Other ways to insert"
+                  aria-label="Other ways to insert"
+                  (mousedown)="$event.preventDefault()"
+                  (click)="toggleMore(item, $event)"
+                ></button>
+              </li>
+            }
+          </ul>
+        } @else if (loading()) {
+          <div class="sp-empty" aria-busy="true">Searching…</div>
+        } @else if ((query() ?? '').trim()) {
+          <div class="sp-empty">
+            No sources match “{{ (query() ?? '').trim() }}”.
+            <button type="button" class="sp-browse" (mousedown)="$event.preventDefault()" (click)="browseReference()">
+              Browse Reference
+            </button>
+          </div>
+        } @else {
+          <div class="sp-empty">Type a name, a title or words from a quote.</div>
         }
-      </ul>
-    } @else if (loading()) {
-      <div class="sp-empty" aria-busy="true">Searching…</div>
-    } @else if ((query() ?? '').trim()) {
-      <div class="sp-empty">
-        No sources match “{{ (query() ?? '').trim() }}”.
-        <button type="button" class="sp-browse" (mousedown)="$event.preventDefault()" (click)="browseReference()">
-          Browse Reference
-        </button>
       </div>
-    } @else {
-      <div class="sp-empty">Type a name, a title or words from a quote.</div>
-    }
+
+      <!-- The highlighted source in full, in a box of its own size that
+           scrolls by itself, so a long quotation never pushes the list. -->
+      <div class="sp-preview" data-testid="source-preview" aria-hidden="true" (mousedown)="$event.preventDefault()">
+        @if (activeItem(); as item) {
+          @for (shown of [item]; track shown.id) {
+            <div class="sp-preview-body" [class.show-actions]="moreFor() === shown.id">
+              <div class="sp-preview-text">
+                @if (shown.kind === 'passage') {
+                  <span class="sp-passage">
+                    <span class="sp-kind">Passage</span>
+                    <span class="sp-passage-title">{{ shown.passageTitle ?? 'Passage' }}</span>
+                  </span>
+                }
+                <p class="sp-preview-lead" [class.is-quote]="!!shown.selectedText">{{ shown.lead }}</p>
+                @if (shown.note) {
+                  <p class="sp-note">{{ shown.note }}</p>
+                }
+                <span class="sp-byline">{{ byline(shown) }}</span>
+              </div>
+              <span class="sp-more-actions">
+                <button type="button" class="sp-more-action" tabindex="-1" (click)="pick(shown, 'note')">Insert as note</button>
+                <button type="button" class="sp-more-action" tabindex="-1" (click)="pick(shown, 'reference')">Insert as reference</button>
+              </span>
+            </div>
+          }
+        }
+      </div>
+    </div>
 
     <div class="sp-hint" aria-hidden="true">
       <span><kbd>↵</kbd> quote</span>

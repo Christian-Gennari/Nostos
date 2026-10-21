@@ -185,4 +185,97 @@ describe('SourcePaletteComponent (issue #1039)', () => {
     component.handleKey(key('Enter'));
     expect(chosen[0].mode).toBe('note');
   });
+
+  describe('a steady palette (issue #1111)', () => {
+    const longQuote = 'It is a long quotation. '.repeat(120);
+
+    function results() {
+      return [
+        { ...hits[0], id: 'short', selectedText: 'Short.' },
+        { ...hits[0], id: 'long', selectedText: longQuote, content: 'My own note on it.' },
+        hits[1],
+      ];
+    }
+
+    it('keeps the rows as they are when the highlight moves, and reads the active one in the preview', async () => {
+      search.mockReturnValue(of(results()));
+      await typeQuery('schopenhauer');
+      const rowHtml = () =>
+        Array.from(fixture.nativeElement.querySelectorAll('.sp-row-main') as NodeListOf<HTMLElement>).map((r) => r.innerHTML);
+      const before = rowHtml();
+
+      component.handleKey(key('ArrowDown'));
+      fixture.detectChanges();
+
+      expect(rowHtml()).toEqual(before);
+      const preview = fixture.nativeElement.querySelector('[data-testid="source-preview"]') as HTMLElement;
+      expect(preview.textContent).toContain(longQuote.trim());
+      expect(preview.textContent).toContain('My own note on it.');
+      expect(fixture.nativeElement.querySelector('.sp-list .sp-note')).toBeNull();
+    });
+
+    it('offers the other insert options in the preview, and ⋯ highlights a row without inserting it', async () => {
+      search.mockReturnValue(of(results()));
+      await typeQuery('schopenhauer');
+      const more = fixture.nativeElement.querySelectorAll('.sp-more')[2] as HTMLButtonElement;
+      more.click();
+      await vi.advanceTimersByTimeAsync(0);
+      fixture.detectChanges();
+
+      expect(component.active()).toBe(2);
+      expect(chosen).toEqual([]);
+      const actions = Array.from(
+        fixture.nativeElement.querySelectorAll('[data-testid="source-preview"] .sp-more-action') as NodeListOf<HTMLButtonElement>,
+      );
+      expect(actions.map((a) => a.textContent?.trim())).toEqual(['Insert as note', 'Insert as reference']);
+      actions[1].click();
+      expect(chosen.map((c) => [c.source.id, c.mode])).toEqual([['p', 'reference']]);
+    });
+
+    it('keeps the old results on screen while a new query is answered', async () => {
+      search.mockReturnValue(of(results()));
+      await typeQuery('schopenhauer');
+      const late = new Subject<typeof hits>();
+      search.mockReturnValue(late);
+      fixture.componentRef.setInput('query', 'schopenhauer will');
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(200);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelectorAll('.sp-row').length).toBe(3);
+      expect(fixture.nativeElement.querySelector('.sp-searching')?.textContent).toContain('Searching');
+      late.next([hits[0]]);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.sp-searching')).toBeNull();
+    });
+
+    it('decides its place once per open, and again only when the caret changes line', async () => {
+      const anchor = { top: 300, bottom: 320, left: 200, right: 210 };
+      fixture.componentRef.setInput('anchor', anchor);
+      await typeQuery('schopenhauer');
+      const first = component.position();
+
+      fixture.componentRef.setInput('anchor', { ...anchor, left: 260, right: 270 });
+      search.mockReturnValue(of([]));
+      await typeQuery('schopenhauer zzz');
+      expect(component.position()).toBe(first);
+
+      fixture.componentRef.setInput('anchor', { top: 340, bottom: 360, left: 40, right: 50 });
+      fixture.detectChanges();
+      expect(component.position()).not.toBe(first);
+      expect(component.position().style['top']).toBe('366px');
+    });
+
+    it('gives the palette a fixed height while it is open', async () => {
+      fixture.componentRef.setInput('anchor', { top: 100, bottom: 120, left: 200, right: 210 });
+      await typeQuery('zzz unknown');
+      const palette = fixture.nativeElement.querySelector('[data-testid="source-palette"]') as HTMLElement;
+      const emptyHeight = palette.style.height;
+      expect(emptyHeight).toMatch(/px$/);
+
+      search.mockReturnValue(of(results()));
+      await typeQuery('schopenhauer');
+      expect(palette.style.height).toBe(emptyHeight);
+    });
+  });
 });
