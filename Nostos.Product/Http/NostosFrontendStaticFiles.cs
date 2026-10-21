@@ -28,6 +28,13 @@ public static partial class NostosFrontendStaticFiles
     public const string BinaryCMapContentType = "application/octet-stream";
 
     /// <summary>
+    /// The Studio's citation styles (<c>csl/styles/*.csl</c>, issue #1109):
+    /// unknown to the default provider, so every style but the house format
+    /// fell back to it on a served Nostos (issue #1157).
+    /// </summary>
+    public const string CitationStyleContentType = "application/vnd.citationstyles.style+xml";
+
+    /// <summary>
     /// A file whose name carries the build's content hash (<c>main-UG2TJAJM.js</c>):
     /// its bytes never change under that name, so browsers and the edge may keep
     /// it for good. Without a header the hosting edge marks every file private
@@ -57,6 +64,7 @@ public static partial class NostosFrontendStaticFiles
         contentTypes.Mappings[".ftl"] = FluentContentType;
         contentTypes.Mappings[".icc"] = IccProfileContentType;
         contentTypes.Mappings[".bcmap"] = BinaryCMapContentType;
+        contentTypes.Mappings[".csl"] = CitationStyleContentType;
         return new StaticFileOptions
         {
             ContentTypeProvider = contentTypes,

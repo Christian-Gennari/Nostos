@@ -33,6 +33,19 @@ public class NostosFrontendStaticFilesTests
         contentType.Should().Be(expected);
     }
 
+    [Fact]
+    public void ServesTheStudioCitationStyles()
+    {
+        var options = NostosFrontendStaticFiles.CreateOptions();
+
+        options.ContentTypeProvider!
+            .TryGetContentType("csl/styles/chicago-notes-bibliography.csl", out var contentType)
+            .Should().BeTrue();
+        contentType.Should().Be(NostosFrontendStaticFiles.CitationStyleContentType);
+        options.ContentTypeProvider!.TryGetContentType("csl/locales/locales-en-GB.xml", out var locale).Should().BeTrue();
+        locale.Should().Be("text/xml");
+    }
+
     [Theory]
     [InlineData("index.html", "text/html")]
     [InlineData("main-ABC123.js", "text/javascript")]
