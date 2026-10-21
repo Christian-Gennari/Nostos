@@ -20,11 +20,13 @@
    3. PAGE EDGE (1 rule) — `#viewer .page`, the fixed light surround.
    4. SIDEBAR (10 rules) — the library's own outline sidebar. NOT dead code:
       the shell's Contents button drives `sidebarVisible`, so it is reachable
-      (measured open at 297px wide) and these rules are what make the library's
-      list look like the app's own.
-   5. LIBRARY TOOLBAR (1 rule) — `#toolbarSidebar .toolbarButton`. Verified
-      necessary by falsification: disabling it at runtime made two 20x22px
-      buttons appear that `showSidebarButton=false` does not hide.
+      (measured open at 232px wide, pdf.js's --sidebar-width) and these rules
+      are what make the library's list look like the app's own.
+   5. SIDEBAR HEADER (1 rule) — `#viewsManagerHeader`. It holds the view
+      switchers (`#toolbarSidebar`) and a "current outline item" button that
+      `showSidebarButton=false` does not hide; without the rule they sit
+      half under the shell header. (Before ngx-extended-pdf-viewer 26 this was
+      `#toolbarSidebar .toolbarButton`.)
    6. FIND BAR (my own, 13 rules) — the library's search bar, scoped to
       `#pdf-viewer-wrapper`: the input (which our old `[type='text']` selector
       silently missed), the steppers, the checkbox labels, and the phone strip.
@@ -216,29 +218,32 @@
 }
 /* =========================================
    SIDEBAR CUSTOMIZATION (Match Custom TOC)
-   ========================================= */
+   =========================================
+   pdf.js 5.4 (ngx-extended-pdf-viewer 26+) rebuilt the sidebar: the old
+   `#sidebarContainer` / `#sidebarContent` / `#outlineView` became
+   `#viewsManager` / `#viewsManagerContent` / `#outlinesView`, with a header
+   row (`#viewsManagerHeader`, hidden in 5. below) above the list. */
 
-/* 1. Sidebar Container - Match Dimensions & Background */
-::ng-deep #sidebarContainer {
+/* 1. Sidebar container - the app's surface and hairline instead of pdf.js's
+   translucent white panel, which would stay light in the dark theme. */
+::ng-deep #viewsManager {
   background-color: var(--bg-surface) !important;
   border-right: 1px solid var(--border-color) !important;
-  padding: 3rem !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08) !important;
 }
 
-::ng-deep #outlineView {
+::ng-deep #outlinesView {
   width: 100% !important;
   padding: 0 !important;
   margin: 0 !important;
+  box-sizing: border-box;
 }
 
-/* 3. Content Area - Push down to account for taller header */
-::ng-deep #sidebarContent {
-  all: unset;
-  border-right: 1px solid var(--border-color) !important;
-  top: 0 !important;
-  bottom: 0 !important;
+/* 3. Content area - full-width rows, with the same first-row clearance under
+   the transient shared header as #viewerContainer. */
+::ng-deep #viewsManagerContent {
+  padding: calc(84px + env(safe-area-inset-top, 0px)) 0 0 !important;
   background-color: var(--bg-surface) !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08) !important;
 }
 
 /* 4. The TOC Items (Correct Selector: .treeItem) */
@@ -279,10 +284,12 @@
   color: var(--color-brand-accent) !important;
 }
 
-/* 5. Toolbar Icons (Outline/Thumbnail switchers) */
-::ng-deep #toolbarSidebar .toolbarButton {
+/* 5. Sidebar header - the outline/thumbnail switchers (`#toolbarSidebar`), the
+   "current outline item" button and the page-editing status. The shell's
+   Contents button is the only way in, so the header stays hidden, as the
+   switcher buttons always were. */
+::ng-deep #viewsManagerHeader {
   display: none !important;
-  height: 0 !important;
 }
 
 /* --- Page-colour inversion (issue #259) ---
@@ -325,6 +332,10 @@
 
 @media (max-width: 768px) {
   :host ::ng-deep #viewerContainer {
+    padding-top: calc(72px + env(safe-area-inset-top, 0px)) !important;
+  }
+
+  :host ::ng-deep #viewsManagerContent {
     padding-top: calc(72px + env(safe-area-inset-top, 0px)) !important;
   }
 

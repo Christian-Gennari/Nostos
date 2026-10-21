@@ -1057,6 +1057,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
+  /**
+   * The viewer's page is bound one way (`[page]`), and this is the only place
+   * that follows it: a `[(page)]` banana would assign `currentPage` before this
+   * handler runs, so a user's own page turn would never look like a move.
+   */
   onPageChange(newPage: number | undefined) {
     // The viewer's `page` model is `number | undefined` (ngx-extended-pdf-viewer 26+);
     // undefined means no document page yet, which is not a move.

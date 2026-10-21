@@ -23,6 +23,17 @@ public class NostosFrontendStaticFilesTests
     }
 
     [Theory]
+    [InlineData("assets/iccs/CGATS001Compat-v2-micro.icc", NostosFrontendStaticFiles.IccProfileContentType)]
+    [InlineData("assets/cmaps/78-EUC-H.bcmap", NostosFrontendStaticFiles.BinaryCMapContentType)]
+    public void ServesThePdfViewerColourProfileAndCMaps(string path, string expected)
+    {
+        var options = NostosFrontendStaticFiles.CreateOptions();
+
+        options.ContentTypeProvider!.TryGetContentType(path, out var contentType).Should().BeTrue();
+        contentType.Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData("index.html", "text/html")]
     [InlineData("main-ABC123.js", "text/javascript")]
     [InlineData("assets/wasm/qcms_bg.wasm", "application/wasm")]

@@ -15,6 +15,19 @@ public static partial class NostosFrontendStaticFiles
     public const string FluentContentType = "text/plain; charset=utf-8";
 
     /// <summary>
+    /// The PDF viewer's ICC colour profile (<c>assets/iccs/*.icc</c>, pdf.js's
+    /// default <c>iccUrl</c> since ngx-extended-pdf-viewer 31): without it a
+    /// CMYK PDF renders without colour management.
+    /// </summary>
+    public const string IccProfileContentType = "application/vnd.iccprofile";
+
+    /// <summary>
+    /// The PDF viewer's binary CMaps (<c>assets/cmaps/*.bcmap</c>), which
+    /// pdf.js fetches to show text in many CJK PDFs.
+    /// </summary>
+    public const string BinaryCMapContentType = "application/octet-stream";
+
+    /// <summary>
     /// A file whose name carries the build's content hash (<c>main-UG2TJAJM.js</c>):
     /// its bytes never change under that name, so browsers and the edge may keep
     /// it for good. Without a header the hosting edge marks every file private
@@ -42,6 +55,8 @@ public static partial class NostosFrontendStaticFiles
     {
         var contentTypes = new FileExtensionContentTypeProvider();
         contentTypes.Mappings[".ftl"] = FluentContentType;
+        contentTypes.Mappings[".icc"] = IccProfileContentType;
+        contentTypes.Mappings[".bcmap"] = BinaryCMapContentType;
         return new StaticFileOptions
         {
             ContentTypeProvider = contentTypes,
