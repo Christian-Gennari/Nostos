@@ -9,6 +9,8 @@ class FakeAudio extends EventTarget {
   src = '';
   preload = '';
   currentTime = 0;
+  /** The loaded file's own length; NaN until its metadata is in. */
+  duration = NaN;
   paused = true;
   ended = false;
   playbackRate = 1;
@@ -53,6 +55,14 @@ class FakeAudio extends EventTarget {
 
   removeAttribute(name: string): void {
     if (name === 'src') this.src = '';
+  }
+
+  /**
+   * The stream breaks mid-track: the next read is refused (an expired storage
+   * link) or the connection drops. The element keeps its place.
+   */
+  failStream(): void {
+    this.dispatchEvent(new Event('error'));
   }
 
   /** The current track plays to its end. */
@@ -254,6 +264,104 @@ describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
 
     expect(events).toEqual(['load', 'play', 'loaderror', 'pause']);
     expect(player.playing()).toBe(false);
+  });
+
+  it('asks again for a stream that died mid-track, on the same element and at the same place', () => {
+    const { audio, events, player } = setup();
+    audio.finishLoading();
+    player.seek(150);
+    audio.finishLoading();
+    player.play();
+    audio.currentTime = 73.5; // played on in track 2
+
+    audio.failStream();
+
+    // Requested anew at once, from inside the error event: no timer, no new
+    // element, and nothing for the reader to report.
+    expect(audio.loads).toEqual(['/tracks/1', '/tracks/2', '/tracks/2']);
+    expect(player.seek()).toBe(173.5);
+    expect(player.playing()).toBe(true);
+    expect(events).toEqual(['load', 'play']);
+
+    audio.finishLoading();
+    expect(audio.currentTime).toBe(73.5);
+    expect(audio.playCalls).toBe(2);
+    expect(events).toEqual(['load', 'play']);
+
+    // A later break, after the stream was back, is picked up again.
+    audio.currentTime = 80;
+    audio.failStream();
+    audio.finishLoading();
+    expect(audio.currentTime).toBe(80);
+    expect(events).toEqual(['load', 'play']);
+  });
+
+  it('does not start a paused book when its stream is asked for again', () => {
+    const { audio, player } = setup();
+    audio.finishLoading();
+    audio.currentTime = 30;
+
+    audio.failStream();
+    audio.finishLoading();
+
+    expect(audio.currentTime).toBe(30);
+    expect(audio.playCalls).toBe(0);
+    expect(player.playing()).toBe(false);
+  });
+
+  it('reports a stream that fails again when asked for anew', () => {
+    const { audio, events, player } = setup();
+    audio.finishLoading();
+    player.play();
+    audio.currentTime = 12;
+
+    audio.failNextLoad = true;
+    audio.failStream();
+    audio.finishLoading();
+
+    expect(audio.loads).toEqual(['/tracks/1', '/tracks/1']);
+    expect(events).toEqual(['load', 'play', 'loaderror', 'pause']);
+    expect(player.playing()).toBe(false);
+  });
+
+  it('reports a spot that fails every time instead of asking again forever', () => {
+    const { audio, events, player } = setup();
+    audio.finishLoading();
+    player.play();
+    audio.currentTime = 40;
+
+    audio.failStream();
+    audio.finishLoading();
+    expect(events).toEqual(['load', 'play']);
+
+    audio.currentTime = 40.2; // fails again before getting anywhere
+    audio.failStream();
+
+    expect(audio.loads).toEqual(['/tracks/1', '/tracks/1']);
+    expect(events).toEqual(['load', 'play', 'loaderror', 'pause']);
+    expect(player.playing()).toBe(false);
+  });
+
+  it('reports a book that never loaded instead of asking again', () => {
+    const { audio, events } = setup();
+    audio.failStream();
+
+    expect(audio.loads).toEqual(['/tracks/1']);
+    expect(events).toEqual(['loaderror']);
+  });
+
+  it("takes a single file's length from the file", () => {
+    const { audio, events, player } = setup([0]);
+    expect(player.duration()).toBe(0);
+
+    audio.duration = 3725.4;
+    audio.finishLoading();
+
+    expect(events).toEqual(['load']);
+    expect(player.duration()).toBe(3725.4);
+    player.seek(3000);
+    expect(audio.currentTime).toBe(3000);
+    expect(player.seek()).toBe(3000);
   });
 
   it('goes quiet after unload', () => {

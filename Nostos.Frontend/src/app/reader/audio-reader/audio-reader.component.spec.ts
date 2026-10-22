@@ -4,16 +4,18 @@ import { of } from 'rxjs';
 import { AudioReader, PLAYING_SAVE_INTERVAL_MS, parseTimeString } from './audio-reader.component';
 import { BooksService } from '../../core/services/books.service';
 import { Book } from '../../core/dtos/book.dtos';
+import { AUDIO_PLAYER_FACTORY, PlaylistCallbacks, PlaylistTrack } from './track-playlist-player';
 
-// Mock Howl so specs can drive the Howl lifecycle (onload / onloaderror)
-// without real media loading.
-const howlerState = vi.hoisted(() => ({ instances: [] as any[] }));
+// A fake player so specs can drive the player lifecycle (onload / onloaderror)
+// without real media loading. `config` holds the callbacks the reader passed.
+const playerState = { instances: [] as any[] };
 
-vi.mock('howler', () => ({
-  // Regular function (not an arrow) so `new Howl(...)` works.
-  Howl: vi.fn(function (config: any) {
+const FAKE_PLAYER = {
+  provide: AUDIO_PLAYER_FACTORY,
+  useValue: (tracks: PlaylistTrack[], config: PlaylistCallbacks) => {
     const instance = {
       config,
+      tracks,
       unload: vi.fn(),
       duration: vi.fn(() => 7200),
       seek: vi.fn(() => 0),
@@ -22,17 +24,14 @@ vi.mock('howler', () => ({
       pause: vi.fn(),
       rate: vi.fn(),
     };
-    howlerState.instances.push(instance);
+    playerState.instances.push(instance);
     return instance;
-  }),
-}));
+  },
+};
 
 function mockPlayer(component: AudioReader): any {
-  // Read what the component actually received from `new Howl(...)` rather than
-  // relying on this file's private instances[] side channel. Another reader
-  // spec also mocks the same module, and Angular may bundle the specs together.
-  // The player reference is the production seam and remains correct whichever
-  // compatible mock factory the bundle resolves.
+  // Read what the component actually received from the factory; the player
+  // reference is the production seam.
   expect(component.player).toBeDefined();
   return component.player as any;
 }
@@ -102,6 +101,7 @@ describe('AudioReader jump-to-timestamp (issue #6)', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AudioReader],
+      providers: [FAKE_PLAYER],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AudioReader);
@@ -220,13 +220,13 @@ describe('AudioReader single-fetch + restore + loading state (issue #7)', () => 
   };
 
   beforeEach(async () => {
-    howlerState.instances.length = 0;
+    playerState.instances.length = 0;
     booksServiceMock.get.mockReset();
     booksServiceMock.updateProgress.mockReset();
 
     await TestBed.configureTestingModule({
       imports: [AudioReader],
-      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }, FAKE_PLAYER],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AudioReader);
@@ -307,18 +307,25 @@ describe('AudioReader single-fetch + restore + loading state (issue #7)', () => 
     expect(booksServiceMock.get).not.toHaveBeenCalled();
   });
 
-  it('shows the loading state while Howl initializes and clears it on load', () => {
+  it('plays a single-file book as a playlist of one, its length read from the file (issue #1161)', () => {
+    const book = makeBook();
+    render(book);
+
+    expect(mockPlayer(component).tracks).toEqual([{ url: `/api/books/${book.id}/file`, duration: 0 }]);
+  });
+
+  it('shows the loading state while the player initializes and clears it on load', () => {
     render(makeBook());
 
-    const howl = mockPlayer(component);
-    expect(howl).toBeDefined();
+    const fakePlayer = mockPlayer(component);
+    expect(fakePlayer).toBeDefined();
     expect(component.loading()).toBe(true);
     const loading = fixture.nativeElement.querySelector('[data-testid="audio-loading"]') as HTMLElement;
     expect(loading.textContent).toContain('Loading audio');
     expect(loading.querySelector('nostos-loading-indicator')).not.toBeNull();
     expect(loading.querySelector('.audio-loading-icon')).toBeNull();
 
-    howl.config.onload();
+    fakePlayer.config.onload();
     fixture.detectChanges();
 
     expect(component.loading()).toBe(false);
@@ -329,11 +336,11 @@ describe('AudioReader single-fetch + restore + loading state (issue #7)', () => 
   it('clears the loading state and surfaces an error on load failure', () => {
     render(makeBook());
 
-    const howl = mockPlayer(component);
-    expect(howl).toBeDefined();
+    const fakePlayer = mockPlayer(component);
+    expect(fakePlayer).toBeDefined();
     expect(component.loading()).toBe(true);
 
-    howl.config.onloaderror();
+    fakePlayer.config.onloaderror();
     fixture.detectChanges();
 
     expect(component.loading()).toBe(false);
@@ -351,14 +358,14 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
   };
 
   beforeEach(async () => {
-    howlerState.instances.length = 0;
+    playerState.instances.length = 0;
     booksServiceMock.get.mockReset();
     booksServiceMock.updateProgress.mockReset();
     localStorage.clear();
 
     await TestBed.configureTestingModule({
       imports: [AudioReader],
-      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }, FAKE_PLAYER],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AudioReader);
@@ -499,13 +506,13 @@ describe('AudioReader sleep timer (issue #47)', () => {
   };
 
   beforeEach(async () => {
-    howlerState.instances.length = 0;
+    playerState.instances.length = 0;
     booksServiceMock.get.mockReset();
     booksServiceMock.updateProgress.mockReset();
 
     await TestBed.configureTestingModule({
       imports: [AudioReader],
-      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }, FAKE_PLAYER],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AudioReader);
@@ -545,13 +552,13 @@ describe('AudioReader sleep timer (issue #47)', () => {
   });
 
   it('pauses playback and clears the armed state when the timer expires', () => {
-    const howl = mockPlayer(component);
-    expect(howl).toBeDefined();
+    const fakePlayer = mockPlayer(component);
+    expect(fakePlayer).toBeDefined();
 
     component.selectSleepTimer(15);
     vi.advanceTimersByTime(15 * 60 * 1000);
 
-    expect(howl.pause).toHaveBeenCalled();
+    expect(fakePlayer.pause).toHaveBeenCalled();
     expect(component.sleepTimerMinutes()).toBeNull();
     expect(component.sleepDeadline()).toBeNull();
     expect(component.sleepRemainingSeconds()).toBe(0);
@@ -580,8 +587,8 @@ describe('AudioReader sleep timer (issue #47)', () => {
   });
 
   it("disarms immediately when 'Off' is selected", () => {
-    const howl = mockPlayer(component);
-    expect(howl).toBeDefined();
+    const fakePlayer = mockPlayer(component);
+    expect(fakePlayer).toBeDefined();
 
     component.selectSleepTimer(30);
     vi.advanceTimersByTime(2 * 60 * 1000);
@@ -593,7 +600,7 @@ describe('AudioReader sleep timer (issue #47)', () => {
     expect(component.sleepDeadline()).toBeNull();
     expect(component.sleepRemainingSeconds()).toBe(0);
     // Off just disarms — it must not pause playback.
-    expect(howl.pause).not.toHaveBeenCalled();
+    expect(fakePlayer.pause).not.toHaveBeenCalled();
 
     // No countdown continues after disarming.
     vi.advanceTimersByTime(5 * 60 * 1000);
@@ -616,12 +623,12 @@ describe('AudioReader sleep timer (issue #47)', () => {
   });
 
   it('keeps counting down wall-clock time while playback is paused (wall-clock decision)', () => {
-    const howl = mockPlayer(component);
-    expect(howl).toBeDefined();
+    const fakePlayer = mockPlayer(component);
+    expect(fakePlayer).toBeDefined();
 
     component.selectSleepTimer(30);
-    // Simulate the user pausing playback (Howl fires onpause).
-    howl.config.onpause();
+    // Simulate the user pausing playback (the player fires onpause).
+    fakePlayer.config.onpause();
     expect(component.isPlaying()).toBe(false);
 
     vi.advanceTimersByTime(5 * 60 * 1000);
@@ -679,8 +686,8 @@ describe('AudioReader sleep timer (issue #47)', () => {
       }),
     );
     fixture.detectChanges();
-    const howl = mockPlayer(component);
-    howl.config.onload();
+    const fakePlayer = mockPlayer(component);
+    fakePlayer.config.onload();
 
     component.currentTime.set(610);
     component.selectSleepAtChapterEnd();
@@ -691,10 +698,10 @@ describe('AudioReader sleep timer (issue #47)', () => {
     // The progress watch is restarted here so it runs on the fake clock — the
     // component started it during init, before this suite replaced the timers.
     component.startProgressTracking();
-    howl.seek = vi.fn(() => 1200);
+    fakePlayer.seek = vi.fn(() => 1200);
     vi.advanceTimersByTime(1000);
 
-    expect(howl.pause).toHaveBeenCalled();
+    expect(fakePlayer.pause).toHaveBeenCalled();
     expect(component.sleepAtChapterEnd()).toBe(false);
     expect(component.sleepStatusMessage()).toBe('Chapter finished. Playback paused.');
   });
@@ -712,8 +719,8 @@ describe('AudioReader sleep timer (issue #47)', () => {
       }),
     );
     fixture.detectChanges();
-    const howl = mockPlayer(component);
-    howl.config.onload();
+    const fakePlayer = mockPlayer(component);
+    fakePlayer.config.onload();
 
     component.currentTime.set(610);
     component.selectSleepAtChapterEnd();
@@ -721,13 +728,13 @@ describe('AudioReader sleep timer (issue #47)', () => {
     // A jump to 1300 skips the 1200 boundary. Seeking is user intent, so it must
     // NOT fire — the armed target moves to the next chapter start instead.
     component.goToTime(1300);
-    expect(howl.pause).not.toHaveBeenCalled();
+    expect(fakePlayer.pause).not.toHaveBeenCalled();
     expect(component.sleepAtChapterEnd()).toBe(true);
 
     component.startProgressTracking();
-    howl.seek = vi.fn(() => 1800);
+    fakePlayer.seek = vi.fn(() => 1800);
     vi.advanceTimersByTime(1000);
-    expect(howl.pause).toHaveBeenCalled();
+    expect(fakePlayer.pause).toHaveBeenCalled();
   });
 
   it('stays armed but inert past the last chapter start', () => {
@@ -736,17 +743,17 @@ describe('AudioReader sleep timer (issue #47)', () => {
       makeBook({ chapters: [{ title: 'One', startTime: 0 }] }),
     );
     fixture.detectChanges();
-    const howl = mockPlayer(component);
-    howl.config.onload();
+    const fakePlayer = mockPlayer(component);
+    fakePlayer.config.onload();
 
     component.currentTime.set(100);
     component.selectSleepAtChapterEnd();
 
     // No chapter follows, so the target is the end of the media; nothing fires
     // mid-chapter and the state stays visible.
-    howl.seek = vi.fn(() => 200);
+    fakePlayer.seek = vi.fn(() => 200);
     vi.advanceTimersByTime(1000);
-    expect(howl.pause).not.toHaveBeenCalled();
+    expect(fakePlayer.pause).not.toHaveBeenCalled();
     expect(component.sleepLabel()).toBe('Chapter end');
   });
 
@@ -827,7 +834,7 @@ describe('AudioReader with a multi-track audiobook (issue #835)', () => {
 
   beforeEach(async () => {
     StubAudio.instances = [];
-    howlerState.instances.length = 0;
+    playerState.instances.length = 0;
     vi.stubGlobal('Audio', StubAudio);
     await TestBed.configureTestingModule({
       imports: [AudioReader],
@@ -866,7 +873,7 @@ describe('AudioReader with a multi-track audiobook (issue #835)', () => {
 
     expect(StubAudio.instances.length).toBe(1);
     expect(StubAudio.instances[0].src).toBe('/api/books/multi-track-book/tracks/1');
-    expect(howlerState.instances.length).toBe(0);
+    expect(playerState.instances.length).toBe(0);
   });
 
   it('shows one continuous book and resumes at the saved position in the right track', () => {
@@ -924,7 +931,7 @@ describe('AudioReader current chapter (issue #904)', () => {
   ];
 
   beforeEach(async () => {
-    howlerState.instances.length = 0;
+    playerState.instances.length = 0;
     written = [];
     vi.stubGlobal(
       'MediaMetadata',
@@ -948,6 +955,7 @@ describe('AudioReader current chapter (issue #904)', () => {
       imports: [AudioReader],
       providers: [
         { provide: BooksService, useValue: { updateProgress: vi.fn(() => of(null)) } },
+        FAKE_PLAYER,
       ],
     }).compileComponents();
 
@@ -1090,7 +1098,7 @@ describe('AudioReader current chapter (issue #904)', () => {
 describe('AudioReader keeps its place when the player loses it', () => {
   let fixture: ComponentFixture<AudioReader>;
   let component: AudioReader;
-  let howl: any;
+  let fakePlayer: any;
   let visibility: DocumentVisibilityState;
   const booksServiceMock = { updateProgress: vi.fn(() => of(null)) };
 
@@ -1102,7 +1110,7 @@ describe('AudioReader keeps its place when the player loses it', () => {
 
     await TestBed.configureTestingModule({
       imports: [AudioReader],
-      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }, FAKE_PLAYER],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AudioReader);
@@ -1111,15 +1119,15 @@ describe('AudioReader keeps its place when the player loses it', () => {
     // 43 minutes into a two-hour book.
     fixture.componentRef.setInput('book', makeBook({ lastLocation: '2580' }));
     fixture.detectChanges();
-    howl = mockPlayer(component);
+    fakePlayer = mockPlayer(component);
     let position = 0;
-    howl.seek = vi.fn((seconds?: number) => {
+    fakePlayer.seek = vi.fn((seconds?: number) => {
       if (seconds === undefined) return position;
       position = seconds;
-      return howl;
+      return fakePlayer;
     });
-    howl.config.onload();
-    howl.resetPosition = () => (position = 0);
+    fakePlayer.config.onload();
+    fakePlayer.resetPosition = () => (position = 0);
     booksServiceMock.updateProgress.mockClear();
   });
 
@@ -1137,7 +1145,7 @@ describe('AudioReader keeps its place when the player loses it', () => {
     visibility = 'hidden';
     document.dispatchEvent(new Event('visibilitychange'));
     // The phone drops the paused media element while the tab is away.
-    howl.resetPosition();
+    fakePlayer.resetPosition();
     visibility = 'visible';
     document.dispatchEvent(new Event('visibilitychange'));
   }
@@ -1147,23 +1155,23 @@ describe('AudioReader keeps its place when the player loses it', () => {
     vi.advanceTimersByTime(5000);
 
     expect(component.currentTime()).toBe(2580);
-    expect(howl.seek()).toBe(2580);
+    expect(fakePlayer.seek()).toBe(2580);
     expect(savedLocations()).not.toContain('0');
     expect(savedLocations().every((location) => location === '2580')).toBe(true);
   });
 
   it('play from the lock screen after a reset resumes from the place, not the start', () => {
-    howl.resetPosition();
+    fakePlayer.resetPosition();
     component.togglePlay();
 
-    expect(howl.seek).toHaveBeenCalledWith(2580);
-    expect(howl.play).toHaveBeenCalled();
-    expect(howl.seek()).toBe(2580);
+    expect(fakePlayer.seek).toHaveBeenCalledWith(2580);
+    expect(fakePlayer.play).toHaveBeenCalled();
+    expect(fakePlayer.seek()).toBe(2580);
   });
 
   it('a reset noticed while playing puts the player back', () => {
-    howl.config.onplay();
-    howl.resetPosition();
+    fakePlayer.config.onplay();
+    fakePlayer.resetPosition();
     vi.advanceTimersByTime(5000);
 
     expect(component.currentTime()).toBe(2580);
@@ -1171,7 +1179,7 @@ describe('AudioReader keeps its place when the player loses it', () => {
   });
 
   it('saves a playing position every ten seconds, not every tick', () => {
-    howl.config.onplay();
+    fakePlayer.config.onplay();
     vi.advanceTimersByTime(30_000);
 
     expect(booksServiceMock.updateProgress).toHaveBeenCalledTimes(30_000 / PLAYING_SAVE_INTERVAL_MS);
@@ -1188,10 +1196,10 @@ describe('AudioReader keeps its place when the player loses it', () => {
 
   it('a finished book plays again from the start', () => {
     component.goToTime(7200);
-    howl.resetPosition();
+    fakePlayer.resetPosition();
     component.togglePlay();
 
-    expect(howl.seek()).toBe(0);
+    expect(fakePlayer.seek()).toBe(0);
   });
 });
 
@@ -1201,26 +1209,26 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   let online: boolean;
   const booksServiceMock = { updateProgress: vi.fn(() => of(null)) };
 
-  /** Gives the current player a working position, as a loaded Howl has. */
-  function withPosition(howl: any, start = 0): any {
+  /** Gives the current player a working position, as a loaded player has. */
+  function withPosition(fakePlayer: any, start = 0): any {
     let position = start;
-    howl.seek = vi.fn((seconds?: number) => {
+    fakePlayer.seek = vi.fn((seconds?: number) => {
       if (seconds === undefined) return position;
       position = seconds;
-      return howl;
+      return fakePlayer;
     });
-    return howl;
+    return fakePlayer;
   }
 
   /** Loads the book and starts playback 43 minutes in. */
   function startPlaying(): any {
-    const howl = withPosition(mockPlayer(component));
-    howl.config.onload();
+    const fakePlayer = withPosition(mockPlayer(component));
+    fakePlayer.config.onload();
     component.goToTime(2580);
-    howl.config.onplay();
+    fakePlayer.config.onplay();
     fixture.detectChanges();
     expect(component.isPlaying()).toBe(true);
-    return howl;
+    return fakePlayer;
   }
 
   beforeEach(async () => {
@@ -1231,7 +1239,7 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
 
     await TestBed.configureTestingModule({
       imports: [AudioReader],
-      providers: [{ provide: BooksService, useValue: booksServiceMock }],
+      providers: [{ provide: BooksService, useValue: booksServiceMock }, FAKE_PLAYER],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AudioReader);
@@ -1248,9 +1256,9 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   });
 
   it('shows play, not pause, and "Reconnecting…" when the stream dies mid-book', () => {
-    const howl = startPlaying();
+    const fakePlayer = startPlaying();
 
-    howl.config.onloaderror();
+    fakePlayer.config.onloaderror();
     fixture.detectChanges();
 
     expect(component.isPlaying()).toBe(false);
@@ -1262,13 +1270,13 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   });
 
   it('reloads after a wait and resumes playing at the same place', () => {
-    const howl = startPlaying();
-    howl.config.onloaderror();
+    const fakePlayer = startPlaying();
+    fakePlayer.config.onloaderror();
 
     vi.advanceTimersByTime(AudioReader.RELOAD_DELAYS_MS[0]);
     const reloaded = withPosition(mockPlayer(component));
-    expect(reloaded).not.toBe(howl);
-    expect(howl.unload).toHaveBeenCalled();
+    expect(reloaded).not.toBe(fakePlayer);
+    expect(fakePlayer.unload).toHaveBeenCalled();
 
     reloaded.config.onload();
     fixture.detectChanges();
@@ -1281,11 +1289,11 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   });
 
   it('stays paused after the reload when the drop happened while paused', () => {
-    const howl = withPosition(mockPlayer(component));
-    howl.config.onload();
+    const fakePlayer = withPosition(mockPlayer(component));
+    fakePlayer.config.onload();
     component.goToTime(2580);
 
-    howl.config.onloaderror();
+    fakePlayer.config.onloaderror();
     vi.advanceTimersByTime(AudioReader.RELOAD_DELAYS_MS[0]);
     const reloaded = withPosition(mockPlayer(component));
     reloaded.config.onload();
@@ -1295,18 +1303,18 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   });
 
   it('waits for the connection while offline, then reloads at once when it is back', () => {
-    const howl = startPlaying();
+    const fakePlayer = startPlaying();
     online = false;
-    howl.config.onloaderror();
+    fakePlayer.config.onloaderror();
 
     vi.advanceTimersByTime(60_000);
-    expect(mockPlayer(component)).toBe(howl);
+    expect(mockPlayer(component)).toBe(fakePlayer);
     expect(component.reconnecting()).toBe(true);
 
     online = true;
     window.dispatchEvent(new Event('online'));
     const reloaded = withPosition(mockPlayer(component));
-    expect(reloaded).not.toBe(howl);
+    expect(reloaded).not.toBe(fakePlayer);
 
     reloaded.config.onload();
     expect(reloaded.seek()).toBe(2580);
@@ -1314,12 +1322,12 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   });
 
   it('shows the error with a Retry action once the reloads run out', () => {
-    let howl = startPlaying();
-    howl.config.onloaderror();
+    let fakePlayer = startPlaying();
+    fakePlayer.config.onloaderror();
     for (const delay of AudioReader.RELOAD_DELAYS_MS) {
       vi.advanceTimersByTime(delay);
-      howl = mockPlayer(component);
-      howl.config.onloaderror();
+      fakePlayer = mockPlayer(component);
+      fakePlayer.config.onloaderror();
     }
     fixture.detectChanges();
 
@@ -1331,7 +1339,7 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
 
     retry.click();
     const reloaded = withPosition(mockPlayer(component));
-    expect(reloaded).not.toBe(howl);
+    expect(reloaded).not.toBe(fakePlayer);
     reloaded.config.onload();
 
     // Still at the place the listener was, and still meant to be playing.
@@ -1340,36 +1348,36 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
   });
 
   it('pressing play while reconnecting reloads now instead of waiting', () => {
-    const howl = withPosition(mockPlayer(component));
-    howl.config.onload();
-    howl.config.onloaderror();
+    const fakePlayer = withPosition(mockPlayer(component));
+    fakePlayer.config.onload();
+    fakePlayer.config.onloaderror();
 
     component.togglePlay();
     const reloaded = withPosition(mockPlayer(component));
-    expect(reloaded).not.toBe(howl);
+    expect(reloaded).not.toBe(fakePlayer);
     reloaded.config.onload();
 
     expect(reloaded.play).toHaveBeenCalled();
   });
 
   it('shows the error at once when a book that never loaded fails while online', () => {
-    const howl = mockPlayer(component);
-    howl.config.onloaderror();
+    const fakePlayer = mockPlayer(component);
+    fakePlayer.config.onloaderror();
     vi.advanceTimersByTime(60_000);
 
-    expect(mockPlayer(component)).toBe(howl);
+    expect(mockPlayer(component)).toBe(fakePlayer);
     expect(component.reconnecting()).toBe(false);
     expect(component.loadError()).toBe('Unable to load audio.');
   });
 
   it('stops trying once the reader is closed', () => {
-    const howl = startPlaying();
-    howl.config.onloaderror();
+    const fakePlayer = startPlaying();
+    fakePlayer.config.onloaderror();
     component.ngOnDestroy();
 
     vi.advanceTimersByTime(60_000);
     window.dispatchEvent(new Event('online'));
 
-    expect(mockPlayer(component)).toBe(howl);
+    expect(mockPlayer(component)).toBe(fakePlayer);
   });
 });

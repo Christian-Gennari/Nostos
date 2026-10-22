@@ -26,6 +26,11 @@ import {
   HighlightColour,
 } from './highlight-colours';
 import { AudioReader } from './audio-reader/audio-reader.component';
+import {
+  AUDIO_PLAYER_FACTORY,
+  PlaylistCallbacks,
+  PlaylistTrack,
+} from './audio-reader/track-playlist-player';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
@@ -43,24 +48,20 @@ import { AssistantService } from '../ui/assistant/assistant.service';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
 
 // The AudioReader is kept real so this spec guards the reader page's total
-// GET /api/books/{id} count; Howl is mocked to avoid real media loading.
-vi.mock('howler', () => ({
-  // Keep the same observable mock shape as audio-reader.component.spec.ts.
-  // Angular's unit-test builder can bundle these specs together, so either
-  // module mock must be safe for the real AudioReader lifecycle tests.
-  Howl: vi.fn(function (config: any) {
-    return {
-      config,
-      unload: vi.fn(),
-      seek: vi.fn(() => 0),
-      playing: vi.fn(() => false),
-      duration: vi.fn(() => 7200),
-      play: vi.fn(),
-      pause: vi.fn(),
-      rate: vi.fn(),
-    };
+// GET /api/books/{id} count; its player is faked to avoid real media loading.
+const FAKE_PLAYER = {
+  provide: AUDIO_PLAYER_FACTORY,
+  useValue: (_tracks: PlaylistTrack[], config: PlaylistCallbacks) => ({
+    config,
+    unload: vi.fn(),
+    seek: vi.fn(() => 0),
+    playing: vi.fn(() => false),
+    duration: vi.fn(() => 7200),
+    play: vi.fn(),
+    pause: vi.fn(),
+    rate: vi.fn(),
   }),
-}));
+};
 
 // Stand-ins for the other reader children (epub.js / pdf.js are heavy and
 // irrelevant to the audiobook single-fetch regression). They declare the exact
@@ -276,6 +277,7 @@ async function configureReaderShell(
   await TestBed.configureTestingModule({
     imports: [ReaderShell],
     providers: [
+      FAKE_PLAYER,
       provideRouter([]),
       {
         provide: ActivatedRoute,
