@@ -154,7 +154,7 @@ Or use the included Compose file: `docker compose up -d`. Then open **http://loc
 
 Everything Nostos keeps lives in the `/data` volume: the database, your books, local backups and the key ring in `/data/keys` that protects AI keys saved in Settings. Back up the whole volume, and keep it when you replace the container.
 
-- **Update:** `docker compose pull && docker compose up -d`. `latest` is published only after the full CI passes on `main`. To pin a build, set `NOSTOS_IMAGE_TAG=selfhosted-sha-<commit>`. Older `sha-*` tags are not SelfHosted builds.
+- **Update:** `docker compose pull && docker compose up -d`. `latest` is published only after the full CI passes on `main` and that exact image has passed its start-up and persistence check; it never moves back to an older revision. To pin a build, set `NOSTOS_IMAGE_TAG=selfhosted-sha-<commit>`. Older `sha-*` tags are not SelfHosted builds.
 - **Books already on your server:** mount the folder at `/external/media` (read-only), then open **Settings → This server → External media**. See the [External media guide](docs/external-media.md).
 - **Coming from an older image?** Older images kept the key ring inside the container. Copy it into `/data/keys` before you replace the container, or re-enter your AI keys afterwards.
 
