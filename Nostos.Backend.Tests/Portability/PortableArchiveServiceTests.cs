@@ -282,6 +282,43 @@ public sealed class PortableArchiveServiceTests
     }
 
     [Fact]
+    public async Task Writing_citation_index_is_not_exported_and_import_rebuilds_it_from_content()
+    {
+        // Issue #1162: the notes a writing cites are derived from its content.
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var ids = await PortableArchiveTestSupport.PopulateRepresentativeAsync(
+            source.Db,
+            source.Storage);
+        var writing = await source.Db.Writings.SingleAsync(x => x.Id == ids.WritingDocumentId);
+        writing.Content += $"\n\n[(Author, 2020)](nostos:cite/{ids.EpubBookId}?as=quote&src={ids.NoteId})" +
+            $" [(Elsewhere)](nostos:cite/{ids.EpubBookId}?src={Guid.NewGuid()})";
+        await source.Db.SaveChangesAsync();
+        await Nostos.Backend.Services.Writings.WritingCitationIndex.SyncAsync(
+            source.Db, writing.Id, writing.Content);
+        (await source.Db.WritingCitations.CountAsync()).Should().Be(1);
+
+        using var archive = new MemoryStream();
+        var exported = await source.Portability().ExportAsync(archive);
+
+        var entries = await ReadEntriesAsync(archive);
+        var data = Encoding.UTF8.GetString(entries.Single(x => x.Name == "data/library.json").Bytes);
+        data.Should().NotContainEquivalentOf("writingCitation", "the index is derived and never travels");
+        data.Should().Contain("nostos:cite/", "the content that derives it does");
+
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        archive.Position = 0;
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.Counts.Should().Be(exported.Counts);
+        destination.Db.ChangeTracker.Clear();
+        var rows = await destination.Db.WritingCitations.AsNoTracking().ToListAsync();
+        rows.Should().ContainSingle();
+        rows[0].WritingId.Should().Be(ids.WritingDocumentId);
+        rows[0].NoteId.Should().Be(ids.NoteId, "ids are kept on import, so src still names the note");
+    }
+
+    [Fact]
     public async Task Export_excludes_secrets_provider_paths_and_generated_caches()
     {
         await using var source = await LocalPortableTestLibrary.CreateAsync();

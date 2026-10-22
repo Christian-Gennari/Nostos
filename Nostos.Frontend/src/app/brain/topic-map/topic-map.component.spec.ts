@@ -782,6 +782,19 @@ describe('TopicMapComponent', () => {
     fixture.detectChanges();
   });
 
+  it('never shows writings as nodes (issue #1162)', () => {
+    // A writing reaches a topic only through the notes it cites; the map is
+    // topics and their shared notes, and it never asks about writings.
+    setTopics(topics);
+    flushGraph();
+
+    expect(http.match((req) => /writing|cite/i.test(req.urlWithParams))).toHaveLength(0);
+    expect(component.accessibleNodes().map((node) => node.id).sort()).toEqual(['alpha', 'beta', 'gamma']);
+    const rendered = [...fixture.nativeElement.querySelectorAll('.map-accessible-list button')]
+      .map((button) => (button as HTMLElement).textContent ?? '');
+    expect(rendered.some((text) => /writing|essay/i.test(text))).toBe(false);
+  });
+
   /* ── Regression guards for the reported graph bugs ──
    *
    * Each of these fails against the behaviour that shipped, so they pin the

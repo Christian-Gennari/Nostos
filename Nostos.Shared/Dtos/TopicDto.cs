@@ -66,3 +66,24 @@ public record TopicLinkRequestDto(IReadOnlyList<string> Topics, IReadOnlyList<Gu
 
 /// <summary>The notes a link or unlink changed, and every listed note as it now is.</summary>
 public record TopicLinkResultDto(IReadOnlyList<Guid> ChangedNoteIds, IReadOnlyList<NoteSearchHitDto> Notes);
+
+/// <summary>
+/// Where a topic is used in writing (issue #1162), worked out at read time:
+/// writings that cite a note carrying the topic. Topics are never stored on
+/// a writing. <paramref name="Writings"/> holds the newest first, at most the
+/// requested number; <paramref name="Total"/> counts them all.
+/// <paramref name="NoteCitations"/> says, for each of the topic's notes that
+/// any writing cites, how many writings cite it.
+/// </summary>
+public record TopicWritingUsageDto(
+    int Total,
+    List<TopicWritingDto> Writings,
+    List<NoteCitationCountDto> NoteCitations);
+
+public record TopicWritingDto(Guid Id, string Name, DateTime UpdatedAt);
+
+/// <summary>
+/// How many writings cite one of the topic's notes, and which, newest edited
+/// first, so the note's "Cited in N writings" can list them.
+/// </summary>
+public record NoteCitationCountDto(Guid NoteId, int Writings, List<Guid>? WritingIds = null);

@@ -29,6 +29,26 @@ public static class NotesEndpoints
             }
         );
 
+        // GET several notes by id, with their topics (issue #1162): the Studio
+        // shows the topics of the sources a writing cites, read from the
+        // editor's current document. `ids` is comma-separated; ids that are
+        // not GUIDs, or name no note in this library, are left out.
+        group.MapGet(
+            "/notes/by-ids",
+            async (string? ids, INoteService notes, CancellationToken ct) =>
+            {
+                var parsed = (ids ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(value => Guid.TryParse(value, out var id) ? id : Guid.Empty)
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .ToList();
+                if (parsed.Count > NoteService.MaxNotesByIds)
+                    return Results.BadRequest(new { error = $"At most {NoteService.MaxNotesByIds} ids." });
+                return Results.Ok(await notes.GetManyAsync(parsed, ct));
+            }
+        );
+
         // GET a passage in full (issue #1014). The note lists carry only its
         // opening, so the passage viewer asks for the rest when it opens.
         group.MapGet(

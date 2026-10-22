@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, input, output, Input } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 import { StudioPreferencesService } from './page-settings/studio-preferences.service';
 import { CitationService } from './citations/citation.service';
@@ -125,7 +125,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
-        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
       ],
     }).compileComponents();
 
@@ -895,7 +895,7 @@ describe('WritingStudio typewriter mode', () => {
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
-        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
       ],
     }).compileComponents();
 
@@ -1006,7 +1006,7 @@ describe('WritingStudio delete (no window.confirm)', () => {
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
-        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
       ],
     }).compileComponents();
 
@@ -1251,7 +1251,7 @@ describe('WritingStudio kept sources (#491)', () => {
             ),
           },
         },
-        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
       ],
     }).compileComponents();
 
@@ -2499,7 +2499,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
         } },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
-        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
       ],
     }).compileComponents();
 
@@ -2718,7 +2718,7 @@ describe('WritingStudio export menu (issue #1164)', () => {
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), show: vi.fn() } },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
-        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
       ],
     }).compileComponents();
 
@@ -2777,5 +2777,208 @@ describe('WritingStudio export menu (issue #1164)', () => {
   it('has nothing to export on a blank page', () => {
     component.activeItem.set(null);
     expect(component.exportBlockedReason()).toBe('Nothing to export yet');
+  });
+});
+
+describe('WritingStudio: what the writing touches (issue #1162)', () => {
+  let fixture: ComponentFixture<WritingStudio>;
+  let component: WritingStudio;
+  let getMany: ReturnType<typeof vi.fn>;
+  const router = { navigate: vi.fn(async () => true) };
+
+  const book = '11111111-1111-1111-1111-111111111111';
+  const cited = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const alsoCited = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+  const keptOnly = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+  const pasted = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  const removed = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  const plain = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+  const cite = (id: string, extra = 'as=quote') => `[(Voltaire, 1759)](nostos:cite/${book}?${extra}&src=${id})`;
+
+  const doc: WritingContentDto = { id: 'doc-touch', name: 'Essay', content: '', updatedAt: '2026-10-01T00:00:00Z' };
+
+  const kept = (id: string, content: string): WritingSourceDto => ({
+    id,
+    bookId: book,
+    bookTitle: 'Candide',
+    content,
+    selectedText: null,
+    cfiRange: null,
+    createdAt: '2026-10-01T00:00:00Z',
+    addedAt: '2026-10-01T00:00:00Z',
+    sourceAnchorKind: 'unknown',
+    sourceAnchorValue: null,
+    anchorVerified: false,
+    kind: 'note',
+  });
+
+  const topicsByNote: Record<string, string[]> = {
+    [cited]: ['Theodicy', 'Optimism'],
+    [alsoCited]: ['Optimism'],
+    [keptOnly]: ['Gardening'],
+    [pasted]: ['Providence'],
+    [plain]: [],
+  };
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    getMany = vi.fn((ids: string[]) =>
+      of(ids.filter((id) => topicsByNote[id]).map((id) => ({
+        id,
+        bookId: book,
+        bookTitle: 'Candide',
+        content: `Note ${id.slice(0, 4)}`,
+        selectedText: null,
+        snippet: null,
+        topicNames: topicsByNote[id],
+        createdAt: '2026-10-01T00:00:00Z',
+      }))));
+
+    TestBed.overrideComponent(WritingStudio, {
+      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+    });
+    await TestBed.configureTestingModule({
+      imports: [WritingStudio],
+      providers: [
+        {
+          provide: WritingsService,
+          useValue: {
+            list: vi.fn(() => of([])),
+            get: vi.fn(() => of(doc)),
+            create: vi.fn(() => of({})),
+            update: vi.fn(() => of({})),
+            delete: vi.fn(() => of({})),
+            move: vi.fn(() => of({})),
+            listSources: vi.fn(() => of([])),
+            addSource: vi.fn(() => of({})),
+            removeSource: vi.fn(() => of({})),
+            getPageSetup: vi.fn(() => of(null)),
+            savePageSetup: vi.fn(() => of({})),
+          },
+        },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), show: vi.fn() } },
+        {
+          provide: TopicsService,
+          useValue: {
+            list: vi.fn(() => of([
+              { id: 'topic-optimism', name: 'Optimism', usageCount: 2 },
+              { id: 'topic-theodicy', name: 'Theodicy', usageCount: 1 },
+            ])),
+            get: vi.fn(),
+          },
+        },
+        { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany } },
+        { provide: Router, useValue: router },
+      ],
+    }).compileComponents();
+    localStorage.clear();
+
+    fixture = TestBed.createComponent(WritingStudio);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    component.activeItem.set(doc);
+    component.referenceMode.set('writing');
+    component.keptSourcesState.set('loaded');
+    component.keptSources.set([kept(cited, 'All is for the best'), kept(alsoCited, 'The earthquake'), kept(keptOnly, 'The garden')]);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  /** The editor reported new Markdown; the lookup settles after its debounce. */
+  const type = (markdown: string) => {
+    component.editorText.set(markdown);
+    fixture.detectChanges();
+    vi.advanceTimersByTime(350);
+    fixture.detectChanges();
+  };
+
+  const panel = (): HTMLElement => fixture.nativeElement.querySelector('.kept-sources-content') as HTMLElement;
+  const touches = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="writing-touches"]');
+
+  it('shows the cited sources’ topics as pills and one Touches line, live from the document', () => {
+    type(`${cite(cited)} and ${cite(alsoCited)}`);
+
+    const rows = [...panel().querySelectorAll('.reference-source-row')] as HTMLElement[];
+    const pills = (row: HTMLElement) => [...row.querySelectorAll('.reference-source-use [appBadge], .reference-source-use .nostos-badge')].map((p) => p.textContent?.trim());
+    expect(pills(rows[0])).toEqual(['Theodicy', 'Optimism']);
+    expect(pills(rows[1])).toEqual(['Optimism']);
+    expect(touches()?.querySelector('.writing-touches-line')?.textContent?.trim()).toBe('Touches Optimism · Theodicy');
+    expect(touches()?.querySelector('.writing-touches-note')?.textContent?.trim()).toBe('From the sources above.');
+
+    // Deleting a citation in the editor updates the panel before any save.
+    type(cite(alsoCited));
+    expect(touches()?.querySelector('.writing-touches-line')?.textContent?.trim()).toBe('Touches Optimism');
+  });
+
+  it('marks a kept source the writing does not cite as kept, not cited, and never counts it', () => {
+    type(cite(alsoCited));
+
+    const rows = [...panel().querySelectorAll('.reference-source-row')] as HTMLElement[];
+    expect(rows[2].querySelector('.reference-source-use.is-uncited')?.textContent?.trim()).toBe('Kept, not cited');
+    expect(rows[2].querySelector('.nostos-badge')).toBeNull();
+    expect(touches()?.textContent).not.toContain('Gardening');
+  });
+
+  it('shows no Touches line when nothing is cited or the cited notes have no topics', () => {
+    type('Prose that cites nothing.');
+    expect(touches()).toBeNull();
+
+    type(cite(plain));
+    expect(touches()).toBeNull();
+    expect(panel().querySelectorAll('.reference-source-row.is-cited-only')).toHaveLength(1);
+  });
+
+  it('never counts a book-only citation or a bibliography entry', () => {
+    type(`[(Voltaire)](nostos:cite/${book}?p=3)\n\n[^1]: ${cite(cited, 'as=bib')}`);
+
+    expect(touches()).toBeNull();
+  });
+
+  it('lists a pasted citation’s source and says when a cited source was removed', () => {
+    type(`${cite(pasted)} ${cite(removed)}`);
+
+    expect(panel().querySelectorAll('.reference-source-row.is-cited-only')).toHaveLength(1);
+    expect(panel().querySelector('[data-testid="studio-removed-sources"]')?.textContent).toContain('A cited source was removed.');
+    expect(touches()?.querySelector('.writing-touches-line')?.textContent?.trim()).toBe('Touches Providence');
+  });
+
+  it('looks sources up once the ids settle, not on every keystroke', () => {
+    getMany.mockClear();
+    component.editorText.set(`${cite(cited)} a`);
+    component.editorText.set(`${cite(cited)} ab`);
+    component.editorText.set(`${cite(cited)} abc`);
+    fixture.detectChanges();
+    vi.advanceTimersByTime(350);
+
+    expect(getMany).toHaveBeenCalledTimes(1);
+    type(`${cite(cited)} abcd`);
+    expect(getMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a cited source’s topic page in the Brain from its pill, keeping the pill’s look', async () => {
+    type(cite(cited));
+    // As saved: nothing to flush before leaving.
+    component.activeItem.set({ ...doc, content: component.editorText() });
+    component.editorTitle.set(doc.name);
+    fixture.detectChanges();
+    router.navigate.mockClear();
+
+    const pill = panel().querySelector('.reference-source-use button.reference-source-topic') as HTMLButtonElement;
+    expect(pill.getAttribute('type')).toBe('button');
+    expect(pill.querySelector('.nostos-badge')?.textContent?.trim()).toBe('Theodicy');
+
+    pill.click();
+    for (let i = 0; i < 20 && !router.navigate.mock.calls.length; i++) await vi.advanceTimersByTimeAsync(50);
+    expect(router.navigate).toHaveBeenCalledWith(['/brain/topics', 'topic-theodicy']);
+  });
+
+  it('offers no control that adds a topic to the writing', () => {
+    type(cite(cited));
+
+    const text = panel().textContent ?? '';
+    expect(text).not.toMatch(/add (a )?topic/i);
+    expect(touches()?.querySelectorAll('button, input, a')).toHaveLength(0);
   });
 });

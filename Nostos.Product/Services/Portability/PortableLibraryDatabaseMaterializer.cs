@@ -4,6 +4,7 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Writings;
 using Nostos.Shared.Enums;
 
 namespace Nostos.Backend.Services.Portability;
@@ -303,6 +304,11 @@ internal static class PortableLibraryDatabaseMaterializer
                 });
             }
         }
+
+        // The notes each writing cites are derived from its content and never
+        // travel in the archive (issue #1162); ids are kept on import, so every
+        // citation's src still names the same note and the index is rebuilt.
+        WritingCitationIndex.AddForImport(db, writings, notes);
 
         if (data.ReadingListEntries is not null)
         {

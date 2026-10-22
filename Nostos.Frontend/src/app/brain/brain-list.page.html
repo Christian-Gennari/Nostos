@@ -142,6 +142,12 @@
   </section>
   }
 
+  <!-- Read-only, in the Often with row's style: writings reach a topic only
+       through the notes they cite (issue #1162). -->
+  @if (place() === 'topic') {
+  <app-brain-topic-used-in class="often-with" [usage]="writingUsage()" />
+  }
+
   @if (withTopic(); as other) {
   <div class="narrow-notice" role="status">
     <span appNotice>Showing the {{ total() === 1 ? 'note' : total() + ' notes' }} with both <strong>{{ title() }}</strong> and
@@ -219,6 +225,7 @@
         [topicMap]="state.lookup()"
         [showBook]="order() !== 'book'"
         [showMoreFromBook]="!bookId()"
+        [citedWritings]="place() === 'topic' ? citedWritings(note.id) : noWritings"
         [busy]="noteActions.busy().has(note.id)"
         [selectable]="selecting()"
         [selected]="selected().has(note.id)"

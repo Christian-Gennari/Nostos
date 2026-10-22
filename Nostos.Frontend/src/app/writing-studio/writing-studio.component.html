@@ -494,7 +494,7 @@
             Kept sources could not be loaded.
             <button appButton variant="ghost" size="sm" (click)="retryKeptSources()">Retry</button>
           </p>
-        } @else if (keptNotes().length === 0) {
+        } @else if (keptNotes().length === 0 && citedOnlyNotes().length === 0 && removedCitedCount() === 0) {
           <div class="reference-empty-state">
             <p>No sources are kept with this writing yet. Keep notes here from Library or from Brain with Keep with writing.</p>
             <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
@@ -516,9 +516,31 @@
                   title="Remove from this writing"
                   aria-label="Remove from this writing"
                 ></button>
+                <ng-container *ngTemplateOutlet="sourceUse; context: { $implicit: note }"></ng-container>
               </div>
             }
+            <!-- Cited without being kept: a citation pasted from another writing (issue #1162). -->
+            @for (note of citedOnlyNotes(); track note.id) {
+              <div class="reference-source-row is-cited-only">
+                <ng-container *ngTemplateOutlet="sourceRowMain; context: { $implicit: note }"></ng-container>
+                <span></span>
+                <ng-container *ngTemplateOutlet="sourceUse; context: { $implicit: note }"></ng-container>
+              </div>
+            }
+            @if (removedCitedCount(); as removed) {
+              <p class="reference-source-removed" data-testid="studio-removed-sources">
+                {{ removed === 1 ? 'A cited source was removed.' : removed + ' cited sources were removed.' }}
+                The citation text stays as written.
+              </p>
+            }
           </div>
+          <!-- What the writing touches, from what it cites: never tagged (issue #1162). -->
+          @if (touchedTopics().length) {
+            <div class="writing-touches" data-testid="writing-touches">
+              <p class="writing-touches-line">Touches {{ touchedTopics().join(' · ') }}</p>
+              <p class="writing-touches-note">From the sources above.</p>
+            </div>
+          }
         }
       </div>
     }
@@ -770,6 +792,31 @@
     }
     <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
   </button>
+</ng-template>
+
+<!-- How a source is used in the open writing (issue #1162): a cited one shows
+     its topics as small pills; a kept one the writing does not cite says so. -->
+<ng-template #sourceUse let-note>
+  @if (isCited(note.id)) {
+    @if (citedTopics(note.id); as topics) {
+      @if (topics.length) {
+        <span class="reference-source-use" role="list" aria-label="Topics of this source">
+          @for (topic of topics; track topic) {
+            <span role="listitem">
+              @if (topicIdFor(topic)) {
+                <button type="button" class="reference-source-topic" [title]="'Open ' + topic + ' in the Brain'"
+                  (click)="openTopic(topic)"><span appBadge>{{ topic }}</span></button>
+              } @else {
+                <span appBadge>{{ topic }}</span>
+              }
+            </span>
+          }
+        </span>
+      }
+    }
+  } @else {
+    <span class="reference-source-use is-uncited">Kept, not cited</span>
+  }
 </ng-template>
 
 <ng-template #sourceKeepAction let-note>

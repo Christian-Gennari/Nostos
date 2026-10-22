@@ -16,7 +16,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DragDropModule } from '@angular/cdk/drag-drop';
-import { firstValueFrom } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, forkJoin, map, of, switchMap } from 'rxjs';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
 
 import { WritingsService } from '../core/services/writings.service';
@@ -27,7 +28,7 @@ import { NotesService } from '../core/services/notes.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { WritingDto, WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
-import { Note, Passage, isPassage } from '../core/dtos/note.dtos';
+import { Note, NoteSearchHit, Passage, isPassage } from '../core/dtos/note.dtos';
 import { PassageViewerRequest, PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import {
   MarkdownEditorComponent,
@@ -40,7 +41,8 @@ import { StudioPageSettingsComponent } from './page-settings/studio-page-setting
 import { StudioPreferencesService } from './page-settings/studio-preferences.service';
 import { CitableSource, CitationService, citationLocator } from './citations/citation.service';
 import { bookToCslItem, missingForStyle, missingPhrase } from './citations/csl-item';
-import { CitationRole, citationMarkdown } from '../ui/markdown-editor/citation.extension';
+import { CitationRole, citationMarkdown, citedSourceIds } from '../ui/markdown-editor/citation.extension';
+import { removedCitedIds, sourceKey, touchedTopics } from './writing-touches.helpers';
 import { StyledInsertion, bibliographyMarkdown, styledNote, styledQuote, styledReference } from './citations/styled-insertion';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
@@ -302,6 +304,73 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   rootItems = signal<WritingDto[]>([]);
   activeItem = signal<WritingContentDto | null>(null);
+
+  // --- What the writing touches (issue #1162) ---
+  // Worked out from what the writing cites, read live from the editor's
+  // document; never stored on the writing, and nothing here adds a topic.
+
+  /** Note ids the open writing cites (lower-case, once each, in order). */
+  readonly citedIds = computed(() => (this.activeItem() ? citedSourceIds(this.editorText()) : []));
+  private readonly citedIdSet = computed(() => new Set(this.citedIds()));
+  /** Kept and cited sources as the server has them now, with their topics. */
+  readonly sourceLookup = signal<ReadonlyMap<string, NoteSearchHit>>(new Map());
+  /** The ids `sourceLookup` answers for: an id asked about and absent was removed. */
+  private readonly sourceLookedUp = signal<ReadonlySet<string>>(new Set());
+  /** Every id worth looking up, as one stable key, so typing alone never refetches. */
+  private readonly sourceLookupKey = computed(() =>
+    [...new Set([...this.keptSources().map((s) => sourceKey(s.id)), ...this.citedIds()])]
+      .filter(Boolean)
+      .sort()
+      .join(','));
+  /** The topics the cited sources carry, for the panel's one Touches line. */
+  readonly touchedTopics = computed(() => touchedTopics(this.citedIds(), this.sourceLookup()));
+  /** Cited sources whose note (or book) was deleted; the citation text stays. */
+  readonly removedCitedCount = computed(
+    () => removedCitedIds(this.citedIds(), this.sourceLookup(), this.sourceLookedUp()).length);
+  /** Sources cited without being kept (a citation pasted from another writing). */
+  readonly citedOnlyNotes = computed<Note[]>(() => {
+    const kept = new Set(this.keptSources().map((s) => sourceKey(s.id)));
+    const lookup = this.sourceLookup();
+    return this.citedIds()
+      .filter((id) => !kept.has(id) && lookup.has(id))
+      .map((id) => hitToNote(lookup.get(id)!));
+  });
+
+  /** Topic ids by folded name, so a source's topic pill can open its page. */
+  private readonly topicIdsByName = computed(
+    () => new Map(this.topics().map((topic) => [topic.name.toLocaleLowerCase(), topic.id])));
+
+  /** The Brain page of a cited source's topic, or null while topics are not loaded. */
+  topicIdFor(name: string): string | null {
+    return this.topicIdsByName().get(name.toLocaleLowerCase()) ?? null;
+  }
+
+  /**
+   * A topic pill opens that topic's page in the Brain. The writing is saved
+   * first and the Studio's place kept, as opening a source does, so Back
+   * returns to the same caret.
+   */
+  async openTopic(name: string): Promise<void> {
+    const id = this.topicIdFor(name);
+    if (!this.router || !id) return;
+    const active = this.activeItem();
+    if (active) {
+      if (!(await this.flushActiveWritingBeforeSource(active))) return;
+      this.attachSourceReturnSnapshot(this.captureSourceReturnSnapshot(active.id));
+    }
+    await this.navigateFromStudio(['/brain/topics', id]);
+  }
+
+  /** True when the open writing cites this source. */
+  isCited(noteId: string): boolean {
+    return this.citedIdSet().has(sourceKey(noteId));
+  }
+
+  /** A cited source's topics, as small pills under its row; none for an uncited one. */
+  citedTopics(noteId: string): string[] {
+    return this.isCited(noteId) ? (this.sourceLookup().get(sourceKey(noteId))?.topicNames ?? []) : [];
+  }
+
 
   editingId = signal<string | null>(null);
 
@@ -572,6 +641,29 @@ export class WritingStudio implements OnInit, AfterViewInit {
   });
 
   constructor() {
+    // The kept and cited sources, with their topics, once the ids settle.
+    toObservable(this.sourceLookupKey)
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((key) => {
+          const ids = key ? key.split(',') : [];
+          if (!ids.length) return of({ ids, hits: [] as NoteSearchHit[] });
+          const chunks: string[][] = [];
+          for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
+          return forkJoin(chunks.map((chunk) => this.notesService.getMany(chunk))).pipe(
+            map((pages) => ({ ids, hits: pages.flat() })),
+            // A failed lookup shows nothing rather than calling sources removed.
+            catchError(() => of(null)),
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((answer) => {
+        if (!answer) return;
+        this.sourceLookup.set(new Map(answer.hits.map((hit) => [sourceKey(hit.id), hit])));
+        this.sourceLookedUp.set(new Set(answer.ids));
+      });
     const onResize = () => {
       const compact = isStudioCompactViewport();
 
@@ -2163,4 +2255,25 @@ export class WritingStudio implements OnInit, AfterViewInit {
       `${window.location.pathname}${window.location.search}${window.location.hash}`,
     );
   }
+}
+
+/** A cited source the server returned, in the shape the panel's rows draw. */
+function hitToNote(hit: NoteSearchHit): Note {
+  return {
+    id: hit.id,
+    bookId: hit.bookId,
+    content: hit.content,
+    selectedText: hit.selectedText ?? undefined,
+    cfiRange: hit.cfiRange ?? undefined,
+    createdAt: hit.createdAt,
+    bookTitle: hit.bookTitle ?? undefined,
+    bookAuthor: hit.bookAuthor ?? undefined,
+    sourceAnchorKind: hit.sourceAnchorKind ?? undefined,
+    sourceAnchorValue: hit.sourceAnchorValue ?? undefined,
+    anchorVerified: hit.anchorVerified ?? undefined,
+    kind: hit.kind,
+    passageTitle: hit.passageTitle,
+    passageEnd: hit.passageEnd,
+    passageWordCount: hit.passageWordCount,
+  };
 }

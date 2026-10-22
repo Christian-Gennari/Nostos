@@ -36,6 +36,16 @@ public interface ITopicRepository
     Task<TopicGraphDto> GetGraphAsync();
 
     /// <summary>
+    /// The writings that cite the topic's notes (issue #1162), newest first and
+    /// at most <paramref name="limit"/> (up to 500), with the total and, per
+    /// cited note, how many and which writings cite it.
+    /// Joined at read time through the derived citation index, so renaming,
+    /// merging or unlinking a topic needs no extra write. Null when the topic
+    /// does not exist.
+    /// </summary>
+    Task<TopicWritingUsageDto?> GetWritingUsageAsync(Guid id, int limit, CancellationToken ct = default);
+
+    /// <summary>
     /// Gets a topic with its linked notes (deep includes for Book and Note data).
     /// Returns null if not found.
     /// </summary>

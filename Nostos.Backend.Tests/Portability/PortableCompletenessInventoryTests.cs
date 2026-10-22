@@ -362,6 +362,9 @@ public sealed class PortableCompletenessInventoryTests
             ["AlignmentAnchorModel"] = ExcludedEntity(
                 "Derived audiobook/ebook alignment anchors, bound to exact file revisions and rebuilt on demand by transcription; regeneratable state rather than portable library content."),
 
+            ["WritingCitationModel"] = ExcludedEntity(
+                "Derived index of the notes a writing cites (issue #1162), rebuilt from the writing's portable Content on every save and on import; regeneratable state rather than portable library content, and the verifier never counts it."),
+
             ["ExternalMediaLinkModel"] = ExcludedEntity(
                 "Host-local reference to a media file in an administrator-mounted folder (root id + relative path). " +
                 "It names this server's file system, so it is never serialized; a portable archive carries the media bytes themselves."),

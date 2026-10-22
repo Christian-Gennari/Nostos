@@ -1159,6 +1159,21 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("Works");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.WritingCitationModel", b =>
+                {
+                    b.Property<Guid>("WritingId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("WritingId", "NoteId");
+
+                    b.HasIndex("NoteId");
+
+                    b.ToTable("WritingCitations");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.WritingModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1556,6 +1571,25 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Note");
 
                     b.Navigation("Topic");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.WritingCitationModel", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.NoteModel", "Note")
+                        .WithMany()
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nostos.Backend.Data.Models.WritingModel", "Writing")
+                        .WithMany()
+                        .HasForeignKey("WritingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Note");
+
+                    b.Navigation("Writing");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.WritingModel", b =>
