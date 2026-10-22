@@ -49,6 +49,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "library_list_collections",
         "library_get_collection",
         "notes_capture",
+        "notes_rewrite_capture",
         "notes_link_existing_topic",
         "library_create_collection",
         "library_rename_collection",

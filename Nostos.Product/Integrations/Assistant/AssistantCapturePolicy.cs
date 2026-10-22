@@ -18,15 +18,15 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int MaxBookCandidateChoices = 5;
 
-    public Task<AssistantCapturePreparation> PrepareAsync(
-        string argumentsJson,
-        AssistantContextDto? context,
-        CancellationToken ct) =>
-        PrepareAsync(argumentsJson, context, fallbackContent: null, ct);
-
+    /// <param name="userMessage">
+    /// The user's own message that asked for the capture. Only its words can
+    /// turn on a rewrite or topics; the tool call's flags alone never do.
+    /// </param>
+    /// <param name="fallbackContent">The capture text when the tool call carried none (a continuation).</param>
     public async Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
         AssistantContextDto? context,
+        string? userMessage,
         string? fallbackContent,
         CancellationToken ct)
     {
@@ -39,7 +39,9 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
                 "Ask the user for this; do not save the capture yet.");
         }
 
-        var anchor = DecideAnchor(context);
+        var anchor = AboutWholeBook(argumentsJson, context)
+            ? AnchorDecision.Skip()
+            : DecideAnchor(context);
         if (anchor.Prompt is { } anchorPrompt)
         {
             return AssistantCapturePreparation.Ask(
@@ -53,10 +55,24 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             context,
             anchor,
             book.BookId!.Value,
+            userMessage,
             fallbackContent,
             out var quoteFidelity);
 
         return AssistantCapturePreparation.Ready(args, book.Title, quoteFidelity);
+    }
+
+    /// <summary>
+    /// A thought about the book as a whole (a character, a theme) belongs to no
+    /// position in it, so it is saved without one and nobody is asked for a page
+    /// or timestamp. A quote always keeps its place.
+    /// </summary>
+    private static bool AboutWholeBook(string argumentsJson, AssistantContextDto? context)
+    {
+        var obj = AssistantToolArguments.ParseObject(argumentsJson);
+        return ReadBool(obj, "wholeBook") == true
+            && string.IsNullOrWhiteSpace(ReadString(obj, "selectedText"))
+            && string.IsNullOrWhiteSpace(context?.SelectedText);
     }
 
     /// <summary>
@@ -95,12 +111,13 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
                     NormalizePageAnswer(trimmed),
                     false),
             },
+            // An answer that is not a time ("I don't have one") is a skip. Stored
+            // as a timestamp it would read back as 0:00, a place the user never named.
             "external_audio_timestamp" => context with
             {
-                Anchor = new AssistantAnchorDto(
-                    "external_audio_timestamp",
-                    NormalizeTimestampAnswer(trimmed),
-                    false),
+                Anchor = NormalizeTimestampAnswer(trimmed) is { } seconds
+                    ? new AssistantAnchorDto("external_audio_timestamp", seconds, false)
+                    : new AssistantAnchorDto("unknown", null, false),
             },
             _ => context,
         };
@@ -241,6 +258,7 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         AssistantContextDto? context,
         AnchorDecision decision,
         Guid bookId,
+        string? userMessage,
         string? fallbackContent,
         out bool quoteFidelity)
     {
@@ -282,10 +300,23 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         obj["sourceAnchorValue"] = decision.Value;
         obj["anchorVerified"] = decision.Verified;
 
-        // Ask Nostos keeps the user's words exactly as given. Whatever
-        // `processingMode` the tool call carried is overwritten on purpose: the
-        // model may not ask for its own rewrite of the user's thought.
-        obj["processingMode"] = ThoughtProcessingModes.Verbatim;
+        // Ask Nostos keeps the user's words exactly as given unless the USER
+        // asked for a rewrite. Whatever `processingMode` the tool call carried
+        // is overwritten on purpose; the model's `rewrite` flag counts only when
+        // the user's own message asks for one, so the model can never decide
+        // on its own to rewrite a thought. The exact words stay as the original.
+        var rewrite = ReadBool(obj, "rewrite") == true
+            && AssistantRewriteIntent.Requested(userMessage);
+        obj["processingMode"] = rewrite
+            ? ThoughtProcessingModes.Clarify
+            : ThoughtProcessingModes.Verbatim;
+
+        // Topics come with a rewrite, or when the user asked for them. A plain
+        // capture stays the user's words alone and waits in Unsorted.
+        if (!rewrite && !AssistantRewriteIntent.TopicsMentioned(userMessage))
+        {
+            obj.Remove("topics");
+        }
 
         if (string.Equals(decision.Kind, "epub_cfi", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(decision.Value))
@@ -390,11 +421,16 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         return null;
     }
 
-    public static string BuildAcknowledgement(string? bookTitle, bool quoteFidelity)
+    public static string BuildAcknowledgement(string? bookTitle, bool quoteFidelity, bool rewritten = false)
     {
         var text = string.IsNullOrWhiteSpace(bookTitle)
             ? "Saved."
             : $"Saved to {bookTitle}.";
+
+        if (rewritten)
+        {
+            text += " I tidied the wording; your own words are kept as the original.";
+        }
 
         // The response contract carries no undo field; the note id and the note
         // itself are the affordance, so point at them.
@@ -419,8 +455,16 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         return match.Success ? match.Groups[1].Value : cleaned;
     }
 
-    private static string NormalizeTimestampAnswer(string answer)
+    /// <summary>
+    /// Seconds for an h:mm:ss / m:ss / s answer; any other answer with a number
+    /// in it is kept as the user said it. Null when there is no number at all:
+    /// that is not a time, whatever the words.
+    /// </summary>
+    private static string? NormalizeTimestampAnswer(string answer)
     {
+        if (!answer.Any(char.IsAsciiDigit))
+            return null;
+
         var parts = answer.Trim().Split(':');
         if (parts.Length is < 1 or > 3)
             return answer.Trim();
@@ -449,6 +493,21 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         }
 
         return seconds.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static bool? ReadBool(JsonObject obj, string name)
+    {
+        if (!obj.TryGetPropertyValue(name, out var node) || node is null)
+            return null;
+
+        try
+        {
+            return node.GetValue<bool>();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     private static string? ReadString(JsonObject obj, string name)

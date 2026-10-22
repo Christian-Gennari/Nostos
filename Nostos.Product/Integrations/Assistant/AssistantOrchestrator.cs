@@ -125,6 +125,7 @@ public sealed class AssistantOrchestrator(
 
     private const int MaxBookContinuationAttempts = 3;
     private const string CaptureCapability = "notes_capture";
+    private const string RewriteCaptureCapability = "notes_rewrite_capture";
     private const string BookTextCapability = "book_text_search";
     private const string KnowledgeSearchCapability = "knowledge_search";
     private const string KnowledgeReadCapability = "knowledge_read_evidence";
@@ -436,6 +437,8 @@ public sealed class AssistantOrchestrator(
                     capture = await _capturePolicy.PrepareAsync(
                         call.ArgumentsJson,
                         turnContext,
+                        request.Message,
+                        fallbackContent: null,
                         ct);
 
                     if (capture.Prompt is { } prompt)
@@ -469,6 +472,20 @@ public sealed class AssistantOrchestrator(
                 else
                 {
                     args = AssistantToolArguments.ParseElement(call.ArgumentsJson);
+                    // A rewrite is the user's to ask for, never the model's to
+                    // offer: without a request in their own words, nothing changes.
+                    // Which notes it may touch is the note service's check.
+                    if (string.Equals(capability.Name, RewriteCaptureCapability, StringComparison.Ordinal)
+                        && !AssistantRewriteIntent.Requested(request.Message))
+                    {
+                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
+                        {
+                            status = "rewrite_rejected",
+                            message = "The user did not ask for a rewrite in this message. Nothing was changed.",
+                        })));
+                        continue;
+                    }
+
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
                         || string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
@@ -685,7 +702,7 @@ public sealed class AssistantOrchestrator(
                     && string.Equals(capability.Name, CaptureCapability, StringComparison.Ordinal))
                 {
                     acknowledgement = AssistantCapturePolicy.BuildAcknowledgement(
-                        capture!.BookTitle, capture.QuoteFidelity);
+                        capture!.BookTitle, capture.QuoteFidelity, Rewritten(result.Data));
                     capturedNoteId = ReadNoteId(result.Data);
                 }
 
@@ -1003,6 +1020,7 @@ public sealed class AssistantOrchestrator(
             stored.ArgumentsJson,
             resumedContext,
             stored.OriginalMessage,
+            stored.OriginalMessage,
             ct);
 
         if (capture.Prompt is { } prompt)
@@ -1113,7 +1131,8 @@ public sealed class AssistantOrchestrator(
             Reply: string.Empty,
             Acknowledgement: AssistantCapturePolicy.BuildAcknowledgement(
                 capture.BookTitle,
-                capture.QuoteFidelity),
+                capture.QuoteFidelity,
+                Rewritten(result.Data)),
             AnchorPrompt: null,
             Suggestions: [],
             Changeset: null,
@@ -1270,6 +1289,18 @@ public sealed class AssistantOrchestrator(
                 ? id.GetString()
                 : null;
     }
+
+    /// <summary>
+    /// True when the saved note is a rewrite of the user's words, read from the
+    /// stored note: a rewrite that fell back to the original reports verbatim.
+    /// </summary>
+    private static bool Rewritten(JsonElement? data) =>
+        data is { ValueKind: JsonValueKind.Object } element
+        && element.TryGetProperty("value", out var value)
+        && value.ValueKind == JsonValueKind.Object
+        && value.TryGetProperty("processingMode", out var mode)
+        && mode.ValueKind == JsonValueKind.String
+        && !ThoughtProcessingModes.IsVerbatim(mode.GetString());
 
     private static string ToolJson(object value) => JsonSerializer.Serialize(value, JsonOptions);
 

@@ -134,8 +134,14 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["content"] = "string",
                 ["selectedText"] = "string",
                 ["captureSource"] = "string",
+                ["rewrite"] = "boolean",
+                ["topics"] = "array",
+                ["wholeBook"] = "boolean",
             },
             Required: []),
+        ["notes_rewrite_capture"] = new(
+            Properties: new() { ["noteId"] = "string", ["topics"] = "array" },
+            Required: ["noteId"]),
         ["notes_link_existing_topic"] = new(
             Properties: new() { ["noteId"] = "string", ["topicId"] = "string" },
             Required: ["noteId", "topicId"]),
@@ -315,7 +321,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 [AssistantCapabilityCategory.KnowledgeRetrieval] = 8,
                 [AssistantCapabilityCategory.SourceNavigation] = 1,
                 [AssistantCapabilityCategory.LibraryRead] = 4,
-                [AssistantCapabilityCategory.Capture] = 1,
+                [AssistantCapabilityCategory.Capture] = 2,
                 [AssistantCapabilityCategory.Organization] = 12,
                 [AssistantCapabilityCategory.OrdinaryAction] = 1,
             });
@@ -337,7 +343,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(27);
+        measurement.CapabilityCount.Should().Be(28);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(

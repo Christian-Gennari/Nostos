@@ -81,6 +81,14 @@ public interface INoteService
         Guid noteId, string processingMode, CancellationToken ct = default);
 
     /// <summary>
+    /// Ask Nostos's "clean that up": clarifies a note that a capture under
+    /// <paramref name="clientId"/> created, from its original words. Any other
+    /// note is refused, so a conversation can only tidy what it saved.
+    /// </summary>
+    Task<NoteCommandResult<NoteDto>> RewriteCaptureAsync(
+        Guid noteId, string clientId, CancellationToken ct = default);
+
+    /// <summary>
     /// The raw transcript of one note and the mode its text currently reflects
     /// (issue #262 §8), so the original capture stays readable after any mode
     /// processed it.
