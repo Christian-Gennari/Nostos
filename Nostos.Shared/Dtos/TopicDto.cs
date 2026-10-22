@@ -82,4 +82,8 @@ public record TopicWritingUsageDto(
 
 public record TopicWritingDto(Guid Id, string Name, DateTime UpdatedAt);
 
-public record NoteCitationCountDto(Guid NoteId, int Writings);
+/// <summary>
+/// How many writings cite one of the topic's notes, and which, newest edited
+/// first, so the note's "Cited in N writings" can list them.
+/// </summary>
+public record NoteCitationCountDto(Guid NoteId, int Writings, List<Guid>? WritingIds = null);

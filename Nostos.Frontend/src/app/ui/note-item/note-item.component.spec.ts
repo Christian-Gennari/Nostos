@@ -59,17 +59,29 @@ describe('NoteItemComponent', () => {
     expect(chips).toEqual(['mean', 'virtue']);
   });
 
-  it('says quietly how many writings cite the note, and nothing when none do (issue #1162)', () => {
+  it('says how many writings cite the note as a quiet button whose menu opens each (issue #1162)', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     render();
     expect(element.querySelector('.note-item-cited')).toBeNull();
 
-    fixture.componentRef.setInput('citedIn', 1);
+    fixture.componentRef.setInput('citedWritings', [{ id: 'w1', name: 'On Optimism' }]);
     fixture.detectChanges();
-    expect(element.querySelector('.note-item-meta .note-item-cited')?.textContent?.trim()).toBe('Cited in 1 writing');
+    expect(element.querySelector('.note-item-meta button.note-item-cited')?.textContent?.trim()).toBe('Cited in 1 writing');
 
-    fixture.componentRef.setInput('citedIn', 3);
+    fixture.componentRef.setInput('citedWritings', [{ id: 'w1', name: 'On Optimism' }, { id: 'w2', name: 'Theodicy' }]);
     fixture.detectChanges();
-    expect(element.querySelector('.note-item-cited')?.textContent?.trim()).toBe('Cited in 3 writings');
+    const button = element.querySelector('button.note-item-cited') as HTMLButtonElement;
+    expect(button.getAttribute('type')).toBe('button');
+    expect(button.textContent?.trim()).toBe('Cited in 2 writings');
+    expect(button.getAttribute('aria-haspopup')).toBe('menu');
+
+    button.click();
+    fixture.detectChanges();
+    const items = Array.from(document.querySelectorAll<HTMLButtonElement>('.nostos-menu-item'));
+    expect(items.map((item) => item.textContent?.trim())).toEqual(['On Optimism', 'Theodicy']);
+    items[1].click();
+    expect(navigate).toHaveBeenCalledWith(['/studio'], { queryParams: { writingId: 'w2' } });
+    document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
   });
 
   it('draws the quote rule in the note’s pen', () => {

@@ -82,6 +82,8 @@ export interface TopicWritingDto {
 export interface NoteCitationCountDto {
   noteId: string;
   writings: number;
+  /** Which writings, newest edited first. */
+  writingIds?: string[];
 }
 
 /**
@@ -102,7 +104,7 @@ export class TopicsService {
     return this.http.get<TopicDto[]>('/api/topics');
   }
 
-  /** Writings that cite the topic's notes (issue #1162), newest first. Read-only. */
+  /** Writings that cite the topic's notes (issue #1162), newest edited first. Read-only. */
   getWritingUsage(id: string, limit = 5): Observable<TopicWritingUsageDto> {
     return this.http.get<TopicWritingUsageDto>(`/api/topics/${id}/writings`, { params: { limit } });
   }

@@ -18,7 +18,13 @@ import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@
 
 import type { NoteBookFacet, NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
 import { NotesService, type NoteBrowseFilter } from '../core/services/notes.service';
-import { TopicsService, type RelatedTopicDto, type TopicDto, type TopicWritingUsageDto } from '../core/services/topics.service';
+import {
+  TopicsService,
+  type RelatedTopicDto,
+  type TopicDto,
+  type TopicWritingDto,
+  type TopicWritingUsageDto,
+} from '../core/services/topics.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
@@ -31,7 +37,7 @@ import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
 import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
-import { BrainTopicUsedInComponent, USED_IN_SHOWN } from './topic-used-in/brain-topic-used-in.component';
+import { BrainTopicUsedInComponent, USED_IN_FETCHED } from './topic-used-in/brain-topic-used-in.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
@@ -150,9 +156,16 @@ export class BrainListPage {
   readonly relatedExpanded = signal(false);
   /** Where this topic is used in writing, from what writings cite; read-only (issue #1162). */
   readonly writingUsage = signal<TopicWritingUsageDto | null>(null);
-  /** How many writings cite each of this topic's notes. */
-  readonly citedIn = computed(
-    () => new Map((this.writingUsage()?.noteCitations ?? []).map((c) => [c.noteId.toLowerCase(), c.writings])));
+  /** The writings that cite each of this topic's notes, newest edited first. */
+  readonly citedIn = computed(() => {
+    const usage = this.writingUsage();
+    const byId = new Map((usage?.writings ?? []).map((w) => [w.id.toLowerCase(), w]));
+    return new Map((usage?.noteCitations ?? []).map((c) => [
+      c.noteId.toLowerCase(),
+      (c.writingIds ?? []).map((id) => byId.get(id.toLowerCase())).filter((w): w is TopicWritingDto => !!w),
+    ]));
+  });
+  readonly noWritings: readonly TopicWritingDto[] = [];
 
   // The toolbar.
   readonly searchDraft = signal('');
@@ -438,7 +451,7 @@ export class BrainListPage {
       return;
     }
     if (this.writingUsage() && this.topicId() !== topicId) this.writingUsage.set(null);
-    this.topicsService.getWritingUsage(topicId, USED_IN_SHOWN).subscribe({
+    this.topicsService.getWritingUsage(topicId, USED_IN_FETCHED).subscribe({
       next: (usage) => {
         if (seq === this.writingUsageSeq) this.writingUsage.set(usage);
       },
@@ -448,9 +461,9 @@ export class BrainListPage {
     });
   }
 
-  /** How many writings cite a note, for its muted "Cited in N writings" line. */
-  citedInCount(noteId: string): number {
-    return this.citedIn().get(noteId.toLowerCase()) ?? 0;
+  /** The writings that cite a note, for its "Cited in N writings" menu. */
+  citedWritings(noteId: string): readonly TopicWritingDto[] {
+    return this.citedIn().get(noteId.toLowerCase()) ?? this.noWritings;
   }
 
   private loadRelated(topicId: string | null): void {

@@ -802,7 +802,14 @@
       @if (topics.length) {
         <span class="reference-source-use" role="list" aria-label="Topics of this source">
           @for (topic of topics; track topic) {
-            <span appBadge role="listitem">{{ topic }}</span>
+            <span role="listitem">
+              @if (topicIdFor(topic)) {
+                <button type="button" class="reference-source-topic" [title]="'Open ' + topic + ' in the Brain'"
+                  (click)="openTopic(topic)"><span appBadge>{{ topic }}</span></button>
+              } @else {
+                <span appBadge>{{ topic }}</span>
+              }
+            </span>
           }
         </span>
       }

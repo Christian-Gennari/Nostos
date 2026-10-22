@@ -37,7 +37,8 @@ public interface ITopicRepository
 
     /// <summary>
     /// The writings that cite the topic's notes (issue #1162), newest first and
-    /// at most <paramref name="limit"/>, with the total and a per-note count.
+    /// at most <paramref name="limit"/> (up to 500), with the total and, per
+    /// cited note, how many and which writings cite it.
     /// Joined at read time through the derived citation index, so renaming,
     /// merging or unlinking a topic needs no extra write. Null when the topic
     /// does not exist.

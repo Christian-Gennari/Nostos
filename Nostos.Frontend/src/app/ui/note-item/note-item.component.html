@@ -180,8 +180,20 @@
     }
     <time [attr.datetime]="note().createdAt">{{ note().createdAt | date: 'd MMM y' }}</time>
     @if (location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
-    @if (citedIn() > 0) {
-    <span class="note-item-dot" aria-hidden="true">·</span><span class="note-item-cited">Cited in {{ citedIn() === 1 ? '1 writing' : citedIn() + ' writings' }}</span>
+    @if (citedWritings(); as writings) {
+    @if (writings.length) {
+    <span class="note-item-dot" aria-hidden="true">·</span>
+    <button type="button" class="note-item-cited" [nostosMenuTriggerFor]="citedMenu">
+      Cited in {{ writings.length === 1 ? '1 writing' : writings.length + ' writings' }}
+    </button>
+    <ng-template #citedMenu>
+      <nostos-menu aria-label="Writings that cite this note">
+        @for (writing of writings; track writing.id) {
+        <button nostosMenuItem icon="file-text" (triggered)="openWriting(writing)">{{ writing.name }}</button>
+        }
+      </nostos-menu>
+    </ng-template>
+    }
     }
     <a class="note-item-source" [routerLink]="source().commands" [queryParams]="source().queryParams">
       Open in book <nostos-icon name="arrow-right" [size]="12" />

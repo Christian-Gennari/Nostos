@@ -69,6 +69,12 @@ const PICKER_POSITIONS: ConnectedPosition[] = [
  * and shows whatever note it is given back, so a list can save, undo and
  * replace a note in one place.
  */
+/** A writing that cites a note: enough to name it and open it. */
+export interface CitingWriting {
+  id: string;
+  name: string;
+}
+
 @Component({
   selector: 'app-note-item',
   standalone: true,
@@ -111,8 +117,12 @@ export class NoteItemComponent {
    */
   readonly topicMap = input<ReadonlyMap<string, TopicDto> | null>(null);
   /** False where a heading above already names the book. */
-  /** How many writings cite this note (issue #1162); shown quietly when above 0. */
-  readonly citedIn = input(0);
+  /**
+   * The writings that cite this note (issue #1162), newest edited first. When
+   * there are any, the meta line says "Cited in N writings" as a quiet button
+   * whose menu opens each one in the Studio.
+   */
+  readonly citedWritings = input<readonly CitingWriting[]>([]);
   readonly showBook = input(true);
   /** Offer "More from this book" (not when the list is already that book). */
   readonly showMoreFromBook = input(true);
@@ -142,6 +152,11 @@ export class NoteItemComponent {
 
   private readonly passageViewer = inject(PassageViewerService);
   private readonly router = inject(Router);
+
+  /** Opens a writing that cites this note in the Studio. */
+  openWriting(writing: CitingWriting): void {
+    void this.router.navigate(['/studio'], { queryParams: { writingId: writing.id } });
+  }
 
   readonly pickerPositions = PICKER_POSITIONS;
   readonly highlightColours = HIGHLIGHT_COLOURS;

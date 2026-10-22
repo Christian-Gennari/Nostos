@@ -336,6 +336,31 @@ export class WritingStudio implements OnInit, AfterViewInit {
       .map((id) => hitToNote(lookup.get(id)!));
   });
 
+  /** Topic ids by folded name, so a source's topic pill can open its page. */
+  private readonly topicIdsByName = computed(
+    () => new Map(this.topics().map((topic) => [topic.name.toLocaleLowerCase(), topic.id])));
+
+  /** The Brain page of a cited source's topic, or null while topics are not loaded. */
+  topicIdFor(name: string): string | null {
+    return this.topicIdsByName().get(name.toLocaleLowerCase()) ?? null;
+  }
+
+  /**
+   * A topic pill opens that topic's page in the Brain. The writing is saved
+   * first and the Studio's place kept, as opening a source does, so Back
+   * returns to the same caret.
+   */
+  async openTopic(name: string): Promise<void> {
+    const id = this.topicIdFor(name);
+    if (!this.router || !id) return;
+    const active = this.activeItem();
+    if (active) {
+      if (!(await this.flushActiveWritingBeforeSource(active))) return;
+      this.attachSourceReturnSnapshot(this.captureSourceReturnSnapshot(active.id));
+    }
+    await this.navigateFromStudio(['/brain/topics', id]);
+  }
+
   /** True when the open writing cites this source. */
   isCited(noteId: string): boolean {
     return this.citedIdSet().has(sourceKey(noteId));

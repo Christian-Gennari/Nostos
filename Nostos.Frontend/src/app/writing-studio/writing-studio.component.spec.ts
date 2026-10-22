@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, input, output, Input } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
 import { StudioPreferencesService } from './page-settings/studio-preferences.service';
 import { CitationService } from './citations/citation.service';
@@ -2784,6 +2784,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
   let fixture: ComponentFixture<WritingStudio>;
   let component: WritingStudio;
   let getMany: ReturnType<typeof vi.fn>;
+  const router = { navigate: vi.fn(async () => true) };
 
   const book = '11111111-1111-1111-1111-111111111111';
   const cited = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -2857,9 +2858,19 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), show: vi.fn() } },
-        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        {
+          provide: TopicsService,
+          useValue: {
+            list: vi.fn(() => of([
+              { id: 'topic-optimism', name: 'Optimism', usageCount: 2 },
+              { id: 'topic-theodicy', name: 'Theodicy', usageCount: 1 },
+            ])),
+            get: vi.fn(),
+          },
+        },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany } },
+        { provide: Router, useValue: router },
       ],
     }).compileComponents();
     localStorage.clear();
@@ -2944,6 +2955,23 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
     expect(getMany).toHaveBeenCalledTimes(1);
     type(`${cite(cited)} abcd`);
     expect(getMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens a cited source’s topic page in the Brain from its pill, keeping the pill’s look', async () => {
+    type(cite(cited));
+    // As saved: nothing to flush before leaving.
+    component.activeItem.set({ ...doc, content: component.editorText() });
+    component.editorTitle.set(doc.name);
+    fixture.detectChanges();
+    router.navigate.mockClear();
+
+    const pill = panel().querySelector('.reference-source-use button.reference-source-topic') as HTMLButtonElement;
+    expect(pill.getAttribute('type')).toBe('button');
+    expect(pill.querySelector('.nostos-badge')?.textContent?.trim()).toBe('Theodicy');
+
+    pill.click();
+    for (let i = 0; i < 20 && !router.navigate.mock.calls.length; i++) await vi.advanceTimersByTimeAsync(50);
+    expect(router.navigate).toHaveBeenCalledWith(['/brain/topics', 'topic-theodicy']);
   });
 
   it('offers no control that adds a topic to the writing', () => {

@@ -366,16 +366,22 @@ public class TopicRepository : ITopicRepository
                 .OrderByDescending(w => w.UpdatedAt)
                 .ThenBy(w => w.Name)
                 .ThenBy(w => w.Id)
-                .Take(Math.Clamp(limit, 1, 100))
+                .Take(Math.Clamp(limit, 1, 500))
                 .Select(w => new TopicWritingDto(w.Id, w.Name, w.UpdatedAt))
                 .ToListAsync(ct);
 
-        var perNote = total == 0
+        var pairs = total == 0
             ? []
             : await citations
-                .GroupBy(c => c.NoteId)
-                .Select(g => new NoteCitationCountDto(g.Key, g.Count()))
+                .OrderByDescending(c => c.Writing.UpdatedAt)
+                .ThenBy(c => c.Writing.Name)
+                .ThenBy(c => c.WritingId)
+                .Select(c => new { c.NoteId, c.WritingId })
                 .ToListAsync(ct);
+        var perNote = pairs
+            .GroupBy(p => p.NoteId)
+            .Select(g => new NoteCitationCountDto(g.Key, g.Count(), g.Select(p => p.WritingId).ToList()))
+            .ToList();
 
         return new TopicWritingUsageDto(total, shown, perNote);
     }

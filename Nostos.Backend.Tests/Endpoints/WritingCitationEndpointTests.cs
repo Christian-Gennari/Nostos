@@ -161,7 +161,10 @@ public sealed class WritingCitationEndpointTests : IClassFixture<LibraryEndpoint
         (await RowsAsync(writingId)).Should().Equal(library.NoteIds[1]);
         var usage = await UsageAsync(library.TheodicyId);
         usage.Total.Should().Be(1);
-        usage.NoteCitations.Should().Equal(new NoteCitationCountDto(library.NoteIds[1], 1));
+        var only = usage.NoteCitations.Should().ContainSingle().Subject;
+        only.NoteId.Should().Be(library.NoteIds[1]);
+        only.Writings.Should().Be(1);
+        only.WritingIds.Should().Equal(writingId);
     }
 
     [Fact]
@@ -307,7 +310,10 @@ public sealed class WritingCitationEndpointTests : IClassFixture<LibraryEndpoint
         (await RowsAsync(second)).Should().Equal(library.NoteIds[0]);
         var usage = await UsageAsync(library.OptimismId);
         usage.Total.Should().Be(2);
-        usage.NoteCitations.Should().Equal(new NoteCitationCountDto(library.NoteIds[0], 2));
+        var note = usage.NoteCitations.Should().ContainSingle().Subject;
+        note.NoteId.Should().Be(library.NoteIds[0]);
+        note.Writings.Should().Be(2);
+        note.WritingIds.Should().Equal([second, first], "the note's writings are listed newest edited first");
     }
 
     [Fact]
