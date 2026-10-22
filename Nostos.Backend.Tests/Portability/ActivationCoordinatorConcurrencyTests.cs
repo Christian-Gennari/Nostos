@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Xunit;
@@ -105,6 +107,84 @@ public sealed class ActivationCoordinatorConcurrencyTests
         release.TrySetResult();
         (await first).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
         await bed.AssertImportedGenerationAsync();
+    }
+
+    /// <summary>
+    /// Inside its exclusive window the owner holds SQLite locks on the live
+    /// database (job transition, lease renewal, the finalized revision bump).
+    /// A concurrent request that opened the live database there waited in
+    /// SQLite's busy retry with its connection still bound to the pre-cutover
+    /// file, slept across the swap and retried against the retained recovery
+    /// copy. When that retry met the owner's post-commit write on the activated
+    /// database, SQLite took the owner's rollback journal (named after the shared
+    /// live path) as hot: it played the activated pages into the recovery copy,
+    /// deleted the journal, and the owner's commit failed with a disk I/O error,
+    /// "committed but finalization could not complete". This is the
+    /// deterministic reproduction of that CI flake: the test holds the lock the
+    /// owner holds at that point, and the second request must answer from
+    /// durable files without opening or waiting on the live database.
+    /// </summary>
+    [Fact]
+    public async Task SecondRequestInsideTheExclusiveWindow_NeverWaitsOnTheLiveDatabase()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        var inWindow = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // The observer blocks a pool thread inside the window, so run the
+        // first activation away from the test's synchronization context.
+        var first = Task.Run(() => bed.ActivateAsync(confirm: true, observer: step =>
+        {
+            if (string.Equals(step, SelfHostedActivationSteps.PhaseDatabaseCheckpointed, StringComparison.Ordinal))
+            {
+                inWindow.TrySetResult();
+                release.Task.GetAwaiter().GetResult();
+            }
+        }));
+
+        try
+        {
+            await inWindow.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+            // Stand in for the write lock the owner itself holds inside its
+            // window; nothing else may touch the live database there.
+            await using var ownerLock = new SqliteConnection(
+                $"Data Source={bed.Paths.LiveDatabase};Mode=ReadWrite;Pooling=False");
+            await ownerLock.OpenAsync();
+            await using (var begin = ownerLock.CreateCommand())
+            {
+                begin.CommandText = "BEGIN EXCLUSIVE;";
+                await begin.ExecuteNonQueryAsync();
+            }
+
+            var second = Task.Run(() => bed.ActivateAsync(confirm: true));
+            var answered = await Task.WhenAny(second, Task.Delay(TimeSpan.FromSeconds(5)));
+            answered.Should().BeSameAs(second,
+                "a request inside another owner's exclusive window must answer from durable files, "
+                + "not wait on the live database with a connection that outlives the swap");
+            (await second).Outcome.Should().Be(SelfHostedActivationOutcome.InProgress,
+                "the durable journal shows this job's cutover is in flight");
+
+            await using (var rollback = ownerLock.CreateCommand())
+            {
+                rollback.CommandText = "ROLLBACK;";
+                await rollback.ExecuteNonQueryAsync();
+            }
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        (await first).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.AssertImportedGenerationAsync();
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.Completed);
+
+        var manifest = bed.Manifests.Read(bed.JobId);
+        manifest.Should().NotBeNull();
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(bed.Paths.PreviousDatabase(bed.JobId))))
+            .Should().BeEquivalentTo(manifest!.DatabaseSha256,
+                "the retained recovery copy must be exactly the database the manifest captured");
     }
 
     /// <summary>
