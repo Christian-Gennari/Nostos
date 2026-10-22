@@ -40,12 +40,18 @@
       }
     </div>
 
-    <!-- The setup: one quiet line until "Change". Paper, margins, font and
-         spacing only for a format with pages; the citation style always. -->
+    <!-- The setup: one quiet row until "Change", whose value then becomes the
+         citation style control. A format with pages adds its page controls
+         below; one without pages has none. -->
     <div class="export-row" data-testid="export-setup">
-      <span class="export-label">{{ paged() ? 'Page' : 'Citations' }}</span>
+      <span class="export-label">{{ paged() && !setupOpen() ? 'Page' : 'Citation style' }}</span>
       <span class="export-summary">
-        <span class="export-value" data-testid="export-setup-summary">{{ setupSummary() }}</span>
+        @if (setupOpen()) {
+          <app-dropdown class="export-control export-summary-control" ariaLabel="Citation style" controlSize="compact" [fullWidth]="true" data-testid="export-style"
+            [options]="styleOptions" [value]="setup().citationStyle" (valueChange)="setCitationStyle($event)" />
+        } @else {
+          <span class="export-value" data-testid="export-setup-summary">{{ setupSummary() }}</span>
+        }
         <button appButton variant="link" size="sm" type="button" data-testid="export-setup-toggle"
           aria-controls="export-setup-controls" [attr.aria-expanded]="setupOpen()" (click)="setupOpen.set(!setupOpen())">
           {{ setupOpen() ? 'Done' : 'Change' }}
@@ -53,34 +59,27 @@
       </span>
     </div>
 
-    @if (setupOpen()) {
+    @if (setupOpen() && paged()) {
       <div class="export-setup" id="export-setup-controls">
-        @if (paged()) {
-          <div class="export-row">
-            <span class="export-label" id="export-paper-label">Paper</span>
-            <nostos-segmented class="export-control" fill aria-labelledby="export-paper-label" data-testid="export-paper"
-              [options]="paperOptions" [value]="setup().paper" (valueChange)="updateSetup({ paper: $any($event) })" />
-          </div>
-          <div class="export-row">
-            <span class="export-label" id="export-margins-label">Margins</span>
-            <nostos-segmented class="export-control" fill aria-labelledby="export-margins-label"
-              [options]="marginOptions" [value]="setup().marginMm" (valueChange)="updateSetup({ marginMm: +$event })" />
-          </div>
-          <div class="export-row">
-            <span class="export-label">Font</span>
-            <app-dropdown class="export-control" ariaLabel="Font" controlSize="compact" [fullWidth]="true"
-              [options]="fontOptions" [value]="setup().font" (valueChange)="updateSetup({ font: $event })" />
-          </div>
-          <div class="export-row">
-            <span class="export-label" id="export-spacing-label">Spacing</span>
-            <nostos-segmented class="export-control" fill aria-labelledby="export-spacing-label"
-              [options]="spacingOptions" [value]="setup().lineSpacing" (valueChange)="updateSetup({ lineSpacing: +$event })" />
-          </div>
-        }
         <div class="export-row">
-          <span class="export-label">Citation style</span>
-          <app-dropdown class="export-control" ariaLabel="Citation style" controlSize="compact" [fullWidth]="true" data-testid="export-style"
-            [options]="styleOptions" [value]="setup().citationStyle" (valueChange)="setCitationStyle($event)" />
+          <span class="export-label" id="export-paper-label">Paper</span>
+          <nostos-segmented class="export-control" fill aria-labelledby="export-paper-label" data-testid="export-paper"
+            [options]="paperOptions" [value]="setup().paper" (valueChange)="updateSetup({ paper: $any($event) })" />
+        </div>
+        <div class="export-row">
+          <span class="export-label" id="export-margins-label">Margins</span>
+          <nostos-segmented class="export-control" fill aria-labelledby="export-margins-label"
+            [options]="marginOptions" [value]="setup().marginMm" (valueChange)="updateSetup({ marginMm: +$event })" />
+        </div>
+        <div class="export-row">
+          <span class="export-label">Font</span>
+          <app-dropdown class="export-control" ariaLabel="Font" controlSize="compact" [fullWidth]="true"
+            [options]="fontOptions" [value]="setup().font" (valueChange)="updateSetup({ font: $event })" />
+        </div>
+        <div class="export-row">
+          <span class="export-label" id="export-spacing-label">Spacing</span>
+          <nostos-segmented class="export-control" fill aria-labelledby="export-spacing-label"
+            [options]="spacingOptions" [value]="setup().lineSpacing" (valueChange)="updateSetup({ lineSpacing: +$event })" />
         </div>
       </div>
     }
@@ -116,7 +115,8 @@
         <div class="export-warnings" data-testid="export-warnings">
           <button appButton variant="link" size="sm" type="button" class="export-warnings-toggle" data-testid="export-warnings-toggle"
             aria-controls="export-warning-list" [attr.aria-expanded]="warningsOpen()" (click)="warningsOpen.set(!warningsOpen())">
-            {{ warningsLine() }}
+            <span>{{ warningsLine() }}</span>
+            <nostos-icon class="export-caret" [class.is-open]="warningsOpen()" name="caret-down" [size]="12" aria-hidden="true" />
           </button>
           @if (warningsOpen()) {
             <ul class="export-warning-list" id="export-warning-list">

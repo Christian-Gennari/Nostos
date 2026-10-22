@@ -135,8 +135,12 @@ describe('ExportDialogComponent (issue #1164)', () => {
     await open('one');
 
     const toggle = el('export-warnings-toggle') as HTMLButtonElement;
+    expect(toggle.tagName).toBe('BUTTON');
     expect(toggle.textContent?.trim()).toBe('2 things to check before you send this');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.classList).toContain('nostos-button--link');
+    const caret = toggle.querySelector('nostos-icon.export-caret')!;
+    expect(caret.classList).not.toContain('is-open');
     expect(el('export-warnings')?.querySelector('li')).toBeNull();
 
     toggle.click();
@@ -147,21 +151,25 @@ describe('ExportDialogComponent (issue #1164)', () => {
       'Image “Map”: couldn’t be loaded, shown as [image: Map]',
     ]);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(caret.classList).toContain('is-open');
     expect((el('export-download') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('keeps the setup in one collapsed row; a web page has no pages, so only the citation style', async () => {
     await open('one');
 
-    expect(el('export-setup')?.textContent).toContain('Citations');
+    expect(el('export-setup')?.textContent).toContain('Citation style');
     expect(el('export-setup-summary')?.textContent?.trim()).toBe('MLA 9');
     expect(el('export-style')).toBeNull();
 
     (el('export-setup-toggle') as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(el('export-style')).toBeTruthy();
+    // Opened, the row's value is the control itself: one row, no second "Citation style".
+    expect(el('export-setup')!.querySelector('[data-testid="export-style"]')).toBeTruthy();
+    expect(el('export-setup-summary')).toBeNull();
+    expect(el('export-setup-toggle')?.textContent?.trim()).toBe('Done');
+    expect(fixture.nativeElement.textContent.match(/Citation style/g)).toHaveLength(1);
     expect(el('export-paper')).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('Citation style');
   });
 
   it('names the house style as such', async () => {
@@ -183,8 +191,8 @@ describe('ExportDialogComponent (issue #1164)', () => {
 
       (el('export-setup-toggle') as HTMLButtonElement).click();
       fixture.detectChanges();
+      expect(el('export-setup')!.querySelector('[data-testid="export-style"]')).toBeTruthy();
       expect(el('export-paper')).toBeTruthy();
-      expect(el('export-style')).toBeTruthy();
       expect(fixture.componentInstance.filename()).toBe('One.test');
     } finally {
       (EXPORT_FORMATS as ExportFormat[]).pop();

@@ -17,6 +17,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { DialogActionsComponent } from '../../ui/dialog-actions/dialog-actions.component';
 import { DropdownComponent, type DropdownOption } from '../../ui/dropdown/dropdown.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
+import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { SegmentedComponent, type SegmentedOption } from '../../ui/segmented/segmented.component';
 import { CITATION_STYLES, citationStyle } from '../citations/citation-styles';
@@ -46,6 +47,7 @@ import { type ExportSource, ExportService, exportBlockedReason, orderChapters } 
     DialogActionsComponent,
     ButtonComponent,
     IconButtonComponent,
+    NostosIconComponent,
     DropdownComponent,
     SegmentedComponent,
   ],

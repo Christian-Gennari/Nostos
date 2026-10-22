@@ -127,6 +127,19 @@
   min-width: 0;
 }
 
+.export-summary {
+  align-items: center;
+}
+
+.export-summary-control {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.export-summary button {
+  flex: 0 0 auto;
+}
+
 .export-summary .export-value {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -205,4 +218,23 @@
 .export-chapters,
 .export-warnings {
   margin-top: 0.35rem;
+}
+
+/* The warnings line reads as the button it is, open or closed. */
+.export-warnings-toggle {
+  gap: 0.3rem;
+}
+
+.export-caret {
+  transition: transform 160ms ease;
+}
+
+.export-caret.is-open {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-caret {
+    transition: none;
+  }
 }
