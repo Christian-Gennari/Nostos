@@ -20,7 +20,7 @@
 <hr>
 
 <div align="center">
-  <a href="https://nostos.page">
+  <a href="https://nostos.page/#film">
     <img
       width="2880"
       height="1620"
@@ -28,7 +28,7 @@
       src="docs/screenshots/promo-poster.png"
     />
   </a>
-  <p><em>Watch the launch film on <a href="https://nostos.page">nostos.page</a></em></p>
+  <p><em>Watch the launch film on <a href="https://nostos.page/#film">nostos.page</a></em></p>
 </div>
 
 ## What is Nostos?
