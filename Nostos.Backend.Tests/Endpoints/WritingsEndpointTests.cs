@@ -48,6 +48,74 @@ public sealed class WritingsEndpointTests : IClassFixture<LibraryEndpointFactory
     }
 
     [Fact]
+    public async Task PageSetup_IsEmptyUntilSaved_ThenReadsBackAsWritten_WithoutTouchingTheWriting()
+    {
+        var writing = await SeedWritingAsync();
+
+        var empty = await Client.GetAsync($"/api/writings/{writing.Id}/page-setup");
+        empty.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            "a writing never exported has no page setup; the dialog starts from the Studio's preferences");
+
+        var setup = new WritingPageSetupDto("letter", 25.44, "eb-garamond", 1.5, "chicago-notes");
+        var saved = await Client.PutAsJsonAsync($"/api/writings/{writing.Id}/page-setup", setup);
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await saved.Content.ReadFromJsonAsync<WritingPageSetupDto>())
+            .Should().Be(setup with { MarginMm = 25.4 });
+
+        var read = await Client.GetFromJsonAsync<WritingPageSetupDto>($"/api/writings/{writing.Id}/page-setup");
+        read.Should().Be(setup with { MarginMm = 25.4 });
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        var stored = await db.Writings.FindAsync(writing.Id);
+        stored!.Content.Should().Be(writing.Content);
+        stored.UpdatedAt.Should().Be(writing.UpdatedAt, "page setup is not a change to the writing's words");
+    }
+
+    [Fact]
+    public async Task PageSetup_IsSavedForAFolderToo()
+    {
+        var folder = await SeedWritingAsync("Thesis", null, WritingType.Folder);
+        var setup = new WritingPageSetupDto("a4", 30, "newsreader", 2, "apa");
+
+        var saved = await Client.PutAsJsonAsync($"/api/writings/{folder.Id}/page-setup", setup);
+
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client.GetFromJsonAsync<WritingPageSetupDto>($"/api/writings/{folder.Id}/page-setup")).Should().Be(setup);
+    }
+
+    [Theory]
+    [InlineData("tabloid", 25, "newsreader", 1.5, "apa")]
+    [InlineData("a4", 1, "newsreader", 1.5, "apa")]
+    [InlineData("a4", 200, "newsreader", 1.5, "apa")]
+    [InlineData("a4", 25, "Comic Sans; drop", 1.5, "apa")]
+    [InlineData("a4", 25, "newsreader", 9, "apa")]
+    [InlineData("a4", 25, "newsreader", 1.5, "")]
+    public async Task PageSetup_RejectsAnUnusableSetup_AndKeepsTheSavedOne(
+        string paper, double margin, string font, double spacing, string style)
+    {
+        var writing = await SeedWritingAsync();
+        var good = new WritingPageSetupDto("a4", 25, "newsreader", 1.5, "apa");
+        (await Client.PutAsJsonAsync($"/api/writings/{writing.Id}/page-setup", good)).EnsureSuccessStatusCode();
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/writings/{writing.Id}/page-setup",
+            new WritingPageSetupDto(paper, margin, font, spacing, style));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Client.GetFromJsonAsync<WritingPageSetupDto>($"/api/writings/{writing.Id}/page-setup")).Should().Be(good);
+    }
+
+    [Fact]
+    public async Task PageSetup_ForAMissingWriting_IsNotFound()
+    {
+        var id = Guid.NewGuid();
+        (await Client.GetAsync($"/api/writings/{id}/page-setup")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await Client.PutAsJsonAsync($"/api/writings/{id}/page-setup", new WritingPageSetupDto("a4", 25, "newsreader", 1.5, "apa")))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Update_NameOnly_PreservesExistingContent_InResponseAndPersistedGet()
     {
         var writing = await SeedWritingAsync();

@@ -709,7 +709,8 @@ public sealed class PortableArchiveService(
                 x.Content,
                 x.ParentId,
                 x.CreatedAt,
-                x.UpdatedAt))
+                x.UpdatedAt,
+                x.PageSetup))
             .ToList();
 
         var acquisitions = (await _db.BookAcquisitions
@@ -1266,7 +1267,8 @@ public sealed class PortableArchiveService(
                 writing.ParentId,
                 writing.Name,
                 writing.Content,
-                writing.Type.ToString());
+                writing.Type.ToString(),
+                writing.PageSetup);
         }
     }
 

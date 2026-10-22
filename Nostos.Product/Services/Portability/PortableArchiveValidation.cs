@@ -363,11 +363,13 @@ internal static class PortableArchiveValidation
         Guid? parentId,
         string name,
         string? content,
-        string type)
+        string type,
+        string? pageSetup)
     {
         if (parentId != expected.ParentId
             || name != expected.Name
             || content != expected.Content
+            || pageSetup != expected.PageSetup
             || !string.Equals(type, expected.Type, StringComparison.OrdinalIgnoreCase))
         {
             throw new PortableArchiveException(
@@ -839,6 +841,13 @@ internal static class PortableArchiveValidation
                 throw new PortableArchiveException(
                     "invalid_writing_type",
                     $"Writing {writing.Id} has invalid type '{writing.Type}'.");
+            }
+
+            if (writing.PageSetup is { Length: > WritingModel.MaxPageSetupLength })
+            {
+                throw new PortableArchiveException(
+                    "invalid_writing_page_setup",
+                    $"Writing {writing.Id} has a page setup longer than {WritingModel.MaxPageSetupLength} characters.");
             }
 
             if (writing.ParentId is { } parentId)

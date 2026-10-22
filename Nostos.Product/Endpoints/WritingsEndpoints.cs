@@ -163,6 +163,42 @@ public static class WritingsEndpoints
             }
         );
 
+        // GET: The writing's export page setup (issue #1164); 204 until one is saved.
+        group.MapGet(
+            "/{id}/page-setup",
+            async (Guid id, IWritingRepository repo) =>
+            {
+                var item = await repo.GetByIdAsync(id);
+                if (item is null)
+                    return Results.NotFound();
+
+                var setup = WritingPageSetup.Read(item.PageSetup);
+                return setup is null ? Results.NoContent() : Results.Ok(setup);
+            }
+        );
+
+        // PUT: Save the writing's export page setup. Not a content change, so
+        // UpdatedAt stays as it is.
+        group.MapPut(
+            "/{id}/page-setup",
+            async (Guid id, WritingPageSetupDto dto, IWritingRepository repo) =>
+            {
+                var error = WritingPageSetup.Validate(dto);
+                if (error is not null)
+                    return Results.BadRequest(error);
+
+                var item = await repo.GetByIdAsync(id);
+                if (item is null)
+                    return Results.NotFound();
+
+                var normalized = WritingPageSetup.Normalize(dto);
+                item.PageSetup = WritingPageSetup.Write(normalized);
+                await repo.UpdateAsync(item);
+
+                return Results.Ok(normalized);
+            }
+        );
+
         // GET: Fetch kept source notes for a writing document
         group.MapGet(
             "/{writingId}/notes",

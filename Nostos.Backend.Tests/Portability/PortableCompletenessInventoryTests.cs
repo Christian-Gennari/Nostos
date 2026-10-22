@@ -263,6 +263,9 @@ public sealed class PortableCompletenessInventoryTests
                     "ParentId",
                     "CreatedAt",
                     "UpdatedAt",
+                    // How the writer last exported it: a restore that dropped
+                    // it would forget their paper, margins and style.
+                    "PageSetup",
                 ],
                 excludedNavigations:
                 [

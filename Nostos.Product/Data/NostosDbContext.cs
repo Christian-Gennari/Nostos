@@ -675,6 +675,9 @@ public class NostosDbContext : DbContext
         modelBuilder.Entity<BookCollectionModel>().HasIndex(bc => bc.CollectionId);
 
         modelBuilder.Entity<WritingModel>().HasIndex(w => w.ParentId);
+        modelBuilder.Entity<WritingModel>()
+            .Property(w => w.PageSetup)
+            .HasMaxLength(WritingModel.MaxPageSetupLength);
 
         // --- WRITING ↔ CHOSEN SOURCE NOTES MEMBERSHIP ---
         // Both sides cascade: deleting a writing (or folder) removes membership

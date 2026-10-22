@@ -288,6 +288,8 @@ internal static class PortableArchiveTestSupport
             Name = "Portable draft",
             Type = WritingType.Document,
             Content = "<p>User-owned studio prose.</p>",
+            // How it was last exported, so a round trip proves it travels.
+            PageSetup = "{\"paper\":\"letter\",\"marginMm\":25.4,\"font\":\"newsreader\",\"lineSpacing\":1.5,\"citationStyle\":\"apa\"}",
             ParentId = studioFolder.Id,
             Parent = studioFolder,
             CreatedAt = now.AddHours(1),

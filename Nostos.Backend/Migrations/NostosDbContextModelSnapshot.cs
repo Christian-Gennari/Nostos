@@ -15,7 +15,7 @@ namespace Nostos.Backend.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.AiProviderSettingsModel", b =>
                 {
@@ -1173,6 +1173,10 @@ namespace Nostos.Backend.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PageSetup")
+                        .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("ParentId")

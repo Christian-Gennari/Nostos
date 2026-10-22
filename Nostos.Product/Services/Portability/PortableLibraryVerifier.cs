@@ -2285,6 +2285,10 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             nameof(PortableWriting.UpdatedAt),
             Ef(("WritingModel", nameof(WritingModel.UpdatedAt))),
             (context, failures) => CompareField(failures, "writing", context.Row.Id, nameof(PortableWriting.UpdatedAt), context.Row.UpdatedAt, context.Expected.UpdatedAt)),
+        Entry<WritingContext>(
+            nameof(PortableWriting.PageSetup),
+            Ef(("WritingModel", nameof(WritingModel.PageSetup))),
+            (context, failures) => CompareField(failures, "writing", context.Row.Id, nameof(PortableWriting.PageSetup), context.Row.PageSetup, context.Expected.PageSetup)),
     ];
 
     private static readonly IReadOnlyList<ComparisonEntry<AcquisitionContext>> AcquisitionComparisons =
