@@ -210,6 +210,71 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             throw new ArgumentException("A migration job identifier is required.", nameof(jobId));
         }
 
+        // Every live-database read before this run owns the job lease sits
+        // inside a shared operation lease, like any other library reader, so it
+        // can never straddle another owner's exclusive window. Without it, a
+        // read that met the owner's write lock waited in SQLite's busy retry
+        // with its connection still bound to the pre-cutover file, slept across
+        // the swap and retried against the retained recovery copy. SQLite names
+        // the rollback journal after the path, not the file, so that retry could
+        // take the owner's journal on the activated database as hot, replay the
+        // activated pages into the recovery copy and delete the journal under
+        // the owner's commit (issue #1181).
+        var admission = _maintenance.TryEnterOperation();
+        if (admission is null)
+        {
+            return ReportWhileAdmissionClosed(jobId);
+        }
+
+        try
+        {
+            return await ActivateAdmittedAsync(jobId, request, admission, ct);
+        }
+        finally
+        {
+            // Idempotent: the owner path releases it as soon as it holds the
+            // job lease, before it can enter its own exclusive window.
+            admission.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Admission is closed, so an exclusive owner may be moving the live
+    /// database and nothing may open it. Only the durable journals, which live
+    /// outside the database, can say whether the window belongs to this job (a
+    /// cutover in flight, or one a fail-closed host keeps for reconciliation).
+    /// Anything else is ordinary maintenance: the typed busy answer.
+    /// </summary>
+    private SelfHostedActivationResult ReportWhileAdmissionClosed(Guid jobId)
+    {
+        bool ownCutover;
+        try
+        {
+            ownCutover = _journals.Read(jobId) is not null
+                || _journals.ReadResolved(jobId) is { Phase: SelfHostedActivationPhase.Committed };
+        }
+        catch (IOException)
+        {
+            // The owner renamed this job's journal between the existence check
+            // and the open: its run is the one holding the window.
+            ownCutover = true;
+        }
+
+        if (!ownCutover)
+        {
+            throw LibraryMaintenanceCoordinator.Busy();
+        }
+
+        return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.InProgress,
+            MigrationJobState.Activating, MigrationRecoveryStatus.Pending);
+    }
+
+    private async Task<SelfHostedActivationResult> ActivateAdmittedAsync(
+        Guid jobId,
+        MigrationActivateRequest? request,
+        ILibraryOperationLease admission,
+        CancellationToken ct)
+    {
         MigrationJobRecord record;
         try
         {
@@ -242,7 +307,15 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         var committed = ReadCommittedJournal(jobId);
         if (committed is not null)
         {
-            return await ResumeCommittedAsync(jobId, record, committed, ct);
+            if (state != MigrationJobState.Activating)
+            {
+                throw MigrationJobStoreException.InvalidState(jobId,
+                    "A committed activation must be completed from the Activating state.");
+            }
+
+            var resumeToken = await AcquireLeaseAsync(jobId, ct);
+            admission.Dispose();
+            return await ResumeCommittedAsync(jobId, record, committed, resumeToken, ct);
         }
 
         if (record.PreparedStagingId is not { } stagingValue || stagingValue == Guid.Empty)
@@ -287,6 +360,9 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
                     (MigrationJobState)current.State, (MigrationRecoveryStatus)current.RecoveryStatus);
             }
 
+            // This run owns the job lease now; its own exclusive window must be
+            // able to drain every shared lease, including this one.
+            admission.Dispose();
             heartbeat = StartHeartbeat(jobId, token);
 
             // A durably admitted run resumes ONLY from the activation journal
@@ -711,15 +787,9 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         Guid jobId,
         MigrationJobRecord record,
         SelfHostedActivationJournal journal,
+        string? token,
         CancellationToken ct)
     {
-        if ((MigrationJobState)record.State != MigrationJobState.Activating)
-        {
-            throw MigrationJobStoreException.InvalidState(jobId,
-                "A committed activation must be completed from the Activating state.");
-        }
-
-        var token = await AcquireLeaseAsync(jobId, ct);
         if (token is null)
         {
             return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.InProgress,
