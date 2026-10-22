@@ -1,0 +1,45 @@
+/* Where a topic is used in writing (issue #1162): a quiet, read-only list
+   at the end of the topic's notes. */
+:host {
+  display: block;
+}
+
+.used-in {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.used-in-heading {
+  margin: 0 0 0.5rem;
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+  font-weight: var(--fw-medium);
+}
+
+.used-in-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.used-in-link {
+  color: var(--color-text-main);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.used-in-link:hover,
+.used-in-link:focus-visible {
+  text-decoration: underline;
+}
+
+.used-in-more {
+  margin: 0.5rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+

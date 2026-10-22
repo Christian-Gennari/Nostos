@@ -60,6 +60,31 @@ export function parseCitationHref(href: string | null | undefined): CitationRef 
   };
 }
 
+const CITATION_LINKS = /\[((?:\\.|[^\\\]])*)\]\((nostos:cite\/[^)\s]+)\)/g;
+const FENCED_CODE = /^[ \t]{0,3}(```|~~~)[\s\S]*?(?:^[ \t]{0,3}\1|(?![\s\S]))/gm;
+const INLINE_CODE = /`[^`\n]*`/g;
+const NOTE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The kept sources a writing cites, once each, in the order they first
+ * appear (issue #1162). The same rules as the server's index: a citation
+ * with no `src`, a bibliography entry (`as=bib`), a `src` that is not a note
+ * id and a link shown as code never count. Ids come back lower-case.
+ */
+export function citedSourceIds(markdown: string | null | undefined): string[] {
+  const text = markdown ?? '';
+  if (!text.includes(CITATION_SCHEME)) return [];
+  const prose = text.replace(FENCED_CODE, '').replace(INLINE_CODE, '');
+  const ids: string[] = [];
+  for (const match of prose.matchAll(CITATION_LINKS)) {
+    const ref = parseCitationHref(match[2].replace(/&amp;/g, '&'));
+    if (!ref?.src || ref.as === 'bib' || !NOTE_ID.test(ref.src)) continue;
+    const id = ref.src.toLowerCase();
+    if (id !== '00000000-0000-0000-0000-000000000000' && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 export function citationHref(ref: CitationRef): string {
   const params: string[] = [];
   if (ref.page) params.push(`p=${ref.page}`);

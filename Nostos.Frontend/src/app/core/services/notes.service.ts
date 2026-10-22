@@ -49,6 +49,15 @@ export class NotesService {
     return this.http.get<NoteSearchHit>(`/api/notes/${id}`);
   }
 
+  /**
+   * Several notes by id, with their topics (issue #1162: the Studio shows the
+   * topics of the sources a writing cites). Ids that name no note in this
+   * library are simply absent from the answer.
+   */
+  getMany(ids: readonly string[]): Observable<NoteSearchHit[]> {
+    return this.http.get<NoteSearchHit[]>('/api/notes/by-ids', { params: { ids: ids.join(',') } });
+  }
+
   /** A passage in full (issue #1014); the lists carry only its opening. */
   getPassage(id: string): Observable<Passage> {
     return this.http.get<Passage>(`/api/notes/${id}/passage`);

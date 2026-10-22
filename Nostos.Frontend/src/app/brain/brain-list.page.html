@@ -219,6 +219,7 @@
         [topicMap]="state.lookup()"
         [showBook]="order() !== 'book'"
         [showMoreFromBook]="!bookId()"
+        [citedIn]="place() === 'topic' ? citedInCount(note.id) : 0"
         [busy]="noteActions.busy().has(note.id)"
         [selectable]="selecting()"
         [selected]="selected().has(note.id)"
@@ -246,6 +247,12 @@
       </button>
       }
     </div>
+    }
+
+    <!-- Read-only: writings reach a topic only through the notes they cite
+         (issue #1162). Nothing here adds a topic to a writing. -->
+    @if (place() === 'topic') {
+    <app-brain-topic-used-in [usage]="writingUsage()" />
     }
   </main>
 </div>

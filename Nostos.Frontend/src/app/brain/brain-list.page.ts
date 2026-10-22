@@ -18,7 +18,7 @@ import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@
 
 import type { NoteBookFacet, NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
 import { NotesService, type NoteBrowseFilter } from '../core/services/notes.service';
-import { TopicsService, type RelatedTopicDto, type TopicDto } from '../core/services/topics.service';
+import { TopicsService, type RelatedTopicDto, type TopicDto, type TopicWritingUsageDto } from '../core/services/topics.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
@@ -31,6 +31,7 @@ import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
 import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
+import { BrainTopicUsedInComponent, USED_IN_SHOWN } from './topic-used-in/brain-topic-used-in.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
@@ -58,6 +59,7 @@ import {
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 250;
 const RELATED_SHOWN = 6;
+
 
 const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
   { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -8 },
@@ -91,6 +93,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     BrainTopicRenameComponent,
     BrainNoteDialogsComponent,
     BrainTopicWordsComponent,
+    BrainTopicUsedInComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',
@@ -145,6 +148,11 @@ export class BrainListPage {
   readonly books = signal<NoteBookFacet[]>([]);
   readonly related = signal<RelatedTopicDto[]>([]);
   readonly relatedExpanded = signal(false);
+  /** Where this topic is used in writing, from what writings cite; read-only (issue #1162). */
+  readonly writingUsage = signal<TopicWritingUsageDto | null>(null);
+  /** How many writings cite each of this topic's notes. */
+  readonly citedIn = computed(
+    () => new Map((this.writingUsage()?.noteCitations ?? []).map((c) => [c.noteId.toLowerCase(), c.writings])));
 
   // The toolbar.
   readonly searchDraft = signal('');
@@ -234,6 +242,13 @@ export class BrainListPage {
     effect(() => {
       const id = this.topicId();
       untracked(() => this.loadRelated(id));
+    });
+
+    // Where the topic is used in writing. It follows what writings cite, so it
+    // is read again whenever the list is (a note deleted, a topic merged).
+    effect(() => {
+      const [, , id] = [this.listKey(), this.state.topicsRewritten(), this.topicId()];
+      untracked(() => this.loadWritingUsage(id));
     });
 
     // The field follows the URL when the search changes from elsewhere (Back, a chip).
@@ -412,6 +427,30 @@ export class BrainListPage {
         if (seq === this.booksSeq) this.booksKey = null;
       },
     });
+  }
+
+  private writingUsageSeq = 0;
+
+  private loadWritingUsage(topicId: string | null): void {
+    const seq = ++this.writingUsageSeq;
+    if (!topicId) {
+      this.writingUsage.set(null);
+      return;
+    }
+    if (this.writingUsage() && this.topicId() !== topicId) this.writingUsage.set(null);
+    this.topicsService.getWritingUsage(topicId, USED_IN_SHOWN).subscribe({
+      next: (usage) => {
+        if (seq === this.writingUsageSeq) this.writingUsage.set(usage);
+      },
+      error: () => {
+        if (seq === this.writingUsageSeq) this.writingUsage.set(null);
+      },
+    });
+  }
+
+  /** How many writings cite a note, for its muted "Cited in N writings" line. */
+  citedInCount(noteId: string): number {
+    return this.citedIn().get(noteId.toLowerCase()) ?? 0;
   }
 
   private loadRelated(topicId: string | null): void {

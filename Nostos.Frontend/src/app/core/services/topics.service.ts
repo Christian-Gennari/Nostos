@@ -71,12 +71,40 @@ export interface TopicDetailDto {
   notes: NoteContextDto[];
 }
 
+/** A writing that cites one of a topic's notes (issue #1162). */
+export interface TopicWritingDto {
+  id: string;
+  name: string;
+  updatedAt: string;
+}
+
+/** How many writings cite one of a topic's notes. */
+export interface NoteCitationCountDto {
+  noteId: string;
+  writings: number;
+}
+
+/**
+ * Where a topic is used in writing, joined at read time from what writings
+ * cite: the newest few, how many in all, and a count per cited note.
+ */
+export interface TopicWritingUsageDto {
+  total: number;
+  writings: TopicWritingDto[];
+  noteCitations: NoteCitationCountDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class TopicsService {
   private http = inject(HttpClient);
 
   list(): Observable<TopicDto[]> {
     return this.http.get<TopicDto[]>('/api/topics');
+  }
+
+  /** Writings that cite the topic's notes (issue #1162), newest first. Read-only. */
+  getWritingUsage(id: string, limit = 5): Observable<TopicWritingUsageDto> {
+    return this.http.get<TopicWritingUsageDto>(`/api/topics/${id}/writings`, { params: { limit } });
   }
 
   get(id: string): Observable<TopicDetailDto> {

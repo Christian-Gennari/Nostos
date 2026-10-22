@@ -111,6 +111,8 @@ export class NoteItemComponent {
    */
   readonly topicMap = input<ReadonlyMap<string, TopicDto> | null>(null);
   /** False where a heading above already names the book. */
+  /** How many writings cite this note (issue #1162); shown quietly when above 0. */
+  readonly citedIn = input(0);
   readonly showBook = input(true);
   /** Offer "More from this book" (not when the list is already that book). */
   readonly showMoreFromBook = input(true);

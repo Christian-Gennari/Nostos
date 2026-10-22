@@ -180,6 +180,9 @@
     }
     <time [attr.datetime]="note().createdAt">{{ note().createdAt | date: 'd MMM y' }}</time>
     @if (location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
+    @if (citedIn() > 0) {
+    <span class="note-item-dot" aria-hidden="true">·</span><span class="note-item-cited">Cited in {{ citedIn() === 1 ? '1 writing' : citedIn() + ' writings' }}</span>
+    }
     <a class="note-item-source" [routerLink]="source().commands" [queryParams]="source().queryParams">
       Open in book <nostos-icon name="arrow-right" [size]="12" />
     </a>

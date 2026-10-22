@@ -59,6 +59,19 @@ describe('NoteItemComponent', () => {
     expect(chips).toEqual(['mean', 'virtue']);
   });
 
+  it('says quietly how many writings cite the note, and nothing when none do (issue #1162)', () => {
+    render();
+    expect(element.querySelector('.note-item-cited')).toBeNull();
+
+    fixture.componentRef.setInput('citedIn', 1);
+    fixture.detectChanges();
+    expect(element.querySelector('.note-item-meta .note-item-cited')?.textContent?.trim()).toBe('Cited in 1 writing');
+
+    fixture.componentRef.setInput('citedIn', 3);
+    fixture.detectChanges();
+    expect(element.querySelector('.note-item-cited')?.textContent?.trim()).toBe('Cited in 3 writings');
+  });
+
   it('draws the quote rule in the note’s pen', () => {
     render({ highlightColour: 'rose' });
 
