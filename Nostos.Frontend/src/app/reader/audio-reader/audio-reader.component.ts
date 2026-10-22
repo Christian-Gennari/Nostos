@@ -17,14 +17,13 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Howl } from 'howler';
 import { Subject, Subscription } from 'rxjs';
 import { sampleTime, filter } from 'rxjs/operators';
 import { BooksService } from '../../core/services/books.service';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
 import { Book } from '../../core/dtos/book.dtos';
-import { AudioPlayer, TrackPlaylistPlayer } from './track-playlist-player';
+import { AUDIO_PLAYER_FACTORY, AudioPlayer, PlaylistTrack } from './track-playlist-player';
 
 import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
@@ -122,16 +121,17 @@ export class AudioReader implements OnDestroy, IReader {
   });
 
   // Player State
-  // A single-file book plays through Howler; a multi-track one through the
-  // playlist player. Both speak seconds across the whole book.
+  // One audio element plays the book: a multi-track book as its tracks in
+  // order, a single-file one as a list of one. Seconds across the whole book.
   player: AudioPlayer | null = null;
+  private readonly createPlayer = inject(AUDIO_PLAYER_FACTORY);
   isPlaying = signal(false);
   currentTime = signal(0);
   duration = signal(0);
   currentRate = signal(1);
   // The single playback menu holds speed and sleep (issue #227 §1/§3), so there is
   // one pill, one chevron, one focus path and one outside-click rule.
-  // True while Howl is initializing (between `new Howl` and the onload callback),
+  // True while the player is initializing (until its onload callback),
   // so the UI can show a visible loading state instead of a dead-looking player.
   loading = signal(true);
   loadError = signal<string | null>(null);
@@ -307,7 +307,7 @@ export class AudioReader implements OnDestroy, IReader {
     if (!recovering) this.resetRecovery();
     this.loading.set(true);
     this.loadError.set(null);
-    // Show the remembered speed immediately; applied to Howl on load.
+    // Show the remembered speed immediately; applied to the player on load.
     this.currentRate.set(this.restoreSavedRate());
 
     // Read without tracking: this runs inside the effect keyed on the book id,
@@ -361,28 +361,22 @@ export class AudioReader implements OnDestroy, IReader {
       },
     };
 
-    if (tracks.length > 0) {
-      this.player = new TrackPlaylistPlayer(
-        tracks.map((track) => ({
-          url: `/api/books/${id}/tracks/${track.number}`,
-          duration: track.duration,
-        })),
-        callbacks,
-      );
-      return;
-    }
-
-    this.player = new Howl({
-      src: [`/api/books/${id}/file`],
-      html5: true,
-      format: ['mp3', 'm4a', 'm4b'],
-      ...callbacks,
-    });
+    // A single file's length is read from the file itself once it loads.
+    const playlist: PlaylistTrack[] =
+      tracks.length > 0
+        ? tracks.map((track) => ({
+            url: `/api/books/${id}/tracks/${track.number}`,
+            duration: track.duration,
+          }))
+        : [{ url: `/api/books/${id}/file`, duration: 0 }];
+    this.player = this.createPlayer(playlist, callbacks);
   }
 
   /**
-   * The audio stopped loading (issue #1058). A dead stream fires no pause, so
-   * the player is marked paused here. After the book has played once, the
+   * The audio stopped loading (issue #1058). A stream that dies mid-book is
+   * first requested again in place by the player itself (issue #1161); this
+   * runs when that fails too, or the book never loaded. A dead stream fires no
+   * pause, so the player is marked paused here. After the book has played once, the
    * failure is most likely the connection: the audio is reloaded a few times
    * with growing waits, and at once when the browser reports it is back online.
    * While offline nothing is tried until then. Only when that runs out, or the
@@ -478,7 +472,6 @@ export class AudioReader implements OnDestroy, IReader {
 
   /**
    * The player's own position in book seconds, or null when it has none to give.
-   * Howler's getter returns the Howl itself (not a number) when it cannot answer.
    */
   private readPlayerPosition(): number | null {
     const position = this.player?.seek();

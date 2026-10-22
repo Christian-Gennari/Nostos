@@ -1,8 +1,9 @@
+import { InjectionToken } from '@angular/core';
+
 /**
- * What the audio reader needs from whatever is producing sound. Howler's
- * `Howl` already has this shape for a single-file audiobook;
- * {@link TrackPlaylistPlayer} provides it for a multi-track one. Positions and
- * the duration are always seconds across the WHOLE book.
+ * What the audio reader needs from whatever is producing sound;
+ * {@link TrackPlaylistPlayer} provides it. Positions and the duration are
+ * always seconds across the WHOLE book.
  */
 export interface AudioPlayer {
   play(): unknown;
@@ -17,7 +18,10 @@ export interface AudioPlayer {
 
 export interface PlaylistTrack {
   url: string;
-  /** Recorded length in seconds. */
+  /**
+   * Recorded length in seconds. A single-file book has none to give (0): its
+   * length is read from the file once it loads.
+   */
   duration: number;
 }
 
@@ -29,8 +33,17 @@ export interface PlaylistCallbacks {
   onend: () => void;
 }
 
+/** Builds the player for a book's audio; specs swap in a fake. */
+export type AudioPlayerFactory = (tracks: PlaylistTrack[], callbacks: PlaylistCallbacks) => AudioPlayer;
+
+export const AUDIO_PLAYER_FACTORY = new InjectionToken<AudioPlayerFactory>('AUDIO_PLAYER_FACTORY', {
+  providedIn: 'root',
+  factory: () => (tracks, callbacks) => new TrackPlaylistPlayer(tracks, callbacks),
+});
+
 /**
- * Plays an ordered list of audio files as one continuous book.
+ * Plays an ordered list of audio files as one continuous book. A single-file
+ * audiobook is a list of one.
  *
  * The book is a virtual timeline: track N starts where the recorded lengths of
  * the tracks before it end. Everything outside this class (progress, chapters,
@@ -46,11 +59,20 @@ export interface PlaylistCallbacks {
  * recorded lengths. A recorded length that is a few milliseconds off therefore
  * costs a tiny step in the displayed time and can never cut a track short or
  * leave silence at its end.
+ *
+ * A stream that fails after it played is picked up again in place: the same
+ * track is requested anew on the same element, at the same place, from inside
+ * the element's error event. On Cloud the file is served from a storage link
+ * that expires after a few minutes, and the browser keeps reading the book
+ * from that link, so its next read after expiry fails however healthy the
+ * connection is. A fresh request gets a fresh link. Recovering on a timer or a
+ * new element would not survive a locked phone (issue #1161).
  */
 export class TrackPlaylistPlayer implements AudioPlayer {
   private readonly audio: HTMLAudioElement;
   private readonly starts: number[] = [];
-  private readonly total: number;
+  private readonly durations: number[];
+  private total: number;
   private index = 0;
   /** Offset in the current track to apply once its metadata has loaded. */
   private pendingOffset: number | null = null;
@@ -72,10 +94,11 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     private readonly callbacks: PlaylistCallbacks,
     audioFactory: () => HTMLAudioElement = () => new Audio(),
   ) {
+    this.durations = tracks.map((track) => Math.max(0, track.duration || 0));
     let cursor = 0;
-    for (const track of tracks) {
+    for (const duration of this.durations) {
       this.starts.push(cursor);
-      cursor += Math.max(0, track.duration);
+      cursor += duration;
     }
     this.total = cursor;
 
@@ -164,7 +187,7 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     if (this.pendingOffset !== null) return this.starts[this.index] + this.pendingOffset;
     // Clamped to the recorded length so the book position never runs past the
     // next track's start while this one plays out its last few milliseconds.
-    const within = Math.min(this.audio.currentTime || 0, this.tracks[this.index]?.duration ?? 0);
+    const within = Math.min(this.audio.currentTime || 0, this.durations[this.index] ?? 0);
     return this.starts[this.index] + within;
   }
 
@@ -188,6 +211,7 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     const offset = this.pendingOffset ?? 0;
     this.pendingOffset = null;
     this.switching = false;
+    this.learnSingleFileLength();
     this.audio.defaultPlaybackRate = this.playbackRate;
     this.audio.playbackRate = this.playbackRate;
     if (offset > 0) this.setCurrentTime(offset);
@@ -230,6 +254,13 @@ export class TrackPlaylistPlayer implements AudioPlayer {
 
   private handleError(): void {
     if (this.disposed) return;
+    if (this.loadedOnce && !this.switching) {
+      // The stream of a track that had loaded died. Ask for it again right
+      // here; the place and the wish to play carry over. Should that request
+      // fail too, it fails while switching and is reported below.
+      this.load(this.index, Math.max(0, this.position() - this.starts[this.index]));
+      return;
+    }
     this.switching = false;
     this.pendingOffset = null;
     this.wantPlaying = false;
@@ -256,6 +287,15 @@ export class TrackPlaylistPlayer implements AudioPlayer {
         this.reportPaused();
       });
     }
+  }
+
+  /** A single file's length is the file's own, as soon as the element knows it. */
+  private learnSingleFileLength(): void {
+    if (this.tracks.length !== 1) return;
+    const length = this.audio.duration;
+    if (!Number.isFinite(length) || length <= 0) return;
+    this.durations[0] = length;
+    this.total = length;
   }
 
   private setCurrentTime(offset: number): void {
