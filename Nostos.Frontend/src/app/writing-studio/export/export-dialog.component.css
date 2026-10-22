@@ -1,0 +1,175 @@
+:host {
+  display: contents;
+}
+
+.export-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.export-header h2 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.export-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem 1.25rem;
+}
+
+@media (max-width: 480px) {
+  .export-body {
+    padding-inline: 1rem;
+  }
+}
+
+.export-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.export-label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.export-value {
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+}
+
+.export-control {
+  min-width: 0;
+}
+
+.export-rule {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--border-color);
+}
+
+.export-chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.export-chapters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.export-chapter-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: chapter;
+}
+
+.export-chapter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: var(--radius-lg);
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+  counter-increment: chapter;
+}
+
+.export-chapter::before {
+  content: counter(chapter) '.';
+  min-width: 1.5rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.export-chapter-grip {
+  display: inline-flex;
+  color: var(--color-text-muted);
+  cursor: grab;
+}
+
+.export-chapter-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-chapter-group {
+  color: var(--color-text-muted);
+}
+
+.export-chapter.cdk-drag-preview {
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 1px var(--border-color);
+}
+
+.export-chapter.cdk-drag-placeholder {
+  opacity: 0.4;
+}
+
+.export-file {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.export-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.export-warnings h3 {
+  margin: 0 0 0.35rem;
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.export-warnings ul {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.export-warning-chapter {
+  font-weight: 600;
+}
+
+.export-warning-count {
+  color: var(--color-text-muted);
+}
+
+.export-status {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 480px) {
+  .export-row {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+}

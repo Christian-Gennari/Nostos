@@ -49,6 +49,9 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
+import { ExportDialogComponent } from './export/export-dialog.component';
+import { hasExportableContent } from './export/export-resolve';
 import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
 import {
   buildNoteMarkdown,
@@ -173,6 +176,8 @@ function writeCarets(carets: RememberedCaret[]): void {
     InputDirective,
     BadgeComponent,
     ConfirmModal,
+    NOSTOS_MENU,
+    ExportDialogComponent,
   ],
   templateUrl: './writing-studio.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -311,6 +316,19 @@ export class WritingStudio implements OnInit, AfterViewInit {
   readonly pagePrefs = inject(StudioPreferencesService);
   private readonly citations = inject(CitationService);
   pageSettingsOpen = signal(false);
+  /** The export dialog (issue #1164). */
+  exportOpen = signal(false);
+  /**
+   * Why "Export…" is unavailable, shown under it; null when it can open. An
+   * empty writing in a folder can still open it, to export the folder.
+   */
+  readonly exportBlockedReason = computed(() => {
+    const item = this.activeItem();
+    if (!item) return 'Nothing to export yet';
+    if (hasExportableContent(this.editorText())) return null;
+    const parent = this.rootItems().find((candidate) => candidate.id === item.id)?.parentId;
+    return parent ? null : 'This writing is empty';
+  });
   /** Where the settings open: the page, or the Citations list at a book missing details (#1157). */
   readonly pageSettingsStart = signal<{ view: 'main' | 'citations'; book: string | null }>({ view: 'main', book: null });
   /** The books this writing cites, for the Citations list's missing details. */
@@ -330,6 +348,13 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const width = this.pagePrefs.preferences().textWidth;
     return width === null ? null : `calc(${width}ch + 2 * var(--manuscript-gutter))`;
   });
+
+  /** Opens the export dialog; one layer over the page at a time. */
+  openExport(): void {
+    if (this.exportBlockedReason()) return;
+    this.pageSettingsOpen.set(false);
+    this.exportOpen.set(true);
+  }
 
   togglePageSettings(): void {
     const open = !this.pageSettingsOpen();
