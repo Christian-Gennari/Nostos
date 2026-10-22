@@ -13,6 +13,12 @@ public interface INoteService
 {
     Task<IReadOnlyList<NoteDto>> GetByBookAsync(Guid bookId, CancellationToken ct = default);
     Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default);
+    /// <summary>
+    /// The listed notes that exist, with their topics (issue #1162: the Studio
+    /// shows the topics of the sources a writing cites). Ids naming no note are
+    /// left out, never an error.
+    /// </summary>
+    Task<IReadOnlyList<NoteSearchHitDto>> GetManyAsync(IReadOnlyCollection<Guid> noteIds, CancellationToken ct = default);
     /// <summary>A passage in full for the passage viewer; null when the note is not one.</summary>
     Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default);
     Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default);

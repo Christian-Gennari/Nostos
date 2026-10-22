@@ -19,6 +19,12 @@ public interface IWritingRepository
     Task<WritingModel?> GetByIdAsync(Guid id);
     Task AddAsync(WritingModel writing);
     Task UpdateAsync(WritingModel writing);
+
+    /// <summary>
+    /// Saves a writing's name and content and rebuilds the notes it cites from
+    /// that content (issue #1162), in one transaction.
+    /// </summary>
+    Task SaveContentAsync(WritingModel writing, CancellationToken ct = default);
     Task DeleteAsync(WritingModel writing);
 
     /// <summary>

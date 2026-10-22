@@ -87,6 +87,28 @@ public sealed class NoteService : INoteService
         return note is null ? null : ByText(note, null);
     }
 
+    public async Task<IReadOnlyList<NoteSearchHitDto>> GetManyAsync(
+        IReadOnlyCollection<Guid> noteIds, CancellationToken ct = default)
+    {
+        var ids = noteIds.Distinct().Take(MaxNotesByIds).ToList();
+        if (ids.Count == 0)
+            return [];
+
+        var notes = await _db.Notes
+            .AsNoTracking()
+            .Include(n => n.Book)
+            .Include(n => n.NoteTopics)
+            .ThenInclude(nc => nc.Topic)
+            .Where(n => ids.Contains(n.Id))
+            .ToListAsync(ct);
+
+        var order = ids.Select((id, index) => (id, index)).ToDictionary(x => x.id, x => x.index);
+        return notes.OrderBy(n => order[n.Id]).Select(n => ByText(n, null)).ToList();
+    }
+
+    /// <summary>The most notes one <see cref="GetManyAsync"/> call answers for.</summary>
+    public const int MaxNotesByIds = 200;
+
     public async Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default)
     {
         var take = Clamp(limit);

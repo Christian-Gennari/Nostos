@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Writings;
 
 namespace Nostos.Backend.Data.Repositories;
 
@@ -33,6 +34,23 @@ public class WritingRepository : IWritingRepository
     {
         _db.Writings.Update(writing);
         await _db.SaveChangesAsync();
+    }
+
+    public async Task SaveContentAsync(WritingModel writing, CancellationToken ct = default)
+    {
+        // One transaction: the content save takes the writing's row lock (and
+        // the library revision's), so a second tab saving the same writing
+        // waits, then rebuilds from its own content. The last save wins and
+        // its citation rows match the content it saved (issue #1162).
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        _db.Writings.Update(writing);
+        await _db.SaveChangesAsync(ct);
+        await WritingCitationIndex.SyncAsync(
+            _db,
+            writing.Id,
+            writing.Type == WritingType.Document ? writing.Content : null,
+            ct);
+        await transaction.CommitAsync(ct);
     }
 
     public async Task DeleteAsync(WritingModel writing)

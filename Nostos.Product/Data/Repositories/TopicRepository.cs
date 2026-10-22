@@ -346,6 +346,40 @@ public class TopicRepository : ITopicRepository
         return new TopicGraphDto(nodes, edges);
     }
 
+    public async Task<TopicWritingUsageDto?> GetWritingUsageAsync(
+        Guid id, int limit, CancellationToken ct = default)
+    {
+        if (!await _db.Topics.AnyAsync(t => t.Id == id, ct))
+            return null;
+
+        // Citations of this topic's notes, from documents only (a folder has
+        // no content, so it never has rows; the filter says so anyway).
+        var citations = _db.WritingCitations.Where(c =>
+            c.Writing.Type == WritingType.Document
+            && _db.NoteTopics.Any(nt => nt.TopicId == id && nt.NoteId == c.NoteId));
+
+        var writings = _db.Writings.Where(w => citations.Any(c => c.WritingId == w.Id));
+        var total = await writings.CountAsync(ct);
+        var shown = total == 0
+            ? []
+            : await writings
+                .OrderByDescending(w => w.UpdatedAt)
+                .ThenBy(w => w.Name)
+                .ThenBy(w => w.Id)
+                .Take(Math.Clamp(limit, 1, 100))
+                .Select(w => new TopicWritingDto(w.Id, w.Name, w.UpdatedAt))
+                .ToListAsync(ct);
+
+        var perNote = total == 0
+            ? []
+            : await citations
+                .GroupBy(c => c.NoteId)
+                .Select(g => new NoteCitationCountDto(g.Key, g.Count()))
+                .ToListAsync(ct);
+
+        return new TopicWritingUsageDto(total, shown, perNote);
+    }
+
     public async Task<TopicModel?> GetByIdWithNotesAsync(Guid id)
     {
         return await _db

@@ -91,6 +91,17 @@ public static class TopicsEndpoints
             async (Guid id, ITopicRepository repo) => Results.Ok(await repo.GetRelatedAsync(id))
         );
 
+        // GET where a topic is used in writing (issue #1162): read-only, joined
+        // at read time from what writings cite. Nothing adds a topic to a writing.
+        group.MapGet(
+            "/{id}/writings",
+            async (Guid id, int? limit, ITopicRepository repo, CancellationToken ct) =>
+            {
+                var usage = await repo.GetWritingUsageAsync(id, limit ?? 5, ct);
+                return usage is null ? Results.NotFound() : Results.Ok(usage);
+            }
+        );
+
         // GET whole-brain topic co-occurrence graph
         group.MapGet(
             "/graph",

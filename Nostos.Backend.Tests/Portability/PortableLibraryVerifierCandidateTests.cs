@@ -321,6 +321,27 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
     }
 
     [Fact]
+    public async Task Writing_citation_index_is_neither_required_nor_counted()
+    {
+        // Issue #1162: the index is derived; the verifier compares portable
+        // state only, so an extra or a missing row never fails a candidate.
+        var report = await VerifyAsync(async candidate =>
+        {
+            candidate.Db.WritingCitations.Add(new WritingCitationModel
+            {
+                WritingId = _fixture.WritingDocumentId,
+                NoteId = _fixture.NoteId,
+            });
+            await candidate.Db.SaveChangesAsync();
+        });
+
+        report.Passed.Should().BeTrue(
+            string.Join("; ", report.Failures.Select(failure => $"{failure.Code}:{failure.Entity}:{failure.Field}")));
+        PortableLibraryVerifier.CandidateVerifiedKinds.Should().NotContain(kind =>
+            kind.Contains("Citation", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Writing_note_timestamp_change_is_detected()
     {
         var report = await VerifyAsync(async candidate =>

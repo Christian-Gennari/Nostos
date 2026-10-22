@@ -54,6 +54,10 @@ public sealed class DatabaseBootstrapService(NostosDbContext db) : IDatabaseBoot
             // Topics whose key the migration could not fold in full, or that
             // differ from another only in case, are merged into one.
             await new Repositories.TopicRepository(db).MergeCaseVariantsAsync(cancellationToken);
+            // The notes each writing cites (issue #1162) are derived from its
+            // content: AddWritingCitations creates the table empty and this
+            // pass fills it, then keeps it right. Writes only differences.
+            await Services.Writings.WritingCitationIndex.RebuildAllAsync(db, cancellationToken);
             await EnsureLibraryStateRowAsync(cancellationToken);
             return;
         }

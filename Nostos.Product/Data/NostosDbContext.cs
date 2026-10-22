@@ -37,6 +37,7 @@ public class NostosDbContext : DbContext
     public DbSet<WorkModel> Works => Set<WorkModel>();
     public DbSet<WritingModel> Writings => Set<WritingModel>();
     public DbSet<WritingNoteModel> WritingNotes => Set<WritingNoteModel>();
+    public DbSet<WritingCitationModel> WritingCitations => Set<WritingCitationModel>();
 
     public DbSet<NoteModel> Notes => Set<NoteModel>();
     public DbSet<CollectionModel> Collections => Set<CollectionModel>();
@@ -700,6 +701,31 @@ public class NostosDbContext : DbContext
 
             // The PK backs WritingId-first lookups; this index backs NoteId lookups.
             e.HasIndex(wn => wn.NoteId);
+        });
+
+        // --- WRITING → CITED NOTES (derived index, issue #1162) ---
+        // Rebuilt from the writing's content on every save; never portable.
+        // Both sides cascade for the same reasons as WritingNotes above:
+        // deleting a writing or folder removes its rows, and deleting a note
+        // (or the book whose notes cascade) removes the rows that cite it, so
+        // no orphan row can outlive either end.
+        modelBuilder.Entity<WritingCitationModel>(e =>
+        {
+            e.HasKey(wc => new { wc.WritingId, wc.NoteId });
+
+            e.HasOne(wc => wc.Writing)
+                .WithMany()
+                .HasForeignKey(wc => wc.WritingId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(wc => wc.Note)
+                .WithMany()
+                .HasForeignKey(wc => wc.NoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The PK backs WritingId-first lookups; this index backs the topic
+            // page's NoteId-first join ("which writings cite these notes").
+            e.HasIndex(wc => wc.NoteId);
         });
 
         // --- EXTERNALLY ACQUIRED BOOK PROVENANCE (issue #166) ---

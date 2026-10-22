@@ -98,7 +98,7 @@ public static class WritingsEndpoints
                     item.Content = dto.Content;
                 item.UpdatedAt = DateTime.UtcNow;
 
-                await repo.UpdateAsync(item);
+                await repo.SaveContentAsync(item);
 
                 return Results.Ok(item.ToContentDto());
             }
