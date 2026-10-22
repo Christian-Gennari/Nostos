@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Nostos maskable app icon</title>
+  <!-- Full-bleed background, mark scaled to 70% so it survives the Android 12+ launch-screen crop (inner ~2/3) and launcher masks. -->
+  <rect x="0" y="0" width="1024" height="1024" fill="#293E32"/>
+  <g transform="translate(512 512) scale(0.7) translate(-511 -519.5)">
+    <path d="M 282 764 L 282 509 A 229 234 0 0 1 740 509 L 740 764 Z M 358 764 L 358 509 A 110 112 0 0 1 578 509 L 578 764 Z" fill="#FFFFFF" fill-rule="evenodd"/>
+  </g>
+</svg>
