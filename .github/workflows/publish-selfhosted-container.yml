@@ -46,6 +46,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - name: Resolve successful main revision
@@ -88,8 +91,9 @@ jobs:
           cache-from: type=gha,scope=selfhosted-image
           build-args: |
             SOURCE_REVISION=${{ steps.source.outputs.sha }}
+          # Only the immutable revision tag here. `latest` moves in the
+          # promote job, after this exact digest has passed the runtime check.
           tags: |
-            ghcr.io/christian-gennari/nostos:latest
             ghcr.io/christian-gennari/nostos:${{ steps.source.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/Christian-Gennari/Nostos
@@ -168,3 +172,89 @@ jobs:
             --arg id "$book_id" \
             --arg title "$title" \
             '.id == $id and .title == $title' >/dev/null
+
+  promote-latest:
+    name: Promote verified image to latest
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    # One promotion at a time, so reading what `latest` points at and moving
+    # it cannot interleave with another run. A queued promotion is replaced by
+    # a newer one, which is fine: the newer revision contains the older one.
+    concurrency:
+      group: publish-selfhosted-latest
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout main history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Never move `latest` backwards: a slow run, or a re-run of an old CI
+      # run, can finish after a newer revision was promoted.
+      - name: Decide whether the candidate may become latest
+        id: decide
+        env:
+          IMAGE: ghcr.io/christian-gennari/nostos
+          CANDIDATE_SHA: ${{ needs.publish.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          current=""
+          if config="$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Image}}' 2>/dev/null)"; then
+            # A single-platform image gives one config; a multi-platform
+            # index gives one per platform. Any of them carries the label.
+            current="$(printf '%s' "$config" | jq -r \
+              '[.. | objects | .Labels? // empty | .["org.opencontainers.image.revision"]? // empty] | first // empty' \
+              2>/dev/null || true)"
+          fi
+
+          if ! [[ "$current" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "latest is missing or has no revision label; promoting $CANDIDATE_SHA."
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          elif ! git cat-file -e "$current^{commit}" 2>/dev/null; then
+            echo "::warning::latest points at $current, which is not in this repository's history; promoting $CANDIDATE_SHA."
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "$current" "$CANDIDATE_SHA"; then
+            echo "latest is at $current, which $CANDIDATE_SHA contains; promoting."
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Not promoting $CANDIDATE_SHA: latest is already at $current, which it does not contain. selfhosted-sha-$CANDIDATE_SHA stays published."
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Point latest at the verified digest
+        if: steps.decide.outputs.promote == 'true'
+        env:
+          IMAGE: ghcr.io/christian-gennari/nostos
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Expected the verified image digest, got '$DIGEST'" >&2
+            exit 1
+          fi
+          # Same digest, one more name: nothing is rebuilt.
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+
+          promoted="$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | jq -r '.digest')"
+          if [ "$promoted" != "$DIGEST" ]; then
+            echo "latest resolves to $promoted, expected $DIGEST" >&2
+            exit 1
+          fi
+          echo "latest now points at $DIGEST"
