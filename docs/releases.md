@@ -146,3 +146,4 @@ dotnet build Nostos.sln
 ```
 
 The script tests run in public CI.
+
