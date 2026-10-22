@@ -15,7 +15,7 @@ namespace Nostos.Backend.Tests.Data;
 // real startup pass on a SQLite file that stops at the previous migration.
 public sealed class WritingCitationsMigrationTests : IDisposable
 {
-    private const string PreviousMigration = "20261021062134_AddTopicNormalizedName";
+    private const string PreviousMigration = "20261022122737_AddWritingPageSetup";
 
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), $"nostos-writing-citations-migration-{Guid.NewGuid():N}");

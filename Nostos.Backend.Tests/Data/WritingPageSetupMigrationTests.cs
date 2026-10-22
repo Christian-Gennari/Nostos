@@ -71,7 +71,9 @@ public sealed class WritingPageSetupMigrationTests : IDisposable
         await using (var db = new NostosDbContext(options))
         {
             await db.GetService<IMigrator>().MigrateAsync(migrationId);
-            (await db.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+            // Later migrations (AddWritingCitations, #1162) may still be pending;
+            // this one is applied.
+            (await db.Database.GetPendingMigrationsAsync()).Should().NotContain(migrationId);
         }
 
         (await ColumnsAsync(path)).Should().Contain(Column);

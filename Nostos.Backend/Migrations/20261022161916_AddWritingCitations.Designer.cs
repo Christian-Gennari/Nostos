@@ -11,7 +11,7 @@ using Nostos.Backend.Data;
 namespace Nostos.Backend.Migrations
 {
     [DbContext(typeof(NostosDbContext))]
-    [Migration("20261022122737_AddWritingCitations")]
+    [Migration("20261022161916_AddWritingCitations")]
     partial class AddWritingCitations
     {
         /// <inheritdoc />
@@ -1191,6 +1191,10 @@ namespace Nostos.Backend.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PageSetup")
+                        .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
                     b.Property<Guid?>("ParentId")
