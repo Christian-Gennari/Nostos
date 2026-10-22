@@ -1379,7 +1379,8 @@
   grid-column: 1 / -1;
   flex-wrap: wrap;
   gap: 0.25rem;
-  padding: 0 0.35rem 0.1rem 0.1rem;
+  /* Lines up with the row's text, which sits inside its button's padding. */
+  padding: 0 0.35rem 0.1rem 0.55rem;
 }
 
 .reference-source-use.is-uncited {
@@ -1398,7 +1399,7 @@
 
 /* One quiet line under the sources: what the writing touches. */
 .writing-touches {
-  margin: 0.75rem 0.55rem 0.5rem;
+  margin: 0.75rem 0.55rem 0.5rem 1.1rem;
   padding-top: 0.6rem;
   border-top: 1px solid var(--border-light);
 }
