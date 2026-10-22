@@ -313,7 +313,8 @@ Each guard is checked against the quality bed before it is deleted.
   `AssistantSettings.CaptureProcessingMode` and `Notes.ProcessingMode`
   columns **stay**: notes already processed keep their recorded mode, and
   dropping public columns forces a Cloud migration for no user benefit. New
-  captures are always `verbatim`.
+  captures are `verbatim` unless the user asks for a rewrite (#1171,
+  `docs/captured-thoughts.md`).
 - Wire DTOs: `pendingPlan` is replaced by `changeset` in turn responses. The
   frontend ships with the backend, so no compatibility shim is needed.
   `/api/assistant/plan/approve` is removed.

@@ -63,12 +63,15 @@ public static partial class AssistantCapabilities
             "notes_capture",
             AssistantTrustClass.Capture,
             AssistantCapabilityCategory.Capture,
-            "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it for genuine thoughts the user gives you to keep even when they do not literally say 'save' or 'note'. Never use it for corrections, source/book clarifications, answers to a previous question, or explicit instructions not to save. The book is supplied by the app; never pass one.",
+            "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it for genuine thoughts the user gives you to keep even when they do not literally say 'save' or 'note'. Never use it for corrections, source/book clarifications, answers to a previous question, explicit instructions not to save, or a request to rephrase a note already saved in this conversation (that is notes_rewrite_capture). The book is supplied by the app; never pass one.",
             """
             {
               "type": "object",
               "properties": {
-                "content": { "type": "string", "description": "The user's own words for the note, exactly as they said or wrote them, with only any instruction removed. Never paraphrase, shorten, translate, correct or add to them." },
+                "content": { "type": "string", "description": "The user's own words for the note, exactly as they said or wrote them, with every instruction to you removed (\"can you add a note on…\", \"rephrase this and post it for me\"). Never paraphrase, shorten, translate, correct or add to them yourself: when the user asks for a rewrite, set rewrite and Nostos does it." },
+                "rewrite": { "type": "boolean", "description": "True only when the user asked you to rephrase, clean up or make the thought more coherent. Nostos then saves a tidied version and keeps their exact words as the original. Never set it on your own judgement." },
+                "topics": { "type": "array", "items": { "type": "string" }, "description": "With rewrite, or when the user asks for topics: up to five topic names the thought is plainly about (a character, a theme, an idea it names). Prefer the exact names of topics that already exist. Ignored otherwise." },
+                "wholeBook": { "type": "boolean", "description": "True when the thought is about the book as a whole (a character across the book, a theme, an overall reaction) rather than the moment the user is at. The note is then saved without a page or timestamp, and the user is not asked for one." },
                 "selectedText": { "type": "string", "description": "A passage quoted from the book itself. When the reader has a passage selected it is already in the current context — capture it here rather than asking for it. It is stored as the quotation exactly as given." },
                 "captureSource": { "type": "string", "description": "Where the words came from. Defaults to 'text'." }
               },
@@ -105,6 +108,45 @@ public static partial class AssistantCapabilities
                     IdempotencyKey: context.IdempotencyKey);
 
                 var result = await notes.CaptureAsync(request, ct);
+                if (result.Success && StrList(args, "topics") is { Count: > 0 } topics)
+                {
+                    // After the rewrite, never before it: the references are
+                    // appended to the stored text, so the processor cannot drop them.
+                    await notes.LinkTopicsAsync(topics, [result.Value!.Id], ct);
+                }
+
+                return NoteResult(result);
+            }),
+
+        new AssistantCapability(
+            "notes_rewrite_capture",
+            AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Capture,
+            "Rewrites a note saved earlier in this conversation into a tidier, more coherent version when the user asks for that afterwards (\"clean that up\", \"rephrase it\"). Their exact words stay with the note as the original. Only for a note this conversation captured.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "noteId": { "type": "string", "format": "uuid", "description": "The id of the note this conversation captured. Required." },
+                "topics": { "type": "array", "items": { "type": "string" }, "description": "Up to five topic names the thought is plainly about. Prefer the exact names of topics that already exist." }
+              },
+              "required": ["noteId"],
+              "additionalProperties": true
+            }
+            """,
+            async (context, args, ct) =>
+            {
+                if (Id(args, "noteId") is not { } noteId)
+                {
+                    return Invalid("'noteId' is required.");
+                }
+
+                var result = await notes.RewriteCaptureAsync(noteId, context.ClientId ?? string.Empty, ct);
+                if (result.Success && StrList(args, "topics") is { Count: > 0 } topics)
+                {
+                    await notes.LinkTopicsAsync(topics, [noteId], ct);
+                }
+
                 return NoteResult(result);
             }),
 

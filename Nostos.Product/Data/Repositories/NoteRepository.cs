@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
@@ -71,6 +72,26 @@ public class NoteRepository : INoteRepository
         // one transaction, then commits.
         _db.NoteCommandReceipts.Add(receipt);
         return Task.CompletedTask;
+    }
+
+    public async Task<bool> HasReceiptForNoteAsync(string clientId, Guid noteId)
+    {
+        // Containment narrows the candidates, but note text may itself mention
+        // another note's id. Only the receipt's result id proves ownership.
+        var id = noteId.ToString();
+        var receipts = await _db.NoteCommandReceipts.AsNoTracking()
+            .Where(r => r.ClientId == clientId && r.ResultJson.Contains(id))
+            .Select(r => r.ResultJson)
+            .ToListAsync();
+        return receipts.Any(json =>
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("value", out var value)
+                && value.ValueKind == JsonValueKind.Object
+                && value.TryGetProperty("id", out var resultId)
+                && resultId.TryGetGuid(out var capturedId)
+                && capturedId == noteId;
+        });
     }
 
     public async Task DeleteAsync(NoteModel note)

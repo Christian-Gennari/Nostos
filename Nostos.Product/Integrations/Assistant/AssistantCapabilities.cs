@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Knowledge;
@@ -127,6 +128,25 @@ public static partial class AssistantCapabilities
             JsonValueKind.False => false,
             _ => null,
         };
+
+    /// <summary>
+    /// The valid topic names in a string array, distinct and at most five. A
+    /// name a topic cannot carry is dropped rather than failing the whole call.
+    /// </summary>
+    private static IReadOnlyList<string> StrList(JsonElement args, string name)
+    {
+        var value = Property(args, name);
+        if (value.ValueKind != JsonValueKind.Array)
+            return [];
+
+        return value.EnumerateArray()
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString()!.Trim())
+            .Where(TopicReferences.IsValidName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(5)
+            .ToList();
+    }
 
     private static bool TryIds(JsonElement args, string name, out IReadOnlyList<Guid>? ids)
     {

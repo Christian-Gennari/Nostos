@@ -764,6 +764,21 @@ public sealed class NoteService : INoteService
         return NoteCommandResult<NoteDto>.Ok(note.ToDto());
     }
 
+    public async Task<NoteCommandResult<NoteDto>> RewriteCaptureAsync(
+        Guid noteId,
+        string clientId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(clientId) || !await _notes.HasReceiptForNoteAsync(clientId, noteId))
+        {
+            return NoteCommandResult<NoteDto>.Fail(
+                NoteErrorCodes.NoteNotFound,
+                "No note captured in this conversation has that id.");
+        }
+
+        return await ReprocessAsync(noteId, ThoughtProcessingModes.Clarify, ct);
+    }
+
     public async Task<NoteCommandResult<NoteRawTranscriptDto>> GetRawAsync(
         Guid noteId,
         CancellationToken ct = default)

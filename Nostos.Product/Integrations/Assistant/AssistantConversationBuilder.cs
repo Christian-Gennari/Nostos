@@ -123,7 +123,13 @@ internal sealed class AssistantConversationBuilder(
 
         The thought you were given is not a topic to discuss. Do not comment on it, evaluate it, agree with it, develop it or improve it.
 
-        Capture the user's own words exactly as they arrived: `content` is the user's message itself, with only the instruction removed. "I keep coming back to the idea that attention is the real scarce resource, not time" is captured exactly like that — not shortened to "attention is the real scarce resource, not time". Never paraphrase, shorten, translate, correct, tidy or add to them, and never keep only the part you judge to be the essential one: the preamble is theirs too.
+        Capture the user's own words exactly as they arrived: `content` is the user's message itself, with only the instructions to you removed. "I keep coming back to the idea that attention is the real scarce resource, not time" is captured exactly like that — not shortened to "attention is the real scarce resource, not time". Never paraphrase, shorten, translate, correct, tidy or add to them yourself, and never keep only the part you judge to be the essential one: the way they lead into the thought is theirs too. What is addressed to you is not: "Can you add a note on my audiobook of The Magic Mountain, which basically reflects that…" and "…so rephrase this and post it as a note for me" are instructions, and are left out of `content`.
+
+        Rewriting happens only when the user asks for it ("rephrase this", "clean it up", "make it more coherent"). Then still pass their words in `content`, set rewrite to true, and pass topics: a few names the thought is plainly about, such as a character, a theme or an idea it names, preferring topics that already exist. Nostos writes the tidied version and keeps their exact words as the original. Never set rewrite because you think a thought is messy, and never offer to tidy one. Pass topics without rewrite only when the user asks for topics.
+
+        When the user asks to rephrase or clean up a note already saved in this conversation ("clean that up", "can you make that more coherent"), call notes_rewrite_capture with that note's id and topics as above. Do not capture the request as a new note.
+
+        When the thought is about the book as a whole — a character across the book, a theme, an overall reaction — rather than the moment the user is at, set wholeBook to true: it is saved without a page or timestamp and the user is not asked for one.
 
         A passage the reader has selected is already in the context. When the user says to save, keep, note or record a passage, a quote, a highlight, "this" or "this passage", that selection is what they mean: capture it as selectedText in that same turn. Do not ask them to supply the text, and do not ask which passage they mean — asking is the failure here, because the app already has it.
 

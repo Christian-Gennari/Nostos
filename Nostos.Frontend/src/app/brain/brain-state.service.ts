@@ -21,7 +21,7 @@ export interface BrainMapView {
 }
 
 /** Ask Nostos capabilities that change notes or their topics. */
-const NOTE_WRITING_CAPABILITIES = new Set(['notes_capture', 'notes_link_existing_topic']);
+const NOTE_WRITING_CAPABILITIES = new Set(['notes_capture', 'notes_rewrite_capture', 'notes_link_existing_topic']);
 
 /**
  * What every place of the Brain shares: the topics and the counts the sidebar

@@ -471,6 +471,226 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task A_capture_the_user_asks_to_rephrase_is_tidied_with_topics_and_keeps_the_original()
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => new ThoughtProcessingResult("Peeperkorn is the Dionysian in man.", mode, ProviderCalled: true)
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h, "The Magic Mountain");
+        h.Llm
+            .CallsTool(
+                "notes_capture",
+                """{"content":"so peeperkorn is like the dionysian in man i think","rewrite":true,"topics":["Mynheer Peeperkorn","Dionysian"],"wholeBook":true}""")
+            .Returns("Saved.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "so peeperkorn is like the dionysian in man i think. Can you rephrase this into something more coherent and post it as a note?",
+            Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "audiobook")));
+
+        thoughts.Calls.Should().ContainSingle()
+            .Which.Should().Be(("so peeperkorn is like the dionysian in man i think", "clarify"));
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().Include(n => n.NoteTopics).ThenInclude(nt => nt.Topic).SingleAsync();
+        note.Content.Should().StartWith("Peeperkorn is the Dionysian in man.");
+        note.Content.Should().Contain("[[Mynheer Peeperkorn]]").And.Contain("[[Dionysian]]");
+        note.NoteTopics.Select(nt => nt.Topic.Topic).Should().BeEquivalentTo(["Mynheer Peeperkorn", "Dionysian"]);
+        note.RawContent.Should().Be("so peeperkorn is like the dionysian in man i think");
+        note.ProcessingMode.Should().Be("clarify");
+        // A thought about the whole book is saved without asking for a timestamp.
+        response.AnchorPrompt.Should().BeNull();
+        note.SourceAnchorKind.Should().Be("unknown");
+        response.Acknowledgement.Should().Contain("your own words are kept as the original");
+    }
+
+    [Fact]
+    public async Task The_model_cannot_rewrite_or_tag_a_thought_the_user_did_not_ask_to_change()
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => throw new InvalidOperationException("not asked for a rewrite")
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h);
+        h.Llm
+            .CallsTool(
+                "notes_capture",
+                """{"content":"Mann seems to rewrite Faust here","rewrite":true,"topics":["Faust"]}""")
+            .Returns("Saved.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "Mann seems to rewrite Faust here",
+            Context(bookId: book.Id.ToString(), bookFormat: "ebook")));
+
+        thoughts.Calls.Should().BeEmpty();
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.Content.Should().Be("Mann seems to rewrite Faust here");
+        note.ProcessingMode.Should().Be("verbatim");
+        (await db.Topics.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Clean_that_up_rewrites_the_note_this_conversation_just_saved()
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => new ThoughtProcessingResult("A tidy thought.", mode, ProviderCalled: true)
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h);
+        h.Llm
+            .CallsTool("notes_capture", """{"content":"um so a messy thought"}""")
+            .Returns("Saved.");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "um so a messy thought",
+            Context(bookId: book.Id.ToString(), bookFormat: "ebook"),
+            conversationId: "conversation-rewrite",
+            turnId: "turn-capture"));
+        thoughts.Calls.Should().BeEmpty();
+
+        h.Llm
+            .CallsTool(
+                "notes_rewrite_capture",
+                $$"""{"noteId":"{{first.CapturedNoteId}}","topics":["Mess"]}""")
+            .Returns("Done.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "can you clean that up",
+            Context(bookId: book.Id.ToString(), bookFormat: "ebook"),
+            idem: "key-2",
+            conversationId: "conversation-rewrite",
+            turnId: "turn-rewrite"));
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.Content.Should().StartWith("A tidy thought.").And.Contain("[[Mess]]");
+        note.RawContent.Should().Be("um so a messy thought");
+        note.ProcessingMode.Should().Be("clarify");
+    }
+
+    [Fact]
+    public async Task Clean_that_up_cannot_touch_a_note_another_conversation_saved()
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => throw new InvalidOperationException("not this conversation's note")
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h);
+        h.Llm
+            .CallsTool("notes_capture", """{"content":"someone else's words"}""")
+            .Returns("Saved.");
+        var other = await h.Orchestrator.HandleTurnAsync(Turn(
+            "someone else's words",
+            Context(bookId: book.Id.ToString(), bookFormat: "ebook"),
+            conversationId: "conversation-other",
+            turnId: "turn-other"));
+
+        // Mentioning another note's id in our own capture cannot authorize
+        // rewriting it: the receipt must identify that note as its result.
+        h.Llm
+            .CallsTool("notes_capture", $$"""{"content":"A reference to {{other.CapturedNoteId}}"}""")
+            .Returns("Saved.");
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            $"A reference to {other.CapturedNoteId}",
+            Context(bookId: book.Id.ToString(), bookFormat: "ebook"),
+            idem: "key-reference",
+            conversationId: "conversation-mine",
+            turnId: "turn-reference"));
+
+        h.Llm
+            .CallsTool("notes_rewrite_capture", $$"""{"noteId":"{{other.CapturedNoteId}}"}""")
+            .Returns("Done.");
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "clean that up",
+            Context(bookId: book.Id.ToString(), bookFormat: "ebook"),
+            idem: "key-2",
+            conversationId: "conversation-mine",
+            turnId: "turn-mine"));
+
+        thoughts.Calls.Should().BeEmpty();
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var otherNoteId = Guid.Parse(other.CapturedNoteId!);
+        (await db.Notes.AsNoTracking().SingleAsync(n => n.Id == otherNoteId)).Content
+            .Should().Be("someone else's words");
+    }
+
+    [Theory]
+    [InlineData("Keep this as it is.")]
+    [InlineData("Don't rewrite this, save my exact words.")]
+    public async Task A_followup_rewrite_requires_the_users_request(string message)
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => throw new InvalidOperationException("not asked for a rewrite")
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h);
+        var context = Context(bookId: book.Id.ToString(), bookFormat: "ebook");
+        h.Llm.CallsTool("notes_capture", """{"content":"my exact words"}""").Returns("Saved.");
+        var saved = await h.Orchestrator.HandleTurnAsync(Turn(
+            "my exact words", context, conversationId: "conversation-keep", turnId: "turn-save"));
+
+        h.Llm.CallsTool("notes_rewrite_capture", $$"""{"noteId":"{{saved.CapturedNoteId}}","topics":["Unasked"]}""")
+            .Returns("Done.");
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            message, context, idem: "key-keep", conversationId: "conversation-keep", turnId: "turn-keep"));
+
+        thoughts.Calls.Should().BeEmpty();
+        response.ExecutedCapabilities.Should().NotContain("notes_rewrite_capture");
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).Content.Should().Be("my exact words");
+        (await db.Topics.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("rephrase this", true)]
+    [InlineData("Can you make it more coherent?", true)]
+    [InlineData("rephrase this into something more coherent and then post it", true)]
+    [InlineData("clean it up please", true)]
+    [InlineData("kan du formulera om det", true)]
+    [InlineData("can you reword it?", true)]
+    [InlineData("I love Polish poetry", false)]
+    [InlineData("Mann seems to rewrite Faust here", false)]
+    [InlineData("Don't rewrite this, save my exact words", false)]
+    [InlineData("Please do not clean that up", false)]
+    [InlineData("Skriv inte om det", false)]
+    [InlineData("Settembrini argues for progress", false)]
+    [InlineData("The argument becomes more coherent here", false)]
+    public void A_rewrite_is_read_from_the_users_own_words(string message, bool requested) =>
+        AssistantRewriteIntent.Requested(message).Should().Be(requested);
+
+    [Fact]
+    public async Task External_audio_answer_without_a_time_saves_with_no_timestamp()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "External Audio");
+        h.Llm.CallsTool("notes_capture", """{"content":"Audio thought"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "audiobook"),
+            conversationId: "conversation-no-time",
+            turnId: "turn-original"));
+        first.AnchorPrompt!.Kind.Should().Be("external_audio_timestamp");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "i dont have one",
+            Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "audiobook"),
+            conversationId: "conversation-no-time",
+            turnId: "turn-answer",
+            continuationId: first.AnchorPrompt.ContinuationId));
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SourceAnchorKind.Should().Be("unknown");
+        note.SourceAnchorValue.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Capture_retries_with_the_same_client_and_key_stay_exactly_once()
     {
         var h = CreateHarness();

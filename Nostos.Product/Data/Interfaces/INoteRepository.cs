@@ -60,6 +60,12 @@ public interface INoteRepository
     Task AddReceiptAsync(NoteCommandReceipt receipt);
 
     /// <summary>
+    /// True when a capture under <paramref name="clientId"/> produced the note:
+    /// how an Ask Nostos conversation proves a note is its own.
+    /// </summary>
+    Task<bool> HasReceiptForNoteAsync(string clientId, Guid noteId);
+
+    /// <summary>
     /// Notes linked to no topic at all. These are unreachable through the index's
     /// topic rows, which is the gap #158 was filed about.
     /// </summary>

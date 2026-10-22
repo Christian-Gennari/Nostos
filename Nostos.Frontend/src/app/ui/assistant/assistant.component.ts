@@ -661,6 +661,7 @@ export class AssistantComponent {
   private humanizeCapability(capability: string): string {
     const labels: Record<string, string> = {
       notes_link_existing_topic: 'note linked to topic',
+      notes_rewrite_capture: 'note rewritten',
       library_update_book: 'book updated',
       library_move_book: 'book moved',
       library_create_collection: 'collection created',
