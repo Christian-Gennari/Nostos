@@ -2,6 +2,11 @@ name: SelfHosted container
 
 on:
   workflow_call:
+    inputs:
+      docs_only:
+        description: Skip the jobs because only documentation changed. They still report, as skipped, so required checks pass.
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -9,6 +14,7 @@ permissions:
 
 jobs:
   runtime-validation:
+    if: ${{ !inputs.docs_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
