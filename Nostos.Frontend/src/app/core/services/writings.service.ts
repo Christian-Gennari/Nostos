@@ -9,6 +9,7 @@ import {
   MoveWritingDto,
   WritingSourceDto,
   AddWritingSourceDto,
+  WritingPageSetupDto,
 } from '../dtos/writing.dtos';
 
 @Injectable({
@@ -63,5 +64,15 @@ export class WritingsService {
   // DELETE: Remove a kept source note from a writing document
   removeSource(writingId: string, noteId: string): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/${writingId}/notes/${noteId}`);
+  }
+
+  // GET: The writing's export page setup (issue #1164); null until one is saved.
+  getPageSetup(id: string): Observable<WritingPageSetupDto | null> {
+    return this.http.get<WritingPageSetupDto | null>(`${this.baseUrl}/${id}/page-setup`);
+  }
+
+  // PUT: Save the writing's export page setup.
+  savePageSetup(id: string, dto: WritingPageSetupDto): Observable<WritingPageSetupDto> {
+    return this.http.put<WritingPageSetupDto>(`${this.baseUrl}/${id}/page-setup`, dto);
   }
 }

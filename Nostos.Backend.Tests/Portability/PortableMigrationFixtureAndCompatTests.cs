@@ -256,6 +256,45 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
+    public async Task Archive_written_before_writing_page_setup_imports_its_writings_without_one()
+    {
+        // The export page setup (issue #1164) was appended to the writing
+        // record without a data version bump, so an archive of the current
+        // version may not have it.
+        using var fixture = await CreateFixtureAsync(
+            "portable-format1-data2.nostos",
+            CurrentDataVersion);
+
+        var entries = ReadEntries(fixture.Bytes);
+
+        MutateJsonEntry(entries, DataPath, root =>
+        {
+            var removed = 0;
+            foreach (var writing in root["writings"]!.AsArray())
+            {
+                if (writing!.AsObject().Remove("pageSetup"))
+                    removed++;
+            }
+            removed.Should().BeGreaterThan(0,
+                "the current writer carries the page setup, so the fixture has it to remove");
+        });
+
+        RehashDataDescriptor(entries);
+
+        using var archive = new MemoryStream(BuildArchive(entries));
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        destination.Db.ChangeTracker.Clear();
+
+        var writings = await destination.Db.Writings.AsNoTracking().ToListAsync();
+        writings.Should().NotBeEmpty();
+        writings.Should().OnlyContain(writing => writing.PageSetup == null);
+    }
+
+    [Fact]
     public async Task Archive_written_before_highlight_colours_imports_its_notes_with_no_pen()
     {
         // The pen (issue #861) was appended to the note record without a data

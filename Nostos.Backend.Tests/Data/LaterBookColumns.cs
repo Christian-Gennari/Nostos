@@ -28,7 +28,16 @@ internal static class LaterBookColumns
         await RestoreTopicDescriptionAsync(db);
         await RestoreCoverVersionAsync(db);
         await RestoreTopicNormalizedNameAsync(db);
+        await RestoreWritingPageSetupAsync(db);
     }
+
+    /// <summary>
+    /// AddWritingPageSetup (issue #1164): the export page setup the current
+    /// model reads and writes on every writing.
+    /// </summary>
+    public static async Task RestoreWritingPageSetupAsync(NostosDbContext db) =>
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Writings\" ADD COLUMN \"PageSetup\" TEXT NULL");
 
     /// <summary>
     /// AddTopicNormalizedName (issue #1116): the key the current model writes

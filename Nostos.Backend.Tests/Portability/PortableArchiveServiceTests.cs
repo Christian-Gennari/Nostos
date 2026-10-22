@@ -141,6 +141,8 @@ public sealed class PortableArchiveServiceTests
             .SingleAsync(x => x.Id == ids.WritingDocumentId);
         writing.Content.Should().Be("<p>User-owned studio prose.</p>");
         writing.ParentId.Should().NotBeNull();
+        writing.PageSetup.Should().Contain("\"citationStyle\":\"apa\"",
+            "a writing keeps its export page setup through export and import");
 
         var assistant = await destination.Db.AssistantSettings
             .AsNoTracking()

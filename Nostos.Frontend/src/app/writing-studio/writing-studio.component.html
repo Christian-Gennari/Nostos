@@ -139,6 +139,30 @@
 
           <button
             appIconButton
+            class="studio-more-toggle"
+            icon="dots-three"
+            [glyphSize]="18"
+            weight="thin"
+            title="More"
+            aria-label="More for this writing"
+            data-testid="studio-more"
+            [nostosMenuTriggerFor]="studioMore"
+          ></button>
+          <ng-template #studioMore>
+            <nostos-menu aria-label="More for this writing">
+              <button
+                nostosMenuItem
+                icon="download-simple"
+                data-testid="studio-export"
+                [disabled]="!!exportBlockedReason()"
+                [hint]="exportBlockedReason()"
+                (triggered)="openExport()"
+              >Export…</button>
+            </nostos-menu>
+          </ng-template>
+
+          <button
+            appIconButton
             class="zen-toggle"
             [class.active]="isZen()"
             [icon]="isZen() ? 'corners-in' : 'corners-out'"
@@ -686,6 +710,14 @@
       [citedBookIds]="citedBookIds()"
       (bookUpdated)="onCitationBookUpdated()"
       (closed)="pageSettingsOpen.set(false)" />
+  }
+
+  @if (exportOpen() && activeItem(); as item) {
+    <app-export-dialog
+      [items]="rootItems()"
+      [documentId]="item.id"
+      [currentMarkdown]="editorText()"
+      (closed)="exportOpen.set(false)" />
   }
 
   @if (shortcutsOpen()) {

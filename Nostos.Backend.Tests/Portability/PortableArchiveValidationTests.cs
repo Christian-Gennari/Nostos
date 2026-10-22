@@ -855,14 +855,25 @@ public sealed class PortableArchiveValidationTests
             expectedWriting.ParentId,
             expectedWriting.Name,
             expectedWriting.Content,
-            expectedWriting.Type);
+            expectedWriting.Type,
+            expectedWriting.PageSetup);
         ThrowPortableError(
             () => PortableArchiveValidation.ValidateImportedWritingState(
                 expectedWriting,
                 Guid.NewGuid(),
                 expectedWriting.Name,
                 expectedWriting.Content,
-                expectedWriting.Type),
+                expectedWriting.Type,
+                expectedWriting.PageSetup),
+            "integrity_failed");
+        ThrowPortableError(
+            () => PortableArchiveValidation.ValidateImportedWritingState(
+                expectedWriting,
+                expectedWriting.ParentId,
+                expectedWriting.Name,
+                expectedWriting.Content,
+                expectedWriting.Type,
+                "{\"paper\":\"letter\"}"),
             "integrity_failed");
     }
 

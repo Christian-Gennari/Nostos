@@ -156,7 +156,7 @@ public static class PortableLibraryRecoverySource
 
         var writings = (await db.Writings.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
             .Select(x => new PortableWriting(
-                x.Id, x.Name, x.Type.ToString(), x.Content, x.ParentId, x.CreatedAt, x.UpdatedAt))
+                x.Id, x.Name, x.Type.ToString(), x.Content, x.ParentId, x.CreatedAt, x.UpdatedAt, x.PageSetup))
             .ToList();
 
         var acquisitions = (await db.BookAcquisitions.AsNoTracking()

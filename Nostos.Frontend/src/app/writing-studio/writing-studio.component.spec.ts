@@ -2685,3 +2685,97 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
     expect(component.showBrainSidebar()).toBe(true);
   });
 });
+
+describe('WritingStudio export menu (issue #1164)', () => {
+  let fixture: ComponentFixture<WritingStudio>;
+  let component: WritingStudio;
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(WritingStudio, {
+      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [WritingStudio],
+      providers: [
+        {
+          provide: WritingsService,
+          useValue: {
+            list: vi.fn(() => of([])),
+            get: vi.fn(() => of({ id: 'doc', name: 'Doc', content: 'Words.', updatedAt: '' })),
+            create: vi.fn(() => of({})),
+            update: vi.fn(() => of({})),
+            delete: vi.fn(() => of({})),
+            move: vi.fn(() => of({})),
+            listSources: vi.fn(() => of([])),
+            addSource: vi.fn(() => of({})),
+            removeSource: vi.fn(() => of({})),
+            getPageSetup: vi.fn(() => of(null)),
+            savePageSetup: vi.fn(() => of({})),
+          },
+        },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), show: vi.fn() } },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WritingStudio);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  afterEach(() => fixture.destroy());
+
+  function open(id: string, content: string, parentId: string | null = null): void {
+    component.rootItems.set([
+      { id: 'folder', name: 'Folder', type: 'Folder', parentId: null, updatedAt: '' },
+      { id, name: 'Doc', type: 'Document', parentId, updatedAt: '' },
+    ]);
+    component.activeItem.set({ id, name: 'Doc', content, updatedAt: '' });
+    component.editorText.set(content);
+    fixture.detectChanges();
+  }
+
+  function exportItem(): HTMLButtonElement | null {
+    (fixture.nativeElement.querySelector('[data-testid="studio-more"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    return document.querySelector('[data-testid="studio-export"]');
+  }
+
+  it('offers one “Export…” item in the Studio menu, which opens the export dialog', async () => {
+    open('doc', 'Words.');
+    const item = exportItem();
+    expect(item?.textContent).toContain('Export…');
+    expect(item?.getAttribute('aria-disabled')).not.toBe('true');
+
+    item!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.exportOpen()).toBe(true);
+    expect(fixture.nativeElement.querySelector('app-export-dialog')).toBeTruthy();
+  });
+
+  it('disables it for an empty writing, and says why', () => {
+    open('doc', '   \n');
+    expect(component.exportBlockedReason()).toBe('This writing is empty');
+    const item = exportItem();
+    expect(item?.getAttribute('aria-disabled')).toBe('true');
+    expect(item?.textContent).toContain('This writing is empty');
+
+    component.openExport();
+    expect(component.exportOpen()).toBe(false);
+  });
+
+  it('keeps it open for an empty writing in a folder, which may still be exported whole', () => {
+    open('doc', '', 'folder');
+    expect(component.exportBlockedReason()).toBeNull();
+  });
+
+  it('has nothing to export on a blank page', () => {
+    component.activeItem.set(null);
+    expect(component.exportBlockedReason()).toBe('Nothing to export yet');
+  });
+});

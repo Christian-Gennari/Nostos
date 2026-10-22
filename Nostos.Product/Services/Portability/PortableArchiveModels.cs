@@ -203,7 +203,11 @@ internal sealed record PortableWriting(
     string? Content,
     Guid? ParentId,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    // The writing's export page setup (issue #1164), as stored. Appended and
+    // optional, with no data version bump: an archive written before it
+    // imports every writing without one.
+    [property: JsonPropertyName("pageSetup")] string? PageSetup = null);
 
 internal sealed record PortableWritingNote(
     Guid WritingId,

@@ -1,0 +1,240 @@
+:host {
+  display: contents;
+}
+
+.export-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.export-header h2 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.export-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem 1.25rem;
+}
+
+@media (max-width: 480px) {
+  .export-body {
+    padding-inline: 1rem;
+  }
+}
+
+.export-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.export-label {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.export-value {
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+}
+
+.export-control {
+  min-width: 0;
+}
+
+
+.export-chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.export-chapters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.export-chapter-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: chapter;
+}
+
+.export-chapter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: var(--radius-lg);
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+  counter-increment: chapter;
+}
+
+.export-chapter::before {
+  content: counter(chapter) '.';
+  min-width: 1.5rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+
+.export-chapter-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-chapter-group {
+  color: var(--color-text-muted);
+}
+
+
+
+
+.export-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+
+
+.export-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.export-summary {
+  align-items: center;
+}
+
+.export-summary-control {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.export-summary button {
+  flex: 0 0 auto;
+}
+
+.export-summary .export-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.export-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.export-warnings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.export-warning-list {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.export-warning-chapter {
+  color: var(--color-text-main);
+}
+
+.export-warning-count {
+  color: var(--color-text-muted);
+}
+
+.export-status {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+/* On a phone the shared footer moves its leading text under the buttons.
+   Here it is a short status, so it keeps its place on the same row. */
+@media (max-width: 480px) {
+  :host ::ng-deep .export-actions.nostos-dialog-actions--footer {
+    flex-wrap: nowrap;
+  }
+
+  :host ::ng-deep .export-actions .nostos-dialog-actions__start:not(:empty) {
+    order: 0;
+    width: auto;
+    flex: 1 1 auto;
+    margin-right: auto;
+  }
+
+  :host ::ng-deep .export-actions .nostos-dialog-actions__end {
+    order: 1;
+    width: auto;
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .export-row {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+}
+
+/* Text buttons here sit on the same edge as the labels and values. */
+.export-warnings-toggle,
+.export-summary button {
+  padding-inline: 0;
+  min-width: 0;
+}
+
+.export-chapters,
+.export-warnings {
+  margin-top: 0.35rem;
+}
+
+/* The warnings line reads as the button it is, open or closed. */
+.export-warnings-toggle {
+  gap: 0.3rem;
+}
+
+.export-caret {
+  transition: transform 160ms ease;
+}
+
+.export-caret.is-open {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-caret {
+    transition: none;
+  }
+}

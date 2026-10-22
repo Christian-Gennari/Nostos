@@ -53,3 +53,12 @@ export interface WritingSourceDto {
   bookAuthor?: string | null;
 }
 
+
+/** How a writing is laid out when exported (issue #1164), as the server stores it. */
+export interface WritingPageSetupDto {
+  paper: 'a4' | 'letter';
+  marginMm: number;
+  font: string;
+  lineSpacing: number;
+  citationStyle: string;
+}

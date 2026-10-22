@@ -123,6 +123,7 @@ internal static class PortableLibraryDatabaseMaterializer
                 Name = x.Name,
                 Type = Enum.Parse<WritingType>(x.Type, ignoreCase: true),
                 Content = x.Content,
+                PageSetup = x.PageSetup,
                 ParentId = x.ParentId,
                 CreatedAt = x.CreatedAt,
                 UpdatedAt = x.UpdatedAt,
