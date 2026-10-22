@@ -76,7 +76,7 @@ export type ExportWarningKind = 'citation' | 'image' | 'footnote';
 /** Something the writer should know before downloading. It never blocks the export. */
 export interface ExportWarning {
   kind: ExportWarningKind;
-  /** One plain sentence, ready to show. */
+  /** A short item, ready to show: what it is, then what happened ("(Voltaire, 1759): book no longer in your library, kept as written"). */
   message: string;
   /** The chapter it is in, for a folder. */
   chapter: string | null;

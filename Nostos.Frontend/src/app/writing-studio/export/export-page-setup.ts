@@ -1,4 +1,4 @@
-import { isCitationStyleId } from '../citations/citation-styles';
+import { type CitationStyle, isCitationStyleId } from '../citations/citation-styles';
 import { STUDIO_FONTS, type StudioPreferences, nearestLineSpacing } from '../page-settings/studio-preferences.service';
 import type { PageSetup, PaperSize } from './export-model';
 
@@ -59,4 +59,18 @@ export function normalizePageSetup(raw: unknown, fallback: PageSetup): PageSetup
     lineSpacing: spacing === null ? fallback.lineSpacing : near(EXPORT_LINE_SPACINGS, spacing),
     citationStyle: isCitationStyleId(value.citationStyle) ? value.citationStyle : fallback.citationStyle,
   };
+}
+
+/** "A4, normal margins, Newsreader, 1.5": the page setup in one quiet line. */
+export function pageSummary(setup: PageSetup): string {
+  const paper = setup.paper === 'letter' ? 'Letter' : 'A4';
+  const margins = EXPORT_MARGINS.find((m) => m.value === setup.marginMm)?.label.toLowerCase() ?? `${setup.marginMm} mm`;
+  const font = STUDIO_FONTS.find((f) => f.value === setup.font)?.label ?? setup.font;
+  const spacing = EXPORT_LINE_SPACINGS.find((s) => s.value === setup.lineSpacing)?.label ?? String(setup.lineSpacing);
+  return `${paper}, ${margins} margins, ${font}, ${spacing}`;
+}
+
+/** A style's name as the export shows it: the house format is "Nostos (house style)", not a bare "Nostos". */
+export function exportStyleLabel(style: Pick<CitationStyle, 'label' | 'kind'>): string {
+  return style.kind === 'house' ? `${style.label} (house style)` : style.label;
 }

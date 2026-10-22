@@ -4,6 +4,7 @@ import { ToastService } from '../../core/services/toast.service';
 import { DEFAULT_STUDIO_PREFERENCES, StudioPreferencesService } from '../page-settings/studio-preferences.service';
 import { signal } from '@angular/core';
 import { ExportDialogComponent } from './export-dialog.component';
+import { EXPORT_FORMATS, type ExportFormat } from './export-formats';
 import type { ExportDocument, PageSetup } from './export-model';
 import type { ExportTreeItem } from './export-order';
 import { type ExportSource, ExportService } from './export.service';
@@ -99,8 +100,9 @@ describe('ExportDialogComponent (issue #1164)', () => {
 
     const component = fixture.componentInstance;
     expect(component.setup()).toMatchObject({ font: 'lora', citationStyle: 'mla', marginMm: 25.4 });
-    expect((el('export-filename') as HTMLInputElement).value).toBe('One');
     expect(el('export-format')?.textContent).toContain('Web page');
+    // No file name field: the title names the file.
+    expect(fixture.nativeElement.querySelector('input[type="text"]')).toBeNull();
 
     const download = el('export-download') as HTMLButtonElement;
     expect(download.disabled).toBe(false);
@@ -125,15 +127,68 @@ describe('ExportDialogComponent (issue #1164)', () => {
     expect(exporter.resolve).not.toHaveBeenCalled();
   });
 
-  it('lists what the writer should know before downloading', async () => {
-    warnings = [{ kind: 'citation', message: '“(Lost, 1900)” could not be written.', chapter: 'One', count: 2 }];
+  it('says what to check before sending in one quiet line that opens to short items', async () => {
+    warnings = [
+      { kind: 'citation', message: '(Lost, 1900): book no longer in your library, kept as written', chapter: 'One', count: 2 },
+      { kind: 'image', message: 'Image “Map”: couldn’t be loaded, shown as [image: Map]', chapter: null, count: 1 },
+    ];
     await open('one');
 
-    const list = el('export-warnings');
-    expect(list?.textContent).toContain('Before you download');
-    expect(list?.textContent).toContain('One:');
-    expect(list?.textContent).toContain('(2 times)');
+    const toggle = el('export-warnings-toggle') as HTMLButtonElement;
+    expect(toggle.textContent?.trim()).toBe('2 things to check before you send this');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(el('export-warnings')?.querySelector('li')).toBeNull();
+
+    toggle.click();
+    fixture.detectChanges();
+    const items = [...el('export-warnings')!.querySelectorAll('li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim());
+    expect(items).toEqual([
+      'One · (Lost, 1900): book no longer in your library, kept as written (2 times)',
+      'Image “Map”: couldn’t be loaded, shown as [image: Map]',
+    ]);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect((el('export-download') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('keeps the setup in one collapsed row; a web page has no pages, so only the citation style', async () => {
+    await open('one');
+
+    expect(el('export-setup')?.textContent).toContain('Citations');
+    expect(el('export-setup-summary')?.textContent?.trim()).toBe('MLA 9');
+    expect(el('export-style')).toBeNull();
+
+    (el('export-setup-toggle') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(el('export-style')).toBeTruthy();
+    expect(el('export-paper')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Citation style');
+  });
+
+  it('names the house style as such', async () => {
+    exporter.savedSetup.mockResolvedValueOnce({ paper: 'a4', marginMm: 25.4, font: 'lora', lineSpacing: 1.5, citationStyle: 'nostos' });
+    await open('one');
+    expect(el('export-setup-summary')?.textContent?.trim()).toBe('Nostos (house style)');
+  });
+
+  it('offers paper, margins, font and spacing for a format with pages', async () => {
+    const paged: ExportFormat = { id: 'paged', label: 'Paged (.test)', extension: 'test', paged: true, render: () => new Blob([]) };
+    (EXPORT_FORMATS as ExportFormat[]).push(paged);
+    try {
+      await open('one');
+      fixture.componentInstance.formatId.set('paged');
+      fixture.detectChanges();
+      expect(el('export-setup')?.textContent).toContain('Page');
+      // The paper follows the test browser's locale.
+      expect(el('export-setup-summary')?.textContent?.trim()).toMatch(/^(A4|Letter), normal margins, Lora, 1.5 · MLA 9$/);
+
+      (el('export-setup-toggle') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(el('export-paper')).toBeTruthy();
+      expect(el('export-style')).toBeTruthy();
+      expect(fixture.componentInstance.filename()).toBe('One.test');
+    } finally {
+      (EXPORT_FORMATS as ExportFormat[]).pop();
+    }
   });
 
   it('exports the folder the writing is in, with its chapters reorderable for this export only', async () => {
@@ -145,7 +200,9 @@ describe('ExportDialogComponent (issue #1164)', () => {
     expect(exporter.load).toHaveBeenLastCalledWith(items, 'thesis', new Map([['one', 'Unsaved words.']]));
     const names = () => [...(el('export-chapters')?.querySelectorAll('.export-chapter-name') ?? [])].map((n) => n.textContent?.trim());
     expect(names()).toEqual(['One', 'Two']);
-    expect((el('export-filename') as HTMLInputElement).value).toBe('Thesis');
+    expect(fixture.componentInstance.filename()).toBe('Thesis.html');
+    // Arrows only, no drag handles.
+    expect(el('export-chapters')!.querySelector('[cdkDragHandle], .export-chapter-grip')).toBeNull();
 
     (el('export-chapters')!.querySelector('[aria-label="Move One later"]') as HTMLButtonElement).click();
     await settle();
@@ -154,6 +211,7 @@ describe('ExportDialogComponent (issue #1164)', () => {
 
     (el('export-download') as HTMLButtonElement).click();
     await settle();
+    expect(exporter.download).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'Thesis.html');
     expect(exporter.saveSetup).toHaveBeenCalledWith('thesis', expect.anything());
   });
 

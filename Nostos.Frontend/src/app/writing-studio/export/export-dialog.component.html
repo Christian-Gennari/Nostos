@@ -17,7 +17,7 @@
   <div class="export-body" data-testid="export-dialog">
     @if (targets().length > 1) {
       <div class="export-row">
-        <span class="export-label" id="export-what-label">What</span>
+        <span class="export-label">What</span>
         <app-dropdown
           class="export-control"
           ariaLabel="What to export"
@@ -40,36 +40,52 @@
       }
     </div>
 
-    <div class="export-rule" aria-hidden="true"></div>
+    <!-- The setup: one quiet line until "Change". Paper, margins, font and
+         spacing only for a format with pages; the citation style always. -->
+    <div class="export-row" data-testid="export-setup">
+      <span class="export-label">{{ paged() ? 'Page' : 'Citations' }}</span>
+      <span class="export-summary">
+        <span class="export-value" data-testid="export-setup-summary">{{ setupSummary() }}</span>
+        <button appButton variant="link" size="sm" type="button" data-testid="export-setup-toggle"
+          aria-controls="export-setup-controls" [attr.aria-expanded]="setupOpen()" (click)="setupOpen.set(!setupOpen())">
+          {{ setupOpen() ? 'Done' : 'Change' }}
+        </button>
+      </span>
+    </div>
 
-    <div class="export-row">
-      <span class="export-label" id="export-paper-label">Paper</span>
-      <nostos-segmented class="export-control" fill aria-labelledby="export-paper-label" data-testid="export-paper"
-        [options]="paperOptions" [value]="setup().paper" (valueChange)="updateSetup({ paper: $any($event) })" />
-    </div>
-    <div class="export-row">
-      <span class="export-label" id="export-margins-label">Margins</span>
-      <nostos-segmented class="export-control" fill aria-labelledby="export-margins-label"
-        [options]="marginOptions" [value]="setup().marginMm" (valueChange)="updateSetup({ marginMm: +$event })" />
-    </div>
-    <div class="export-row">
-      <span class="export-label">Font</span>
-      <app-dropdown class="export-control" ariaLabel="Font" controlSize="compact" [fullWidth]="true"
-        [options]="fontOptions" [value]="setup().font" (valueChange)="updateSetup({ font: $event })" />
-    </div>
-    <div class="export-row">
-      <span class="export-label" id="export-spacing-label">Spacing</span>
-      <nostos-segmented class="export-control" fill aria-labelledby="export-spacing-label"
-        [options]="spacingOptions" [value]="setup().lineSpacing" (valueChange)="updateSetup({ lineSpacing: +$event })" />
-    </div>
-    <div class="export-row">
-      <span class="export-label">Citations</span>
-      <app-dropdown class="export-control" ariaLabel="Citation style" controlSize="compact" [fullWidth]="true" data-testid="export-style"
-        [options]="styleOptions" [value]="setup().citationStyle" (valueChange)="setCitationStyle($event)" />
-    </div>
+    @if (setupOpen()) {
+      <div class="export-setup" id="export-setup-controls">
+        @if (paged()) {
+          <div class="export-row">
+            <span class="export-label" id="export-paper-label">Paper</span>
+            <nostos-segmented class="export-control" fill aria-labelledby="export-paper-label" data-testid="export-paper"
+              [options]="paperOptions" [value]="setup().paper" (valueChange)="updateSetup({ paper: $any($event) })" />
+          </div>
+          <div class="export-row">
+            <span class="export-label" id="export-margins-label">Margins</span>
+            <nostos-segmented class="export-control" fill aria-labelledby="export-margins-label"
+              [options]="marginOptions" [value]="setup().marginMm" (valueChange)="updateSetup({ marginMm: +$event })" />
+          </div>
+          <div class="export-row">
+            <span class="export-label">Font</span>
+            <app-dropdown class="export-control" ariaLabel="Font" controlSize="compact" [fullWidth]="true"
+              [options]="fontOptions" [value]="setup().font" (valueChange)="updateSetup({ font: $event })" />
+          </div>
+          <div class="export-row">
+            <span class="export-label" id="export-spacing-label">Spacing</span>
+            <nostos-segmented class="export-control" fill aria-labelledby="export-spacing-label"
+              [options]="spacingOptions" [value]="setup().lineSpacing" (valueChange)="updateSetup({ lineSpacing: +$event })" />
+          </div>
+        }
+        <div class="export-row">
+          <span class="export-label">Citation style</span>
+          <app-dropdown class="export-control" ariaLabel="Citation style" controlSize="compact" [fullWidth]="true" data-testid="export-style"
+            [options]="styleOptions" [value]="setup().citationStyle" (valueChange)="setCitationStyle($event)" />
+        </div>
+      </div>
+    }
 
     @if (chapters().length > 1) {
-      <div class="export-rule" aria-hidden="true"></div>
       <section class="export-chapters" aria-labelledby="export-chapters-label">
         <div class="export-chapters-head">
           <h3 class="export-label" id="export-chapters-label">Chapters</h3>
@@ -77,12 +93,9 @@
             <button appButton variant="link" size="sm" type="button" (click)="resetOrder()">Studio order</button>
           }
         </div>
-        <ol class="export-chapter-list" cdkDropList (cdkDropListDropped)="dropChapter($event)" data-testid="export-chapters">
+        <ol class="export-chapter-list" data-testid="export-chapters">
           @for (chapter of chapters(); track chapter.id; let i = $index, last = $last, first = $first) {
-            <li class="export-chapter" cdkDrag cdkDragLockAxis="y" [attr.data-chapter]="chapter.id">
-              <span class="export-chapter-grip" cdkDragHandle aria-hidden="true" title="Drag to reorder">
-                <nostos-icon name="list" [size]="14" />
-              </span>
+            <li class="export-chapter" [attr.data-chapter]="chapter.id">
               <span class="export-chapter-name">
                 @for (group of chapter.groupPath; track group.id) {
                   <span class="export-chapter-group">{{ group.title }} / </span>
@@ -98,42 +111,36 @@
       </section>
     }
 
-    <div class="export-rule" aria-hidden="true"></div>
-
-    <label class="export-file">
-      <span class="export-label">File name</span>
-      <input appInput controlSize="compact" type="text" autocomplete="off" spellcheck="false" data-testid="export-filename"
-        [value]="filenameBase()" (input)="setFilename($any($event.target).value)" />
-      <span class="export-hint">Saved as {{ filename() }}</span>
-    </label>
-
     @if (doc(); as resolved) {
       @if (resolved.warnings.length) {
-        <section appNotice tone="caution" class="export-warnings" role="status" aria-labelledby="export-warnings-label" data-testid="export-warnings">
-          <h3 id="export-warnings-label">Before you download</h3>
-          <ul>
-            @for (warning of resolved.warnings; track $index) {
-              <li>
-                @if (warning.chapter) {
-                  <span class="export-warning-chapter">{{ warning.chapter }}: </span>
-                }
-                {{ warning.message }}
-                @if (warning.count > 1) {
-                  <span class="export-warning-count">({{ warning.count }} times)</span>
-                }
-              </li>
-            }
-          </ul>
-        </section>
+        <div class="export-warnings" data-testid="export-warnings">
+          <button appButton variant="link" size="sm" type="button" class="export-warnings-toggle" data-testid="export-warnings-toggle"
+            aria-controls="export-warning-list" [attr.aria-expanded]="warningsOpen()" (click)="warningsOpen.set(!warningsOpen())">
+            {{ warningsLine() }}
+          </button>
+          @if (warningsOpen()) {
+            <ul class="export-warning-list" id="export-warning-list">
+              @for (warning of resolved.warnings; track $index) {
+                <li>
+                  @if (warning.chapter) {
+                    <span class="export-warning-chapter">{{ warning.chapter }} · </span>
+                  }{{ warning.message }}@if (warning.count > 1) {
+                    <span class="export-warning-count"> ({{ warning.count }} times)</span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </div>
       }
     }
   </div>
 
-  <app-dialog-actions shellActions variant="footer">
+  <app-dialog-actions shellActions variant="footer" class="export-actions">
     @if (downloadReason(); as reason) {
       <span dialogActionsStart class="export-status" id="export-status" role="status" data-testid="export-status">{{ reason }}</span>
     } @else if (doc(); as resolved) {
-      <span dialogActionsStart class="export-status" role="status">{{ resolved.words }} {{ resolved.words === 1 ? 'word' : 'words' }}</span>
+      <span dialogActionsStart class="export-status" role="status" data-testid="export-status">{{ resolved.words }} {{ resolved.words === 1 ? 'word' : 'words' }}</span>
     }
     <button appButton variant="secondary" type="button" [disabled]="downloading()" (click)="cancel()">Cancel</button>
     <button appButton variant="primary" type="button" data-testid="export-download"

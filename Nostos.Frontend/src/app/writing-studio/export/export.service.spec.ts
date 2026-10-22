@@ -112,7 +112,7 @@ describe('ExportService (issue #1164): real writings, books and citation styles'
     expect(doc.bibliography?.entries.map((entry) => words(entry.children))).toEqual([
       'Schopenhauer, Arthur. *The World as Will and Representation*. Translated by E. F. J. Payne. Dover, 1851.',
     ]);
-    expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'citation', chapter: 'One', message: expect.stringContaining('“(Lost, 1900)”') })]);
+    expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'citation', chapter: 'One', message: '(Lost, 1900): book no longer in your library, kept as written' })]);
   });
 
   it('writes the same folder again in APA: citations back in the sentence, “References”', async () => {

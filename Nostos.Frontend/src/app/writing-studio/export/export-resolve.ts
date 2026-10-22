@@ -115,7 +115,7 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
     const context: ParseContext = {
       baseUrl: input.baseUrl ?? null,
       malformedCitation: (words) =>
-        warnings.add('citation', index, `A citation link could not be read, so “${shorten(words)}” is exported as it was last written.`),
+        warnings.add('citation', index, `${shorten(words)}: citation link couldn’t be read, kept as written`),
     };
     chapters.push({ input: chapter, blocks: await parseMarkdown(chapter.markdown, context, slicer) });
   }
@@ -172,7 +172,7 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
       warnings.add(
         'citation',
         chapter,
-        `“${shorten(plainCitation(cite.text))}” could not be written in ${input.style.label}: its book is no longer in the library or cannot be read. It keeps the words it was last written with.`,
+        `${shorten(plainCitation(cite.text))}: book no longer in your library, kept as written`,
       );
       written.set(cite, cite.text);
     } else {
@@ -219,7 +219,7 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
       warnings.add(
         'citation',
         null,
-        `“${shorten(plainCitation(text))}” in the bibliography could not be written in ${input.style.label}: its book is no longer in the library or cannot be read. It keeps the words it was last written with.`,
+        `Bibliography entry “${shorten(plainCitation(text))}”: book no longer in your library, kept as written`,
       );
     }
     const parseContext: ParseContext = { baseUrl: input.baseUrl ?? null, malformedCitation: () => undefined };
@@ -474,7 +474,7 @@ function pairFootnotes(
             used.add(definition);
             list[i] = { type: 'note', id: newNote(words, chapter) };
           } else {
-            warn(`Footnote marker ${inline.number} has no note, so it was left out.`);
+            warn(`Footnote marker ${inline.number}: no note, left out`);
             list.splice(i, 1);
             i--;
           }
@@ -494,7 +494,7 @@ function pairFootnotes(
       // The Studio's own note without its marker: the Studio drops it too.
       blocks.splice(index, 1);
     } else {
-      warn(`Footnote ${definition.number} has no marker in the text, so its words are exported as an ordinary paragraph.`);
+      warn(`Footnote ${definition.number}: no marker in the text, kept as a paragraph`);
       blocks.splice(index, 1, { type: 'paragraph', children: definition.children });
     }
   }
@@ -547,7 +547,7 @@ async function checkImages(
 
 function imageMessage(alt: string, src: string): string {
   const what = alt.trim() ? `“${shorten(alt.trim())}”` : src ? shorten(src, 60) : 'without an address';
-  return `An image (${what}) could not be loaded, so it is exported as “${imagePlaceholder(alt)}”.`;
+  return `Image ${what}: couldn’t be loaded, shown as ${imagePlaceholder(alt)}`;
 }
 
 export function imagePlaceholder(alt: string): string {

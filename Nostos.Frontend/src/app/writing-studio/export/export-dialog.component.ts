@@ -10,17 +10,14 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { CdkDrag, CdkDragDrop, CdkDragHandle, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+import { moveItemInArray } from '@angular/cdk/drag-drop';
 
 import { ToastService } from '../../core/services/toast.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { DialogActionsComponent } from '../../ui/dialog-actions/dialog-actions.component';
 import { DropdownComponent, type DropdownOption } from '../../ui/dropdown/dropdown.component';
-import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
-import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
-import { NoticeComponent } from '../../ui/notice/notice.component';
 import { SegmentedComponent, type SegmentedOption } from '../../ui/segmented/segmented.component';
 import { CITATION_STYLES, citationStyle } from '../citations/citation-styles';
 import { STUDIO_FONTS, StudioPreferencesService } from '../page-settings/studio-preferences.service';
@@ -28,15 +25,18 @@ import { exportFilename } from './export-filename';
 import { EXPORT_FORMATS } from './export-formats';
 import type { ExportDocument, PageSetup, PaperSize } from './export-model';
 import { type ExportTreeItem, ancestorFolders } from './export-order';
-import { EXPORT_LINE_SPACINGS, EXPORT_MARGINS, pageSetupFromStudio } from './export-page-setup';
+import { EXPORT_LINE_SPACINGS, EXPORT_MARGINS, exportStyleLabel, pageSetupFromStudio, pageSummary } from './export-page-setup';
 import { type ExportSource, ExportService, exportBlockedReason, orderChapters } from './export.service';
 
 /**
  * The export dialog (issue #1164), opened from the Studio's one "Export…"
  * menu item. It exports the open writing or a folder it sits in, as one
- * document: format, page setup (saved with that writing or folder when the
- * file is made), chapter order for a folder (for this export only), the file
- * name, and what the writer should know before downloading.
+ * document. The common path is What → Format → Download: the citation style
+ * and, for a paged format, the page setup sit in one collapsed summary row
+ * (saved with that writing or folder when the file is made). A folder's
+ * chapters can be reordered for this export only. The file is named from the
+ * title. What the writer should know before sending it is one quiet line that
+ * opens to a short list.
  */
 @Component({
   selector: 'app-export-dialog',
@@ -46,14 +46,8 @@ import { type ExportSource, ExportService, exportBlockedReason, orderChapters } 
     DialogActionsComponent,
     ButtonComponent,
     IconButtonComponent,
-    NostosIconComponent,
     DropdownComponent,
     SegmentedComponent,
-    InputDirective,
-    NoticeComponent,
-    CdkDropList,
-    CdkDrag,
-    CdkDragHandle,
   ],
   templateUrl: './export-dialog.component.html',
   styleUrl: './export-dialog.component.css',
@@ -81,7 +75,7 @@ export class ExportDialogComponent {
   readonly marginOptions: SegmentedOption<number>[] = EXPORT_MARGINS.map((m) => ({ value: m.value, label: m.label }));
   readonly spacingOptions: SegmentedOption<number>[] = EXPORT_LINE_SPACINGS.map((s) => ({ value: s.value, label: s.label }));
   readonly fontOptions: DropdownOption[] = STUDIO_FONTS.map((f) => ({ value: f.value, label: f.label }));
-  readonly styleOptions: DropdownOption[] = CITATION_STYLES.map((s) => ({ value: s.id, label: s.label }));
+  readonly styleOptions: DropdownOption[] = CITATION_STYLES.map((s) => ({ value: s.id, label: exportStyleLabel(s) }));
 
   /** The open writing, then each folder it sits in, nearest first. */
   readonly targets = computed(() => {
@@ -110,8 +104,10 @@ export class ExportDialogComponent {
   readonly resolving = signal(false);
   readonly resolveError = signal<string | null>(null);
   readonly downloading = signal(false);
-  private readonly filenameEdited = signal(false);
-  readonly filenameBase = signal('');
+  /** The page and citation setup, shown as one summary row until "Change". */
+  readonly setupOpen = signal(false);
+  /** The list behind "N things to check". */
+  readonly warningsOpen = signal(false);
 
   readonly blockedReason = computed(() => {
     const source = this.source();
@@ -124,7 +120,15 @@ export class ExportDialogComponent {
   });
   readonly reordered = computed(() => this.order() !== null);
   readonly format = computed(() => this.formats.find((f) => f.id === this.formatId()) ?? this.formats[0]);
-  readonly filename = computed(() => exportFilename(this.filenameBase(), this.format().extension));
+  readonly paged = computed(() => this.format().paged);
+  readonly filename = computed(() => exportFilename(this.source()?.title ?? this.items().find((i) => i.id === this.targetId())?.name, this.format().extension));
+  readonly styleLabel = computed(() => exportStyleLabel(citationStyle(this.setup().citationStyle)));
+  /** "Page · A4, normal margins, Newsreader, 1.5 · Chicago (notes)", or only the style for a format without pages. */
+  readonly setupSummary = computed(() => (this.paged() ? `${pageSummary(this.setup())} · ${this.styleLabel()}` : this.styleLabel()));
+  readonly warningsLine = computed(() => {
+    const count = this.doc()?.warnings.length ?? 0;
+    return count === 1 ? '1 thing to check before you send this' : `${count} things to check before you send this`;
+  });
   readonly canDownload = computed(() => !!this.doc() && !this.resolving() && !this.blockedReason() && !this.downloading());
   readonly downloadReason = computed(() => {
     if (this.loadError()) return this.loadError();
@@ -173,8 +177,7 @@ export class ExportDialogComponent {
     this.doc.set(null);
     this.order.set(null);
     this.loadError.set(null);
-    const target = this.items().find((item) => item.id === id);
-    if (!this.filenameEdited()) this.filenameBase.set(target?.name ?? '');
+    this.warningsOpen.set(false);
     const studio = pageSetupFromStudio(this.prefs.preferences(), navigator.language);
     const overrides = new Map<string, string>();
     const current = this.currentMarkdown();
@@ -232,15 +235,6 @@ export class ExportDialogComponent {
     this.updateSetup({ citationStyle: citationStyle(id).id });
   }
 
-  setFilename(value: string): void {
-    this.filenameEdited.set(true);
-    this.filenameBase.set(value);
-  }
-
-  dropChapter(event: CdkDragDrop<unknown>): void {
-    this.moveChapter(event.previousIndex, event.currentIndex);
-  }
-
   moveChapter(from: number, to: number): void {
     const ids = this.chapters().map((chapter) => chapter.id);
     if (to < 0 || to >= ids.length || from === to) return;
@@ -251,8 +245,6 @@ export class ExportDialogComponent {
   resetOrder(): void {
     this.order.set(null);
   }
-
-  warningCount = computed(() => this.doc()?.warnings.length ?? 0);
 
   async download(): Promise<void> {
     const doc = this.doc();

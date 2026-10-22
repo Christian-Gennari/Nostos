@@ -158,7 +158,7 @@ describe('export resolve (issue #1164)', () => {
 
       expect(text(doc)).toBe('As shown (Gone, 1990, p. 3) and (Kant, 1992).');
       expect(doc.warnings).toEqual([
-        expect.objectContaining({ kind: 'citation', message: expect.stringContaining('“(Gone, 1990, p. 3)” could not be written in APA 7') }),
+        expect.objectContaining({ kind: 'citation', message: '(Gone, 1990, p. 3): book no longer in your library, kept as written' }),
       ]);
     });
 
@@ -173,7 +173,7 @@ describe('export resolve (issue #1164)', () => {
       const doc = await resolve('Odd [(Kant, 1781)](nostos:cite/../etc?p=1) here, and [*a note*](nostos:note/x).');
 
       expect(text(doc)).toBe('Odd (Kant, 1781) here, and *a note*.');
-      expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'citation', message: expect.stringContaining('“(Kant, 1781)”') })]);
+      expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'citation', message: '(Kant, 1781): citation link couldn’t be read, kept as written' })]);
     });
 
     it('keeps a deleted book’s bibliography entry as last written, and still writes the rest', async () => {
@@ -183,7 +183,7 @@ describe('export resolve (issue #1164)', () => {
 
       expect(doc.bibliography).not.toBeNull();
       expect(doc.bibliography!.entries.map((e) => inlines(e.children))).toEqual(['Kant. *Book*. 1992.', 'Gone. *Lost*. 1990.']);
-      expect(doc.warnings.some((w) => w.message.includes('“Gone. Lost. 1990.” in the bibliography'))).toBe(true);
+      expect(doc.warnings.some((w) => w.message === 'Bibliography entry “Gone. Lost. 1990.”: book no longer in your library, kept as written')).toBe(true);
     });
   });
 
@@ -304,14 +304,14 @@ describe('export resolve (issue #1164)', () => {
     it('drops a marker with no note, and says so', async () => {
       const doc = await resolve('One[^1] two[^7].\n\n[^1]: Mine.');
       expect(text(doc)).toBe('One[^1] two.\n\n[^1]: Mine.');
-      expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'footnote', message: 'Footnote marker 7 has no note, so it was left out.' })]);
+      expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'footnote', message: 'Footnote marker 7: no note, left out' })]);
     });
 
     it('keeps the writer’s note with no marker as a plain paragraph, and drops the Studio’s', async () => {
       const doc = await resolve('Text.\n\n[^1]: My aside.\n\n[^2]: [Kant, *Full*.](nostos:cite/b2?as=reference)');
       expect(text(doc)).toBe('Text.\n\nMy aside.');
       expect(doc.footnotes).toEqual([]);
-      expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'footnote', message: expect.stringContaining('Footnote 1 has no marker') })]);
+      expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'footnote', message: 'Footnote 1: no marker in the text, kept as a paragraph' })]);
     });
 
     it('gives a note called twice its words at each call', async () => {
@@ -388,7 +388,10 @@ describe('export resolve (issue #1164)', () => {
       expect(text(doc)).toBe('![A map](https://nostos.example/api/books/1/cover) and [image: untitled] and [image: x]');
       expect(checked.sort()).toEqual(['https://example.com/broken.png', 'https://nostos.example/api/books/1/cover']);
       expect(doc.warnings.filter((w) => w.kind === 'image')).toHaveLength(2);
-      expect(doc.warnings[0].message).toContain('“[image: untitled]”');
+      expect(doc.warnings.map((w) => w.message)).toEqual([
+        'Image https://example.com/broken.png: couldn’t be loaded, shown as [image: untitled]',
+        'Image “x”: couldn’t be loaded, shown as [image: x]',
+      ]);
     });
   });
 
