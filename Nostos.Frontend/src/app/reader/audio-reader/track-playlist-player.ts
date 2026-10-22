@@ -82,6 +82,8 @@ export class TrackPlaylistPlayer implements AudioPlayer {
   private loadedOnce = false;
   private disposed = false;
   private playbackRate = 1;
+  /** Where the last in-place pickup resumed, so a spot that fails every time is reported. */
+  private lastPickup: { index: number; offset: number } | null = null;
 
   private readonly onLoadedMetadata = () => this.handleLoadedMetadata();
   private readonly onPlaying = () => this.handlePlaying();
@@ -257,10 +259,18 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     if (this.loadedOnce && !this.switching) {
       // The stream of a track that had loaded died. Ask for it again right
       // here; the place and the wish to play carry over. Should that request
-      // fail too, it fails while switching and is reported below.
-      this.load(this.index, Math.max(0, this.position() - this.starts[this.index]));
-      return;
+      // fail too, it fails while switching and is reported below. A failure
+      // where the last pickup resumed, with nothing played since, is the file
+      // itself (a damaged frame) and is reported too, not retried forever.
+      const offset = Math.max(0, this.position() - this.starts[this.index]);
+      const last = this.lastPickup;
+      if (!last || last.index !== this.index || Math.abs(offset - last.offset) >= 1) {
+        this.lastPickup = { index: this.index, offset };
+        this.load(this.index, offset);
+        return;
+      }
     }
+    this.lastPickup = null;
     this.switching = false;
     this.pendingOffset = null;
     this.wantPlaying = false;

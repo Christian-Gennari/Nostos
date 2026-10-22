@@ -324,6 +324,24 @@ describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
     expect(player.playing()).toBe(false);
   });
 
+  it('reports a spot that fails every time instead of asking again forever', () => {
+    const { audio, events, player } = setup();
+    audio.finishLoading();
+    player.play();
+    audio.currentTime = 40;
+
+    audio.failStream();
+    audio.finishLoading();
+    expect(events).toEqual(['load', 'play']);
+
+    audio.currentTime = 40.2; // fails again before getting anywhere
+    audio.failStream();
+
+    expect(audio.loads).toEqual(['/tracks/1', '/tracks/1']);
+    expect(events).toEqual(['load', 'play', 'loaderror', 'pause']);
+    expect(player.playing()).toBe(false);
+  });
+
   it('reports a book that never loaded instead of asking again', () => {
     const { audio, events } = setup();
     audio.failStream();
