@@ -13,6 +13,12 @@ permissions:
   # Adds the CalVer tag to the SelfHosted image already built for that revision.
   packages: write
 
+# A scheduled and a manual run must never compute the same version or repair
+# the same release at once.
+concurrency:
+  group: scheduled-release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Publish weekly CalVer release
@@ -24,6 +30,31 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A release is the git tag, the image tag and the GitHub Release
+      # together. If an earlier run stopped part-way, finish the newest
+      # release before deciding whether there is anything new to release:
+      # its revision counts as released from here on, so nothing else would.
+      - name: Repair the latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t TAGS < <(git tag -l 'v[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]*' --sort=-v:refname | head -n 2)
+          if [ "${#TAGS[@]}" -eq 0 ]; then
+            echo "No CalVer release yet; nothing to repair."
+            exit 0
+          fi
+          LATEST_TAG="${TAGS[0]}"
+          PREVIOUS_REF="${TAGS[1]:-7db4e3ddd484f1c56486d92a24475c6df544c570}"
+          scripts/ensure-release.sh "$LATEST_TAG" "$(git rev-list -n 1 "refs/tags/$LATEST_TAG")" "$PREVIOUS_REF"
 
       - name: Determine release range and generate notes
         id: notes
@@ -88,59 +119,17 @@ jobs:
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
           echo "version=$CALVER" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
 
-      - name: Sign in to GHCR
-        if: steps.notes.outputs.has_changes == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # A release is the tag, the GitHub Release and the image together. The
-      # image for this exact revision must exist before anything is tagged, so
-      # a release can never point at a revision nobody can run.
-      - name: Require the SelfHosted image for the release revision
-        if: steps.notes.outputs.has_changes == 'true'
-        env:
-          HEAD_REF: ${{ steps.notes.outputs.head_ref }}
-        run: |
-          set -euo pipefail
-          image="ghcr.io/christian-gennari/nostos:selfhosted-sha-$HEAD_REF"
-          if ! docker buildx imagetools inspect "$image" >/dev/null; then
-            echo "No published image $image yet; Publish SelfHosted container may still be running. Re-run this release once it has finished." >&2
-            exit 1
-          fi
-
-      - name: Publish tag and GitHub Release
+      # The image for this exact revision must exist before anything is
+      # tagged, so a release can never point at a revision nobody can run.
+      # Then: git tag, image tag, and only last the visible GitHub Release.
+      # Each piece is skipped when present and checked against the revision.
+      - name: Publish tag, image tag and GitHub Release
         if: steps.notes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.notes.outputs.version }}"
-          HEAD_REF="${{ steps.notes.outputs.head_ref }}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          echo "Tagging $HEAD_REF as $VERSION..."
-          git tag -a "$VERSION" "$HEAD_REF" -m "Nostos $VERSION"
-          git push origin "refs/tags/$VERSION"
-
-          echo "Creating GitHub Release $VERSION..."
-          gh release create "$VERSION" \
-            --verify-tag \
-            --title "Nostos $VERSION" \
-            --notes-file /tmp/release-notes.md
-
-      - name: Tag the SelfHosted image with the release version
-        if: steps.notes.outputs.has_changes == 'true'
-        env:
           VERSION: ${{ steps.notes.outputs.version }}
           HEAD_REF: ${{ steps.notes.outputs.head_ref }}
-        run: |
-          set -euo pipefail
-          # Same digest, one more name: nothing is rebuilt.
-          docker buildx imagetools create \
-            --tag "ghcr.io/christian-gennari/nostos:$VERSION" \
-            "ghcr.io/christian-gennari/nostos:selfhosted-sha-$HEAD_REF"
+          BASE_REF: ${{ steps.notes.outputs.base_ref }}
+        run: scripts/ensure-release.sh "$VERSION" "$HEAD_REF" "$BASE_REF" /tmp/release-notes.md

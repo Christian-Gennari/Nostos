@@ -92,18 +92,29 @@ Every GitHub PR entry links to its source.
 A GitHub Actions workflow (`.github/workflows/scheduled-release.yml`) runs weekly
 (Sundays at 18:00 UTC) and can also be triggered manually via `workflow_dispatch`.
 
+Scheduled and manual runs share one concurrency group, so they never overlap.
+
 It executes the following steps:
-1. Determines the latest CalVer tag (or fallback baseline pin).
-2. Checks if any new reader-facing changes have landed on `main`.
-3. If no changes exist, it exits cleanly without publishing an empty release.
-4. Generates reader-facing release notes using `scripts/generate-release-notes.py`.
-5. Computes the release version `vYYYY.MM.DD` (or `.1`, `.2` for same-day releases).
-6. Stops if the SelfHosted image for that revision (`selfhosted-sha-<commit>`)
+1. Repairs the newest CalVer release if an earlier run stopped part-way: a
+   missing image tag or GitHub Release is added, and existing pieces are
+   checked against the tag's revision (`scripts/ensure-release.sh`).
+2. Determines the latest CalVer tag (or fallback baseline pin).
+3. Checks if any new reader-facing changes have landed on `main`.
+4. If no changes exist, it exits cleanly without publishing an empty release.
+5. Generates reader-facing release notes using `scripts/generate-release-notes.py`.
+6. Computes the release version `vYYYY.MM.DD` (or `.1`, `.2` for same-day releases).
+7. Stops if the SelfHosted image for that revision (`selfhosted-sha-<commit>`)
    is not published yet. Re-run the workflow once `Publish SelfHosted container`
    has finished.
-7. Creates and pushes the tag, and publishes the GitHub Release with the notes.
-8. Adds the `vYYYY.MM.DD` tag to that image. The digest stays the same, nothing
-   is rebuilt.
+8. Creates and pushes the git tag, adds the `vYYYY.MM.DD` tag to that image
+   (same digest, nothing is rebuilt), and only then publishes the GitHub
+   Release with the notes. A visible release therefore always has its image.
+
+`scripts/ensure-release.sh <version> <revision> <previous-ref> [notes-file]`
+does steps 1 and 7–8. Each piece is created only when missing; an existing git
+tag must point at the revision and an existing image tag must have the same
+digest as `selfhosted-sha-<revision>`, or the run fails without changing
+anything. `DRY_RUN=1` prints the writes instead of making them.
 
 ## Manual release
 
@@ -114,14 +125,17 @@ git fetch origin --tags
 python3 scripts/generate-release-notes.py \
   --from <previous-tag-or-pin> --to <target-main-sha> --version vYYYY.MM.DD > /tmp/release-notes.md
 
-# Publish tag and release
+# Publish tag, image tag and release
 git tag -a vYYYY.MM.DD <target-main-sha> -m "Nostos vYYYY.MM.DD"
 git push origin refs/tags/vYYYY.MM.DD
-gh release create vYYYY.MM.DD --verify-tag \
-  --title "Nostos vYYYY.MM.DD" --notes-file /tmp/release-notes.md
 docker buildx imagetools create \
   --tag ghcr.io/christian-gennari/nostos:vYYYY.MM.DD \
   ghcr.io/christian-gennari/nostos:selfhosted-sha-<target-main-sha>
+gh release create vYYYY.MM.DD --verify-tag \
+  --title "Nostos vYYYY.MM.DD" --notes-file /tmp/release-notes.md
+
+# Or let the script do the three steps, skipping any that already exist:
+scripts/ensure-release.sh vYYYY.MM.DD <target-main-sha> <previous-tag-or-pin> /tmp/release-notes.md
 ```
 
 ```bash
