@@ -174,8 +174,14 @@ export async function printExport(doc: ExportDocument, title: string, timeoutMs 
   // The PDF is named from the title in most browsers' "Save as PDF".
   document.title = title;
   win.addEventListener('afterprint', () => setTimeout(cleanUp, 0), { once: true });
-  win.focus();
-  win.print();
+  try {
+    win.focus();
+    win.print();
+  } catch (error) {
+    // A browser that refuses to print leaves neither the frame nor the borrowed title behind.
+    cleanUp();
+    throw error;
+  }
   // Browsers whose print() doesn't wait for the dialog still fire afterprint; this is the backstop.
   setTimeout(() => {
     if (current?.frame === frame) document.title = current.restoreTitle;

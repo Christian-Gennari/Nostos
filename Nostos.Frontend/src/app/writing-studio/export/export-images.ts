@@ -23,6 +23,9 @@ export interface EmbeddedImages {
   warnings: ExportWarning[];
 }
 
+/** The longest side, in pixels, an embedded image is drawn at. */
+export const MAX_EDGE = 1600;
+
 export type ImageFetcher = (src: string, signal?: AbortSignal) => Promise<EmbeddedImage | null>;
 
 /** Kept per resolved document (its sections array), so checking before the download and writing the file fetch once. */
@@ -49,7 +52,7 @@ export function embedImages(doc: Pick<ExportDocument, 'sections' | 'footnotes'>,
           kind: 'image',
           chapter: null,
           count: 1,
-          message: `Image “${alt.trim() || 'untitled'}”: its site doesn’t allow it to be saved in a file, shown as ${imagePlaceholder(alt)}`,
+          message: `Image “${alt.trim() || 'untitled'}”: couldn’t be copied into the file, shown as ${imagePlaceholder(alt)}`,
         });
       }
     });
@@ -74,11 +77,15 @@ export async function fetchAsPng(src: string, signal?: AbortSignal): Promise<Emb
     const bitmap = await decode(blob);
     if (!bitmap) return null;
     const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
+    // Drawn at most MAX_EDGE pixels on its longest side: twice a page's text
+    // width, sharp in print, and a 6000-pixel photo doesn't make a 50 MB file
+    // or run the browser out of canvas memory.
+    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height, 1));
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const context = canvas.getContext('2d');
     if (!context || !canvas.width || !canvas.height) return null;
-    context.drawImage(bitmap.source, 0, 0);
+    context.drawImage(bitmap.source, 0, 0, canvas.width, canvas.height);
     bitmap.close();
     const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
     if (!png) return null;

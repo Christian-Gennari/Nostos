@@ -198,7 +198,7 @@ describe('ExportDialogComponent (issue #1164)', () => {
       expect((el('export-download') as HTMLButtonElement).disabled).toBe(true);
       expect(el('export-status')?.textContent).toContain('Checking the images');
 
-      finish([{ kind: 'image', message: 'Image “Map”: its site doesn’t allow it to be saved in a file, shown as [image: Map]', chapter: null, count: 1 }]);
+      finish([{ kind: 'image', message: 'Image “Map”: couldn’t be copied into the file, shown as [image: Map]', chapter: null, count: 1 }]);
       await settle();
       expect((el('export-download') as HTMLButtonElement).disabled).toBe(false);
       expect(el('export-warnings-toggle')?.textContent?.trim()).toBe('1 thing to check before you send this');

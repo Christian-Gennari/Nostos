@@ -347,6 +347,48 @@ describe('DOCX (issue #1166)', () => {
     expect(Object.keys(missing.zip.files).some((name) => name.startsWith('word/media/'))).toBe(false);
   });
 
+  it('gives an image in a footnote a relationship of the footnotes part, and writes an in-page link as text', async () => {
+    const doc = essay({
+      sections: [{ type: 'chapter', writingId: 'x', title: 'X', depth: 0, blocks: [{ type: 'paragraph', children: [t('See'), { type: 'footnoteRef', number: 1 }, t(' and '), { type: 'link', href: '#part-two', children: [t('part two')] }] }] }],
+      footnotes: [{ number: 1, children: [t('A map: '), { type: 'image', src: 'm', alt: 'Map', title: null }] }],
+      bibliography: null,
+    });
+    const { zip, footnotes, document: body } = await docxXml(doc, new Map([['m', { data: PNG, width: 10, height: 10 }]]));
+    const embed = /r:embed="([^"]+)"/.exec(footnotes)?.[1];
+    expect(embed).toBeTruthy();
+    const rels = (await zip.file('word/_rels/footnotes.xml.rels')?.async('string')) ?? '';
+    expect(rels).toContain(`Id="${embed}"`);
+    const docRels = (await zip.file('word/_rels/document.xml.rels')?.async('string')) ?? '';
+    expect(docRels + body).not.toContain('#part-two');
+    expect(body).toContain('part two');
+  });
+
+  it('keeps an image in a table cell inside its cell, and the next image back at text width', async () => {
+    const wide: EmbeddedImage = { data: PNG, width: 4000, height: 1000 };
+    const doc = essay({
+      sections: [
+        {
+          type: 'chapter',
+          writingId: 'x',
+          title: 'X',
+          depth: 0,
+          blocks: [
+            { type: 'table', align: [null, null], header: [[t('A')], [t('B')]], rows: [[[{ type: 'image', src: 'w', alt: 'W', title: null }], [t('2')]]] },
+            { type: 'paragraph', children: [{ type: 'image', src: 'w', alt: 'W', title: null }] },
+          ],
+        },
+      ],
+      footnotes: [],
+      bibliography: null,
+    });
+    const { document: body } = await docxXml(doc, new Map([['w', wide]]));
+    const widths = [...body.matchAll(/<wp:extent cx="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(widths).toHaveLength(2);
+    // Two columns: under half the text width; then the full text width again.
+    expect(widths[0]).toBeLessThan(5_732_145 / 2);
+    expect(widths[1]).toBeGreaterThan(5_700_000);
+  });
+
   it('warns before the download about an image the browser can’t fetch, and fetches each once', async () => {
     const fetchImage = vi.fn(async (src: string) => (src.includes('map') ? null : { data: PNG, width: 1, height: 1 }));
     const doc = essay();
@@ -355,7 +397,7 @@ describe('DOCX (issue #1166)', () => {
     expect(again).toBe(first);
     expect(fetchImage).toHaveBeenCalledTimes(1);
     expect(first.warnings).toEqual([
-      { kind: 'image', chapter: null, count: 1, message: 'Image “Map”: its site doesn’t allow it to be saved in a file, shown as [image: Map]' },
+      { kind: 'image', chapter: null, count: 1, message: 'Image “Map”: couldn’t be copied into the file, shown as [image: Map]' },
     ]);
   });
 
@@ -369,6 +411,47 @@ describe('DOCX (issue #1166)', () => {
     expect(footers.length).toBeGreaterThan(0);
     expect(await zip.file(footers[0])!.async('string')).toContain('PAGE');
   });
+
+  it('writes well-formed XML even from text with control characters and a broken surrogate', async () => {
+    // Pasted text can carry characters XML 1.0 forbids; one of them makes Word ask to repair the file.
+    const dirty = `Form${String.fromCharCode(12)}feed, vertical${String.fromCharCode(11)}tab, nul${String.fromCharCode(0)}, lone ${String.fromCharCode(0xd800)} half, ${String.fromCharCode(0xfffe)} and a tab\tkept`;
+    const doc = essay({
+      title: `Title${String.fromCharCode(1)}`,
+      sections: [{ type: 'chapter', writingId: 'x', title: 'X', depth: 0, blocks: [{ type: 'heading', level: 1, children: [t(dirty)] }, { type: 'paragraph', children: [t(dirty), { type: 'footnoteRef', number: 1 }] }] }],
+      footnotes: [{ number: 1, children: [t(dirty)] }],
+      bibliography: { heading: 'Bibliography', entries: [{ book: 'b', children: [t(dirty)] }] },
+    });
+    const zip = await unzip(await Packer.toBlob(buildDocx(doc, { images: new Map() })));
+    for (const name of Object.keys(zip.files).filter((n) => /\.(xml|rels)$/.test(n))) {
+      const xml = await zip.file(name)!.async('string');
+      const parsed = new DOMParser().parseFromString(xml, 'application/xml');
+      expect(parsed.getElementsByTagName('parsererror'), name).toHaveLength(0);
+      expect(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/.test(xml), name).toBe(false);
+    }
+    const body = await zip.file('word/document.xml')!.async('string');
+    expect(body).toContain('Form');
+    expect(body).toContain('feed, vertical');
+  });
+
+  it('writes a 100,000-word folder in reasonable time', async () => {
+    const paragraph = (i: number): Extract<ExportSection, { type: 'chapter' }>['blocks'][number] => ({
+      type: 'paragraph',
+      children: [t(`Paragraph ${i} carries an ordinary amount of prose so that the whole writing is long, with some words in it.`), { type: 'footnoteRef', number: i + 1 }],
+    });
+    const sections: ExportSection[] = Array.from({ length: 10 }, (_, c) => ({
+      type: 'chapter',
+      writingId: `c${c}`,
+      title: `Chapter ${c}`,
+      depth: 0,
+      blocks: Array.from({ length: 500 }, (_, i) => paragraph(c * 500 + i)),
+    }));
+    const footnotes = Array.from({ length: 5000 }, (_, i) => ({ number: i + 1, children: [t(`Note ${i + 1}.`)] }));
+    const started = performance.now();
+    const blob = await Packer.toBlob(buildDocx(essay({ sections, footnotes, bibliography: null }), { images: new Map() }));
+    const seconds = (performance.now() - started) / 1000;
+    expect(blob.size).toBeGreaterThan(50_000);
+    expect(seconds).toBeLessThan(20);
+  }, 60_000);
 
   it('keeps right-to-left paragraphs right to left', async () => {
     const doc = essay({ sections: [{ type: 'chapter', writingId: 'x', title: 'X', depth: 0, blocks: [{ type: 'paragraph', children: [t('שלום עולם')] }] }], footnotes: [], bibliography: null });

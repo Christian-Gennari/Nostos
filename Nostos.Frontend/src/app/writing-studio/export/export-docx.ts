@@ -123,7 +123,7 @@ export function buildDocx(doc: ExportDocument, embedded: Pick<EmbeddedImages, 'i
   }
 
   return new Document({
-    title: doc.title,
+    title: xmlText(doc.title),
     creator: 'Nostos',
     features: { updateFields: false },
     styles: {
@@ -172,7 +172,7 @@ class DocxWriter {
 
   constructor(
     private readonly images: ReadonlyMap<string, EmbeddedImage>,
-    private readonly box: { width: number; height: number },
+    private box: { width: number; height: number },
   ) {}
 
   numbering(): INumberingOptions {
@@ -224,7 +224,7 @@ class DocxWriter {
             children: b.text
               .replace(/\n$/, '')
               .split('\n')
-              .map((text, i) => new TextRun({ text, font: MONO, size: NOTE_PT * 2, break: i ? 1 : undefined })),
+              .map((text, i) => new TextRun({ text: xmlText(text), font: MONO, size: NOTE_PT * 2, break: i ? 1 : undefined })),
           }),
         ];
       case 'rule':
@@ -266,7 +266,7 @@ class DocxWriter {
             new TableCell({
               width: { size: Math.floor(5000 / width), type: WidthType.PERCENTAGE },
               margins: { top: 40, bottom: 40, left: 80, right: 80 },
-              children: [this.paragraph(cells[i] ?? [], { alignment: cellAlignment(align[i]), spacing: { after: 0, line: 240 } }, head ? { bold: true } : {})],
+              children: [this.inCell(width, () => this.paragraph(cells[i] ?? [], { alignment: cellAlignment(align[i]), spacing: { after: 0, line: 240 } }, head ? { bold: true } : {}))],
             }),
         ),
       });
@@ -276,6 +276,17 @@ class DocxWriter {
       borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
       rows: [row(header, true), ...rows.map((cells) => row(cells, false))],
     });
+  }
+
+  /** Lays out a table cell's content, its images no wider than the cell (columns share the text width evenly). */
+  private inCell<T>(columns: number, write: () => T): T {
+    const page = this.box;
+    this.box = { width: Math.max(24, page.width / columns - 16), height: page.height };
+    try {
+      return write();
+    } finally {
+      this.box = page;
+    }
   }
 
   paragraph(children: readonly ExportInline[], options: ParagraphOptions = {}, style: RunStyle = {}): Paragraph {
@@ -309,9 +320,14 @@ class DocxWriter {
           out.push(...this.runs(inline.children, { ...style, strike: true }, rtl));
           break;
         case 'code':
-          out.push(new TextRun({ text: inline.text, font: MONO, size: style.size ? style.size * 2 : undefined }));
+          out.push(new TextRun({ text: xmlText(inline.text), font: MONO, size: style.size ? style.size * 2 : undefined }));
           break;
         case 'link':
+          // An in-page link ("#part-two") points at an anchor the file doesn't have: its words stay, plain.
+          if (inline.href.startsWith('#')) {
+            out.push(...this.runs(inline.children, style, rtl));
+            break;
+          }
           out.push(new ExternalHyperlink({ link: inline.href, children: this.runs(inline.children, { ...style, link: true }, rtl) as TextRun[] }));
           break;
         case 'image':
@@ -330,7 +346,7 @@ class DocxWriter {
 
   private text(text: string, style: RunStyle, rtl: boolean): TextRun {
     return new TextRun({
-      text,
+      text: xmlText(text),
       italics: style.italics,
       bold: style.bold,
       strike: style.strike,
@@ -350,9 +366,22 @@ class DocxWriter {
       data: image.data,
       // Rounded down, so a full-width image never pokes past the margin.
       transformation: { width: Math.max(1, Math.floor(image.width * scale)), height: Math.max(1, Math.floor(image.height * scale)) },
-      altText: { name: alt || 'image', description: alt, title: alt },
+      altText: { name: xmlText(alt) || 'image', description: xmlText(alt), title: xmlText(alt) },
     });
   }
+}
+
+/**
+ * Text as XML 1.0 allows it. Pasted text can carry control characters
+ * (a form feed, a vertical tab) and half a surrogate pair; any one of them
+ * makes Word ask to repair the file. Breaks that look like space become a
+ * space, a broken pair the replacement character, the rest nothing.
+ */
+export function xmlText(text: string): string {
+  return text
+    .replace(/[\u000B\u000C\u0085]/g, ' ')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
+    .replace(/[\u0000-\u0008\u000E-\u001F\u007F\uFFFE\uFFFF]/g, '');
 }
 
 function cellAlignment(align: ExportAlign): (typeof AlignmentType)[keyof typeof AlignmentType] | undefined {
