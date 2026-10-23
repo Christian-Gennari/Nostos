@@ -100,6 +100,28 @@ describe('SwitchEditionDialog', () => {
     expect(rows()[1].textContent).toContain('Opens at the page you’re hearing');
   });
 
+  it('offers the edition’s own place beside the same sentence', async () => {
+    open(audiobook([epub, pdf]), { audio: 180 });
+
+    // The PDF was never opened, so it has no place of its own to offer.
+    expect(byTestId('switch-edition-pdf-where-left')).toBeNull();
+    const whereLeft = byTestId('switch-edition-epub-where-left')!;
+    expect(whereLeft.textContent).toContain('Or open where you left off · 40%');
+
+    whereLeft.click();
+    await settle();
+
+    expect(alignment.locateText).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(['/read', 'epub-1'], undefined);
+  });
+
+  it('has no second choice when the row already opens where you left off', () => {
+    open(audiobook([epub]), { audio: null });
+
+    expect(rows()[0].textContent).toContain('Opens where you left off · 40%');
+    expect(byTestId('switch-edition-epub-where-left')).toBeNull();
+  });
+
   it('continues an audiobook in the EPUB at the located sentence', async () => {
     open(audiobook([epub]), { audio: 180.5 });
 

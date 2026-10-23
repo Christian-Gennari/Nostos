@@ -76,6 +76,22 @@
           </span>
         </button>
 
+        <!-- Two places, two promises: the row follows what you're hearing; this
+             keeps the edition's own place one tap away. -->
+        @if (target.sameSentence && target.edition.progressPercent) {
+        <button
+          appButton
+          type="button"
+          variant="link"
+          class="switch-alt"
+          [disabled]="!!busyEditionId()"
+          (click)="openWhereLeft(target.edition.id)"
+          [attr.data-testid]="'switch-edition-' + target.kind + '-where-left'"
+        >
+          Or open where you left off · {{ target.edition.progressPercent }}%
+        </button>
+        }
+
         @if (slow() && busyEditionId() === target.edition.id) {
         <div appNotice class="switch-outcome" role="status" data-testid="switch-edition-slow">
           <p class="switch-outcome-text">Still looking. This is taking longer than usual.</p>
