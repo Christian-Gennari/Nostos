@@ -160,6 +160,15 @@ export class Library implements OnInit, OnDestroy {
   loading = signal(true);
   loadingMore = signal(false);
 
+  /**
+   * The last page-one read failed. The results stage then says so in place of
+   * the list, so a failed read is never mistaken for an empty library.
+   */
+  loadFailed = signal(false);
+
+  /** The last load-more read failed; the list end offers a retry instead of scrolling on. */
+  loadMoreFailed = signal(false);
+
   /** True while the existing results blur out before the new page is swapped in. */
   swapping = signal(false);
 
@@ -399,7 +408,12 @@ export class Library implements OnInit, OnDestroy {
   refreshBooks(reset = true, showWaiting = true): void {
     if (reset) {
       this.currentPage.set(1);
-      if (!this.preferences.hasLoadedBooks()) {
+      if (this.loadFailed()) {
+        // Leaving the error state: the stage waits, empty, for the new page
+        // rather than flashing the stale list or an empty-library message.
+        this.loadFailed.set(false);
+        this.loading.set(true);
+      } else if (!this.preferences.hasLoadedBooks()) {
         // Genuine first paint: the results region stays empty until the page
         // lands. Nothing is scheduled here — the results resolve in as they
         // arrive, so the arrival needs no timer.
@@ -415,6 +429,7 @@ export class Library implements OnInit, OnDestroy {
     } else {
       this.loadingMore.set(true);
     }
+    this.loadMoreFailed.set(false);
 
     const seq = ++this.requestSeq;
 
@@ -428,7 +443,13 @@ export class Library implements OnInit, OnDestroy {
         },
         error: () => {
           if (seq !== this.requestSeq) return;
-          this.toast.error('Failed to load books');
+          if (reset) {
+            this.loadFailed.set(true);
+          } else {
+            // The page that failed was never added: step back so a retry asks for it again.
+            this.currentPage.update((p) => Math.max(1, p - 1));
+            this.loadMoreFailed.set(true);
+          }
           this.loading.set(false);
           this.loadingMore.set(false);
           this.swapping.set(false);
@@ -446,7 +467,7 @@ export class Library implements OnInit, OnDestroy {
    * change it may have missed arrives with the next announcement.
    */
   private refreshInPlace(): void {
-    if (this.loading() || this.loadingMore() || this.swapping()) return;
+    if (this.loading() || this.loadingMore() || this.swapping() || this.loadFailed()) return;
 
     const seq = ++this.requestSeq;
     // Everything already loaded, in one request when the server's page limit
@@ -515,6 +536,7 @@ export class Library implements OnInit, OnDestroy {
       }
       this.totalItems.set(data.totalCount);
       this.preferences.hasLoadedBooks.set(true);
+      if (reset) this.loadFailed.set(false);
       this.loading.set(false);
       this.loadingMore.set(false);
       this.swapping.set(false); // releases the in-phase: new books resolve in
@@ -553,10 +575,21 @@ export class Library implements OnInit, OnDestroy {
   }
 
   loadMore(): void {
-    if (!this.hasMoreBooks() || this.loadingMore()) return;
+    if (!this.hasMoreBooks() || this.loadingMore() || this.loadMoreFailed()) return;
 
     this.currentPage.update((p) => p + 1);
     this.refreshBooks(false);
+  }
+
+  /** The list end's "Try again": asks for the page that failed. */
+  retryLoadMore(): void {
+    this.loadMoreFailed.set(false);
+    this.loadMore();
+  }
+
+  /** The results stage's "Try again" after a failed first read. */
+  retryLoad(): void {
+    this.refreshBooks(true);
   }
 
   onSearch(event: Event): void {

@@ -184,6 +184,23 @@ app-sidebar-collections.no-transition {
   color: var(--color-text-main);
 }
 
+/* A failed load-more: the list end says so and offers the retry in the place
+   the next page would have loaded. */
+.books-load-more-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 0;
+  width: 100%;
+  color: var(--color-text-muted);
+}
+
+.books-load-more-error p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 /* NEW: Search Bar Styles */
 /* <nostos-search-field>: fills the toolbar's middle track (capped at 480px
    there). The glass, its gutter and the clear button are the primitive's. */

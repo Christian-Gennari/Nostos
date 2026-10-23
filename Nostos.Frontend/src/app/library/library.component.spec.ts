@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, computed, Signal, signal, WritableSignal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { Library } from './library.component';
 import { BooksService } from '../core/services/books.service';
@@ -1061,6 +1061,64 @@ describe('Library', () => {
     empty.querySelector('button')!.click();
 
     expect(component.showAddModal()).toBe(true);
+  });
+
+  it('says the books could not load, not that the library is empty, when the list read fails', () => {
+    listSpy.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.refreshBooks(true);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const error = host.querySelector('.container.lg .books-load-error') as HTMLElement;
+    expect(error).not.toBeNull();
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.textContent).toContain('could not be loaded');
+    expect(host.textContent).not.toContain('Your library is empty');
+
+    // Try again reads the list once more and, on success, the stage is the list again.
+    listSpy.mockReturnValueOnce(of({ items: [importingBook({ id: 'b1', title: 'B1', status: 0 })], totalCount: 1 } as PaginatedResponse<Book>));
+    const calls = listSpy.mock.calls.length;
+    (error.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(listSpy.mock.calls.length).toBe(calls + 1);
+    expect(host.querySelector('.books-load-error')).toBeNull();
+    expect(component.books().map((b) => b.id)).toEqual(['b1']);
+  });
+
+  it('offers a retry at the list end when loading more fails, and asks for the same page again', () => {
+    // The list-end sentinel observes scrolling; jsdom has no observer to give it.
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    component.rawBooks.set([importingBook({ id: 'b1', title: 'B1', status: 0 })]);
+    component.totalItems.set(5);
+    fixture.detectChanges();
+
+    listSpy.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.loadMore();
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const retry = host.querySelector('.books-load-more-error button') as HTMLButtonElement;
+    expect(retry).not.toBeNull();
+    expect(component.currentPage()).toBe(1);
+    // The list itself is untouched.
+    expect(component.books().map((b) => b.id)).toEqual(['b1']);
+
+    // Scrolling does not hammer the failed page; only the button retries.
+    const calls = listSpy.mock.calls.length;
+    component.loadMore();
+    expect(listSpy.mock.calls.length).toBe(calls);
+
+    retry.click();
+    expect(listSpy.mock.calls.length).toBe(calls + 1);
+    expect(listSpy.mock.calls.at(-1)![0].page).toBe(2);
+    vi.unstubAllGlobals();
   });
 
   it('opens and closes Add Book without a separate acquisition chooser', () => {
