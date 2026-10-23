@@ -127,9 +127,9 @@ export type IconButtonSurface = 'plain' | 'overlay';
 
            reader  / modal   32px  a smart-hidden  [--control-h-md]
            library rows      28px  radius 4px
-           note-card .xs     24px  radius 50%   <- round chip, NOT xs=28px
+           note card .xs     24px  radius 50%   <- round chip, NOT xs=28px (card since removed)
 
-         "small" appeared in note-card markup but had NO CSS rule anywhere, so it
+         "small" appeared in the note card's markup but had NO CSS rule anywhere, so it
          already computed at 32px and maps to md; a "small" size is deliberately
          not a rung, because inventing one would change those buttons' size. The
          dead class was dropped during that migration. */
@@ -183,7 +183,7 @@ export type IconButtonSurface = 'plain' | 'overlay';
       }
       /* Size only. Radius deliberately NOT owned: it varies per surface on
          purpose — 3px global (--radius-sm), 4px on Library rows and the reader
-         toolbar, 6px on the studio zen toggle, 50% on note-card's round chips —
+         toolbar, 6px on the studio zen toggle, 50% on the old note card's round chips —
          and it mostly arrives through descendant rules that keep matching because
          the host is still the button. Encoding a radius rung here would move
          pixels on four surfaces to no benefit.

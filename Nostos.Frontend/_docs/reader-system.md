@@ -183,7 +183,7 @@ Common across all reader types. Displays all `Note[]` for the book.
 
 Features:
 
-- **Jump to note:** Clicking a note with a `cfiRange` navigates the epub; clicking one with a page number navigates the PDF; an audiobook note jumps to its time, from the arrow or from the time shown on the card
-- **Edit inline:** Uses `NoteCardComponent` with topic tag support
+- **Jump to note:** "Show in book" on a note with a `cfiRange` navigates the epub; one with a page number navigates the PDF; an audiobook note jumps to its time, from "Show in book" or from the time shown on the note
+- **Same note as the Brain:** Uses `NoteItemComponent` (`inBook`), with its topics as chips (read from the Brain's listing of the book), the topic picker, Keep with writing, and Edit / Delete from its `⋯` menu
 - **Delete:** With confirmation
 - **Topic tags:** `[[Topic]]` links rendered via `NoteFormatPipe`, clickable to open the topic in the Brain

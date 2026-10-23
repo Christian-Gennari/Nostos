@@ -7,6 +7,10 @@
   gap: 0.9rem;
   padding: 1.35rem 0 1.25rem;
   border-bottom: 1px solid var(--border-color);
+  /* The note answers its own width, not the window's: the same note sits in
+     the Brain's wide column, the reader's notes panel and the Studio's source
+     panel, and the narrow ones are narrow on a wide screen too. */
+  container-type: inline-size;
 }
 
 :host(.is-busy) .note-item-topics {
@@ -27,6 +31,11 @@
   gap: 0.75rem;
   min-width: 0;
   padding-right: 2.25rem;
+}
+
+/* No menu to make room for. */
+:host(.is-read-only) .note-item-body {
+  padding-right: 0;
 }
 
 /* --- Passage head ---------------------------------------------------------- */
@@ -249,7 +258,8 @@ a.note-item-topic-name:focus-visible {
 
 /* "Cited in N writings" (issue #1162): reads as the meta text it sits in,
    and opens the writings that cite the note. */
-.note-item-cited {
+.note-item-cited,
+.note-item-time {
   padding: 0;
   border: 0;
   background: none;
@@ -258,15 +268,34 @@ a.note-item-topic-name:focus-visible {
   cursor: pointer;
 }
 
-.note-item-cited:hover {
+/* An audiobook note's moment (issue #906): read like the meta text, and a
+   way back to that moment in the open book. */
+.note-item-time {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.note-item-cited:hover,
+.note-item-time:hover {
   color: var(--color-text-main);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.note-item-cited:focus-visible {
+.note-item-cited:focus-visible,
+.note-item-time:focus-visible,
+button.note-item-source:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* "Show in book" inside the reader: the link's look on a button. */
+button.note-item-source {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
 }
 
 .note-item-source {
@@ -335,7 +364,7 @@ a.note-item-topic-name:focus-visible {
   gap: 0.5rem;
 }
 
-@media (max-width: 640px) {
+@container (max-width: 640px) {
   .note-item-body {
     padding-right: 1.9rem;
   }
@@ -364,14 +393,16 @@ a.note-item-topic-name:focus-visible {
   .note-item-topic-name,
   .note-item-topic-remove,
   .note-item-add,
-  .note-item-source {
+  .note-item-source,
+  .note-item-time {
     position: relative;
   }
 
   .note-item-topic-name::after,
   .note-item-topic-remove::after,
   .note-item-add::after,
-  .note-item-source::after {
+  .note-item-source::after,
+  .note-item-time::after {
     content: '';
     position: absolute;
     inset-block: calc(50% - 22px);

@@ -432,7 +432,7 @@ uses four layers so that cohesion does not become accidental homogenisation:
    tokens in `styles.css`.
 2. **Primitives** — Button, IconButton, native Input/Textarea, Dropdown, Switch, Chip and Badge.
 3. **Patterns** — FormField, ModalShell + DialogActions and the segmented visual recipe.
-4. **Product components** — BookCard/NoteCard, Reader transport and page tools, Studio
+4. **Product components** — BookCard/NoteItem, Reader transport and page tools, Studio
    editor/tree, assistant recording/context, acquisition/result interactions and other
    controls whose semantics or geometry belong to a feature.
 
@@ -482,7 +482,7 @@ Documented so the next reader does not "fix" it:
 is near-black in dark mode. Resolved rather than merely flagged, on evidence:
 
 - **Nothing else in the app hardcodes these.** Every other surface (book-detail,
-  settings, library, note-card, flat-tree, second-brain, add-book-modal) reads
+  settings, library, note-item, flat-tree, second-brain, add-book-modal) reads
   `--color-success` / `--color-danger`, which are theme-aware
   (`#22c55e` -> `#8FC7A8`, `#ba1a1a` -> `#ffb4ab`). Toast was the sole outlier.
 - **The component contradicted itself**: its `info` variant already used
@@ -623,9 +623,9 @@ The primitive owns the measured box rungs and glyph path:
 | --- | --- | --- |
 | `md` (default) | 32px | Reader toolbar, modal close, ordinary icon actions |
 | `xs` | 28px | Library rows, Studio compact actions |
-| `xxs` | 24px | NoteCard's smallest round actions |
+| `xxs` | 24px | NoteItem's topic-chip remove, other smallest actions |
 
-Radius is deliberately **not** a size input. Reader, Library, Studio and NoteCard use
+Radius is deliberately **not** a size input. Reader, Library, Studio and NoteItem use
 different measured radii and selected-state treatments, and those differences belong to
 their surfaces. Likewise `pressed` is tri-state: `null` emits no `aria-pressed`, because
 most icon buttons are actions rather than toggles. A real toggle opts in explicitly.
@@ -731,7 +731,7 @@ Four instrument bugs found by using it, each of which made it lie:
   variant: 80 buttons, 12 variants.
 
 It also checks its OWN coverage and exits non-zero unless it captured at least two
-distinct variants, hover AND focus, the 24px rung, and the note-card edit-mode
+distinct variants, hover AND focus, the 24px rung, and the note item edit-mode
 buttons. A probe that silently samples nothing is worse than no probe.
 
 **Its noise floor is measured, not assumed**: two consecutive runs of the same code

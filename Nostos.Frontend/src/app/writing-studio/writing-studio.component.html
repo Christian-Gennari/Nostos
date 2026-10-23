@@ -312,15 +312,18 @@
           </button>
         </div>
 
-        <app-note-card
-          class="inspected-source-card"
-          [note]="source"
-          [topicMap]="topicMap()"
-          [passageViewerOptions]="passageViewerOptions"
-          [showActions]="false"
-          [showSource]="false"
-          [showDate]="false"
-        ></app-note-card>
+        @if (inspectedSourceItem(); as item) {
+          <!-- The note as the Brain shows it; its actions are the Studio's own,
+               under the provenance line. -->
+          <app-note-item
+            class="inspected-source-card"
+            [note]="item"
+            [topicMap]="topicMap()"
+            [passageViewerOptions]="passageViewerOptions"
+            [readOnly]="true"
+            [showMeta]="false"
+          />
+        }
 
         <div class="inspected-source-provenance">
           <span class="inspected-source-source-label">{{ sourceProvenance(source) }}</span>

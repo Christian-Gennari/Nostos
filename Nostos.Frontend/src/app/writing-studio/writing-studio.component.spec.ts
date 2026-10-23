@@ -16,7 +16,7 @@ import { TopicsService } from '../core/services/topics.service';
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
-import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.component';
 import { PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
@@ -74,13 +74,12 @@ class FlatTreeStub {
   readonly nodeRenameCancelled = output<void>();
 }
 
-@Component({ selector: 'app-note-card', standalone: true, template: '' })
-class NoteCardStub {
+@Component({ selector: 'app-note-item', standalone: true, template: '' })
+class NoteItemStub {
   @Input() note: unknown;
   @Input() topicMap: Map<string, unknown> = new Map();
-  @Input() showActions = true;
-  @Input() showSource = false;
-  @Input() showDate = true;
+  @Input() readOnly = false;
+  @Input() showMeta = true;
   @Input() passageViewerOptions: unknown = null;
 }
 
@@ -103,8 +102,8 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
   beforeEach(async () => {
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -897,8 +896,8 @@ describe('WritingStudio typewriter mode', () => {
   beforeEach(async () => {
     localStorage.clear();
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -1008,8 +1007,8 @@ describe('WritingStudio delete (no window.confirm)', () => {
 
   beforeEach(async () => {
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -1232,8 +1231,8 @@ describe('WritingStudio kept sources (#491)', () => {
     };
 
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -1333,7 +1332,7 @@ describe('WritingStudio kept sources (#491)', () => {
       '.kept-sources-content .reference-source-row',
     );
     expect(keptRows).toHaveLength(2);
-    expect(fixture.nativeElement.querySelectorAll('.kept-sources-content app-note-card')).toHaveLength(0);
+    expect(fixture.nativeElement.querySelectorAll('.kept-sources-content app-note-item')).toHaveLength(0);
   });
 
   // 3. empty kept list shows the calm empty state and no note cards.
@@ -2510,8 +2509,8 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
     toastService = { error: vi.fn(), success: vi.fn() };
 
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -2718,8 +2717,8 @@ describe('WritingStudio export menu (issue #1164)', () => {
 
   beforeEach(async () => {
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -2861,8 +2860,8 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
       }))));
 
     TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteCardComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteCardStub, MarkdownEditorStub] },
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
     });
     await TestBed.configureTestingModule({
       imports: [WritingStudio],

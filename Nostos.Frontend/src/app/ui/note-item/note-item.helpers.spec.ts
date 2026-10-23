@@ -2,6 +2,7 @@ import {
   hasTopic,
   isReferenceLine,
   newTopicName,
+  noteAsItem,
   noteLocationLabel,
   rankTopicChoices,
   thoughtForDisplay,
@@ -99,5 +100,41 @@ describe('hasTopic', () => {
   it('compares trimmed and case-insensitively', () => {
     expect(hasTopic([' Virtue '], 'virtue')).toBe(true);
     expect(hasTopic(['virtue'], 'vice')).toBe(false);
+  });
+});
+
+describe('noteAsItem', () => {
+  it('turns a book note into the note item’s shape, with the topics given', () => {
+    const item = noteAsItem(
+      {
+        id: 'n1',
+        bookId: 'b1',
+        content: 'A thought.',
+        selectedText: 'A quote.',
+        createdAt: '2026-10-01T00:00:00Z',
+        cfiRange: 'epubcfi(/6/2)',
+        rawContent: 'a thought',
+        highlightColour: 'rose',
+      },
+      ['virtue'],
+    );
+
+    expect(item).toMatchObject({
+      id: 'n1',
+      bookTitle: null,
+      selectedText: 'A quote.',
+      cfiRange: 'epubcfi(/6/2)',
+      topicNames: ['virtue'],
+      hasRawContent: true,
+      highlightColour: 'rose',
+    });
+  });
+
+  it('leaves the pen unknown when the note does not say, and lists no topics by default', () => {
+    const item = noteAsItem({ id: 'n1', bookId: 'b1', content: '', createdAt: '2026-10-01T00:00:00Z' });
+
+    expect(item).not.toHaveProperty('highlightColour');
+    expect(item.topicNames).toEqual([]);
+    expect(item.selectedText).toBeNull();
   });
 });
