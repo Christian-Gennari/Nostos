@@ -282,17 +282,14 @@
       }
 
       @case ('provisioning') {
-        <nostos-loading-indicator class="cloud-entry__spinner" decorative size="xl" />
         <p class="cloud-entry__eyebrow">Almost there</p>
         <h1>Preparing your Nostos library…</h1>
-        <div
+        <nostos-progress
           class="cloud-entry__progress"
-          role="progressbar"
-          aria-label="Preparing your library"
-          aria-valuetext="In progress"
-        >
-          <span class="cloud-entry__progress-fill" aria-hidden="true"></span>
-        </div>
+          size="md"
+          label="Preparing your library"
+          valueText="In progress"
+        />
         <p>You can refresh or come back later. Nostos reads progress from the server.</p>
         <button
           appButton

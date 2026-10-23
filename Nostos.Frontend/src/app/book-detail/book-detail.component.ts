@@ -48,6 +48,7 @@ interface PendingWorkAction {
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
+import { ProgressComponent } from '../ui/progress/progress.component';
 import { ConfirmModal, type ConfirmTone } from '../ui/confirm-modal/confirm-modal.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
@@ -95,6 +96,7 @@ interface StatusConfirmCopy {
     AddBookModal,
     EditionsModal,
     ConfirmModal,
+    ProgressComponent,
     TopicInputComponent,
     NoteItemComponent,
     BrainNoteDialogsComponent,

@@ -278,6 +278,7 @@ describe('BookDetail reset progress', () => {
     fixture.detectChanges();
 
     const bar = fixture.nativeElement.querySelector('.detail-import-track') as HTMLElement;
+    expect(bar.tagName).toBe('NOSTOS-PROGRESS');
     expect(bar.getAttribute('aria-valuenow')).toBe('73');
     expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
       .toContain('Saving');

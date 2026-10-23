@@ -246,14 +246,12 @@
                   <span>{{ store.importPercent() }}%</span>
                 }
               </div>
-              @if (store.importPercent() !== null) {
-              <div class="detail-import-track" role="progressbar"
-                   [attr.aria-label]="store.importStage()"
-                   [attr.aria-valuenow]="store.importPercent()"
-                   aria-valuemin="0" aria-valuemax="100">
-                <span [style.width.%]="store.importPercent()"></span>
-              </div>
-              }
+              <!-- The shared bar; indeterminate until the import reports a percent. -->
+              <nostos-progress
+                class="detail-import-track"
+                [value]="store.importPercent()"
+                [label]="store.importStage()"
+              />
               @if (store.importConnectionState() === 'reconnecting') {
                 <p>Reconnecting to import progress…</p>
               } @else {
