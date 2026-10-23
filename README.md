@@ -13,6 +13,7 @@
     <a href="https://docs.nostos.page">Docs</a> •
     <a href="#features">Features</a> •
     <a href="#getting-started">Getting started</a> •
+    <a href="https://github.com/sponsors/Christian-Gennari">Sponsor</a> •
     <a href="#license--trademark">License</a>
   </p>
 </div>
@@ -205,6 +206,12 @@ Nostos/
 - **[Security policy](SECURITY.md):** how to report a vulnerability.
 
 Work in progress is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues). Before your first pull request is merged, a bot asks you to accept the [Contributor License Agreement](CLA.md) with one comment.
+
+---
+
+## Support Nostos
+
+Nostos is free to self-host. If it has a place in your reading life, you can support its development and upkeep through **[GitHub Sponsors](https://github.com/sponsors/Christian-Gennari)**, once or every month. It's voluntary: nothing in Nostos is locked behind it, and it doesn't buy features or priority support. It's separate from a [Nostos Cloud](https://nostos.page) subscription, which pays for the hosted service.
 
 ---
 
