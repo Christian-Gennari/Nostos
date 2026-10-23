@@ -34,11 +34,15 @@
     <div class="export-row">
       <span class="export-label">Format</span>
       @if (formats.length > 1) {
-        <app-dropdown class="export-control" ariaLabel="Format" controlSize="compact" [fullWidth]="true" [options]="formatOptions" [value]="formatId()" (valueChange)="formatId.set($event)" />
+        <app-dropdown class="export-control" ariaLabel="Format" controlSize="compact" [fullWidth]="true" [options]="formatOptions" [value]="formatId()" (valueChange)="chooseFormat($event)" data-testid="export-format" />
       } @else {
         <span class="export-value" data-testid="export-format">{{ format().label }}</span>
       }
     </div>
+
+    @if (format().hint; as hint) {
+      <p class="export-hint export-format-hint" data-testid="export-format-hint">{{ hint }}</p>
+    }
 
     <!-- The setup: one quiet row until "Change", whose value then becomes the
          citation style control. A format with pages adds its page controls
@@ -110,8 +114,15 @@
       </section>
     }
 
-    @if (doc(); as resolved) {
-      @if (resolved.warnings.length) {
+    @if (copyRefused()) {
+      <p class="export-refused" role="alert" data-testid="export-copy-refused">
+        Your browser didn’t allow copying.
+        <button appButton variant="link" size="sm" type="button" (click)="downloadMarkdownInstead()">Download Markdown instead</button>
+      </p>
+    }
+
+    @if (doc()) {
+      @if (warnings().length) {
         <div class="export-warnings" data-testid="export-warnings">
           <button appButton variant="link" size="sm" type="button" class="export-warnings-toggle" data-testid="export-warnings-toggle"
             aria-controls="export-warning-list" [attr.aria-expanded]="warningsOpen()" (click)="warningsOpen.set(!warningsOpen())">
@@ -120,7 +131,7 @@
           </button>
           @if (warningsOpen()) {
             <ul class="export-warning-list" id="export-warning-list">
-              @for (warning of resolved.warnings; track $index) {
+              @for (warning of warnings(); track $index) {
                 <li>
                   @if (warning.chapter) {
                     <span class="export-warning-chapter">{{ warning.chapter }} · </span>
@@ -145,7 +156,7 @@
     <button appButton variant="secondary" type="button" [disabled]="downloading()" (click)="cancel()">Cancel</button>
     <button appButton variant="primary" type="button" data-testid="export-download"
       [busy]="downloading()" [disabled]="!canDownload()" [attr.aria-describedby]="downloadReason() ? 'export-status' : null" (click)="download()">
-      Download
+      {{ actionLabel() }}
     </button>
   </app-dialog-actions>
 </app-modal-shell>
