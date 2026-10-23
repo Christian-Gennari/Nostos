@@ -1,4 +1,4 @@
-import { Component, forwardRef, input, output } from '@angular/core';
+import { Component, forwardRef, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -15,6 +15,8 @@ import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-a
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { AssistantService } from '../ui/assistant/assistant.service';
+import { BrainStateService } from '../brain/brain-state.service';
+import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 
 @Component({ standalone: true, template: '' })
 class BlankComponent {}
@@ -134,8 +136,12 @@ describe('ReaderShell header tools', () => {
     const queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
 
     TestBed.overrideComponent(ReaderShell, {
-      remove: { imports: [TopicInputComponent, PdfReader, AudioReader] },
-      add: { imports: [TopicInputStub, PdfReaderStub, AudioReaderStub] },
+      remove: { imports: [TopicInputComponent, PdfReader, AudioReader], providers: [BrainTopicSuggestionsService] },
+      add: {
+        imports: [TopicInputStub, PdfReaderStub, AudioReaderStub],
+        // The notes panel's topic suggestions talk to Ask Nostos; not under test here.
+        providers: [{ provide: BrainTopicSuggestionsService, useValue: { namesFor: () => [], stateFor: () => 'off' } }],
+      },
     });
 
     await TestBed.configureTestingModule({
@@ -162,9 +168,13 @@ describe('ReaderShell header tools', () => {
         },
         {
           provide: NotesService,
-          useValue: { list: vi.fn(() => of([])) },
+          useValue: { list: vi.fn(() => of([])), browse: vi.fn(() => of({ items: [], totalCount: 0 })) },
         },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
+        {
+          provide: BrainStateService,
+          useValue: { topics: signal([]), lookup: signal(new Map()), ensureLoaded: vi.fn(), refresh: vi.fn() },
+        },
         { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
         {
           provide: AssistantService,
