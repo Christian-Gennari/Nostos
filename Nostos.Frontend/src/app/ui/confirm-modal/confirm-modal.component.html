@@ -19,7 +19,7 @@
     <div class="confirm-modal-head" shellHeader>
       @if (tone() === 'danger') {
         <span appIconTile tone="danger" [size]="26" class="confirm-mark" aria-hidden="true">
-          <nostos-icon name="trash" [size]="15"></nostos-icon>
+          <nostos-icon [name]="icon()" [size]="15"></nostos-icon>
         </span>
       }
       <h2 id="confirm-dialog-title" class="confirm-title">{{ heading() }}</h2>
@@ -60,7 +60,7 @@
           <span>{{ busyLabel() }}</span>
         } @else {
           @if (tone() === 'danger') {
-            <nostos-icon name="trash" [size]="14"></nostos-icon>
+            <nostos-icon [name]="icon()" [size]="14"></nostos-icon>
           }
           <span>{{ confirmLabel() }}</span>
         }

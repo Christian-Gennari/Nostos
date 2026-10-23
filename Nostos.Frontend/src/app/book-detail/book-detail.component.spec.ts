@@ -98,15 +98,15 @@ describe('BookDetail reset progress', () => {
   }
 
   function resetDialog(): HTMLElement | null {
-    return fixture.nativeElement.querySelector('.status-confirm-dialog');
+    return fixture.nativeElement.querySelector('.status-confirm .confirm-modal-card');
   }
 
   function resetConfirmButton(): HTMLButtonElement | null {
-    return fixture.nativeElement.querySelector('.status-confirm-dialog .nostos-button--danger');
+    return fixture.nativeElement.querySelector('.status-confirm .btn-confirm.nostos-button--danger');
   }
 
   function resetCancelButton(): HTMLButtonElement | null {
-    return fixture.nativeElement.querySelector('.status-confirm-dialog .nostos-button--ghost');
+    return fixture.nativeElement.querySelector('.status-confirm .btn-cancel');
   }
 
   beforeEach(async () => {
@@ -335,6 +335,22 @@ describe('BookDetail reset progress', () => {
     expect(httpMock.match((req) => req.method === 'POST' && req.url === '/api/books/b1/progress/reset').length).toBe(0);
   });
 
+  it('asks status changes through the shared confirm modal: danger for reset, neutral otherwise', async () => {
+    await setup(readableBook());
+
+    openResetViaDropdown();
+    expect(resetDialog()!.getAttribute('role')).toBe('alertdialog');
+    expect(resetDialog()!.querySelector('.confirm-mark')).toBeTruthy();
+    resetCancelButton()!.click();
+    fixture.detectChanges();
+
+    component.selectStatusOption('finished');
+    fixture.detectChanges();
+    expect(resetDialog()!.textContent).toContain('Mark as Finished?');
+    expect(resetDialog()!.querySelector('.confirm-mark')).toBeNull();
+    expect(resetDialog()!.querySelector('.btn-confirm.nostos-button--primary')).toBeTruthy();
+  });
+
   it('does nothing when the status change confirmation is cancelled', async () => {
     await setup(readableBook());
 
@@ -355,8 +371,12 @@ describe('BookDetail reset progress', () => {
     openResetViaDropdown();
     expect(resetDialog()).toBeTruthy();
 
-    const backdrop = fixture.nativeElement.querySelector('.reset-confirm-backdrop') as HTMLElement;
-    backdrop.click();
+    const backdrop = fixture.nativeElement.querySelector('.status-confirm .modal-backdrop') as HTMLElement;
+    for (const type of ['pointerdown', 'pointerup'] as const) {
+      const event = new Event(type, { bubbles: true }) as PointerEvent;
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      backdrop.dispatchEvent(event);
+    }
     fixture.detectChanges();
 
     expect(resetDialog()).toBeNull();

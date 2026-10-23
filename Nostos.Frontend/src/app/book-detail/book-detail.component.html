@@ -614,66 +614,20 @@
     }
   </div>
 
-  @if (pendingStatus()) {
-  <div class="reset-confirm-backdrop" (click)="cancelStatusChange()">
-    <div
-      class="reset-confirm-dialog status-confirm-dialog"
-      role="alertdialog"
-      aria-labelledby="status-confirm-title"
-      aria-describedby="status-confirm-body"
-      (click)="$event.stopPropagation()"
-    >
-      @if (pendingStatus() === 'notstarted') {
-        <h3 id="status-confirm-title">Reset to Not Started?</h3>
-        <p id="status-confirm-body">
-          This will override your current progress and clear your saved page position. The next time you open this book, it will start from the beginning.
-        </p>
-        <app-dialog-actions variant="inset">
-          <button appButton variant="ghost" size="sm" type="button" (click)="cancelStatusChange()" [disabled]="store.resettingProgress()">
-            Cancel
-          </button>
-          <button
-            appButton
-            variant="danger"
-            size="sm"
-            type="button"
-            (click)="confirmStatusChange()"
-            [busy]="store.resettingProgress()"
-            [disabled]="store.resettingProgress()"
-          >
-            {{ store.resettingProgress() ? 'Resetting…' : 'Reset Progress' }}
-          </button>
-        </app-dialog-actions>
-      } @else if (pendingStatus() === 'finished') {
-        <h3 id="status-confirm-title">Mark as Finished?</h3>
-        <p id="status-confirm-body">
-          This will override your current reading progress and mark the book as 100% completed.
-        </p>
-        <app-dialog-actions variant="inset">
-          <button appButton variant="ghost" size="sm" type="button" (click)="cancelStatusChange()">
-            Cancel
-          </button>
-          <button appButton variant="primary" size="sm" type="button" (click)="confirmStatusChange()">
-            Mark as Finished
-          </button>
-        </app-dialog-actions>
-      } @else if (pendingStatus() === 'reading') {
-        <h3 id="status-confirm-title">Mark as In Progress?</h3>
-        <p id="status-confirm-body">
-          This will update the book's status back to in-progress.
-        </p>
-        <app-dialog-actions variant="inset">
-          <button appButton variant="ghost" size="sm" type="button" (click)="cancelStatusChange()">
-            Cancel
-          </button>
-          <button appButton variant="primary" size="sm" type="button" (click)="confirmStatusChange()">
-            Set In Progress
-          </button>
-        </app-dialog-actions>
-      }
-    </div>
-  </div>
-  }
+  <!-- Reading-status changes overwrite progress, so they ask first. Resetting
+       to Not Started discards the saved position: the danger tone. -->
+  <app-confirm-modal
+    class="status-confirm"
+    [isOpen]="!!statusConfirm()"
+    [heading]="statusConfirm()?.heading ?? ''"
+    [description]="statusConfirm()?.description ?? ''"
+    [confirmLabel]="statusConfirm()?.confirmLabel ?? ''"
+    [tone]="statusConfirm()?.tone ?? 'neutral'"
+    icon="arrow-counter-clockwise"
+    (confirm)="confirmStatusChange()"
+    (cancel)="cancelStatusChange()"
+  >
+  </app-confirm-modal>
 
   <app-confirm-modal
     [isOpen]="showDeleteConfirm()"

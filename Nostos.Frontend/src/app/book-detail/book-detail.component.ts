@@ -48,7 +48,7 @@ interface PendingWorkAction {
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
+import { ConfirmModal, type ConfirmTone } from '../ui/confirm-modal/confirm-modal.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
@@ -69,13 +69,19 @@ import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indic
 import { ButtonComponent } from '../ui/button/button.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
-import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switcher.component';
 import { buildEditionSwitchOptions } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
 import { readPaperPage } from './paper-page-progress';
+
+interface StatusConfirmCopy {
+  heading: string;
+  description: string;
+  confirmLabel: string;
+  tone: ConfirmTone;
+}
 
 @Component({
   standalone: true,
@@ -96,7 +102,6 @@ import { readPaperPage } from './paper-page-progress';
     ButtonComponent,
     IconButtonComponent,
     BadgeComponent,
-    DialogActionsComponent,
     ...NOSTOS_MENU,
     DropdownComponent,
     EditionSwitcherComponent,
@@ -483,6 +488,37 @@ export class BookDetail implements OnInit, OnDestroy {
     if (target === this.statusValue()) return;
     this.pendingStatus.set(target);
   }
+
+  /** The pending status change's question, for the shared confirm modal. */
+  readonly statusConfirm = computed<StatusConfirmCopy | null>(() => {
+    switch (this.pendingStatus()) {
+      case 'notstarted':
+        return {
+          heading: 'Reset to Not Started?',
+          description:
+            'This will override your current progress and clear your saved page position. ' +
+            'The next time you open this book, it will start from the beginning.',
+          confirmLabel: 'Reset Progress',
+          tone: 'danger',
+        };
+      case 'finished':
+        return {
+          heading: 'Mark as Finished?',
+          description: 'This will override your current reading progress and mark the book as 100% completed.',
+          confirmLabel: 'Mark as Finished',
+          tone: 'neutral',
+        };
+      case 'reading':
+        return {
+          heading: 'Mark as In Progress?',
+          description: "This will update the book's status back to in-progress.",
+          confirmLabel: 'Set In Progress',
+          tone: 'neutral',
+        };
+      default:
+        return null;
+    }
+  });
 
   cancelStatusChange(): void {
     this.pendingStatus.set(null);
