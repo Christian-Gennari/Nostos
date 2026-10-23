@@ -61,6 +61,13 @@
   margin-top: 0.4rem;
 }
 
+/* appButton variant="link"; `button.` keeps this spacing over the variant's.
+   Indented to the row's text so it reads as part of that edition. */
+button.switch-alt {
+  margin: 0.45rem 0 0.15rem 0.9rem;
+  padding: 2px 0;
+}
+
 .switch-outcome-text {
   margin: 0 0 0.5rem;
   font-size: 0.8rem;

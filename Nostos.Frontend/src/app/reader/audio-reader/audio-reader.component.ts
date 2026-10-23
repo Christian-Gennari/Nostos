@@ -508,11 +508,17 @@ export class AudioReader implements OnDestroy, IReader {
    */
   handoffPosition(): number | null {
     const player = this.player;
-    if (!player || this.loading() || this.loadError()) return null;
+    if (!player || this.loading() || this.loadError()) {
+      // The element is gone or still loading, but the reader knows its place.
+      const known = this.currentTime();
+      return Number.isFinite(known) && known > 0 ? known : null;
+    }
 
-    // Prefer the real media position to the UI's once-per-second snapshot.
-    const position = player.seek() as number;
-    if (!Number.isFinite(position) || position <= 0) return null;
+    // Prefer the real media position to the UI's once-per-second snapshot,
+    // unless a phone handed the paused element back at 0:00: then the
+    // reader's own position is the truth, as it is for play.
+    const position = this.recoverLostPosition();
+    if (position === null || position <= 0) return null;
 
     player.pause();
     this.currentTime.set(position);

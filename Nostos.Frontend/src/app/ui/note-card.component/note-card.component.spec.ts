@@ -253,6 +253,28 @@ describe('NoteCard audio time (issue #906)', () => {
   });
 });
 
+describe('NoteCard show more', () => {
+  it('is a link-styled appButton, not a bare browser button', async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoteCardComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(NoteCardComponent);
+    fixture.componentInstance.note = {
+      id: 'note-1',
+      bookId: 'book-1',
+      content: 'A long thought. '.repeat(200),
+      createdAt: '2026-10-01T00:00:00Z',
+    } satisfies Note;
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector('.expand-btn') as HTMLButtonElement;
+    expect(button.textContent).toContain('Show more');
+    expect(button.classList).toContain('nostos-button--link');
+  });
+});
+
 describe('NoteCard passage (issue #1014)', () => {
   let fixture: ComponentFixture<NoteCardComponent>;
   let viewer: PassageViewerService;

@@ -1194,6 +1194,14 @@ describe('AudioReader keeps its place when the player loses it', () => {
     expect(savedLocations()).toContain('0');
   });
 
+  it('hands off the place, not 0:00, when switching edition after a reset', () => {
+    fakePlayer.resetPosition();
+
+    expect(component.handoffPosition()).toBe(2580);
+    expect(fakePlayer.seek()).toBe(2580);
+    expect(savedLocations()).not.toContain('0');
+  });
+
   it('a finished book plays again from the start', () => {
     component.goToTime(7200);
     fakePlayer.resetPosition();
