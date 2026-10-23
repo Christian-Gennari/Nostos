@@ -677,8 +677,12 @@ describe('Library', () => {
     const cell = fixture.nativeElement.querySelector('.col.title') as HTMLElement;
     expect(cell).toBeTruthy();
 
-    const ordered = Array.from(cell.children).map((el) => el.className.split(' ')[0]);
+    const ordered = Array.from(cell.children).map((el) =>
+      el.classList.contains('list-cover-frame') ? 'list-cover-frame' : el.className.split(' ')[0],
+    );
     expect(ordered).toEqual(['list-cover-frame', 'list-title-text', 'list-row-status']);
+    // The cover is the shared book-cover at the list's rung.
+    expect(cell.querySelector('nostos-book-cover.list-cover-frame.nostos-book-cover--sm')).toBeTruthy();
 
     // The toggles live INSIDE the status cluster, not loose in the cell, so the
     // cluster can own their spacing and hover reveal as one unit.

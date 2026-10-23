@@ -260,3 +260,14 @@
   font-size: 0.875rem;
   color: var(--color-text-main);
 }
+
+/* A stand-in for a surface's own cover frame (Library card, Book detail). */
+.catalogue-cover-frame {
+  width: 6rem;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 8px);
+  background: var(--surface-image-ground);
+  box-shadow: var(--cover-shadow);
+}

@@ -71,25 +71,15 @@
       <div class="stage-inner">
         <aside class="cover-card">
           <div class="cover-frame">
-            @if (store.book()?.coverUrl) {
-            <img
-              [src]="coverSrc()"
-              alt="Book cover"
+            <nostos-book-cover
               class="cover-img"
-              [class.loaded]="coverLoaded()"
+              size="fill"
+              reveal="fade"
               loading="eager"
-              decoding="async"
-              (load)="onCoverLoad()"
-              (error)="onCoverLoad()"
+              [src]="store.book()?.coverUrl ? coverSrc() : null"
+              [bookTitle]="store.book()?.title"
+              [format]="coverFormat()"
             />
-            } @else {
-            <div class="placeholder-cover">
-              <nostos-icon
-                name="book-open"
-                [size]="48" weight="thin"
-                color="#ccc"></nostos-icon>
-            </div>
-            }
 
             <div class="cover-overlay">
               <button

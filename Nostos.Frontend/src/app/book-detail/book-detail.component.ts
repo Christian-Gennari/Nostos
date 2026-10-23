@@ -49,6 +49,7 @@ interface PendingWorkAction {
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
 import { ProgressComponent } from '../ui/progress/progress.component';
+import { BookCoverComponent, bookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { ConfirmModal, type ConfirmTone } from '../ui/confirm-modal/confirm-modal.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
@@ -97,6 +98,7 @@ interface StatusConfirmCopy {
     EditionsModal,
     ConfirmModal,
     ProgressComponent,
+    BookCoverComponent,
     TopicInputComponent,
     NoteItemComponent,
     BrainNoteDialogsComponent,
@@ -252,6 +254,9 @@ export class BookDetail implements OnInit, OnDestroy {
   /** A pending work link/unlink awaiting confirmation (issue #143). */
   pendingWorkAction = signal<PendingWorkAction | null>(null);
 
+  /** The format a cover-less book's placeholder names. */
+  readonly coverFormat = computed(() => bookCoverFormat(this.store.book()));
+
   /** The delete confirmation's words; a linked book is only removed from Nostos. */
   deleteCopy = computed(() => bookDeleteCopy(this.store.book()?.title, this.isLinkedExternally()));
 
@@ -270,7 +275,6 @@ export class BookDetail implements OnInit, OnDestroy {
   heroArtLoaded = signal(false);
 
   /** True once the stage cover has painted, for the same reason as above. */
-  coverLoaded = signal(false);
 
   onHeroArtError(): void {
     this.heroArtFailed.set(true);
@@ -280,14 +284,6 @@ export class BookDetail implements OnInit, OnDestroy {
     this.heroArtLoaded.set(true);
   }
 
-  /**
-   * Also bound to `error`, deliberately: a cover that fails must end up in the
-   * same state it had before this fade existed (a visible, empty frame) rather
-   * than being stranded at opacity 0.
-   */
-  onCoverLoad(): void {
-    this.coverLoaded.set(true);
-  }
 
   /**
    * URL for the hero band's art layers. Prefers the 640px thumbnail: the art is

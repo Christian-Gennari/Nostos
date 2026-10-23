@@ -336,13 +336,13 @@ describe('ReadingList', () => {
     expect(text()).not.toContain("in the order you'll read them");
   });
 
-  it('gives the same title the same cover every time', async () => {
+  it('shows a wish with the shared cover placeholder, beside its own title', async () => {
     await create([entry({ id: 'a', title: 'Stoner', nextPosition: 0 })]);
 
-    const hue = component.coverHue(list.next()[0]);
-    expect(component.coverHue(entry({ id: 'other', title: 'Stoner' }))).toBe(hue);
-    const cover = host().querySelector('.shelf-card .cover') as HTMLElement;
-    expect(cover.style.getPropertyValue('--cover-hue')).toBe(String(hue));
+    const cover = host().querySelector('.shelf-card nostos-book-cover.cover') as HTMLElement;
+    expect(cover).toBeTruthy();
+    expect(cover.classList.contains('nostos-book-cover--lg')).toBe(true);
+    expect(cover.querySelector('.nostos-book-cover__placeholder')!.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('asks before removing, and removes only on confirm', async () => {

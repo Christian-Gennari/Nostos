@@ -179,15 +179,14 @@
         @for (book of books(); track book.id) {
         <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)">
           <div class="col title">
-            <div class="list-cover-frame">
-              @if (book.coverUrl) {
-                <img [src]="getLibraryCoverUrl(book)" [alt]="book.title" appBloomArt class="list-cover-img" loading="lazy" decoding="async" />
-              } @else {
-                <div class="list-cover-placeholder">
-                  <nostos-icon name="book" [size]="16" weight="light"></nostos-icon>
-                </div>
-              }
-            </div>
+            <nostos-book-cover
+              class="list-cover-frame"
+              size="sm"
+              reveal="bloom"
+              [src]="book.coverUrl ? getLibraryCoverUrl(book) : null"
+              [bookTitle]="book.title"
+              [format]="coverFormat(book)"
+            />
 
             <div class="list-title-text">
               <span class="list-book-title">{{ book.title }}</span>
@@ -395,18 +394,14 @@
               </div>
             }
 
-            @if (book.coverUrl) {
-            <img
-              [src]="getLibraryCoverUrl(book)"
-              appBloomArt
+            <nostos-book-cover
               class="cover-image"
-              alt="{{ book.title }} cover"
-              loading="lazy"
-              decoding="async"
+              size="fill"
+              reveal="bloom"
+              [src]="book.coverUrl ? getLibraryCoverUrl(book) : null"
+              [bookTitle]="book.title"
+              [format]="coverFormat(book)"
             />
-            } @else {
-            <nostos-icon name="book" [size]="48" weight="thin"></nostos-icon>
-            }
 
             @if (book.otherEditions && book.otherEditions.length > 0) {
             <span class="format-badge micro-glyphs" [attr.title]="getWorkFormatsTooltip(book)">

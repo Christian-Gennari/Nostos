@@ -53,8 +53,8 @@
         (pointermove)="onPointerMove(section.start + j)"
         [attr.data-testid]="'palette-item-' + entry.kind"
       >
-        @if (entry.coverUrl) {
-        <img class="palette-cover" [src]="entry.coverUrl" alt="" loading="lazy" decoding="async" />
+        @if (entry.kind === 'book') {
+        <nostos-book-cover class="palette-cover" size="xs" [src]="entry.coverUrl" [format]="entry.coverFormat" decorative />
         } @else {
         <span class="palette-glyph" aria-hidden="true">
           <nostos-icon [name]="entry.icon" [size]="16"></nostos-icon>

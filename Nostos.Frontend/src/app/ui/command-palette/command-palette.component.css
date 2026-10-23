@@ -148,12 +148,7 @@
 
 /* A book's cover in place of the glyph tile: same row height, book-shaped. */
 .palette-cover {
-  flex: none;
-  width: 1.375rem;
-  height: 2rem;
   margin: 0 0.1875rem;
-  border-radius: 3px;
-  object-fit: cover;
   box-shadow: var(--cover-shadow);
 }
 

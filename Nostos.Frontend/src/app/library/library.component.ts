@@ -29,7 +29,6 @@ import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dt
 import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { InfiniteScrollDirective } from '../core/directives/infinite-scroll.directive';
-import { BloomArtDirective } from '../ui/bloom-art/bloom-art.directive';
 import { BookSort } from '../core/dtos/book.enums';
 import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
@@ -45,6 +44,7 @@ import type { NostosIconName } from '../ui/icon/nostos-icons';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { coverImageUrl } from '../core/cover-url';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
@@ -134,7 +134,7 @@ interface WorkFormatGlyph {
     DropdownComponent,
     SidebarCollections,
     InfiniteScrollDirective,
-    BloomArtDirective,
+    BookCoverComponent,
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css'],
@@ -877,6 +877,11 @@ export class Library implements OnInit, OnDestroy {
     ];
 
     return formats.filter((format) => presentFormats.has(format.type));
+  }
+
+  /** The format a cover-less book's placeholder names. */
+  coverFormat(book: Book): BookCoverFormat | null {
+    return bookCoverFormat(book);
   }
 
   getWorkFormatsTooltip(book: Book): string {

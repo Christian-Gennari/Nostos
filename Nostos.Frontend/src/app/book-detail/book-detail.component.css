@@ -394,6 +394,10 @@
   position: relative;
   width: 100%;
   aspect-ratio: 2/3;
+  /* The cover (nostos-book-cover, reveal="fade") arrives on the page's own
+     entrance clock: measured 2.4 s after the entrance on a throttled phone, it
+     used to punch into a frame that had already settled. */
+  --book-cover-fade: var(--detail-enter);
   background: var(--surface-image-ground);
   border-radius: 8px;
   box-shadow:
@@ -418,33 +422,6 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-}
-.cover-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-
-  /* --- FIX FOR HIGH RES PIXELATION --- */
-  transform: translateZ(0); /* Forces GPU texture scaling */
-  backface-visibility: hidden;
-  image-rendering: auto;
-
-  /* Same late-arrival problem as the hero art: measured 2.4 s after the page's
-     entrance fade on a throttled phone-class connection, so the cover used to
-     punch into an empty frame that had already settled. */
-  opacity: 0;
-  transition: opacity var(--detail-enter) var(--ease-out);
-}
-.cover-img.loaded {
-  opacity: 1;
-}
-.placeholder-cover {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  color: var(--color-text-faint);
 }
 
 /* --- COVER HOVER OVERLAY --- */
@@ -500,8 +477,7 @@
   }
   /* The artwork fades are decoration as well — show the art the moment it is
      there rather than dissolving it in. */
-  .hero-art,
-  .cover-img {
+  .hero-art {
     transition: none;
   }
 }
