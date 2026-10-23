@@ -269,9 +269,12 @@ let nextDropdownId = 0;
         opacity: 0.75;
       }
 
+      /* Focus is the border plus the halo, as on form controls: the global
+         ring is drawn transparent here (forced-colours modes still show it). */
       .nostos-dropdown__trigger:focus-visible {
         border-color: var(--border-focus);
         box-shadow: var(--focus-halo);
+        outline: var(--focus-ring-width) solid transparent;
       }
 
       .nostos-dropdown__trigger[aria-invalid='true'] {

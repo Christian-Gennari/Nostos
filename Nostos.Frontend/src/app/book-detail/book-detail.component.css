@@ -258,12 +258,14 @@
   color: rgba(255, 255, 255, 0.72);
   margin-top: 0.5rem;
 }
+/* "← Library" is the shared .back-link (styles.css); on the band it reads in
+   the band's light ink, and its hover ground is a light wash, not the page's. */
 .book-hero .btn-back {
-  align-self: flex-start;
   color: rgba(255, 255, 255, 0.86);
 }
 .book-hero .btn-back:hover {
   color: #fff;
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
 /* ── Stage: the sharp cover hands over from the band, controls beside it ── */
@@ -338,20 +340,6 @@
 .container.lg {
   /* Clears the floating bottom dock at every scroll position. */
   padding-bottom: 8.5rem;
-}
-
-.btn-back {
-  background: 0 0;
-  border: none;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text-light);
-  font-size: 0.9rem;
-  transition: color 0.2s;
-}
-.btn-back:hover {
-  color: var(--color-primary);
 }
 
 /* The longest line a block of prose on this page runs to (review, synopsis):

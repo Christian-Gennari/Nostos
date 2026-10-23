@@ -191,7 +191,11 @@ describe('BookDetail reset progress', () => {
     // These controls carry Book Detail-specific interaction contracts and must
     // remain product-owned rather than being flattened into generic primitives.
     expect(statusChipButton()!.classList.contains('nostos-chip')).toBe(false);
-    expect(fixture.nativeElement.querySelector('.btn-back')?.classList.contains('nostos-button')).toBe(false);
+    // "← Library" navigates, so it is a real link drawn by the button primitive.
+    const back = fixture.nativeElement.querySelector('.btn-back') as HTMLAnchorElement;
+    expect(back.tagName).toBe('A');
+    expect(back.getAttribute('href')).toBe('/library');
+    expect(back.classList.contains('nostos-button--ghost')).toBe(true);
   });
 
   it('surfaces a timed-out replacement upload instead of failing silently', async () => {
