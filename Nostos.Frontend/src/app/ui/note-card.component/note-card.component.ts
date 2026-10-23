@@ -22,6 +22,7 @@ import {
 import { TopicDto } from '../../core/services/topics.service';
 import { TopicInputComponent } from '../topic-input.component/topic-input.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
+import { ButtonComponent } from '../button/button.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { TextareaDirective } from '../form-control/form-control.directive';
@@ -34,6 +35,7 @@ import { inlineTopicHref } from '../note-item/note-item.helpers';
     CommonModule,
     FormsModule,
     NostosIconComponent,
+    ButtonComponent,
     IconButtonComponent,
     TopicInputComponent,
     NoteFormatPipe,
