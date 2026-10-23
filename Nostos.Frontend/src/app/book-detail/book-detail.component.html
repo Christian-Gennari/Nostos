@@ -677,10 +677,10 @@
 
   <app-confirm-modal
     [isOpen]="showDeleteConfirm()"
-    [heading]="deleteHeading()"
-    [description]="deleteDescription()"
-    [confirmLabel]="deleteConfirmLabel()"
-    busyLabel="Deleting…"
+    [heading]="deleteCopy().heading"
+    [description]="deleteCopy().description"
+    [confirmLabel]="deleteCopy().confirmLabel"
+    [busyLabel]="deleteCopy().busyLabel"
     [busy]="deleting()"
     (confirm)="confirmDeleteBook()"
     (cancel)="cancelDeleteConfirm()"

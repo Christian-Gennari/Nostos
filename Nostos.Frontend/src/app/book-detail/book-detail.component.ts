@@ -62,6 +62,7 @@ import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { ExternalMediaBookStatus, ExternalMediaService } from '../core/services/external-media.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
@@ -244,25 +245,8 @@ export class BookDetail implements OnInit, OnDestroy {
   /** A pending work link/unlink awaiting confirmation (issue #143). */
   pendingWorkAction = signal<PendingWorkAction | null>(null);
 
-  /** The confirmation question, composed here so the modal stays generic. */
-  deleteHeading = computed(() => {
-    const title = this.store.book()?.title;
-    if (this.isLinkedExternally()) {
-      return title ? `Remove “${title}” from Nostos?` : 'Remove book from Nostos?';
-    }
-    return title ? `Delete “${title}”?` : 'Delete book?';
-  });
-
-  /** A linked book's files are not Nostos's to delete, and the dialog says so. */
-  deleteDescription = computed(() =>
-    this.isLinkedExternally()
-      ? 'This cannot be undone. The book, its notes and its reading progress are removed from Nostos. ' +
-        'Your original files stay where they are and are never modified or deleted by Nostos.'
-      : 'This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library.',
-  );
-  deleteConfirmLabel = computed(() =>
-    this.isLinkedExternally() ? 'Remove from Nostos' : 'Delete Permanently',
-  );
+  /** The delete confirmation's words; a linked book is only removed from Nostos. */
+  deleteCopy = computed(() => bookDeleteCopy(this.store.book()?.title, this.isLinkedExternally()));
 
   /** True when the hero's decorative cover art failed to load — the band falls back to flat colour. */
   heroArtFailed = signal(false);
@@ -722,7 +706,7 @@ export class BookDetail implements OnInit, OnDestroy {
     this.deleting.set(true);
     this.booksService.delete(b.id).subscribe({
       next: () => {
-        this.toast.success('Book deleted');
+        this.toast.success(bookDeletedToast(b.title, this.isLinkedExternally()));
         this.showDeleteConfirm.set(false);
         void this.router.navigate(['/library']);
       },

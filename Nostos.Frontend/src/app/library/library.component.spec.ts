@@ -9,6 +9,8 @@ import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { ExternalMediaService } from '../core/services/external-media.service';
 import { ImportActivity } from '../core/dtos/import.dtos';
 import { PaginatedResponse } from '../core/dtos/book.dtos';
 import { Book } from '../core/dtos/book.dtos';
@@ -33,6 +35,10 @@ describe('Library', () => {
 
   /** "The library changed elsewhere", driven per test. */
   let libraryChanged: Subject<void>;
+
+  /** Whether the server links external media folders, and what it says about a book. */
+  let externalMediaSupported: WritableSignal<boolean>;
+  let externalMediaBook: ReturnType<typeof vi.fn>;
 
   function activity(overrides: Partial<ImportActivity> = {}): ImportActivity {
     return {
@@ -68,6 +74,8 @@ describe('Library', () => {
     importEntries = signal<ImportActivity[]>([]);
     importPatched = new Subject<Book>();
     libraryChanged = new Subject<void>();
+    externalMediaSupported = signal(false);
+    externalMediaBook = vi.fn(() => of({ linked: false, files: 1, unavailableFiles: 0 }));
     progressByBookId = computed(() => {
       const byBook = new Map<string, ImportActivity>();
       for (const entry of importEntries()) {
@@ -103,6 +111,11 @@ describe('Library', () => {
           } as unknown as CollectionsService,
         },
         { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
+        {
+          provide: CloudEntryService,
+          useValue: { supportsExternalMediaLibraries: () => externalMediaSupported() },
+        },
+        { provide: ExternalMediaService, useValue: { book: externalMediaBook } },
         {
           // The library reads the feed as signals: it starts the connection,
           // looks up the import driving a given book, and patches the single book
@@ -1119,6 +1132,35 @@ describe('Library', () => {
     expect(listSpy.mock.calls.length).toBe(calls + 1);
     expect(listSpy.mock.calls.at(-1)![0].page).toBe(2);
     vi.unstubAllGlobals();
+  });
+
+  it('asks to delete an owned book permanently and toasts like the topic toast', () => {
+    const toast = TestBed.inject(ToastService);
+    const success = vi.spyOn(toast, 'success').mockImplementation(() => undefined as never);
+    const target = importingBook({ id: 'b1', title: 'Dune', status: 0, hasFile: true });
+    component.rawBooks.set([target]);
+
+    component.openDeleteModal(target);
+    expect(externalMediaBook).not.toHaveBeenCalled();
+    expect(component.deleteCopy().heading).toBe('Delete “Dune”?');
+    expect(component.deleteCopy().confirmLabel).toBe('Delete Permanently');
+
+    component.confirmDelete();
+    expect(success).toHaveBeenCalledWith('Deleted “Dune”');
+  });
+
+  it('says a linked book is only removed from Nostos, as Book detail does', () => {
+    externalMediaSupported.set(true);
+    externalMediaBook.mockReturnValueOnce(of({ linked: true, files: 1, unavailableFiles: 0 }));
+    const target = importingBook({ id: 'b1', title: 'Dune', status: 0, hasFile: true });
+
+    component.openDeleteModal(target);
+
+    expect(externalMediaBook).toHaveBeenCalledWith('b1');
+    expect(component.deleteTarget()?.id).toBe('b1');
+    expect(component.deleteCopy().heading).toBe('Remove “Dune” from Nostos?');
+    expect(component.deleteCopy().description).toContain('Your original files stay where they are');
+    expect(component.deleteCopy().confirmLabel).toBe('Remove from Nostos');
   });
 
   it('opens and closes Add Book without a separate acquisition chooser', () => {

@@ -139,10 +139,10 @@
 
       <app-confirm-modal
         [isOpen]="!!deleteTarget()"
-        [heading]="deleteHeading()"
-        description="This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library."
-        confirmLabel="Delete Permanently"
-        busyLabel="Deleting…"
+        [heading]="deleteCopy().heading"
+        [description]="deleteCopy().description"
+        [confirmLabel]="deleteCopy().confirmLabel"
+        [busyLabel]="deleteCopy().busyLabel"
         [busy]="deletingBook()"
         (confirm)="confirmDelete()"
         (cancel)="cancelDelete()"
