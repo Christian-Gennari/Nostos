@@ -18,13 +18,10 @@
  * reports every offending file. Comments count: naming the thing is how it
  * comes back.
  */
-// No @types/node in this repo; vitest resolves the node built-ins at runtime.
+// vitest resolves the node built-ins at runtime.
 // Used only for static source guards (templates/stylesheet files).
-// @ts-expect-error — see above.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-// @ts-expect-error — see above.
 import path from 'node:path';
-// @ts-expect-error — see above.
 import process from 'node:process';
 
 import { describe, expect, it } from 'vitest';
