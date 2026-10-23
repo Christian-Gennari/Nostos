@@ -12,8 +12,7 @@ import {
 import { Location } from '@angular/common';
 import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 
-// @ts-expect-error — no @types/node in this repo; vitest resolves node:fs at
-// runtime. Used only for static source guards (the shell stylesheet).
+// vitest resolves node:fs at runtime. Used only for static source guards (the shell stylesheet).
 import { readFileSync } from 'node:fs';
 
 /** Read one of this component's own source files for a static guard. */

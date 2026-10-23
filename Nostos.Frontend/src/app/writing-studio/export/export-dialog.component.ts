@@ -23,8 +23,9 @@ import { SegmentedComponent, type SegmentedOption } from '../../ui/segmented/seg
 import { CITATION_STYLES, citationStyle } from '../citations/citation-styles';
 import { STUDIO_FONTS, StudioPreferencesService } from '../page-settings/studio-preferences.service';
 import { exportFilename } from './export-filename';
-import { EXPORT_FORMATS } from './export-formats';
-import type { ExportDocument, PageSetup, PaperSize } from './export-model';
+import { EXPORT_FORMATS, type ExportAction, lastExportFormat, rememberExportFormat } from './export-formats';
+import type { ExportDocument, ExportWarning, PageSetup, PaperSize } from './export-model';
+import { copyRichText } from './export-rich-text';
 import { type ExportTreeItem, ancestorFolders } from './export-order';
 import { EXPORT_LINE_SPACINGS, EXPORT_MARGINS, exportStyleLabel, pageSetupFromStudio, pageSummary } from './export-page-setup';
 import { type ExportSource, ExportService, exportBlockedReason, orderChapters } from './export.service';
@@ -94,7 +95,7 @@ export class ExportDialogComponent {
   );
   readonly targetId = signal<string>('');
 
-  readonly formatId = signal(EXPORT_FORMATS[0].id);
+  readonly formatId = signal(lastExportFormat().id);
   readonly setup = signal<PageSetup>(pageSetupFromStudio(this.prefs.preferences(), navigator.language));
   /** Only the style changes the words; paper, margins and the rest are laid out by the format. */
   private readonly styleId = computed(() => this.setup().citationStyle);
@@ -110,6 +111,10 @@ export class ExportDialogComponent {
   readonly setupOpen = signal(false);
   /** The list behind "N things to check". */
   readonly warningsOpen = signal(false);
+  /** What the chosen format alone found (an image a DOCX can't carry); null while it looks. */
+  readonly formatWarnings = signal<ExportWarning[] | null>([]);
+  /** The browser said no to the clipboard: offer the Markdown file instead. */
+  readonly copyRefused = signal(false);
 
   readonly blockedReason = computed(() => {
     const source = this.source();
@@ -127,27 +132,33 @@ export class ExportDialogComponent {
   readonly styleLabel = computed(() => exportStyleLabel(citationStyle(this.setup().citationStyle)));
   /** "Page · A4, normal margins, Newsreader, 1.5 · Chicago (notes)", or only the style for a format without pages. */
   readonly setupSummary = computed(() => (this.paged() ? `${pageSummary(this.setup())} · ${this.styleLabel()}` : this.styleLabel()));
+  readonly warnings = computed(() => [...(this.doc()?.warnings ?? []), ...(this.formatWarnings() ?? [])]);
   readonly warningsLine = computed(() => {
-    const count = this.doc()?.warnings.length ?? 0;
+    const count = this.warnings().length;
     return count === 1 ? '1 thing to check before you send this' : `${count} things to check before you send this`;
   });
-  readonly canDownload = computed(() => !!this.doc() && !this.resolving() && !this.blockedReason() && !this.downloading());
+  readonly canDownload = computed(() => !!this.doc() && !this.resolving() && !this.blockedReason() && !this.downloading() && this.formatWarnings() !== null);
+  /** The button says what it does: download a file, copy, or open the print dialog. */
+  readonly actionLabel = computed(() => ACTION_LABELS[this.format().action]);
   readonly downloadReason = computed(() => {
     if (this.loadError()) return this.loadError();
     if (!this.source()) return 'Gathering the writing…';
     if (this.blockedReason()) return this.blockedReason();
     if (this.resolveError()) return this.resolveError();
     if (this.resolving() || !this.doc()) return 'Writing the citations…';
+    if (this.formatWarnings() === null) return 'Checking the images…';
     return null;
   });
 
   private loadRun = 0;
   private resolveAbort: AbortController | null = null;
   private resolveTimer: ReturnType<typeof setTimeout> | null = null;
+  private checkAbort: AbortController | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       this.resolveAbort?.abort();
+      this.checkAbort?.abort();
       if (this.resolveTimer) clearTimeout(this.resolveTimer);
     });
 
@@ -170,6 +181,13 @@ export class ExportDialogComponent {
       const style = this.styleId();
       const order = this.order();
       untracked(() => this.scheduleResolve(source, style, order));
+    });
+
+    // What the format alone would change is known before the writer commits.
+    effect(() => {
+      const doc = this.doc();
+      const format = this.format();
+      untracked(() => this.checkFormat(doc, format));
     });
   }
 
@@ -225,6 +243,26 @@ export class ExportDialogComponent {
     }, 150);
   }
 
+  private checkFormat(doc: ExportDocument | null, format: (typeof EXPORT_FORMATS)[number]): void {
+    this.checkAbort?.abort();
+    this.copyRefused.set(false);
+    if (!doc || !format.check) {
+      this.formatWarnings.set([]);
+      return;
+    }
+    const abort = new AbortController();
+    this.checkAbort = abort;
+    this.formatWarnings.set(null);
+    format
+      .check(doc, abort.signal)
+      .then((warnings) => !abort.signal.aborted && this.formatWarnings.set(warnings))
+      .catch(() => !abort.signal.aborted && this.formatWarnings.set([]));
+  }
+
+  chooseFormat(id: string): void {
+    this.formatId.set(id);
+  }
+
   chooseTarget(id: string): void {
     if (id !== this.targetId()) this.targetId.set(id);
   }
@@ -249,24 +287,54 @@ export class ExportDialogComponent {
   }
 
   async download(): Promise<void> {
-    const doc = this.doc();
-    if (!doc || !this.canDownload()) return;
-    this.downloading.set(true);
+    const resolved = this.doc();
+    if (!resolved || !this.canDownload()) return;
     const setup = this.setup();
+    const doc = { ...resolved, setup };
+    const format = this.format();
+    this.downloading.set(true);
+    this.copyRefused.set(false);
     try {
-      await this.exporter.download({ ...doc, setup }, this.format(), this.filename());
+      switch (format.action) {
+        case 'copy':
+          // The clipboard is written straight from the click: nothing is awaited before it.
+          try {
+            await copyRichText(format.clip(doc));
+          } catch (error) {
+            console.warn('Copy was refused', error);
+            this.copyRefused.set(true);
+            return;
+          }
+          this.toast.show('Copied. Paste it into Substack, Google Docs or Word.', 'success');
+          break;
+        case 'print':
+          await format.print(doc, this.filename().replace(/\.pdf$/i, ''));
+          break;
+        case 'download':
+          await this.exporter.download(doc, format, this.filename());
+          break;
+      }
+      rememberExportFormat(format.id);
       // Remembered for the next export of the same writing or folder.
       this.exporter.saveSetup(this.targetId(), setup).catch(() => this.toast.show('The page setup could not be saved for next time.', 'error'));
       this.closed.emit();
     } catch (error) {
       console.error('Export failed', error);
-      this.toast.show('The file could not be made. Try again.', 'error');
+      this.toast.show(format.action === 'print' ? 'The print layout could not be opened. Try again.' : 'The file could not be made. Try again.', 'error');
     } finally {
       this.downloading.set(false);
     }
+  }
+
+  /** After a refused copy: the same document as a Markdown file. */
+  async downloadMarkdownInstead(): Promise<void> {
+    this.formatId.set('markdown');
+    await this.download();
   }
 
   cancel(): void {
     if (!this.downloading()) this.closed.emit();
   }
 }
+
+const ACTION_LABELS: Record<ExportAction, string> = { download: 'Download', copy: 'Copy', print: 'Save as PDF…' };

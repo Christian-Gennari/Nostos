@@ -3,8 +3,7 @@ import { By } from '@angular/platform-browser';
 import { Component, input, output } from '@angular/core';
 import { of, throwError } from 'rxjs';
 
-// @ts-expect-error — no @types/node in this repo; vitest resolves node:fs at
-// runtime. Used only for static source guards (template/css/ts files).
+// vitest resolves node:fs at runtime. Used only for static source guards (template/css/ts files).
 import { readFileSync } from 'node:fs';
 
 import {

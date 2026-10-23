@@ -1,10 +1,7 @@
-// No @types/node in this repo; vitest resolves node:fs at runtime (angular.json
-// lists it under externalDependencies).
-// @ts-expect-error — see above.
+// vitest resolves node:fs at runtime (angular.json lists it under
+// externalDependencies).
 import { readFileSync } from 'node:fs';
-// @ts-expect-error — see above.
 import path from 'node:path';
-// @ts-expect-error — see above.
 import process from 'node:process';
 
 import { THEMES, ThemeName } from './theme.service';

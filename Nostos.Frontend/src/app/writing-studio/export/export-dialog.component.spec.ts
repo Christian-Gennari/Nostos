@@ -62,6 +62,7 @@ describe('ExportDialogComponent (issue #1164)', () => {
   }
 
   beforeEach(async () => {
+    localStorage.removeItem('nostos.export.format');
     warnings = [];
     exporter = {
       load: vi.fn(async (_items: ExportTreeItem[], id: string, overrides: Map<string, string>): Promise<ExportSource> => {
@@ -100,7 +101,9 @@ describe('ExportDialogComponent (issue #1164)', () => {
 
     const component = fixture.componentInstance;
     expect(component.setup()).toMatchObject({ font: 'lora', citationStyle: 'mla', marginMm: 25.4 });
-    expect(el('export-format')?.textContent).toContain('Web page');
+    // A Word document is what a writer hands in most often.
+    expect(component.format().id).toBe('docx');
+    expect(el('export-download')?.textContent?.trim()).toBe('Download');
     // No file name field: the title names the file.
     expect(fixture.nativeElement.querySelector('input[type="text"]')).toBeNull();
 
@@ -109,8 +112,99 @@ describe('ExportDialogComponent (issue #1164)', () => {
     download.click();
     await settle();
 
-    expect(exporter.download).toHaveBeenCalledWith(expect.objectContaining({ title: 'One' }), expect.objectContaining({ id: 'html' }), 'One.html');
+    expect(exporter.download).toHaveBeenCalledWith(expect.objectContaining({ title: 'One' }), expect.objectContaining({ id: 'docx' }), 'One.docx');
     expect(exporter.saveSetup).toHaveBeenCalledWith('one', expect.objectContaining({ font: 'lora', citationStyle: 'mla' }));
+  });
+
+  it('starts the next export in the format used last', async () => {
+    await open('one');
+    fixture.componentInstance.chooseFormat('markdown');
+    await settle();
+    (el('export-download') as HTMLButtonElement).click();
+    await settle();
+    expect(exporter.download).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'markdown' }), 'One.md');
+    fixture.destroy();
+
+    await open('two');
+    expect(fixture.componentInstance.format().id).toBe('markdown');
+  });
+
+  it('copies rich text from the click itself, and says so', async () => {
+    const write = vi.fn(async () => undefined);
+    const restore = stubClipboard(write);
+    try {
+      await open('one');
+      fixture.componentInstance.chooseFormat('rich-text');
+      await settle();
+      expect(el('export-download')?.textContent?.trim()).toBe('Copy');
+      expect(el('export-format-hint')?.textContent).toContain('Substack, Google Docs or Word');
+      expect(el('export-setup-summary')?.textContent?.trim()).toBe('MLA 9');
+
+      (el('export-download') as HTMLButtonElement).click();
+      // Written before anything is awaited: browsers allow the clipboard only during the click.
+      expect(write).toHaveBeenCalledTimes(1);
+      await settle();
+      expect(TestBed.inject(ToastService).show).toHaveBeenCalledWith(expect.stringContaining('Copied'), 'success');
+      expect(exporter.download).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('offers the Markdown file when the browser refuses the clipboard', async () => {
+    const restore = stubClipboard(vi.fn(async () => Promise.reject(new DOMException('No', 'NotAllowedError'))));
+    try {
+      await open('one');
+      fixture.componentInstance.chooseFormat('rich-text');
+      await settle();
+      (el('export-download') as HTMLButtonElement).click();
+      await settle();
+
+      const refused = el('export-copy-refused')!;
+      expect(refused.getAttribute('role')).toBe('alert');
+      expect(refused.textContent).toContain('didn’t allow copying');
+      (refused.querySelector('button') as HTMLButtonElement).click();
+      await settle();
+      expect(exporter.download).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'markdown' }), 'One.md');
+    } finally {
+      restore();
+    }
+  });
+
+  it('opens the print dialog for a PDF, named from the title', async () => {
+    const pdf = EXPORT_FORMATS.find((f) => f.id === 'pdf') as Extract<ExportFormat, { action: 'print' }>;
+    const print = vi.spyOn(pdf, 'print').mockResolvedValue(undefined);
+    try {
+      await open('one');
+      fixture.componentInstance.chooseFormat('pdf');
+      await settle();
+      expect(el('export-download')?.textContent?.trim()).toBe('Save as PDF…');
+      expect(el('export-format-hint')?.textContent).toContain('Save as PDF');
+      (el('export-download') as HTMLButtonElement).click();
+      await settle();
+      expect(print).toHaveBeenCalledWith(expect.objectContaining({ title: 'One' }), 'One');
+      expect(exporter.download).not.toHaveBeenCalled();
+    } finally {
+      print.mockRestore();
+    }
+  });
+
+  it('lists what the format alone can’t carry before the download, and waits for it', async () => {
+    let finish!: (warnings: ExportDocument['warnings']) => void;
+    const docx = EXPORT_FORMATS.find((f) => f.id === 'docx')!;
+    const check = vi.spyOn(docx, 'check').mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    try {
+      await open('one');
+      expect((el('export-download') as HTMLButtonElement).disabled).toBe(true);
+      expect(el('export-status')?.textContent).toContain('Checking the images');
+
+      finish([{ kind: 'image', message: 'Image “Map”: couldn’t be copied into the file, shown as [image: Map]', chapter: null, count: 1 }]);
+      await settle();
+      expect((el('export-download') as HTMLButtonElement).disabled).toBe(false);
+      expect(el('export-warnings-toggle')?.textContent?.trim()).toBe('1 thing to check before you send this');
+    } finally {
+      check.mockRestore();
+    }
   });
 
   it('uses the page setup saved with the writing', async () => {
@@ -155,8 +249,10 @@ describe('ExportDialogComponent (issue #1164)', () => {
     expect((el('export-download') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('keeps the setup in one collapsed row; a web page has no pages, so only the citation style', async () => {
+  it('keeps the setup in one collapsed row; Markdown has no pages, so only the citation style', async () => {
     await open('one');
+    fixture.componentInstance.chooseFormat('markdown');
+    await settle();
 
     expect(el('export-setup')?.textContent).toContain('Citation style');
     expect(el('export-setup-summary')?.textContent?.trim()).toBe('MLA 9');
@@ -175,16 +271,14 @@ describe('ExportDialogComponent (issue #1164)', () => {
   it('names the house style as such', async () => {
     exporter.savedSetup.mockResolvedValueOnce({ paper: 'a4', marginMm: 25.4, font: 'lora', lineSpacing: 1.5, citationStyle: 'nostos' });
     await open('one');
-    expect(el('export-setup-summary')?.textContent?.trim()).toBe('Nostos (house style)');
+    expect(el('export-setup-summary')?.textContent?.trim()).toMatch(/· Nostos \(house style\)$/);
   });
 
   it('offers paper, margins, font and spacing for a format with pages', async () => {
-    const paged: ExportFormat = { id: 'paged', label: 'Paged (.test)', extension: 'test', paged: true, render: () => new Blob([]) };
-    (EXPORT_FORMATS as ExportFormat[]).push(paged);
-    try {
+    for (const id of ['docx', 'pdf']) {
       await open('one');
-      fixture.componentInstance.formatId.set('paged');
-      fixture.detectChanges();
+      fixture.componentInstance.chooseFormat(id);
+      await settle();
       expect(el('export-setup')?.textContent).toContain('Page');
       // The paper follows the test browser's locale.
       expect(el('export-setup-summary')?.textContent?.trim()).toMatch(/^(A4|Letter), normal margins, Lora, 1.5 · MLA 9$/);
@@ -193,9 +287,8 @@ describe('ExportDialogComponent (issue #1164)', () => {
       fixture.detectChanges();
       expect(el('export-setup')!.querySelector('[data-testid="export-style"]')).toBeTruthy();
       expect(el('export-paper')).toBeTruthy();
-      expect(fixture.componentInstance.filename()).toBe('One.test');
-    } finally {
-      (EXPORT_FORMATS as ExportFormat[]).pop();
+      expect(fixture.componentInstance.filename()).toBe(`One.${id}`);
+      fixture.destroy();
     }
   });
 
@@ -208,7 +301,7 @@ describe('ExportDialogComponent (issue #1164)', () => {
     expect(exporter.load).toHaveBeenLastCalledWith(items, 'thesis', new Map([['one', 'Unsaved words.']]));
     const names = () => [...(el('export-chapters')?.querySelectorAll('.export-chapter-name') ?? [])].map((n) => n.textContent?.trim());
     expect(names()).toEqual(['One', 'Two']);
-    expect(fixture.componentInstance.filename()).toBe('Thesis.html');
+    expect(fixture.componentInstance.filename()).toBe('Thesis.docx');
     // Arrows only, no drag handles.
     expect(el('export-chapters')!.querySelector('[cdkDragHandle], .export-chapter-grip')).toBeNull();
 
@@ -219,7 +312,7 @@ describe('ExportDialogComponent (issue #1164)', () => {
 
     (el('export-download') as HTMLButtonElement).click();
     await settle();
-    expect(exporter.download).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'Thesis.html');
+    expect(exporter.download).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'Thesis.docx');
     expect(exporter.saveSetup).toHaveBeenCalledWith('thesis', expect.anything());
   });
 
@@ -237,3 +330,18 @@ describe('ExportDialogComponent (issue #1164)', () => {
     expect(exporter.resolve).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ citationStyle: 'chicago-notes' }), null, expect.anything());
   });
 });
+
+/** Puts a clipboard that `write` stands in for on the test browser, and returns how to take it away. */
+function stubClipboard(write: (items: ClipboardItem[]) => Promise<void>): () => void {
+  const had = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  const hadItem = (globalThis as { ClipboardItem?: unknown }).ClipboardItem;
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } });
+  (globalThis as { ClipboardItem?: unknown }).ClipboardItem ??= class {
+    constructor(readonly items: Record<string, Blob>) {}
+  };
+  return () => {
+    if (had) Object.defineProperty(navigator, 'clipboard', had);
+    else delete (navigator as { clipboard?: unknown }).clipboard;
+    (globalThis as { ClipboardItem?: unknown }).ClipboardItem = hadItem;
+  };
+}

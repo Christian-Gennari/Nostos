@@ -54,6 +54,18 @@
   min-width: 0;
 }
 
+/* Sits under the format, in the controls' column. */
+.export-format-hint {
+  margin-top: -0.4rem;
+  padding-inline-start: calc(6.5rem + 0.75rem);
+}
+
+.export-refused {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+}
+
 
 .export-chapters {
   display: flex;
@@ -205,6 +217,12 @@
   .export-row {
     grid-template-columns: 1fr;
     gap: 0.3rem;
+  }
+
+  /* The rows stack, so the hint starts at the edge like the control above it. */
+  .export-format-hint {
+    margin-top: -0.25rem;
+    padding-inline-start: 0;
   }
 }
 

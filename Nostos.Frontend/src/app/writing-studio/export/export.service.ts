@@ -117,7 +117,7 @@ export class ExportService {
   }
 
   /** Writes the document in `format` and hands it to the browser as a download. */
-  async download(doc: ExportDocument, format: ExportFormat, filename: string): Promise<void> {
+  async download(doc: ExportDocument, format: Extract<ExportFormat, { action: 'download' }>, filename: string): Promise<void> {
     const blob = await format.render(doc);
     const url = URL.createObjectURL(blob);
     try {
