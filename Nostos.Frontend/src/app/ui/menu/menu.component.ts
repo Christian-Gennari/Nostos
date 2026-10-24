@@ -2,7 +2,14 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import { CdkMenu, CdkMenuItem, CdkMenuTrigger, MENU_SCROLL_STRATEGY } from '@angular/cdk/menu';
+import {
+  CdkMenu,
+  CdkMenuGroup,
+  CdkMenuItem,
+  CdkMenuItemRadio,
+  CdkMenuTrigger,
+  MENU_SCROLL_STRATEGY,
+} from '@angular/cdk/menu';
 import type { ConnectedPosition, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
 import {
   ChangeDetectionStrategy,
@@ -11,6 +18,7 @@ import {
   ElementRef,
   Injector,
   NgZone,
+  OnChanges,
   ViewEncapsulation,
   inject,
   input,
@@ -92,6 +100,68 @@ export class MenuItemComponent {
    */
   readonly hint = input<string | null>(null);
 }
+
+/**
+ * One choice of several (a voice, a speed): `role="menuitemradio"` with
+ * `aria-checked`, and a check in a column every item keeps, so the labels
+ * line up whichever one is chosen. Wrap a set in `nostosMenuGroup`.
+ *
+ *   <div nostosMenuGroup>
+ *     @for (rate of rates; track rate) {
+ *       <button nostosMenuItemRadio [checked]="rate === current()"
+ *               (triggered)="choose(rate)">{{ rate }}×</button>
+ *     }
+ *   </div>
+ */
+@Component({
+  selector: 'button[nostosMenuItemRadio]',
+  standalone: true,
+  imports: [NostosIconComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  hostDirectives: [
+    {
+      directive: CdkMenuItemRadio,
+      inputs: ['cdkMenuItemDisabled: disabled'],
+      outputs: ['cdkMenuItemTriggered: triggered'],
+    },
+  ],
+  host: {
+    class: 'nostos-menu-item nostos-menu-item--radio',
+    type: 'button',
+    '[class.nostos-menu-item--checked]': 'checked()',
+    '[class.nostos-menu-item--with-hint]': '!!hint()',
+  },
+  template: `
+    <span class="nostos-menu-item__check" aria-hidden="true">
+      @if (checked()) {
+        <nostos-icon name="check" [size]="16" />
+      }
+    </span>
+    <span class="nostos-menu-item__label"><ng-content /></span>
+    @if (hint(); as text) {
+      <span class="nostos-menu-item__hint">{{ text }}</span>
+    }
+  `,
+})
+export class MenuItemRadioComponent implements OnChanges {
+  readonly checked = input(false);
+  readonly hint = input<string | null>(null);
+  private readonly radio = inject(CdkMenuItemRadio, { self: true });
+
+  /** The caller's state is the truth; the CDK only reflects it as aria-checked. */
+  ngOnChanges(): void {
+    this.radio.checked = this.checked();
+  }
+}
+
+/** A set of `nostosMenuItemRadio` choices (`role="group"`). */
+@Directive({
+  selector: '[nostosMenuGroup]',
+  standalone: true,
+  hostDirectives: [CdkMenuGroup],
+  host: { class: 'nostos-menu-group' },
+})
+export class MenuGroupDirective {}
 
 @Directive({
   selector: 'hr[nostosMenuSeparator]',
@@ -204,6 +274,8 @@ class FollowAnyScrollStrategy implements ScrollStrategy {
 export const NOSTOS_MENU = [
   MenuComponent,
   MenuItemComponent,
+  MenuItemRadioComponent,
+  MenuGroupDirective,
   MenuSeparatorDirective,
   MenuTriggerDirective,
 ] as const;

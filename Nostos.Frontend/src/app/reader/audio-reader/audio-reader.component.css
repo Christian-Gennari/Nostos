@@ -178,42 +178,8 @@
   gap: 0.5rem;
 }
 
-.range-input {
-  appearance: none;
-  -webkit-appearance: none;
-  --progress: 0%;
-  width: 100%;
-  height: 3px;
-  background: linear-gradient(
-    to right,
-    var(--color-text-muted) 0,
-    var(--color-text-muted) var(--progress, 0%),
-    var(--border-color) var(--progress, 0%),
-    var(--border-color) 100%
-  );
-  border-radius: var(--radius-pill);
-  outline: none;
-  cursor: pointer;
-}
-
-.range-input:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 4px;
-}
-
-.range-input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  height: 12px;
-  width: 12px;
-  border-radius: 50%;
-  background: var(--color-brand-accent);
-  cursor: pointer;
-  transition: transform var(--motion-fast) var(--ease-out);
-}
-
-.range-input::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-}
+/* The scrubber is appRange, the app's one slider: the directive keeps the
+   played part filled. */
 
 .time-labels {
   display: flex;
@@ -387,195 +353,53 @@
   fill: currentColor;
 }
 
-/* --- PLAYBACK CONTROL (issue #227 §1/§3) -------------------------------------
-   Speed and the sleep timer were two pills in their own row, each with its own
-   chevron, focus path and outside-click rule. They are one control now: a single
-   pill that reports both values and opens one menu with both settings.
-   Tokens only — the old pills hard-coded a 999px radius, raw rgba shadows and
-   0.15s transitions, which is the drift §4 of the issue lists. */
-.playback-selector {
-  position: relative;
+/* --- SPEED AND SLEEP (issue #1200) -----------------------------------------
+   Two capsules beside the transport: the shared playback-speed menu and the
+   sleep timer's nostos-menu trigger. Both are appButton secondary; this file
+   only gives them one height and the capsule shape. The menus are the CDK's,
+   so there is no popover, scrim or outside-click rule here any more. */
+.playback-options {
   display: flex;
   align-items: center;
-}
-
-.playback-pill {
-  display: inline-flex;
-  align-items: center;
   gap: 0.5rem;
-  padding: 0.45rem 1.7rem 0.45rem 0.9rem;
-  border: 1px solid var(--border-color);
+}
+
+.playback-option {
+  --playback-speed-trigger-height: var(--control-h-md);
+}
+
+.sleep-trigger {
+  position: relative;
+  min-height: var(--control-h-md);
   border-radius: var(--radius-pill);
-  background: transparent;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A finger needs 44px; the capsule stays the app's own size and the hit area
+   grows invisibly instead, as the speed trigger's does. */
+@media (pointer: coarse) {
+  .sleep-trigger::after {
+    content: '';
+    position: absolute;
+    inset: -6px -3px;
+  }
+}
+
+.sleep-icon,
+.sleep-caret {
+  color: var(--color-text-light);
+}
+
+.sleep-trigger.is-armed .sleep-icon {
   color: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.9rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1;
-  cursor: pointer;
-  outline: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
 }
 
-.playback-pill:hover {
-  border-color: var(--color-primary-dim);
-}
-
-.playback-pill:focus-visible {
-  border-color: var(--border-focus);
-}
-
-.playback-pill[aria-expanded='true'] {
-  border-color: var(--border-focus);
-  background: var(--bg-hover);
-}
-
-.playback-pill:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 3px;
-}
-
-.playback-icon {
-  color: var(--color-text-light);
-  flex-shrink: 0;
-}
-
-.playback-value {
-  font-variant-numeric: tabular-nums;
-}
-
-.playback-sleep {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding-left: 0.55rem;
-  margin-left: 0.1rem;
-  border-left: 1px solid var(--border-color);
-  color: var(--color-text-light);
-  font-weight: var(--fw-regular);
-  font-variant-numeric: tabular-nums;
-}
-
-.playback-arrow {
-  position: absolute;
-  right: 0.75rem;
-  top: 50%;
-  /* The translate is what centres the chevron; the flip is composed with it so
-     opening the menu cannot displace it (see the note this file used to carry). */
-  transform: translateY(-50%) rotate(0deg);
-  color: var(--color-text-light);
-  display: block;
-  flex-shrink: 0;
-  pointer-events: none;
+.sleep-caret {
   transition: transform var(--motion-fast) var(--ease-standard);
 }
 
-.playback-pill[aria-expanded='true'] .playback-arrow {
-  transform: translateY(-50%) rotate(180deg);
-}
-
-.playback-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.6rem);
-  z-index: 20;
-  min-width: 264px;
-  max-height: calc(100dvh - var(--header-height) - env(safe-area-inset-top, 0px) - 1.5rem);
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  padding: 1rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-popover);
-  box-shadow: var(--shadow-md);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.playback-menu-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  min-height: 2.75rem;
-  margin: -0.25rem -0.25rem 0;
-  padding: 0 0.25rem 0.625rem;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.playback-menu-header h2 {
-  margin: 0;
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: 1.05rem;
-  font-weight: var(--fw-medium);
-  letter-spacing: -0.01em;
-}
-
-.playback-menu-header .icon-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  color: var(--color-text-muted);
-  border-color: transparent;
-}
-
-.playback-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.playback-section-label {
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: var(--text-xs);
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--color-text-muted);
-  font-weight: var(--fw-regular);
-}
-
-.rate-steps {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-/* The steps are appButton sm; the menu keeps them square. The glyphs are SVG
-   icons, not "−"/"+" text, because text glyphs sit on the font's math axis and
-   never land in the box's optical center. */
-.rate-step {
-  min-width: 30px;
-  padding: 0;
-}
-
-.rate-step:focus-visible,
-.sleep-option:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.rate-readout {
-  min-width: 4.5rem;
-  text-align: center;
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.95rem;
-  font-weight: var(--fw-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Speed presets are nostos-segmented; sleep presets are appChip toggles, which
-   wrap when "Chapter end" is offered. The menu owns only the layout. */
-.sleep-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+.sleep-trigger[aria-expanded='true'] .sleep-caret {
+  transform: rotate(180deg);
 }
 
 .sleep-status {
@@ -632,12 +456,11 @@
     gap: 0.25rem;
   }
 
-  /* Portrait stacks the Playback pill UNDER the transport: that is the owner's
+  /* Portrait stacks the speed and sleep capsules UNDER the transport: that is the owner's
      call for standing/portrait use, and it is also what gives the rows their own
-     lines to breathe on (the pill no longer has to share a 344px row with the
+     lines to breathe on (they no longer have to share a 344px row with the
      transport trio). The short-landscape block at the end of this file puts the
-     two back side by side, where there is width and no height to spare.
-     `position: relative` on the row is the mobile popover's containing block. */
+     two back side by side, where there is width and no height to spare. */
   .playback-row {
     position: relative;
     flex-direction: column;
@@ -663,52 +486,6 @@
   .skip-btn {
     width: 44px;
     height: 44px;
-  }
-
-  .playback-pill {
-    /* Its own containing block, so the chevron keeps its place once the
-       selector below stops being one. */
-    position: relative;
-    /* No `min-height: 44px` here. It made this the fattest pill in the app (44px
-       against the library chips' 28px and this control's own 33px on desktop),
-       which is the convention it has to sit in. The pill is the app's own pill on
-       a phone too, and the tap floor is kept by the hit area below instead. */
-  }
-
-  .playback-pill::after {
-    /* A 33px pill is under the 44px tap floor, so the hit area is expanded
-       invisibly rather than by making the pill fat: 8px above and below (49px
-       total) and 6px at each end. Verified by clicking 6px above the pill's box
-       and asserting the menu opens. */
-    content: '';
-    position: absolute;
-    inset: -8px -6px;
-  }
-
-  /* The menu is a panel the width of the control row on a phone. It used to be a
-     264px-wide floating popover anchored to the pill's right edge, which put its
-     left edge 41px outside a 320px viewport (measured). Anchoring it to the row
-     is width-proof. */
-  .playback-selector {
-    position: static;
-  }
-
-  .playback-menu {
-    left: 0;
-    right: 0;
-    min-width: 0;
-    max-height: calc(100dvh - var(--header-height) - env(safe-area-inset-top, 0px) - 1rem);
-  }
-
-  /* The popover's rows are touch targets on a phone too. */
-  .rate-step {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  .sleep-option {
-    min-height: 44px;
-    padding: 0.45rem 0.75rem;
   }
 
   .skip-btn:hover {

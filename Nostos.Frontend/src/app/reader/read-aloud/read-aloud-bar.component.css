@@ -122,31 +122,14 @@
   }
 }
 
-.read-aloud-chip {
-  all: unset;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  min-height: 44px;
-  padding: 0 0.7rem;
+/* The voice and the speed are the same quiet capsule: appButton ghost, the
+   speed inside nostos-playback-speed-menu. */
+.read-aloud-voice {
   border-radius: var(--radius-pill);
-  color: var(--color-text-main);
-  font-size: 0.85rem;
-  font-weight: var(--fw-medium);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
-.read-aloud-chip:hover,
-.read-aloud-chip[aria-expanded='true'] {
-  background-color: var(--bg-hover);
-}
-
-.read-aloud-chip nostos-icon {
-  color: var(--color-text-muted);
+.read-aloud-voice nostos-icon {
+  color: var(--color-text-light);
 }
 
 .read-aloud-chip-label {
@@ -156,12 +139,10 @@
 }
 
 .read-aloud-rate {
-  min-width: 52px;
-  padding: 0 0.55rem;
+  --playback-speed-trigger-height: var(--control-h-touch);
 }
 
-.read-aloud-toggle:focus-visible,
-.read-aloud-chip:focus-visible {
+.read-aloud-toggle:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -214,26 +195,14 @@
 }
 
 /* The menus open in the overlay, outside this component, so these rules are
-   global. A choice list keeps every label in one column: the check sits in a
-   slot that unchecked items leave empty. */
+   global. The voices are nostosMenuItemRadio choices, which keep their labels
+   in one column themselves. */
 /* A book that does not say its language lists every voice: more than a phone
    screen holds, so the menu scrolls. */
 ::ng-deep .read-aloud-menu.nostos-menu {
   max-height: min(32rem, calc(100dvh - 7rem));
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-::ng-deep .read-aloud-menu .nostos-menu-item:not(.is-selected) {
-  padding-left: calc(0.65rem + 16px + 0.6rem);
-}
-
-::ng-deep .read-aloud-menu .nostos-menu-item.is-selected nostos-icon {
-  color: var(--color-text-main);
-}
-
-::ng-deep .read-aloud-menu .nostos-menu-item.is-selected .nostos-menu-item__label {
-  font-weight: var(--fw-medium);
 }
 
 ::ng-deep .read-aloud-menu-heading {
@@ -252,8 +221,4 @@
   font-size: 0.78rem;
   line-height: 1.4;
   white-space: normal;
-}
-
-::ng-deep .read-aloud-menu--narrow {
-  min-width: 7rem;
 }

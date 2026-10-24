@@ -44,6 +44,32 @@
   color: var(--color-text-light);
 }
 
+.nostos-menu-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A choice keeps its check column empty when it is not the chosen one, so
+   every label starts at the same place. */
+.nostos-menu-item__check {
+  display: inline-flex;
+  flex: 0 0 16px;
+  width: 16px;
+}
+
+.nostos-menu-item--checked nostos-icon {
+  color: var(--color-text-main);
+}
+
+.nostos-menu-item--checked .nostos-menu-item__label {
+  font-weight: var(--fw-medium);
+}
+
+.nostos-menu-item--with-hint .nostos-menu-item__check {
+  grid-row: 1 / span 2;
+  margin-top: 1px;
+}
+
 .nostos-menu-item__label {
   min-width: 0;
   overflow: hidden;

@@ -700,7 +700,7 @@
       [focusBook]="pageSettingsStart().book"
       [citedBookIds]="citedBookIds()"
       (bookUpdated)="onCitationBookUpdated()"
-      (closed)="pageSettingsOpen.set(false)" />
+      (closed)="$event === 'escape' ? closePageSettings() : pageSettingsOpen.set(false)" />
   }
 
   @if (exportOpen() && activeItem(); as item) {

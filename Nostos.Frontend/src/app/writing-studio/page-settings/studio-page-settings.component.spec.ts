@@ -20,7 +20,8 @@ describe('StudioPageSettingsComponent (#1060)', () => {
     closed = 0;
     fixture.componentInstance.closed.subscribe(() => closed++);
     fixture.detectChanges();
-    root = fixture.nativeElement;
+    // The panel renders in the overlay (the shared settings popover), not in the host.
+    root = document.querySelector('[data-testid="page-settings"]') as HTMLElement;
   });
 
   afterEach(() => fixture.destroy());
@@ -136,9 +137,20 @@ describe('StudioPageSettingsComponent (#1060)', () => {
   });
 
   it('closes on a press outside it, but not inside', () => {
-    root.querySelector('.tp-swatch')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    const press = (el: HTMLElement) => {
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      el.click();
+    };
+    press(root.querySelector('.tp-swatch') as HTMLElement);
     expect(closed).toBe(0);
-    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    press(document.body);
     expect(closed).toBe(1);
+  });
+
+  it('says Escape closes it from the main view, for the Studio to go back to the page', () => {
+    const reasons: string[] = [];
+    fixture.componentInstance.closed.subscribe((reason) => reasons.push(reason));
+    root.querySelector('.tp-swatch')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(reasons).toEqual(['escape']);
   });
 });

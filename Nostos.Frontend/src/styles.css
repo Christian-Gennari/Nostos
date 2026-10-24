@@ -400,6 +400,9 @@
      and 12px. One role now owns both numbers. */
   --radius-popover: 10px;
   --radius-popover-item: calc(var(--radius-popover) - 4px);
+  /* A settings panel (nostos-settings-popover: the reader's View settings,
+     the Studio's Page settings). Both were 304px, written twice. */
+  --settings-popover-width: 19rem;
 
   /* ── Surface and row roles ──
      A surface is a bordered box that holds content and, usually, controls: a

@@ -72,6 +72,7 @@
            390px ("Bei…" / "Marti…"); the render scale moved in here, with the
            presets it belongs to, and now persists per book. -->
       <button
+        #typoToggle
         appIconButton
         icon="text-aa"
         [glyphSize]="20"
@@ -854,16 +855,21 @@
   <!-- Keep with writing, from a note's menu in the notes panel. -->
   <app-brain-note-dialogs />
 
-  <!-- EPUB typography: typeface, text size, line height, margins. Anchored under
-       the Aa control it belongs to, with a scrim so a click outside closes it and
-       Escape is handled in the shell. State lives on the EpubReader (persisted
-       reader-wide); the shell only owns whether the panel is open. -->
+  <!-- View settings: typeface, text size, line height, margins (EPUB) or the
+       page's mode, zoom and fit (PDF). The shared settings popover (issue #1201)
+       hangs it under the Aa control and owns Escape, a press outside, focus and
+       the phone sheet. State lives on the readers (persisted reader-wide); the
+       shell only owns whether the panel is open. -->
   @if (typoOpen() && (fileType() === 'epub' || fileType() === 'pdf')) {
-  <div class="typo-scrim" (click)="toggleTypo()" aria-hidden="true"></div>
-  <div class="typo-panel" data-testid="typo-panel" role="dialog" aria-label="View settings">
+  <nostos-settings-popover
+    [origin]="typoToggleButton?.nativeElement ?? null"
+    label="View settings"
+    (dismissed)="closeTypo()"
+  >
+  <div class="typo-panel" data-testid="typo-panel">
     <div class="typo-panel-heading">
       <h2>View settings</h2>
-      <button appIconButton icon="x" type="button" (click)="toggleTypo()" aria-label="Close view settings" title="Close view settings"></button>
+      <button appIconButton icon="x" type="button" (click)="closeTypo()" aria-label="Close view settings" title="Close view settings"></button>
     </div>
     <!-- App-wide theme (#651). It drives ThemeService, the one owner of the
          theme, so it is the same setting as Settings → Appearance and both
@@ -1056,6 +1062,7 @@
     </section>
     }
   </div>
+  </nostos-settings-popover>
   }
 </div>
 

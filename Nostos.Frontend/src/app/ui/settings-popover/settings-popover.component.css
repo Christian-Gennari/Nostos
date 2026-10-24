@@ -1,0 +1,75 @@
+/* The settings panel (nostos-settings-popover). It renders in the CDK
+   overlay, so these rules are global. The pane is a column, so the panel
+   scrolls inside it once the overlay caps the pane at the viewport. */
+.nostos-settings-popover-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.nostos-settings-popover-pane--sheet {
+  width: 100%;
+  max-height: 72dvh;
+}
+
+.nostos-settings-popover-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--settings-popover-width), calc(100vw - 16px));
+  min-height: 0;
+  padding: 0.875rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-md);
+  font-family: 'Hanken Grotesk', sans-serif;
+  transform-origin: top right;
+  animation: nostos-settings-popover-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes nostos-settings-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+/* A phone: a sheet along the bottom edge, the width of the screen, with a
+   grab handle that says it sits over the page and goes with a tap above it. */
+.nostos-settings-popover-pane--sheet .nostos-settings-popover-panel {
+  width: 100%;
+  padding-inline: max(1.125rem, env(safe-area-inset-left, 0px)) max(1.125rem, env(safe-area-inset-right, 0px));
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  border-width: 1px 0 0;
+  border-radius: var(--radius-popover) var(--radius-popover) 0 0;
+  animation-name: nostos-settings-sheet-in;
+}
+
+.nostos-settings-popover-pane--sheet .nostos-settings-popover-panel::before {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 4px;
+  margin: -0.375rem auto 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--border-color);
+}
+
+@keyframes nostos-settings-sheet-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nostos-settings-popover-panel,
+  .nostos-settings-popover-pane--sheet .nostos-settings-popover-panel {
+    animation: none;
+  }
+}

@@ -1,4 +1,13 @@
-<section class="page-settings" role="dialog" aria-modal="false" aria-label="Page settings" data-testid="page-settings">
+<!-- The shared settings popover (issue #1201) places it under the Aa button
+     (a sheet on a phone) and says when Escape or a press outside closes it. -->
+<nostos-settings-popover
+  [origin]="anchor()"
+  label="Page settings"
+  [initialFocus]="false"
+  [restoreFocus]="false"
+  (dismissed)="closed.emit($event)"
+>
+<section #panel class="page-settings" data-testid="page-settings" (keydown.escape)="escape($event)">
   @if (view() === 'fonts') {
     <header class="ps-subhead">
       <button appIconButton icon="caret-left" [glyphSize]="16" aria-label="Back to page settings" title="Back" (click)="backToMain()"></button>
@@ -185,3 +194,4 @@
     <button appButton variant="link" size="sm" type="button" class="ps-reset" (click)="prefs.reset()">Reset to the standard page</button>
   }
 </section>
+</nostos-settings-popover>

@@ -36,8 +36,9 @@ describe('StudioPageSettingsComponent: missing citation details (#1157)', () => 
     });
   }
 
+  /** The panel renders in the overlay (the shared settings popover), not in the host. */
   function root(): HTMLElement {
-    return fixture.nativeElement as HTMLElement;
+    return document.querySelector('[data-testid="page-settings"]') as HTMLElement;
   }
 
   function sources(): { book: string | null; title: string; fields: string[] }[] {

@@ -1,4 +1,4 @@
-import { Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -105,6 +105,7 @@ function createdAtOf(note: Note): number {
 import { BrowserVoice } from './read-aloud/browser-voice';
 import { ReadAloudBarComponent } from './read-aloud/read-aloud-bar.component';
 import { SegmentedComponent } from '../ui/segmented/segmented.component';
+import { SettingsPopoverComponent } from '../ui/settings-popover/settings-popover.component';
 import { EPUB_LINE_OPTIONS } from './epub-reader/epub-typography';
 import { ReadAloudController } from './read-aloud/read-aloud-controller';
 import { ServerVoice } from './read-aloud/server-voice';
@@ -191,6 +192,7 @@ import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
     ThemePickerComponent,
     PenSwatchesComponent,
     QuoteBlockComponent,
+    SettingsPopoverComponent,
   ],
   providers: [ReadAloudController, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './reader-shell.component.html',
@@ -695,6 +697,9 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);
+  /** The Aa control: the settings popover hangs from it and returns focus to it. */
+  @ViewChild('typoToggle', { read: ElementRef }) typoToggleButton?: ElementRef<HTMLElement>;
+  private readonly cdr = inject(ChangeDetectorRef);
 
   /**
    * EPUB/PDF chrome is absent while the reader is resting (#759). It is only a
@@ -712,20 +717,28 @@ export class ReaderShell implements OnInit, OnDestroy {
     { value: 'printed', label: 'As printed' },
   ] as const;
 
+  /** Focus moves in and back out with the shared settings popover itself. */
   toggleTypo(): void {
     const opening = !this.typoOpen();
     if (opening) {
       this.closeSearch(false);
       this.dismissHighlightCardForTool();
-      this.rememberOverlayFocus();
       this.tocOpen.set(false);
       this.notesOpen.set(false);
       this.typoOpen.set(true);
-      this.focusOverlay('.typo-panel button');
       return;
     }
+    this.closeTypo();
+  }
+
+  /**
+   * Closed now, not at the next render: the popover claims Escape while it is
+   * on the page, so an Escape pressed straight after the close button must
+   * already find it gone and reach the shell, which then rests the chrome.
+   */
+  closeTypo(): void {
     this.typoOpen.set(false);
-    this.restoreOverlayFocus();
+    this.cdr.detectChanges();
   }
 
   // ------------------------------------------------------------------

@@ -62,9 +62,12 @@
         [min]="0"
         [max]="duration()"
         [value]="currentTime()"
-        [style.--progress]="(duration() > 0 ? currentTime() / duration() * 100 : 0) + '%'"
         (input)="seek($event)"
+        appRange
         class="range-input"
+        aria-label="Playback position"
+        [attr.aria-valuetext]="timeLabels().current + ' of ' + timeLabels().total"
+        data-testid="audio-scrubber"
       />
       <div class="time-labels">
         @if (isEditingTime()) {
@@ -125,107 +128,39 @@
         </button>
       </div>
 
-      <!-- One control for speed and sleep (issue #227 §1/§3). The chapter list in the
-           shell panel and the scrubber are the chapter navigation, so the two chapter
-           buttons that used to sit in this row are gone rather than relocated twice. -->
-      <div class="playback-selector">
-        <div
-          class="playback-pill"
-          tabindex="0"
-          role="button"
-          aria-haspopup="true"
-          aria-controls="playback-menu"
-          [attr.aria-expanded]="playbackMenuOpen()"
-          aria-label="Playback settings"
-          data-testid="audio-playback-pill"
-          (click)="toggleDropdown()"
-          (keydown.enter)="toggleDropdown()"
-          (keydown.space)="toggleDropdown(); $event.preventDefault()"
-          (keydown.escape)="closePlaybackMenu()"
+      <!-- Speed and the sleep timer (issue #1200): the speed is the app's one
+           playback-speed menu, shared with read aloud; the sleep timer is a
+           nostos-menu beside it. The chapter list in the shell panel and the
+           scrubber are the chapter navigation (issue #227). -->
+      <div class="playback-options">
+        <nostos-playback-speed-menu
+          class="playback-option"
+          variant="secondary"
+          label="Playback speed"
+          [rate]="currentRate()"
+          [rates]="availableRates"
+          [step]="rateStep"
+          [min]="rateMin"
+          [max]="rateMax"
+          (rateChange)="setRate($event)"
+          data-testid="audio-speed"
+        />
+        <button
+          appButton
+          variant="secondary"
+          size="sm"
+          type="button"
+          class="playback-option sleep-trigger"
+          [class.is-armed]="sleepArmed()"
+          [nostosMenuTriggerFor]="sleepMenu"
+          title="Sleep timer"
+          [attr.aria-label]="'Sleep timer: ' + sleepLabel() + '. Change sleep timer'"
+          data-testid="audio-sleep-trigger"
         >
-          <nostos-icon name="sliders-horizontal" [size]="14" class="playback-icon"></nostos-icon>
-          <span class="playback-value" data-testid="audio-rate-label">{{ formatRate(currentRate()) }}</span>
-          <span class="playback-sleep" data-testid="sleep-timer-label">
-            <nostos-icon name="moon" [size]="13" class="sleep-icon"></nostos-icon>{{ sleepLabel() }}
-          </span>
-          <svg class="playback-arrow" width="8" height="5" viewBox="0 0 8 5" aria-hidden="true">
-            <path d="M1 1l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-
-        @if (playbackMenuOpen()) {
-          <div class="playback-menu" id="playback-menu" role="dialog" aria-labelledby="playback-menu-title" data-testid="audio-playback-menu">
-            <div class="playback-menu-header">
-              <h2 id="playback-menu-title">Playback settings</h2>
-              <button
-                appIconButton
-                icon="x"
-                [glyphSize]="18"
-                type="button"
-                (click)="closePlaybackMenu()"
-                aria-label="Close playback settings"
-                title="Close playback settings"
-              ></button>
-            </div>
-
-            <div class="playback-section">
-              <span class="playback-section-label" id="playback-speed-label">Speed</span>
-              <div class="rate-steps" role="group" aria-labelledby="playback-speed-label">
-                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(-0.05)" aria-label="Slower" data-testid="audio-rate-down"><nostos-icon name="minus" [size]="14" /></button>
-                <span class="rate-readout">{{ formatRate(currentRate()) }}</span>
-                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(0.05)" aria-label="Faster" data-testid="audio-rate-up"><nostos-icon name="plus" [size]="14" /></button>
-              </div>
-              <nostos-segmented
-                class="rate-options"
-                fill
-                aria-label="Playback speed"
-                [options]="rateOptions"
-                [value]="currentRate()"
-                (valueChange)="selectRate($event)"
-              />
-            </div>
-
-            <div class="playback-section">
-              <span class="playback-section-label" id="playback-sleep-label">Sleep timer</span>
-              <div class="sleep-options" role="group" aria-labelledby="playback-sleep-label">
-                <button
-                  appChip
-                  class="sleep-option"
-                  type="button"
-                  [attr.aria-pressed]="!sleepArmed()"
-                  (click)="selectSleepTimer(null)"
-                >
-                  Off
-                </button>
-                <!-- End of chapter (issue #209). Only offered when the file actually
-                     carries chapter starts; otherwise there is nothing to stop at. -->
-                @if (hasChapters()) {
-                  <button
-                    appChip
-                    class="sleep-option"
-                    type="button"
-                    [attr.aria-pressed]="sleepAtChapterEnd()"
-                    data-testid="audio-sleep-chapter-end"
-                    (click)="selectSleepAtChapterEnd()"
-                  >
-                    Chapter end
-                  </button>
-                }
-                @for (minutes of sleepPresets; track minutes) {
-                  <button
-                    appChip
-                    class="sleep-option"
-                    type="button"
-                    [attr.aria-pressed]="sleepTimerMinutes() === minutes"
-                    (click)="selectSleepTimer(minutes)"
-                  >
-                    {{ minutes }} min
-                  </button>
-                }
-              </div>
-            </div>
-          </div>
-        }
+          <nostos-icon name="moon" [size]="14" class="sleep-icon" />
+          <span class="sleep-value" data-testid="sleep-timer-label">{{ sleepLabel() }}</span>
+          <nostos-icon name="caret-down" [size]="12" class="sleep-caret" />
+        </button>
       </div>
     </div>
 
@@ -236,3 +171,36 @@
     }
   </div>
 </div>
+
+<ng-template #sleepMenu>
+  <nostos-menu aria-label="Sleep timer" data-testid="audio-sleep-menu">
+    <div nostosMenuGroup>
+      <button nostosMenuItemRadio class="sleep-option" [checked]="!sleepArmed()" (triggered)="selectSleepTimer(null)">
+        Off
+      </button>
+      <!-- End of chapter (issue #209). Only offered when the file has chapter
+           starts; otherwise there is nothing to stop at. -->
+      @if (hasChapters()) {
+        <button
+          nostosMenuItemRadio
+          class="sleep-option"
+          [checked]="sleepAtChapterEnd()"
+          (triggered)="selectSleepAtChapterEnd()"
+          data-testid="audio-sleep-chapter-end"
+        >
+          Chapter end
+        </button>
+      }
+      @for (minutes of sleepPresets; track minutes) {
+        <button
+          nostosMenuItemRadio
+          class="sleep-option"
+          [checked]="sleepTimerMinutes() === minutes"
+          (triggered)="selectSleepTimer(minutes)"
+        >
+          {{ minutes }} min
+        </button>
+      }
+    </div>
+  </nostos-menu>
+</ng-template>

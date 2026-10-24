@@ -27,12 +27,12 @@ import { AUDIO_PLAYER_FACTORY, AudioPlayer, PlaylistTrack } from './track-playli
 
 import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
-import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 
 import { ButtonComponent } from '../../ui/button/button.component';
-import { ChipComponent } from '../../ui/chip/chip.component';
-import { SegmentedComponent } from '../../ui/segmented/segmented.component';
+import { NOSTOS_MENU } from '../../ui/menu/menu.component';
+import { PlaybackSpeedMenuComponent } from '../../ui/playback-speed-menu/playback-speed-menu.component';
+import { RangeDirective } from '../../ui/range/range.directive';
 import { PassageDraft, PassageMark } from '../passage/passage-mark';
 import { formatAudioTime } from '../../core/dtos/note.dtos';
 import { PASSAGE_CLIP_PLAY_EVENT } from '../../ui/passage-viewer/clip-player';
@@ -49,11 +49,11 @@ export const PLAYING_SAVE_INTERVAL_MS = 10_000;
     FormsModule,
     NostosIconComponent,
     BloomArtDirective,
-    IconButtonComponent,
     LoadingIndicatorComponent,
     ButtonComponent,
-    ChipComponent,
-    SegmentedComponent,
+    PlaybackSpeedMenuComponent,
+    ...NOSTOS_MENU,
+    RangeDirective,
   ],
   templateUrl: './audio-reader.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -129,8 +129,6 @@ export class AudioReader implements OnDestroy, IReader {
   currentTime = signal(0);
   duration = signal(0);
   currentRate = signal(1);
-  // The single playback menu holds speed and sleep (issue #227 §1/§3), so there is
-  // one pill, one chevron, one focus path and one outside-click rule.
   // True while the player is initializing (until its onload callback),
   // so the UI can show a visible loading state instead of a dead-looking player.
   loading = signal(true);
@@ -151,8 +149,9 @@ export class AudioReader implements OnDestroy, IReader {
   sleepRemainingSeconds = signal(0);
   // Brief status message shown when the timer expires.
   sleepStatusMessage = signal<string | null>(null);
-  // --- Playback menu: speed and sleep timer share ONE control (issue #227 §1/§3).
-  playbackMenuOpen = signal(false);
+  // Speed is the shared playback-speed menu (issue #1200); the sleep timer is
+  // a nostos-menu beside it. Both are CDK menus: Escape, outside clicks and
+  // focus return are theirs, not this component's.
   sleepPresets = [15, 30, 45, 60];
   // Sleep-at-end-of-chapter (issue #209). The chapter starts are already in the
   // component from the file metadata, so this needs no clock: it watches the
@@ -186,12 +185,11 @@ export class AudioReader implements OnDestroy, IReader {
   // Playback speeds (issue #227 §2): a short preset list for the coarse choice,
   // with ±0.05 stepping in the same menu for the fine one. Remembered
   // reader-wide — a speed is a habit, not a property of one audiobook.
-  availableRates = [0.8, 1, 1.25, 1.5, 2];
-  readonly rateOptions = this.availableRates.map((value) => ({ value, label: this.formatRate(value) }));
+  readonly availableRates = [0.8, 1, 1.25, 1.5, 2];
+  readonly rateStep = 0.05;
+  readonly rateMin = 0.5;
+  readonly rateMax = 3;
   private static readonly RATE_KEY = 'nostos.audio-rate';
-  private static readonly RATE_STEP = 0.05;
-  private static readonly RATE_MIN = 0.5;
-  private static readonly RATE_MAX = 3;
   /** A reported position under this many seconds, while the reader knows better, is a lost one. */
   private static readonly LOST_POSITION_MAX = 1;
   /** Only a real place in the book is protected; the first seconds have nothing to lose. */
@@ -574,32 +572,9 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   // Speed Logic
-  toggleRate() {
-    const current = this.currentRate();
-    const currentIndex = this.availableRates.indexOf(current);
-
-    // Calculate next index, wrapping around to the start
-    const nextIndex = (currentIndex + 1) % this.availableRates.length;
-
-    // Set the new rate
-    this.setRate(this.availableRates[nextIndex]);
-  }
-
-  /** Fine step: the presets are the coarse choice, this is the nudge next to them. */
-  nudgeRate(delta: number) {
-    const stepped =
-      Math.round((this.currentRate() + delta) / AudioReader.RATE_STEP) * AudioReader.RATE_STEP;
-    this.setRate(this.clampRate(stepped));
-  }
-
   private clampRate(rate: number): number {
-    const clamped = Math.min(AudioReader.RATE_MAX, Math.max(AudioReader.RATE_MIN, rate));
+    const clamped = Math.min(this.rateMax, Math.max(this.rateMin, rate));
     return parseFloat(clamped.toFixed(2));
-  }
-
-  /** Display form: the app's editorial copy uses the multiplication sign. */
-  formatRate(rate: number): string {
-    return `${rate}×`;
   }
 
   setRate(rate: number) {
@@ -667,20 +642,6 @@ export class AudioReader implements OnDestroy, IReader {
     this.goToTime(prev ?? starts[0]);
   }
 
-  // Dropdown — one menu now holds speed and sleep (issue #227 §1/§3)
-  toggleDropdown() {
-    this.playbackMenuOpen.update(v => !v);
-  }
-
-  closeDropdown() {
-    this.playbackMenuOpen.set(false);
-  }
-
-  selectRate(rate: number) {
-    this.setRate(rate);
-    this.closeDropdown();
-  }
-
   // --- Sleep Timer (issue #47) ---
   // Label for the timer control: the remaining mm:ss while armed, 'Off' otherwise.
   sleepLabel = computed(() => {
@@ -699,7 +660,6 @@ export class AudioReader implements OnDestroy, IReader {
    * to the end of the media on the last chapter, where pausing is harmless.
    */
   selectSleepAtChapterEnd(): void {
-    this.closePlaybackMenu();
     this.sleepStatusMessage.set(null);
     this.disarmSleepTimer();
     this.chapterEndTarget = this.nextChapterStart(this.currentTime());
@@ -732,16 +692,7 @@ export class AudioReader implements OnDestroy, IReader {
     }, 5000);
   }
 
-  toggleSleepMenu() {
-    this.playbackMenuOpen.update((v) => !v);
-  }
-
-  closePlaybackMenu() {
-    this.playbackMenuOpen.set(false);
-  }
-
   selectSleepTimer(minutes: number | null) {
-    this.closePlaybackMenu();
     this.sleepStatusMessage.set(null);
     // Either preset replaces whatever was armed, including the chapter mode.
     this.disarmSleepTimer();
@@ -798,22 +749,6 @@ export class AudioReader implements OnDestroy, IReader {
     this.sleepStatusTimeout = window.setTimeout(() => {
       this.sleepStatusMessage.set(null);
     }, 5000);
-  }
-
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent) {
-    if (!this.playbackMenuOpen()) return;
-    const target = event.target as HTMLElement;
-    if (!target.closest('.playback-selector')) {
-      this.closePlaybackMenu();
-    }
-  }
-
-  @HostListener('document:keydown.escape')
-  onKeydownEscape() {
-    if (this.playbackMenuOpen()) {
-      this.closePlaybackMenu();
-    }
   }
 
   startProgressTracking() {

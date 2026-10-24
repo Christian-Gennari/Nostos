@@ -2,6 +2,7 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  ViewChild,
   Injector,
   OnDestroy,
   afterNextRender,
@@ -22,6 +23,7 @@ import { RangeDirective } from '../../ui/range/range.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { ThemePickerComponent } from '../../ui/theme-picker/theme-picker.component';
+import { SettingsPopoverComponent, type SettingsPopoverDismissal } from '../../ui/settings-popover/settings-popover.component';
 import { SoundPack, TypewriterSound, TypewriterSounds } from '../../ui/markdown-editor/typewriter-sounds';
 import {
   FONT_SIZE_RANGE,
@@ -63,19 +65,15 @@ const STANDARD_WIDTH_VALUE = 'standard';
 @Component({
   selector: 'app-studio-page-settings',
   standalone: true,
-  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent, InputDirective],
+  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent, InputDirective, SettingsPopoverComponent],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,
-  host: {
-    '[style.--ps-top.px]': 'top()',
-    '(window:resize)': 'viewport.update((n) => n + 1)',
-    '(keydown.escape)': 'escape($event)',
-  },
 })
 export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   readonly prefs = inject(StudioPreferencesService);
-  private readonly host = inject(ElementRef<HTMLElement>);
+  /** The panel itself: it renders in the overlay, outside this component's host. */
+  @ViewChild('panel', { static: true }) private readonly panel!: ElementRef<HTMLElement>;
   private readonly injector = inject(Injector);
 
   /** The Aa button: the popover hangs under it, and a click on it is its own toggle. */
@@ -90,7 +88,8 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   readonly citedBookIds = input<readonly string[]>([]);
   /** A book's details were saved here; its citations follow. */
   readonly bookUpdated = output<Book>();
-  readonly closed = output<void>();
+  /** Escape or a press outside: the Studio closes the panel (and on Escape goes back to the page). */
+  readonly closed = output<SettingsPopoverDismissal>();
 
   readonly view = signal<'main' | 'fonts' | 'citations'>('main');
 
@@ -149,25 +148,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   /** Plays a sample from the settings themselves; made on the first preview. */
   private soundPreview: TypewriterSounds | null = null;
 
-  /** Bumped on resize, so the popover follows its button when the header reflows. */
-  readonly viewport = signal(0);
-
-  /** Under the anchor; the stylesheet's own fallback when there is none. */
-  readonly top = computed(() => {
-    this.viewport();
-    const rect = this.anchor()?.getBoundingClientRect();
-    return rect ? Math.round(rect.bottom + 6) : null;
-  });
-
-  /** A press outside the popover (and outside its own button) closes it. */
-  private readonly onPointerDown = (event: PointerEvent) => {
-    const target = event.target as Node | null;
-    if (!target || this.host.nativeElement.contains(target) || this.anchor()?.contains(target)) return;
-    this.closed.emit();
-  };
-
   ngAfterViewInit(): void {
-    document.addEventListener('pointerdown', this.onPointerDown, true);
     if (this.startView() === 'citations') {
       this.openCitations(true);
       return;
@@ -177,7 +158,6 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    document.removeEventListener('pointerdown', this.onPointerDown, true);
     this.soundPreview?.dispose();
   }
 
@@ -222,7 +202,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     const next = STUDIO_FONTS[(index + step + STUDIO_FONTS.length) % STUDIO_FONTS.length];
     this.prefs.update({ font: next.value });
     queueMicrotask(() =>
-      (this.host.nativeElement.querySelector(`[data-font-option="${next.value}"]`) as HTMLElement | null)?.focus(),
+      (this.panel.nativeElement.querySelector(`[data-font-option="${next.value}"]`) as HTMLElement | null)?.focus(),
     );
   }
 
@@ -321,7 +301,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
     const next = CITATION_STYLES[(index + step + CITATION_STYLES.length) % CITATION_STYLES.length];
     this.prefs.update({ citationStyle: next.id });
     queueMicrotask(() =>
-      (this.host.nativeElement.querySelector(`[data-citation-option="${next.id}"]`) as HTMLElement | null)?.focus(),
+      (this.panel.nativeElement.querySelector(`[data-citation-option="${next.id}"]`) as HTMLElement | null)?.focus(),
     );
   }
 
@@ -370,7 +350,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   private focusAfterRender(selector: string, fallback: string | null = null): void {
     afterNextRender(
       () => {
-        const root = this.host.nativeElement;
+        const root = this.panel.nativeElement;
         ((root.querySelector(selector) ?? (fallback ? root.querySelector(fallback) : null)) as HTMLElement | null)?.focus();
       },
       { injector: this.injector },
@@ -378,7 +358,7 @@ export class StudioPageSettingsComponent implements AfterViewInit, OnDestroy {
   }
 
   private focusTheme(): void {
-    const root = this.host.nativeElement;
+    const root = this.panel.nativeElement;
     ((root.querySelector('.tp-swatch[aria-checked="true"]') ?? root.querySelector('.tp-swatch')) as HTMLElement | null)?.focus();
   }
 }

@@ -25,6 +25,7 @@ import { ModalShell } from '../modal-shell/modal-shell.component';
 import { ButtonComponent } from '../button/button.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
+import { RangeDirective } from '../range/range.directive';
 import { PassageViewerRequest, PassageViewerService } from './passage-viewer.service';
 import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
 import { PdfDocument, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
@@ -52,7 +53,7 @@ let libronInjected = false;
 @Component({
   selector: 'app-passage-viewer',
   standalone: true,
-  imports: [ModalShell, ButtonComponent, IconButtonComponent, NostosIconComponent],
+  imports: [ModalShell, ButtonComponent, IconButtonComponent, NostosIconComponent, RangeDirective],
   templateUrl: './passage-viewer.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './passage-viewer.component.css',

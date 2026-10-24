@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { NOSTOS_MENU } from '../menu/menu.component';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { THEMES, ThemeName, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
 import { BadgeComponent } from '../badge/badge.component';
@@ -33,6 +33,8 @@ import { QuoteBlockComponent } from '../quote-block/quote-block.component';
 import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import type { HighlightColour } from '../../reader/highlight-colours';
+import { PlaybackSpeedMenuComponent } from '../playback-speed-menu/playback-speed-menu.component';
+import { SettingsPopoverComponent } from '../settings-popover/settings-popover.component';
 
 /**
  * Inspectable reference fixture for Nostos UI v1.
@@ -68,6 +70,8 @@ import type { HighlightColour } from '../../reader/highlight-colours';
     LoadingIndicatorComponent,
     DropdownComponent,
     ...NOSTOS_MENU,
+    PlaybackSpeedMenuComponent,
+    SettingsPopoverComponent,
     SwitchComponent,
     ViewToggleComponent,
     TextareaDirective,
@@ -102,6 +106,12 @@ export class UiCatalogueComponent {
   readonly cataloguePen = signal<HighlightColour>('amber');
   readonly catalogueTopics = signal(['Virtue', 'Habit', 'The good life']);
   readonly noTopicsYet = NO_TOPICS_YET;
+  readonly catalogueSettingsOpen = signal(false);
+  readonly catalogueSettingsButton = viewChild('settingsTrigger', { read: ElementRef<HTMLElement> });
+  readonly catalogueChoices = ['Recent', 'Title', 'Author'];
+  readonly catalogueChoice = signal('Recent');
+  readonly catalogueRate = signal(1);
+  readonly catalogueReadAloudRate = signal(1);
   readonly catalogueDropdownValue = signal('epub');
   readonly dropdownOptions = [
     { value: 'epub', label: 'EPUB' },
