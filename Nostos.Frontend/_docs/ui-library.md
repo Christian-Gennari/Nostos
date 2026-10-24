@@ -50,7 +50,8 @@ ARIA contract, geometry, or state model is part of the product surface.
 - A book without an author shows **Unknown author** (`UNKNOWN_AUTHOR` in `book-format.ts`).
 - A book without a title shows **Unknown book** (`UNKNOWN_BOOK`). Formats are named once, by
   `formatOf()` and `BOOK_FORMAT_LABEL` in `book-format.ts`: Audiobook, **EPUB** (the ebook file
-  format, never “eBook” or “E-book”), PDF, Physical.
+  format, never “eBook” or “E-book”), PDF, Physical. A filter or file slot that covers EPUB
+  and PDF together is **Ebooks** / **Ebook** (`EBOOK_CATEGORY_LABEL`); “EPUB” only means that format.
 - `core/format.ts` holds the shared `plural()`, `formatAudioTime()` and `formatFileSize()`
   (B, KB, MB, GB). Do not write another one.
 - Product names: **Nostos Cloud**, “self-hosted” (never `SelfHosted` in copy), Studio, Brain,

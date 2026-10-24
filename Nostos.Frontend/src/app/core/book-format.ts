@@ -21,6 +21,13 @@ export interface BookFormat {
 }
 
 /**
+ * The category covering EPUB and PDF together (a source filter, a file slot that
+ * takes either). Say "EPUB" only where it means exactly that format.
+ */
+export const EBOOK_CATEGORY_LABEL = 'Ebook';
+export const EBOOK_CATEGORY_LABEL_PLURAL = 'Ebooks';
+
+/**
  * The one way to name a book's format: Audiobook, EPUB, PDF, Physical. A file
  * extension names any other ebook type ("MOBI"); an ebook with no file says EPUB.
  */
