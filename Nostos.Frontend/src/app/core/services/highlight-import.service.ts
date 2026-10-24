@@ -2,6 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { BookFormatConcept } from '../book-format';
+import type { NoteSearchHit } from '../dtos/note.dtos';
 
 /**
  * How sure the server is that a book on the device is a book in the library.
@@ -130,6 +131,15 @@ export class HighlightImportService {
 
   recent(): Observable<HighlightImportBatch[]> {
     return this.http.get<HighlightImportBatch[]>('/api/notes/imports/batches');
+  }
+
+  /**
+   * The imported highlights a starter draft quotes (issue #1220), at most
+   * three: from these imports, or with none given, the library's latest.
+   */
+  starterPassages(batchIds: readonly string[] = []): Observable<NoteSearchHit[]> {
+    const params: Record<string, string> = batchIds.length ? { batchIds: batchIds.join(',') } : {};
+    return this.http.get<NoteSearchHit[]>('/api/notes/imports/starter', { params });
   }
 
   /** Removes the notes one import created. */

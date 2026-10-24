@@ -111,6 +111,19 @@ export function footnoteInsertPosition(doc: PMNode): number {
   return trailingBibliographyStart(doc) ?? doc.content.size;
 }
 
+/**
+ * Where the writing's own text ends (issue #1220): before its footnotes and a
+ * bibliography at the end, so a caret put there writes on from the last
+ * paragraph, not inside the notes.
+ */
+export function bodyEndPosition(doc: PMNode): number {
+  const definitions = footnoteDefinitions(doc);
+  const notes = definitions.length ? definitions[0].pos : null;
+  const bibliography = trailingBibliographyStart(doc);
+  const ends = [notes, bibliography].filter((pos): pos is number => pos !== null);
+  return ends.length ? Math.min(...ends) : doc.content.size;
+}
+
 /** Where a bibliography at the end of the writing starts (its heading, when it has one). */
 export function trailingBibliographyStart(doc: PMNode): number | null {
   const positions: number[] = [];

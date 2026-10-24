@@ -29,6 +29,8 @@ import { SearchFieldComponent } from '../search-field/search-field.component';
 import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../../core/book-format';
 import { ChoiceRowComponent } from '../choice-row/choice-row.component';
 import { plural } from '../../core/format';
+import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
+import { answerStarterOffer } from '../../writing-studio/starter-draft/starter-draft';
 
 type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
 
@@ -100,6 +102,7 @@ export class HighlightImportModal {
   private readonly service = inject(HighlightImportService);
   private readonly booksService = inject(BooksService);
   private readonly router = inject(Router);
+  private readonly starter = inject(StarterDraftService);
 
   readonly isOpen = this.service.isOpen;
   readonly stage = signal<Stage>('pick');
@@ -151,6 +154,13 @@ export class HighlightImportModal {
   readonly duplicateCount = computed(() => this.sum(this.imported(), 'duplicateCount'));
 
   readonly recent = signal<HighlightImportBatch[]>([]);
+
+  /** A starter draft from what was just imported (issue #1220). */
+  readonly startingDraft = signal(false);
+  readonly draftError = signal<string | null>(null);
+  readonly canStartDraft = computed(
+    () => this.importedCount() > 0 && this.batchIds().length > 0 && this.undone() === null,
+  );
 
   readonly headline = computed(() => {
     const removed = this.undone();
@@ -259,6 +269,7 @@ export class HighlightImportModal {
     this.batchIds.set([]);
     this.undone.set(null);
     this.undoError.set(null);
+    this.draftError.set(null);
     this.fileCount.set(files.length);
     this.stage.set('reading');
 
@@ -415,6 +426,29 @@ export class HighlightImportModal {
     this.loadRecent();
   }
 
+  /**
+   * Opens the Studio on a new draft that quotes three of the passages just
+   * imported, with their sources (issue #1220).
+   */
+  async startDraft(): Promise<void> {
+    if (this.startingDraft() || this.undoing() || !this.canStartDraft()) return;
+    this.startingDraft.set(true);
+    this.draftError.set(null);
+    let writingId: string | null = null;
+    try {
+      writingId = await this.starter.create(await this.starter.passages(this.batchIds()));
+      if (!writingId) this.draftError.set('None of these highlights has words to quote.');
+    } catch {
+      this.draftError.set('The draft could not be started. Try again.');
+    }
+    this.startingDraft.set(false);
+    if (!writingId) return;
+    // The empty Studio need not offer it again.
+    answerStarterOffer('taken');
+    this.close();
+    void this.router.navigate(['/studio'], { queryParams: { writingId } });
+  }
+
   importAnother(): void {
     this.stage.set('pick');
   }
@@ -426,7 +460,7 @@ export class HighlightImportModal {
   }
 
   close(): void {
-    if (this.busy() || this.undoing()) return;
+    if (this.busy() || this.undoing() || this.startingDraft()) return;
     this.service.close();
     this.stage.set('pick');
     this.rows.set([]);
@@ -434,6 +468,7 @@ export class HighlightImportModal {
     this.failures.set([]);
     this.unimportable.set([]);
     this.undoError.set(null);
+    this.draftError.set(null);
     this.closePicker();
   }
 

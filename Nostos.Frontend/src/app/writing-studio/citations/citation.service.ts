@@ -3,17 +3,21 @@ import { firstValueFrom } from 'rxjs';
 
 import { Book } from '../../core/dtos/book.dtos';
 import { BooksService } from '../../core/services/books.service';
-import type { CitationRef } from '../../ui/markdown-editor/citation.extension';
+import { citationMarkdown, type CitationRef } from '../../ui/markdown-editor/citation.extension';
 import type { CitationRenderer } from '../../ui/markdown-editor/live-citations';
 import { SourceInsertionSource } from '../source-insertion.helpers';
 import { CitationEngine, CitationLocator } from './citation-engine';
 import { CitationStyle, bibliographyHeading } from './citation-styles';
 import { CslItem, bookToCslItem } from './csl-item';
+import { StyledInsertion, styledNote, styledQuote, styledReference } from './styled-insertion';
 
 /** A source the Studio can cite: what it quotes and which book it is from. */
 export interface CitableSource extends SourceInsertionSource {
   bookId?: string | null;
 }
+
+/** What a source goes in as: its quoted words, the writer's note on it, or a bare reference. */
+export type InsertionMode = 'quote' | 'note' | 'reference';
 
 /** A kept source, as far as citations need it: a passage is named in the house format. */
 export interface KeptCitationSource {
@@ -99,6 +103,42 @@ export class CitationService {
     const ref: CitationRef = { book: book.id, page: citationLocator(source)?.page ?? null, src: null, as: role };
     if (!style.file) return houseText(book, ref, (source.passageTitle ?? '').trim() || null);
     return (await this.engine(style)).cite(bookToCslItem(book), citationLocator(source), subsequent);
+  }
+
+  /**
+   * A source as it goes into a writing, a live citation in `style` (issues
+   * #1109, #1157): the one shape every insertion takes, from the `@` palette,
+   * the Reference rail and a starter draft (issue #1220) alike. Null when the
+   * source has no book or the book cannot be cited; the caller then falls
+   * back to plain house text. `subsequent` gives a note style's short form;
+   * `footnoteNumber` is the number a note style's footnote takes.
+   */
+  async insertion(
+    source: CitableSource & { id?: string | null },
+    mode: InsertionMode,
+    style: CitationStyle,
+    subsequent: boolean,
+    footnoteNumber: number,
+  ): Promise<StyledInsertion | null> {
+    if (!source.bookId) return null;
+    let text: string | null = null;
+    try {
+      text = await this.cite(source, style, subsequent, mode);
+    } catch {
+      text = null;
+    }
+    if (!text) return null;
+    const citation = citationMarkdown(text, {
+      book: source.bookId,
+      page: citationLocator(source)?.page ?? null,
+      src: source.id ?? null,
+      as: mode,
+    });
+    if (mode === 'reference') return styledReference(citation, style, footnoteNumber);
+    if (mode === 'note') {
+      return styledNote(source.content, citation, style, footnoteNumber) ?? styledQuote(source.selectedText, citation, style, footnoteNumber);
+    }
+    return styledQuote(source.selectedText, citation, style, footnoteNumber) ?? styledNote(source.content, citation, style, footnoteNumber);
   }
 
   /** The reference list for these books, each entry its own Markdown paragraph. */
