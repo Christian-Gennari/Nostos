@@ -98,6 +98,29 @@ public static partial class WritingCitationIndex
     }
 
     /// <summary>
+    /// <paramref name="content"/> with every live citation replaced by the
+    /// words it was last written with, so nothing of Nostos is left in it
+    /// (the Markdown export of notes, issue #1221). A citation shown as code
+    /// stays as written; every other character is kept.
+    /// </summary>
+    public static string CitationsAsWords(string? content)
+    {
+        var text = content ?? string.Empty;
+        if (!text.Contains(Scheme, StringComparison.Ordinal))
+            return text;
+
+        var code = FencedCodeRegex().Matches(text).Cast<Match>()
+            .Concat(InlineCodeRegex().Matches(text).Cast<Match>())
+            .Select(match => (match.Index, End: match.Index + match.Length))
+            .ToList();
+        return CitationLinkRegex().Replace(text, match =>
+            code.Any(span => match.Index >= span.Index && match.Index < span.End)
+            || ParseHref(match.Groups[2].Value) is null
+                ? match.Value
+                : match.Groups[1].Value);
+    }
+
+    /// <summary>
     /// The notes <paramref name="content"/> cites, once each. A citation with
     /// no <c>src</c> (book only), a bibliography entry (<c>as=bib</c>) and a
     /// <c>src</c> that is not a note id never count.

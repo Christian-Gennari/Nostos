@@ -1,4 +1,5 @@
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Markdown;
 using Nostos.Product.Composition;
 
 namespace Nostos.Backend.Endpoints;
@@ -6,6 +7,7 @@ namespace Nostos.Backend.Endpoints;
 public static class PortabilityEndpoints
 {
     public const string ArchiveContentType = "application/vnd.nostos.portable+zip";
+    public const string MarkdownExportPath = "/api/portability/markdown";
 
     public static IEndpointRouteBuilder MapPortabilityEndpoints(
         this IEndpointRouteBuilder routes,
@@ -25,6 +27,24 @@ public static class PortabilityEndpoints
 
         if (!string.IsNullOrWhiteSpace(policies.PortableExportAuthorizationPolicy))
             export.RequireAuthorization(policies.PortableExportAuthorizationPolicy);
+
+        // Notes, highlights, passages and topics as Markdown (issue #1221): for
+        // reading elsewhere, never imported back. Same door as the archive, so
+        // anyone who may take their library out may take their notes out.
+        var markdown = group.MapGet("/markdown", async (
+            bool? writings,
+            IMarkdownNotesExporter exporter,
+            CancellationToken cancellationToken) =>
+        {
+            var archive = await exporter.ExportAsync(writings ?? true, cancellationToken);
+            return Results.Stream(
+                archive,
+                "application/zip",
+                fileDownloadName: $"nostos-notes-{DateTime.UtcNow:yyyy-MM-dd}.zip");
+        });
+
+        if (!string.IsNullOrWhiteSpace(policies.PortableExportAuthorizationPolicy))
+            markdown.RequireAuthorization(policies.PortableExportAuthorizationPolicy);
 
         group.MapPost("/import", async (
             HttpRequest request,
