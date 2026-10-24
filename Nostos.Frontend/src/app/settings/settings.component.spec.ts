@@ -150,6 +150,17 @@ const portableLibraryServiceMock = {
         }),
       ),
   ),
+  exportNotesMarkdown: vi.fn(
+    (): Observable<HttpResponse<Blob>> =>
+      of(
+        new HttpResponse({
+          body: new Blob(['zip']),
+          headers: new HttpHeaders({
+            'content-disposition': 'attachment; filename="nostos-notes-2026-10-24.zip"',
+          }),
+        }),
+      ),
+  ),
 };
 
 const cloudAuthServiceMock = {
@@ -1431,6 +1442,66 @@ describe('SettingsComponent backup-only surface', () => {
     expect(toastMock.error).toHaveBeenCalledWith('Could not export your Nostos data.');
   });
 
+  it('offers notes as Markdown on SelfHosted and Cloud alike', () => {
+    for (const capabilities of [selfHostedCapabilities, cloudCapabilities]) {
+      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      render();
+      openManageLibraryPage(capabilities);
+
+      const card = fixture.nativeElement.querySelector(
+        '[data-testid="markdown-notes-export-card"]',
+      ) as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.textContent).toContain('Notes as Markdown');
+      expect(card.textContent).toContain('cannot be imported back');
+      expect(
+        (card.querySelector('[data-testid="markdown-notes-export-writings"]') as HTMLInputElement).checked,
+      ).toBe(true);
+      fixture.destroy();
+    }
+  });
+
+  it('downloads the notes zip, with or without writings', () => {
+    portableLibraryServiceMock.exportNotesMarkdown.mockClear();
+    render();
+    openManageLibraryPage();
+
+    const component = fixture.componentInstance;
+    const saveSpy = vi
+      .spyOn(component as unknown as { saveDownload: (blob: Blob, name: string) => void }, 'saveDownload')
+      .mockImplementation(() => {});
+
+    const writings = fixture.nativeElement.querySelector(
+      '[data-testid="markdown-notes-export-writings"]',
+    ) as HTMLInputElement;
+    writings.click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('[data-testid="markdown-notes-export-action"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(portableLibraryServiceMock.exportNotesMarkdown).toHaveBeenCalledWith(false);
+    expect(saveSpy).toHaveBeenCalledWith(expect.any(Blob), 'nostos-notes-2026-10-24.zip');
+    expect(component.notesExportBusy()).toBe(false);
+    expect(toastMock.success).toHaveBeenCalledWith('Your notes are ready.');
+  });
+
+  it('says plainly when the notes export fails', () => {
+    portableLibraryServiceMock.exportNotesMarkdown.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Server error' })),
+    );
+    render();
+    openManageLibraryPage();
+
+    (fixture.nativeElement.querySelector('[data-testid="markdown-notes-export-action"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('[data-testid="markdown-notes-export-card"]') as HTMLElement;
+    const error = card.querySelector('.portable-export-status.is-error') as HTMLElement;
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.textContent).toContain('Nothing was changed');
+    expect(fixture.componentInstance.notesExportBusy()).toBe(false);
+  });
+
   it('keeps the Cloud voice toggle as product intent instead of provider configuration', () => {
     capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
     aiProviderServiceMock.update.mockClear();
@@ -1576,8 +1647,9 @@ describe('SettingsComponent backup-only surface', () => {
     openManageLibraryPage();
     const toggles = fixture.debugElement.queryAll(By.css('input[type="checkbox"]'));
     // Automatic Backup + Include Book Files + the Reading assistant toggle (W1)
-    // + the AI provider card's voice transcription and embeddings toggles.
-    expect(toggles.length).toBe(7);
+    // + the AI provider card's voice transcription and embeddings toggles,
+    // and one plain checkbox: whether the notes export carries writings.
+    expect(toggles.length).toBe(8);
     expect(fixture.debugElement.queryAll(By.css('label.nostos-switch')).length).toBe(7);
     const buttons = fixture.debugElement
       .queryAll(By.css('button'))
@@ -2796,7 +2868,7 @@ describe('SettingsComponent shared library transfer host', () => {
       Array.from(fixture.nativeElement.querySelectorAll('.manage-library-group-title')).map(
         (heading: any) => heading.textContent.trim(),
       );
-    expect(groupTitles()).toEqual(['Protect this installation']);
+    expect(groupTitles()).toEqual(['Protect this installation', 'Take your notes elsewhere']);
     expect(testId('library-transfer-card')).toBeNull();
     expect(testId('library-transfer-host')).toBeNull();
     expect(testId('cloud-portable-export-card')).toBeNull();
@@ -2807,7 +2879,7 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(mock.calls.uploadChunk).toBe(0);
 
     await configure(cloudCapabilities);
-    expect(groupTitles()).toEqual(['Move to another Nostos']);
+    expect(groupTitles()).toEqual(['Move to another Nostos', 'Take your notes elsewhere']);
     expect(testId('library-transfer-card')).toBeNull();
     expect(testId('library-transfer-host')).toBeNull();
     expect(testId('cloud-portable-export-card')).toBeTruthy();
@@ -2822,6 +2894,7 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(groupTitles()).toEqual([
       'Protect this installation',
       'Move to another Nostos',
+      'Take your notes elsewhere',
     ]);
 
     const card = testId('library-transfer-card') as HTMLElement;
@@ -2854,7 +2927,7 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(importFlow().supportsSafeActivation()).toBe(true);
 
     await configure({ ...cloudCapabilities, supportsLibraryMigration: true });
-    expect(groupTitles()).toEqual(['Move to another Nostos']);
+    expect(groupTitles()).toEqual(['Move to another Nostos', 'Take your notes elsewhere']);
     expect(testId('library-transfer-host')).toBeTruthy();
     expect(testId('library-export-flow')).toBeTruthy();
     expect(testId('library-import-flow')).toBeTruthy();

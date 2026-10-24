@@ -130,7 +130,7 @@ Progress is only visible inline in readers. No holistic view of reading habits.
 Highlights are secondary to notes. Users may want to collect highlights without writing notes.
 
 - "Highlights" view per book — shows all highlights without associated notes
-- Bulk highlight export (Markdown, plain text)
+- ~~Bulk highlight export (Markdown, plain text)~~ Shipped in #1221: see 7.2.
 - Optional highlight color coding
 
 ---
@@ -450,12 +450,12 @@ OPDS catalog is read-only. Cannot subscribe to updates from other apps.
 ### 7.2 Export Highlights and Notes
 **Impact:** Medium | **Effort:** Low | **Area:** Export
 
-Cannot export notes/highlights in bulk.
-
-- Export all notes for a book as Markdown
-- Export all highlights as formatted text or Markdown
-- Export all notes across library as JSON
-- Export to Obsidian-compatible format (Markdown files with `[[Concept]]` links)
+**Shipped (#1221).** Settings → Backups & data → **Notes as Markdown**
+downloads a .zip with one Markdown file per book (metadata as YAML front
+matter, highlights, passages and notes in reading order with their
+locations), one file per topic, the Writing Studio's documents if wanted, and
+a README. `[[Topic]]` links are kept, so the folder opens as an Obsidian
+vault. The whole library as data (JSON) is the `.nostos` archive.
 
 ---
 

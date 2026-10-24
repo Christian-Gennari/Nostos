@@ -401,6 +401,7 @@ account-plan rules are outside this public repository.
 | Method | Route | Behavior |
 | --- | --- | --- |
 | GET | /api/portability/export | Streams a .nostos archive. |
+| GET | /api/portability/markdown | Notes, highlights, passages, topics and (unless `writings=false`) writings as a .zip of Markdown files (issue #1221). Never imported back. |
 | POST | /api/portability/import | Reads raw .nostos bytes from the request body and imports only into an empty destination; a populated destination returns 409. |
 
 The single-request import is subject to the SelfHosted Kestrel request-body

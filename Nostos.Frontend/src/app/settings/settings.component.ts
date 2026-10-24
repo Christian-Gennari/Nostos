@@ -70,6 +70,7 @@ import {
   AlignmentTranscriptionSectionUpdate,
 } from '../core/dtos/ai-provider.dtos';
 import { NoticeComponent } from '../ui/notice/notice.component';
+import { CheckboxDirective } from '../ui/check/check.directive';
 import { ProgressComponent } from '../ui/progress/progress.component';
 
 const SLOW_STEP_THRESHOLD_MS = 30_000;
@@ -272,6 +273,7 @@ const defaultProgress: BackupProgress = {
     ExternalMediaSettingsComponent,
     LibraryTransferHostComponent,
     SegmentedComponent,
+    CheckboxDirective,
   ],
   templateUrl: './settings.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -772,6 +774,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly portableExportBusy = signal(false);
   readonly portableExportProgress = signal<number | null>(null);
   readonly portableExportError = signal<string | null>(null);
+
+  // --- Notes as Markdown (issue #1221), on every deployment ---------------
+  readonly notesExportBusy = signal(false);
+  readonly notesExportError = signal<string | null>(null);
+  readonly notesExportWritings = signal(true);
 
   readonly managedAiUsage = signal<CloudManagedAiUsage | null>(null);
   readonly managedAiUsageFailed = signal(false);
@@ -1604,6 +1611,50 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
+  exportNotesAsMarkdown(): void {
+    if (this.notesExportBusy()) return;
+
+    this.notesExportBusy.set(true);
+    this.notesExportError.set(null);
+    this.portableLibrary.exportNotesMarkdown(this.notesExportWritings()).subscribe({
+      next: (response) => {
+        this.notesExportBusy.set(false);
+        if (!response.body || response.body.size === 0) {
+          this.notesExportError.set('Nostos returned an empty export. Try again.');
+          return;
+        }
+        this.saveDownload(response.body, this.notesExportFileName(response.headers.get('content-disposition')));
+        this.toast.success('Your notes are ready.');
+      },
+      error: (error) => {
+        this.notesExportBusy.set(false);
+        this.notesExportError.set(
+          error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403)
+            ? 'Your session no longer allows this export. Sign in again, then retry.'
+            : 'Nostos could not export your notes. Nothing was changed. Try again.',
+        );
+      },
+    });
+  }
+
+  private notesExportFileName(contentDisposition: string | null): string {
+    const match = contentDisposition?.match(/filename="?([^";]+)"?/iu);
+    const fileName = match?.[1]?.trim();
+    return fileName?.toLowerCase().endsWith('.zip') ? fileName : 'nostos-notes.zip';
+  }
+
+  private saveDownload(blob: Blob, fileName: string): void {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), PORTABLE_EXPORT_URL_LIFETIME_MS);
+  }
+
   private savePortableArchive(blob: Blob | null, contentDisposition: string | null): void {
     if (!blob) {
       this.portableExportBusy.set(false);
@@ -1613,15 +1664,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = this.portableExportFileName(contentDisposition);
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), PORTABLE_EXPORT_URL_LIFETIME_MS);
+    this.saveDownload(blob, this.portableExportFileName(contentDisposition));
   }
 
   private portableExportFileName(contentDisposition: string | null): string {

@@ -31,4 +31,18 @@ describe('PortableLibraryService', () => {
 
     request.flush(new Blob(['portable']));
   });
+
+  it('asks for the notes as Markdown, saying whether writings come too', () => {
+    service.exportNotesMarkdown(true).subscribe();
+    service.exportNotesMarkdown(false).subscribe();
+
+    const [withWritings, without] = http.match((request) => request.url === '/api/portability/markdown');
+    expect(withWritings.request.method).toBe('GET');
+    expect(withWritings.request.responseType).toBe('blob');
+    expect(withWritings.request.params.get('writings')).toBe('true');
+    expect(without.request.params.get('writings')).toBe('false');
+
+    withWritings.flush(new Blob(['zip']));
+    without.flush(new Blob(['zip']));
+  });
 });

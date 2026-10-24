@@ -95,9 +95,11 @@ The shipped portability API exposes:
 ```text
 GET  /api/portability/export
 POST /api/portability/import
+GET  /api/portability/markdown?writings=true|false
 ```
 
 - `GET /api/portability/export` streams a `.nostos` archive using `application/vnd.nostos.portable+zip`.
+- `GET /api/portability/markdown` returns the notes as a `.zip` of Markdown files (`application/zip`, issue #1221). It is for reading elsewhere and is never imported back; see [Notes as Markdown](#notes-as-markdown).
 - `POST /api/portability/import` accepts an archive and returns a structured import result or typed validation error.
 - A non-empty destination returns HTTP 409 (`destination_not_empty`).
 
@@ -746,3 +748,47 @@ The following normative constants are defined in `MigrationContractLimits`:
 | `WorkerLeaseDurationMinutes` | 5 | Default worker lease duration, requested as a `TimeSpan` |
 | `SessionExpiryHours` | 24 | Transfer session lifetime |
 | `RecoveryRetentionDays` | 7 | Mandatory recovery snapshot retention |
+
+## Notes as Markdown
+
+**Settings → Backups & data → Take your notes elsewhere → Notes as Markdown** downloads
+`nostos-notes-<date>.zip`, on SelfHosted and Cloud alike. It is not a transfer
+format: nothing reads it back. It is the copy of your notes other tools read.
+
+```text
+Nostos notes/
+  README.md          what is where, in a few paragraphs
+  Books/<title>.md   one per book that has notes
+  Topics/<name>.md   one per topic
+  Writings/…         the Writing Studio's documents, in their folders (optional)
+```
+
+- **A book's file** starts with YAML front matter: `title`, `subtitle`,
+  `authors` (a list, split the way citations split them), `translator`,
+  `editor`, `narrator`, `year`, `publisher`, `isbn` or `asin`, `format`
+  (EPUB, PDF, Audiobook, Paper book), `notes` and `nostos_id`. Its highlights,
+  passages and notes follow in reading order (EPUB position, then page, then
+  time; anything without a place last, by date). Each has its location as a
+  heading, the book's words as a quote, the reader's own words as written,
+  and a line with its kind, date and, for an EPUB, the CFI.
+- **Locations:** a PDF page or an audiobook time only when the reader verified
+  it, an audiobook time with its chapter when the recording has chapters, an
+  EPUB position as "Section *n* of the book" plus its CFI, a typed paper-book
+  page as "(as noted)", and KOReader and Kobo imports in their own terms.
+- **Links:** `[[Topic]]` in a note is kept as written, so Obsidian and other
+  wiki-style editors resolve it to `Topics/<name>.md`. A topic file links back
+  to each book as `[[Books/<file>|<title>]]`. Topics take their file names
+  first, so a book never takes a topic's name; a topic name a file cannot hold
+  (`Either/or`) is written to a nearby name and kept as its `aliases` entry.
+- **Writings:** each document's Markdown with every live citation replaced by
+  the words it reads as. Footnotes stay Pandoc `[^n]` notes. For a typeset copy
+  with a bibliography, use the Studio's own export.
+- **File names** follow the Studio export's rules (Windows, macOS and Linux
+  accept them; Unicode stays) and also drop `# ^ [ ] |`, which a wikilink would
+  read as syntax. Names are unique ignoring case and are handed out oldest
+  book first, so the same library exports to the same names and a new book
+  never renames an old one.
+- **Size:** the server reads one book's notes at a time and writes the zip to a
+  temporary file that is deleted when the download ends, so a failure is an
+  ordinary error response rather than a truncated download. Books without
+  notes, book files and covers are left out; the `.nostos` archive has them.

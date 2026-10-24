@@ -1946,6 +1946,67 @@
       </section>
       </section>
             }
+
+      <section class="manage-library-group" aria-labelledby="manage-library-notes-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-notes-heading"
+      >
+        Take your notes elsewhere
+      </h2>
+      <!-- Issue #1221: notes for reading in other tools. Not a backup and
+           not a transfer; it is never imported back. -->
+      <section class="settings-card" data-testid="markdown-notes-export-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Notes as Markdown</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Your notes, highlights and passages</span>
+              <span class="label-desc">Download a .zip of plain Markdown files: one for each book, with its details and your notes in reading order, and one for each topic. [[Topic]] links stay links, so the folder opens as an Obsidian vault. It is for reading elsewhere and cannot be imported back.</span>
+              <label class="notes-export-option">
+                <input
+                  type="checkbox"
+                  appCheckbox
+                  data-testid="markdown-notes-export-writings"
+                  [checked]="notesExportWritings()"
+                  [disabled]="notesExportBusy()"
+                  (change)="notesExportWritings.set($any($event.target).checked)"
+                >
+                <span class="label-desc">Include my writings</span>
+              </label>
+              @if (notesExportBusy()) {
+                <span class="label-desc portable-export-status" aria-live="polite">Preparing your notes…</span>
+              }
+              @if (notesExportError(); as exportError) {
+                <span class="label-desc portable-export-status is-error" role="alert">{{ exportError }}</span>
+              }
+            </div>
+
+            <button
+              appButton
+              variant="secondary"
+              class="portable-export-action"
+              data-testid="markdown-notes-export-action"
+              [disabled]="notesExportBusy()"
+              [busy]="notesExportBusy()"
+              (click)="exportNotesAsMarkdown()"
+            >
+              @if (notesExportBusy()) {
+                Exporting…
+              } @else {
+                <nostos-icon name="download-simple" [size]="16"></nostos-icon>
+                Export notes
+              }
+            </button>
+          </div>
+        </div>
+      </section>
+      </section>
             </div>
           </section>
           }

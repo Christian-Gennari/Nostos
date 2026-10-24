@@ -264,6 +264,8 @@ public static class NostosProductComposition
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
+        services.TryAddScoped<Nostos.Backend.Services.Portability.Markdown.IMarkdownNotesExporter,
+            Nostos.Backend.Services.Portability.Markdown.MarkdownNotesExporter>();
         services.TryAddScoped<IManagedBackupCatalog, NotSupportedManagedBackupCatalog>();
         services.TryAddScoped<IManagedBackupRestorer, NotSupportedManagedBackupRestorer>();
         services.TryAddScoped<IMigrationJobStore, EfMigrationJobStore>();
