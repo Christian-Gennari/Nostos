@@ -1,0 +1,24 @@
+services:
+  # One-shot helper: the app-data folder is created as root, but Nostos runs as
+  # the image's non-root user (UID 1654). This hands the folder to that user
+  # and exits; it does not touch files inside the folder.
+  nostos-init:
+    image: ghcr.io/christian-gennari/nostos:v2026.10.18
+    user: "0:0"
+    entrypoint: ["chown", "1654:1654", "/data"]
+    restart: "no"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+  nostos:
+    image: ghcr.io/christian-gennari/nostos:v2026.10.18
+    depends_on:
+      nostos-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+      - ${ROOT_FOLDER_HOST}/media/data/books:/external/media:ro
+    x-runtipi:
+      internal_port: 8080
+      is_main: true
+x-runtipi:
+  schema_version: 2
