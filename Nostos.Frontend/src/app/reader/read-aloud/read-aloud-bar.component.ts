@@ -1,8 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import type { ReadAloudServerVoice } from '../../core/services/read-aloud.service';
+import { ButtonComponent } from '../../ui/button/button.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { NOSTOS_MENU } from '../../ui/menu/menu.component';
+import { PlaybackSpeedMenuComponent } from '../../ui/playback-speed-menu/playback-speed-menu.component';
 import { ReadAloudController } from './read-aloud-controller';
 import { READ_ALOUD_RATES } from './read-aloud.types';
 
@@ -37,7 +39,7 @@ export function readAloudVoiceLabel(voice: ReadAloudServerVoice, all: readonly R
 @Component({
   selector: 'app-read-aloud-bar',
   standalone: true,
-  imports: [IconButtonComponent, NostosIconComponent, ...NOSTOS_MENU],
+  imports: [ButtonComponent, IconButtonComponent, NostosIconComponent, PlaybackSpeedMenuComponent, ...NOSTOS_MENU],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './read-aloud-bar.component.html',
   styleUrl: './read-aloud-bar.component.css',
@@ -78,7 +80,6 @@ export class ReadAloudBarComponent {
     });
   }
 
-  readonly rateLabel = computed(() => formatRate(this.controller.rate()));
   readonly toggleLabel = computed(() => (this.controller.playing() ? 'Pause reading' : 'Resume reading'));
 
   /** What is speaking now: the device voice after a fallback, whatever was chosen. */
@@ -91,10 +92,6 @@ export class ReadAloudBarComponent {
   label(voice: ReadAloudServerVoice): string {
     return readAloudVoiceLabel(voice, this.voices());
   }
-
-  formatRate(rate: number): string {
-    return formatRate(rate);
-  }
 }
 
 function languageName(tag: string): string {
@@ -103,8 +100,4 @@ function languageName(tag: string): string {
   } catch {
     return tag;
   }
-}
-
-function formatRate(rate: number): string {
-  return `${rate}×`;
 }

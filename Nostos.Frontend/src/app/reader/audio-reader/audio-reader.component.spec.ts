@@ -372,25 +372,49 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
     component = fixture.componentInstance;
   });
 
-  it('offers a short preset list, with a fine step beside it', () => {
+  const speedTrigger = (): HTMLButtonElement =>
+    fixture.nativeElement.querySelector('[data-testid="audio-speed"] [data-testid="playback-speed-trigger"]');
+  const openSpeedMenu = () => {
+    speedTrigger().click();
+    fixture.detectChanges();
+  };
+  const overlayButton = (testId: string): HTMLButtonElement =>
+    document.querySelector(`[data-testid="${testId}"]`) as HTMLButtonElement;
+
+  afterEach(() => document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove()));
+
+  it('offers a short preset list, with a fine step beside it (issue #1200)', () => {
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.detectChanges();
     // Issue #227 §2: nine entries was too much choice for a once-a-session control.
-    expect(component.availableRates.length).toBeLessThanOrEqual(6);
     expect(component.availableRates).toEqual([0.8, 1, 1.25, 1.5, 2]);
 
-    component.setRate(1);
-    component.nudgeRate(0.05);
+    openSpeedMenu();
+    const choices = Array.from(document.querySelectorAll('[data-testid="playback-speed-menu"] [role="menuitemradio"]'));
+    expect(choices.map((el) => el.textContent?.trim())).toEqual(['0.8×', '1×', '1.25×', '1.5×', '2×']);
+
+    overlayButton('playback-speed-faster').click();
+    fixture.detectChanges();
     expect(component.currentRate()).toBe(1.05);
-    component.nudgeRate(-0.05);
+    overlayButton('playback-speed-slower').click();
+    fixture.detectChanges();
     expect(component.currentRate()).toBe(1);
   });
 
   it('clamps the fine step to the supported range', () => {
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.detectChanges();
     component.setRate(3);
-    component.nudgeRate(0.05);
+    fixture.detectChanges();
+    openSpeedMenu();
+    overlayButton('playback-speed-faster').click();
+    fixture.detectChanges();
     expect(component.currentRate()).toBe(3);
 
     component.setRate(0.5);
-    component.nudgeRate(-0.05);
+    fixture.detectChanges();
+    overlayButton('playback-speed-slower').click();
+    fixture.detectChanges();
     expect(component.currentRate()).toBe(0.5);
   });
 
@@ -398,7 +422,7 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
     fixture.componentRef.setInput('bookId', 'book-42');
     fixture.detectChanges();
 
-    component.selectRate(2);
+    component.setRate(2);
     expect(component.currentRate()).toBe(2);
     expect(localStorage.getItem('nostos.audio-rate')).toBe('2');
     expect(localStorage.getItem('nostos.audio-rate.book-42')).toBeNull();
@@ -477,7 +501,10 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
   });
 
   it('writes the multiplication sign, not the letter x', () => {
-    expect(component.formatRate(1.25)).toBe('1.25×');
+    fixture.componentRef.setInput('bookId', 'book-1');
+    component.setRate(1.25);
+    fixture.detectChanges();
+    expect(speedTrigger().textContent?.trim()).toBe('1.25×');
   });
 
   it('jumps between chapters with next/prev', () => {
@@ -543,7 +570,14 @@ describe('AudioReader sleep timer (issue #47)', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
   });
+
+  const sleepMenu = (): HTMLElement | null => document.querySelector('[data-testid="audio-sleep-menu"]');
+  const openSleepMenu = () => {
+    (fixture.nativeElement.querySelector('[data-testid="audio-sleep-trigger"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+  };
 
   it('arms a preset: sets the timer state and shows the remaining time', () => {
     expect(mockPlayer(component)).toBeDefined();
@@ -663,28 +697,20 @@ describe('AudioReader sleep timer (issue #47)', () => {
     expect(component.sleepStatusMessage()).toBeNull();
   });
 
-  it('offers the speed presets and the Off/15/30/45/60 presets in one menu', () => {
-    expect(component.playbackMenuOpen()).toBe(false);
+  it('offers the Off/15/30/45/60 presets in a menu beside the speed (issue #1200)', () => {
+    openSleepMenu();
 
-    component.toggleSleepMenu();
+    const menu = sleepMenu();
+    expect(menu?.getAttribute('role')).toBe('menu');
+    const options = Array.from(menu!.querySelectorAll('.sleep-option'));
+    expect(options.map((el) => el.textContent?.trim())).toEqual(['Off', '15 min', '30 min', '45 min', '60 min']);
+    expect(options.every((el) => el.getAttribute('role') === 'menuitemradio')).toBe(true);
+    expect(options[0].getAttribute('aria-checked')).toBe('true');
+
+    // Choosing closes the menu and arms the chosen preset.
+    (options[3] as HTMLButtonElement).click();
     fixture.detectChanges();
-
-    const menu = fixture.nativeElement.querySelector('.playback-menu') as Element | null;
-    expect(menu).not.toBeNull();
-    const labels = Array.from(menu!.querySelectorAll('.sleep-option')).map((el: Element) =>
-      el.textContent?.trim(),
-    );
-    expect(labels).toEqual(['Off', '15 min', '30 min', '45 min', '60 min']);
-    // Speed lives in the same menu now (issue #227 §3): the presets and the fine step.
-    const rateOptions = Array.from(menu!.querySelectorAll('.rate-options [role="radio"]')).map((el: Element) =>
-      el.textContent?.trim(),
-    );
-    expect(rateOptions).toEqual(['0.8×', '1×', '1.25×', '1.5×', '2×']);
-    expect(menu!.querySelectorAll('.rate-step').length).toBe(2);
-
-    // Re-selecting closes the menu and arms the chosen preset.
-    component.selectSleepTimer(45);
-    expect(component.playbackMenuOpen()).toBe(false);
+    expect(sleepMenu()).toBeNull();
     expect(component.sleepTimerMinutes()).toBe(45);
   });
 
@@ -798,18 +824,17 @@ describe('AudioReader sleep timer (issue #47)', () => {
   it('offers Chapter end in the menu only when the file has chapters', () => {
     fixture.componentRef.setInput('book', makeBook());
     fixture.detectChanges();
-    component.toggleSleepMenu();
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="audio-sleep-chapter-end"]')).toBeNull();
+    openSleepMenu();
+    expect(document.querySelector('[data-testid="audio-sleep-chapter-end"]')).toBeNull();
+    openSleepMenu(); // the trigger toggles: this closes it
 
     fixture.componentRef.setInput(
       'book',
       makeBook({ chapters: [{ title: 'One', startTime: 0 }] }),
     );
     fixture.detectChanges();
-    expect(
-      fixture.nativeElement.querySelector('[data-testid="audio-sleep-chapter-end"]')
-    ).not.toBeNull();
+    openSleepMenu();
+    expect(document.querySelector('[data-testid="audio-sleep-chapter-end"]')).not.toBeNull();
   });
 });
 

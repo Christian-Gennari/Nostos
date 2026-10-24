@@ -1,0 +1,76 @@
+:host {
+  display: inline-flex;
+}
+
+/* A capsule, like the chips it sits with. Its height is the caller's: a
+   player bar used without looking sets
+   `--playback-speed-trigger-height: var(--control-h-touch)` on the host. */
+.playback-speed-menu__trigger {
+  position: relative;
+  min-height: var(--playback-speed-trigger-height, var(--control-h-xs));
+  border-radius: var(--radius-pill);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The value keeps one width as it changes (1× to 1.25×), so the bar around it
+   does not shift with every step. */
+.playback-speed-menu__value {
+  min-width: 2.6em;
+  text-align: center;
+}
+
+.playback-speed-menu__caret {
+  color: var(--color-text-light);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+
+.playback-speed-menu__trigger[aria-expanded='true'] .playback-speed-menu__caret {
+  transform: rotate(180deg);
+}
+
+.playback-speed-menu.nostos-menu {
+  min-width: 9.5rem;
+}
+
+/* "− 1.05× +": the two steps are menu items, the rate between them is text. */
+.playback-speed-menu__fine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.playback-speed-menu__step {
+  justify-content: center;
+  width: 34px;
+  padding: 0;
+}
+
+.playback-speed-menu__readout {
+  flex: 1 1 auto;
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (pointer: coarse) {
+  /* The touch floor without a fat capsule: the hit area grows past it,
+     invisibly, to at least 44px. */
+  .playback-speed-menu__trigger::after {
+    content: '';
+    position: absolute;
+    inset: min(-3px, calc((var(--playback-speed-trigger-height, var(--control-h-xs)) - var(--control-h-touch)) / 2)) -3px;
+  }
+
+  .playback-speed-menu__step {
+    width: var(--control-h-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playback-speed-menu__caret {
+    transition: none;
+  }
+}

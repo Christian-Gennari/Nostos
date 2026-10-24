@@ -109,4 +109,25 @@ describe('ReadAloudBarComponent', () => {
     expect(bar().hasAttribute('inert')).toBe(true);
     expect(bar().getAttribute('aria-hidden')).toBe('true');
   });
+
+  it('chooses the speed in the shared playback-speed menu, its range the voices support (issue #1200)', () => {
+    const { fixture } = render();
+    const controller = TestBed.inject(ReadAloudController) as unknown as { setRate: (r: number) => void };
+    controller.setRate = vi.fn();
+    const trigger = fixture.nativeElement.querySelector(
+      '[data-testid="read-aloud-rate"] [data-testid="playback-speed-trigger"]',
+    ) as HTMLButtonElement;
+    expect(trigger.getAttribute('aria-label')).toBe('Reading speed: 1×. Change speed');
+
+    trigger.click();
+    fixture.detectChanges();
+    const choices = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'));
+    expect(choices.map((c) => c.textContent?.trim())).toEqual(['0.75×', '1×', '1.25×', '1.5×']);
+    // Read aloud has no fine step: its voices take these rates only.
+    expect(document.querySelector('[data-testid="playback-speed-faster"]')).toBeNull();
+
+    choices[2].click();
+    expect(controller.setRate).toHaveBeenCalledWith(1.25);
+    document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
+  });
 });

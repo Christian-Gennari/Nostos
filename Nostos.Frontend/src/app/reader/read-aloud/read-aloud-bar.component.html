@@ -9,8 +9,10 @@
   data-testid="read-aloud-bar"
 >
   <button
+    appButton
+    variant="ghost"
     type="button"
-    class="read-aloud-chip read-aloud-voice"
+    class="read-aloud-voice"
     [nostosMenuTriggerFor]="voiceMenu"
     [attr.aria-label]="'Voice: ' + voiceLabel() + '. Change voice'"
     title="Voice"
@@ -58,14 +60,14 @@
 
   <span class="read-aloud-divider" aria-hidden="true"></span>
 
-  <button
-    type="button"
-    class="read-aloud-chip read-aloud-rate"
-    [nostosMenuTriggerFor]="rateMenu"
-    title="Reading speed"
-    [attr.aria-label]="'Reading speed ' + rateLabel() + '. Change speed'"
+  <nostos-playback-speed-menu
+    class="read-aloud-rate"
+    label="Reading speed"
+    [rate]="controller.rate()"
+    [rates]="rates"
+    (rateChange)="controller.setRate($event)"
     data-testid="read-aloud-rate"
-  >{{ rateLabel() }}</button>
+  />
 
   <button
     appIconButton
@@ -83,46 +85,32 @@
   <nostos-menu aria-label="Voice" class="read-aloud-menu" data-testid="read-aloud-voice-menu">
     @if (voices().length > 0) {
       <div class="read-aloud-menu-heading" role="presentation">Natural voices</div>
-      @for (voice of voices(); track voice.id) {
-        <button
-          nostosMenuItem
-          [icon]="selectedVoice() === voice.id ? 'check' : null"
-          [class.is-selected]="selectedVoice() === voice.id"
-          [attr.aria-checked]="selectedVoice() === voice.id"
-          [attr.lang]="voice.language"
-          (triggered)="voiceChange.emit(voice.id)"
-        >{{ label(voice) }}</button>
-      }
+      <div nostosMenuGroup>
+        @for (voice of voices(); track voice.id) {
+          <button
+            nostosMenuItemRadio
+            [checked]="selectedVoice() === voice.id"
+            [attr.lang]="voice.language"
+            (triggered)="voiceChange.emit(voice.id)"
+          >{{ label(voice) }}</button>
+        }
+      </div>
       @if (managed()) {
         <div class="read-aloud-menu-note" role="presentation">Natural voices use your AI allowance.</div>
       }
       <hr nostosMenuSeparator />
     }
-    <button
-      nostosMenuItem
-      [icon]="selectedVoice() === 'device' ? 'check' : null"
-      [class.is-selected]="selectedVoice() === 'device'"
-      [attr.aria-checked]="selectedVoice() === 'device'"
-      hint="Free, and works without a connection"
-      (triggered)="voiceChange.emit('device')"
-    >This device’s voice</button>
+    <div nostosMenuGroup>
+      <button
+        nostosMenuItemRadio
+        [checked]="selectedVoice() === 'device'"
+        hint="Free, and works without a connection"
+        (triggered)="voiceChange.emit('device')"
+      >This device’s voice</button>
+    </div>
     @if (voiceNote(); as note) {
       <hr nostosMenuSeparator />
       <div class="read-aloud-menu-note" role="note" data-testid="read-aloud-voice-note">{{ note }}</div>
-    }
-  </nostos-menu>
-</ng-template>
-
-<ng-template #rateMenu>
-  <nostos-menu aria-label="Reading speed" class="read-aloud-menu read-aloud-menu--narrow">
-    @for (rate of rates; track rate) {
-      <button
-        nostosMenuItem
-        [icon]="controller.rate() === rate ? 'check' : null"
-        [class.is-selected]="controller.rate() === rate"
-        [attr.aria-checked]="controller.rate() === rate"
-        (triggered)="controller.setRate(rate)"
-      >{{ formatRate(rate) }}</button>
     }
   </nostos-menu>
 </ng-template>

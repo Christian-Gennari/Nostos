@@ -33,6 +33,7 @@ import { QuoteBlockComponent } from '../quote-block/quote-block.component';
 import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import type { HighlightColour } from '../../reader/highlight-colours';
+import { PlaybackSpeedMenuComponent } from '../playback-speed-menu/playback-speed-menu.component';
 
 /**
  * Inspectable reference fixture for Nostos UI v1.
@@ -68,6 +69,7 @@ import type { HighlightColour } from '../../reader/highlight-colours';
     LoadingIndicatorComponent,
     DropdownComponent,
     ...NOSTOS_MENU,
+    PlaybackSpeedMenuComponent,
     SwitchComponent,
     ViewToggleComponent,
     TextareaDirective,
@@ -102,6 +104,10 @@ export class UiCatalogueComponent {
   readonly cataloguePen = signal<HighlightColour>('amber');
   readonly catalogueTopics = signal(['Virtue', 'Habit', 'The good life']);
   readonly noTopicsYet = NO_TOPICS_YET;
+  readonly catalogueChoices = ['Recent', 'Title', 'Author'];
+  readonly catalogueChoice = signal('Recent');
+  readonly catalogueRate = signal(1);
+  readonly catalogueReadAloudRate = signal(1);
   readonly catalogueDropdownValue = signal('epub');
   readonly dropdownOptions = [
     { value: 'epub', label: 'EPUB' },

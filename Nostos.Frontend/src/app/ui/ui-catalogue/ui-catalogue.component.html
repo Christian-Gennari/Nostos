@@ -193,6 +193,47 @@
           </ng-template>
         </div>
       </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Choices (menuitemradio)</span>
+        <div class="catalogue-row">
+          <button appButton size="sm" type="button" [nostosMenuTriggerFor]="catalogueChoiceMenu">
+            {{ catalogueChoice() }}
+            <nostos-icon name="caret-down" [size]="12" />
+          </button>
+          <ng-template #catalogueChoiceMenu>
+            <nostos-menu aria-label="Sort">
+              <div nostosMenuGroup>
+                @for (choice of catalogueChoices; track choice) {
+                  <button nostosMenuItemRadio [checked]="catalogueChoice() === choice" (triggered)="catalogueChoice.set(choice)">
+                    {{ choice }}
+                  </button>
+                }
+              </div>
+            </nostos-menu>
+          </ng-template>
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Playback speed: presets, with the audiobook's fine step</span>
+        <div class="catalogue-row">
+          <nostos-playback-speed-menu
+            label="Playback speed"
+            variant="secondary"
+            [rate]="catalogueRate()"
+            [rates]="[0.8, 1, 1.25, 1.5, 2]"
+            [step]="0.05"
+            [min]="0.5"
+            [max]="3"
+            (rateChange)="catalogueRate.set($event)"
+          />
+          <nostos-playback-speed-menu
+            label="Reading speed"
+            [rate]="catalogueReadAloudRate()"
+            [rates]="[0.75, 1, 1.25, 1.5]"
+            (rateChange)="catalogueReadAloudRate.set($event)"
+          />
+        </div>
+      </div>
     </div>
   </section>
 

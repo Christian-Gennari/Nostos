@@ -2141,9 +2141,9 @@ describe('ReaderShell UI kit migration (#362)', () => {
     expect(template).not.toContain('class="btn btn-primary"');
     expect(template).not.toContain('class="btn btn-secondary"');
 
-    // The audio transport (play, skip) keeps its own playback contract. The
-    // speed and sleep choices in the settings menu are shared primitives, and the
-    // menu close uses the shared icon button like the other reader panels.
+    // The audio transport (play, skip) keeps its own playback contract. Speed
+    // and sleep are shared primitives (issue #1200): the playback-speed menu
+    // and a nostos-menu, both opened from real buttons.
     const audioTemplate = readSource('./audio-reader/audio-reader.component.html');
     const transportStart = audioTemplate.indexOf('<div class="main-controls">');
     const transportEnd = audioTemplate.indexOf('</div>', transportStart);
@@ -2151,13 +2151,9 @@ describe('ReaderShell UI kit migration (#362)', () => {
     expect(transportTemplate).not.toContain('appIconButton');
     expect(audioTemplate).toContain('class="play-btn"');
     expect(audioTemplate).toContain('class="skip-btn"');
-    expect(audioTemplate).toContain('class="playback-pill"');
-    expect(audioTemplate).toMatch(/<button\s+appIconButton[\s\S]*?aria-label="Close playback settings"/);
-
-    // The settings surface floats above the controls so opening it cannot
-    // resize the centered player block.
-    const audioCss = readSource('./audio-reader/audio-reader.component.css');
-    expect(audioCss).toMatch(/\.playback-menu\s*\{[^}]*position:\s*absolute;/s);
+    expect(audioTemplate).toContain('<nostos-playback-speed-menu');
+    expect(audioTemplate).toMatch(/<button\s+appButton[^>]*\[nostosMenuTriggerFor\]="sleepMenu"/);
+    expect(audioTemplate).not.toContain('role="button"');
   });
 
   it('keeps mobile touch floors on custom Reader controls after the migration', () => {

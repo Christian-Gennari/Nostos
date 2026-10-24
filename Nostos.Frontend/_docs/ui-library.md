@@ -385,6 +385,68 @@ Do not turn ModalShell into a universal working-area component, and do not route
 inline row actions through DialogActions merely because they happen to live inside a
 dialog.
 
+## Menu choices (`nostosMenuItemRadio`, `nostosMenuGroup`)
+
+**Files:** `src/app/ui/menu/`
+
+A `nostos-menu` (the CDK menu: overlay, arrow keys, Escape, outside click,
+focus return) can hold a set of choices as well as actions. A choice is
+`button[nostosMenuItemRadio]`: `role="menuitemradio"`, `aria-checked` from its
+`checked` input, and a check column every item keeps so the labels line up.
+Wrap a set in `[nostosMenuGroup]` (`role="group"`). Do not fake a choice with
+`nostosMenuItem` plus `aria-checked`; a `menuitem` cannot be checked.
+
+```html
+<nostos-menu aria-label="Voice">
+  <div nostosMenuGroup>
+    @for (voice of voices(); track voice.id) {
+      <button nostosMenuItemRadio [checked]="voice.id === selected()"
+              (triggered)="choose(voice.id)">{{ voice.name }}</button>
+    }
+  </div>
+</nostos-menu>
+```
+
+## PlaybackSpeedMenuComponent
+
+**Selector:** `nostos-playback-speed-menu`  
+**Files:** `src/app/ui/playback-speed-menu/`
+
+The one playback-speed control (read aloud and the audiobook player). An
+`appButton` capsule shows the rate and opens a `nostos-menu`: the common rates
+as `nostosMenuItemRadio` choices with the current one checked and, when `step`
+is set, a "− rate +" row of menu items that keep the menu open between presses.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rate` | `number` | required | The rate playing now |
+| `rates` | `readonly number[]` | required | The common rates listed as choices |
+| `step` | `number \| null` | `null` | Fine step; `null` offers the presets only |
+| `min` / `max` | `number \| null` | slowest / fastest preset | The player's supported range; the step stays inside it |
+| `label` | `string` | `'Playback speed'` | Names the trigger and the menu |
+| `variant` | `ButtonVariant` | `'ghost'` | The trigger's appButton variant |
+
+Output: `rateChange(number)`. The trigger's height is the caller's, through
+`--playback-speed-trigger-height` on the host (default `--control-h-xs`); a
+player bar used without looking sets `var(--control-h-touch)`.
+
+```html
+<nostos-playback-speed-menu label="Playback speed" variant="secondary"
+  [rate]="rate()" [rates]="[0.8, 1, 1.25, 1.5, 2]" [step]="0.05" [min]="0.5" [max]="3"
+  (rateChange)="setRate($event)" />
+```
+
+## RangeDirective
+
+**Selector:** `input[type=range][appRange]`  
+**Files:** `src/app/ui/range/`
+
+The one slider: a 4px track filled in the accent up to the value, a 14px
+thumb. The native input stays the control (value, min, max, step, keys,
+labelling). Scrubbers use it too (the audiobook and the passage clip); the
+directive repaints when `min`/`max` change under the same value, so a
+duration that arrives late still fills the track correctly.
+
 ## UI catalogue / visual fixture
 
 **Route:** `/ui-catalogue`  
