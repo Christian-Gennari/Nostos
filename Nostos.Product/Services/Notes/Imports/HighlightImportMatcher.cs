@@ -86,7 +86,7 @@ internal static class HighlightImportMatcher
     }
 
     private static HighlightImportCandidate Candidate(ImportLibraryBook book, string reason) =>
-        new(book.Id, book.Title, book.Author, reason);
+        new(book.Id, book.Title, book.Author, reason, book.Format);
 
     private static double TitleScore(
         string title,

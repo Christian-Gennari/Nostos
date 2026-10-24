@@ -236,6 +236,21 @@
   background: var(--bg-hover);
 }
 
+/* Books are appChoiceRow, spaced as the Editions dialog's list, and inset to
+   the search field's edges above them. */
+.book-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-inline: 0.5rem;
+}
+
+.book-choice-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .list-item-icon {
   color: var(--color-text-muted);
   margin-right: 0.65rem;

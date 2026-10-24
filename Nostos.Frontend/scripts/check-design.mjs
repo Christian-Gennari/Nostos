@@ -1041,7 +1041,7 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
     new Set(['btn-back', 'cover-overlay-btn',
       'expand-btn'])],
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
-    new Set(['manage-member-action', 'manage-link-candidate'])],
+    new Set(['manage-member-action'])],
   ['src/app/reader/reader-shell.component.html',
     new Set(['hl-pen', 'typo-opt', 'typo-step'])],
   ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item',
@@ -1064,7 +1064,7 @@ function rawButtonWithoutPrimitive(html, relativePath) {
   const allowed = PRODUCT_RAW_BUTTON_CLASSES.get(relativePath) ?? new Set();
   for (const tag of clean.matchAll(/<button\b[^>]*>/gs)) {
     const raw = tag[0];
-    if (/\bapp(?:Button|IconButton|Chip)\b/.test(raw)) continue;
+    if (/\bapp(?:Button|IconButton|Chip|ChoiceRow)\b/.test(raw)) continue;
     // An item of the shared `nostos-menu` is a canonical primitive too: the
     // component owns its chrome and the CDK owns its behaviour.
     if (/\bnostosMenuItem\b/.test(raw)) continue;

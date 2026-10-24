@@ -652,18 +652,18 @@
                 <button appButton variant="ghost" size="sm" (click)="retryBookIndex()">Retry</button>
               </p>
             } @else {
-              <div class="index-list">
+              <div class="index-list book-choice-list">
                 @for (book of filteredBooks(); track book.id) {
-                  <button class="list-item" (click)="selectBook(book.id)">
-                    <div class="list-item-icon">
-                      <nostos-icon name="book" [size]="16"></nostos-icon>
-                    </div>
-                    <div class="list-item-content">
-                      <span class="name">{{ book.title }}</span>
-                      @if (book.author) {
-                        <span class="subtext">{{ book.author }}</span>
-                      }
-                    </div>
+                  <!-- The Editions dialog's book row: title, author, format. -->
+                  <button type="button" appChoiceRow class="book-choice" (click)="selectBook(book.id)">
+                    <span class="nostos-choice-row__text">
+                      <span class="nostos-choice-row__title">{{ book.title }}</span>
+                      <span class="nostos-choice-row__sub">{{ book.author || unknownAuthor }}</span>
+                      <span class="book-choice-format nostos-choice-row__meta">
+                        <nostos-icon [concept]="bookFormat(book)" [size]="12" aria-hidden="true"></nostos-icon>
+                        {{ formatLabel[bookFormat(book)] }}
+                      </span>
+                    </span>
                   </button>
                 }
                 @if (filteredBooks().length === 0) {

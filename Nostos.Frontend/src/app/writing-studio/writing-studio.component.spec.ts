@@ -278,6 +278,30 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(back.classList.contains('nostos-button--sm')).toBe(true);
   });
 
+  it('lists books to pick as choice rows with the format glyph and an author fallback', () => {
+    component.referenceMode.set('library');
+    component.activeSidebarTab.set('notes');
+    component.selectedBookId.set(null);
+    component.books.set([
+      { id: 'b1', title: 'Middlemarch', author: 'George Eliot', type: 'audiobook', fileName: null },
+      { id: 'b2', title: 'Moby-Dick', author: null, type: 'ebook', fileName: 'moby-dick.pdf' },
+    ] as never);
+    component.bookIndexState.set('loaded');
+    fixture.detectChanges();
+
+    const rows = Array.from(
+      fixture.nativeElement.querySelectorAll('.book-choice-list .book-choice') as NodeListOf<HTMLButtonElement>,
+    );
+    expect(rows.map((row) => row.classList.contains('nostos-choice-row'))).toEqual([true, true]);
+    expect(rows[0].querySelector('.nostos-choice-row__sub')?.textContent).toBe('George Eliot');
+    expect(rows[0].querySelector('.nostos-choice-row__meta')?.textContent?.trim()).toBe('Audiobook');
+    expect(rows[1].querySelector('.nostos-choice-row__sub')?.textContent).toBe('Unknown author');
+    expect(rows[1].querySelector('.nostos-choice-row__meta')?.textContent?.trim()).toBe('PDF');
+
+    rows[1].click();
+    expect(component.selectedBookId()).toBe('b2');
+  });
+
   it('does not run the shared transform entry animation on Studio sidebars', () => {
     const css = componentCss();
 

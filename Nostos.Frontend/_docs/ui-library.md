@@ -447,6 +447,30 @@ collections, Studio documents), a Brain topic in the index and at the top of its
 
 ---
 
+## "Pick a book" rows
+
+Wherever the user chooses a library book from a list (the Editions dialog's "Link another
+book", highlight import's "Choose a book", Studio's book index), each book is one
+`appChoiceRow` (`src/app/ui/choice-row/`), with the same three tiers:
+
+```html
+<button type="button" appChoiceRow (click)="pick(book)">
+  <span class="nostos-choice-row__text">
+    <span class="nostos-choice-row__title">{{ book.title }}</span>
+    <span class="nostos-choice-row__sub">{{ book.author || 'Unknown author' }}</span>
+    <span class="nostos-choice-row__meta">
+      <nostos-icon [concept]="format" [size]="12" aria-hidden="true" /> {{ formatLabel }}
+    </span>
+  </span>
+</button>
+```
+
+`bookFormatConcept(type, fileName)` and `BOOK_FORMAT_LABEL` (`src/app/core/book-format.ts`)
+give the format concept and its short name. A book with no author reads "Unknown author"
+everywhere (`UNKNOWN_AUTHOR`).
+
+---
+
 ## FlatTreeComponent
 
 **Selector:** `app-flat-tree`  

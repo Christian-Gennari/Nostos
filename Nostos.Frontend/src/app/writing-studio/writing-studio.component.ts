@@ -72,6 +72,8 @@ import {
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept } from '../core/book-format';
+import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
 
 /** The writing the Studio opens on next time. */
 const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
@@ -165,6 +167,7 @@ function writeCarets(carets: RememberedCaret[]): void {
   selector: 'app-writing-studio',
   standalone: true,
   imports: [
+    ChoiceRowComponent,
     SearchFieldComponent,
     CommonModule,
     FormsModule,
@@ -582,6 +585,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   // Books / Notes State
   books = signal<BookDto[]>([]);
+  protected readonly formatLabel = BOOK_FORMAT_LABEL;
+  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
+  protected bookFormat(book: BookDto): BookFormatConcept {
+    return bookFormatConcept(book.type, book.fileName);
+  }
   bookIndexState = signal<ReferenceLoadState>('loading');
   bookQuery = signal('');
   selectedBookId = signal<string | null>(null);

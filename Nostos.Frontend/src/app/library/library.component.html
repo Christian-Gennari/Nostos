@@ -191,7 +191,7 @@
               }
               <!-- Phones hide the Author column, so the row names the author
                    under the title instead (desktop hides this line). -->
-              <span class="list-book-author">{{ book.author || 'Unknown' }}</span>
+              <span class="list-book-author">{{ book.author || 'Unknown author' }}</span>
 
               <!-- Import state, in the row the book will keep. The bar sits inside
                    the existing row height (measured: 63px desktop / 79px mobile
@@ -270,7 +270,7 @@
           </div>
 
           <div class="col author">
-            {{ book.author || 'Unknown' }}
+            {{ book.author || 'Unknown author' }}
           </div>
 
           <div class="col rating" (click)="$event.stopPropagation()">
@@ -488,7 +488,7 @@
           <!-- The book's own state rides on the author line, so the cover is
                left to its art. The toggles on the cover appear on hover. -->
           <div class="meta-author">
-            <span class="meta-author-name">{{ book.author || 'Unknown' }}</span>
+            <span class="meta-author-name">{{ book.author || 'Unknown author' }}</span>
             @if (book.finishedAt) {
             <nostos-icon name="check-circle" weight="fill" [size]="13" class="meta-mark meta-mark--finished" label="Finished"></nostos-icon>
             }

@@ -399,13 +399,19 @@
         <ul class="highlight-picker-list">
           @for (candidate of searchQuery().trim() ? searchResults() : row.book.candidates; track candidate.bookId) {
             <li>
-              <button type="button" class="highlight-picker-option" (click)="choose(row, candidate)">
-                <span class="highlight-row-title">{{ candidate.title }}</span>
-                <span class="highlight-row-sub">
-                  {{ candidate.author || 'Unknown author' }}
-                  @if (candidate.reason) {
-                    · {{ candidate.reason }}
-                  }
+              <!-- The Editions dialog's book row: title, author, then the
+                   format with its glyph (and why it was suggested). -->
+              <button type="button" appChoiceRow class="highlight-picker-option" (click)="choose(row, candidate)">
+                <span class="nostos-choice-row__text">
+                  <span class="nostos-choice-row__title">{{ candidate.title }}</span>
+                  <span class="nostos-choice-row__sub">{{ candidate.author || unknownAuthor }}</span>
+                  <span class="highlight-picker-format nostos-choice-row__meta">
+                    <nostos-icon [concept]="candidate.format" [size]="12" aria-hidden="true"></nostos-icon>
+                    {{ formatName(candidate.format) }}
+                    @if (candidate.reason) {
+                      · {{ candidate.reason }}
+                    }
+                  </span>
                 </span>
               </button>
             </li>
