@@ -24,7 +24,8 @@ import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { isPhoneViewport } from '../../ui/breakpoints';
-import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
+import { NOSTOS_MENU } from '../../ui/menu/menu.component';
+import { CommandPaletteService } from '../../ui/command-palette/command-palette.service';
 import { AssistantLauncherService } from '../../ui/assistant/assistant-launcher.service';
 
 /** The phone rail's breakpoint, matching the dock's own stylesheet. */
@@ -33,7 +34,7 @@ const isNarrowViewport = isPhoneViewport;
 @Component({
   standalone: true,
   selector: 'app-app-dock',
-  imports: [RouterLink, RouterLinkActive, NostosIconComponent],
+  imports: [RouterLink, RouterLinkActive, NostosIconComponent, ...NOSTOS_MENU],
   template: `
     <nav class="app-dock-container" aria-label="Main navigation">
       <div class="dock-bar" #dockBar [class.has-pending]="pendingDestination() !== null">
@@ -116,17 +117,17 @@ const isNarrowViewport = isPhoneViewport;
         </a>
 
         @if (isNarrow()) {
-          <!-- One More on every phone, whatever the deployment: the sheet holds
+          <!-- One More on every phone, whatever the deployment: the menu holds
                Search everything and Settings, and Send feedback where there is a
-               link, so SelfHosted and Cloud read the same. -->
+               link, so SelfHosted and Cloud read the same. It opens as a bottom
+               sheet at this width (nostos-menu). -->
           <button
             type="button"
             class="dock-item"
-            [class.dock-item-open]="sheet.open()"
-            (click)="sheet.toggle()"
-            aria-haspopup="dialog"
-            aria-controls="mobile-more-sheet"
-            [attr.aria-expanded]="sheet.open()"
+            [class.dock-item-open]="moreOpen()"
+            [nostosMenuTriggerFor]="more"
+            (menuOpened)="moreOpen.set(true)"
+            (menuClosed)="moreOpen.set(false)"
             title="More"
             data-testid="dock-more"
           >
@@ -135,6 +136,37 @@ const isNarrowViewport = isPhoneViewport;
             </span>
             <span class="label">More</span>
           </button>
+          <ng-template #more>
+            <nostos-menu aria-label="More" data-testid="utility-sheet">
+              @if (feedbackUrl(); as feedbackHref) {
+                <a
+                  nostosMenuItem
+                  icon="paper-plane-tilt"
+                  [href]="feedbackHref"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="utility-sheet-feedback"
+                  >Send feedback</a
+                >
+              }
+              <button
+                nostosMenuItem
+                icon="binoculars"
+                data-testid="utility-sheet-search"
+                (triggered)="palette.open()"
+              >
+                Search everything
+              </button>
+              <button
+                nostosMenuItem
+                icon="gear-six"
+                data-testid="utility-sheet-settings"
+                (triggered)="router.navigateByUrl('/settings')"
+              >
+                Settings
+              </button>
+            </nostos-menu>
+          </ng-template>
         } @else {
           @if (launcher.available()) {
             <span class="dock-divider" aria-hidden="true"></span>
@@ -601,11 +633,13 @@ const isNarrowViewport = isPhoneViewport;
 })
 export class AppDockComponent {
   private historyService = inject(NavigationHistoryService);
-  private router = inject(Router);
+  readonly router = inject(Router);
   private filters = inject(LibraryFilterService);
   private dockBar = viewChild<ElementRef<HTMLElement>>('dockBar');
 
-  readonly sheet = inject(UtilitySheetService);
+  readonly palette = inject(CommandPaletteService);
+  /** Whether the More menu is open: the trigger reads as pressed. */
+  readonly moreOpen = signal(false);
   readonly feedbackUrl = inject(FeedbackLinkService).url;
   readonly launcher = inject(AssistantLauncherService);
 
@@ -658,10 +692,9 @@ export class AppDockComponent {
   onResize(): void {
     const narrow = isNarrowViewport();
     this.isNarrow.set(narrow);
-    // Crossing to the wide shell removes the More trigger, so the narrow sheet
-    // must not survive the breakpoint. CDK's trap restores focus only if the
-    // trigger still exists; a detached trigger is a safe no-op.
-    if (!narrow) this.sheet.close();
+    // Crossing to the wide shell removes the More trigger, and the CDK closes
+    // its menu with it.
+    if (!narrow) this.moreOpen.set(false);
     this.movePill();
   }
 

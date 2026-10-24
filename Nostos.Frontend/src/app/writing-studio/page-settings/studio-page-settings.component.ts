@@ -16,7 +16,6 @@ import {
 import { firstValueFrom } from 'rxjs';
 
 import { ButtonComponent } from '../../ui/button/button.component';
-import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmented.component';
 import { SwitchComponent } from '../../ui/switch/switch.component';
 import { RangeDirective } from '../../ui/range/range.directive';
@@ -65,7 +64,7 @@ const STANDARD_WIDTH_VALUE = 'standard';
 @Component({
   selector: 'app-studio-page-settings',
   standalone: true,
-  imports: [ButtonComponent, IconButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent, InputDirective, SettingsPopoverComponent],
+  imports: [ButtonComponent, SegmentedComponent, SwitchComponent, RangeDirective, NostosIconComponent, ThemePickerComponent, InputDirective, SettingsPopoverComponent],
   templateUrl: './studio-page-settings.component.html',
   styleUrl: './studio-page-settings.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,

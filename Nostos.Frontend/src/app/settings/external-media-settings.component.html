@@ -148,6 +148,7 @@
 
 @if (reviewOpen()) {
   <app-modal-shell
+    closeLabel="Close import review"
     [isOpen]="true"
     variant="sheet"
     cardClass="external-review-card"
@@ -168,15 +169,6 @@
           @default { Review before importing }
         }
       </h2>
-      <button
-        appIconButton
-        icon="x"
-        [glyphSize]="20"
-        class="external-review-close"
-        title="Close"
-        aria-label="Close"
-        (click)="closeReview()"
-      ></button>
     </header>
 
     <div class="external-review-body">

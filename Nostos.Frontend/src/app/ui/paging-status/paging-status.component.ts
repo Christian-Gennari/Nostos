@@ -6,7 +6,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, input, output } f
 
 import { canObserveIntersections, InfiniteScrollDirective } from '../../core/directives/infinite-scroll.directive';
 import { ButtonComponent } from '../button/button.component';
-import { TRY_AGAIN } from '../empty-state/empty-state.component';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 
 /**
@@ -31,7 +31,7 @@ import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicato
 @Component({
   selector: 'nostos-paging-status',
   standalone: true,
-  imports: [ButtonComponent, InfiniteScrollDirective, LoadingIndicatorComponent],
+  imports: [ButtonComponent, EmptyStateComponent, InfiniteScrollDirective, LoadingIndicatorComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (hasMore()) {
@@ -39,15 +39,19 @@ import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicato
         class="nostos-paging-status__end"
         appInfiniteScroll
         [root]="root()"
-        [rootMargin]="rootMargin()"
+        [rootMargin]="ROOT_MARGIN"
         [paused]="loading() || failed()"
         (reached)="more.emit()"
       >
         @if (failed()) {
-          <div class="nostos-paging-status__failed" role="alert">
-            <p>{{ failedMessage() }}</p>
-            <button appButton variant="ghost" size="sm" type="button" (click)="retry.emit()">{{ retryLabel }}</button>
-          </div>
+          <!-- The same failure state as everywhere else, in its compact size. -->
+          <nostos-empty-state
+            class="nostos-paging-status__failed"
+            compact
+            error
+            [message]="failedMessage()"
+            (retry)="retry.emit()"
+          />
         } @else {
           @if (loading()) {
             <nostos-loading-indicator [label]="label()" size="md" />
@@ -84,19 +88,6 @@ import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicato
         padding: 1.25rem 0;
       }
 
-      .nostos-paging-status__failed {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.4rem;
-        color: var(--color-text-muted);
-        text-align: center;
-      }
-
-      .nostos-paging-status__failed p {
-        margin: 0;
-        font-size: var(--text-sm);
-      }
     `,
   ],
 })
@@ -110,13 +101,13 @@ export class PagingStatusComponent {
   readonly failedMessage = input('More could not be loaded.');
   /** The scrolling element the list lives in; null is the viewport. */
   readonly root = input<Element | null>(null);
-  readonly rootMargin = input('200px 0px');
+  /** How far ahead of the list end the next page is asked for: one distance everywhere. */
+  protected readonly ROOT_MARGIN = '600px 0px';
 
   /** The list end came into view, or the fallback was pressed. */
   readonly more = output<void>();
   /** "Try again" after a failed page. */
   readonly retry = output<void>();
 
-  protected readonly retryLabel = TRY_AGAIN;
   protected readonly observing = canObserveIntersections();
 }

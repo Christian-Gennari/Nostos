@@ -283,12 +283,8 @@
 
 .sp-empty {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  justify-content: center;
   padding: 14px;
-  color: var(--manuscript-ink-soft);
-  font-size: 0.86rem;
 }
 
 .sp-hint {

@@ -183,21 +183,6 @@
   margin-left: 0.25rem;
 }
 
-.topic-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--color-text-main);
-  font-size: var(--text-sm);
-  text-decoration: underline;
-  text-decoration-color: var(--border-color);
-  text-underline-offset: 3px;
-}
-
-.topic-link:hover {
-  text-decoration-color: currentColor;
-}
-
 /* --- The reading column --------------------------------------------------- */
 .brain-list {
   display: block;

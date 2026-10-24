@@ -176,9 +176,7 @@
     <span class="matching-topics" aria-label="Topics matching the search">
       <span class="often-label">Topics</span>
       @for (match of matchingTopics(); track match.id) {
-      <a class="topic-link" [routerLink]="['/brain/topics', match.id]">
-        <nostos-icon concept="topic" [size]="12" />{{ match.name }}
-      </a>
+      <app-topic-chip [name]="match.name" [link]="['/brain/topics', match.id]" [title]="'Open ' + match.name" />
       }
     </span>
     }
@@ -243,7 +241,6 @@
       [loading]="loading()"
       [failed]="failed()"
       [root]="scroller"
-      rootMargin="600px 0px"
       label="Loading more notes"
       failedMessage="More notes could not be loaded."
       (more)="loadMore()"

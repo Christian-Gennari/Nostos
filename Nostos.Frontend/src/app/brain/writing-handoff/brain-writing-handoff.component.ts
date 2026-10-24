@@ -1,4 +1,5 @@
 import { CommonModule, DOCUMENT } from '@angular/common';
+import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 import {
   AfterViewInit,
   Component,
@@ -22,7 +23,6 @@ import { WritingsService } from '../../core/services/writings.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { DialogActionsComponent } from '../../ui/dialog-actions/dialog-actions.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
-import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
@@ -40,6 +40,7 @@ export interface BrainWritingHandoffResult {
   standalone: true,
   selector: 'app-brain-writing-handoff',
   imports: [
+    ChoiceRowComponent,
     SearchFieldComponent,
     CheckboxDirective,
     IconTileComponent,
@@ -48,7 +49,6 @@ export interface BrainWritingHandoffResult {
     DialogActionsComponent,
     ButtonComponent,
     InputDirective,
-    IconButtonComponent,
     NostosIconComponent,
     EmptyStateComponent,
     LoadingIndicatorComponent,

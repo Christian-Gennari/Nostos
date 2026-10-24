@@ -124,11 +124,6 @@
   color: var(--color-text-main);
 }
 
-.external-review-close {
-  flex-shrink: 0;
-  margin: -0.15rem -0.25rem 0 0;
-}
-
 .external-review-body {
   padding: 0.95rem 1.25rem 1.25rem;
 }

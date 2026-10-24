@@ -24,7 +24,6 @@ import {
 } from '../core/dtos/provider.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
 import { BookType } from '../core/dtos/book.dtos';
-import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { CollectionPickerComponent } from '../ui/collection-picker/collection-picker.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
@@ -69,7 +68,6 @@ export interface AddBookPrefill {
     FormsModule,
     NostosIconComponent,
     LoadingIndicatorComponent,
-    IconButtonComponent,
     CollectionPickerComponent,
     FormFieldComponent,
     InputDirective,

@@ -336,6 +336,9 @@
   margin: auto;
   width: min(32rem, calc(100% - 2rem));
 }
+.reader-loading {
+  margin: auto;
+}
 .reader-save-feedback {
   position: absolute;
   left: 50%;
@@ -468,7 +471,6 @@
 
 .highlight-confirmation .selected-text {
   overflow: hidden;
-  font-size: 0.9rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -746,21 +748,6 @@ app-note-item.is-flashed {
   gap: 1rem;
 }
 
-.typo-panel-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.typo-panel-heading h2 {
-  margin: 0;
-  font-family: 'Newsreader', serif;
-  font-size: 1.125rem;
-  font-weight: var(--fw-medium);
-  color: var(--color-text-main);
-}
-
 /* Three levels: the serif panel title, a small-caps group title over a
    hairline, then the row labels in body type. Rows sit closer to each other
    than groups do, so spacing alone says which rows belong together. */
@@ -943,9 +930,6 @@ app-note-item.is-flashed {
   .confirmation-content {
     padding: 0.5rem 0.75rem;
     gap: 0.75rem;
-  }
-  .highlight-confirmation .selected-text {
-    font-size: 0.85rem;
   }
   /* Docked selection actions need the same two-row contract for EPUB and PDF
      now that both surfaces expose Copy + Ask Nostos. The quote gets the first
@@ -1552,19 +1536,15 @@ button.passage-pill-action {
   margin-bottom: 0.6rem;
 }
 
+/* The look is the shared quote block (ui/quote-block); only the gap under it is ours. */
 .passage-sheet-excerpt {
   margin: 0 0 0.75rem;
-  padding: 0.15rem 0 0.15rem 1rem;
-  border-left: 3px solid var(--color-accent);
-  font-family: 'Newsreader', serif;
-  font-style: italic;
-  font-size: var(--text-md);
-  line-height: 1.55;
-  color: var(--color-text-main);
 }
 
 .passage-sheet-excerpt p {
   margin: 0;
+  color: inherit;
+  line-height: inherit;
 }
 
 .passage-sheet-excerpt .passage-sheet-closing {

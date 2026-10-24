@@ -36,7 +36,7 @@
   </nostos-search-field>
   <div class="merge-target-list">
     @if (candidates().length === 0) {
-    <span class="merge-picker-empty">{{ emptyText() }}</span>
+    <nostos-empty-state compact [message]="emptyText()" />
     } @else {
     @for (candidate of candidates(); track candidate.id) {
     <button
@@ -45,8 +45,7 @@
       class="merge-target"
       [name]="candidate.name"
       [count]="candidate.usageCount"
-      [active]="selectedId() === candidate.id"
-      [class.selected]="selectedId() === candidate.id"
+      [selected]="selectedId() === candidate.id"
       [attr.aria-pressed]="selectedId() === candidate.id"
       (click)="chosen.emit(candidate.id)"
     ></button>

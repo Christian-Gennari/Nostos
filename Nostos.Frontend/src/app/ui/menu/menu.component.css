@@ -10,23 +10,16 @@
   max-height: min(var(--menu-max-h), calc(100dvh - 16px));
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Items keep 4px of padding inside, so the corner is theirs plus that. The
+     box (border, corner, shadow, entrance, the phone sheet) is the shared
+     .nostos-surface in styles.css. */
   padding: 4px;
-  border: 1px solid var(--border-color);
-  /* Items keep 4px of padding inside, so the corner is theirs plus that. */
-  border-radius: var(--radius-popover);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  box-shadow: var(--shadow-md);
-  font-family: 'Hanken Grotesk', sans-serif;
-  transform-origin: top right;
-  animation: nostos-menu-in var(--motion-fast) var(--ease-out);
 }
 
-@keyframes nostos-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-3px) scale(0.98);
-  }
+/* On a phone the menu is a sheet (.nostos-sheet-pane): its own list scrolls
+   and the last row clears the home indicator. */
+.nostos-sheet-pane > .nostos-menu {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .nostos-menu-item {
@@ -147,11 +140,5 @@
 @media (pointer: coarse) {
   .nostos-menu-item {
     min-height: var(--control-h-touch);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nostos-menu {
-    animation: none;
   }
 }

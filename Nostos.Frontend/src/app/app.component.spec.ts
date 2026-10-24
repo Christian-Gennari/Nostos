@@ -281,15 +281,7 @@ describe('App shell utility area', () => {
     return more;
   }
 
-  async function finishUtilitySheetExit(fixture: ComponentFixture<App>): Promise<void> {
-    await fixture.whenStable();
-    fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, 240));
-    fixture.detectChanges();
-  }
-
-  const background = (fixture: ComponentFixture<App>): HTMLElement =>
-    fixture.nativeElement.querySelector('.workspace-content');
+  const menu = (): HTMLElement | null => document.querySelector('.nostos-menu');
   const dock = (fixture: ComponentFixture<App>): HTMLElement =>
     fixture.nativeElement.querySelector('app-app-dock');
 
@@ -320,67 +312,53 @@ describe('App shell utility area', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });
 
-  it('makes the shell inert while the More sheet is open and lifts it on Escape', async () => {
+  it('opens More as a bottom sheet holding Feedback, Search and Settings, and gives focus back on Escape', async () => {
     const fixture = await renderNarrow();
     const more = await openMore(fixture);
 
-    expect(background(fixture).hasAttribute('inert')).toBe(true);
-    expect(dock(fixture).hasAttribute('inert')).toBe(true);
+    expect(menu()).toBeTruthy();
+    expect(menu()!.closest('.nostos-sheet-pane')).toBeTruthy();
+    expect(more.getAttribute('aria-haspopup')).toBe('menu');
+    expect(more.getAttribute('aria-expanded')).toBe('true');
     expect(
-      (fixture.nativeElement.querySelector('app-utility-sheet') as HTMLElement).hasAttribute(
-        'inert',
+      Array.from(menu()!.querySelectorAll('[nostosMenuItem], .nostos-menu-item')).map((item) =>
+        item.textContent?.trim(),
       ),
-    ).toBe(false);
+    ).toEqual(['Send feedback', 'Search everything', 'Settings']);
     expect(document.activeElement).toBe(
-      fixture.nativeElement.querySelector('[data-testid="utility-sheet-feedback"]'),
+      document.querySelector('[data-testid="utility-sheet-feedback"]'),
     );
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    (document.activeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }),
+    );
     fixture.detectChanges();
 
-    // Accessibility cleanup and focus restoration happen as soon as close starts;
-    // the panel remains mounted only long enough to finish its exit transition.
-    expect(background(fixture).hasAttribute('inert')).toBe(false);
-    expect(dock(fixture).hasAttribute('inert')).toBe(false);
-    expect(document.activeElement).toBe(more);
-
-    await finishUtilitySheetExit(fixture);
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
-  });
-
-  it('lifts the inert shell and restores focus when the scrim closes the sheet', async () => {
-    const fixture = await renderNarrow();
-    const more = await openMore(fixture);
-
-    (fixture.nativeElement.querySelector('.utility-sheet-scrim') as HTMLElement).click();
-    fixture.detectChanges();
-
-    expect(background(fixture).hasAttribute('inert')).toBe(false);
-    expect(dock(fixture).hasAttribute('inert')).toBe(false);
+    expect(menu()).toBeNull();
     expect(document.activeElement).toBe(more);
   });
 
-  it('lifts the inert shell when a route change closes the sheet', async () => {
+  it('closes the menu and goes to Settings when Settings is chosen', async () => {
     const fixture = await renderNarrow();
     await openMore(fixture);
 
-    await TestBed.inject(Router).navigateByUrl('/settings');
+    (document.querySelector('[data-testid="utility-sheet-settings"]') as HTMLElement).click();
+    await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(background(fixture).hasAttribute('inert')).toBe(false);
-    expect(dock(fixture).hasAttribute('inert')).toBe(false);
-
-    await finishUtilitySheetExit(fixture);
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/settings');
+    expect(menu()).toBeNull();
   });
 
-  it('leaves Ask Nostos usable after the sheet closes', async () => {
+  it('leaves Ask Nostos usable after the menu closes', async () => {
     TestBed.inject(LibraryPreferencesService).assistantEnabled.set(true);
     assistantAvailable.set(true);
     const fixture = await renderNarrow();
 
     await openMore(fixture);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    (document.activeElement as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }),
+    );
     fixture.detectChanges();
 
     const trigger = fixture.nativeElement.querySelector(
@@ -391,25 +369,23 @@ describe('App shell utility area', () => {
 
     trigger.click();
     fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-panel"]')).toBeTruthy();
   });
 
-  it('closes the More sheet, its scrim and the inert shell when the viewport crosses to wide', async () => {
+  it('removes the More menu when the viewport crosses to wide', async () => {
     const fixture = await renderNarrow();
     await openMore(fixture);
-    expect(background(fixture).hasAttribute('inert')).toBe(true);
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
     window.dispatchEvent(new Event('resize'));
     fixture.detectChanges();
+    await fixture.whenStable();
 
-    expect(background(fixture).hasAttribute('inert')).toBe(false);
-    expect(dock(fixture).hasAttribute('inert')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
-
-    await finishUtilitySheetExit(fixture);
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
+    expect(menu()).toBeNull();
+    expect(dock(fixture).hasAttribute('inert')).toBe(false);
   });
 });

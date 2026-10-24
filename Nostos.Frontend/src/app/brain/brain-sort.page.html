@@ -110,7 +110,7 @@
       <div class="sort-row">
         <span class="sort-row-label">Recent</span>
         @for (name of recentChoices(); track name) {
-        <button appChip type="button" [attr.aria-pressed]="false" (click)="addChip(name)">{{ name }}</button>
+        <button appChip type="button" (click)="addChip(name)">{{ name }}</button>
         }
       </div>
       }
@@ -121,7 +121,7 @@
         @switch (suggestionState()) {
           @case ('ready') {
             @for (name of suggested(); track name) {
-            <button appChip type="button" [attr.aria-pressed]="false" (click)="addChip(name)">{{ name }}</button>
+            <button appChip type="button" (click)="addChip(name)">{{ name }}</button>
             } @empty { <span class="sort-quiet">No suggestions for this note.</span> }
           }
           @case ('loading') { <span class="sort-quiet">Asking…</span> }

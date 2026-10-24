@@ -71,16 +71,15 @@
             }
           </ul>
         } @else if (loading()) {
-          <div class="sp-empty" aria-busy="true">Searching…</div>
+          <div class="sp-empty" aria-busy="true"><nostos-loading-indicator label="Searching sources" /></div>
         } @else if ((query() ?? '').trim()) {
-          <div class="sp-empty">
-            No sources match “{{ (query() ?? '').trim() }}”.
+          <nostos-empty-state compact message="No sources match “{{ (query() ?? '').trim() }}”.">
             <button type="button" class="sp-browse" (mousedown)="$event.preventDefault()" (click)="browseReference()">
               Browse reference
             </button>
-          </div>
+          </nostos-empty-state>
         } @else {
-          <div class="sp-empty">Type a name, a title or words from a quote.</div>
+          <nostos-empty-state compact message="Type a name, a title or words from a quote." />
         }
       </div>
 

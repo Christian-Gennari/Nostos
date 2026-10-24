@@ -8,11 +8,11 @@
   data-testid="command-palette"
 >
   <div class="palette-input-row">
-    <nostos-icon name="magnifying-glass" [size]="18" class="palette-input-icon"></nostos-icon>
+    <nostos-search-field class="palette-field" [clearable]="false">
     <input
       #paletteInput
-      class="palette-input"
-      type="text"
+      appInput
+      type="search"
       role="combobox"
       aria-autocomplete="list"
       aria-expanded="true"
@@ -27,6 +27,7 @@
       aria-label="Search Nostos"
       data-testid="palette-input"
     />
+    </nostos-search-field>
     @if (searching()) {
     <nostos-loading-indicator class="palette-loading" decorative size="sm" />
     }

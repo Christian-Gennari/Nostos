@@ -338,7 +338,7 @@ describe('BrainWritingHandoffComponent', () => {
     fixture.detectChanges();
     expect(component.saving()).toBe(true);
     expect(
-      (fixture.nativeElement.querySelector('.handoff-close') as HTMLButtonElement).disabled
+      (fixture.nativeElement.querySelector('.modal-close') as HTMLButtonElement).disabled
     ).toBe(true);
 
     component.cancel();

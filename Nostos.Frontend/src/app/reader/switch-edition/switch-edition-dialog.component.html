@@ -1,5 +1,6 @@
 @if (isOpen()) {
 <app-modal-shell
+  closeLabel="Close edition switcher"
   [isOpen]="true"
   variant="dialog"
   cardClass="switch-edition-card"
@@ -17,14 +18,6 @@
       <p class="switch-subtitle">{{ book()?.title }}</p>
       }
     </div>
-    <button
-      appIconButton
-      icon="x"
-      [glyphSize]="20"
-      title="Close"
-      aria-label="Close"
-      (click)="close()"
-    ></button>
   </header>
 
   <div class="switch-body" data-testid="switch-edition-dialog">

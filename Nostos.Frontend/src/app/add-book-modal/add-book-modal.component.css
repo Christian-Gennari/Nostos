@@ -82,11 +82,6 @@
   background: var(--bg-surface);
   color: var(--color-text-light);
 }
-.review-cover {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 .review-summary__copy {
   display: flex;
   flex: 1 1 auto;

@@ -74,11 +74,6 @@
   white-space: nowrap;
 }
 
-.pv-close {
-  flex-shrink: 0;
-  margin-right: -0.35rem;
-}
-
 /* --- The page ----------------------------------------------------------- */
 
 .pv-body {
@@ -331,16 +326,9 @@ button.pv-clip-play:hover:not(:disabled) {
   border-top: 1px solid var(--border-color);
 }
 
+/* The bar is the shared nostos-progress, laid flush on the footer's rule. */
 .pv-progress {
-  height: 2px;
-  background: transparent;
-}
-
-.pv-progress-fill {
-  display: block;
-  height: 100%;
-  background: var(--color-accent);
-  transition: width var(--motion-base, 220ms) var(--ease-out, ease-out);
+  border-radius: 0;
 }
 
 .pv-foot-row {

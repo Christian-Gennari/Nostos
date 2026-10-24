@@ -1,17 +1,13 @@
-import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { AppDockComponent } from '../app-dock/app-dock.component';
-import { UtilitySheetComponent } from '../utility-sheet/utility-sheet.component';
-import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
 
 @Component({
   standalone: true,
   selector: 'app-workspace-layout',
-  imports: [RouterOutlet, AppDockComponent, UtilitySheetComponent],
+  imports: [RouterOutlet, AppDockComponent],
   templateUrl: './workspace-layout.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './workspace-layout.component.css',
 })
-export class WorkspaceLayout {
-  readonly sheet = inject(UtilitySheetService);
-}
+export class WorkspaceLayout {}

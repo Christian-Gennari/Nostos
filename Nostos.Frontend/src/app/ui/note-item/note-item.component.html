@@ -81,6 +81,7 @@
   <blockquote
     appQuote
     class="note-item-quote"
+    [size]="isPassage() ? 'sm' : 'md'"
     [pen]="pen()"
     [lines]="isPassage() ? 4 : long() && !expanded() ? 5 : null"
     [class.is-opening]="isPassage()"

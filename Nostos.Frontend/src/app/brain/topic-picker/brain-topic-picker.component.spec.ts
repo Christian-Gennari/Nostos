@@ -72,7 +72,7 @@ describe('BrainTopicPickerComponent', () => {
     fixture.detectChanges();
 
     expect(host.selectedId()).toBe('b');
-    expect(element.querySelectorAll('.merge-target')[1].classList).toContain('selected');
+    expect(element.querySelectorAll('.merge-target')[1].classList).toContain('is-selected');
   });
 
   it('keeps confirm disabled until its owner allows it, then reports the confirmation', () => {
@@ -109,7 +109,7 @@ describe('BrainTopicPickerComponent', () => {
     fixture.detectChanges();
 
     expect(element.querySelector('.merge-target')).toBeNull();
-    expect(query('.merge-picker-empty').textContent).toBe('No topics match.');
+    expect(query('nostos-empty-state').textContent?.trim()).toBe('No topics match.');
   });
 
   it('shows the linking hint and the inspector style only when asked', () => {

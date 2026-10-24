@@ -12,6 +12,7 @@ import { ScrollLockDirective } from '../scroll-lock/scroll-lock.service';
 import { CommonModule } from '@angular/common';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { ModalStack } from './modal-stack.service';
+import { IconButtonComponent } from '../icon-button/icon-button.component';
 
 /**
  * How the shell presents itself.
@@ -32,9 +33,11 @@ export type ModalShellVariant = 'sheet' | 'dialog';
  * `editions-modal`, `confirm-modal`), so "what a dialog looks like on a phone"
  * meant three edits and usually missed one. The shell owns that geometry.
  *
- * Callers own their content, including their own close control — every form
- * dialog here already has one, styled to its own header, and a second one
- * rendered by the shell would only be a duplicate to keep in sync.
+ * Callers own their content. The close control is the shell's: a dialog names
+ * it with `closeLabel` ("Close import dialog") and the shell draws the one
+ * icon button, in the one place, disabled while `busy`. A dialog that is not
+ * dismissable by a button (a confirmation, whose actions are its way out) omits
+ * `closeLabel`.
  *
  * The regions, top to bottom:
  *
@@ -51,7 +54,7 @@ export type ModalShellVariant = 'sheet' | 'dialog';
 @Component({
   selector: 'app-modal-shell',
   standalone: true,
-  imports: [CommonModule, CdkTrapFocus, ScrollLockDirective],
+  imports: [CommonModule, CdkTrapFocus, ScrollLockDirective, IconButtonComponent],
   templateUrl: './modal-shell.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './modal-shell.component.css',
@@ -105,6 +108,15 @@ export class ModalShell {
 
   /** A hairline under the header. Off for compact cards that pad their own. */
   headDivider = input<boolean>(true);
+
+  /**
+   * Draws the shell's close button with this accessible name. Leave unset for a
+   * dialog that closes through its actions only.
+   */
+  closeLabel = input<string | null>(null);
+
+  /** Whether the close button takes focus on open (a dialog with nothing to fill in). */
+  closeFocusInitial = input<boolean>(false);
 
   closed = output<void>();
 

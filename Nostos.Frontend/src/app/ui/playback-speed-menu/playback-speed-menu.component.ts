@@ -25,6 +25,16 @@ export class MenuStepItemDirective extends CdkMenuItem {
   }
 }
 
+/**
+ * The common rates every player offers, so read aloud and the audiobook list the
+ * same speeds. A player that cannot render the fastest one passes `max`
+ * (read aloud stops at 1.5×).
+ */
+export const COMMON_PLAYBACK_RATES: readonly number[] = [0.75, 1, 1.25, 1.5, 2];
+
+/** The one name of the control, in the button, its menu and the screen reader. */
+export const PLAYBACK_SPEED_LABEL = 'Playback speed';
+
 /** Two rates closer than this are the same rate (0.05 steps add up in floating point). */
 const SAME = 1e-6;
 
@@ -135,8 +145,8 @@ export class PlaybackSpeedMenuComponent {
   readonly min = input<number | null>(null);
   /** The fastest rate the player supports (defaults to the fastest preset). */
   readonly max = input<number | null>(null);
-  /** Names the control and its menu ("Reading speed", "Playback speed"). */
-  readonly label = input('Playback speed');
+  /** Names the control and its menu; every player keeps "Playback speed". */
+  readonly label = input(PLAYBACK_SPEED_LABEL);
   readonly variant = input<ButtonVariant>('ghost');
 
   readonly rateChange = output<number>();

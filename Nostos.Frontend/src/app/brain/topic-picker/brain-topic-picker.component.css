@@ -40,7 +40,7 @@
 }
 
 /* The rows are the shared topic option row (ui/topic-option); the chosen
- * one keeps the active fill. */
+ * one carries its check. */
 .merge-target:hover {
   background: var(--bg-hover);
 }
@@ -48,7 +48,6 @@
 /* Says what linking will actually do before it does it: the association this
  * codebase has is an explicit [[reference]] in the note, and a user should not
  * discover that by reading the diff. */
-.merge-picker-empty,
 .merge-picker-hint {
   padding: 0.8rem 0.65rem;
   color: var(--color-text-muted);

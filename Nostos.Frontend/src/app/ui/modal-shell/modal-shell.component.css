@@ -107,6 +107,28 @@
   padding: var(--modal-head-padding);
 }
 
+.modal-head.has-close {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.modal-head-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.modal-close {
+  flex: 0 0 auto;
+  /* The glyph, not the 44px box, lines up with the title's first line. */
+  margin-block: -0.25rem;
+}
+
+.modal-close:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .modal-head.is-divided {
   border-bottom: 1px solid var(--border-color);
 }

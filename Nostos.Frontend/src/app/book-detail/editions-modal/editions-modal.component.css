@@ -53,22 +53,6 @@
   white-space: nowrap;
 }
 
-/* Optical alignment only: pulls the 32px control level with the title's cap line
-   instead of letting it push the header taller. */
-.editions-modal-close {
-  flex-shrink: 0;
-  margin: -0.15rem -0.25rem 0 0;
-}
-
-/* `icon-btn` has no disabled state anywhere in the app (no surface needed one
-   before this), and the shell's `busy` guard already blocks Escape and the
-   backdrop — so the control must also stop looking live. Scoped to this header on
-   purpose: the shared button deliberately owns no surface styling. */
-.editions-modal-close:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* --- Body -------------------------------------------------------------- */
 
 /* Padding only: the shell owns the scrolling. */

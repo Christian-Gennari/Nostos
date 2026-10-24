@@ -25,16 +25,6 @@
   color: var(--color-text-main);
 }
 
-.highlight-import-close {
-  flex-shrink: 0;
-  margin: -0.15rem -0.25rem 0 0;
-}
-
-.highlight-import-close:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 .highlight-import-body {
   padding: 0.95rem 1.25rem 1.25rem;
 }
@@ -421,9 +411,9 @@ summary.highlight-section-header:focus-visible {
 }
 
 .highlight-picker-empty {
-  padding: 0.4rem 0.5rem;
-  font-size: 0.78rem;
-  color: var(--color-text-light);
+  display: flex;
+  justify-content: center;
+  list-style: none;
 }
 
 .highlight-picker-footer {

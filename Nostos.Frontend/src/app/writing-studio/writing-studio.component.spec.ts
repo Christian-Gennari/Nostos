@@ -210,7 +210,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(search.classList.contains('nostos-form-control')).toBe(true);
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
 
-    const count = fixture.nativeElement.querySelector('.badge-count') as HTMLSpanElement;
+    const count = fixture.nativeElement.querySelector('.index-list .topic-option-count') as HTMLSpanElement;
     // A topic's usage is a plain muted number, not a badge (issue #1204).
     expect(count.tagName).toBe('SPAN');
     expect(count.classList.contains('nostos-badge')).toBe(false);
@@ -242,7 +242,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     );
     expect(tabIcons.map((icon) => icon.componentInstance.name())).toEqual(['hash', 'book']);
 
-    const topicRow = fixture.nativeElement.querySelector('.list-item') as HTMLButtonElement;
+    const topicRow = fixture.nativeElement.querySelector('.index-list .topic-option') as HTMLButtonElement;
     expect(topicRow.tagName).toBe('BUTTON');
     expect(topicRow.classList.contains('nostos-button')).toBe(false);
 

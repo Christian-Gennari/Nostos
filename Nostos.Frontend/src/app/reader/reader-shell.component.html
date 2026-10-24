@@ -252,7 +252,9 @@
       >
         <button appButton type="button" variant="secondary" size="sm" (click)="goBack()">Book details</button>
       </nostos-empty-state>
-      } @else if (!loading()) { @switch (fileType()) { @case ('pdf') {
+      } @else if (loading()) {
+      <nostos-loading-indicator class="reader-loading" label="Opening book" />
+      } @else { @switch (fileType()) { @case ('pdf') {
       <app-pdf-reader
         [bookId]="book()!.id"
         [initialLocation]="$safeNavigationMigration(book()?.lastLocation)"
@@ -273,14 +275,16 @@
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" (contentsRequested)="openContents()" />
       } @default {
-      <div class="reader-load-error" role="alert">
-        <nostos-icon name="warning" [size]="28"></nostos-icon>
-        <h2>This format can’t be read here</h2>
-        <p>Nostos supports EPUB, PDF, and audiobook files in the Reader.</p>
-        <div class="reader-load-error-actions">
-          <button appButton type="button" variant="secondary" (click)="goBack()">Book details</button>
-        </div>
-      </div>
+      <nostos-empty-state
+        class="reader-load-error"
+        error
+        [retryable]="false"
+        icon="warning"
+        message="This format can’t be read here"
+        detail="Nostos supports EPUB, PDF, and audiobook files in the Reader."
+      >
+        <button appButton type="button" variant="secondary" size="sm" (click)="goBack()">Book details</button>
+      </nostos-empty-state>
       } } }
 
       @if (saveFeedback()) {
@@ -859,14 +863,10 @@
   @if (typoOpen() && (fileType() === 'epub' || fileType() === 'pdf')) {
   <nostos-settings-popover
     [origin]="typoToggleButton?.nativeElement ?? null"
-    label="View settings"
+    heading="View settings"
     (dismissed)="closeTypo()"
   >
   <div class="typo-panel" data-testid="typo-panel">
-    <div class="typo-panel-heading">
-      <h2>View settings</h2>
-      <button appIconButton icon="x" type="button" (click)="closeTypo()" aria-label="Close view settings" title="Close view settings"></button>
-    </div>
     <!-- App-wide theme (#651). It drives ThemeService, the one owner of the
          theme, so it is the same setting as Settings → Appearance and both
          readers follow it without reloading. Kept first and identical for EPUB
@@ -1072,6 +1072,7 @@
 
 <!-- Save a passage (issue #1014): both ends are marked; title it and keep it. -->
 <app-modal-shell
+  closeLabel="Close passage dialog"
   [isOpen]="passageSheetOpen()"
   variant="sheet"
   cardClass="passage-sheet-card"
@@ -1091,15 +1092,6 @@
       <p class="passage-sheet-meta" data-testid="passage-sheet-size">{{ passageDraftSize() }}</p>
       }
     </div>
-    <button
-      appIconButton
-      icon="x"
-      type="button"
-      aria-label="Close"
-      title="Close"
-      [disabled]="passageSaving()"
-      (click)="closePassageSheet()"
-    ></button>
   </header>
 
   <div class="passage-sheet-body">
@@ -1137,12 +1129,12 @@
       </div>
     </div>
     } @else {
-    <div class="passage-sheet-excerpt" data-testid="passage-sheet-excerpt">
+    <blockquote appQuote class="passage-sheet-excerpt" data-testid="passage-sheet-excerpt">
       <p class="passage-sheet-opening">{{ draft.opening }}</p>
       @if (draft.closing !== draft.opening) {
       <p class="passage-sheet-closing">{{ draft.closing }}</p>
       }
-    </div>
+    </blockquote>
     }
 
     <label class="passage-sheet-label" for="passage-sheet-note">Note <span class="passage-sheet-optional">(optional)</span></label>

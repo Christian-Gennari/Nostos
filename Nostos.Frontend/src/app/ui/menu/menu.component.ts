@@ -10,7 +10,7 @@ import {
   CdkMenuTrigger,
   MENU_SCROLL_STRATEGY,
 } from '@angular/cdk/menu';
-import type { ConnectedPosition, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
+import { Overlay, type ConnectedPosition, type OverlayRef, type ScrollStrategy } from '@angular/cdk/overlay';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -25,6 +25,7 @@ import {
 } from '@angular/core';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import type { NostosIconName } from '../icon/nostos-icons';
+import { isPhoneViewport } from '../breakpoints';
 
 export type MenuItemTone = 'default' | 'danger';
 
@@ -49,6 +50,13 @@ export type MenuItemTone = 'default' | 'danger';
  *   </ng-template>
  *
  * A single-choice value belongs in `app-dropdown`, not here.
+ *
+ * At phone width (`PHONE_QUERY`) the menu opens as a bottom sheet instead of
+ * hanging from its trigger: the same surface as the settings panel's sheet
+ * (`.nostos-surface` inside a `.nostos-sheet-pane`, one keyframe, one grab
+ * handle). The trigger decides when it opens, so a resize while open leaves it
+ * as it was. A row that navigates is `<a nostosMenuItem href>` or a button that
+ * calls the router; either closes the menu.
  */
 @Component({
   selector: 'nostos-menu',
@@ -57,14 +65,14 @@ export type MenuItemTone = 'default' | 'danger';
   // The menu renders in the CDK overlay, outside any host element.
   encapsulation: ViewEncapsulation.None,
   hostDirectives: [CdkMenu],
-  host: { class: 'nostos-menu' },
+  host: { class: 'nostos-menu nostos-surface' },
   template: `<ng-content />`,
   styleUrl: './menu.component.css',
 })
 export class MenuComponent {}
 
 @Component({
-  selector: 'button[nostosMenuItem]',
+  selector: 'button[nostosMenuItem], a[nostosMenuItem]',
   standalone: true,
   imports: [NostosIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -77,7 +85,7 @@ export class MenuComponent {}
   ],
   host: {
     class: 'nostos-menu-item',
-    type: 'button',
+    '[attr.type]': 'isLink ? null : "button"',
     '[class.nostos-menu-item--danger]': "tone() === 'danger'",
     '[class.nostos-menu-item--with-hint]': '!!hint()',
   },
@@ -92,6 +100,8 @@ export class MenuComponent {}
   `,
 })
 export class MenuItemComponent {
+  /** A link row (`<a nostosMenuItem href>`) keeps its own navigation. */
+  protected readonly isLink = inject(ElementRef).nativeElement.tagName === 'A';
   readonly icon = input<NostosIconName | null>(null);
   readonly tone = input<MenuItemTone>('default');
   /**
@@ -200,9 +210,30 @@ export class MenuTriggerDirective {
     // A "more" button sits at the trailing edge of its row, so the menu hangs
     // from that edge and opens inward. The CDK falls through the list when a
     // position would leave the viewport.
-    inject(CdkMenuTrigger).menuPosition = MENU_POSITIONS;
+    const trigger = inject(CdkMenuTrigger);
+    trigger.menuPosition = MENU_POSITIONS;
+    // The overlay exists only once the CDK has attached it, which is right
+    // after `opened` fires; a microtask later it is there, before the first
+    // paint. Every open decides again, because the overlay is kept between
+    // opens and the viewport may have changed.
+    const overlay = inject(Overlay);
+    trigger.opened.subscribe(() =>
+      queueMicrotask(() => {
+        const ref: OverlayRef | null = trigger['overlayRef'];
+        if (!ref) return;
+        const sheet = isPhoneViewport();
+        ref.updatePositionStrategy(
+          sheet ? overlay.position().global().bottom('0').centerHorizontally() : trigger['_getOverlayPositionStrategy'](),
+        );
+        if (sheet) ref.addPanelClass(SHEET_PANE);
+        else ref.removePanelClass(SHEET_PANE);
+      }),
+    );
   }
 }
+
+/** The overlay pane of a menu opened as a bottom sheet (shared with the settings panel). */
+const SHEET_PANE = 'nostos-sheet-pane';
 
 const MENU_POSITIONS: ConnectedPosition[] = [
   { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top', offsetY: 4 },

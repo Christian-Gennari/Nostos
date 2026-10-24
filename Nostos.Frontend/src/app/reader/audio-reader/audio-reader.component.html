@@ -1,13 +1,15 @@
 <div class="audio-container">
   <div class="cover-section">
     <div class="cover-art">
-      @if (coverSrc(); as cover) {
-      <img [src]="cover" alt="Book cover" appBloomArt class="cover-img" />
-      } @else {
-      <div class="placeholder-art">
-        <nostos-icon name="waveform" [size]="48" class="placeholder-icon"></nostos-icon>
-      </div>
-      }
+      <nostos-book-cover
+        class="cover-img"
+        size="fill"
+        reveal="bloom"
+        format="audiobook"
+        loading="eager"
+        [src]="coverSrc()"
+        [bookTitle]="book()?.title"
+      />
 
       <!-- Waiting and error states sit ON the cover, absolutely positioned, so the
            player below never moves when they come and go. They used to be a row
@@ -136,7 +138,6 @@
         <nostos-playback-speed-menu
           class="playback-option"
           variant="secondary"
-          label="Playback speed"
           [rate]="currentRate()"
           [rates]="availableRates"
           [step]="rateStep"

@@ -168,7 +168,10 @@
           message="Your books could not be loaded."
           (retry)="retryLoad()"
         />
-        } @else if (!loading()) {
+        } @else if (loading()) {
+        <!-- Held back a beat (see .results-loading): a fast load never flashes it. -->
+        <nostos-loading-indicator class="results-loading" label="Loading your books" />
+        } @else {
       @if (viewMode() === 'list') {
       <div class="table-view">
         <div class="table-header">

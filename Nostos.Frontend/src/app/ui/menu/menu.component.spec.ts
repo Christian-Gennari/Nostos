@@ -96,6 +96,32 @@ describe('Menu', () => {
     expect(menu()).toBeNull();
   });
 
+  describe('at phone width', () => {
+    afterEach(() => Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 }));
+
+    it('opens as a bottom sheet on the shared surface, and as a popover again when wide', () => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+      trigger().click();
+      fixture.detectChanges();
+      return Promise.resolve().then(() => {
+        expect(menu()!.classList).toContain('nostos-surface');
+        expect(menu()!.closest('.nostos-sheet-pane')).toBeTruthy();
+
+        trigger().click();
+        fixture.detectChanges();
+        expect(menu()).toBeNull();
+
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+        trigger().click();
+        fixture.detectChanges();
+        return Promise.resolve().then(() => {
+          expect(menu()).not.toBeNull();
+          expect(menu()!.closest('.nostos-sheet-pane')).toBeNull();
+        });
+      });
+    });
+  });
+
   // The page scrolls inside its own container, not the window, so the menu
   // has to hear any element's scroll to stay with its trigger.
   describe('when a scroll container moves the trigger', () => {

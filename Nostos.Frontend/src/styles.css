@@ -2630,3 +2630,92 @@ app-assistant {
     scrollbar-gutter: stable;
   }
 }
+
+/* ------------------------------
+   OVERLAY SURFACE: nostos-menu and nostos-settings-popover
+------------------------------ */
+/* One floating surface, two guests. The menu and the settings panel render in
+   the CDK overlay, so these rules are global. `.nostos-surface` is the box
+   (border, corner, shadow, entrance); at phone width the overlay pane is
+   `.nostos-sheet-pane` and the same box becomes a sheet along the bottom edge
+   with a grab handle. Each component owns only what is inside the box. */
+.nostos-surface {
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-md);
+  font-family: 'Hanken Grotesk', sans-serif;
+  transform-origin: top right;
+  animation: nostos-surface-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes nostos-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+@keyframes nostos-sheet-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+}
+
+.nostos-sheet-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 72dvh;
+}
+
+.nostos-sheet-pane > .nostos-surface {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  border-width: 1px 0 0;
+  border-radius: var(--radius-popover) var(--radius-popover) 0 0;
+  padding-inline: max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-right, 0px));
+  padding-top: 0;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  animation-name: nostos-sheet-in;
+}
+
+.nostos-sheet-pane > .nostos-surface::before {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 4px;
+  margin: 0.625rem auto;
+  border-radius: var(--radius-pill);
+  background: var(--border-color);
+}
+
+/* The heading row a surface may carry: a title and the one close button. */
+.nostos-surface-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.nostos-surface-heading h2 {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.125rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nostos-surface,
+  .nostos-sheet-pane > .nostos-surface {
+    animation: none;
+  }
+}

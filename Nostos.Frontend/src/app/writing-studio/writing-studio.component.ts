@@ -52,7 +52,7 @@ import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
-import { NO_TOPICS_MATCH } from '../ui/topic-option/topic-option.component';
+import { NO_TOPICS, NO_TOPICS_MATCH, TopicOptionComponent } from '../ui/topic-option/topic-option.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -195,6 +195,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     ExportDialogComponent,
     QuoteBlockComponent,
     TopicChipComponent,
+    TopicOptionComponent,
     EmptyStateComponent,
     LoadingIndicatorComponent,
   ],
@@ -1953,6 +1954,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The pen a source row's quotation is shown in; null when the row does not know it. */
   readonly quotePen = quotePen;
   readonly noTopicsMatch = NO_TOPICS_MATCH;
+  readonly noTopics = NO_TOPICS;
 
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) => this.quotePassageSelection(text, passage),

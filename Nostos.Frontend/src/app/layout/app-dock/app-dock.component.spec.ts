@@ -8,7 +8,6 @@ import { Subject, of } from 'rxjs';
 import { AppDockComponent } from './app-dock.component';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
-import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
 import { AssistantLauncherService } from '../../ui/assistant/assistant-launcher.service';
 import { AssistantService } from '../../ui/assistant/assistant.service';
 import { AssistantStatusService } from '../../ui/assistant/assistant-status.service';
@@ -253,27 +252,26 @@ describe('AppDockComponent', () => {
     expect(labels).toEqual(['Library', 'Brain', 'Studio', 'More']);
   });
 
-  it('opens and closes the More sheet from the dock trigger', () => {
+  it('opens and closes the More menu from the dock trigger', () => {
     const fixture = render(390);
-    const sheet = TestBed.inject(UtilitySheetService);
     const more = fixture.nativeElement.querySelector(
       '[data-testid="dock-more"]',
     ) as HTMLButtonElement;
 
-    expect(sheet.open()).toBe(false);
+    expect(document.querySelector('.nostos-menu')).toBeNull();
     expect(more.getAttribute('aria-expanded')).toBe('false');
-    expect(more.getAttribute('aria-controls')).toBe('mobile-more-sheet');
-    expect(more.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(more.getAttribute('aria-haspopup')).toBe('menu');
 
     more.click();
     fixture.detectChanges();
-    expect(sheet.open()).toBe(true);
+    expect(document.querySelector('.nostos-menu')).toBeTruthy();
     expect(more.getAttribute('aria-expanded')).toBe('true');
     expect(more.classList).toContain('dock-item-open');
 
     more.click();
     fixture.detectChanges();
-    expect(sheet.open()).toBe(false);
+    expect(document.querySelector('.nostos-menu')).toBeNull();
+    expect(more.classList).not.toContain('dock-item-open');
   });
 
   it('shows More before capabilities resolve and keeps it after', () => {
@@ -299,19 +297,18 @@ describe('AppDockComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeTruthy();
   });
 
-  it('closes the More sheet when the viewport crosses to the wide shell', () => {
+  it('closes the More menu when the viewport crosses to the wide shell', () => {
     const fixture = render(390);
-    const sheet = TestBed.inject(UtilitySheetService);
 
     (fixture.nativeElement.querySelector('[data-testid="dock-more"]') as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(sheet.open()).toBe(true);
+    expect(document.querySelector('.nostos-menu')).toBeTruthy();
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
     window.dispatchEvent(new Event('resize'));
     fixture.detectChanges();
 
-    expect(sheet.open()).toBe(false);
+    expect(document.querySelector('.nostos-menu')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });

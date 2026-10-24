@@ -387,11 +387,11 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
     fixture.componentRef.setInput('bookId', 'book-1');
     fixture.detectChanges();
     // Issue #227 §2: nine entries was too much choice for a once-a-session control.
-    expect(component.availableRates).toEqual([0.8, 1, 1.25, 1.5, 2]);
+    expect(component.availableRates).toEqual([0.75, 1, 1.25, 1.5, 2]);
 
     openSpeedMenu();
     const choices = Array.from(document.querySelectorAll('[data-testid="playback-speed-menu"] [role="menuitemradio"]'));
-    expect(choices.map((el) => el.textContent?.trim())).toEqual(['0.8×', '1×', '1.25×', '1.5×', '2×']);
+    expect(choices.map((el) => el.textContent?.trim())).toEqual(['0.75×', '1×', '1.25×', '1.5×', '2×']);
 
     overlayButton('playback-speed-faster').click();
     fixture.detectChanges();

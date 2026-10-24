@@ -1,4 +1,5 @@
 import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { READING_STATUS_LABEL, readingStatusOf } from '../core/reading-status';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -113,6 +114,7 @@ interface StatusConfirmCopy {
     DropdownComponent,
     EditionSwitcherComponent,
     EmptyStateComponent,
+    TopicChipComponent,
   ],
   providers: [BookDetailStore, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './book-detail.component.html',

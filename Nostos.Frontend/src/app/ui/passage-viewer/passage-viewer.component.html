@@ -1,5 +1,6 @@
 @if (request(); as req) {
 <app-modal-shell
+  closeLabel="Close passage"
   [isOpen]="true"
   variant="sheet"
   [cardClass]="isAudio() ? 'passage-viewer-card is-clip' : 'passage-viewer-card'"
@@ -21,16 +22,6 @@
       <p class="pv-subtitle">{{ subtitle() }}</p>
       }
     </div>
-    <button
-      appIconButton
-      icon="x"
-      type="button"
-      class="pv-close"
-      aria-label="Close passage"
-      title="Close"
-      data-testid="passage-viewer-close"
-      (click)="close()"
-    ></button>
   </header>
 
   <div class="pv-body">
@@ -155,9 +146,7 @@
   </div>
 
   <footer class="pv-foot" shellActions>
-    <div class="pv-progress" aria-hidden="true" [class.is-hidden]="isAudio()">
-      <span class="pv-progress-fill" [style.width.%]="progress()"></span>
-    </div>
+    <nostos-progress class="pv-progress" decorative [class.is-hidden]="isAudio()" [value]="progress()" />
     <div class="pv-foot-row">
       <button
         appButton

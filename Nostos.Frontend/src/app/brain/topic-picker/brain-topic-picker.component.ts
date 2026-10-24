@@ -1,4 +1,5 @@
 import { Component, input, model, output, ChangeDetectionStrategy } from '@angular/core';
+import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import { FormsModule } from '@angular/forms';
 
 import type { TopicDto } from '../../core/services/topics.service';
@@ -22,7 +23,8 @@ import { NO_TOPICS_MATCH, TopicOptionComponent } from '../../ui/topic-option/top
 @Component({
   standalone: true,
   selector: 'app-brain-topic-picker',
-  imports: [SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective, TopicOptionComponent],
+  imports: [
+    EmptyStateComponent, SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective, TopicOptionComponent],
   templateUrl: './brain-topic-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './brain-topic-picker.component.css',

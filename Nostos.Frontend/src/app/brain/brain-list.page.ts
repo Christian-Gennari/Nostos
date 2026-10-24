@@ -12,6 +12,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
@@ -107,6 +108,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     BrainTopicUsedInComponent,
     EmptyStateComponent,
     PagingStatusComponent,
+    TopicChipComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',

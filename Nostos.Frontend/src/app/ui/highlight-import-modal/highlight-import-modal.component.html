@@ -1,5 +1,6 @@
 @if (isOpen()) {
 <app-modal-shell
+  closeLabel="Close highlight import"
   [isOpen]="true"
   variant="sheet"
   cardClass="highlight-import-card"
@@ -16,16 +17,6 @@
     <h2 id="highlight-import-title" class="highlight-import-title">
       {{ stage() === 'review' ? 'Review before importing' : 'Import highlights' }}
     </h2>
-    <button
-      appIconButton
-      icon="x"
-      [glyphSize]="20"
-      class="highlight-import-close"
-      title="Close"
-      aria-label="Close"
-      [disabled]="busy() || undoing()"
-      (click)="close()"
-    ></button>
   </header>
 
   <div class="highlight-import-body">
@@ -474,13 +465,13 @@
           } @empty {
             <li class="highlight-picker-empty">
               @if (searching()) {
-                Searching…
+                <nostos-loading-indicator label="Searching" />
               } @else if (searchError()) {
-                Search could not finish. Try again.
+                <nostos-empty-state compact error [retryable]="false" message="Search could not finish. Try again." />
               } @else if (searchQuery().trim()) {
-                No book in your library matches.
+                <nostos-empty-state compact message="No book in your library matches." />
               } @else {
-                Type a title or an author.
+                <nostos-empty-state compact message="Type a title or an author." />
               }
             </li>
           }

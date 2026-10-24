@@ -2,7 +2,7 @@
      (a sheet on a phone) and says when Escape or a press outside closes it. -->
 <nostos-settings-popover
   [origin]="anchor()"
-  label="Page settings"
+  heading="Page settings"
   [initialFocus]="false"
   [restoreFocus]="false"
   (dismissed)="closed.emit($event)"
@@ -10,7 +10,10 @@
 <section #panel class="page-settings" data-testid="page-settings" (keydown.escape)="escape($event)">
   @if (view() === 'fonts') {
     <header class="ps-subhead">
-      <button appIconButton icon="caret-left" [glyphSize]="16" aria-label="Back to page settings" title="Back" (click)="backToMain()"></button>
+      <button appButton variant="ghost" size="sm" type="button" class="ps-back" aria-label="Back to page settings" (click)="backToMain()">
+        <nostos-icon name="arrow-left" [size]="14" aria-hidden="true"></nostos-icon>
+        Back
+      </button>
       <h2 class="ps-subhead-title">Typeface</h2>
     </header>
     <div class="ps-fonts" role="radiogroup" aria-label="Typeface">
@@ -39,7 +42,10 @@
     </div>
   } @else if (view() === 'citations') {
     <header class="ps-subhead">
-      <button appIconButton icon="caret-left" [glyphSize]="16" aria-label="Back to page settings" title="Back" (click)="backToMain()"></button>
+      <button appButton variant="ghost" size="sm" type="button" class="ps-back" aria-label="Back to page settings" (click)="backToMain()">
+        <nostos-icon name="arrow-left" [size]="14" aria-hidden="true"></nostos-icon>
+        Back
+      </button>
       <h2 class="ps-subhead-title">Citation style</h2>
     </header>
     <!-- The writing's books that lack a detail the style needs (issue #1157):

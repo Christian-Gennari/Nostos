@@ -20,7 +20,6 @@ import { TemplatePortal } from '@angular/cdk/portal';
 
 import { InputDirective } from '../form-control/form-control.directive';
 import { SearchFieldComponent } from '../search-field/search-field.component';
-import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import { TopicAutocompleteService, TopicPickerMode } from './topic-autocomplete.service';
@@ -41,7 +40,7 @@ import { TopicAutocompleteService, TopicPickerMode } from './topic-autocomplete.
 @Component({
   standalone: true,
   selector: 'topic-autocomplete-panel',
-  imports: [NgTemplateOutlet, ModalShell, InputDirective, IconButtonComponent, SearchFieldComponent, TopicOptionComponent],
+  imports: [NgTemplateOutlet, ModalShell, InputDirective, SearchFieldComponent, TopicOptionComponent],
   templateUrl: './topic-autocomplete-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./topic-autocomplete-panel.css'],

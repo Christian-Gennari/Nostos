@@ -12,6 +12,8 @@ import {
   viewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { SearchFieldComponent } from '../search-field/search-field.component';
+import { InputDirective } from '../form-control/form-control.directive';
 import { lockScrollWhile } from '../scroll-lock/scroll-lock.service';
 import { Router } from '@angular/router';
 import { ModalStack } from '../modal-shell/modal-stack.service';
@@ -137,7 +139,7 @@ const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
 @Component({
   selector: 'app-command-palette',
   standalone: true,
-  imports: [EmptyStateComponent, LoadingIndicatorComponent, NostosIconComponent, BookCoverComponent, ButtonComponent],
+  imports: [SearchFieldComponent, InputDirective, EmptyStateComponent, LoadingIndicatorComponent, NostosIconComponent, BookCoverComponent, ButtonComponent],
   templateUrl: './command-palette.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './command-palette.component.css',

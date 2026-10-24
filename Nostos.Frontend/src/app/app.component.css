@@ -27,7 +27,7 @@
   opacity: 0;
   transform: scaleX(0);
   transform-origin: left;
-  background: linear-gradient(90deg, var(--color-accent), var(--color-primary), var(--color-accent));
+  background: var(--color-primary);
   transition: opacity 120ms ease;
 }
 
