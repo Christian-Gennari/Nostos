@@ -29,11 +29,17 @@ export async function openReferenceRailOnLoad(target: Pick<Page, 'addInitScript'
     const started = Date.now();
     const tryOpen = () => {
       const toggle = document.querySelector<HTMLButtonElement>('.reference-toggle');
-      if (toggle) {
-        if (toggle.getAttribute('aria-expanded') === 'false') toggle.click();
+      // The button is in the DOM a moment before its bindings are: a routed
+      // Studio is created first and checked on the next change detection. Until
+      // aria-expanded is bound, its state is unknown, so keep waiting rather
+      // than give up (this race left the rail closed on a slow CI runner).
+      const expanded = toggle?.getAttribute('aria-expanded');
+      if (expanded === 'false') {
+        toggle!.click();
         return;
       }
-      if (Date.now() - started < 15000) window.setTimeout(tryOpen, 50);
+      if (expanded === 'true') return;
+      if (Date.now() - started < 30000) window.setTimeout(tryOpen, 50);
     };
     window.addEventListener('DOMContentLoaded', tryOpen, { once: true });
   });
