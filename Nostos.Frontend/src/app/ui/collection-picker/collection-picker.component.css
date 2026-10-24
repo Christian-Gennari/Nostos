@@ -1,9 +1,8 @@
 /* Multi-select collection picker.
    Deliberately built only from existing theme tokens — a new colour token would
-   need a dark counterpart or `npm run check:theme` fails (AGENTS.md §5). The
-   selected-row recipe mirrors the sidebar's own fill/ink split
-   (--selection-surface / --selection-ink) so a chosen collection reads the same
-   here as it does in the rail. The box is the shared appCheckbox. */
+   need a dark counterpart or `npm run check:theme` fails (AGENTS.md §5). A
+   chosen collection is told by its shared appCheckbox alone; a filled row as
+   well said the same thing twice, loudly (issue #1204). */
 
 .picker {
   display: flex;
@@ -73,11 +72,6 @@
 
 .option:hover {
   background: var(--bg-hover);
-}
-
-.option.selected {
-  background: var(--selection-surface);
-  color: var(--selection-ink);
 }
 
 .option-name {
