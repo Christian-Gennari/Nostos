@@ -50,7 +50,7 @@ import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.comp
 import { EditionPlaceKeeper, KeeperPlace } from './switch-edition/edition-place-keeper';
 import { AlignmentService } from '../core/services/alignment.service';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
-import { NoteItemComponent } from '../ui/note-item/note-item.component';
+import { NoteItemComponent, type NoteItemEdit } from '../ui/note-item/note-item.component';
 import { noteAsItem } from '../ui/note-item/note-item.helpers';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
@@ -212,6 +212,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.noteActions.attach({
       replace: (hit) => this.replaceNoteFromHit(hit),
       remove: (noteId) => this.dbNotes.update((notes) => notes.filter((note) => note.id !== noteId)),
+      edited: (saved, edit) => this.noteEdited(saved, edit),
     });
 
     // Read aloud follows whichever text reader is mounted.
@@ -879,6 +880,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   highlightSaving = signal(false);
 
   dbNotes = signal<Note[]>([]);
+  /** The book's notes could not be read; the panel offers Try again. */
+  notesFailed = signal(false);
   /**
    * Each note's topics, by note id. The reader's own list of notes does not
    * carry them, so they are read from the Brain's listing of this book.
@@ -1112,6 +1115,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.loadError.set(null);
     this.book.set(null);
     this.dbNotes.set([]);
+    this.notesFailed.set(false);
     this.pendingSelectionText.set(null);
     this.closeHighlightCard();
     this.highlightSaving.set(false);
@@ -1466,8 +1470,10 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   loadNotes(bookId: string) {
-    this.notesService.list(bookId).subscribe((notes) => {
-      this.dbNotes.set(notes.reverse());
+    this.notesFailed.set(false);
+    this.notesService.list(bookId).subscribe({
+      next: (notes) => this.dbNotes.set(notes.reverse()),
+      error: () => this.notesFailed.set(true),
     });
     this.loadNoteTopics(bookId);
   }
@@ -1822,7 +1828,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   recolourActiveHighlight(colour: HighlightColour): void {
     const note = this.activeHighlight();
     if (!note || colour === this.activeHighlightPen()) return;
-    this.onUpdateNote({ id: note.id, content: note.content ?? '', highlightColour: colour });
+    this.onUpdateNote({ id: note.id, content: note.content ?? '', highlightColour: colour }, { quiet: true });
   }
 
   copyActiveHighlight(): void {
@@ -1969,37 +1975,27 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   // --- HANDLERS FOR NOTE CARD ---
 
-  onUpdateNote(event: {
-    id: string;
-    content: string;
-    selectedText?: string;
-    highlightColour?: HighlightColour;
-    passageTitle?: string;
-  }) {
-    this.notesService
-      .update(event.id, {
-        content: event.content,
-        selectedText: event.selectedText,
-        highlightColour: event.highlightColour,
-        passageTitle: event.passageTitle,
-      })
-      .subscribe({
-        next: (updated) => {
-          // Update local state so we see the change immediately without reload
-          this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
-          this.refreshNoteTopics(updated.id);
-          this.loadTopics();
-          // A changed pen, or a note added to or cleared from a highlight, is
-          // redrawn on the page now, not at the next open.
-          if (updated.cfiRange) {
-            this.activeReader()?.recolourHighlight?.(
-              updated,
-              event.highlightColour ?? noteHighlightColour(updated),
-            );
-          }
-        },
-      });
+  retryNotes(): void {
+    const bookId = this.book()?.id;
+    if (bookId) this.loadNotes(bookId);
   }
+
+  onUpdateNote(event: NoteItemEdit, options: { quiet?: boolean } = {}) {
+    this.noteActions.edit(event, options);
+  }
+
+  /** An edit saved: repaint the list now and redraw a changed pen on the page. */
+  private noteEdited(updated: Note, event: NoteItemEdit): void {
+    this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
+    this.refreshNoteTopics(updated.id);
+    this.loadTopics();
+    // A changed pen, or a note added to or cleared from a highlight, is
+    // redrawn on the page now, not at the next open.
+    if (updated.cfiRange) {
+      this.activeReader()?.recolourHighlight?.(updated, event.highlightColour ?? noteHighlightColour(updated));
+    }
+  }
+
   onDeleteNote(noteId: string) {
     this.pendingNoteDelete.set(noteId);
   }

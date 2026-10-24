@@ -173,6 +173,43 @@ describe('BookDetail reset progress', () => {
     expect(empty?.textContent).toContain('first thought');
   });
 
+  it('says the notes could not be loaded, with Try again, instead of "No notes yet"', async () => {
+    fixture = TestBed.createComponent(BookDetail);
+    component = fixture.componentInstance;
+    await fixture.whenStable();
+    fixture.detectChanges();
+    httpMock.expectOne('/api/books/b1').flush(readableBook());
+    httpMock.expectOne(bookNotes).flush('nope', { status: 500, statusText: 'Server Error' });
+    httpMock.expectOne('/api/collections').flush([]);
+    httpMock.match(brainReads).forEach((request) => request.flush([]));
+    fixture.detectChanges();
+
+    const failed = fixture.nativeElement.querySelector('.notes-empty') as HTMLElement;
+    expect(failed.getAttribute('role') ?? failed.querySelector('[role="alert"]')?.getAttribute('role')).toBe('alert');
+    expect(failed.textContent).toContain('Your notes could not be loaded.');
+
+    (failed.querySelector('button') as HTMLButtonElement).click();
+    httpMock.expectOne(bookNotes).flush(notesPage([{ id: 'n1', content: 'Back again' }]));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.notes-empty')).toBeNull();
+  });
+
+  it('keeps a new note\'s text until it is saved', async () => {
+    await setup();
+    const toastError = vi.spyOn(toast, 'error');
+    component.newNote.set('A thought worth keeping');
+    component.addNote();
+
+    httpMock.expectOne((r) => r.method === 'POST' && r.url.includes('/notes')).flush('no', { status: 500, statusText: 'Server Error' });
+    expect(component.newNote()).toBe('A thought worth keeping');
+    expect(toastError).toHaveBeenCalledWith('Could not save the note. Try again.');
+
+    component.addNote();
+    httpMock.expectOne((r) => r.method === 'POST' && r.url.includes('/notes')).flush({ id: 'n9', content: 'A thought worth keeping' });
+    expect(component.newNote()).toBe('');
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
+  });
+
   it('uses shared primitives for ordinary Book Detail controls without flattening product interactions', async () => {
     await setup(readableBook({ isFavorite: true }));
 

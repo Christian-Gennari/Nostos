@@ -550,8 +550,10 @@ export class BookDetail implements OnInit, OnDestroy {
   addNote(): void {
     const content = this.newNote().trim();
     if (!content) return;
-    this.store.addNote(content, () => this.brain.refresh());
-    this.newNote.set('');
+    this.store.addNote(content, () => {
+      this.newNote.set('');
+      this.brain.refresh();
+    });
   }
 
   /** True while the cover-remove question is up (asked through ConfirmModal). */

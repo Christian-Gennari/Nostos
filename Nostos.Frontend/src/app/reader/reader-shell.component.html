@@ -763,12 +763,16 @@
           (jumpRequested)="onJumpToNote(row.note)"
         />
         } @empty {
+        @if (notesFailed()) {
+        <nostos-empty-state compact error message="Your notes could not be loaded." (retry)="retryNotes()" />
+        } @else {
         <nostos-empty-state
           compact
           concept="note"
           message="No notes yet."
           detail="Highlight text or use the box above to add one."
         />
+        }
         }
       </div>
     </aside>

@@ -1041,9 +1041,13 @@ export class WritingStudio implements OnInit, AfterViewInit {
     target?.focus();
   }
 
+  /** The file list could not be read (and nothing is held to show instead). */
+  readonly treeFailed = signal(false);
+
   loadTree() {
     this.writingsService.list().subscribe({
       next: (items) => {
+        this.treeFailed.set(false);
         this.rootItems.set(items);
         const firstLoad = !this.writingTreeLoaded;
         this.writingTreeLoaded = true;
@@ -1052,6 +1056,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
         else if (firstLoad && !this.activeItem() && !this.blankPage()) this.openStartingPage();
       },
       error: () => {
+        if (this.rootItems().length === 0) this.treeFailed.set(true);
+        else this.toast.error('Could not refresh the writings. Try again.');
         const firstLoad = !this.writingTreeLoaded;
         this.writingTreeLoaded = true;
         if (this.requestedWritingId) this.toast.error('That writing is unavailable');
@@ -1551,7 +1557,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         ) {
           return;
         }
-        if (fromHandoff) this.toast.error('That writing is unavailable');
+        this.toast.error(fromHandoff ? 'That writing is unavailable' : 'Could not open the writing. Try again.');
       },
     });
   }

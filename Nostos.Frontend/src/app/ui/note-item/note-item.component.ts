@@ -2,7 +2,9 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
+  untracked,
   input,
   output,
   signal,
@@ -197,6 +199,27 @@ export class NoteItemComponent {
   readonly pickerOpen = signal(false);
   readonly expanded = signal(false);
   readonly editing = signal(false);
+  /** A saved edit is out; the form stays until the note comes back changed. */
+  readonly saving = signal(false);
+  private savingNote: object | null = null;
+
+  /**
+   * An edit leaves the form open while it saves. When the change settles
+   * (`busy` falls) the form closes if the note was replaced; if it was not,
+   * the save failed and the words stay in the form to try again.
+   */
+  constructor() {
+    effect(() => {
+      const busy = this.busy();
+      const note = this.note();
+      untracked(() => {
+        if (busy || !this.saving()) return;
+        if (note !== this.savingNote) this.editing.set(false);
+        this.saving.set(false);
+      });
+    });
+  }
+
   readonly editContent = signal('');
   readonly editQuote = signal('');
   readonly editTitle = signal('');
@@ -281,6 +304,7 @@ export class NoteItemComponent {
   }
 
   cancelEdit(): void {
+    if (this.saving()) return;
     this.editing.set(false);
   }
 
@@ -308,8 +332,14 @@ export class NoteItemComponent {
       changed = true;
     }
 
-    this.editing.set(false);
-    if (changed) this.edited.emit(edit);
+    if (!changed) {
+      this.editing.set(false);
+      return;
+    }
+    if (this.saving()) return;
+    this.savingNote = note;
+    this.saving.set(true);
+    this.edited.emit(edit);
   }
 
   toggleSelected(checked: boolean): void {

@@ -13,7 +13,7 @@ import {
   ChangeDetectionStrategy,
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { Observable, Subject, catchError, debounceTime, forkJoin, map, of, switchMap } from 'rxjs';
+import { Observable, type OperatorFunction, Subject, catchError, debounceTime, forkJoin, map, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BooksService } from '../../core/services/books.service';
@@ -31,6 +31,7 @@ import { NoteSearchHit } from '../../core/dtos/note.dtos';
 import { WritingDto } from '../../core/dtos/writing.dtos';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import type { NostosIconName } from '../icon/nostos-icons';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { AssistantService } from '../assistant/assistant.service';
 import { AssistantLauncherService } from '../assistant/assistant-launcher.service';
@@ -116,6 +117,8 @@ const LIMITS = { books: 5, topics: 4, notes: 4, documents: 4, collections: 4, sc
 interface ServerResults {
   books: Book[];
   notes: NoteSearchHit[];
+  /** Books or notes could not be searched. */
+  failed?: boolean;
 }
 
 const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
@@ -132,7 +135,7 @@ const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
 @Component({
   selector: 'app-command-palette',
   standalone: true,
-  imports: [LoadingIndicatorComponent, NostosIconComponent, BookCoverComponent, ButtonComponent],
+  imports: [EmptyStateComponent, LoadingIndicatorComponent, NostosIconComponent, BookCoverComponent, ButtonComponent],
   templateUrl: './command-palette.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './command-palette.component.css',
@@ -157,6 +160,8 @@ export class CommandPalette {
   readonly isOpen = this.palette.isOpen;
   readonly query = signal('');
   readonly searching = signal(false);
+  /** The last search could not reach the server: the list says so, not "Nothing matches". */
+  readonly searchFailed = signal(false);
   readonly activeIndex = signal(0);
 
   private readonly inputRef = viewChild<ElementRef<HTMLInputElement>>('paletteInput');
@@ -257,21 +262,25 @@ export class CommandPalette {
             return of(NO_SERVER_RESULTS);
           }
           this.searching.set(true);
+          let failed = false;
+          const failedTo = <T>(empty: T): OperatorFunction<T, T> =>
+            catchError(() => { failed = true; return of(empty); });
           return forkJoin({
             books: wantsBooks
               ? this.booksService
                   .list({ search: q, page: 1, pageSize: LIMITS.books })
-                  .pipe(map((res) => res.items ?? []), catchError(() => of([] as Book[])))
+                  .pipe(map((res) => res.items ?? []), failedTo([] as Book[]))
               : of([] as Book[]),
             notes: wantsNotes
-              ? this.notesService.search(q, LIMITS.notes).pipe(catchError(() => of([] as NoteSearchHit[])))
+              ? this.notesService.search(q, LIMITS.notes).pipe(failedTo([] as NoteSearchHit[]))
               : of([] as NoteSearchHit[]),
-          });
+          }).pipe(map((found) => ({ ...found, failed })));
         }),
         takeUntilDestroyed(),
       )
       .subscribe((results) => {
         this.server.set(results);
+        this.searchFailed.set(!!results.failed);
         this.searching.set(false);
         // New results reorder the list; keep the highlight on a real row.
         if (this.activeIndex() >= this.entries().length) this.activeIndex.set(0);
@@ -353,8 +362,17 @@ export class CommandPalette {
     this.activeIndex.set(0);
     // Results stay until the next answer arrives, so typing does not make the
     // Books and Notes sections blink; an emptied query clears them at once.
-    if (!value.trim()) this.server.set(NO_SERVER_RESULTS);
+    if (!value.trim()) {
+      this.server.set(NO_SERVER_RESULTS);
+      this.searchFailed.set(false);
+    }
     this.searchSubject.next(value);
+  }
+
+  /** Try again after a failed search. */
+  retrySearch(): void {
+    this.searchFailed.set(false);
+    this.searchSubject.next(this.query());
   }
 
   moveActive(delta: number): void {

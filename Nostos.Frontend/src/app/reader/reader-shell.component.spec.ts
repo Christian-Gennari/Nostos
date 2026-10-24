@@ -2917,6 +2917,37 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     expect(notesService().delete).not.toHaveBeenCalled();
   });
 
+  it('toasts a failed note edit from the notes panel instead of losing it silently', async () => {
+    const component = await openBook('iliad.epub', [note({ content: 'Old thought' })]);
+    const error = vi.spyOn(TestBed.inject(ToastService), 'error');
+    notesService().update.mockReturnValue(throwError(() => new Error('offline')));
+
+    component.onUpdateNote({ id: 'n-1', content: 'New words' });
+
+    expect(error).toHaveBeenCalledWith('Could not save the note. Try again.');
+    expect(component.dbNotes()[0].content).toBe('Old thought');
+    expect(component.noteActions.busy().has('n-1')).toBe(false);
+  });
+
+  it('says the notes could not be loaded, with Try again, instead of "No notes yet"', async () => {
+    const component = await openBook('iliad.epub', []);
+    const list = TestBed.inject(NotesService) as unknown as { list: ReturnType<typeof vi.fn> };
+    list.list.mockReturnValueOnce(throwError(() => new Error('offline')));
+
+    component.loadNotes('book-hl');
+    render();
+
+    const panel = fixture.nativeElement.querySelector('.notes-panel') as HTMLElement;
+    expect(panel.querySelector('[role="alert"]')?.textContent).toContain('Your notes could not be loaded.');
+    expect(panel.textContent).not.toContain('No notes yet.');
+
+    list.list.mockReturnValueOnce(of([note({ content: 'Back' })]));
+    (panel.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    render();
+    expect(component.notesFailed()).toBe(false);
+    expect(component.dbNotes()).toHaveLength(1);
+  });
+
   it('keeps the draft when the save fails', async () => {
     const component = await openBook('iliad.epub', [note({ content: '' })]);
     activate(component, CFI_OLD);

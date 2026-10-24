@@ -175,6 +175,9 @@
 
       <div class="collapsible">
         <div class="root-drop-list">
+          @if (loadFailed()) {
+          <nostos-empty-state compact error message="Collections could not be loaded." (retry)="retryLoad()" />
+          } @else {
           <app-flat-tree
             [items]="treeItems()"
             [activeId]="filters.collectionId()"
@@ -192,6 +195,7 @@
             (nodeRenameSaved)="saveRename($event.id, $event.newName)"
             (nodeRenameCancelled)="cancelRename()"
           ></app-flat-tree>
+          }
         </div>
       </div>
 

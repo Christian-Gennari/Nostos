@@ -406,17 +406,14 @@
 }
 
 <ng-template #more let-page let-status="status">
-  @if (page.items.length < page.total) {
-    <button
-      appButton
-      type="button"
-      variant="ghost"
-      size="sm"
-      class="external-more"
-      [disabled]="page.loading"
-      (click)="showMore(status)"
-    >
-      Show more ({{ page.total - page.items.length }} left)
-    </button>
-  }
+  <nostos-paging-status
+    class="external-more"
+    [hasMore]="page.items.length < page.total"
+    [loading]="page.loading"
+    [failed]="!!page.failed"
+    label="Loading more"
+    failedMessage="More items could not be loaded."
+    (more)="showMore(status)"
+    (retry)="showMore(status)"
+  />
 </ng-template>

@@ -56,7 +56,7 @@
     ></app-topic-input>
 
     <div class="note-item-edit-actions">
-      <button appButton variant="primary" size="sm" type="submit">Save</button>
+      <button appButton variant="primary" size="sm" type="submit" [disabled]="saving()">Save</button>
       <button appButton variant="ghost" size="sm" type="button" (click)="cancelEdit()">Cancel</button>
     </div>
   </form>

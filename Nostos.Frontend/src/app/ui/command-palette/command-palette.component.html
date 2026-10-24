@@ -77,6 +77,9 @@
       }
     </div>
     } @empty {
+    @if (searchFailed() && !searching()) {
+    <nostos-empty-state compact error message="Search could not be completed." (retry)="retrySearch()" />
+    } @else {
     <p class="palette-empty" role="status">
       @if (searching()) {
       Searching…
@@ -84,6 +87,7 @@
       {{ emptyMessage() }}
       }
     </p>
+    }
     }
   </div>
 

@@ -33,6 +33,10 @@ export class BookDetailStore {
 
   readonly book = signal<Book | null>(null);
   readonly notes = signal<NoteSearchHit[]>([]);
+  /** The notes could not be read; the list says so rather than "No notes yet". */
+  readonly notesFailed = signal(false);
+  /** A new note is being saved. */
+  readonly noteSaving = signal(false);
   readonly collections = signal<Collection[]>([]);
 
   /** The same per-book import feed that supplies the Library cover and row. */
@@ -144,6 +148,7 @@ export class BookDetailStore {
    */
   loadNotes(id: string) {
     const seq = ++this.notesSeq;
+    this.notesFailed.set(false);
     const page = (held: NoteSearchHit[]) =>
       this.notesService.browse({ bookId: id, order: 'oldest', limit: 200, offset: held.length }).subscribe({
         next: (result) => {
@@ -151,6 +156,9 @@ export class BookDetailStore {
           const all = [...held, ...result.items];
           if (result.items.length && all.length < result.totalCount) page(all);
           else this.notes.set(all);
+        },
+        error: () => {
+          if (seq === this.notesSeq) this.notesFailed.set(true);
         },
       });
     page([]);
@@ -413,15 +421,24 @@ export class BookDetailStore {
 
   // --- NOTES ---
 
-  /** Saves a new note; `saved` runs once it exists (new [[topics]] included). */
+  /**
+   * Saves a new note; `saved` runs once it exists (new [[topics]] included). A
+   * failure toasts and leaves the caller's text where it is.
+   */
   addNote(content: string, saved?: () => void) {
     const b = this.book();
-    if (!b || !content.trim()) return;
+    if (!b || !content.trim() || this.noteSaving()) return;
 
+    this.noteSaving.set(true);
     this.notesService.create(b.id, { content }).subscribe({
       next: () => {
+        this.noteSaving.set(false);
         this.loadNotes(b.id);
         saved?.();
+      },
+      error: () => {
+        this.noteSaving.set(false);
+        this.toast.error('Could not save the note. Try again.');
       },
     });
   }

@@ -151,6 +151,24 @@ describe('ExternalMediaSettingsComponent', () => {
     expect(text('external-media-review')).toBe('Review and import');
   });
 
+  it('says a failed "Show more" failed, in place, and tries again from there', async () => {
+    await component.startScan();
+    await component.openReview();
+    component.ready.set({ items: [items[0]], total: 3, loading: false });
+    api.scan.mockImplementationOnce(() => throwError(() => new Error('offline')));
+    await component.showMore('ready');
+    fixture.detectChanges();
+
+    expect(component.ready().failed).toBe(true);
+    const alert = fixture.nativeElement.querySelector('.nostos-paging-status__failed') as HTMLElement;
+    expect(alert.textContent).toContain('More items could not be loaded.');
+
+    (alert.querySelector('button') as HTMLButtonElement).click();
+    await settle();
+    expect(component.ready().failed).toBe(false);
+    expect(component.ready().items.length).toBe(3);
+  });
+
   it('reviews every group before importing and says what was passed over', async () => {
     await component.startScan();
     await component.openReview();

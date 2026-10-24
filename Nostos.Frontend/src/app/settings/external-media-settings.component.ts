@@ -20,6 +20,7 @@ import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { CheckboxDirective } from '../ui/check/check.directive';
+import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 
 type ReviewStage = 'review' | 'importing' | 'result';
@@ -29,6 +30,8 @@ interface ItemPage {
   items: ExternalMediaScanItem[];
   total: number;
   loading: boolean;
+  /** The last "Show more" failed. */
+  failed?: boolean;
 }
 
 const EMPTY_PAGE: ItemPage = { items: [], total: 0, loading: false };
@@ -56,6 +59,7 @@ export const EXTERNAL_MEDIA_GUIDE_URL =
   imports: [
     CheckboxDirective,
     LoadingIndicatorComponent,
+    PagingStatusComponent,
     NoticeComponent,
     NgTemplateOutlet,
     ButtonComponent,
@@ -203,16 +207,17 @@ export class ExternalMediaSettingsComponent implements OnInit {
     const current = page();
     if (current.loading || current.items.length >= current.total) return;
 
-    page.set({ ...current, loading: true });
+    page.set({ ...current, loading: true, failed: false });
     try {
       const next = await firstValueFrom(this.api.scan(status, current.items.length, PAGE_SIZE));
       page.set({
         items: [...current.items, ...next.items],
         total: next.matchingItems,
         loading: false,
+        failed: false,
       });
     } catch {
-      page.set({ ...current, loading: false });
+      page.set({ ...current, loading: false, failed: true });
     }
   }
 

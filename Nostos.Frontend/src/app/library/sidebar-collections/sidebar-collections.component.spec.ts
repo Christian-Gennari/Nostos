@@ -610,4 +610,30 @@ describe('SidebarCollections', () => {
       );
     });
   });
+
+  describe('when the collections cannot be loaded', () => {
+    it('says so, with Try again, instead of "No collections yet"', () => {
+      collectionsService.list.mockReturnValueOnce(throwError(() => new Error('offline')));
+      fixture = TestBed.createComponent(SidebarCollections);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('app-flat-tree')).toBeNull();
+      expect(el.querySelector('nostos-empty-state [role="alert"], nostos-empty-state[role="alert"]')?.textContent)
+        .toContain('Collections could not be loaded.');
+
+      (el.querySelector('nostos-empty-state button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(el.querySelector('app-flat-tree')).not.toBeNull();
+    });
+
+    it('treats failed counts the same way, rather than showing every count as 0', () => {
+      collectionsService.getCounts.mockReturnValueOnce(throwError(() => new Error('offline')));
+      fixture = TestBed.createComponent(SidebarCollections);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      expect(component.loadFailed()).toBe(true);
+    });
+  });
 });

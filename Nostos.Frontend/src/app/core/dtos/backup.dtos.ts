@@ -54,3 +54,17 @@ export interface BackupProgress {
   stepNumber: number;
   totalSteps: number;
 }
+/** The words for a backup status, from the server enum name. */
+export function backupStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'InProgress':
+      return 'In progress';
+    default:
+      return status ?? '';
+  }
+}
+
+/** Completed is calm, Failed is the one alarm, anything else is neutral. */
+export function backupStatusTone(status: string | null | undefined): 'success' | 'danger' | 'neutral' {
+  return status === 'Completed' ? 'success' : status === 'Failed' ? 'danger' : 'neutral';
+}
