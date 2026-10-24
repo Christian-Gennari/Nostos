@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
+import { formatFileSize } from '../core/format';
 import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -1929,12 +1930,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
-  formatSize(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-  }
+  formatSize = formatFileSize;
 
   formatInterval(hours: number): string {
     if (hours < 24) return `${hours} hours`;

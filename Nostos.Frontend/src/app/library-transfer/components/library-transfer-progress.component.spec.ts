@@ -42,8 +42,8 @@ describe('LibraryTransferProgressComponent', () => {
     const detail = fixture.nativeElement.querySelector(
       '[data-testid="transfer-progress-detail"]',
     ) as HTMLElement;
-    expect(detail.textContent).toContain('25 MiB of 100 MiB');
-    expect(detail.textContent).toContain('12 MiB/s');
+    expect(detail.textContent).toContain('25 MB of 100 MB');
+    expect(detail.textContent).toContain('12 MB/s');
     expect(detail.textContent).toContain('About 2 minutes remaining');
     expect(fixture.nativeElement.querySelector('.transfer-progress-percent').textContent).toContain(
       '25%',
@@ -108,6 +108,6 @@ describe('LibraryTransferProgressComponent', () => {
     const detail = fixture.nativeElement.querySelector(
       '[data-testid="transfer-progress-detail"]',
     ) as HTMLElement;
-    expect(detail.textContent).not.toContain('MiB/s');
+    expect(detail.textContent).not.toContain('MB/s');
   });
 });

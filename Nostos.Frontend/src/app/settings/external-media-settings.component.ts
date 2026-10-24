@@ -22,6 +22,7 @@ import { NoticeComponent } from '../ui/notice/notice.component';
 import { CheckboxDirective } from '../ui/check/check.directive';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { plural } from '../core/format';
 
 type ReviewStage = 'review' | 'importing' | 'result';
 
@@ -270,7 +271,7 @@ export class ExternalMediaSettingsComponent implements OnInit {
   }
 
   count(n: number, noun: string): string {
-    return `${n} ${noun}${n === 1 ? '' : 's'}`;
+    return plural(n, noun);
   }
 
   private format(location: string): string {

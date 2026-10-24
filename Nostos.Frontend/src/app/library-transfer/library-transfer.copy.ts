@@ -9,6 +9,7 @@
  * failure sentence or a byte string itself.
  */
 
+import { formatFileSize, plural } from '../core/format';
 import { formatNostosDate } from '../core/date-formats';
 import type { LibraryTransferFailure } from './models/library-transfer.models';
 import type { MigrationActivationPhase } from './models/migration-http.dtos';
@@ -23,30 +24,11 @@ export interface TransferFailureCopy {
 }
 
 const NUMBER = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const DECIMAL = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
-const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
+/** Human-readable byte size; the one file-size format, shared with Settings and Add book. */
+export const formatBytes = formatFileSize;
 
-/**
- * Human-readable byte size on the binary scale the archive contract uses
- * (plan §46). Ten or more units keep one decimal; below ten they keep one too,
- * because "4.7 GiB of 12.9 GiB" is the shape the plan asks for.
- */
-export function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return '';
-
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-
-  const formatted = unit === 0 ? NUMBER.format(value) : DECIMAL.format(value);
-  return `${formatted} ${BYTE_UNITS[unit]}`;
-}
-
-/** Transfer rate, e.g. "11.8 MiB/s"; null until a rate is meaningful. */
+/** Transfer rate, e.g. "11.8 MB/s"; null until a rate is meaningful. */
 export function formatRate(bytesPerSecond: number | null | undefined): string | null {
   if (
     bytesPerSecond === null ||
@@ -67,10 +49,10 @@ export function formatEta(seconds: number | null | undefined): string | null {
   if (seconds < 60) return 'Less than a minute remaining';
 
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `About ${minutes} minute${minutes === 1 ? '' : 's'} remaining`;
+  if (minutes < 60) return `About ${plural(minutes, 'minute')} remaining`;
 
   const hours = Math.round(minutes / 60);
-  return `About ${hours} hour${hours === 1 ? '' : 's'} remaining`;
+  return `About ${plural(hours, 'hour')} remaining`;
 }
 
 /** The three counts the replacement copy compares (plan §27). */

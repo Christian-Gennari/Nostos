@@ -79,7 +79,7 @@ import {
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
-import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept } from '../core/book-format';
+import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../core/book-format';
 import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
 
 /** The writing the Studio opens on next time. */
@@ -1874,7 +1874,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   sourceProvenance(note: Note): string {
-    const title = note.bookTitle?.trim() || 'Unknown book';
+    const title = note.bookTitle?.trim() || UNKNOWN_BOOK;
     const locator = this.sourceDisplayLocator(note);
     return locator ? `${title} · ${locator}` : title;
   }

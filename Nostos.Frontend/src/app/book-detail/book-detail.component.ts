@@ -79,7 +79,7 @@ import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switche
 import { buildEditionSwitchOptions } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
 import { readPaperPage } from './paper-page-progress';
-import { UNKNOWN_AUTHOR } from '../core/book-format';
+import { UNKNOWN_AUTHOR, UNKNOWN_BOOK, formatOf } from '../core/book-format';
 
 interface StatusConfirmCopy {
   heading: string;
@@ -576,7 +576,7 @@ export class BookDetail implements OnInit, OnDestroy {
    */
   private getEditionTitleOrFallback(edition: EditionSummaryDto): string {
     const format = edition.format?.trim().toUpperCase();
-    return format ? `Unknown title (${format})` : 'Unknown title';
+    return format ? `${UNKNOWN_BOOK} (${format})` : UNKNOWN_BOOK;
   }
 
   /** Search text for the "link another book" picker. */
@@ -813,16 +813,8 @@ export class BookDetail implements OnInit, OnDestroy {
     narrator?: string | null,
     edition?: string | null,
   ): string {
-    const normalizedType = type.toLowerCase();
-    const isAudio = normalizedType === 'audiobook' || normalizedType === 'audio';
-    const formatLabel = this.getFormatLabel(type, fileName, format);
-    const label = isAudio
-      ? 'Audiobook'
-      : formatLabel === 'EPUB' || formatLabel === 'PDF'
-        ? formatLabel
-        : normalizedType === 'physical'
-          ? 'Physical'
-          : formatLabel;
+    const isAudio = formatOf({ type }).concept === 'audiobook';
+    const label = formatOf({ type, format, fileName }).format;
 
     const details = isAudio
       ? [duration, narrator, edition]
@@ -830,25 +822,6 @@ export class BookDetail implements OnInit, OnDestroy {
     const detailText = details.filter((detail): detail is string => !!detail?.trim()).join(', ');
 
     return detailText ? `${label} (${detailText})` : label;
-  }
-
-  private getFormatLabel(type: string, fileName?: string | null, format?: string): string {
-    const extension = fileName?.split('.').pop()?.trim().toLowerCase();
-    if (extension) return extension.toUpperCase();
-
-    const normalizedFormat = format?.trim().toLowerCase();
-    switch (normalizedFormat || type.toLowerCase()) {
-      case 'audiobook':
-      case 'audio':
-        return 'AUDIO';
-      case 'ebook':
-      case 'epub':
-        return 'EPUB';
-      case 'physical':
-        return 'PHYSICAL';
-      default:
-        return (normalizedFormat || type).toUpperCase();
-    }
   }
 
   /** The review is only collapsible once it has been measured as overflowing. */

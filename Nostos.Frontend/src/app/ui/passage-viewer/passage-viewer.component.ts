@@ -32,6 +32,7 @@ import { PassageViewerRequest, PassageViewerService } from './passage-viewer.ser
 import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
 import { PdfDocument, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
 import { noteWikilinksToText } from '../pipes/note-format.pipe';
+import { UNKNOWN_BOOK } from '../../core/book-format';
 
 type ViewerState = 'loading' | 'ready' | 'error';
 
@@ -134,7 +135,7 @@ export class PassageViewerComponent {
   readonly subtitle = computed(() => {
     const passage = this.passage();
     if (!passage) return '';
-    const parts = [passage.bookTitle?.trim() || 'Untitled book'];
+    const parts = [passage.bookTitle?.trim() || UNKNOWN_BOOK];
     if (passage.anchorKind !== 'epub_cfi') {
       parts.push(
         passageSizeLabel({

@@ -2,11 +2,10 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+import { formatOf } from '../core/book-format';
 import type { Book, EditionSummaryDto } from '../core/dtos/book.dtos';
 import type { EditionSwitcherOption } from '../ui/edition-switcher/edition-switcher.component';
 import { READING_STATUS_LABEL } from '../core/reading-status';
-
-type Format = Pick<EditionSwitcherOption, 'format' | 'concept'>;
 
 /** The fields an edition can be told apart by, from either side of the DTO split. */
 interface EditionFacts {
@@ -124,19 +123,6 @@ function toFacts(source: Book | EditionSummaryDto, current: boolean): EditionFac
     progressPercent: source.progressPercent,
     finishedAt: source.finishedAt,
   };
-}
-
-/** The short format name and its glyph concept: Audiobook, EPUB, PDF, Physical. */
-export function formatOf(edition: Pick<EditionFacts, 'type' | 'format' | 'fileName'>): Format {
-  const type = edition.type.toLowerCase();
-  if (isAudio(type)) return { format: 'Audiobook', concept: 'audiobook' };
-  if (type === 'physical') return { format: 'Physical', concept: 'physical' };
-
-  const extension = edition.fileName?.split('.').pop()?.trim().toLowerCase();
-  const declared = edition.format?.trim().toLowerCase();
-  const kind = extension || (declared && declared !== 'ebook' ? declared : 'epub');
-  if (kind === 'pdf') return { format: 'PDF', concept: 'pdf' };
-  return { format: kind.toUpperCase(), concept: 'ebook' };
 }
 
 /** Tooltip and menu hint: every detail the edition has, not only the one shown. */

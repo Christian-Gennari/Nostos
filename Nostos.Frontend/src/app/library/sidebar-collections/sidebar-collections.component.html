@@ -111,10 +111,10 @@
         class="nav-item"
         (click)="toggleFormat('ebook')"
         [class.active]="filters.format() === 'ebook'"
-        title="eBooks"
+        title="EPUBs"
       >
         <nostos-icon concept="ebook" [size]="16" weight="light"></nostos-icon>
-        <span class="label">eBooks</span>
+        <span class="label">EPUBs</span>
         @if (statusCounts()?.ebooks) {
           <span class="count-badge">{{ statusCounts()?.ebooks }}</span>
         }

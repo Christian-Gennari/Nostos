@@ -206,7 +206,7 @@
     @for (note of notes(); track note.id; let i = $index) {
       @if (order() === 'book' && startsBook(i)) {
       <header class="book-group">
-        <h2 class="book-group-title">{{ note.bookTitle || 'Unknown book' }}</h2>
+        <h2 class="book-group-title">{{ note.bookTitle || unknownBook }}</h2>
         <span class="book-group-meta">
           @if (note.bookAuthor) { {{ note.bookAuthor }} · }
           @if (bookCounts().get(note.bookId); as count) { {{ plural(count, 'note') }} }

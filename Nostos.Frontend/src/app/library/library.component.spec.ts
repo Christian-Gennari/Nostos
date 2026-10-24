@@ -859,7 +859,7 @@ describe('Library', () => {
 
   it('names list formats in words, keeping file types as acronyms', () => {
     const book = (type: string, fileName: string | null = null) => ({ type, fileName }) as unknown as Book;
-    expect(component.listFormatLabel(book('audiobook'))).toBe('Audio');
+    expect(component.listFormatLabel(book('audiobook'))).toBe('Audiobook');
     expect(component.listFormatLabel(book('physical'))).toBe('Physical');
     expect(component.listFormatLabel(book('ebook'))).toBe('EPUB');
     expect(component.listFormatLabel(book('ebook', 'paper.pdf'))).toBe('PDF');

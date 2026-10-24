@@ -1,4 +1,5 @@
 import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { formatFileSize } from '../core/format';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
@@ -792,7 +793,7 @@ export class AddBookModal {
   sourceKind = signal<'all' | 'ebook' | 'audiobook'>('all');
   readonly sourceKinds = [
     { value: 'all', label: 'All' },
-    { value: 'ebook', label: 'E-books' },
+    { value: 'ebook', label: 'EPUBs' },
     { value: 'audiobook', label: 'Audiobooks' },
   ] as const;
   sourceResults = signal<ProviderItem[]>([]);
@@ -994,9 +995,7 @@ export class AddBookModal {
   }
 
   formatBytes(bytes: number | null): string {
-    if (!bytes || bytes <= 0) return '';
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return bytes && bytes > 0 ? formatFileSize(bytes) : '';
   }
 
   /**
@@ -1375,7 +1374,7 @@ export class AddBookModal {
   }
 
   mediaKindLabel(item: ProviderItem): string {
-    return item.mediaKind === 'audiobook' ? 'Audiobook' : 'E-book';
+    return item.mediaKind === 'audiobook' ? 'Audiobook' : 'EPUB';
   }
 
   assetFormatFamily(sourceFormat: string | null): 'EPUB' | 'PDF' | null {

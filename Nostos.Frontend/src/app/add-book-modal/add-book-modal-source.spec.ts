@@ -312,7 +312,7 @@ describe('AddBookModal — From a Source', () => {
       fixture.nativeElement.querySelectorAll('.source-filters [role="radio"]') as NodeListOf<HTMLButtonElement>,
     ).map((button) => button.textContent?.trim());
 
-    expect(labels).toEqual(['All', 'E-books', 'Audiobooks']);
+    expect(labels).toEqual(['All', 'EPUBs', 'Audiobooks']);
   });
 
   it('keeps unified search usable if the provider metadata list fails', async () => {

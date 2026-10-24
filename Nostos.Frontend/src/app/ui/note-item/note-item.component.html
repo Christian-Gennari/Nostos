@@ -167,7 +167,7 @@
     <span class="note-item-dot" aria-hidden="true">·</span>
     }
     @if (showBook()) {
-    <span class="note-item-book">{{ note().bookTitle || 'Unknown book' }}</span>
+    <span class="note-item-book">{{ note().bookTitle || unknownBook }}</span>
     @if (note().bookAuthor) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ note().bookAuthor }}</span> }
     <span class="note-item-dot" aria-hidden="true">·</span>
     }

@@ -26,7 +26,7 @@
     } @else if (note(); as current) {
     <article class="sort-note" [attr.aria-label]="'Note from ' + (current.bookTitle || 'an unknown book')">
       <p class="sort-source">
-        {{ current.bookTitle || 'Unknown book' }}@if (current.bookAuthor) { · {{ current.bookAuthor }} } ·
+        {{ current.bookTitle || unknownBook }}@if (current.bookAuthor) { · {{ current.bookAuthor }} } ·
         {{ current.createdAt | nostosDate }}@if (where(); as at) { · {{ at }} }
       </p>
       @if (passage()) {
