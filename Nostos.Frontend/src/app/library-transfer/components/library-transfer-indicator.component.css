@@ -2,7 +2,9 @@
   position: fixed;
   inset-block-start: calc(env(safe-area-inset-top, 0px) + 12px);
   inset-inline-end: 16px;
-  z-index: var(--layer-navigation);
+  /* Above the toasts (--layer-system): a transfer in flight is never hidden
+     under a message that arrives while it runs. */
+  z-index: calc(var(--layer-system) + 1);
   pointer-events: none;
 }
 

@@ -11,6 +11,7 @@ import {
   ViewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { BrandLockupComponent } from '../ui/brand-lockup/brand-lockup.component';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { formatFileSize, plural } from '../core/format';
@@ -263,6 +264,7 @@ const defaultProgress: BackupProgress = {
   standalone: true,
   selector: 'app-settings',
   imports: [
+    BrandLockupComponent,
     ProgressComponent,
     NoticeComponent,
     CommonModule,
@@ -1824,8 +1826,19 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * The archive comes down in this tab as a download, from a link the page
+   * clicks itself: no popup for a blocker to stop, and no blank tab left behind.
+   */
   downloadBackup(id: string): void {
-    window.open(this.backupService.getDownloadUrl(id), '_blank');
+    const link = document.createElement('a');
+    link.href = this.backupService.getDownloadUrl(id);
+    link.download = '';
+    link.rel = 'noopener';
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   scanForBackups(): void {

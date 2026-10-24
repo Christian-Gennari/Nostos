@@ -128,7 +128,7 @@ interface ServerResults {
 const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
 
 /**
- * Global command palette (Cmd/Ctrl+K, or Search everything in the More sheet
+ * Global command palette (Cmd/Ctrl+K, or Search everything in the More menu
  * on a phone).
  *
  * One search across the library: books and notes are matched on the server;

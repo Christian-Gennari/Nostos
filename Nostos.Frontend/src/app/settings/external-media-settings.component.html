@@ -176,6 +176,10 @@
         @case ('review') {
           <p class="external-hint">Nothing has been added yet. {{ promise }}</p>
 
+          @if (ready().loading || review().loading || unusable().loading) {
+            <nostos-loading-indicator class="external-loading" label="Loading scan results" />
+          }
+
           @if (summary(); as found) {
             <ul class="external-tally" data-testid="external-media-tally">
               <li><strong>{{ found.ready }}</strong> ready</li>

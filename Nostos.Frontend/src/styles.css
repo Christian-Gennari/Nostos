@@ -1283,11 +1283,9 @@
      ::selection                     → --text-selection-bg
 
    Worth noting because it is an easy trap: `.brand` was never applied by any
-   template. The sidebar lockup uses `.brand-lockup`, `.brand-lockup__tile`,
-   `.brand-lockup__arch` and `.brand-lockup__word` (sidebar-collections.html),
-   and the only other `.brand` reference is a rule in that component's stylesheet
-   that is itself unreachable. So half of the deleted override was styling a
-   class that cannot appear. */
+   template. The lockup everywhere is `<nostos-brand-lockup>` (ui/brand-lockup),
+   which owns its own tile, arch and wordmark. So half of the deleted override
+   was styling a class that cannot appear. */
 
 /* Text on a primary fill. `--on-primary` replaces the surface tokens these
    rules used to borrow, which invert under a dark theme. The active row keeps a
@@ -2100,33 +2098,6 @@ a.topic-tag:focus-visible {
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   font-weight: var(--fw-semibold);
-}
-
-.badge-count {
-  background: var(--bg-body);
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-weight: var(--fw-semibold);
-  border: 1px solid var(--border-color);
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--color-text-light);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  padding: 0.2rem 0.6rem;
-  border-radius: 100px;
-}
-
-.note-text {
-  line-height: 1.6;
-  color: var(--color-text-main);
 }
 
 /* ------------------------------

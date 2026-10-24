@@ -7,7 +7,7 @@ import { DOCUMENT, DestroyRef, Injectable, inject, signal } from '@angular/core'
  * initial bundle does not carry its template and styles. That means the
  * shortcut cannot live on the component, which does not exist yet; it lives
  * here, started once by the app root. Phones have no keyboard chord, so the
- * More sheet's Search everything item calls open() directly.
+ * More menu's Search everything item calls open() directly.
  */
 @Injectable({ providedIn: 'root' })
 export class CommandPaletteService {

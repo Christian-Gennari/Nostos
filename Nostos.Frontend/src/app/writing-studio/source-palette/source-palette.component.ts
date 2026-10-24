@@ -82,9 +82,7 @@ interface PalettePlacement {
 @Component({
   selector: 'app-source-palette',
   standalone: true,
-  imports: [
-    LoadingIndicatorComponent,
-    EmptyStateComponent, IconButtonComponent, QuoteBlockComponent],
+  imports: [IconButtonComponent, QuoteBlockComponent, LoadingIndicatorComponent, EmptyStateComponent],
   templateUrl: './source-palette.component.html',
   styleUrl: './source-palette.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,

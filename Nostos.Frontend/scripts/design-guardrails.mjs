@@ -606,9 +606,8 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   'src/app/ui/assistant/assistant.component.html': ['starter', 'suggestion-chip', 'anchor-chip-dismiss', 'voice-control', 'assistant-trigger'],
 
   // --- App chrome and navigation.
-  // The dock and the phone utility sheet: navigation rows whose <a> twins share the recipe.
+  // The dock: navigation rows whose <a> twins share the recipe.
   'src/app/layout/app-dock/app-dock.component.ts': ['dock-item', 'dock-ask'],
-  'src/app/layout/utility-sheet/utility-sheet.component.ts': ['utility-sheet-item'],
   // Side navigation rows (the shared `.nav-item` page-chrome recipe in styles.css).
   'src/app/library/sidebar-collections/sidebar-collections.component.html': ['nav-item'],
   'src/app/settings/settings.component.html': ['settings-nav-item', 'theme-card'],
@@ -735,7 +734,7 @@ const OVERLAY_STYLE_HOMES = [
   'src/app/ui/topic-picker-popover/', 'src/app/ui/topic-autocomplete-panel/',
   'src/app/ui/confirm-modal/', 'src/app/ui/toast-container/',
   'src/app/writing-studio/source-palette/', 'src/app/writing-studio/page-settings/',
-  'src/app/layout/utility-sheet/', 'src/app/library/sidebar-collections/',
+  'src/app/library/sidebar-collections/',
   'src/app/brain/brain-shell.',
 ];
 const PHONE_WIDTHS = new Set([480, 768, 900]);

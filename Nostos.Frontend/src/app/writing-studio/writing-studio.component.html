@@ -710,18 +710,22 @@
       </header>
       <dl class="shortcut-list" data-testid="shortcut-sheet">
         <div><dt><kbd>&#64;</kbd></dt><dd>Find a source and put it on the page</dd></div>
-        <div><dt><kbd>Ctrl</kbd> <kbd>'</kbd></dt><dd>Open the source palette</dd></div>
+        <div><dt><kbd>{{ modKey }}</kbd> <kbd>'</kbd></dt><dd>Open the source palette</dd></div>
         <div><dt><kbd>/</kbd></dt><dd>On an empty line: headings, lists, divider, image, table</dd></div>
         <div><dt><kbd>Alt</kbd> <kbd>M</kbd></dt><dd>Files</dd></div>
         <div><dt><kbd>Alt</kbd> <kbd>R</kbd></dt><dd>Reference</dd></div>
-        <div><dt><kbd>Ctrl</kbd> <kbd>B</kbd> · <kbd>Ctrl</kbd> <kbd>I</kbd></dt><dd>Bold · italic</dd></div>
+        <div><dt><kbd>{{ modKey }}</kbd> <kbd>B</kbd> · <kbd>{{ modKey }}</kbd> <kbd>I</kbd></dt><dd>Bold · italic</dd></div>
         <div><dt><kbd>#</kbd> <kbd>##</kbd> <kbd>###</kbd> then space</dt><dd>Headings</dd></div>
         <div><dt><kbd>&gt;</kbd> then space</dt><dd>Quote</dd></div>
         <div><dt><kbd>-</kbd> or <kbd>1.</kbd> then space</dt><dd>List</dd></div>
-        <div><dt><kbd>Ctrl</kbd> <kbd>Z</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Undo · redo</dd></div>
+        <div><dt><kbd>{{ modKey }}</kbd> <kbd>Z</kbd> · <kbd>{{ modKey }}</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Undo · redo</dd></div>
         <div><dt><kbd>Esc</kbd></dt><dd>Close what is open; show the controls again</dd></div>
-        <div><dt><kbd>Ctrl</kbd> <kbd>,</kbd></dt><dd>Page settings: theme, typeface, spacing</dd></div>
-        <div><dt><kbd>Ctrl</kbd> <kbd>/</kbd></dt><dd>This sheet</dd></div>
+        <div><dt><kbd>{{ modKey }}</kbd> <kbd>,</kbd></dt><dd>Page settings: theme, typeface, spacing</dd></div>
+        <div><dt><kbd>{{ modKey }}</kbd> <kbd>/</kbd></dt><dd>This sheet</dd></div>
+        <div><dt><kbd>{{ modKey }}</kbd> <kbd>K</kbd></dt><dd>Search everything</dd></div>
+        @if (assistantLauncher.available()) {
+          <div><dt><kbd>{{ modKey }}</kbd> <kbd>J</kbd></dt><dd>Ask Nostos</dd></div>
+        }
       </dl>
     </app-modal-shell>
   }

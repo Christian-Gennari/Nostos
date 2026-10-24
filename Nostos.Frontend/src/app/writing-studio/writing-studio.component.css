@@ -55,47 +55,6 @@
   .sidebar-right > * {
     min-width: 260px;
   }
-
-  .sidebar-left > .sidebar-resizer {
-    min-width: 0;
-  }
-}
-
-/* The Studio enters already settled. The old shared sidebar-enter animation
-   animated transform on the same element the mobile drawer uses for its closed
-   state, so a closed drawer briefly slid onscreen and then disappeared when the
-   entry animation released transform. Opening/closing drawers still animates. */
-.sidebar-resizer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 4;
-  width: 9px;
-  cursor: col-resize;
-  touch-action: none;
-  outline: none;
-}
-
-.sidebar-resizer::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  background: transparent;
-  transform: translateX(-0.5px);
-  transition: background-color var(--motion-fast);
-}
-
-.sidebar-resizer:hover::after,
-.sidebar-resizer:focus-visible::after {
-  background: var(--color-text-light);
-}
-
-.sidebar-resizer:focus-visible {
-  box-shadow: inset -2px 0 0 var(--focus-ring);
 }
 
 /* --- SIDEBAR COMPONENTS --- */
@@ -216,26 +175,6 @@
   padding: 0 0.65rem 5.5rem;
 }
 
-/* Clean List Item Style (Nordic Editorial) */
-.list-item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 0.55rem 0.65rem;
-  margin-bottom: 2px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-row);
-  cursor: pointer;
-  text-align: left;
-  transition:
-    background-color var(--motion-fast),
-    color var(--motion-fast);
-}
-.list-item:hover {
-  background: var(--bg-hover);
-}
-
 /* Books are appChoiceRow, spaced as the Editions dialog's list, and inset to
    the search field's edges above them. */
 .book-choice-list {
@@ -251,44 +190,6 @@
   gap: 0.3rem;
 }
 
-.list-item-icon {
-  color: var(--color-text-muted);
-  margin-right: 0.65rem;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.list-item-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.list-item .name {
-  color: var(--color-text-main);
-  font-size: 0.88rem;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.list-item .subtext {
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  margin-top: 1px;
-}
-
-/* A topic's usage: a plain muted number, as in every topic list. */
-.badge-count {
-  flex: none;
-  margin-left: 0.5rem;
-  color: var(--color-text-light);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-}
-
 /* Detail Headers */
 .brain-detail-header {
   padding-bottom: 0.75rem;
@@ -297,24 +198,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.detail-title {
-  font-size: var(--text-xs);
-  font-weight: var(--fw-semibold);
-  text-transform: uppercase;
-  color: var(--color-text-light);
-}
-
-.inspectable-note {
-  display: block;
-  border-radius: var(--radius-row);
-  cursor: pointer;
-}
-
-.inspectable-note:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .inspected-source-panel {
@@ -353,26 +236,6 @@
   white-space: nowrap;
 }
 
-.inspected-source-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0 0.5rem 0.5rem;
-  color: var(--color-text-light);
-  font-size: 0.68rem;
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.inspected-source-locator {
-  margin-left: auto;
-  font-weight: var(--fw-regular);
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .source-insertion-actions {
   display: flex;
   flex-wrap: wrap;
@@ -381,28 +244,10 @@
   padding: 0.65rem 0.5rem 0;
 }
 
-.empty-index {
-  text-align: center;
-  font-style: italic;
-  color: var(--color-text-light);
-  font-size: 0.9rem;
-  margin-top: 2rem;
-}
-
-.calm-notice {
-  font-style: normal;
-  white-space: normal;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  padding: 1rem 0.5rem;
-}
-
 /* Kept sources (issue #491) */
 .kept-sources-content {
   padding-top: 0.5rem;
 }
-
-
 
 /* --- EDITOR PANE (frameless seamless desk) --- */
 .editor-pane {
@@ -556,12 +401,6 @@
   pointer-events: none;
 }
 
-.editor-desk-telemetry .word-count-num {
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: var(--color-text-muted);
-}
-
 :host-context(body.nostos-zen) .editor-desk-telemetry {
   opacity: 0;
 }
@@ -622,10 +461,6 @@
     transform: translateX(0);
   }
 
-  .sidebar-resizer {
-    display: none;
-  }
-
   .editor-pane {
     background: var(--bg-surface);
     display: flex;
@@ -667,11 +502,6 @@
 .sidebar-left input {
   color: var(--color-text-main) !important;
   background: var(--bg-surface) !important;
-}
-
-.sidebar-header-brain-toggle,
-.sidebar-header-toggle {
-  color: var(--color-text-muted);
 }
 
 /*
@@ -891,17 +721,12 @@
   white-space: nowrap;
 }
 
-.header-doc-meta-empty {
-  visibility: hidden;
-}
-
 .doc-actions {
   flex: 0 0 auto;
   gap: 0.25rem;
 }
 
 .editor-header .header-rail-toggle.active,
-.editor-header .typewriter-toggle.active,
 .editor-header .page-settings-toggle.active,
 .editor-header .zen-toggle.active {
   color: var(--color-text-main);
@@ -1005,10 +830,6 @@
   .sidebar-left.open,
   .sidebar-right.open {
     transform: translateX(0);
-  }
-
-  .sidebar-resizer {
-    display: none;
   }
 
   .editor-pane {
@@ -1527,7 +1348,6 @@
 }
 
 .editor-header .header-rail-toggle,
-.editor-header .typewriter-toggle,
 .editor-header .page-settings-toggle,
 .editor-header .zen-toggle,
 .editor-header .touch-undo,
@@ -1537,7 +1357,6 @@
 }
 
 .editor-header:hover .header-rail-toggle,
-.editor-header:hover .typewriter-toggle,
 .editor-header:hover .page-settings-toggle,
 .editor-header:hover .zen-toggle,
 .editor-header:hover .header-doc-meta,
@@ -1646,10 +1465,6 @@
   .studio-layout.drawer-files .sidebar-left:not(.open),
   .studio-layout.drawer-reference .sidebar-right:not(.open) {
     display: flex;
-  }
-
-  .studio-layout.drawer-files .sidebar-resizer {
-    display: none;
   }
 
   /* The stage no longer shares the row with a rail column. */

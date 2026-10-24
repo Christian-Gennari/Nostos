@@ -29,16 +29,11 @@
   padding: 0.95rem 1.25rem 1.25rem;
 }
 
-.highlight-import-hint,
-.highlight-hint-inline {
+.highlight-import-hint {
   margin: 0 0 1.15rem;
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--color-text-muted);
-}
-
-.highlight-hint-inline {
-  margin-bottom: 0.7rem;
 }
 
 /* --- Pick --------------------------------------------------------------- */
@@ -109,9 +104,6 @@
 .highlight-progress-note {
   margin-top: 0.6rem;
 }
-
-
-
 
 /* --- Result ------------------------------------------------------------- */
 

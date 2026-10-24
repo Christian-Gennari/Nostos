@@ -12,6 +12,8 @@ import {
   ViewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { modifierKeyLabel } from '../core/platform';
+import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
 import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -1955,6 +1957,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
   readonly quotePen = quotePen;
   readonly noTopicsMatch = NO_TOPICS_MATCH;
   readonly noTopics = NO_TOPICS;
+  /** ⌘ on Apple devices, Ctrl elsewhere: what the shortcut sheet shows. */
+  readonly modKey = modifierKeyLabel();
+  readonly assistantLauncher = inject(AssistantLauncherService);
 
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) => this.quotePassageSelection(text, passage),

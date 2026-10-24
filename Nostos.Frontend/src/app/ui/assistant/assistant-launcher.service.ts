@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { modifierKeyLabel } from '../../core/platform';
 import { Subject } from 'rxjs';
 
 import { AssistantService } from './assistant.service';
@@ -97,6 +98,5 @@ export class AssistantLauncherService {
 }
 
 function resolveShortcutLabel(): string {
-  if (typeof navigator === 'undefined') return 'Ctrl J';
-  return /Macintosh|Mac OS X|iPhone|iPad|iPod/i.test(navigator.userAgent) ? '⌘ J' : 'Ctrl J';
+  return `${modifierKeyLabel()} J`;
 }

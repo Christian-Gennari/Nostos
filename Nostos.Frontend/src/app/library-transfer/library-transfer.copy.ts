@@ -420,7 +420,9 @@ export function activationPhaseMessage(phase: MigrationActivationPhase | null): 
     case 'Preparing':
       return 'Preparing your imported library…';
     case 'Activating':
-      return 'Switching libraries…';
+      // The overlay's own title says "Switching libraries…"; this line says
+      // what the host is doing, so the words appear once.
+      return 'Replacing the library on the server…';
     case 'Finalizing':
       return 'Finishing the library switch…';
     default:

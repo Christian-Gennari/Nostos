@@ -791,11 +791,6 @@ app-note-item.is-flashed {
   color: var(--color-text-main);
 }
 
-.typo-hint {
-  font-size: 0.7rem;
-  color: var(--color-text-light);
-}
-
 /* The single-choice rows are nostos-segmented (track, thumb, radio semantics,
    touch floor); the panel owns only the row layout around them. */
 
@@ -995,7 +990,6 @@ app-note-item.is-flashed {
   margin: 0;
   flex-shrink: 0;
 }
-
 
 /* Immersive controls stay outside document flow. Their edge surfaces match the
    page; revealing them never resizes the rendition or the PDF scrollport. */
@@ -1382,10 +1376,6 @@ app-note-item.is-flashed {
     grid-template-columns: 5.75rem minmax(0, 1fr);
     align-items: center;
     column-gap: 0.5rem;
-  }
-
-  .typo-row:not(.typo-row-stacked) .typo-hint {
-    grid-column: 2;
   }
 }
 

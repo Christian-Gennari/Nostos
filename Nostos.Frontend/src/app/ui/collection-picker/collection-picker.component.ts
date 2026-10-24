@@ -23,8 +23,7 @@ import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 @Component({
   selector: 'app-collection-picker',
   standalone: true,
-  imports: [
-    EmptyStateComponent, CommonModule, ButtonComponent, CheckboxDirective, TopicChipComponent],
+  imports: [CommonModule, ButtonComponent, CheckboxDirective, TopicChipComponent, EmptyStateComponent],
   templateUrl: './collection-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './collection-picker.component.css',

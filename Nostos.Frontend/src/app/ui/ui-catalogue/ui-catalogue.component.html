@@ -243,7 +243,7 @@
         <p class="catalogue-kicker">Pattern</p>
         <h2 id="catalogue-settings-popover">Settings popover</h2>
       </div>
-      <p>The panel a toolbar button opens (View settings, Page settings): under its button, a sheet on a phone. Escape or a press outside closes it.</p>
+      <p>The panel a toolbar button opens (View settings, Page settings): under its button, a sheet on a phone, with the shared heading and its one close button. Escape, the close button or a press outside closes it.</p>
     </div>
 
     <div class="catalogue-grid">
@@ -265,7 +265,7 @@
           @if (catalogueSettingsOpen()) {
             <nostos-settings-popover
               [origin]="catalogueSettingsButton()?.nativeElement ?? null"
-              label="View settings"
+              heading="View settings"
               testId="catalogue-settings-popover"
               (dismissed)="catalogueSettingsOpen.set(false)"
             >
@@ -914,9 +914,134 @@
         <ul class="catalogue-topic-list" role="listbox" aria-label="Topic options example">
           <li appTopicOption role="option" name="Virtue" [count]="12" [active]="true" aria-selected="true"></li>
           <li appTopicOption role="option" name="Habit" [count]="3" aria-selected="false"></li>
+          <li appTopicOption role="option" name="Prudence" [count]="5" [selected]="true" aria-selected="true"></li>
           <li appTopicOption role="option" kind="create" name="Practical wisdom" aria-selected="false"></li>
         </ul>
         <span class="catalogue-label">{{ noTopicsYet }}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="catalogue-section" aria-labelledby="catalogue-rows">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-rows">Rows, trees and pickers</h2>
+      </div>
+      <p>
+        The shared rows and pickers the product surfaces compose: a choice row, the collections tree,
+        edition and collection pickers, a rating, a slider and a drop zone.
+      </p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Choice row · button, selected</span>
+        <div class="catalogue-stack">
+          <button type="button" appChoiceRow>
+            <span class="nostos-choice-row__text">
+              <span class="nostos-choice-row__title">Letters on virtue</span>
+              <span class="nostos-choice-row__sub">Plato</span>
+              <span class="nostos-choice-row__meta">Ebook</span>
+            </span>
+          </button>
+          <button type="button" appChoiceRow [selected]="true">
+            <span class="nostos-choice-row__text">
+              <span class="nostos-choice-row__title">On the good life</span>
+              <span class="nostos-choice-row__sub">Aristotle</span>
+              <span class="nostos-choice-row__meta">Audiobook</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Confirm modal</span>
+        <p class="catalogue-example-copy">The one confirmation surface, with the caller's wording and a named action.</p>
+        <button appButton variant="secondary" type="button" (click)="confirmOpen.set(true)" data-testid="catalogue-confirm-open">
+          Open confirmation
+        </button>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Drop zone</span>
+        <label appDropZone [active]="false">
+          <input type="file" aria-label="Choose a file (example)" />
+          <nostos-icon name="upload-simple" [size]="22" weight="light" />
+          <span class="nostos-drop-zone__title">Choose a file or drop it here</span>
+          <span class="nostos-drop-zone__hint">EPUB, PDF</span>
+        </label>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Flat tree · quiet</span>
+        <app-flat-tree
+          [items]="catalogueTree"
+          activeId="catalogue-tree-ethics"
+          [treatAllAsFolders]="true"
+          appearance="quiet"
+        />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Edition switcher</span>
+        <nostos-edition-switcher [options]="catalogueEditions" (switched)="catalogueEditionId.set($event)" />
+        <span class="catalogue-label">{{ catalogueEditionId() ? 'Switch to ' + catalogueEditionId() : 'No switch yet' }}</span>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Collection picker</span>
+        <app-collection-picker
+          [collections]="catalogueCollections"
+          [selectedIds]="catalogueCollectionIds()"
+          (selectedIdsChange)="catalogueCollectionIds.set($event)"
+        />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Star rating · {{ catalogueRating() }} of 5</span>
+        <app-star-rating [rating]="catalogueRating()" (ratingChange)="catalogueRating.set($event)" />
+        <app-star-rating [rating]="3" [readonly]="true" />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Range · {{ catalogueVolume() }}</span>
+        <input
+          type="range"
+          appRange
+          min="0"
+          max="100"
+          aria-label="Volume (example)"
+          [value]="catalogueVolume()"
+          (input)="catalogueVolume.set(+$any($event.target).value)"
+        />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic picker popover</span>
+        <button appButton variant="secondary" size="sm" type="button" (click)="catalogueTopicPickerOpen.set(!catalogueTopicPickerOpen())">
+          {{ catalogueTopicPickerOpen() ? 'Close the picker' : 'Add a topic' }}
+        </button>
+        @if (catalogueTopicPickerOpen()) {
+          <div class="catalogue-topic-picker">
+            <app-topic-picker-popover
+              [topics]="catalogueTopicChoices"
+              [exclude]="['Habit']"
+              (chosen)="catalogueTopicPickerOpen.set(false)"
+              (closed)="catalogueTopicPickerOpen.set(false)"
+            />
+          </div>
+        }
+      </div>
+
+      <div class="catalogue-example catalogue-example--wide">
+        <span class="catalogue-label">Note item · with capture details</span>
+        <app-note-item [note]="catalogueNote" [readOnly]="true" [showMoreFromBook]="false" />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Note capture details</span>
+        <app-note-capture-details [note]="catalogueNote" />
       </div>
     </div>
   </section>
@@ -1042,3 +1167,12 @@
     </button>
   </app-dialog-actions>
 </app-modal-shell>
+
+<app-confirm-modal
+  [isOpen]="confirmOpen()"
+  heading="Delete this note?"
+  description="The highlight stays in the book; only the note is removed."
+  confirmLabel="Delete note"
+  (confirm)="confirmOpen.set(false)"
+  (cancel)="confirmOpen.set(false)"
+/>

@@ -124,6 +124,12 @@
   color: var(--color-text-main);
 }
 
+.external-loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
 .external-review-body {
   padding: 0.95rem 1.25rem 1.25rem;
 }

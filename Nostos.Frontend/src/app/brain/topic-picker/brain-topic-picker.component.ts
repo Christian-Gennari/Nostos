@@ -23,8 +23,7 @@ import { NO_TOPICS_MATCH, TopicOptionComponent } from '../../ui/topic-option/top
 @Component({
   standalone: true,
   selector: 'app-brain-topic-picker',
-  imports: [
-    EmptyStateComponent, SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective, TopicOptionComponent],
+  imports: [SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective, TopicOptionComponent, EmptyStateComponent],
   templateUrl: './brain-topic-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './brain-topic-picker.component.css',

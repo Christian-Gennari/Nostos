@@ -21,6 +21,21 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { SegmentedComponent } from '../segmented/segmented.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
 import { InlineRenameComponent } from '../inline-rename/inline-rename.component';
+import { ChoiceRowComponent } from '../choice-row/choice-row.component';
+import { ConfirmModal } from '../confirm-modal/confirm-modal.component';
+import { DropZoneComponent } from '../drop-zone/drop-zone.component';
+import { FlatTreeComponent } from '../flat-tree/flat-tree.component';
+import type { TreeItem } from '../flat-tree/flat-tree.helper';
+import { EditionSwitcherComponent, type EditionSwitcherOption } from '../edition-switcher/edition-switcher.component';
+import { StarRatingComponent } from '../star-rating/star-rating.component';
+import { CollectionPickerComponent } from '../collection-picker/collection-picker.component';
+import { RangeDirective } from '../range/range.directive';
+import { TopicPickerPopoverComponent } from '../topic-picker-popover/topic-picker-popover.component';
+import { NoteItemComponent } from '../note-item/note-item.component';
+import { NoteCaptureDetailsComponent } from '../note-capture-details/note-capture-details.component';
+import type { NoteSearchHit } from '../../core/dtos/note.dtos';
+import type { TopicDto } from '../../core/services/topics.service';
+import type { Collection } from '../../core/dtos/collection.dtos';
 import { CheckboxDirective, RadioDirective } from '../check/check.directive';
 import { ProgressComponent } from '../progress/progress.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
@@ -84,6 +99,17 @@ import { TO_READ_LABEL } from '../../core/reading-status';
     TopicOptionComponent,
     EmptyStateComponent,
     PagingStatusComponent,
+    ChoiceRowComponent,
+    ConfirmModal,
+    DropZoneComponent,
+    FlatTreeComponent,
+    EditionSwitcherComponent,
+    StarRatingComponent,
+    CollectionPickerComponent,
+    RangeDirective,
+    TopicPickerPopoverComponent,
+    NoteItemComponent,
+    NoteCaptureDetailsComponent,
   ],
   templateUrl: './ui-catalogue.component.html',
   styleUrl: './ui-catalogue.component.css',
@@ -108,6 +134,46 @@ export class UiCatalogueComponent {
     { value: 'grid', icon: 'squares-four', label: 'Grid view' },
   ] satisfies readonly ViewToggleOption[];
   readonly modalOpen = signal(false);
+  readonly confirmOpen = signal(false);
+  readonly catalogueTree: TreeItem[] = [
+    { id: 'catalogue-tree-philosophy', name: 'Philosophy', parentId: null, count: 4 },
+    { id: 'catalogue-tree-ethics', name: 'Ethics', parentId: 'catalogue-tree-philosophy', count: 2 },
+    { id: 'catalogue-tree-poetry', name: 'Poetry', parentId: null, count: 7 },
+  ];
+  readonly catalogueEditions: EditionSwitcherOption[] = [
+    { id: 'catalogue-epub', format: 'Ebook', concept: 'ebook', detail: null, current: true, progress: 37, finished: false, description: 'Ebook, 37% read' },
+    { id: 'catalogue-audio', format: 'Audiobook', concept: 'audiobook', detail: 'Read by a guest narrator', current: false, progress: 0, finished: false, description: 'Audiobook, read by a guest narrator, not started' },
+  ];
+  readonly catalogueEditionId = signal<string | null>(null);
+  readonly catalogueCollections: Collection[] = [
+    { id: 'catalogue-philosophy', name: 'Philosophy', parentId: null },
+    { id: 'catalogue-ethics', name: 'Ethics', parentId: 'catalogue-philosophy' },
+    { id: 'catalogue-poetry', name: 'Poetry', parentId: null },
+  ];
+  readonly catalogueCollectionIds = signal<string[]>(['catalogue-ethics']);
+  readonly catalogueRating = signal(4);
+  readonly catalogueVolume = signal(60);
+  readonly catalogueTopicPickerOpen = signal(false);
+  readonly catalogueTopicChoices = [
+    { id: 't1', name: 'Virtue', usageCount: 12 },
+    { id: 't2', name: 'Habit', usageCount: 3 },
+    { id: 't3', name: 'Prudence', usageCount: 5 },
+  ] as unknown as readonly TopicDto[];
+  readonly catalogueNote: NoteSearchHit = {
+    id: 'catalogue-note',
+    bookId: 'catalogue-book',
+    bookTitle: 'On the good life',
+    bookAuthor: 'Aristotle',
+    content: 'Virtue is a settled disposition, not a single act.',
+    selectedText: 'Virtue, then, is a state of character concerned with choice.',
+    snippet: null,
+    topicNames: ['Virtue', 'Habit'],
+    createdAt: '2026-10-01T09:00:00Z',
+    highlightColour: 'amber',
+    hasRawContent: true,
+    processingMode: 'light_polish',
+    captureSource: 'typed',
+  };
   readonly renameDemo = signal(true);
   readonly cataloguePen = signal<HighlightColour>('amber');
   readonly catalogueTopics = signal(['Virtue', 'Habit', 'The good life']);
