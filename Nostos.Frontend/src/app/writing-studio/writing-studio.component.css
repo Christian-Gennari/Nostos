@@ -1504,25 +1504,7 @@
 }
 
 .inspected-source-open {
-  display: inline-flex;
-  min-height: 36px;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--color-brand-accent);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--color-brand-accent), transparent 58%);
-  text-underline-offset: 3px;
-}
-
-.inspected-source-open:hover {
-  color: var(--color-text-main);
-  text-decoration-color: currentColor;
-}
-
-.inspected-source-open:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .source-insertion-actions {
@@ -1561,24 +1543,6 @@
   gap: 0.25rem;
 }
 
-.source-more-actions {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0 0.2rem;
-}
-
-.source-more-actions .nostos-button {
-  min-height: 36px;
-  color: var(--color-text-muted);
-}
-
-.source-more-actions .remove-source-action {
-  color: var(--color-text-main);
-}
-
 .source-action-disabled-reason {
   margin: 0.15rem 0 0;
   color: var(--color-text-muted);
@@ -1595,7 +1559,6 @@
   }
 
   .source-action-primary-row .nostos-button,
-  .source-more-actions .nostos-button,
   .inspected-source-open,
   .reference-empty-link {
     min-height: 44px;

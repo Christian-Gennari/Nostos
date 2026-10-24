@@ -328,13 +328,10 @@
         <div class="inspected-source-provenance">
           <span class="inspected-source-source-label">{{ sourceProvenance(source) }}</span>
           @if (source.bookId) {
-            <a
-              class="inspected-source-open"
-              href=""
-              (click)="$event.preventDefault(); openSource(source)"
-            >
-              Open source <span aria-hidden="true">→</span>
-            </a>
+            <button appButton variant="link" size="sm" type="button" class="inspected-source-open"
+              (click)="openSource(source)">
+              Open in book <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
+            </button>
           }
         </div>
 
@@ -378,7 +375,7 @@
                 [title]="sourceActionDisabledReason() || ''"
                 (click)="insertNote(source)"
               >
-                Insert note
+                Insert as note
               </button>
             }
 
@@ -405,69 +402,38 @@
 
             @if (canInsertReference(source) || (canInsertQuote(source) && canInsertNote(source)) || keptNoteIds().has(source.id)) {
               <button
-                #sourceMoreTrigger
                 appButton
                 variant="ghost"
                 size="sm"
+                type="button"
                 class="source-more-trigger"
                 aria-label="More source actions"
-                aria-controls="source-more-actions"
-                [attr.aria-expanded]="moreSourceActionsOpen()"
-                (click)="toggleMoreSourceActions()"
+                [nostosMenuTriggerFor]="sourceMoreMenu"
               >
                 More
-                <nostos-icon [name]="moreSourceActionsOpen() ? 'caret-up' : 'caret-down'" [size]="14"></nostos-icon>
+                <nostos-icon name="caret-down" [size]="14"></nostos-icon>
               </button>
+              <ng-template #sourceMoreMenu>
+                <nostos-menu aria-label="More source actions">
+                  @if (canInsertQuote(source) && canInsertNote(source)) {
+                    <button nostosMenuItem icon="note" [disabled]="!!sourceActionDisabledReason()"
+                      (triggered)="insertNote(source)">Insert as note</button>
+                  }
+                  @if (canInsertReference(source)) {
+                    <button nostosMenuItem icon="link-simple" [disabled]="!!sourceActionDisabledReason()"
+                      (triggered)="insertReference(source)">Insert as reference</button>
+                  }
+                  @if (keptNoteIds().has(source.id)) {
+                    @if (canInsertReference(source) || (canInsertQuote(source) && canInsertNote(source))) {
+                      <hr nostosMenuSeparator />
+                    }
+                    <button nostosMenuItem icon="bookmark-simple" class="remove-source-action"
+                      (triggered)="removeKeptSource(source.id)">Remove from this writing</button>
+                  }
+                </nostos-menu>
+              </ng-template>
             }
           </div>
-
-          @if (moreSourceActionsOpen()) {
-            <div
-              id="source-more-actions"
-              class="source-more-actions"
-              role="group"
-              aria-label="More source actions"
-              (keydown.escape)="closeMoreSourceActions($event)"
-            >
-              @if (canInsertQuote(source) && canInsertNote(source)) {
-                <button
-                  appButton
-                  variant="ghost"
-                  size="sm"
-                  [disabled]="!!sourceActionDisabledReason()"
-                  [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
-                  [title]="sourceActionDisabledReason() || ''"
-                  (click)="insertNote(source)"
-                >
-                  Insert note
-                </button>
-              }
-              @if (canInsertReference(source)) {
-                <button
-                  appButton
-                  variant="ghost"
-                  size="sm"
-                  [disabled]="!!sourceActionDisabledReason()"
-                  [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
-                  [title]="sourceActionDisabledReason() || ''"
-                  (click)="insertReference(source)"
-                >
-                  Insert as reference
-                </button>
-              }
-              @if (keptNoteIds().has(source.id)) {
-                <button
-                  appButton
-                  variant="ghost"
-                  size="sm"
-                  class="remove-source-action"
-                  (click)="removeKeptSource(source.id, $event)"
-                >
-                  Remove from this writing
-                </button>
-              }
-            </div>
-          }
 
           @if (sourceActionDisabledReason(); as disabledReason) {
             @if (!activeItem() || (editorWordCount() === null && (canInsertQuote(source) || canInsertNote(source) || canInsertReference(source)))) {

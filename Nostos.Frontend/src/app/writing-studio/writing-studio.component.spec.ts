@@ -1847,34 +1847,34 @@ describe('WritingStudio kept sources (#491)', () => {
     ) as HTMLButtonElement;
     expect(primary.textContent?.trim()).toBe('Insert quote');
     expect(primary.classList.contains('nostos-button--primary')).toBe(true);
-    expect(fixture.nativeElement.querySelector('.inspected-source-open')?.textContent).toContain(
-      'Open source',
-    );
+    // As a note says it (issue #1211): a real button, the words and the arrow icon.
+    const open = fixture.nativeElement.querySelector('.inspected-source-open') as HTMLButtonElement;
+    expect(open.tagName).toBe('BUTTON');
+    expect(open.textContent?.trim()).toBe('Open in book');
+    expect(open.querySelector('nostos-icon')).not.toBeNull();
 
+    // The secondary actions are a nostos-menu, as everywhere else (issue #1211).
+    const menuItems = () =>
+      Array.from(document.querySelectorAll('.nostos-menu-item')).map(
+        (item) => item.querySelector('.nostos-menu-item__label')?.textContent?.trim(),
+      );
     const more = fixture.nativeElement.querySelector(
       '.source-more-trigger',
     ) as HTMLButtonElement;
     expect(more.textContent?.trim()).toContain('More');
-    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(more.getAttribute('aria-haspopup')).toBe('menu');
     more.click();
     fixture.detectChanges();
     expect(more.getAttribute('aria-expanded')).toBe('true');
-    expect(
-      Array.from(
-        fixture.nativeElement.querySelectorAll('.source-more-actions button'),
-      ).map((button) => (button as Element).textContent?.trim()),
-    ).toEqual(['Insert note', 'Insert as reference']);
+    expect(menuItems()).toEqual(['Insert as note', 'Insert as reference']);
 
-    const menuButton = fixture.nativeElement.querySelector(
-      '.source-more-actions button',
-    ) as HTMLButtonElement;
-    menuButton.focus();
-    menuButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    (document.querySelector('.nostos-menu') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }),
+    );
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fixture.nativeElement.querySelector('.source-more-actions')).toBeNull();
+    expect(menuItems()).toEqual([]);
     expect(more.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(more);
 
     component.inspectSource({
       id: 'note-only',
@@ -1888,17 +1888,13 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(
       fixture.nativeElement.querySelector('.source-action-primary-row .nostos-button')
         ?.textContent?.trim(),
-    ).toBe('Insert note');
+    ).toBe('Insert as note');
     const noteMore = fixture.nativeElement.querySelector(
       '.source-more-trigger',
     ) as HTMLButtonElement;
     noteMore.click();
     fixture.detectChanges();
-    expect(
-      Array.from(
-        fixture.nativeElement.querySelectorAll('.source-more-actions button'),
-      ).map((button) => (button as Element).textContent?.trim()),
-    ).toEqual(['Insert as reference']);
+    expect(menuItems()).toEqual(['Insert as reference']);
   });
 
   describe('the @ source palette (#1039)', () => {

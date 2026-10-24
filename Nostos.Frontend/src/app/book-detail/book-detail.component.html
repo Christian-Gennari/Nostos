@@ -379,8 +379,8 @@
                 aria-controls="personal-review-text"
                 (click)="toggleReview()"
               >
-                {{ isReviewExpanded() ? 'Show less' : 'Read full review' }}
-                <span class="icon" [class.rotated]="isReviewExpanded()" aria-hidden="true">↓</span>
+                {{ isReviewExpanded() ? 'Show less' : 'Show all' }}
+                <nostos-icon class="icon" name="caret-down" [size]="12" [class.rotated]="isReviewExpanded()" />
               </button>
               }
             </div>
@@ -412,8 +412,8 @@
               aria-controls="synopsis-text"
               (click)="toggleDescription()"
             >
-              {{ isDescriptionExpanded() ? 'Show less' : 'Read full synopsis' }}
-              <span class="icon" [class.rotated]="isDescriptionExpanded()" aria-hidden="true">↓</span>
+              {{ isDescriptionExpanded() ? 'Show less' : 'Show all' }}
+              <nostos-icon class="icon" name="caret-down" [size]="12" [class.rotated]="isDescriptionExpanded()" />
             </button>
             }
           </div>
