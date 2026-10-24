@@ -698,6 +698,7 @@
                 Search free books and audiobooks
               </label>
               <div class="source-search">
+                <nostos-search-field class="source-search-field">
                 <input
                   #sourceQueryInput
                   id="source-query"
@@ -706,13 +707,14 @@
                   class="source-search-input"
                   type="search"
                   autocomplete="off"
-                  placeholder="Title or author"
+                  placeholder="Title or author…"
                   [ngModel]="sourceQuery()"
                   (ngModelChange)="sourceQuery.set($event)"
                   [ngModelOptions]="{ standalone: true }"
                   [disabled]="!!runningAcquisition()"
                   (keydown.enter)="$event.preventDefault(); searchSource()"
                 />
+                </nostos-search-field>
                 <button
                   type="button"
                   appButton

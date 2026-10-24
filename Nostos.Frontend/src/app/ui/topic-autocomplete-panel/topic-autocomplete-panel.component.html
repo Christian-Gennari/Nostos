@@ -68,8 +68,8 @@
         ></button>
       </div>
 
-      <div class="picker-search">
-        <nostos-icon name="magnifying-glass" [size]="16" class="picker-search-icon"></nostos-icon>
+      <!-- No clear button: the dialog's Close sits right above the field. -->
+      <nostos-search-field class="picker-search" [clearable]="false">
         <input
           appInput
           cdkFocusInitial
@@ -79,7 +79,7 @@
           autocomplete="off"
           spellcheck="false"
           enterkeyhint="done"
-          placeholder="Find or create a topic"
+          placeholder="Find or create a topic…"
           aria-label="Find or create a topic"
           aria-autocomplete="list"
           aria-expanded="true"
@@ -89,7 +89,7 @@
           (input)="onSearchInput($event)"
           (keydown)="onSearchKeydown($event)"
         />
-      </div>
+      </nostos-search-field>
     </div>
 
     <div class="picker-list" role="listbox" aria-label="Topics" [id]="auto.listId">

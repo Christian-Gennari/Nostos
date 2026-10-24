@@ -185,51 +185,10 @@ app-sidebar-collections.no-transition {
 }
 
 /* NEW: Search Bar Styles */
+/* <nostos-search-field>: fills the toolbar's middle track (capped at 480px
+   there). The glass, its gutter and the clear button are the primitive's. */
 .search-bar-container {
-  /* Fills the toolbar's middle track (capped at 480px there). Relative so the
-     search icon is positioned against this box. */
-  position: relative;
   width: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-
-.search-icon {
-  /* Absolutely placed, not a flex sibling: in the flow its 18px box pushed the
-     visible input 9px right of the container's centre, so the box on screen was
-     never the box that was centred. Lifted out, `width: 100%` on the input spans
-     the container exactly and the icon sits at the same left offset.
-
-     12px inset, matching the mobile rule below. The input reserves a 2.5rem
-     (40px) left gutter for the text, so a 12px inset + the 18px glyph leaves an
-     11px gap between icon and text - balanced against the 12px edge inset
-     (measured: inset 12, gap 11). The old 28px was a leftover from when this
-     element was a `position: relative` flex sibling, where the value offset the
-     glyph from its layout box; once it became absolute it placed the glyph's left
-     EDGE at 28px instead, putting its right edge 5px past the start of the text
-     and overlapping the first glyph at every width. */
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--color-text-light);
-  pointer-events: none;
-  z-index: 1;
-  transition: color 0.2s ease;
-}
-
-.search-input {
-  /* appInput owns the generic field contract. Library only reserves the
-     leading-glyph gutter. */
-  padding-left: 2.5rem;
-}
-
-/* Focus turns the icon dark. Only the `:has()` form is used: the icon is the
-   input's PREVIOUS sibling in the template, so an `.search-input:focus +
-   .search-icon` half could never match anything. */
-.search-bar-container:has(.search-input:focus-visible) .search-icon {
-  color: var(--color-text-main);
 }
 
 /* Sort dropdown layout. The canonical Dropdown owns field geometry, popup,
@@ -1184,13 +1143,6 @@ app-sidebar-collections.no-transition {
     gap: 10px;
   }
 
-  .search-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-  }
-
   .active-filters {
     padding: 0 14px;
     margin: 0;
@@ -1227,7 +1179,6 @@ app-sidebar-collections.no-transition {
   .search-bar-container .search-input {
     min-height: var(--control-h-touch);
     height: var(--control-h-touch);
-    padding: 0 1rem 0 2.5rem;
     background-color: var(--bg-surface);
     line-height: normal;
   }

@@ -385,15 +385,17 @@
 
     @if (pickingRowId() === row.id) {
       <div class="highlight-picker" data-testid="highlight-picker">
-        <input
-          appInput
-          type="search"
-          class="highlight-picker-search"
-          placeholder="Search your library"
-          aria-label="Search your library"
-          [value]="searchQuery()"
-          (input)="onSearch($any($event.target).value)"
-        />
+        <nostos-search-field class="highlight-picker-search" size="sm">
+          <input
+            appInput
+            controlSize="compact"
+            type="search"
+            placeholder="Search your library…"
+            aria-label="Search your library"
+            [value]="searchQuery()"
+            (input)="onSearch($any($event.target).value)"
+          />
+        </nostos-search-field>
         <ul class="highlight-picker-list">
           @for (candidate of searchQuery().trim() ? searchResults() : row.book.candidates; track candidate.bookId) {
             <li>

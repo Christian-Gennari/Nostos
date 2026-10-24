@@ -79,32 +79,10 @@
   white-space: nowrap;
 }
 
+/* <nostos-search-field>; the glass and clear button are the primitive's. */
 .search-bar-container {
-  position: relative;
-  display: flex;
-  align-items: center;
   width: 100%;
   min-width: 0;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 1;
-  color: var(--color-text-light);
-  pointer-events: none;
-  transition: color 0.2s ease;
-}
-
-.search-input {
-  width: 100%;
-  padding-left: 2.5rem;
-}
-
-.search-bar-container:has(.search-input:focus-visible) .search-icon {
-  color: var(--color-text-main);
 }
 
 .toolbar-right {
@@ -435,9 +413,3 @@
   }
 }
 
-
-@media (prefers-reduced-motion: reduce) {
-  .search-icon {
-    transition: none;
-  }
-}

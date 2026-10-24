@@ -44,6 +44,7 @@ import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { coverImageUrl } from '../core/cover-url';
+import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -113,6 +114,7 @@ interface WorkFormatGlyph {
   selector: 'app-library',
   standalone: true,
   imports: [
+    SearchFieldComponent,
     ProgressComponent,
     CommonModule,
     RouterLink,

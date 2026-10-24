@@ -1,0 +1,81 @@
+/* The field fills its slot; the glass and the clear button sit over the
+   input's own padding, so the box on screen is the input's box. */
+.nostos-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* 12px inset with an 18px glass and a 2.5rem gutter: an 11px gap between glass
+   and text, balanced against the 12px edge (the Library's measured field). */
+.nostos-search-field .nostos-search-field__icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+  color: var(--color-text-light);
+  pointer-events: none;
+  transition: color var(--motion-fast) var(--ease-plain);
+}
+
+.nostos-search-field > input {
+  width: 100%;
+  min-width: 0;
+  padding-left: 2.5rem;
+}
+
+.nostos-search-field--clearable > input {
+  padding-right: 2.25rem;
+}
+
+/* One clear control in every browser: ours. */
+.nostos-search-field > input::-webkit-search-cancel-button,
+.nostos-search-field > input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+.nostos-search-field:has(> input:focus-visible) .nostos-search-field__icon {
+  color: var(--color-text-main);
+}
+
+.nostos-search-field .nostos-search-field__clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+  border-radius: var(--radius-md);
+  color: var(--color-text-light);
+}
+
+.nostos-search-field .nostos-search-field__clear:hover {
+  color: var(--color-text-main);
+}
+
+/* Dense rung, for panels and dialogs. */
+.nostos-search-field--sm .nostos-search-field__icon {
+  left: 10px;
+}
+
+.nostos-search-field--sm > input {
+  padding-left: 2.1rem;
+}
+
+.nostos-search-field--sm.nostos-search-field--clearable > input {
+  padding-right: 2rem;
+}
+
+.nostos-search-field--sm .nostos-search-field__clear {
+  right: 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nostos-search-field .nostos-search-field__icon {
+    transition: none;
+  }
+}

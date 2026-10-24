@@ -548,18 +548,17 @@
     @if (!inspectedSource() && referenceMode() === 'library') {
       @if (activeSidebarTab() === 'brain') {
         @if (!selectedTopicId()) {
-          <div class="search-box">
-            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+          <nostos-search-field class="search-box" size="sm">
             <input
               appInput
               controlSize="compact"
-              type="text"
-              placeholder="Search topics..."
+              type="search"
+              placeholder="Search topics…"
               aria-label="Search topics"
               [ngModel]="brainQuery()"
               (ngModelChange)="brainQuery.set($event)"
             />
-          </div>
+          </nostos-search-field>
         }
         @if (!activeItem()) {
           <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
@@ -621,18 +620,17 @@
       }
       @if (activeSidebarTab() === 'notes') {
         @if (!selectedBookId()) {
-          <div class="search-box">
-            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+          <nostos-search-field class="search-box" size="sm">
             <input
               appInput
               controlSize="compact"
-              type="text"
-              placeholder="Search books..."
+              type="search"
+              placeholder="Search books…"
               aria-label="Search books"
               [ngModel]="bookQuery()"
               (ngModelChange)="bookQuery.set($event)"
             />
-          </div>
+          </nostos-search-field>
         }
         @if (!activeItem()) {
           <p class="reference-action-notice">Open a writing to keep or insert sources.</p>

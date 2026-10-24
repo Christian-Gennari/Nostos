@@ -132,6 +132,10 @@
   font-size: var(--text-sm);
 }
 
+.catalogue-row--nowrap {
+  flex-wrap: nowrap;
+}
+
 .catalogue-page-head {
   display: flex;
   flex-direction: column;

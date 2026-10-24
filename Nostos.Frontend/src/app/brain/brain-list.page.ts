@@ -61,6 +61,7 @@ import {
   writeStored,
   type BrainPlace,
 } from './brain.helpers';
+import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -82,6 +83,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
   selector: 'app-brain-list-page',
   standalone: true,
   imports: [
+    SearchFieldComponent,
     RouterLink,
     CdkConnectedOverlay,
     CdkOverlayOrigin,

@@ -217,6 +217,37 @@ and focus contract.
 <textarea appTextarea controlSize="compact" rows="5" name="description"></textarea>
 ```
 
+## SearchFieldComponent
+
+**Selector:** `nostos-search-field`
+**Files:** `src/app/ui/search-field/`
+
+Every search or filter field (Library, Brain, Map, Studio's reference panel, the
+Editions dialog, reader search, the writing hand-off, highlight import, add-book,
+the topic pickers). It frames the caller's own input:
+
+```html
+<nostos-search-field>
+  <input appInput controlSize="compact" type="search"
+         placeholder="Search books…" aria-label="Search books"
+         [value]="query()" (input)="onSearch($event)" />
+</nostos-search-field>
+```
+
+- The input stays the caller's: write `type="search"`, a placeholder ending in "…",
+  an `aria-label`, and any binding, keyboard handler or combobox ARIA on it as usual.
+- A leading magnifying glass, and a clear button once the field has a value. Clear
+  empties the input the way typing would (it dispatches `input`, so `ngModel` and
+  `(input)` handlers see it), emits `(cleared)` and keeps focus in the field. The
+  browser's own clear glyph is hidden.
+- `[clearable]="false"` where a Close button already sits beside or above the field
+  (reader search, topic pickers), so two X's never mean two things.
+- `size="sm"` is the dense rung for panels and dialogs (15px glass, narrower gutter).
+- Place it with a class on the host (`class="search-bar-container"`); do not restyle
+  the glass or the input's gutter.
+
+---
+
 ## DropdownComponent
 
 **Selector:** `app-dropdown`  

@@ -28,6 +28,7 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { IconTileComponent } from '../../ui/icon-tile/icon-tile.component';
 import { CheckboxDirective } from '../../ui/check/check.directive';
+import { SearchFieldComponent } from '../../ui/search-field/search-field.component';
 
 export interface BrainWritingHandoffResult {
   succeededNoteIds: string[];
@@ -38,6 +39,7 @@ export interface BrainWritingHandoffResult {
   standalone: true,
   selector: 'app-brain-writing-handoff',
   imports: [
+    SearchFieldComponent,
     CheckboxDirective,
     IconTileComponent,
     CommonModule,

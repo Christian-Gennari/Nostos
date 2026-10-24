@@ -17,18 +17,18 @@
            heading is screen-reader-only there. -->
       <h1 id="library-title" class="page-title library-title visually-hidden-phone">Library</h1>
 
-      <div class="search-bar-container">
-        <nostos-icon name="magnifying-glass" [size]="18" class="search-icon"></nostos-icon>
+      <nostos-search-field class="search-bar-container">
         <input
           appInput
           controlSize="compact"
-          type="text"
+          type="search"
           class="search-input"
-          placeholder="Search books..."
+          placeholder="Search books…"
+          aria-label="Search books"
           [value]="searchQuery()"
           (input)="onSearch($event)"
         />
-      </div>
+      </nostos-search-field>
 
       <div class="toolbar-right">
         <!-- Phone only. Navigation anchors the row's left edge: the drawer opener

@@ -19,6 +19,7 @@ import { Overlay, OverlayConfig, OverlayRef } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
 
 import { InputDirective } from '../form-control/form-control.directive';
+import { SearchFieldComponent } from '../search-field/search-field.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
@@ -40,7 +41,7 @@ import { TopicAutocompleteService, TopicPickerMode } from './topic-autocomplete.
 @Component({
   standalone: true,
   selector: 'topic-autocomplete-panel',
-  imports: [NgTemplateOutlet, ModalShell, InputDirective, IconButtonComponent, NostosIconComponent],
+  imports: [NgTemplateOutlet, ModalShell, InputDirective, IconButtonComponent, NostosIconComponent, SearchFieldComponent],
   templateUrl: './topic-autocomplete-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./topic-autocomplete-panel.css'],

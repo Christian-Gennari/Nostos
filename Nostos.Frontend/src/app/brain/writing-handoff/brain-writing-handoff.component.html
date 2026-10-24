@@ -105,16 +105,17 @@
           <section class="existing-destinations" aria-labelledby="existing-writing-heading">
             <h3 id="existing-writing-heading">Existing writing</h3>
             @if (documentDestinations().length > 8) {
-              <input
-                appInput
-                type="search"
-                class="destination-filter"
-                aria-label="Filter existing writings"
-                placeholder="Filter writings…"
-                [value]="destinationFilter()"
-                [disabled]="saving()"
-                (input)="destinationFilter.set($any($event.target).value)"
-              />
+              <nostos-search-field class="destination-filter">
+                <input
+                  appInput
+                  type="search"
+                  aria-label="Filter existing writings"
+                  placeholder="Filter writings…"
+                  [value]="destinationFilter()"
+                  [disabled]="saving()"
+                  (input)="destinationFilter.set($any($event.target).value)"
+                />
+              </nostos-search-field>
             }
 
             @if (filteredDestinations().length === 0) {

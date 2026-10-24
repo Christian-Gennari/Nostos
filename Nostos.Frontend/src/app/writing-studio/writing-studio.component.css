@@ -201,26 +201,11 @@
   color: var(--color-text-main);
 }
 
-/* Search layout owns only the prefix icon; appInput owns field chrome/focus. */
+/* <nostos-search-field>: the panel only places it. */
 .search-box {
-  position: relative;
   margin: 0 1.15rem 1rem;
-  color: var(--color-text-muted);
   box-sizing: border-box;
   width: calc(100% - 2.3rem);
-}
-
-.search-box nostos-icon {
-  position: absolute;
-  top: 50%;
-  left: 0.85rem;
-  z-index: 1;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.search-box .nostos-form-control {
-  padding-left: 2.35rem;
 }
 
 /* Lists & Items */

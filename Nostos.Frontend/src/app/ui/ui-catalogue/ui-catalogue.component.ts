@@ -19,6 +19,7 @@ import { DropdownComponent, type DropdownOption } from '../dropdown/dropdown.com
 import { FormFieldComponent } from '../form-field/form-field.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { SegmentedComponent } from '../segmented/segmented.component';
+import { SearchFieldComponent } from '../search-field/search-field.component';
 import { CheckboxDirective, RadioDirective } from '../check/check.directive';
 import { ProgressComponent } from '../progress/progress.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
@@ -49,6 +50,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
     FormFieldComponent,
     IconButtonComponent,
     SegmentedComponent,
+    SearchFieldComponent,
     CheckboxDirective,
     RadioDirective,
     ProgressComponent,

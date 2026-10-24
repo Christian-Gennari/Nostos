@@ -33,8 +33,7 @@
       }
     </div>
 
-    <div class="search-bar-container">
-      <nostos-icon name="magnifying-glass" [size]="18" class="search-icon" />
+    <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
       <input
         appInput
         controlSize="compact"
@@ -47,7 +46,7 @@
         (input)="onSearchInput($any($event.target).value)"
         (keydown.escape)="clearSearch()"
       />
-    </div>
+    </nostos-search-field>
 
     <div class="toolbar-right">
       <!-- Phone: order and book as square buttons; the open list shows the choice. -->

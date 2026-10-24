@@ -21,6 +21,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
+import { SearchFieldComponent } from '../search-field/search-field.component';
 
 type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
 
@@ -60,6 +61,7 @@ interface FileFailure {
   selector: 'app-highlight-import-modal',
   standalone: true,
   imports: [
+    SearchFieldComponent,
     LoadingIndicatorComponent,
     DropZoneComponent,
     DatePipe,

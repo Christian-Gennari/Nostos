@@ -38,6 +38,7 @@ import { DropZoneComponent } from '../ui/drop-zone/drop-zone.component';
 import { SegmentedComponent } from '../ui/segmented/segmented.component';
 import { RadioDirective } from '../ui/check/check.directive';
 import { ProgressComponent } from '../ui/progress/progress.component';
+import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -53,6 +54,7 @@ export interface AddBookPrefill {
   selector: 'app-add-book-modal',
   standalone: true,
   imports: [
+    SearchFieldComponent,
     RadioDirective,
     ProgressComponent,
     DropZoneComponent,

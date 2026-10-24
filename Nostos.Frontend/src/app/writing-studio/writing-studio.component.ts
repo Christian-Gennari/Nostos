@@ -71,6 +71,7 @@ import {
   withStudioSourceReturnState,
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
+import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 /** The writing the Studio opens on next time. */
 const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
@@ -164,6 +165,7 @@ function writeCarets(carets: RememberedCaret[]): void {
   selector: 'app-writing-studio',
   standalone: true,
   imports: [
+    SearchFieldComponent,
     CommonModule,
     FormsModule,
     NostosIconComponent,

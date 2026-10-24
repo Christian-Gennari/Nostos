@@ -204,7 +204,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(newDocument.classList.contains('nostos-button--sm')).toBe(true);
 
     const search = fixture.nativeElement.querySelector(
-      'input[placeholder="Search topics..."]',
+      'input[placeholder="Search topics…"]',
     ) as HTMLInputElement;
     expect(search.classList.contains('nostos-form-control')).toBe(true);
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
@@ -257,7 +257,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     fixture.detectChanges();
 
     const bookSearch = fixture.nativeElement.querySelector(
-      'input[placeholder="Search books..."]',
+      'input[placeholder="Search books…"]',
     ) as HTMLInputElement;
     expect(bookSearch.classList.contains('nostos-form-control')).toBe(true);
     expect(bookSearch.classList.contains('nostos-form-control--compact')).toBe(true);
@@ -265,7 +265,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     component.selectedBookId.set('book-1');
     fixture.detectChanges();
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search books..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search books…"]'),
     ).toBeNull();
 
     const back = fixture.nativeElement.querySelector('.goto-btn') as HTMLButtonElement;
@@ -1677,13 +1677,13 @@ describe('WritingStudio kept sources (#491)', () => {
     topicNotesScroll.scrollTop = 456;
     component.captureReferenceScroll({ target: topicNotesScroll } as unknown as Event);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
 
     component.inspectSource(note);
     fixture.detectChanges();
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
     expect(
       (fixture.nativeElement.querySelector('.inspected-source-back') as HTMLButtonElement).textContent,
@@ -1695,7 +1695,7 @@ describe('WritingStudio kept sources (#491)', () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     const search = fixture.nativeElement.querySelector(
-      'input[placeholder="Search topics..."]',
+      'input[placeholder="Search topics…"]',
     ) as HTMLInputElement;
     expect(search.value).toBe('Attention');
     const restoredIndex = fixture.nativeElement.querySelector(
@@ -1749,7 +1749,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(fixture.nativeElement.querySelectorAll('.inspected-source-card')).toHaveLength(1);
     expect(fixture.nativeElement.querySelectorAll('.reference-note-list .reference-source-row')).toHaveLength(0);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
 
     const back = fixture.nativeElement.querySelector(
@@ -1766,7 +1766,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(component.selectedTopicId()).toBe('c-1');
     expect(fixture.nativeElement.querySelectorAll('.reference-note-list .reference-source-row')).toHaveLength(1);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
   });
 

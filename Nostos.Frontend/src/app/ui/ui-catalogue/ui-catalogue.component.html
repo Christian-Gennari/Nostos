@@ -362,6 +362,47 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-search">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-search">Search field</h2>
+      </div>
+      <p>
+        A leading glass, the caller's own type="search" input, and a clear button once there is
+        something to clear. Placeholders end in "…".
+      </p>
+    </div>
+
+    <div class="catalogue-grid catalogue-grid--forms">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Toolbar · empty / filled</span>
+        <div class="catalogue-stack">
+          <nostos-search-field>
+            <input appInput controlSize="compact" type="search" placeholder="Search books…" aria-label="Search books example" />
+          </nostos-search-field>
+          <nostos-search-field>
+            <input appInput controlSize="compact" type="search" placeholder="Search books…" aria-label="Filled search example" value="Le Guin" />
+          </nostos-search-field>
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">size="sm" · clearable / beside a close button</span>
+        <div class="catalogue-stack">
+          <nostos-search-field size="sm">
+            <input appInput controlSize="compact" type="search" placeholder="Search your library…" aria-label="Dense search example" value="Gilead" />
+          </nostos-search-field>
+          <div class="catalogue-row catalogue-row--nowrap">
+            <nostos-search-field size="sm" [clearable]="false">
+              <input appInput controlSize="compact" type="search" placeholder="Search this book…" aria-label="Search beside close example" />
+            </nostos-search-field>
+            <button appIconButton type="button" icon="x" aria-label="Close search example"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-switch">
     <div class="catalogue-section-heading">
       <div>
