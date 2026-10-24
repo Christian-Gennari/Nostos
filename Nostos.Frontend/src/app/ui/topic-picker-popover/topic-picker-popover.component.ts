@@ -1,17 +1,24 @@
+import { Overlay, OverlayRef } from '@angular/cdk/overlay';
+import { TemplatePortal } from '@angular/cdk/portal';
 import {
   AfterViewInit,
-  OnDestroy,
-  inject,
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  OnDestroy,
+  TemplateRef,
+  ViewContainerRef,
   computed,
+  inject,
   input,
   output,
   signal,
   viewChild,
 } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { isPhoneViewport } from '../breakpoints';
+import { IconButtonComponent } from '../icon-button/icon-button.component';
+import { ModalShell } from '../modal-shell/modal-shell.component';
 import type { TopicDto } from '../../core/services/topics.service';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
@@ -36,23 +43,26 @@ let nextPickerId = 0;
  *
  * It is a listbox driven from its own text field (focus stays in the field,
  * the active option is announced through aria-activedescendant), shown in an
- * overlay the caller positions.
+ * overlay the caller positions. At phone width it is a sheet instead (the same
+ * approach as the “Link a topic” dialog): a popover under the field would sit
+ * behind the soft keyboard, so the field goes to the top and the list scrolls
+ * in the space above the keyboard.
  */
 @Component({
   selector: 'app-topic-picker-popover',
   standalone: true,
-  imports: [NostosIconComponent, InputDirective, TopicOptionComponent],
+  imports: [NgTemplateOutlet, NostosIconComponent, InputDirective, TopicOptionComponent, ModalShell, IconButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="picker" role="dialog" [attr.aria-label]="label()">
+    <ng-template #fieldTpl>
       <label class="visually-hidden" [attr.for]="inputId">{{ label() }}</label>
       <input
-        #field
         appInput
-        controlSize="compact"
+        [controlSize]="sheet ? 'normal' : 'compact'"
         class="picker-field"
         type="text"
         autocomplete="off"
+        enterkeyhint="done"
         role="combobox"
         aria-autocomplete="list"
         aria-expanded="true"
@@ -64,6 +74,9 @@ let nextPickerId = 0;
         (input)="setQuery($any($event.target).value)"
         (keydown)="onKeydown($event)"
       />
+    </ng-template>
+
+    <ng-template #listTpl>
       <ul class="picker-list" role="listbox" [id]="listId" [attr.aria-label]="label()">
         @for (option of options(); track option.kind + option.name; let i = $index) {
           @if (option.kind === 'suggestion' && (i === 0 || options()[i - 1].kind !== 'suggestion')) {
@@ -96,7 +109,50 @@ let nextPickerId = 0;
           <li class="picker-empty" role="presentation">{{ query().trim() ? noMatch : noTopics }}</li>
         }
       </ul>
-    </div>
+    </ng-template>
+
+    <!-- The sheet is attached to its own overlay (see openSheet), not rendered
+         here: this host sits in the caller's connected overlay, whose pane is
+         positioned with a transform, and a transformed ancestor turns the
+         shell's fixed backdrop into a zero-width box inside that pane. -->
+    <ng-template #sheetTpl>
+      <app-modal-shell
+        [isOpen]="true"
+        variant="sheet"
+        class="picker-sheet"
+        [maxWidth]="'460px'"
+        [maxHeight]="'min(560px, calc(100dvh - 2.5rem))'"
+        [layer]="130"
+        [trapFocus]="true"
+        [ariaLabel]="label()"
+        (closed)="closed.emit()"
+      >
+        <div shellHeader class="sheet-head">
+          <div class="sheet-title-row">
+            <h2 class="sheet-title">{{ label() }}</h2>
+            <button
+              appIconButton
+              type="button"
+              icon="x"
+              [glyphSize]="18"
+              class="sheet-close"
+              title="Close"
+              aria-label="Close"
+              (click)="closed.emit()"
+            ></button>
+          </div>
+          <ng-container [ngTemplateOutlet]="fieldTpl"></ng-container>
+        </div>
+        <ng-container [ngTemplateOutlet]="listTpl"></ng-container>
+      </app-modal-shell>
+    </ng-template>
+
+    @if (!sheet) {
+      <div class="picker" role="dialog" [attr.aria-label]="label()">
+        <ng-container [ngTemplateOutlet]="fieldTpl"></ng-container>
+        <ng-container [ngTemplateOutlet]="listTpl"></ng-container>
+      </div>
+    }
   `,
   styles: [
     `
@@ -151,6 +207,44 @@ let nextPickerId = 0;
         color: var(--color-text-light);
         font-size: var(--text-sm);
       }
+
+      /* Phone sheet: the shell owns the card; the list fills what is left. */
+      .sheet-head {
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+      }
+
+      .sheet-title-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
+      .sheet-title {
+        margin: 0;
+        color: var(--color-text-main);
+        font-size: 1.05rem;
+        font-weight: var(--fw-medium);
+        line-height: 1.3;
+      }
+
+      .sheet-close {
+        flex-shrink: 0;
+        margin: -0.35rem -0.4rem -0.35rem 0;
+      }
+
+      .picker-sheet .picker-field {
+        /* 16px: anything smaller makes iOS zoom the page when the field takes focus. */
+        font-size: var(--text-md);
+      }
+
+      .picker-sheet .picker-list {
+        margin: 0;
+        padding: 0.375rem;
+        max-height: none;
+      }
     `,
   ],
 })
@@ -174,10 +268,17 @@ export class TopicPickerPopoverComponent implements AfterViewInit, OnDestroy {
   readonly inputId = `topic-picker-${nextPickerId++}`;
   readonly listId = `${this.inputId}-list`;
 
+  /** Phone width: a sheet, not a popover. Fixed for the life of the picker. */
+  readonly sheet = isPhoneViewport();
+
   readonly query = signal('');
   readonly active = signal(0);
 
-  private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
+  private readonly sheetTpl = viewChild.required<TemplateRef<unknown>>('sheetTpl');
+  private readonly overlay = inject(Overlay);
+  private readonly viewContainer = inject(ViewContainerRef);
+  private sheetRef: OverlayRef | null = null;
+  private destroyed = false;
 
   /** Every topic folded for matching once per list, not once per keystroke. */
   private readonly choices = computed(() => topicChoices(this.topics()));
@@ -210,17 +311,42 @@ export class TopicPickerPopoverComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     const active = this.document.activeElement;
     this.origin = active instanceof HTMLElement && active !== this.document.body ? active : null;
-    queueMicrotask(() => this.field().nativeElement.focus());
+    // After the caller's overlay has finished attaching: it registers with the
+    // outside-click dispatcher last, and the overlay on top of that stack is the
+    // one that must hold presses inside the sheet (see openSheet).
+    queueMicrotask(() => {
+      if (this.destroyed) return;
+      if (this.sheet) this.openSheet();
+      this.document.getElementById(this.inputId)?.focus();
+    });
+  }
+
+  /** The phone sheet, on a global overlay of its own (no transformed ancestor). */
+  private openSheet(): void {
+    const ref = this.overlay.create({
+      positionStrategy: this.overlay.position().global(),
+      scrollStrategy: this.overlay.scrollStrategies.noop(),
+    });
+    // The caller's connected overlay closes on a press outside itself. A press
+    // inside this sheet is outside that one, unless this overlay claims it:
+    // the dispatcher stops at the first overlay holding the press.
+    ref.outsidePointerEvents().subscribe();
+    ref.attach(new TemplatePortal(this.sheetTpl(), this.viewContainer));
+    this.sheetRef = ref;
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    const sheet = this.sheetRef?.overlayElement;
+    this.sheetRef?.dispose();
+    this.sheetRef = null;
     // Closing hands focus back to the opener, unless the user already moved it
     // somewhere else on purpose (focus is then outside the picker).
     const origin = this.origin;
     this.origin = null;
     if (!origin?.isConnected) return;
     const active = this.document.activeElement;
-    if (!active || active === this.document.body || this.host.nativeElement.contains(active)) {
+    if (!active || active === this.document.body || this.host.nativeElement.contains(active) || sheet?.contains(active)) {
       origin.focus({ preventScroll: true });
     }
   }

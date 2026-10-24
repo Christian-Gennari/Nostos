@@ -26,7 +26,7 @@
      token graph can see them — otherwise the fallbacks in `var()` would be the
      only values that ever render, and editing the defaults would do nothing. */
   --modal-max-width: 700px;
-  --modal-max-height: 90vh;
+  --modal-max-height: 90dvh;
   --modal-card-padding-narrow: var(--modal-card-padding);
 }
 
@@ -60,7 +60,7 @@
   flex-direction: column;
   width: 100%;
   max-width: var(--modal-max-width, 700px);
-  max-height: var(--modal-max-height, 90vh);
+  max-height: var(--modal-max-height, 90dvh);
   padding: var(--modal-card-padding);
   background: var(--bg-surface);
   /* The dialog role, not a literal: issue #160 moved this into the token graph. */

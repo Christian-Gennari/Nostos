@@ -5,9 +5,11 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   HostListener,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -324,7 +326,7 @@ let nextDropdownId = 0;
         width: max-content;
         min-width: 7.5rem;
         max-width: calc(100vw - 16px);
-        max-height: min(20rem, calc(100vh - 16px));
+        max-height: min(20rem, calc(100dvh - 16px));
         margin: 0;
         padding: 4px;
         overflow: auto;
@@ -463,6 +465,30 @@ export class DropdownComponent {
   private readonly trigger = viewChild.required<ElementRef<HTMLButtonElement>>('trigger');
   private readonly panel = viewChild.required<ElementRef<HTMLDivElement>>('panel');
 
+  constructor() {
+    // `scroll` does not bubble, so only a capturing listener hears the page's
+    // inner scrollers (the Library grid, a modal body). While open, any scroll
+    // outside the panel moves the panel with its trigger.
+    const onScroll = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Node && this.panel().nativeElement.contains(target)) return;
+      this.positionPanel();
+    };
+    let listening: Window | null = null;
+    effect(() => {
+      const open = this.open();
+      const doc = this.host.nativeElement.ownerDocument?.defaultView ?? null;
+      if (open && !listening && doc) {
+        doc.addEventListener('scroll', onScroll, { capture: true, passive: true });
+        listening = doc;
+      } else if (!open && listening) {
+        listening.removeEventListener('scroll', onScroll, { capture: true });
+        listening = null;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => listening?.removeEventListener('scroll', onScroll, { capture: true }));
+  }
+
   toggle(): void {
     if (this.disabled()) return;
     this.open() ? this.close(false) : this.showPanel();
@@ -528,7 +554,6 @@ export class DropdownComponent {
   }
 
   @HostListener('window:resize')
-  @HostListener('window:scroll')
   onViewportChange(): void {
     if (this.open()) this.positionPanel();
   }

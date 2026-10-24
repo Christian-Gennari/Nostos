@@ -1,4 +1,5 @@
 // src/app/reader/pdf-reader/pdf-reader.ts
+import { isPhoneViewport } from '../../ui/breakpoints';
 import {
   Component,
   ElementRef,
@@ -624,7 +625,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   private initialZoom(): string {
-    return typeof window !== 'undefined' && window.innerWidth <= 768 ? 'page-width' : 'page-fit';
+    return isPhoneViewport() ? 'page-width' : 'page-fit';
   }
 
   private initialLoadComplete = false;

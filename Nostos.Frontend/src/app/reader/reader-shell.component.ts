@@ -1,4 +1,5 @@
 import { ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { PHONE_OR_TOUCH_QUERY } from '../ui/breakpoints';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -284,7 +285,7 @@ export class ReaderShell implements OnInit, OnDestroy {
    */
   private readonly dockQuery: MediaQueryList | null =
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia('(max-width: 768px), (pointer: coarse)')
+      ? window.matchMedia(PHONE_OR_TOUCH_QUERY)
       : null;
   dockedLayout = signal(this.dockQuery?.matches ?? true);
   private readonly onDockQueryChange = (event: MediaQueryListEvent) =>

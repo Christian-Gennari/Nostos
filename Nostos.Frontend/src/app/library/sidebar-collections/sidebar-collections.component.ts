@@ -10,6 +10,7 @@ import {
   effect,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { isPhoneViewport } from '../../ui/breakpoints';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -162,7 +163,7 @@ export class SidebarCollections implements OnInit {
     this.loadStatusCounts();
     // The badge is a convenience: a failed load leaves it out, nothing more.
     if (!this.readingList.loaded()) this.readingList.load().subscribe({ error: () => undefined });
-    if (window.innerWidth < 768) {
+    if (isPhoneViewport()) {
       this.setExpanded(false);
     }
 
@@ -182,7 +183,7 @@ export class SidebarCollections implements OnInit {
     const target = event.target as HTMLElement;
 
     // Mobile: Close sidebar if clicking outside
-    if (window.innerWidth < 768 && this.expanded()) {
+    if (isPhoneViewport() && this.expanded()) {
       const clickedInside = this.elementRef.nativeElement.contains(target);
       if (!clickedInside) {
         this.setExpanded(false);
@@ -247,7 +248,7 @@ export class SidebarCollections implements OnInit {
    * untouched.
    */
   private closeDrawerOnMobile(): void {
-    if (window.innerWidth < 768 && this.expanded()) {
+    if (isPhoneViewport() && this.expanded()) {
       this.setExpanded(false);
       // The opener lives in the sibling Library toolbar, not in this drawer.
       (this.elementRef.nativeElement as HTMLElement).parentElement

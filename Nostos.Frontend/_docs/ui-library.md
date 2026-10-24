@@ -53,6 +53,23 @@ ARIA contract, geometry, or state model is part of the product surface.
 - Failures start **Could not …** everywhere a reader sees them (toasts, inline errors,
   empty states), not “Failed to”, “Unable to” or “Couldn’t”.
 
+### Phone overlays
+
+- **One phone width.** `src/app/ui/breakpoints.ts` holds `PHONE_MAX` (768),
+  `PHONE_QUERY`, `PHONE_OR_TOUCH_QUERY` and `isPhoneViewport()`. TypeScript reads the
+  breakpoint from there instead of `innerWidth < 768`; stylesheets write
+  `@media (max-width: 768px)`.
+- **Scroll lock.** An open `app-modal-shell`, a phone drawer (Library, Brain, Studio)
+  and the palettes hold `ScrollLock` (`ui/scroll-lock`), a counted lock on the page
+  behind them. Use `lockScrollWhile(() => open())` in a component or
+  `[appScrollLock]="open()"` in a template for a new overlay.
+- **Drawers.** Width is `--drawer-width`, the dim is `.drawer-scrim`, the layers are
+  `--layer-backdrop` and `--layer-drawer`, and the panel pads for the safe-area
+  insets. An open drawer hides the dock (`workspace-layout.component.css`).
+- **Menus.** `nostos-menu` scrolls inside `min(var(--menu-max-h), 100dvh - 16px)`
+  (24rem unless a menu sets `--menu-max-h`); do not add a per-menu cap.
+- **Heights** in overlays are `dvh`, not `vh`.
+
 ### Design check
 
 `npm run check` (and CI) runs `scripts/check-design.mjs`, which includes the primitive
@@ -75,6 +92,7 @@ file, the line and what to use instead. Specs are not scanned.
 | `raw-range` | `<input type="range">` without `appRange` | `appRange` |
 | `raw-search-field` | `<input type="search">` outside `nostos-search-field` | `nostos-search-field` |
 | `hand-built-cover` | cover placeholder/fallback classes outside `ui/book-cover` | `nostos-book-cover` |
+| `phone-breakpoint` | a `max-width` media query other than 768px, 480px or 900px in an overlay stylesheet (modal shell, menus, popovers, palettes, drawers) | 768px (`PHONE_MAX`, `ui/breakpoints.ts`) |
 | `hand-built-pens` | pen dot/swatch classes, or a component listing `HIGHLIGHT_COLOURS`, outside `ui/pen-swatches` | `app-pen-swatches` |
 
 An exception is written next to the code, with its reason, on the line or in the

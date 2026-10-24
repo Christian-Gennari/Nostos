@@ -10,6 +10,8 @@ import {
   untracked,
   ViewChild,
 } from '@angular/core';
+import { PHONE_QUERY, isPhoneViewport } from '../ui/breakpoints';
+import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BooksService, type BookListOptions } from '../core/services/books.service';
@@ -313,6 +315,8 @@ export class Library implements OnInit, OnDestroy {
   private readonly router = inject(Router);
 
   constructor() {
+    // The phone drawer owns the screen while open.
+    lockScrollWhile(() => this.sidebarExpanded(), PHONE_QUERY);
     // "Add a book" from anywhere (the command palette) lands here as
     // ?add=book. Open the dialog, then drop the parameter so a reload or Back
     // does not open it again.
@@ -520,7 +524,7 @@ export class Library implements OnInit, OnDestroy {
     // Mobile cover decoding is the dominant first-paint cost. Load a smaller
     // first batch there; the existing sentinel still fetches every book as the
     // user scrolls.
-    const pageSize = window.innerWidth < 768 ? Math.min(this.pageSize(), 12) : this.pageSize();
+    const pageSize = isPhoneViewport() ? Math.min(this.pageSize(), 12) : this.pageSize();
 
     return {
       filter: status === 'all' ? undefined : status,

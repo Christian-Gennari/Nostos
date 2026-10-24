@@ -98,6 +98,14 @@ describe('ModalShell', () => {
     );
   });
 
+  it('freezes the page behind it while open and lets go on close', async () => {
+    expect(document.documentElement.classList.contains('nostos-scroll-locked')).toBe(true);
+
+    fixture.componentRef.setInput('isOpen', false);
+    await fixture.whenStable();
+    expect(document.documentElement.classList.contains('nostos-scroll-locked')).toBe(false);
+  });
+
   it('shows the header divider unless the caller opts out', () => {
     expect(head().classList).toContain('is-divided');
 

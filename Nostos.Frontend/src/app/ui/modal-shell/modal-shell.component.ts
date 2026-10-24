@@ -8,6 +8,7 @@ import {
   output,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { ScrollLockDirective } from '../scroll-lock/scroll-lock.service';
 import { CommonModule } from '@angular/common';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { ModalStack } from './modal-stack.service';
@@ -50,7 +51,7 @@ export type ModalShellVariant = 'sheet' | 'dialog';
 @Component({
   selector: 'app-modal-shell',
   standalone: true,
-  imports: [CommonModule, CdkTrapFocus],
+  imports: [CommonModule, CdkTrapFocus, ScrollLockDirective],
   templateUrl: './modal-shell.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './modal-shell.component.css',
@@ -62,11 +63,11 @@ export class ModalShell {
 
   /**
    * Desktop dialog width and height. Strings, because the callers' established
-   * geometry differs (`90vh` for the book form, a computed maximum for the
+   * geometry differs (`90dvh` for the book form, a computed maximum for the
    * editions list) and the shell must not quietly restyle them.
    */
   maxWidth = input<string>('700px');
-  maxHeight = input<string>('90vh');
+  maxHeight = input<string>('90dvh');
 
   /**
    * Stacking order. Kept per-caller because it encodes a real relationship: a

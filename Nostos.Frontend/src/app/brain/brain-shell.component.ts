@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
+import { PHONE_QUERY } from '../ui/breakpoints';
+import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
@@ -32,6 +34,8 @@ export class BrainShellComponent {
   readonly actions = inject(BrainTopicActionsService);
 
   constructor() {
+    // The phone drawer owns the screen while open.
+    lockScrollWhile(() => this.state.drawerOpen(), PHONE_QUERY);
     // Notes change outside the Brain (the reader, a book page): coming in
     // rereads the counts and topics, and stales any list kept for Back.
     this.state.refresh();

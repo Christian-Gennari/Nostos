@@ -11,6 +11,8 @@ import {
   untracked,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { lockScrollWhile } from '../../ui/scroll-lock/scroll-lock.service';
+import { PHONE_QUERY, isPhoneViewport } from '../../ui/breakpoints';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject, catchError, debounceTime, map, of, switchMap } from 'rxjs';
 
@@ -139,6 +141,8 @@ export class SourcePaletteComponent {
   private recentScope = 'local';
 
   constructor() {
+    // The palette is a sheet on a phone; there it holds the page still.
+    lockScrollWhile(() => this.open(), PHONE_QUERY);
     const destroyRef = inject(DestroyRef);
 
     inject(CloudAuthService)
@@ -357,7 +361,7 @@ export class SourcePaletteComponent {
   private place(anchor: PaletteAnchor | null): PalettePlacement {
     const vw = typeof window === 'undefined' ? 1280 : window.innerWidth;
     const vh = typeof window === 'undefined' ? 800 : window.innerHeight;
-    if (vw <= 640) {
+    if (isPhoneViewport()) {
       const vv = typeof window === 'undefined' ? null : window.visualViewport;
       const keyboard = vv ? Math.max(0, vh - vv.height - vv.offsetTop) : 0;
       const room = vh - keyboard - 16 - 64;
@@ -373,7 +377,7 @@ export class SourcePaletteComponent {
       return {
         mode: 'popover',
         preview,
-        style: { top: '25vh', left: `${Math.max(16, (vw - width) / 2)}px`, height: `${MAX_HEIGHT}px` },
+        style: { top: '25dvh', left: `${Math.max(16, (vw - width) / 2)}px`, height: `${MAX_HEIGHT}px` },
       };
     }
     const left = Math.min(Math.max(12, anchor.left - 8), vw - width - 12);

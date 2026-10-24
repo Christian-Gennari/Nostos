@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Directive, ElementRef, effect, inject, input, output, untracked } from '@angular/core';
 
+import { PHONE_QUERY } from '../../ui/breakpoints';
 import { ModalStack } from '../../ui/modal-shell/modal-stack.service';
 
 /**
@@ -32,7 +33,7 @@ export class DrawerFocusDirective {
   /** Selector, inside the host, of the drawer's panel. */
   readonly drawerPanel = input.required<string>();
   /** The viewport in which the panel is a drawer. */
-  readonly drawerQuery = input('(max-width: 768px)');
+  readonly drawerQuery = input(PHONE_QUERY);
   readonly drawerDismiss = output<void>();
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);

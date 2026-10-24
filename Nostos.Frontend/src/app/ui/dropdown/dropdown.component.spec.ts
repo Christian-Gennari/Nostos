@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
@@ -173,5 +174,42 @@ describe('DropdownComponent', () => {
     fixture.detectChanges();
 
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('follows its trigger when any ancestor scrolls, not only the window', () => {
+    const trigger = fixture.nativeElement.querySelector(
+      '.nostos-dropdown__trigger',
+    ) as HTMLButtonElement;
+    const panel = () => fixture.nativeElement.querySelector('[role="listbox"]') as HTMLElement;
+    let top = 100;
+    trigger.getBoundingClientRect = () =>
+      ({ top, bottom: top + 30, left: 20, right: 120, width: 100, height: 30, x: 20, y: top }) as DOMRect;
+
+    trigger.click();
+    fixture.detectChanges();
+    const before = panel().style.top;
+
+    // An inner scroller moves the trigger; scroll events do not bubble.
+    top = 40;
+    const scroller = document.createElement('div');
+    fixture.nativeElement.appendChild(scroller);
+    scroller.dispatchEvent(new Event('scroll'));
+
+    expect(panel().style.top).not.toBe(before);
+  });
+
+  it('stops listening to scrolls once it is closed', () => {
+    const trigger = fixture.nativeElement.querySelector(
+      '.nostos-dropdown__trigger',
+    ) as HTMLButtonElement;
+    const remove = vi.spyOn(window, 'removeEventListener');
+
+    trigger.click();
+    fixture.detectChanges();
+    trigger.click();
+    fixture.detectChanges();
+
+    expect(remove.mock.calls.some(([type, , options]) => type === 'scroll' && (options as AddEventListenerOptions)?.capture)).toBe(true);
+    remove.mockRestore();
   });
 });

@@ -1,6 +1,7 @@
 @if (isOpen()) {
   <div
     class="modal-backdrop"
+    [appScrollLock]="true"
     [class.is-sheet]="variant() === 'sheet'"
     [style.z-index]="layer()"
     (pointerdown)="onBackdropPointerDown($event)"

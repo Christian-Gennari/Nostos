@@ -184,6 +184,22 @@ test('raw-range, raw-search-field, hand-built-cover, hand-built-pens', () => {
   quiet('hand-built-pens', 'src/app/reader/epub-reader/epub-text-marks.ts', 'for (const c of HIGHLIGHT_COLOURS) {}');
 });
 
+test('phone-breakpoint: an overlay stylesheet breaks at 768, 480 or 900 only', () => {
+  const MENU = 'src/app/ui/menu/menu.component.css';
+  fires('phone-breakpoint', MENU, '@media (max-width: 640px) { .nostos-menu { width: 100%; } }');
+  fires('phone-breakpoint', MENU, '@media (pointer: coarse), (max-width: 600px) { .x { top: 0; } }');
+  fires('phone-breakpoint', TS.replace('feature/feature.component.ts', 'ui/settings-popover/a.component.ts'),
+    'template: ``,\nstyles: [`@media (max-width: 700px) { .x { top: 0; } }`]');
+  quiet('phone-breakpoint', MENU, '@media (max-width: 768px) { .nostos-menu { width: 100%; } }');
+  quiet('phone-breakpoint', MENU, '@media (max-width: 480px) { .x { top: 0; } }\n@media (max-width: 900px) { .y { top: 0; } }');
+  // Not a phone width at all, a min-width query, and prose in a comment.
+  quiet('phone-breakpoint', MENU, '@media (max-width: 1400px) { .x { top: 0; } }\n@media (min-width: 769px) { .y { top: 0; } }');
+  quiet('phone-breakpoint', MENU, '/* was @media (max-width: 640px) */ .x { top: 0; }');
+  // A page layout is free to break where its content needs.
+  quiet('phone-breakpoint', 'src/app/reading-list/reading-list.component.css', '@media (max-width: 640px) { .x { top: 0; } }');
+  quiet('phone-breakpoint', 'src/app/ui/menu/menu.component.css', '@container (max-width: 640px) { .x { top: 0; } }');
+});
+
 // ------------------------------------------------------------- exceptions
 
 test('design-allow: a written reason on or above the line', () => {

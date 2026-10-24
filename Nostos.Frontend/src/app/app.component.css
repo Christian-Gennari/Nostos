@@ -13,6 +13,9 @@
   --layer-drawer: 70;
   --layer-assistant: 80;
   --layer-system: 200;
+
+  /* One width for every phone drawer (Library collections, Brain index, Studio files). */
+  --drawer-width: min(300px, 86vw);
 }
 
 .route-progress {

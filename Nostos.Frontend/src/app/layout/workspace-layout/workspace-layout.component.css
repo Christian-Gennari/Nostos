@@ -72,12 +72,14 @@
   }
 
   /* A drawer owns the mobile viewport while open (the Library's collections,
-     the Brain's places); hide the bottom dock so it never competes with or
+     the Brain's places, the Studio's files and reference); hide the bottom dock so it never competes with or
      sits behind it. Scoped to each drawer's own open state: the Brain's
      sidebar reuses the Library's `.sidebar` markup but is never `.collapsed`,
      so the bare selector hid the dock on every Brain page. */
   .workspace-layout:has(app-sidebar-collections .sidebar:not(.collapsed)) app-app-dock,
-  .workspace-layout:has(.brain-layout.drawer-open) app-app-dock {
+  .workspace-layout:has(.brain-layout.drawer-open) app-app-dock,
+  .workspace-layout:has(.studio-layout .sidebar-left.open) app-app-dock,
+  .workspace-layout:has(.studio-layout .sidebar-right.open) app-app-dock {
     opacity: 0;
     pointer-events: none;
     transform: translateY(100%);

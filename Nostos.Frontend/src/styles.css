@@ -1578,6 +1578,17 @@ html {
   background: var(--bg-body);
 }
 
+/* An open modal, drawer or palette freezes the page behind it (ScrollLock). */
+html.nostos-scroll-locked,
+html.nostos-scroll-locked body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.nostos-scroll-locked {
+  padding-right: var(--scroll-lock-gutter, 0px);
+}
+
 html,
 body {
   font-family: 'Hanken Grotesk', sans-serif;

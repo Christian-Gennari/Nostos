@@ -277,7 +277,7 @@
 
 /* --- Phone: a bottom sheet over the dock ---------------------------------- */
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   /* The sheet's inline padding is 18px; the rules and the typeface list run to its edges. */
   .ps-rule {
     margin: 12px -18px;
