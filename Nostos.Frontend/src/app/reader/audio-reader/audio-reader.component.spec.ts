@@ -462,6 +462,20 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
     expect(component.timeLabels()).toEqual({ current: '1:30', total: '30:00' });
   });
 
+  it('draws the scrubber with the shared slider, filled to the position (issue #1199)', () => {
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.componentRef.setInput('book', makeBook());
+    fixture.detectChanges();
+    component.duration.set(200);
+    component.currentTime.set(50);
+    fixture.detectChanges();
+
+    const scrubber = fixture.nativeElement.querySelector('[data-testid="audio-scrubber"]') as HTMLInputElement;
+    expect(scrubber.classList).toContain('nostos-range');
+    expect(scrubber.getAttribute('aria-label')).toBe('Playback position');
+    expect(scrubber.style.getPropertyValue('--range-fill')).toBe('25%');
+  });
+
   it('writes the multiplication sign, not the letter x', () => {
     expect(component.formatRate(1.25)).toBe('1.25×');
   });

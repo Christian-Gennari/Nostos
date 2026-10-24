@@ -28,9 +28,13 @@ export class RangeDirective implements DoCheck {
   private readonly el = inject<ElementRef<HTMLInputElement>>(ElementRef).nativeElement;
   private painted = '';
 
-  /** A [value] binding changes the property without an input event. */
+  /**
+   * A [value] binding changes the property without an input event, and a
+   * scrubber's [max] (a duration that arrives once the media loads) moves the
+   * same value to another place on the track.
+   */
   ngDoCheck(): void {
-    if (this.el.value !== this.painted) this.paint();
+    if (this.key() !== this.painted) this.paint();
   }
 
   paint(): void {
@@ -38,7 +42,11 @@ export class RangeDirective implements DoCheck {
     const max = Number(this.el.max || 100);
     const value = Number(this.el.value);
     const share = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0;
-    this.painted = this.el.value;
+    this.painted = this.key();
     this.el.style.setProperty('--range-fill', `${share * 100}%`);
+  }
+
+  private key(): string {
+    return `${this.el.min}|${this.el.max}|${this.el.value}`;
   }
 }

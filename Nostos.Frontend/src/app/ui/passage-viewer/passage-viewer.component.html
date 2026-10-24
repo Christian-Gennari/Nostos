@@ -58,11 +58,11 @@
             id="pv-clip-scrubber"
             class="pv-clip-scrubber"
             type="range"
+            appRange
             min="0"
             step="1"
             [max]="c.length"
             [value]="c.position() - c.start"
-            [style.--pv-clip-progress]="((c.position() - c.start) / c.length) * 100 + '%'"
             (input)="seekClip($event)"
             data-testid="passage-viewer-clip-scrubber"
           />

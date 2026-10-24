@@ -33,6 +33,7 @@ import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-in
 import { ButtonComponent } from '../../ui/button/button.component';
 import { ChipComponent } from '../../ui/chip/chip.component';
 import { SegmentedComponent } from '../../ui/segmented/segmented.component';
+import { RangeDirective } from '../../ui/range/range.directive';
 import { PassageDraft, PassageMark } from '../passage/passage-mark';
 import { formatAudioTime } from '../../core/dtos/note.dtos';
 import { PASSAGE_CLIP_PLAY_EVENT } from '../../ui/passage-viewer/clip-player';
@@ -54,6 +55,7 @@ export const PLAYING_SAVE_INTERVAL_MS = 10_000;
     ButtonComponent,
     ChipComponent,
     SegmentedComponent,
+    RangeDirective,
   ],
   templateUrl: './audio-reader.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,

@@ -62,9 +62,12 @@
         [min]="0"
         [max]="duration()"
         [value]="currentTime()"
-        [style.--progress]="(duration() > 0 ? currentTime() / duration() * 100 : 0) + '%'"
         (input)="seek($event)"
+        appRange
         class="range-input"
+        aria-label="Playback position"
+        [attr.aria-valuetext]="timeLabels().current + ' of ' + timeLabels().total"
+        data-testid="audio-scrubber"
       />
       <div class="time-labels">
         @if (isEditingTime()) {

@@ -12,6 +12,15 @@ class Host {
   readonly value = signal(0.25);
 }
 
+@Component({
+  standalone: true,
+  imports: [RangeDirective],
+  template: `<input type="range" appRange [min]="0" [max]="max()" [value]="10" />`,
+})
+class ScrubberHost {
+  readonly max = signal(10);
+}
+
 describe('RangeDirective', () => {
   it('marks the slider and keeps the filled part at its value, bound or dragged', () => {
     const fixture = TestBed.createComponent(Host);
@@ -27,5 +36,16 @@ describe('RangeDirective', () => {
     input.value = '1';
     input.dispatchEvent(new Event('input'));
     expect(input.style.getPropertyValue('--range-fill')).toBe('100%');
+  });
+
+  it('repaints when the track grows under the same value (a scrubber whose duration arrives late)', () => {
+    const fixture = TestBed.createComponent(ScrubberHost);
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    expect(input.style.getPropertyValue('--range-fill')).toBe('100%');
+
+    fixture.componentInstance.max.set(40);
+    fixture.detectChanges();
+    expect(input.style.getPropertyValue('--range-fill')).toBe('25%');
   });
 });
