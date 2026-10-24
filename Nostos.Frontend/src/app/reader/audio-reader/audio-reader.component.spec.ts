@@ -344,8 +344,8 @@ describe('AudioReader single-fetch + restore + loading state (issue #7)', () => 
     fixture.detectChanges();
 
     expect(component.loading()).toBe(false);
-    expect(component.loadError()).toBe('Unable to load audio.');
-    expect(fixture.nativeElement.textContent).toContain('Unable to load audio');
+    expect(component.loadError()).toBe('Could not load the audio.');
+    expect(fixture.nativeElement.textContent).toContain('Could not load the audio');
   });
 });
 
@@ -1379,7 +1379,7 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
     fixture.detectChanges();
 
     expect(component.reconnecting()).toBe(false);
-    expect(component.loadError()).toBe('Unable to load audio.');
+    expect(component.loadError()).toBe('Could not load the audio.');
     const error = fixture.nativeElement.querySelector('[data-testid="audio-load-error"]') as HTMLElement;
     const retry = error.querySelector('button') as HTMLButtonElement;
     expect(retry.textContent).toContain('Try again');
@@ -1414,7 +1414,7 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
 
     expect(mockPlayer(component)).toBe(fakePlayer);
     expect(component.reconnecting()).toBe(false);
-    expect(component.loadError()).toBe('Unable to load audio.');
+    expect(component.loadError()).toBe('Could not load the audio.');
   });
 
   it('stops trying once the reader is closed', () => {

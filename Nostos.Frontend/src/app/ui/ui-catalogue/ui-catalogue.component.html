@@ -428,7 +428,7 @@
             appInput
             controlSize="compact"
             type="text"
-            placeholder="The Magic Mountain"
+            placeholder="e.g. The Magic Mountain"
             [attr.aria-describedby]="titleField.describedBy()"
           />
         </app-form-field>
@@ -822,7 +822,7 @@
             <nostos-icon name="arrow-left" [size]="14" />
             <span>Library</span>
           </button>
-          <h3 class="page-title">To read</h3>
+          <h3 class="page-title">{{ toReadLabel }}</h3>
         </div>
       </div>
       <div class="catalogue-example">

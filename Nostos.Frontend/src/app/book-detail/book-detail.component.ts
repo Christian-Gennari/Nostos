@@ -79,6 +79,7 @@ import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switche
 import { buildEditionSwitchOptions } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
 import { readPaperPage } from './paper-page-progress';
+import { UNKNOWN_AUTHOR } from '../core/book-format';
 
 interface StatusConfirmCopy {
   heading: string;
@@ -119,6 +120,7 @@ interface StatusConfirmCopy {
   styleUrls: ['./book-detail.component.css'],
 })
 export class BookDetail implements OnInit, OnDestroy {
+  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private injector = inject(Injector);

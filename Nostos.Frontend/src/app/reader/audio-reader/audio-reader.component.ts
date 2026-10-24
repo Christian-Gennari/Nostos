@@ -401,7 +401,7 @@ export class AudioReader implements OnDestroy, IReader {
     }
 
     this.reconnecting.set(false);
-    this.loadError.set('Unable to load audio.');
+    this.loadError.set('Could not load the audio.');
   }
 
   private handleOnline() {

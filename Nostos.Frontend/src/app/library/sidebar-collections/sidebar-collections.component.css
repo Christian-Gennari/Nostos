@@ -67,32 +67,10 @@ a.nav-item {
    BRAND: <nostos-brand-lockup>. The tile keeps the 40px footprint the rail is
    aligned to (16 + 20 = 36); the wordmark fades with the labels (below). */
 
+/* The + is an appIconButton (24px rung); the sidebar's own radius. */
 .section-add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--color-text-light);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
   flex-shrink: 0;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease;
-}
-
-.section-add:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.section-add:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 1px;
+  border-radius: var(--radius-lg);
 }
 
 .root-drop-list {
@@ -285,29 +263,9 @@ input.sidebar-input {
   color: var(--color-primary);
 }
 
+/* The collapse control is an appIconButton (32px); the sidebar's own radius. */
 .toggle-btn {
-  background: transparent;
-  border: none;
-  color: var(--color-text-light);
-  cursor: pointer;
-  transition:
-    color 0.12s ease,
-    background 0.12s ease;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-lg);
-}
-.toggle-btn:hover {
-  color: var(--color-primary);
-  background: var(--bg-hover);
-}
-.toggle-btn:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 /* --- MOBILE DRAWER --- */

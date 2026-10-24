@@ -327,7 +327,7 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
       '.source-navigation-status',
     ) as HTMLElement | null;
     expect(status).not.toBeNull();
-    expect(status!.textContent).toContain("Couldn't locate this passage in the EPUB.");
+    expect(status!.textContent).toContain("Could not locate this passage in the EPUB.");
     expect(fixture.componentInstance.errorMessage()).toBeNull();
   });
 
@@ -1849,7 +1849,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     await vi.advanceTimersByTimeAsync(3000); // stop the churn: the retry fails closed
     expect(displayCallsFor(TARGET_CFI)).toBe(2);
     expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
-      "Couldn't locate this passage in the EPUB.",
+      "Could not locate this passage in the EPUB.",
     );
   });
 
@@ -1892,7 +1892,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     await vi.advanceTimersByTimeAsync(400);
 
     expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
-      "Couldn't locate this passage in the EPUB.",
+      "Could not locate this passage in the EPUB.",
     );
     await vi.advanceTimersByTimeAsync(5000);
     expect(displayCallsFor(TARGET_CFI)).toBe(3);
@@ -1912,13 +1912,13 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
-      "Couldn't locate this passage in the EPUB.",
+      "Could not locate this passage in the EPUB.",
     );
     const status = fixture.nativeElement.querySelector(
       '.source-navigation-status',
     ) as HTMLElement | null;
     expect(status).not.toBeNull();
-    expect(status!.textContent).toContain("Couldn't locate this passage in the EPUB.");
+    expect(status!.textContent).toContain("Could not locate this passage in the EPUB.");
 
     await vi.advanceTimersByTimeAsync(5000);
     expect(displayCallsFor(TARGET_CFI)).toBe(2); // no further retries

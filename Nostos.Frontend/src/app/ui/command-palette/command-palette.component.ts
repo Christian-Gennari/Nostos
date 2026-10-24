@@ -38,6 +38,8 @@ import { CommandPaletteService } from './command-palette.service';
 import { RecentItem, RecentItemsService, notesLabel } from './recent-items.service';
 import { coverImageUrl } from '../../core/cover-url';
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../book-cover/book-cover.component';
+import { UNKNOWN_AUTHOR } from '../../core/book-format';
+import { ButtonComponent } from '../button/button.component';
 
 export type PaletteEntryKind =
   | 'book'
@@ -130,7 +132,7 @@ const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
 @Component({
   selector: 'app-command-palette',
   standalone: true,
-  imports: [LoadingIndicatorComponent, NostosIconComponent, BookCoverComponent],
+  imports: [LoadingIndicatorComponent, NostosIconComponent, BookCoverComponent, ButtonComponent],
   templateUrl: './command-palette.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './command-palette.component.css',
@@ -599,7 +601,7 @@ export class CommandPalette {
 
 function bookEntry(b: Book): PaletteEntry {
   // A 22px-wide chip: the smallest thumbnail, not the full-size cover.
-  return { kind: 'book', id: b.id, label: b.title, sub: b.author || 'Unknown author', icon: 'book', coverUrl: coverImageUrl(b, 120), coverFormat: bookCoverFormat(b) };
+  return { kind: 'book', id: b.id, label: b.title, sub: b.author || UNKNOWN_AUTHOR, icon: 'book', coverUrl: coverImageUrl(b, 120), coverFormat: bookCoverFormat(b) };
 }
 
 function topicEntry(t: TopicDto): PaletteEntry {

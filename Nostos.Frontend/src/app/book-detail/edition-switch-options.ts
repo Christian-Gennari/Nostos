@@ -4,6 +4,7 @@
  */
 import type { Book, EditionSummaryDto } from '../core/dtos/book.dtos';
 import type { EditionSwitcherOption } from '../ui/edition-switcher/edition-switcher.component';
+import { READING_STATUS_LABEL } from '../core/reading-status';
 
 type Format = Pick<EditionSwitcherOption, 'format' | 'concept'>;
 
@@ -150,7 +151,10 @@ function describe(facts: EditionFacts, format: string, detail: string | null, pr
   // A title or "Copy 2" is the one shown detail the list above does not carry.
   if (detail && !extras.some((extra) => extra.toLowerCase() === detail.toLowerCase())) extras.unshift(detail);
 
-  const status = finished ? 'finished' : progress > 0 ? `${progress}% read` : 'not started';
+  // Mid-sentence, so the shared status labels in lower case: "PDF, not started".
+  const status = finished
+    ? READING_STATUS_LABEL.finished.toLowerCase()
+    : progress > 0 ? `${progress}% read` : READING_STATUS_LABEL.notstarted.toLowerCase();
   return `${format}${extras.length ? ` (${extras.join(', ')})` : ''}, ${status}`;
 }
 

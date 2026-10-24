@@ -1027,7 +1027,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   private failGroundedSourceNavigation(error?: unknown): void {
-    this.sourceNavigationMessage.set("Couldn't locate this passage in the EPUB.");
+    this.sourceNavigationMessage.set("Could not locate this passage in the EPUB.");
     if (error !== undefined) {
       console.warn('Could not navigate to the grounded EPUB source:', error);
     }

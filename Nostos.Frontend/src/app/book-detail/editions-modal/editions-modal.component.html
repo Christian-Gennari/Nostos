@@ -54,7 +54,7 @@
           <li appChoiceRow class="manage-member" [selected]="member.id === currentBookId()" [class.is-current]="member.id === currentBookId()">
             <span class="manage-member-text nostos-choice-row__text">
               <span class="manage-member-title nostos-choice-row__title">{{ member.title }}</span>
-              <span class="manage-member-author nostos-choice-row__sub">{{ member.author || 'Unknown author' }}</span>
+              <span class="manage-member-author nostos-choice-row__sub">{{ member.author || unknownAuthor }}</span>
               @if (member.format) {
               <span class="manage-member-format nostos-choice-row__meta">
                 <nostos-icon [concept]="member.formatIcon ?? 'ebook'" [size]="12" aria-hidden="true"></nostos-icon>

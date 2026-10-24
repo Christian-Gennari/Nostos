@@ -2041,14 +2041,14 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       open();
       voice.setError({
         kind: 'failed',
-        message: "Couldn't transcribe that recording. Try again.",
+        message: "Could not transcribe that recording. Try again.",
       });
       fixture.detectChanges();
 
       const error = query('[data-testid="assistant-voice-error"]');
       expect(error).toBeTruthy();
       expect(error.getAttribute('aria-live')).toBe('polite');
-      expect(error.textContent).toContain("Couldn't transcribe");
+      expect(error.textContent).toContain("Could not transcribe");
 
       voice.setError(null);
       fixture.detectChanges();

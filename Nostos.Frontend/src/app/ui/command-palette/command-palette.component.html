@@ -30,7 +30,7 @@
     @if (searching()) {
     <nostos-loading-indicator class="palette-loading" decorative size="sm" />
     }
-    <button type="button" class="palette-cancel" (click)="dismiss()" data-testid="palette-cancel">
+    <button appButton variant="ghost" size="sm" type="button" class="palette-cancel" (click)="dismiss()" data-testid="palette-cancel">
       Cancel
     </button>
   </div>

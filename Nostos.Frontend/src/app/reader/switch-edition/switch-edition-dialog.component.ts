@@ -277,8 +277,8 @@ export class SwitchEditionDialog {
       approximateSeconds,
       message:
         approximateSeconds === null
-          ? 'Couldn’t find this exact place in that edition.'
-          : 'Couldn’t find the exact sentence in that edition.',
+          ? 'Could not find this exact place in that edition.'
+          : 'Could not find the exact sentence in that edition.',
     });
   }
 
@@ -302,7 +302,7 @@ export class SwitchEditionDialog {
       message:
         failure instanceof HttpErrorResponse && failure.status === 429
           ? 'Too many tries in a row. Give it a moment.'
-          : 'Couldn’t find your place just now. Try again, or open it where you left off.',
+          : 'Could not find your place just now. Try again, or open it where you left off.',
     });
   }
 
@@ -318,12 +318,12 @@ export class SwitchEditionDialog {
         if (navigated) {
           this.close();
         } else if (generation === this.generation) {
-          this.error.set({ editionId, message: 'Couldn’t open that edition. Try again.' });
+          this.error.set({ editionId, message: 'Could not open that edition. Try again.' });
         }
       })
       .catch(() => {
         if (generation === this.generation) {
-          this.error.set({ editionId, message: 'Couldn’t open that edition. Try again.' });
+          this.error.set({ editionId, message: 'Could not open that edition. Try again.' });
         }
       });
   }
