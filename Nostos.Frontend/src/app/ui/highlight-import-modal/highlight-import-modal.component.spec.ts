@@ -287,6 +287,61 @@ describe('HighlightImportModal', () => {
     expect(text()).toContain('Not a Kobo database.');
   });
 
+  it('lists what a file holds that is not imported, and flags a row that may not be a book', async () => {
+    vi.spyOn(service, 'preview').mockReturnValue(
+      of({
+        source: 'readwise',
+        books: [missing, previewBook({ sourceKey: 'rw-2', title: 'How to Read Slowly', match: 'none', bookId: null, candidates: [], notice: 'Readwise keeps this like a web article.' })],
+        skipped: [
+          { title: 'Tweets From Ada Reader', author: '@adareader', count: 2, reason: 'A tweet. Only highlights from books are imported.' },
+          { title: 'Episode 12', author: null, count: 1, reason: 'A podcast. Only highlights from books are imported.' },
+        ],
+      }),
+    );
+    service.open();
+    await component.readFiles([file('readwise-export.csv')]);
+    fixture.detectChanges();
+
+    expect(component.stage()).toBe('review');
+    expect(component.unimportableCount()).toBe(3);
+    const list = fixture.nativeElement.querySelector('[data-testid="highlight-unimportable"]') as HTMLDetailsElement;
+    expect(list.textContent).toContain('Not imported');
+    expect(list.textContent?.replace(/\s+/g, ' ')).toContain('@adareader · 2 entries · A tweet.');
+    expect(list.open).toBe(false);
+    expect(text()).toContain('Readwise keeps this like a web article.');
+    // Flagged, not decided: it waits for the owner like any book not in the library.
+    expect(component.included()).toEqual([]);
+  });
+
+  it('explains a file that holds nothing to import', async () => {
+    vi.spyOn(service, 'preview').mockReturnValue(
+      of({
+        source: 'kindle',
+        books: [],
+        skipped: [{ title: 'Walden', author: 'Henry David Thoreau', count: 4, reason: 'Bookmarks mark a place and hold no text.' }],
+      }),
+    );
+    service.open();
+    await component.readFiles([file('My Clippings.txt')]);
+    fixture.detectChanges();
+
+    expect(component.stage()).toBe('result');
+    const list = fixture.nativeElement.querySelector('[data-testid="highlight-unimportable"]') as HTMLDetailsElement;
+    expect(list.open).toBe(true);
+    expect(list.textContent).toContain('Bookmarks mark a place and hold no text.');
+  });
+
+  it('names where each recent import came from', () => {
+    vi.spyOn(service, 'recent').mockReturnValue(
+      of([{ id: 'b', source: 'kindle', fileName: 'My Clippings.txt', createdAtUtc: '2026-10-24T08:00:00Z', noteCount: 3, bookCount: 1 }]),
+    );
+    service.open();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-recent-row"]').textContent).toContain('Kindle ·');
+  });
+
   it('cannot be closed while it is working', () => {
     service.open();
     component.stage.set('importing');

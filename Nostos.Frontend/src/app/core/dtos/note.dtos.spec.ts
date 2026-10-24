@@ -4,6 +4,7 @@ import {
   isPassage,
   passageSizeLabel,
   importedNoteLocation,
+  isImportedAnchor,
   noteAudioSeconds,
   noteNavigationTarget,
 } from './note.dtos';
@@ -121,6 +122,20 @@ describe('importedNoteLocation', () => {
         note({ selectedText: 'A passage.', sourceAnchorKind: 'kobo_bookmark', sourceAnchorValue: 'abc' }),
       ),
     ).toEqual({ text: 'A passage.', spineIndex: null, xpointer: null, page: null });
+  });
+
+  it('looks a Kindle or Readwise highlight up by its text, never by its page', () => {
+    // A Kindle page belongs to the Kindle edition, not to a PDF in the library.
+    for (const [kind, value] of [
+      ['kindle_location', '180-181'],
+      ['kindle_page', '12'],
+      ['readwise_page', '88'],
+    ]) {
+      expect(isImportedAnchor(kind)).toBe(true);
+      expect(
+        importedNoteLocation(note({ selectedText: 'A passage.', sourceAnchorKind: kind, sourceAnchorValue: value })),
+      ).toEqual({ text: 'A passage.', spineIndex: null, xpointer: null, page: null });
+    }
   });
 
   it('keeps the xpointer of a page bookmark, which has no highlighted text', () => {

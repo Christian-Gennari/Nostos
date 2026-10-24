@@ -10,6 +10,16 @@ import type { BookFormatConcept } from '../book-format';
  */
 export type HighlightImportMatch = 'exact' | 'remembered' | 'suggested' | 'none';
 
+/** Where a file came from, as the server tells it apart by content. */
+export type HighlightImportSource = 'kobo' | 'koreader' | 'kindle' | 'readwise';
+
+export const HIGHLIGHT_IMPORT_SOURCE_LABEL: Record<HighlightImportSource, string> = {
+  kobo: 'Kobo',
+  koreader: 'KOReader',
+  kindle: 'Kindle',
+  readwise: 'Readwise',
+};
+
 export interface HighlightImportCandidate {
   bookId: string;
   title: string;
@@ -28,11 +38,22 @@ export interface HighlightImportPreviewBook {
   match: HighlightImportMatch;
   bookId: string | null;
   candidates: HighlightImportCandidate[];
+  /** Something to know before choosing, such as a Readwise row that looks like a web article. */
+  notice?: string | null;
+}
+
+/** Entries a file holds that cannot be imported, by book and reason. */
+export interface HighlightImportSkipped {
+  title: string | null;
+  author: string | null;
+  count: number;
+  reason: string;
 }
 
 export interface HighlightImportPreview {
-  source: 'kobo' | 'koreader';
+  source: HighlightImportSource;
   books: HighlightImportPreviewBook[];
+  skipped?: HighlightImportSkipped[] | null;
 }
 
 /** One book's answer: an existing library book, or `create` to add it. */
@@ -58,13 +79,13 @@ export interface HighlightImportResultBook {
 
 export interface HighlightImportResult {
   batchId: string | null;
-  source: 'kobo' | 'koreader';
+  source: HighlightImportSource;
   books: HighlightImportResultBook[];
 }
 
 export interface HighlightImportBatch {
   id: string;
-  source: 'kobo' | 'koreader';
+  source: HighlightImportSource;
   fileName: string | null;
   createdAtUtc: string;
   noteCount: number;
@@ -72,7 +93,7 @@ export interface HighlightImportBatch {
 }
 
 /**
- * E-reader highlight import (issue #656). Also owns whether the import dialog
+ * Highlight import from an e-reader or an export (issues #656, #1219). Also owns whether the import dialog
  * is open, so Settings and the command palette open the same one.
  */
 @Injectable({ providedIn: 'root' })

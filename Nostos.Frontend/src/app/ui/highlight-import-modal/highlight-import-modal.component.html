@@ -35,9 +35,9 @@
     @switch (stage()) {
       @case ('pick') {
         <p class="highlight-import-hint">
-          Bring the highlights and notes you made on an e-reader into Nostos. You see where every
-          book is going before anything is added, and importing the same file again never creates
-          duplicates.
+          Bring the highlights and notes you made on an e-reader or in Readwise into Nostos. You see
+          where every book is going before anything is added, and importing the same file again never
+          creates duplicates.
         </p>
 
         <label
@@ -57,7 +57,7 @@
           />
           <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
           <span class="nostos-drop-zone__title">Choose files or drop them here</span>
-          <span class="nostos-drop-zone__hint">KoboReader.sqlite or KOReader metadata.lua</span>
+          <span class="nostos-drop-zone__hint">KoboReader.sqlite, KOReader metadata.lua, My Clippings.txt or a Readwise CSV</span>
         </label>
 
         <dl class="highlight-sources">
@@ -75,6 +75,21 @@
               You can select several at once.
             </dd>
           </div>
+          <div class="highlight-source">
+            <dt>Kindle</dt>
+            <dd>
+              Connect the Kindle by USB and pick <code>My Clippings.txt</code> from its
+              <code>documents</code> folder. Bookmarks are left out, and a highlight edited on the
+              device arrives once, as its latest version.
+            </dd>
+          </div>
+          <div class="highlight-source">
+            <dt>Readwise</dt>
+            <dd>
+              Export to CSV from Readwise and pick the file. Only highlights from books are
+              imported. If Readwise already has your Kindle highlights, import only one of the two.
+            </dd>
+          </div>
         </dl>
 
         @if (recent().length > 0) {
@@ -90,7 +105,7 @@
                       {{ count(batch.noteCount, 'highlight') }} into {{ count(batch.bookCount, 'book') }}
                     </span>
                     <span class="highlight-row-sub">
-                      {{ batch.createdAtUtc | nostosDate: 'datetime' }}
+                      {{ sourceName(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }}
                     </span>
                   </span>
                   <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="undoRecent(batch)">
@@ -159,6 +174,8 @@
             </ul>
           </section>
         }
+
+        <ng-container *ngTemplateOutlet="unimportableList"></ng-container>
       }
 
       @case ('result') {
@@ -177,6 +194,10 @@
         </div>
 
         <ng-container *ngTemplateOutlet="failureList"></ng-container>
+
+        @if (results().length === 0) {
+          <ng-container *ngTemplateOutlet="unimportableList"></ng-container>
+        }
 
         @if (imported().length > 0 && undone() === null) {
           <section class="highlight-section" aria-labelledby="highlight-imported-title">
@@ -293,7 +314,7 @@
       }
     </p>
     <p class="highlight-progress-file">{{ currentFileName() }}</p>
-    <p class="highlight-progress-note">A full Kobo library can take a minute. Keep this window open.</p>
+    <p class="highlight-progress-note">A large library can take a minute. Keep this window open.</p>
   </div>
 </ng-template>
 
@@ -307,6 +328,38 @@
         </li>
       }
     </ul>
+  }
+</ng-template>
+
+<!-- What the files hold that is never imported, with the reason. Collapsed:
+     it explains, it asks nothing. -->
+<ng-template #unimportableList>
+  @if (unimportable().length > 0) {
+    <details class="highlight-section highlight-unplaced" data-testid="highlight-unimportable" [open]="stage() === 'result'">
+      <summary class="highlight-section-header">
+        <nostos-icon name="caret-right" [size]="12" class="highlight-disclosure"></nostos-icon>
+        <h3 class="highlight-section-title">Not imported</h3>
+        <span class="highlight-count-badge">{{ unimportableCount() }}</span>
+      </summary>
+      <ul class="highlight-rows">
+        @for (entry of unimportable(); track $index) {
+          <li class="highlight-row">
+            <span class="highlight-row-text">
+              <span class="highlight-row-title">{{ entry.title || 'Untitled' }}</span>
+              <span class="highlight-row-sub">
+                @if (entry.author) {
+                  {{ entry.author }} ·
+                }
+                @if (entry.count > 1) {
+                  {{ entry.count }} entries ·
+                }
+                {{ entry.reason }}
+              </span>
+            </span>
+          </li>
+        }
+      </ul>
+    </details>
   }
 </ng-template>
 
@@ -327,6 +380,9 @@
         }
         {{ count(row.book.annotationCount, 'highlight') }}
       </span>
+      @if (row.book.notice) {
+        <span class="highlight-review-reason" data-testid="highlight-review-notice">{{ row.book.notice }}</span>
+      }
     </div>
 
     @if (row.target; as target) {

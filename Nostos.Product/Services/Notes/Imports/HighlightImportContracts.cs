@@ -1,17 +1,32 @@
 namespace Nostos.Backend.Services.Notes.Imports;
 
 /// <summary>
-/// What an e-reader file holds and where each of its books would go, before
+/// What an e-reader or export file holds and where each of its books would go, before
 /// anything is written. `Match` is how sure the pairing is:
 /// <c>exact</c> (same ISBN, or same title and author) and <c>remembered</c>
 /// (the owner confirmed it on an earlier import) are safe to import as they
 /// stand; <c>suggested</c> is a resemblance the owner must confirm;
 /// <c>none</c> has no plausible library book.
 /// </summary>
+/// <param name="Skipped">
+/// What the file holds that cannot be imported, by book and reason: a Kindle
+/// bookmark, a Readwise web article, an entry in a format Nostos does not read.
+/// </param>
 public sealed record HighlightImportPreview(
     string Source,
-    IReadOnlyList<HighlightImportPreviewBook> Books);
+    IReadOnlyList<HighlightImportPreviewBook> Books,
+    IReadOnlyList<HighlightImportSkipped>? Skipped = null);
 
+public sealed record HighlightImportSkipped(
+    string? Title,
+    string? Author,
+    int Count,
+    string Reason);
+
+/// <param name="Notice">
+/// Something the owner should know before choosing, such as a Readwise row
+/// that looks like a web article rather than a book.
+/// </param>
 public sealed record HighlightImportPreviewBook(
     string SourceKey,
     string? Title,
@@ -20,7 +35,8 @@ public sealed record HighlightImportPreviewBook(
     int NewCount,
     string Match,
     Guid? BookId,
-    IReadOnlyList<HighlightImportCandidate> Candidates);
+    IReadOnlyList<HighlightImportCandidate> Candidates,
+    string? Notice = null);
 
 /// <param name="Format">
 /// The library book's format, as the app's format concepts name it:
@@ -75,7 +91,13 @@ internal sealed record ImportSourceBook(
     string? Title,
     string? Author,
     string? Isbn,
-    IReadOnlyList<ImportAnnotation> Annotations);
+    IReadOnlyList<ImportAnnotation> Annotations,
+    string? Notice = null);
+
+internal sealed record ImportSourceFile(
+    string Source,
+    IReadOnlyList<ImportSourceBook> Books,
+    IReadOnlyList<HighlightImportSkipped> Skipped);
 
 internal sealed record ImportAnnotation(
     string AnchorKind,

@@ -348,16 +348,19 @@ Delete a note and its topic links.
 
 **Response:** `204 No Content`
 
-### E-reader highlight import — `/api/notes/imports`
+### Highlight import — `/api/notes/imports`
 
-Settings → Library → E-reader highlights opens the review dialog. Select
-one Kobo `KoboReader.sqlite` or several KOReader `metadata.*.lua` sidecars. The
-server detects the format from the contents. Kobo files are read-only, with a
-256 MB upload limit; KOReader sidecars have a 2 MB limit.
+Settings → Highlight import → Import… opens the review dialog (also
+"Import highlights" in the command palette). Select one Kobo
+`KoboReader.sqlite`, several KOReader `metadata.*.lua` sidecars, a Kindle's
+`My Clippings.txt`, or a Readwise CSV export. The server detects the format
+from the contents, not the file name. Kobo files are read-only, with a 256 MB
+upload limit; KOReader sidecars have a 2 MB limit; Kindle and Readwise files a
+64 MB limit.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| `POST` | `/api/notes/imports/preview` | Read multipart field `file`; return `{ source, books }` without writing. |
+| `POST` | `/api/notes/imports/preview` | Read multipart field `file`; return `{ source, books, skipped }` without writing. |
 | `POST` | `/api/notes/imports/commit` | Read the same `file` and a JSON `decisions` form field; import only decided books. |
 | `GET` | `/api/notes/imports/batches` | Return the five most recent imports that still have notes, with note/book counts. |
 | `DELETE` | `/api/notes/imports/batches/{id}` | Undo a batch; return `{ removed }`, or `404` if it no longer exists. |
@@ -365,7 +368,13 @@ server detects the format from the contents. Kobo files are read-only, with a
 Preview books include `sourceKey`, title/author, annotation/new counts, and
 candidates. `match` is `exact` for one ISBN or title-and-author identity,
 `remembered` for a previously confirmed destination, `suggested` for a match
-that needs confirmation (including multiple editions), or `none`.
+that needs confirmation (including multiple editions), or `none`. `source` is
+`kobo`, `koreader`, `kindle` or `readwise`. A book may carry a `notice`, such as
+a Readwise row that looks like a web article. `skipped` lists what the file
+holds that is never imported, as `{ title, author, count, reason }`: Kindle
+bookmarks, highlights the publisher's clipping limit emptied, entries in a
+format Nostos does not recognise, and Readwise tweets, podcasts and other
+sources that are not books.
 
 The commit's `decisions` is an array. Use `{ "sourceKey": "…", "bookId": "guid" }`
 to select a library book, or `{ "sourceKey": "…", "create": true }` to add a
@@ -385,6 +394,33 @@ import receipts, allowing them to be imported again; newly added books and
 remembered destinations stay in the library. Kobo dog-ears, stylus markup and
 deleted rows are ignored. The original `POST /api/notes/import/koreader` endpoint
 remains available for direct single-sidecar imports.
+
+**Kindle.** Entries are read by keyword, so `My Clippings.txt` from a Kindle
+set to English, German, French, Spanish, Italian, Portuguese, Dutch, Russian,
+Japanese, Chinese or Korean is understood; any other entry is listed in
+`skipped`. A UTF-8 byte-order mark and CRLF or LF line endings are accepted.
+The title line's trailing `(Author)` becomes the author, with `Last, First`
+turned around and several authors separated by `;`. A highlight edited on the
+device (a later entry over the same or an overlapping range, with one text
+containing the other) is imported once, as the latest or longest version. A
+note at a highlight's last location is attached to that highlight; a note with
+no highlight is imported on its own. Books group by title and author.
+
+**Readwise.** Columns are found by name (`Highlight`, `Book Title`,
+`Book Author`, `Amazon Book ID`, `Note`, `Location Type`, `Location`, and an
+optional `Category`); quoted fields may span lines. Books group by Amazon Book
+ID, or by title and author. With a `Category` column, only books, supplementals
+and PDFs are imported. Without one, tweets (`Tweets From …` or an `@` author)
+and podcasts (positioned by time) are skipped, and a book positioned by order
+with no Amazon ID is flagged with a `notice`.
+
+**Positions.** Kindle notes are anchored as `kindle_location` (`180-181`) or,
+for a PDF with no locations, `kindle_page`; Readwise notes as
+`readwise_location`, `readwise_page` or `readwise_order`. These anchors are
+never verified, so no citation claims a page from them. The EPUB reader looks
+the highlighted text up in the book and saves a verified location once it is
+found, as it does for Kobo and KOReader highlights. Colours and tags are not
+imported; notes arrive in the default pen.
 
 ---
 

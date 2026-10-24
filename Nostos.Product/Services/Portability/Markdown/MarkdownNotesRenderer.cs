@@ -78,6 +78,9 @@ public static partial class MarkdownNotesRenderer
     [GeneratedRegex(@"[/:](\d+)")]
     private static partial Regex CfiStepRegex();
 
+    [GeneratedRegex(@"^(\d+|[ivxlcdm]+)(-(\d+|[ivxlcdm]+))?$")]
+    private static partial Regex ImportedPositionRegex();
+
     [GeneratedRegex(@"/DocFragment\[(\d+)\]")]
     private static partial Regex DocFragmentRegex();
 
@@ -247,7 +250,26 @@ public static partial class MarkdownNotesRenderer
                 return new(fragment.Success ? $"Section {fragment.Groups[1].Value} of the book (from KOReader)" : "From KOReader", null);
         }
         if (kind.StartsWith("kobo_", StringComparison.Ordinal)) return new("From Kobo", null);
+        // Kindle and Readwise positions are theirs, never a verified page (#1219).
+        if (kind.StartsWith("kindle_", StringComparison.Ordinal))
+            return new(ImportedPosition(kind["kindle_".Length..], value) is { } onKindle ? $"{onKindle} on Kindle" : "From Kindle", null);
+        if (kind.StartsWith("readwise_", StringComparison.Ordinal))
+            return new(ImportedPosition(kind["readwise_".Length..], value) is { } inReadwise ? $"{inReadwise} in Readwise" : "From Readwise", null);
         return new(null, null);
+    }
+
+    // "location" + "5-7" → "Location 5–7"; "page" + "12" → "Page 12".
+    private static string? ImportedPosition(string type, string value)
+    {
+        if (!ImportedPositionRegex().IsMatch(value))
+            return null;
+        var range = value.Replace('-', '–');
+        return type switch
+        {
+            "location" => $"Location {range}",
+            "page" => $"Page {range}",
+            _ => null,
+        };
     }
 
     /// <summary>
