@@ -190,6 +190,26 @@
             @if (summary()) {
               <p class="highlight-result-sub">{{ summary() }}</p>
             }
+            @if (canStartDraft()) {
+              <!-- The first thing to do with them (issue #1220): see them
+                   arrive in a draft, each with its source. -->
+              <button
+                type="button"
+                appButton
+                variant="link"
+                class="highlight-link highlight-start-draft"
+                data-testid="highlight-start-draft"
+                [disabled]="startingDraft() || undoing()"
+                [busy]="startingDraft()"
+                (click)="startDraft()"
+              >
+                <nostos-icon name="pen-nib" [size]="14"></nostos-icon>
+                Start a draft from these
+              </button>
+              @if (draftError()) {
+                <p class="highlight-failure" role="alert">{{ draftError() }}</p>
+              }
+            }
           </div>
         </div>
 

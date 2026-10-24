@@ -385,6 +385,17 @@ summary.highlight-section-header:focus-visible {
   color: var(--color-text-light);
 }
 
+/* The one thing to do next with an import (issue #1220): a quiet link under
+   the summary, not another button in the footer. */
+.highlight-start-draft {
+  margin-top: 0.45rem;
+  gap: 0.35rem;
+}
+
+.highlight-result-summary .highlight-failure {
+  margin-top: 0.45rem;
+}
+
 .highlight-link:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;

@@ -179,6 +179,39 @@
       </div>
     </div>
 
+    @if (showStarterOffer()) {
+      <!-- An empty Studio and imported highlights (issue #1220): one quiet
+           offer to start from them, answered once. -->
+      <div class="starter-offer" role="note" data-testid="studio-starter-offer">
+        <span class="starter-offer-text">Your imported highlights can start this page.</span>
+        <span class="starter-offer-actions">
+          <button
+            appButton
+            type="button"
+            variant="link"
+            size="sm"
+            data-testid="studio-starter-start"
+            [disabled]="startingDraft()"
+            [busy]="startingDraft()"
+            (click)="startStarterDraft()"
+          >
+            <nostos-icon name="pen-nib" [size]="14"></nostos-icon>
+            Start a draft from them
+          </button>
+          <button
+            appButton
+            type="button"
+            variant="link"
+            size="sm"
+            class="starter-offer-dismiss"
+            data-testid="studio-starter-dismiss"
+            [disabled]="startingDraft()"
+            (click)="declineStarterOffer()"
+          >Not now</button>
+        </span>
+      </div>
+    }
+
     @if (activeItem() || blankPage()) {
       <div class="editor-wrapper">
         <app-markdown-editor

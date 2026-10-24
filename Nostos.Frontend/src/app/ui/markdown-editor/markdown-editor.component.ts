@@ -26,7 +26,7 @@ import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
 import { FootnoteRef, tidyFootnotes } from './footnote.extension';
 import { Citation } from './citation.extension';
-import { CitationRenderer, citationBooks, citationSignature, footnoteInsertPosition, refreshCitations } from './live-citations';
+import { CitationRenderer, bodyEndPosition, citationBooks, citationSignature, footnoteInsertPosition, refreshCitations } from './live-citations';
 import { SoundPack, TypewriterSounds, soundForInput } from './typewriter-sounds';
 import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
 import { exitSuggestion } from '@tiptap/suggestion';
@@ -50,6 +50,11 @@ export interface MarkdownEditorTransientState {
   /** The selection, as ProseMirror document positions. */
   bookmark?: unknown;
   scrollY?: number;
+  /**
+   * Instead of a bookmark: a fresh line after the writing's own text, before
+   * its footnotes (issue #1220), for a writing that is ready to be written on.
+   */
+  at?: 'body-end';
 }
 
 /** What has been typed after `@`, and where on screen (issue #1039). */
@@ -307,7 +312,8 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
           },
           // Never over an open @ query, an image or a code block.
           shouldShow: ({ editor, from, to, element }) => {
-            if (element.contains(document.activeElement)) return true;
+            if (editor.isDestroyed) return false;
+            if (element.contains(element.ownerDocument.activeElement)) return true;
             if (from === to || !editor.isFocused || this.suggestionRange) return false;
             return !editor.isActive('codeBlock') && !editor.isActive('image');
           },
@@ -644,13 +650,19 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         ? state.scrollY
         : undefined;
 
-    if (!bookmark && scrollY === undefined) return Promise.resolve(false);
+    const at = state?.at === 'body-end' ? state.at : undefined;
+
+    if (!bookmark && scrollY === undefined && !at) return Promise.resolve(false);
 
     this.pendingTransientRestore?.resolve(false);
 
     return new Promise<boolean>((resolve) => {
       this.pendingTransientRestore = {
-        state: { ...(bookmark ? { bookmark } : {}), ...(scrollY !== undefined ? { scrollY } : {}) },
+        state: {
+          ...(bookmark ? { bookmark } : {}),
+          ...(scrollY !== undefined ? { scrollY } : {}),
+          ...(at ? { at } : {}),
+        },
         expectedMarkdown,
         resolve,
       };
@@ -681,6 +693,11 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       restored = true;
     }
 
+    if (pending.state.at === 'body-end') {
+      this.focusBodyEnd(editor);
+      restored = true;
+    }
+
     if (pending.state.scrollY !== undefined) {
       const y = pending.state.scrollY;
       const scroller = this.scroller.nativeElement;
@@ -691,6 +708,24 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     }
 
     pending.resolve(restored);
+  }
+
+  /**
+   * The caret on an empty line after the writing's own text (issue #1220),
+   * ahead of its footnotes. An empty paragraph already there is reused, so
+   * the Markdown the writing saves does not change.
+   */
+  private focusBodyEnd(editor: Editor): void {
+    const doc = editor.state.doc;
+    const end = bodyEndPosition(doc);
+    const before = doc.resolve(end).nodeBefore;
+    const chain = editor.chain().focus();
+    if (before?.type.name === 'paragraph' && before.content.size === 0) {
+      chain.setTextSelection(end - 1);
+    } else {
+      chain.insertContentAt(end, { type: 'paragraph' }).setTextSelection(end + 1);
+    }
+    chain.scrollIntoView().run();
   }
 
   // ------------------------------------------------------------------

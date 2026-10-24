@@ -40,11 +40,11 @@ import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-p
 import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
 import { StudioPreferencesService } from './page-settings/studio-preferences.service';
-import { CitableSource, CitationService, citationLocator } from './citations/citation.service';
+import { CitableSource, CitationService } from './citations/citation.service';
 import { bookToCslItem, missingForStyle, missingPhrase } from './citations/csl-item';
-import { CitationRole, citationMarkdown, citedSourceIds } from '../ui/markdown-editor/citation.extension';
+import { citationMarkdown, citedSourceIds } from '../ui/markdown-editor/citation.extension';
 import { removedCitedIds, sourceKey, touchedTopics } from './writing-touches.helpers';
-import { StyledInsertion, bibliographyMarkdown, styledNote, styledQuote, styledReference } from './citations/styled-insertion';
+import { StyledInsertion, bibliographyMarkdown } from './citations/styled-insertion';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -78,6 +78,8 @@ import {
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept } from '../core/book-format';
 import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
+import { StarterDraftService } from './starter-draft/starter-draft.service';
+import { answerStarterOffer, starterOfferAnswered } from './starter-draft/starter-draft';
 
 /** The writing the Studio opens on next time. */
 const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
@@ -403,6 +405,68 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The page's own settings (issue #1041): type, measure, behaviour. */
   readonly pagePrefs = inject(StudioPreferencesService);
   private readonly citations = inject(CitationService);
+  private readonly starter = inject(StarterDraftService);
+
+  // --- A starter draft (issue #1220) ---
+
+  /**
+   * The imported passages an empty Studio offers to start a draft from, or
+   * null when there is no offer: the library has writings, nothing imported,
+   * or the offer was answered on this device.
+   */
+  readonly starterOffer = signal<NoteSearchHit[] | null>(null);
+  readonly startingDraft = signal(false);
+  readonly showStarterOffer = computed(
+    () => !!this.starterOffer()?.length && this.blankPage() && !this.activeItem(),
+  );
+
+  private checkStarterOffer(): void {
+    if (starterOfferAnswered()) return;
+    this.starter.passages().then(
+      (passages) => {
+        // Only while the Studio is still empty: a writing begun in the meantime answers it.
+        if (this.rootItems().length === 0 && !this.activeItem()) this.starterOffer.set(passages.length ? passages : null);
+      },
+      () => this.starterOffer.set(null),
+    );
+  }
+
+  /** The offer taken: the draft is created and opened with the caret after its passages. */
+  async startStarterDraft(): Promise<void> {
+    const passages = this.starterOffer();
+    if (!passages?.length || this.startingDraft()) return;
+    this.startingDraft.set(true);
+    try {
+      const id = await this.starter.create(passages);
+      if (!id) {
+        this.toast.error('None of your imported highlights has words to quote');
+        return;
+      }
+      answerStarterOffer('taken');
+      this.starterOffer.set(null);
+      this.loadTree();
+      this.openWritingDocument(id, false);
+    } catch {
+      this.toast.error('Could not start the draft. Try again.');
+    } finally {
+      this.startingDraft.set(false);
+    }
+  }
+
+  /** Not now, and not again on this device: the blank page is the writer's. */
+  declineStarterOffer(): void {
+    answerStarterOffer('declined');
+    this.starterOffer.set(null);
+    this.focusPageSoon();
+  }
+
+  /** A starter draft opens with the caret on a fresh line after its passages. */
+  private caretAfterText(item: WritingContentDto): void {
+    setTimeout(() => {
+      if (this.activeItem()?.id !== item.id) return;
+      void this.markdownEditor?.restoreTransientState({ at: 'body-end' }, item.content);
+    });
+  }
   pageSettingsOpen = signal(false);
   /** The export dialog (issue #1164). */
   exportOpen = signal(false);
@@ -1043,6 +1107,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.rootItems.set(items);
         const firstLoad = !this.writingTreeLoaded;
         this.writingTreeLoaded = true;
+        if (firstLoad && items.length === 0) this.checkStarterOffer();
         const requested = this.requestedWritingId;
         if (requested) this.openWritingFromHandoff(requested);
         else if (firstLoad && !this.activeItem() && !this.blankPage()) this.openStartingPage();
@@ -1257,29 +1322,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const style = this.pagePrefs.citationStyle();
     if (!this.markdownEditor || !source.bookId) return null;
     const subsequent = style.kind === 'note' && this.markdownEditor.citedBooks().includes(source.bookId);
-    const role: CitationRole = mode;
-    let text: string | null = null;
-    try {
-      text = await this.citations.cite(source, style, subsequent, role);
-    } catch {
-      text = null;
+    const styled = await this.citations.insertion(source, mode, style, subsequent, this.markdownEditor.nextFootnoteNumber());
+    if (!styled && style.kind !== 'house') {
+      this.toast.error(`Could not format this source in ${style.label}; it went in as Nostos writes it`);
     }
-    if (!text) {
-      if (style.kind !== 'house') this.toast.error(`Could not format this source in ${style.label}; it went in as Nostos writes it`);
-      return null;
-    }
-    const citation = citationMarkdown(text, {
-      book: source.bookId,
-      page: citationLocator(source)?.page ?? null,
-      src: source.id ?? null,
-      as: role,
-    });
-    const footnote = this.markdownEditor.nextFootnoteNumber();
-    if (mode === 'reference') return styledReference(citation, style, footnote);
-    if (mode === 'note') {
-      return styledNote(source.content, citation, style, footnote) ?? styledQuote(source.selectedText, citation, style, footnote);
-    }
-    return styledQuote(source.selectedText, citation, style, footnote) ?? styledNote(source.content, citation, style, footnote);
+    return styled;
   }
 
   /**
@@ -1538,6 +1585,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
         if (fromHandoff) this.restoreSourceReturnSurface(contentDto);
         else this.restoreRememberedCaret(contentDto);
+        if (this.starter.takeCaret(contentDto.id)) this.caretAfterText(contentDto);
         this.loadKeptSources(contentDto.id);
       },
       error: () => {

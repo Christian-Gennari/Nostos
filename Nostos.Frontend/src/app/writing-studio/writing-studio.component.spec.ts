@@ -21,6 +21,14 @@ import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.c
 import { PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
 import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
+import { StarterDraftService } from './starter-draft/starter-draft.service';
+
+/** No imported highlights unless a test says so (issue #1220). */
+const starterStub = () => ({
+  passages: vi.fn(async (..._batchIds: unknown[]) => [] as unknown[]),
+  create: vi.fn(async (_passages: unknown[]) => null as string | null),
+  takeCaret: vi.fn((_id: string) => false),
+});
 
 // Heavy editor / UI children are stubbed out: MarkdownEditor boots a real
 // TipTap editor (covered by its own spec), and the tree/note cards pull in drag-drop and
@@ -124,6 +132,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
@@ -919,6 +928,7 @@ describe('WritingStudio typewriter mode', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
@@ -1031,6 +1041,7 @@ describe('WritingStudio delete (no window.confirm)', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
@@ -1242,6 +1253,7 @@ describe('WritingStudio kept sources (#491)', () => {
       providers: [
         { provide: WritingsService, useValue: writingsService },
         { provide: ToastService, useValue: toastService },
+        { provide: StarterDraftService, useValue: starterStub() },
         {
           provide: TopicsService,
           useValue: {
@@ -2516,6 +2528,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
       providers: [
         { provide: WritingsService, useValue: writingsService },
         { provide: ToastService, useValue: toastService },
+        { provide: StarterDraftService, useValue: starterStub() },
         { provide: ActivatedRoute, useValue: {
           queryParamMap: queryParams.asObservable(),
           snapshot: { queryParamMap: queryParams.value },
@@ -2739,6 +2752,7 @@ describe('WritingStudio export menu (issue #1164)', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), show: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
@@ -2881,6 +2895,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), show: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
         {
           provide: TopicsService,
           useValue: {
@@ -3003,5 +3018,112 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
     const text = panel().textContent ?? '';
     expect(text).not.toMatch(/add (a )?topic/i);
     expect(touches()?.querySelectorAll('button, input, a')).toHaveLength(0);
+  });
+});
+
+describe('WritingStudio: a starter draft on an empty Studio (issue #1220)', () => {
+  let fixture: ComponentFixture<WritingStudio>;
+  let component: WritingStudio;
+  let starter: ReturnType<typeof starterStub>;
+  let writings: { list: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> };
+  const passage = { id: 'n1', bookId: 'b1', bookTitle: 'Walden', content: 'Mine.', selectedText: 'I went to the woods because I wished to live deliberately.' };
+  const draft: WritingContentDto = { id: 'w-new', name: 'Walden', content: 'Three passages…', updatedAt: '2026-10-24T00:00:00Z' };
+
+  async function open(existing: unknown[] = [], imported: unknown[] = [passage]): Promise<void> {
+    TestBed.overrideComponent(WritingStudio, {
+      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
+      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
+    });
+    starter = starterStub();
+    starter.passages.mockResolvedValue(imported);
+    writings = {
+      list: vi.fn(() => of(existing)),
+      get: vi.fn(() => of(draft)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [WritingStudio],
+      providers: [
+        {
+          provide: WritingsService,
+          useValue: {
+            ...writings,
+            create: vi.fn(() => of({})),
+            update: vi.fn(() => of({})),
+            listSources: vi.fn(() => of([])),
+            addSource: vi.fn(() => of({})),
+          },
+        },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
+        { provide: StarterDraftService, useValue: starter },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(WritingStudio);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  const offer = () => fixture.nativeElement.querySelector('[data-testid="studio-starter-offer"]') as HTMLElement | null;
+  const click = (id: string) => (fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLButtonElement).click();
+
+  beforeEach(() => localStorage.clear());
+  afterEach(() => fixture?.destroy());
+
+  it('offers once, on the blank page, to start from the imported highlights', async () => {
+    await open();
+
+    expect(starter.passages).toHaveBeenCalledWith();
+    expect(component.blankPage()).toBe(true);
+    expect(offer()?.textContent).toContain('Your imported highlights can start this page.');
+    expect(offer()?.textContent).toContain('Start a draft from them');
+  });
+
+  it('starts the draft, opens it and puts the caret after its passages', async () => {
+    await open();
+    starter.create.mockResolvedValue('w-new');
+    starter.takeCaret.mockImplementation((id: string) => id === 'w-new');
+
+    click('studio-starter-start');
+    await vi.waitFor(() => expect(component.activeItem()?.id).toBe('w-new'));
+    fixture.detectChanges();
+
+    expect(starter.create).toHaveBeenCalledWith([passage]);
+    expect(writings.get).toHaveBeenCalledWith('w-new');
+    expect(offer()).toBeNull();
+    expect(localStorage.getItem('nostos.studio.starterDraftOffer')).toBe('taken');
+    const editor = fixture.debugElement.query(By.directive(MarkdownEditorStub)).componentInstance as MarkdownEditorStub;
+    await vi.waitFor(() => expect(editor.restoreTransientState).toHaveBeenCalledWith({ at: 'body-end' }, draft.content));
+  });
+
+  it('is dismissed for good with "Not now"', async () => {
+    await open();
+
+    click('studio-starter-dismiss');
+    fixture.detectChanges();
+
+    expect(offer()).toBeNull();
+    expect(localStorage.getItem('nostos.studio.starterDraftOffer')).toBe('declined');
+    fixture.destroy();
+    TestBed.resetTestingModule();
+
+    await open();
+    expect(starter.passages).not.toHaveBeenCalled();
+    expect(offer()).toBeNull();
+  });
+
+  it('is not offered when the library already has writings, or nothing was imported', async () => {
+    await open([{ id: 'w1', name: 'Essay', type: 'Document', parentId: null, updatedAt: '2026-10-01T00:00:00Z' }]);
+    expect(starter.passages).not.toHaveBeenCalled();
+    expect(offer()).toBeNull();
+    fixture.destroy();
+    TestBed.resetTestingModule();
+
+    await open([], []);
+    expect(starter.passages).toHaveBeenCalled();
+    expect(offer()).toBeNull();
   });
 });
