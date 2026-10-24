@@ -824,7 +824,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card.textContent).toContain('up to 14 days');
     expect(
       card.querySelector('[data-testid="managed-backups-latest"]')?.textContent,
-    ).toContain('Last backup Oct 7, 2026');
+    ).toContain('Last backup 7 Oct 2026');
     expect(card.textContent).not.toContain('Archive');
     expect(card.textContent).not.toContain('protected media');
     expect(card.textContent).not.toContain('Completed');
@@ -1248,7 +1248,7 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(card).not.toBeNull();
     expect(text).toContain('Your included Ask Nostos allowance is nearly used.');
-    expect(text).toContain('Renews Oct 1.');
+    expect(text).toContain('Renews 1 Oct 2026.');
     expect(text).not.toContain('AI refill balance');
     expect(text).not.toContain('refill capacity');
     expect(card.querySelectorAll('.setting-row').length).toBe(1);

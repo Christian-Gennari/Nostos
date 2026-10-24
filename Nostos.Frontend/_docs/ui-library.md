@@ -810,6 +810,23 @@ Applied to a `<textarea>`. Listens for `input` events and pipes text + cursor po
 
 ## Pipes
 
+### NostosDatePipe
+
+**Name:** `nostosDate`  
+**File:** `src/app/ui/pipes/nostos-date.pipe.ts` (formats in `src/app/core/date-formats.ts`)
+
+Every date a reader sees has one of two shapes: a date, `d MMM y` ("24 Oct 2026"), or a
+date and time, `d MMM y, HH:mm` ("24 Oct 2026, 14:05"), in the browser's time zone and
+without naming it. Use the pipe in templates instead of Angular's `date` pipe, and
+`formatNostosDate()` in TypeScript instead of `toLocaleString()` or `Intl.DateTimeFormat`.
+
+```html
+{{ note.createdAt | nostosDate }}
+{{ backup.createdAtUtc | nostosDate: 'datetime' }}
+```
+
+A missing or unreadable value renders as an empty string.
+
 ### NoteFormatPipe
 
 **Name:** `noteFormat`  

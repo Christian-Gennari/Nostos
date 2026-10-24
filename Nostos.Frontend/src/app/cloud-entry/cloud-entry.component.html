@@ -181,7 +181,7 @@
           @if (deletion.state === 'GracePeriod' && deletion.eligibleAtUtc) {
             <p>
               Your account deletion becomes final on
-              <time [attr.datetime]="deletion.eligibleAtUtc">{{ deletion.eligibleAtUtc | date:'long' }}</time>
+              <time [attr.datetime]="deletion.eligibleAtUtc">{{ deletion.eligibleAtUtc | nostosDate: 'datetime' }}</time>
               in your local time.
             </p>
           } @else if (deletion.state === 'GracePeriod') {

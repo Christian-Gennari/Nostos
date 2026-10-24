@@ -59,6 +59,7 @@ import { TransferTabLease } from '../services/transfer-tab-lease.service';
 import { LibraryTransferProgressComponent } from './library-transfer-progress.component';
 import { LibraryReplacementDialogComponent } from './library-replacement-dialog.component';
 import { ButtonComponent } from '../../ui/button/button.component';
+import { formatNostosDate } from '../../core/date-formats';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { NoticeComponent } from '../../ui/notice/notice.component';
 
@@ -306,7 +307,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   readonly statusCheckedTime = computed(() => {
     const value = this.checking()?.statusCheckedAtUtc;
-    return value ? new Date(value).toLocaleTimeString() : null;
+    return value ? formatNostosDate(value, 'time') || null : null;
   });
 
   /** Cancellation is unavailable once the server has begun activation. */

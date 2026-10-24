@@ -10,7 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DatePipe } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Observable, finalize, switchMap, takeWhile, timer } from 'rxjs';
@@ -64,7 +64,7 @@ function asIsbn(typed: string): string | null {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     BookCoverComponent,
-    DatePipe,
+    NostosDatePipe,
     FormsModule,
     RouterLink,
     AddBookModal,

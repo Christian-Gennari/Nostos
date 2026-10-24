@@ -239,7 +239,7 @@
                     @if (entry.recommendedBy) {
                       Recommended by {{ entry.recommendedBy }} ·
                     }
-                    Added {{ entry.createdAt | date: 'mediumDate' }}
+                    Added {{ entry.createdAt | nostosDate }}
                   </p>
                   @if (entry.ownedBookId) {
                     <p class="entry-owned">

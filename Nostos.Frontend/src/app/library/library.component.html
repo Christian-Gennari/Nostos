@@ -314,7 +314,7 @@
           </div>
 
           <div class="col date">
-            {{ book.createdAt | date : 'MMM d, y' }}
+            {{ book.createdAt | nostosDate }}
           </div>
 
           <div class="col actions-cell" (click)="$event.stopPropagation()">

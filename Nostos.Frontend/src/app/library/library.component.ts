@@ -16,6 +16,7 @@ import { BooksService, type BookListOptions } from '../core/services/books.servi
 import { CollectionsService } from '../core/services/collections.service';
 import { Collection } from '../core/dtos/collection.dtos';
 import { CommonModule, DOCUMENT } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
@@ -120,6 +121,7 @@ interface WorkFormatGlyph {
     SearchFieldComponent,
     ProgressComponent,
     CommonModule,
+    NostosDatePipe,
     RouterLink,
     NostosIconComponent,
     LoadingIndicatorComponent,

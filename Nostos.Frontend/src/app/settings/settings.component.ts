@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
@@ -259,6 +260,7 @@ const defaultProgress: BackupProgress = {
     ProgressComponent,
     NoticeComponent,
     CommonModule,
+    NostosDatePipe,
     FormsModule,
     NostosIconComponent,
     ButtonComponent,

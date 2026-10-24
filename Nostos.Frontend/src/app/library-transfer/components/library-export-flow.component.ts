@@ -20,12 +20,8 @@ import {
 } from '../library-transfer.copy';
 import { LibraryTransferProgressComponent } from './library-transfer-progress.component';
 import { ButtonComponent } from '../../ui/button/button.component';
+import { formatNostosDate } from '../../core/date-formats';
 import { NoticeComponent } from '../../ui/notice/notice.component';
-
-const EXPIRY_FORMAT = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
 
 /**
  * A download URL is only safe to assign to an anchor (and auto-click) when it
@@ -97,7 +93,7 @@ export class LibraryExportFlowComponent {
     if (!expiresAt) return null;
     const date = new Date(expiresAt);
     if (Number.isNaN(date.getTime())) return null;
-    return `This download link is available until ${EXPIRY_FORMAT.format(date)}.`;
+    return `This download link is available until ${formatNostosDate(date, 'datetime')}.`;
   });
 
   private autoDownloadedJobId: string | null = null;
