@@ -86,32 +86,16 @@
   margin-left: auto;
 }
 
-/* --- Quote ----------------------------------------------------------------- */
-.note-item-quote {
-  margin: 0;
-  padding: 0.1rem 0 0.1rem 1.15rem;
-  --nostos-accent-rail-width: 2px;
-  --nostos-accent-rail-color: var(--border-color);
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: 1.16rem;
-  line-height: 1.6;
-  text-wrap: pretty;
-  white-space: pre-line;
-}
-
+/* --- Quote -----------------------------------------------------------------
+   The look is the shared quote block (ui/quote-block); a passage's opening is
+   smaller and fades out under its clamp. */
 .note-item-quote.is-opening {
-  display: -webkit-box;
-  overflow: hidden;
   font-size: 1.04rem;
   white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
   mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
 }
 
-.note-item-quote.is-clamped,
 .note-item-thought.is-clamped {
   display: -webkit-box;
   overflow: hidden;
@@ -161,50 +145,7 @@
   gap: 0.4rem;
 }
 
-.note-item-topic {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-alt);
-}
-
-.note-item-topic-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0.18rem 0.15rem 0.18rem 0.6rem;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  line-height: 1.35;
-  text-decoration: none;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.note-item-topic-name nostos-icon {
-  flex: none;
-  color: var(--color-text-light);
-}
-
-a.note-item-topic-name:hover {
-  color: var(--color-text-main);
-}
-
-a.note-item-topic-name:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-pill);
-}
-
-.note-item-topic-remove {
-  margin-right: 0.2rem;
-  color: var(--color-text-light);
-}
-
+/* Each topic is the shared topic chip (ui/topic-chip). */
 .note-item-add {
   display: inline-flex;
   align-items: center;
@@ -335,30 +276,6 @@ button.note-item-source {
   font-weight: var(--fw-medium);
 }
 
-.note-item-pens {
-  display: flex;
-  gap: 0.45rem;
-}
-
-.note-item-pen {
-  width: 1.35rem;
-  height: 1.35rem;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-round);
-  cursor: pointer;
-}
-
-.note-item-pen.is-active {
-  outline: 2px solid var(--color-text-main);
-  outline-offset: 2px;
-}
-
-.note-item-pen:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 .note-item-edit-actions {
   display: flex;
   gap: 0.5rem;
@@ -382,24 +299,21 @@ button.note-item-source {
   }
 }
 
-/* Touch: every control answers a 44px tap. The small ones (chips, the remove
-   cross, the source link) keep their look and grow an invisible hit area
-   instead; the gaps between chips are wide enough that no two areas meet. */
+/* Touch: every control answers a 44px tap. The small ones (the add pill, the
+   source link; the chips do it themselves) keep their look and grow an
+   invisible hit area instead; the gaps between chips are wide enough that no
+   two areas meet. */
 @media (pointer: coarse), (hover: none) {
   .note-item-topics {
     gap: 1rem 1.25rem;
   }
 
-  .note-item-topic-name,
-  .note-item-topic-remove,
   .note-item-add,
   .note-item-source,
   .note-item-time {
     position: relative;
   }
 
-  .note-item-topic-name::after,
-  .note-item-topic-remove::after,
   .note-item-add::after,
   .note-item-source::after,
   .note-item-time::after {
@@ -407,11 +321,6 @@ button.note-item-source {
     position: absolute;
     inset-block: calc(50% - 22px);
     inset-inline: 0;
-  }
-
-  /* The cross reaches right, into the gap, never left over the name. */
-  .note-item-topic-remove::after {
-    inset-inline: 0 calc(100% - 44px);
   }
 
   .note-item-add::after {
@@ -436,21 +345,6 @@ button.note-item-source {
     min-height: 44px;
     margin: -0.6rem -0.5rem 0 -0.75rem;
     padding: 0.6rem 0.5rem 0 0.75rem;
-  }
-
-  /* The swatch is drawn inside a 44px button, its edge kept by an inset ring. */
-  .note-item-pen {
-    width: 44px;
-    height: 44px;
-    padding: 10px;
-    border: 0;
-    background-clip: content-box;
-    box-shadow: inset 0 0 0 10px var(--bg-body, var(--bg-surface)), inset 0 0 0 11px var(--border-color);
-  }
-
-  .note-item-pen.is-active,
-  .note-item-pen:focus-visible {
-    outline-offset: -8px;
   }
 }
 

@@ -19,12 +19,15 @@ describe('CollectionPickerComponent', () => {
     return spy;
   }
 
-  function optionButtons(): HTMLButtonElement[] {
+  function optionButtons(): HTMLLabelElement[] {
     return Array.from(fixture.nativeElement.querySelectorAll('.option'));
   }
 
-  function optionByName(name: string): HTMLButtonElement {
-    return optionButtons().find((b) => b.textContent?.trim() === name)!;
+  /** The row's checkbox (issue #1204: the shared appCheckbox). */
+  function optionByName(name: string): HTMLInputElement {
+    return optionButtons()
+      .find((b) => b.textContent?.trim() === name)!
+      .querySelector('input[type=checkbox]') as HTMLInputElement;
   }
 
   beforeEach(async () => {
@@ -48,7 +51,7 @@ describe('CollectionPickerComponent', () => {
   });
 
   it('marks nested rows with their tree depth so indentation is data-driven', () => {
-    const child = optionByName('Child');
+    const child = optionByName('Child').closest('.option') as HTMLElement;
     expect(child.style.getPropertyValue('--depth')).toBe('1');
   });
 
@@ -84,12 +87,13 @@ describe('CollectionPickerComponent', () => {
     expect(spy).toHaveBeenCalledWith([]);
   });
 
-  it('exposes membership as pressed state for assistive tech', () => {
+  it('exposes membership as a checked checkbox for assistive tech', () => {
     fixture.componentRef.setInput('selectedIds', ['root']);
     fixture.detectChanges();
 
-    expect(optionByName('Root').getAttribute('aria-pressed')).toBe('true');
-    expect(optionByName('Other').getAttribute('aria-pressed')).toBe('false');
+    expect(optionByName('Root').checked).toBe(true);
+    expect(optionByName('Root').classList).toContain('nostos-check');
+    expect(optionByName('Other').checked).toBe(false);
   });
 
   it('renders a chip per membership and removes just that one', () => {
@@ -100,7 +104,7 @@ describe('CollectionPickerComponent', () => {
     expect(chips.length).toBe(2);
     const spy = emitSpy();
 
-    const removeButton = fixture.nativeElement.querySelectorAll('.chip-remove')[0];
+    const removeButton = fixture.nativeElement.querySelectorAll('.topic-chip-remove')[0];
     removeButton.click();
 
     expect(spy).toHaveBeenCalledWith(['other']);

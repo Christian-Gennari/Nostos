@@ -1047,14 +1047,11 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
     new Set(['manage-member-action'])],
   ['src/app/reader/reader-shell.component.html',
-    new Set(['hl-pen', 'typo-opt', 'typo-step'])],
+    new Set(['typo-opt', 'typo-step'])],
   ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item',
     // The stat corner (#1040) is low-opacity text that cycles words, characters
     // and reading time on click: a readout, not an ordinary button.
-    'editor-desk-telemetry',
-    // A cited source's topic pill (#1162) opens the topic's page: the passive
-    // badge is the look, so the button around it adds only the action.
-    'reference-source-topic'])],
+    'editor-desk-telemetry'])],
   ['src/app/ui/confirm-modal/confirm-modal.component.html', new Set()],
 ]);
 

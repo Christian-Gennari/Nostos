@@ -209,7 +209,7 @@ describe('Book Details — long review collapse (issue #159)', () => {
     await setup(LONG_REVIEW);
 
     expect(bodyEl()?.classList.contains('clamped')).toBe(true);
-    expect(toggleEl()?.textContent).toContain('Read full review');
+    expect(toggleEl()?.textContent).toContain('Show all');
     expect(fadeEl()).toBeTruthy();
   });
 
@@ -274,7 +274,7 @@ describe('Book Details — long review collapse (issue #159)', () => {
     fixture.detectChanges();
 
     expect(bodyEl()?.classList.contains('clamped')).toBe(true);
-    expect(toggleEl()?.textContent).toContain('Read full review');
+    expect(toggleEl()?.textContent).toContain('Show all');
   });
 
   it('needs no control at all when the book has no review', async () => {
@@ -351,10 +351,11 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
       expect(t.classList.contains('expand-btn')).toBe(true);
     }
 
-    // Told apart by what they reveal rather than by two generic labels.
+    // The note's wording (issue #1211): Show all / Show less. Each sits
+    // directly under the block it opens and names it through aria-controls.
     const [reviewToggle, synopsisToggle] = toggles;
-    expect(reviewToggle.textContent).toContain('Read full review');
-    expect(synopsisToggle.textContent).toContain('Read full synopsis');
+    expect(reviewToggle.textContent?.trim()).toBe('Show all');
+    expect(synopsisToggle.textContent?.trim()).toBe('Show all');
 
     // Neither falls back to a bare generic verb.
     for (const t of toggles) {
@@ -377,8 +378,10 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
     renderedLines = REVIEW_COLLAPSE_LINES + 20;
     await setup(LONG_REVIEW, null);
 
-    const iconBefore = allToggles()[0].querySelector('.icon') as HTMLElement;
-    expect(iconBefore.textContent?.trim()).toBe('↓');
+    // A caret nostos-icon (issue #1211), not a Unicode arrow.
+    const iconBefore = allToggles()[0].querySelector('nostos-icon.icon') as HTMLElement;
+    expect(iconBefore).not.toBeNull();
+    expect(allToggles()[0].textContent).not.toContain('↓');
     expect(iconBefore.classList.contains('rotated')).toBe(false);
     // Decorative: the label already says what happens.
     expect(iconBefore.getAttribute('aria-hidden')).toBe('true');
@@ -386,11 +389,11 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
     allToggles()[0].click();
     fixture.detectChanges();
 
-    const iconAfter = allToggles()[0].querySelector('.icon') as HTMLElement;
+    const iconAfter = allToggles()[0].querySelector('nostos-icon.icon') as HTMLElement;
     expect(iconAfter.classList.contains('rotated')).toBe(true);
     // The glyph itself never changes — only its rotation, so it reads as one
     // control changing state rather than two different controls.
-    expect(iconAfter.textContent?.trim()).toBe('↓');
+    expect(iconAfter).toBe(iconBefore);
   });
 
   it('keeps the two blocks independently expandable', async () => {

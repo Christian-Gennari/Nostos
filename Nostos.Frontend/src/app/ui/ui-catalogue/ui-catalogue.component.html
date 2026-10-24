@@ -716,6 +716,81 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-quote">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-quote">Quotes and pens</h2>
+      </div>
+      <p>
+        A quotation from a book is serif words beside a square rail in its pen, with no added quotation
+        marks; an unknown pen keeps the neutral rail. The pens are one row of dots everywhere a pen is picked.
+      </p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Quote block · in the chosen pen</span>
+        <blockquote appQuote [pen]="cataloguePen()">Virtue, then, is a state of character concerned with choice.</blockquote>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Quote block · small, pen unknown, two lines</span>
+        <blockquote appQuote size="sm" [lines]="2">
+          It is the mark of an educated mind to be able to entertain a thought without accepting it, and to
+          keep it long enough to see what it is for.
+        </blockquote>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Pen swatches</span>
+        <app-pen-swatches [value]="cataloguePen()" (chosen)="cataloguePen.set($event)" />
+      </div>
+    </div>
+  </section>
+
+  <section class="catalogue-section" aria-labelledby="catalogue-topics">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-topics">Topics</h2>
+      </div>
+      <p>
+        One topic chip (a link or a button, optionally removable) and one option row for every topic
+        list: the mark, the name and a plain muted count.
+      </p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic chip · removable</span>
+        <div class="catalogue-row">
+          @for (topic of catalogueTopics(); track topic) {
+            <app-topic-chip
+              [name]="topic"
+              [removable]="true"
+              (removed)="catalogueTopics.set(catalogueTopics().filter((name) => name !== topic))"
+            />
+          }
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic chip · read only, and without a mark (a collection)</span>
+        <div class="catalogue-row">
+          <app-topic-chip name="Ethics" />
+          <app-topic-chip name="Philosophy shelf" [icon]="null" [removable]="true" removeLabel="Remove from Philosophy shelf" />
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic option rows</span>
+        <ul class="catalogue-topic-list" role="listbox" aria-label="Topic options example">
+          <li appTopicOption role="option" name="Virtue" [count]="12" [active]="true" aria-selected="true"></li>
+          <li appTopicOption role="option" name="Habit" [count]="3" aria-selected="false"></li>
+          <li appTopicOption role="option" kind="create" name="Practical wisdom" aria-selected="false"></li>
+        </ul>
+        <span class="catalogue-label">{{ noTopicsYet }}</span>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-toast">
     <div class="catalogue-section-heading">
       <div>

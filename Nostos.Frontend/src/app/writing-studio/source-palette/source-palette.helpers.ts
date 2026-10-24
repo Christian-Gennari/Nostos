@@ -1,5 +1,6 @@
 import { NoteSearchHit } from '../../core/dtos/note.dtos';
 import { WritingSourceDto } from '../../core/dtos/writing.dtos';
+import { HighlightColour, quotePen } from '../../reader/highlight-colours';
 import { SourceInsertionSource } from '../source-insertion.helpers';
 
 /**
@@ -18,6 +19,8 @@ export interface PaletteSource extends SourceInsertionSource {
   note: string | null;
   /** Whether this source is already kept with the open writing. */
   kept: boolean;
+  /** The pen its quotation was marked with; null (or absent) when not known. */
+  pen?: HighlightColour | null;
 }
 
 export type PaletteInsertMode = 'quote' | 'note' | 'reference';
@@ -52,6 +55,8 @@ function toSource(
     anchorVerified?: boolean;
     kind?: string;
     passageTitle?: string | null;
+    highlightColour?: string | null;
+    cfiRange?: string | null;
   },
   kept: boolean,
 ): PaletteSource {
@@ -72,6 +77,7 @@ function toSource(
     lead: quote || note,
     note: quote && note ? note : null,
     kept,
+    pen: quotePen(value),
   };
 }
 

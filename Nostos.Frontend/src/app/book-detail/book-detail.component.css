@@ -908,9 +908,6 @@
    turning over reads as a state change, where two different glyphs read as two
    different controls. */
 .expand-btn .icon {
-  display: inline-block;
-  font-size: 0.72rem;
-  line-height: 1;
   transition: transform 0.15s ease;
 }
 .expand-btn .icon.rotated {

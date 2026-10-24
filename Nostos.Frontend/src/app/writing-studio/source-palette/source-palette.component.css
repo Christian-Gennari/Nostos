@@ -112,7 +112,7 @@
   gap: 3px;
 }
 
-.sp-lead {
+.sp-lead:not(.is-quote) {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -122,10 +122,16 @@
   line-height: 1.4;
 }
 
+/* A quotation is the shared quote block (ui/quote-block), in the manuscript's
+   ink and rule. */
+.sp-lead.is-quote,
+.sp-preview-lead.is-quote {
+  --nostos-quote-ink: var(--manuscript-ink);
+  --nostos-accent-rail-color: var(--manuscript-rule);
+}
+
 .sp-lead.is-quote {
-  font-family: Newsreader, Georgia, serif;
-  font-size: 0.98rem;
-  font-style: italic;
+  white-space: normal;
 }
 
 /* Every row keeps its two lines when it is highlighted: moving through the
@@ -180,18 +186,12 @@
   }
 }
 
-.sp-preview-lead {
+.sp-preview-lead:not(.is-quote) {
   margin: 0;
   color: var(--manuscript-ink);
   font-size: 0.9rem;
   line-height: 1.5;
   white-space: pre-line;
-}
-
-.sp-preview-lead.is-quote {
-  font-family: Newsreader, Georgia, serif;
-  font-size: 0.98rem;
-  font-style: italic;
 }
 
 .sp-note {

@@ -40,13 +40,15 @@
     @for (candidate of candidates(); track candidate.id) {
     <button
       type="button"
+      appTopicOption
       class="merge-target"
+      [name]="candidate.name"
+      [count]="candidate.usageCount"
+      [active]="selectedId() === candidate.id"
       [class.selected]="selectedId() === candidate.id"
+      [attr.aria-pressed]="selectedId() === candidate.id"
       (click)="chosen.emit(candidate.id)"
-    >
-      <span>{{ candidate.name }}</span>
-      <span class="merge-target-count">{{ candidate.usageCount }}</span>
-    </button>
+    ></button>
     }
     }
   </div>

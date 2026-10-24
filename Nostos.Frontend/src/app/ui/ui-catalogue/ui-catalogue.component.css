@@ -271,3 +271,12 @@
   background: var(--surface-image-ground);
   box-shadow: var(--cover-shadow);
 }
+
+.catalogue-topic-list {
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  background: var(--bg-surface);
+}

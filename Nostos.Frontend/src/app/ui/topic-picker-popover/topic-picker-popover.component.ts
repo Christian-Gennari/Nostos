@@ -12,6 +12,7 @@ import {
 import type { TopicDto } from '../../core/services/topics.service';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
+import { NO_TOPICS_MATCH, NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import { hasTopic, newTopicName, rankTopicChoices, topicChoices } from '../note-item/note-item.helpers';
 
 /** Where AI topic suggestions are; `off` hides the group entirely. */
@@ -37,7 +38,7 @@ let nextPickerId = 0;
 @Component({
   selector: 'app-topic-picker-popover',
   standalone: true,
-  imports: [NostosIconComponent, InputDirective],
+  imports: [NostosIconComponent, InputDirective, TopicOptionComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="picker" role="dialog" [attr.aria-label]="label()">
@@ -68,27 +69,18 @@ let nextPickerId = 0;
             </li>
           }
           <li
-            class="picker-option"
+            appTopicOption
             role="option"
             [id]="optionId(i)"
-            [class.is-active]="i === active()"
-            [class.is-suggestion]="option.kind === 'suggestion'"
+            [name]="option.name"
+            [kind]="option.kind"
+            [count]="option.count"
+            [active]="i === active()"
             [attr.aria-selected]="i === active()"
             (mousedown)="$event.preventDefault()"
             (mouseenter)="active.set(i)"
             (click)="choose(option)"
-          >
-            @if (option.kind === 'create') {
-              <nostos-icon name="plus" [size]="14" />
-              <span class="picker-name">Create “{{ option.name }}”</span>
-            } @else {
-              <nostos-icon name="hash" [size]="14" />
-              <span class="picker-name">{{ option.name }}</span>
-              @if (option.count !== undefined) {
-                <span class="picker-count">{{ option.count }}</span>
-              }
-            }
-          </li>
+          ></li>
         }
         @if (suggestionState() === 'loading') {
           <li class="picker-group picker-status" role="presentation">
@@ -98,7 +90,7 @@ let nextPickerId = 0;
           <li class="picker-group picker-status" role="presentation">Suggestions are unavailable right now.</li>
         }
         @if (options().length === 0 && suggestionState() !== 'loading') {
-          <li class="picker-empty" role="presentation">{{ query().trim() ? 'No topic by that name.' : 'No topics yet. Type a name to create one.' }}</li>
+          <li class="picker-empty" role="presentation">{{ query().trim() ? noMatch : noTopics }}</li>
         }
       </ul>
     </div>
@@ -128,45 +120,6 @@ let nextPickerId = 0;
         padding: 0;
         max-height: 17rem;
         overflow-y: auto;
-      }
-
-      .picker-option {
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
-        min-height: 2.25rem;
-        padding: 0 0.6rem;
-        border-radius: var(--radius-popover-item);
-        color: var(--color-text-main);
-        font-size: var(--text-sm);
-        cursor: pointer;
-      }
-
-      .picker-option nostos-icon {
-        color: var(--color-text-light);
-        flex: none;
-      }
-
-      .picker-option.is-active {
-        background: var(--bg-hover);
-      }
-
-      .picker-option.is-suggestion {
-        color: var(--color-text-muted);
-      }
-
-      .picker-name {
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .picker-count {
-        margin-left: auto;
-        color: var(--color-text-light);
-        font-size: var(--text-xs);
-        font-variant-numeric: tabular-nums;
       }
 
       .picker-group {
@@ -211,6 +164,9 @@ export class TopicPickerPopoverComponent implements AfterViewInit {
 
   readonly chosen = output<string>();
   readonly closed = output<void>();
+
+  readonly noTopics = NO_TOPICS_YET;
+  readonly noMatch = NO_TOPICS_MATCH;
 
   readonly inputId = `topic-picker-${nextPickerId++}`;
   readonly listId = `${this.inputId}-list`;

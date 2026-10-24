@@ -5,37 +5,35 @@
   @for (topic of auto.suggestions(); track topic.id; let i = $index) {
   <button
     type="button"
+    appTopicOption
     class="item"
     role="option"
     tabindex="-1"
     [id]="auto.optionId(i)"
-    [class.active]="i === auto.activeIndex()"
-    [class.nostos-accent-rail]="i === auto.activeIndex()"
+    [name]="topic.name"
+    [count]="topic.usageCount"
+    [active]="i === auto.activeIndex()"
     [attr.aria-selected]="i === auto.activeIndex()"
     (mousemove)="auto.activeIndex.set(i)"
     (click)="select(topic.name, $event)"
-  >
-    <span class="item-name">{{ topic.name }}</span>
-    <span class="item-count">{{ topic.usageCount }}</span>
-  </button>
+  ></button>
   }
 
   @if (auto.createName(); as name) {
   <button
     type="button"
+    appTopicOption
+    kind="create"
     class="item create-item"
     role="option"
     tabindex="-1"
     [id]="auto.optionId(auto.suggestions().length)"
-    [class.active]="auto.activeIndex() === auto.suggestions().length"
-    [class.nostos-accent-rail]="auto.activeIndex() === auto.suggestions().length"
+    [name]="name"
+    [active]="auto.activeIndex() === auto.suggestions().length"
     [attr.aria-selected]="auto.activeIndex() === auto.suggestions().length"
     (mousemove)="auto.activeIndex.set(auto.suggestions().length)"
     (click)="select(name, $event)"
-  >
-    <nostos-icon name="plus" [size]="15"></nostos-icon>
-    <span class="item-name">Create “{{ name }}”</span>
-  </button>
+  ></button>
   }
 </ng-template>
 
@@ -96,7 +94,7 @@
       <ng-container [ngTemplateOutlet]="options"></ng-container>
 
       @if (auto.optionCount() === 0) {
-      <p class="picker-empty">No topics yet. Type a name to create your first one.</p>
+      <p class="picker-empty">{{ noTopics }}</p>
       }
     </div>
 
@@ -116,7 +114,7 @@
       <ng-container [ngTemplateOutlet]="options"></ng-container>
 
       @if (auto.optionCount() === 0) {
-      <p class="picker-empty">Type a topic name.</p>
+      <p class="picker-empty">{{ noTopics }}</p>
       }
     </div>
   </div>

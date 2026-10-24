@@ -17,9 +17,8 @@ import { noteSourceLink } from '../../core/note-source';
 import type { TopicDto } from '../../core/services/topics.service';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
-  HIGHLIGHT_COLOURS,
-  highlightFillRef,
   noteHighlightColour,
+  quotePen,
   type HighlightColour,
 } from '../../reader/highlight-colours';
 import { NOSTOS_MENU } from '../menu/menu.component';
@@ -29,6 +28,9 @@ import { ButtonComponent } from '../button/button.component';
 import { CheckboxDirective } from '../check/check.directive';
 import { InputDirective, TextareaDirective } from '../form-control/form-control.directive';
 import { TopicInputComponent } from '../topic-input.component/topic-input.component';
+import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
+import { QuoteBlockComponent } from '../quote-block/quote-block.component';
+import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NoteCaptureDetailsComponent } from '../note-capture-details/note-capture-details.component';
 import { PassageViewerService, type PassageViewerRequest } from '../passage-viewer/passage-viewer.service';
@@ -95,6 +97,9 @@ export interface CitingWriting {
     NoteFormatPipe,
     NoteCaptureDetailsComponent,
     TopicPickerPopoverComponent,
+    PenSwatchesComponent,
+    QuoteBlockComponent,
+    TopicChipComponent,
   ],
   templateUrl: './note-item.component.html',
   styleUrls: ['./note-item.component.css'],
@@ -188,7 +193,6 @@ export class NoteItemComponent {
   }
 
   readonly pickerPositions = PICKER_POSITIONS;
-  readonly highlightColours = HIGHLIGHT_COLOURS;
 
   readonly pickerOpen = signal(false);
   readonly expanded = signal(false);
@@ -220,14 +224,8 @@ export class NoteItemComponent {
   /** A highlight (or passage) has a pen that can be shown and changed. */
   readonly hasPen = computed(() => !!this.note().selectedText || this.isPassage());
 
-  readonly fillRef = highlightFillRef;
-
-  /** The fill the quote's rule is drawn in; null keeps the neutral rule. */
-  readonly penFill = computed<string | null>(() => {
-    const note = this.note();
-    if (!note.selectedText || note.highlightColour === undefined) return null;
-    return highlightFillRef(noteHighlightColour(note));
-  });
+  /** The pen the quote's rail is drawn in; null keeps the neutral rail. */
+  readonly pen = computed(() => quotePen(this.note()));
 
   readonly long = computed(() =>
     !this.isPassage() && (this.quote().length > LONG_QUOTE || this.thought().length > LONG_THOUGHT));

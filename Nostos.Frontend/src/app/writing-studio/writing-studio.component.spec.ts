@@ -211,8 +211,9 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
 
     const count = fixture.nativeElement.querySelector('.badge-count') as HTMLSpanElement;
+    // A topic's usage is a plain muted number, not a badge (issue #1204).
     expect(count.tagName).toBe('SPAN');
-    expect(count.classList.contains('nostos-badge')).toBe(true);
+    expect(count.classList.contains('nostos-badge')).toBe(false);
 
     const createButtons = Array.from(
       fixture.nativeElement.querySelectorAll('.sidebar-left .actions .icon-btn'),
@@ -1846,34 +1847,34 @@ describe('WritingStudio kept sources (#491)', () => {
     ) as HTMLButtonElement;
     expect(primary.textContent?.trim()).toBe('Insert quote');
     expect(primary.classList.contains('nostos-button--primary')).toBe(true);
-    expect(fixture.nativeElement.querySelector('.inspected-source-open')?.textContent).toContain(
-      'Open source',
-    );
+    // As a note says it (issue #1211): a real button, the words and the arrow icon.
+    const open = fixture.nativeElement.querySelector('.inspected-source-open') as HTMLButtonElement;
+    expect(open.tagName).toBe('BUTTON');
+    expect(open.textContent?.trim()).toBe('Open in book');
+    expect(open.querySelector('nostos-icon')).not.toBeNull();
 
+    // The secondary actions are a nostos-menu, as everywhere else (issue #1211).
+    const menuItems = () =>
+      Array.from(document.querySelectorAll('.nostos-menu-item')).map(
+        (item) => item.querySelector('.nostos-menu-item__label')?.textContent?.trim(),
+      );
     const more = fixture.nativeElement.querySelector(
       '.source-more-trigger',
     ) as HTMLButtonElement;
     expect(more.textContent?.trim()).toContain('More');
-    expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(more.getAttribute('aria-haspopup')).toBe('menu');
     more.click();
     fixture.detectChanges();
     expect(more.getAttribute('aria-expanded')).toBe('true');
-    expect(
-      Array.from(
-        fixture.nativeElement.querySelectorAll('.source-more-actions button'),
-      ).map((button) => (button as Element).textContent?.trim()),
-    ).toEqual(['Insert note', 'Insert as reference']);
+    expect(menuItems()).toEqual(['Insert as note', 'Insert as reference']);
 
-    const menuButton = fixture.nativeElement.querySelector(
-      '.source-more-actions button',
-    ) as HTMLButtonElement;
-    menuButton.focus();
-    menuButton.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    (document.querySelector('.nostos-menu') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }),
+    );
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(fixture.nativeElement.querySelector('.source-more-actions')).toBeNull();
+    expect(menuItems()).toEqual([]);
     expect(more.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(more);
 
     component.inspectSource({
       id: 'note-only',
@@ -1887,17 +1888,13 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(
       fixture.nativeElement.querySelector('.source-action-primary-row .nostos-button')
         ?.textContent?.trim(),
-    ).toBe('Insert note');
+    ).toBe('Insert as note');
     const noteMore = fixture.nativeElement.querySelector(
       '.source-more-trigger',
     ) as HTMLButtonElement;
     noteMore.click();
     fixture.detectChanges();
-    expect(
-      Array.from(
-        fixture.nativeElement.querySelectorAll('.source-more-actions button'),
-      ).map((button) => (button as Element).textContent?.trim()),
-    ).toEqual(['Insert as reference']);
+    expect(menuItems()).toEqual(['Insert as reference']);
   });
 
   describe('the @ source palette (#1039)', () => {
@@ -2922,11 +2919,11 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
   const panel = (): HTMLElement => fixture.nativeElement.querySelector('.kept-sources-content') as HTMLElement;
   const touches = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="writing-touches"]');
 
-  it('shows the cited sources’ topics as pills and one Touches line, live from the document', () => {
+  it('shows the cited sources’ topics as topic chips and one Touches line, live from the document', () => {
     type(`${cite(cited)} and ${cite(alsoCited)}`);
 
     const rows = [...panel().querySelectorAll('.reference-source-row')] as HTMLElement[];
-    const pills = (row: HTMLElement) => [...row.querySelectorAll('.reference-source-use [appBadge], .reference-source-use .nostos-badge')].map((p) => p.textContent?.trim());
+    const pills = (row: HTMLElement) => [...row.querySelectorAll('.reference-source-use app-topic-chip')].map((p) => p.textContent?.trim());
     expect(pills(rows[0])).toEqual(['Theodicy', 'Optimism']);
     expect(pills(rows[1])).toEqual(['Optimism']);
     expect(touches()?.querySelector('.writing-touches-line')?.textContent?.trim()).toBe('Touches Optimism · Theodicy');
@@ -2942,7 +2939,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
 
     const rows = [...panel().querySelectorAll('.reference-source-row')] as HTMLElement[];
     expect(rows[2].querySelector('.reference-source-use.is-uncited')?.textContent?.trim()).toBe('Kept, not cited');
-    expect(rows[2].querySelector('.nostos-badge')).toBeNull();
+    expect(rows[2].querySelector('app-topic-chip')).toBeNull();
     expect(touches()?.textContent).not.toContain('Gardening');
   });
 
@@ -2982,7 +2979,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
     expect(getMany).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a cited source’s topic page in the Brain from its pill, keeping the pill’s look', async () => {
+  it('opens a cited source’s topic page in the Brain from its topic chip', async () => {
     type(cite(cited));
     // As saved: nothing to flush before leaving.
     component.activeItem.set({ ...doc, content: component.editorText() });
@@ -2990,9 +2987,9 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
     fixture.detectChanges();
     router.navigate.mockClear();
 
-    const pill = panel().querySelector('.reference-source-use button.reference-source-topic') as HTMLButtonElement;
+    const pill = panel().querySelector('.reference-source-use .reference-source-topic button.topic-chip-name') as HTMLButtonElement;
     expect(pill.getAttribute('type')).toBe('button');
-    expect(pill.querySelector('.nostos-badge')?.textContent?.trim()).toBe('Theodicy');
+    expect(pill.textContent?.trim()).toBe('Theodicy');
 
     pill.click();
     for (let i = 0; i < 20 && !router.navigate.mock.calls.length; i++) await vi.advanceTimersByTimeAsync(50);

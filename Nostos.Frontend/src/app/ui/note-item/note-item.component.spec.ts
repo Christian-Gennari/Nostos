@@ -63,7 +63,7 @@ describe('NoteItemComponent', () => {
 
     expect(element.querySelector('.note-item-quote')?.textContent).toContain('Virtue, then, is a state');
     expect(element.querySelector('.note-item-thought')?.textContent?.trim()).toBe('A compact definition of virtue.');
-    const chips = Array.from(element.querySelectorAll('.note-item-topic-name')).map((chip) => chip.textContent?.trim());
+    const chips = Array.from(element.querySelectorAll('.topic-chip-name')).map((chip) => chip.textContent?.trim());
     expect(chips).toEqual(['mean', 'virtue']);
   });
 
@@ -124,8 +124,8 @@ describe('NoteItemComponent', () => {
     const removed: string[] = [];
     fixture.componentInstance.topicRemoved.subscribe((name) => removed.push(name));
 
-    const chip = element.querySelector('.note-item-topic-name') as HTMLAnchorElement;
-    (element.querySelector('.note-item-topic-remove') as HTMLButtonElement).click();
+    const chip = element.querySelector('.topic-chip-name') as HTMLAnchorElement;
+    (element.querySelector('.topic-chip-remove') as HTMLButtonElement).click();
 
     expect(new URL(chip.href).pathname).toBe('/brain/topics/t-mean');
     expect(removed).toEqual(['mean']);
@@ -227,7 +227,7 @@ describe('NoteItemComponent', () => {
   });
 
   describe('the highlight pen (issue #861)', () => {
-    const pens = () => Array.from(element.querySelectorAll<HTMLButtonElement>('.note-item-pen'));
+    const pens = () => Array.from(element.querySelectorAll<HTMLButtonElement>('.pen-swatch'));
 
     it('offers the four pens in edit, with the stored one selected, each drawn from a token', () => {
       render({ highlightColour: 'blue' });

@@ -6,23 +6,23 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { SearchFieldComponent } from '../../ui/search-field/search-field.component';
+import { NO_TOPICS_MATCH, TopicOptionComponent } from '../../ui/topic-option/topic-option.component';
 
 /**
  * Pick one existing topic from a searchable list, then confirm.
  *
- * The Brain asks for this in three places: merging a topic into another, and
- * linking a note to a topic while browsing or reviewing. It only shows the
- * list and reports what was chosen. The surface that opened it decides which
- * topics are candidates and what confirming does, and nothing is written
- * until it does.
+ * The Brain asks for this when merging a topic into another (notes get their
+ * topics from the note's own picker, app-topic-picker-popover). It only shows
+ * the list, in the shared topic option rows, and reports what was chosen. The
+ * surface that opened it decides which topics are candidates and what
+ * confirming does, and nothing is written until it does.
  *
- * Anything projected into it appears between the list and the actions; the
- * note pickers put their "create and link" offer there.
+ * Anything projected into it appears between the list and the actions.
  */
 @Component({
   standalone: true,
   selector: 'app-brain-topic-picker',
-  imports: [SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective],
+  imports: [SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective, TopicOptionComponent],
   templateUrl: './brain-topic-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './brain-topic-picker.component.css',
@@ -35,7 +35,7 @@ export class BrainTopicPickerComponent {
   readonly heading = input.required<string>();
   readonly closeLabel = input.required<string>();
   readonly searchLabel = input.required<string>();
-  readonly emptyText = input.required<string>();
+  readonly emptyText = input(NO_TOPICS_MATCH);
   readonly confirmLabel = input.required<string>();
   readonly confirmDisabled = input(false);
   /** Says what linking writes before it is written. Not shown for a merge. */

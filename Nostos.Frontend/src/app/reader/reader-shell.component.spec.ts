@@ -1421,7 +1421,7 @@ describe('ReaderShell toolbar contract', () => {
     render();
 
     expect(fixture.debugElement.query(By.css('[data-testid="reader-highlight-toggle"]'))).toBeNull();
-    expect(fixture.debugElement.queryAll(By.css('.notes-sidebar .hl-pen, .hl-pens .hl-pen')).length)
+    expect(fixture.debugElement.queryAll(By.css('.hl-pens .pen-swatch')).length)
       .toBeGreaterThanOrEqual(4);
   });
 
@@ -1704,7 +1704,7 @@ describe('ReaderShell toolbar contract', () => {
     // spanning 1060..1440) while the control directly above them was inset 20px:
     // the whole row hung 16px to the left of everything else (a #226 follow-up).
     const css = readSource('./reader-shell.component.css');
-    const pensRule = css.slice(css.indexOf('.hl-pens {'), css.indexOf('.hl-pen {'));
+    const pensRule = css.slice(css.indexOf('.hl-pens {'), css.indexOf('.hl-pens.selection-pens'));
 
     // 12px above, 16px below: it was `margin: 12px 20px 0`, so the row's bottom
     // edge landed exactly on `.quick-note`'s top edge and the dots read as glued
@@ -1715,8 +1715,10 @@ describe('ReaderShell toolbar contract', () => {
     // The paint stays 22px; the touch target is an invisible ::before, and it is
     // narrower than it is tall so two neighbours' hit boxes cannot overlap on a
     // 34px pitch and send the tap to the wrong pen.
-    expect(css).toContain('.hl-pen::before');
-    expect(css).toContain('inset: -11px -6px');
+    // The dots are the shared pen swatches (issue #1203), which own that target.
+    const swatches = readSource('../ui/pen-swatches/pen-swatches.component.ts');
+    expect(swatches).toContain('.pen-swatch::before');
+    expect(swatches).toContain('inset: -11px -6px');
   });
 
   it('offers no search control to a format that has no search', async () => {
@@ -1905,7 +1907,7 @@ describe('ReaderShell typography panel (EPUB)', () => {
     render();
 
     const pens = Array.from(
-      fixture.nativeElement.querySelectorAll('.hl-pen') as NodeListOf<HTMLButtonElement>,
+      fixture.nativeElement.querySelectorAll('.pen-swatch') as NodeListOf<HTMLButtonElement>,
     );
     expect(pens.length).toBe(4);
     // Sage is the default pen, announced as pressed rather than only drawn.
@@ -2610,7 +2612,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     component.handleSelectionAnchored(anchor);
     render();
 
-    const quote = el('selection-menu')!.querySelector('.selection-quote .selected-text')!;
+    const quote = el('selection-menu')!.querySelector('.selection-quote.selected-text')!;
     expect(quote.textContent!.trim()).toBe(passage);
   });
 

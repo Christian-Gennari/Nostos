@@ -49,9 +49,12 @@ import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
-import { BadgeComponent } from '../ui/badge/badge.component';
+import { NO_TOPICS_MATCH } from '../ui/topic-option/topic-option.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
+import { quotePen } from '../reader/highlight-colours';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { ExportDialogComponent } from './export/export-dialog.component';
 import { hasExportableContent } from './export/export-resolve';
@@ -182,10 +185,11 @@ function writeCarets(carets: RememberedCaret[]): void {
     IconButtonComponent,
     ButtonComponent,
     InputDirective,
-    BadgeComponent,
     ConfirmModal,
     NOSTOS_MENU,
     ExportDialogComponent,
+    QuoteBlockComponent,
+    TopicChipComponent,
   ],
   templateUrl: './writing-studio.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -602,9 +606,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
   selectedBookId = signal<string | null>(null);
   selectedBookNotes = signal<Note[]>([]);
   bookNotesState = signal<ReferenceLoadState>('idle');
-
-  /** Local disclosure state for secondary source actions. */
-  moreSourceActionsOpen = signal(false);
 
   /** Scroll positions belong to the parent surface and survive its child view. */
   private referenceScrollPositions: Record<ReferenceScrollKey, number> = {
@@ -1477,7 +1478,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.keptSources.update((prev) => prev.filter((s) => s.id !== noteId));
         if (this.inspectedSource()?.id === noteId) {
           this.inspectedSource.set(null);
-          this.moreSourceActionsOpen.set(false);
           this.restoreCurrentReferenceScroll();
         }
       },
@@ -1526,7 +1526,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.editorTitle.set(contentDto.name);
         this.editorText.set(contentDto.content);
         this.inspectedSource.set(null);
-        this.moreSourceActionsOpen.set(false);
 
         // Choosing a writing in the file list closes the list; a handoff lands
         // in the editor on a compact screen. A slow load never closes a
@@ -1694,7 +1693,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.rememberCurrentReferenceScroll();
     if (this.referenceMode() !== mode) {
       this.inspectedSource.set(null);
-      this.moreSourceActionsOpen.set(false);
     }
     this.referenceMode.set(mode);
     this.restoreCurrentReferenceScroll();
@@ -1704,7 +1702,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.rememberCurrentReferenceScroll();
     if (this.activeSidebarTab() !== tab) {
       this.inspectedSource.set(null);
-      this.moreSourceActionsOpen.set(false);
     }
     this.activeSidebarTab.set(tab);
     this.restoreCurrentReferenceScroll();
@@ -1713,7 +1710,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
   selectTopic(id: string) {
     this.rememberReferenceScroll('topics');
     this.inspectedSource.set(null);
-    this.moreSourceActionsOpen.set(false);
     this.selectedTopicId.set(id);
     this.topicNotesState.set('loading');
     this.topicsService.get(id).subscribe({
@@ -1768,7 +1764,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
   selectBook(id: string) {
     this.rememberReferenceScroll('books');
     this.inspectedSource.set(null);
-    this.moreSourceActionsOpen.set(false);
     this.selectedBookId.set(id);
     this.bookNotesState.set('loading');
     this.notesService.list(id).subscribe({
@@ -1799,13 +1794,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   inspectSource(note: Note): void {
     this.rememberCurrentReferenceScroll();
-    this.moreSourceActionsOpen.set(false);
     this.inspectedSource.set(note);
   }
 
   closeInspectedSource(): void {
     this.inspectedSource.set(null);
-    this.moreSourceActionsOpen.set(false);
     this.restoreCurrentReferenceScroll();
   }
 
@@ -1899,23 +1892,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.loadBooks();
   }
 
-  closeMoreSourceActions(event?: Event): void {
-    event?.preventDefault();
-    event?.stopPropagation();
-    if (!this.moreSourceActionsOpen()) return;
-    this.moreSourceActionsOpen.set(false);
-    const focusTrigger = () =>
-      this.hostElement.nativeElement
-        .querySelector('.source-more-trigger')
-        ?.focus();
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(focusTrigger);
-    else setTimeout(focusTrigger, 0);
-  }
-
-  toggleMoreSourceActions(): void {
-    this.moreSourceActionsOpen.update((open) => !open);
-  }
-
   sourceDisplayLocator(source: Note): string | null {
     return sourceHumanLabel(source)?.locator ?? null;
   }
@@ -1935,6 +1911,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
    * The passage viewer opened from Studio offers "Quote in writing": the
    * words selected in it go into the draft as a quotation from the passage.
    */
+  /** The pen a source row's quotation is shown in; null when the row does not know it. */
+  readonly quotePen = quotePen;
+  readonly noTopicsMatch = NO_TOPICS_MATCH;
+
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) => this.quotePassageSelection(text, passage),
   };

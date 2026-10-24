@@ -22,7 +22,6 @@ import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reade
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
-  HIGHLIGHT_COLOURS,
   HighlightColour,
   noteHighlightColour,
   readHighlightColour,
@@ -159,6 +158,8 @@ function readAloudFallbackNotice(code: string | null): string {
   }
 }
 
+import { PenSwatchesComponent } from '../ui/pen-swatches/pen-swatches.component';
+import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
 @Component({
   selector: 'app-reader-shell',
   standalone: true,
@@ -188,6 +189,8 @@ function readAloudFallbackNotice(code: string | null): string {
     MenuTriggerDirective,
     ModalShell,
     ThemePickerComponent,
+    PenSwatchesComponent,
+    QuoteBlockComponent,
   ],
   providers: [ReadAloudController, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './reader-shell.component.html',
@@ -856,7 +859,6 @@ export class ReaderShell implements OnInit, OnDestroy {
    * a book you annotate in sage should come back in sage.
    */
   highlightColour = signal<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
-  readonly highlightColours = HIGHLIGHT_COLOURS;
   pendingSelectionText = signal<string | null>(null);
   readonly selectionPreview = computed(() => selectionPreview(this.pendingSelectionText()));
   highlightSaving = signal(false);
