@@ -21,7 +21,7 @@
 
 .nostos-form-field__label-note {
   color: var(--color-text-light);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-weight: var(--fw-regular);
 }
 

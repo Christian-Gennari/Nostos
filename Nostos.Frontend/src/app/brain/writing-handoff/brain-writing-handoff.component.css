@@ -37,7 +37,7 @@
   margin: 0;
   color: var(--color-text-main);
   font-family: 'Newsreader', serif;
-  font-size: 1.35rem;
+  font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.25;
 }

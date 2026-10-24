@@ -546,7 +546,7 @@
   color: var(--color-danger-vivid);
 }
 .book-subtitle {
-  font-size: 1.15rem;
+  font-size: var(--text-lg);
   color: rgba(255, 255, 255, 0.78);
   margin: 0 0 0.5rem;
   font-weight: var(--fw-regular);
@@ -620,7 +620,7 @@
 }
 .page-stepper-hint {
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .status-dropdown.reading {
@@ -718,7 +718,7 @@
   font-family: 'Hanken Grotesk', sans-serif;
   text-transform: uppercase;
   font-weight: var(--fw-semibold);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.12em;
   line-height: 1.2;
   color: var(--color-text-light);
@@ -736,7 +736,7 @@
 .review-text {
   max-width: var(--detail-measure);
   font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 1rem;
+  font-size: var(--text-md);
   line-height: 1.65;
   color: var(--color-text-main);
   white-space: pre-wrap;
@@ -886,13 +886,18 @@
   gap: 0.4rem;
   color: var(--color-text-muted);
   margin-bottom: 0.2rem;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .meta-item .value {
   color: var(--color-text-main);
   font-weight: var(--fw-medium);
+}
+.meta-item .tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 /* The disclosure control shared by BOTH collapsible blocks in this card (My
    Review and Synopsis). Deliberately a quiet text link rather than a pill: a
@@ -1021,7 +1026,7 @@
     line-height: 1.4;
   }
   .book-author {
-    font-size: 1.15rem;
+    font-size: var(--text-lg);
   }
   .art-base {
     filter: blur(14px) contrast(1.03);
@@ -1086,7 +1091,7 @@
     --book-hero-min-height: 300px;
   }
   .book-title {
-    font-size: 2.1rem;
+    font-size: var(--text-2xl);
   }
   .meta-grid {
     grid-template-columns: 1fr;

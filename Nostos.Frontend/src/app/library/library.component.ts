@@ -30,6 +30,7 @@ import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dt
 import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { InfiniteScrollDirective } from '../core/directives/infinite-scroll.directive';
+import type { BookFormatConcept } from '../core/book-format';
 import { BookSort } from '../core/dtos/book.enums';
 import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
@@ -798,6 +799,14 @@ export class Library implements OnInit, OnDestroy {
   }
 
   getFormatLabel(book: Book | EditionSummaryDto): string {
+  /** The format icon's concept for one edition, drawn the way its label reads. */
+  formatConcept(book: Book): BookFormatConcept {
+    if (book.type === 'audiobook') return 'audiobook';
+    if (this.getFormatLabel(book) === 'PDF') return 'pdf';
+    if (book.type === 'physical') return 'physical';
+    return 'ebook';
+  }
+
     const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
     if (extension) {
       return extension.toUpperCase();

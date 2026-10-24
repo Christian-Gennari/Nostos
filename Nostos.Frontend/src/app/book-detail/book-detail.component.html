@@ -116,7 +116,7 @@
             type="file"
             accept="image/*"
             #coverInput
-            style="display: none"
+            hidden
             (change)="onCoverSelected($event)"
           />
         </aside>
@@ -250,12 +250,12 @@
             </div>
             } @else if (store.book()?.hasFile) { @if (isAudioBook(store.book())) {
             <button appButton variant="primary" size="lg" class="primary-action" (click)="openReader()">
-              <nostos-icon name="headphones" [size]="18"></nostos-icon>
+              <nostos-icon concept="audiobook" [size]="18"></nostos-icon>
               <span>Listen</span>
             </button>
             } @else {
             <button appButton variant="primary" size="lg" class="primary-action" (click)="openReader()">
-              <nostos-icon name="book-open" [size]="18"></nostos-icon>
+              <nostos-icon concept="readingRoom" [size]="18"></nostos-icon>
               <span>Read book</span>
             </button>
             }
@@ -277,7 +277,7 @@
             </button>
             } @else if (store.book()?.type !== 'physical') {
             <button appButton variant="primary" size="lg" class="primary-action" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
-              <nostos-icon name="book-open" [size]="18"></nostos-icon>
+              <nostos-icon concept="ebook" [size]="18"></nostos-icon>
               <span>Upload file</span>
             </button>
             }
@@ -338,7 +338,7 @@
             <input
               type="file"
               accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
-              style="display: none"
+              hidden
               #fileInput
               (change)="onFileUploadSelected($event)"
             />
@@ -576,7 +576,7 @@
               @if(store.book()?.categories) {
               <div class="meta-item full-width">
                 <span class="label">Genres</span>
-                <div class="value" style="display: flex; gap: 0.5rem; flex-wrap: wrap">
+                <div class="value tag-list">
                   @for(cat of store.book()?.categories?.split(','); track cat) {
                   <span class="tag">{{ cat.trim() }}</span>
                   }
@@ -585,7 +585,7 @@
               } @if((store.book()?.collectionIds?.length || 0) > 0) {
               <div class="meta-item full-width">
                 <span class="label">Collections</span>
-                <div class="value" style="display: flex; gap: 0.5rem; flex-wrap: wrap">
+                <div class="value tag-list">
                   <!-- Renders EVERY membership, not just the first: the rail used
                        to show one name because the model only held one. -->
                   @for (name of getCollectionNames(store.book()!); track name) {

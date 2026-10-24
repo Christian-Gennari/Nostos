@@ -207,7 +207,7 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
 
       :host(.nostos-button--lg) {
         padding: 0 14px;
-        font-size: 0.875rem;
+        font-size: var(--text-sm);
       }
 
       /* Busy: the button draws the one spinner, in its own ink, and hides its

@@ -31,6 +31,10 @@ ARIA contract, geometry, or state model is part of the product surface.
   interactions through a generic primitive just to remove CSS.
 - A shared appearance does not imply shared semantics: segmented controls deliberately
   share a recipe rather than one ARIA-switching component.
+- Font sizes come from the type steps in `styles.css` where one fits:
+  `--text-xs` 0.75rem, `--text-sm` 0.875rem, `--text-md` 1rem, `--text-lg` 1.15rem,
+  `--text-xl` 1.35rem, `--text-2xl` 2.1rem. Each is the literal the stylesheets
+  already used most at that size; a size between steps stays a literal.
 
 ### Copy
 

@@ -299,15 +299,7 @@
             </span>
             } @else {
             <span class="list-format" [attr.data-type]="book.type">
-              @if (book.type === 'audiobook') {
-                <nostos-icon name="headphones" [size]="13"></nostos-icon>
-              } @else if (getFormatLabel(book) === 'PDF') {
-                <nostos-icon name="file-text" [size]="13"></nostos-icon>
-              } @else if (book.type === 'physical') {
-                <nostos-icon name="bookmark-simple" [size]="13"></nostos-icon>
-              } @else {
-                <nostos-icon name="book-open" [size]="13"></nostos-icon>
-              }
+              <nostos-icon [concept]="formatConcept(book)" [size]="13"></nostos-icon>
               {{ listFormatLabel(book) }}
             </span>
             }
@@ -415,15 +407,7 @@
               [class.audiobook]="book.type === 'audiobook'"
               [attr.data-type]="book.type"
             >
-              @if (book.type === 'audiobook') {
-              <nostos-icon name="headphones" [size]="11"></nostos-icon>
-              } @else if (getFormatLabel(book) === 'PDF') {
-              <nostos-icon name="file-text" [size]="11"></nostos-icon>
-              } @else if (book.type === 'physical') {
-              <nostos-icon name="bookmark-simple" [size]="11"></nostos-icon>
-              } @else {
-              <nostos-icon name="book-open" [size]="11"></nostos-icon>
-              }
+              <nostos-icon [concept]="formatConcept(book)" [size]="11"></nostos-icon>
               {{ getFormatLabel(book) }}
             </span>
             }

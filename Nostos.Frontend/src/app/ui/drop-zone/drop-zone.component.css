@@ -50,5 +50,5 @@
 
 .nostos-drop-zone__hint {
   color: var(--color-text-light);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
