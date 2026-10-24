@@ -339,7 +339,7 @@ describe('AddBookModal', () => {
     const el = fixture.nativeElement as HTMLElement;
     const submitButton = el.querySelector('button[type="submit"][form="add-book-form"]') as HTMLButtonElement;
     expect(submitButton.getAttribute('aria-busy')).toBe('true');
-    expect((el.querySelector('#close-modal') as HTMLButtonElement).disabled).toBe(true);
+    expect((el.querySelector('[data-testid="modal-close"]') as HTMLButtonElement).disabled).toBe(true);
     const cancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
       (button) => button.textContent?.trim() === 'Cancel',
     ) as HTMLButtonElement;
