@@ -88,7 +88,7 @@ describe('SwitchEditionDialog', () => {
     open(audiobook([epub, pdf, audioB, noFile]), { audio: 180 });
 
     expect(rows()).toHaveLength(3);
-    expect(text()).toContain('EPUB');
+    expect(text()).toContain('Ebook');
     expect(text()).toContain('PDF');
     expect(text()).toContain('Second narrator');
   });

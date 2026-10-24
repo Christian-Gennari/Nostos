@@ -30,7 +30,7 @@ import { SidebarCollections } from './sidebar-collections/sidebar-collections.co
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
 import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
-import { BOOK_FORMAT_LABEL, UNKNOWN_AUTHOR, formatOf, type BookFormatConcept } from '../core/book-format';
+import { EBOOK_CATEGORY_LABEL_PLURAL, BOOK_FORMAT_LABEL, UNKNOWN_AUTHOR, formatOf, type BookFormatConcept } from '../core/book-format';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { BookSort } from '../core/dtos/book.enums';
@@ -77,7 +77,7 @@ function formatFilterLabel(value: string | null | undefined): string | null {
       return 'Audiobooks';
     case 'ebook':
     case 'epub':
-      return 'EPUBs';
+      return EBOOK_CATEGORY_LABEL_PLURAL;
     case 'pdf':
       return 'PDFs';
     case 'physical':

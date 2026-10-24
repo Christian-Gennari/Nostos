@@ -6,10 +6,17 @@
 /** A book's format, named as the icon concepts name it (`nostos-concepts.ts`). */
 export type BookFormatConcept = 'audiobook' | 'ebook' | 'pdf' | 'physical';
 
+/**
+ * The ebook format is always "Ebook" / "Ebooks": the backend takes EPUB, MOBI, AZW
+ * and CBZ alike. Say "EPUB" only where the text is literally about the .epub file type.
+ */
+export const EBOOK_CATEGORY_LABEL = 'Ebook';
+export const EBOOK_CATEGORY_LABEL_PLURAL = 'Ebooks';
+
 /** Short format names, as a "pick a book" row shows them under the author. */
 export const BOOK_FORMAT_LABEL: Readonly<Record<BookFormatConcept, string>> = {
   audiobook: 'Audiobook',
-  ebook: 'EPUB',
+  ebook: EBOOK_CATEGORY_LABEL,
   pdf: 'PDF',
   physical: 'Physical',
 };
@@ -21,15 +28,7 @@ export interface BookFormat {
 }
 
 /**
- * The category covering EPUB and PDF together (a source filter, a file slot that
- * takes either). Say "EPUB" only where it means exactly that format.
- */
-export const EBOOK_CATEGORY_LABEL = 'Ebook';
-export const EBOOK_CATEGORY_LABEL_PLURAL = 'Ebooks';
-
-/**
- * The one way to name a book's format: Audiobook, EPUB, PDF, Physical. A file
- * extension names any other ebook type ("MOBI"); an ebook with no file says EPUB.
+ * The one way to name a book's format: Audiobook, Ebook, PDF, Physical.
  */
 export function formatOf(book: { type: string; format?: string | null; fileName?: string | null }): BookFormat {
   const type = book.type.toLowerCase();
@@ -38,9 +37,8 @@ export function formatOf(book: { type: string; format?: string | null; fileName?
 
   const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
   const declared = book.format?.trim().toLowerCase().replace(/^\./, '');
-  const kind = extension || (declared && declared !== 'ebook' ? declared : 'epub');
-  if (kind === 'pdf') return { format: BOOK_FORMAT_LABEL.pdf, concept: 'pdf' };
-  return { format: kind === 'epub' ? BOOK_FORMAT_LABEL.ebook : kind.toUpperCase(), concept: 'ebook' };
+  if ((extension || declared) === 'pdf') return { format: BOOK_FORMAT_LABEL.pdf, concept: 'pdf' };
+  return { format: BOOK_FORMAT_LABEL.ebook, concept: 'ebook' };
 }
 
 /**

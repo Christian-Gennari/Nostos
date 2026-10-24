@@ -799,7 +799,7 @@ describe('Library', () => {
 
     const format = row.querySelector('.col.format .list-format') as HTMLElement;
     expect(format).toBeTruthy();
-    expect(format.textContent?.trim()).toBe('EPUB');
+    expect(format.textContent?.trim()).toBe('Ebook');
     expect(row.querySelector('.format-badge')).toBeNull();
 
     // Exactly one status cluster per row, holding exactly the two toggles.
@@ -861,7 +861,7 @@ describe('Library', () => {
     const book = (type: string, fileName: string | null = null) => ({ type, fileName }) as unknown as Book;
     expect(component.listFormatLabel(book('audiobook'))).toBe('Audiobook');
     expect(component.listFormatLabel(book('physical'))).toBe('Physical');
-    expect(component.listFormatLabel(book('ebook'))).toBe('EPUB');
+    expect(component.listFormatLabel(book('ebook'))).toBe('Ebook');
     expect(component.listFormatLabel(book('ebook', 'paper.pdf'))).toBe('PDF');
   });
 
