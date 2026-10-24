@@ -1,4 +1,9 @@
 // Nostos.Frontend/src/app/dtos/note.dtos.ts
+import { formatAudioTime } from '../format';
+
+/** Re-exported: the one audio-time format lives in core/format.ts. */
+export { formatAudioTime };
+
 export interface Note {
   id: string;
   bookId: string;
@@ -155,15 +160,6 @@ export function noteAudioSeconds(note: Note): number | null {
     if (anchored !== null) return anchored;
   }
   return parseAudioSeconds(note.cfiRange);
-}
-
-/** Seconds to `m:ss`, or `h:mm:ss` from one hour on. */
-export function formatAudioTime(seconds: number): string {
-  const whole = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
-  const h = Math.floor(whole / 3600);
-  const m = Math.floor((whole % 3600) / 60);
-  const s = (whole % 60).toString().padStart(2, '0');
-  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
 /**

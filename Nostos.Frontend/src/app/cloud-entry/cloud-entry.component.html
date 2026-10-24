@@ -18,7 +18,7 @@
 
       @case ('subscription_required') {
         <p class="cloud-entry__eyebrow">Nostos Cloud</p>
-        <h1>Start your Cloud library.</h1>
+        <h1>Start your Nostos Cloud library.</h1>
         @if (entry.selectedOffer(); as offer) {
           <p>
             Continue with <strong>{{ offer.planName }}</strong> on {{ offer.billingCadence }} billing.
@@ -49,14 +49,14 @@
             }
           </div>
         } @else {
-          <p>Choose a plan on our pricing page to start your Cloud library.</p>
+          <p>Choose a plan on our pricing page to start your Nostos Cloud library.</p>
           <div class="cloud-entry__actions">
             <a
               appButton
               variant="primary"
               href="https://nostos.page/pricing"
             >
-              View Cloud plans
+              View Nostos Cloud plans
             </a>
             @if (entry.view().onboarding?.canCheckSubscription) {
               <button
@@ -143,7 +143,7 @@
                 variant="primary"
                 href="https://nostos.page/pricing"
               >
-                View Cloud plans
+                View Nostos Cloud plans
               </a>
             }
           } @else if (entry.view().onboarding?.canManageSubscription) {
@@ -196,7 +196,7 @@
         }
 
         @if (entry.accountDeletionStatusFailed()) {
-          <p class="cloud-entry__status" role="alert">
+          <p appNotice tone="danger" role="alert">
             Nostos could not load the deletion status. You can still try to export or cancel; the server will confirm whether each action is available.
           </p>
         }
@@ -213,7 +213,7 @@
         </p>
 
         @if (entry.accountDeletionActionError(); as error) {
-          <p class="cloud-entry__status" role="alert">{{ error }}</p>
+          <p appNotice tone="danger" role="alert">{{ error }}</p>
         }
 
         <div class="cloud-entry__actions">
@@ -298,16 +298,16 @@
           [disabled]="entry.actionPending()"
           (click)="entry.retry()"
         >
-          Retry setup
+          Try again
         </button>
       }
 
       @case ('provisioning_failed') {
         <p class="cloud-entry__eyebrow">Setup</p>
-        <h1>We couldn’t finish preparing your library.</h1>
+        <h1>We could not finish preparing your library.</h1>
         <p class="cloud-entry__status">
           <nostos-icon name="warning-circle" [size]="16" />
-          <span>Your account is safe. Retrying reuses the same Cloud resources.</span>
+          <span>Your account is safe. Retrying reuses the same Nostos Cloud resources.</span>
         </p>
         <p>If retrying keeps failing, contact Nostos support.</p>
         <button
@@ -324,7 +324,7 @@
       @case ('first_run') {
         <p class="cloud-entry__eyebrow">Your library is ready</p>
         <h1>How would you like to begin?</h1>
-        <p>Start with an empty library, or bring an existing SelfHosted Nostos library with you.</p>
+        <p>Start with an empty library, or bring an existing self-hosted Nostos library with you.</p>
         <div class="cloud-entry__actions">
           <button appButton variant="primary" type="button" (click)="entry.startFresh()">
             Start fresh
@@ -355,7 +355,7 @@
       @case ('backend_error') {
         <p class="cloud-entry__eyebrow">Nostos Cloud</p>
         <h1>Nostos is temporarily unavailable.</h1>
-        <p>We couldn’t safely confirm your account state. Your library has not been changed.</p>
+        <p>We could not safely confirm your account state. Your library has not been changed.</p>
         <button appButton variant="primary" type="button" (click)="entry.retry()">
           Try again
         </button>
@@ -363,7 +363,7 @@
     }
 
     @if (entry.actionError()) {
-      <p class="cloud-entry__error" role="alert">{{ entry.actionError() }}</p>
+      <p appNotice tone="danger" role="alert">{{ entry.actionError() }}</p>
     }
   </section>
 </main>

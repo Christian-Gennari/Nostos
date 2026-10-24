@@ -22,6 +22,7 @@ import { HttpClient, HttpEventType } from '@angular/common/http';
 import { Subject } from 'rxjs';
 
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
+import { formatAudioTime } from '../../core/format';
 import { AssistantStatusService } from './assistant-status.service';
 
 import {
@@ -2163,11 +2164,5 @@ export function parseTimestamp(value: string): string | null {
 
 /** Seconds (as a string) to `m:ss` / `h:mm:ss`. Null-safe and never NaN-y. */
 export function formatTimestamp(value: string | null): string {
-  const seconds = Math.max(0, Math.floor(Number(value ?? '0')));
-  if (!Number.isFinite(seconds)) return '0:00';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  return `${minutes}:${String(secs).padStart(2, '0')}`;
+  return formatAudioTime(Number(value ?? '0'));
 }

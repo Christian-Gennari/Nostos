@@ -42,12 +42,22 @@ ARIA contract, geometry, or state model is part of the product surface.
 ### Copy
 
 - **Sentence case** for every button, label, heading, menu item, tooltip and
-  `aria-label`: “Add book”, “Table of contents”, “Delete permanently”. Proper nouns
+  `aria-label`: “Add book”, “Contents”, “Delete permanently”. Proper nouns
   keep their capitals: Nostos, Brain, Studio, Ask Nostos, and Library or Settings
   when they name the page.
 - **Reading status** wording comes from `src/app/core/reading-status.ts`: Not started,
   Reading, Finished, and To read for the reading list.
 - A book without an author shows **Unknown author** (`UNKNOWN_AUTHOR` in `book-format.ts`).
+- A book without a title shows **Unknown book** (`UNKNOWN_BOOK`). Formats are named once, by
+  `formatOf()` and `BOOK_FORMAT_LABEL` in `book-format.ts`: Audiobook, **Ebook** (always, in filters, lists, badges, detail,
+  edition switcher and Add book: the backend takes EPUB, MOBI, AZW and CBZ; never “eBook” or
+  “E-book”), PDF, Physical. “EPUB” appears only where the text is literally about the `.epub`
+  file type.
+- `core/format.ts` holds the shared `plural()`, `formatAudioTime()` and `formatFileSize()`
+  (B, KB, MB, GB). Do not write another one.
+- Product names: **Nostos Cloud**, “self-hosted” (never `SelfHosted` in copy), Studio, Brain,
+  Ask Nostos. A Studio item is a **document** everywhere. The `.nostos` file is a **library archive**.
+- **British spelling** throughout: Colour, Favourites, Catalogue, cancelled.
 - Placeholders and pending labels end with an ellipsis character, “…”, not three dots.
 - Dates go through `nostosDate` (see Pipes); toast wording is under ToastContainerComponent.
 - Failures start **Could not …** everywhere a reader sees them (toasts, inline errors,

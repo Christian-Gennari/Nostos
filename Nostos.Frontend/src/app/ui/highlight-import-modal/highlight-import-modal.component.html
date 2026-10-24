@@ -232,7 +232,7 @@
               @for (book of skipped(); track $index) {
                 <li class="highlight-row">
                   <span class="highlight-row-text">
-                    <span class="highlight-row-title">{{ book.sourceTitle || 'Untitled book' }}</span>
+                    <span class="highlight-row-title">{{ book.sourceTitle || unknownBook }}</span>
                     <span class="highlight-row-sub">
                       @if (book.sourceAuthor) {
                         {{ book.sourceAuthor }} ·
@@ -373,7 +373,7 @@
     [class.is-question]="!row.target && row.suggestion"
   >
     <div class="highlight-review-source">
-      <span class="highlight-row-title">{{ row.book.title || 'Untitled book' }}</span>
+      <span class="highlight-row-title">{{ row.book.title || unknownBook }}</span>
       <span class="highlight-row-sub">
         @if (row.book.author) {
           {{ row.book.author }} ·

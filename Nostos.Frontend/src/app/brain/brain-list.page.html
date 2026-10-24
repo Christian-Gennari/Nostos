@@ -109,7 +109,7 @@
           <button nostosMenuItem icon="graph" (triggered)="showOnMap(current.id)">Show on map</button>
           <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
           <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
-          <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes with writing…</button>
+          <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes in a document…</button>
           <hr nostosMenuSeparator />
           <button nostosMenuItem icon="trash" tone="danger" (triggered)="topicActions.openDelete(current)">Delete topic</button>
         </nostos-menu>
@@ -206,7 +206,7 @@
     @for (note of notes(); track note.id; let i = $index) {
       @if (order() === 'book' && startsBook(i)) {
       <header class="book-group">
-        <h2 class="book-group-title">{{ note.bookTitle || 'Unknown book' }}</h2>
+        <h2 class="book-group-title">{{ note.bookTitle || unknownBook }}</h2>
         <span class="book-group-meta">
           @if (note.bookAuthor) { {{ note.bookAuthor }} · }
           @if (bookCounts().get(note.bookId); as count) { {{ plural(count, 'note') }} }
@@ -281,8 +281,8 @@
     />
   </ng-template>
   <button appButton variant="overlay" size="sm" type="button" class="selection-action"
-    [disabled]="selected().size === 0" aria-label="Keep with writing…" (click)="keepSelectionWithWriting()">
-    <nostos-icon name="bookmark-simple" [size]="14" /><span class="selection-label">Keep with writing…</span>
+    [disabled]="selected().size === 0" aria-label="Keep in a document…" (click)="keepSelectionWithWriting()">
+    <nostos-icon name="bookmark-simple" [size]="14" /><span class="selection-label">Keep in a document…</span>
   </button>
   <button appButton variant="overlay" size="sm" type="button" class="selection-action"
     [disabled]="selected().size === 0" aria-label="Delete" (click)="deleteSelection()">

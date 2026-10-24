@@ -36,6 +36,7 @@ import { RouterLink } from '@angular/router';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { BrandLockupComponent } from '../../ui/brand-lockup/brand-lockup.component';
+import { plural } from '../../core/format';
 
 @Component({
   standalone: true,
@@ -133,7 +134,7 @@ export class SidebarCollections implements OnInit {
     if (!target) return '';
     const books = this.countsMap().get(target.id) ?? 0;
     const booksClause = books > 0
-      ? ` Its ${books} book${books === 1 ? '' : 's'} will be moved out of the collection, not deleted.`
+      ? ` Its ${plural(books, 'book')} will be moved out of the collection, not deleted.`
       : '';
     return `Books stay in your library — only the collection is removed.${booksClause}`;
   });

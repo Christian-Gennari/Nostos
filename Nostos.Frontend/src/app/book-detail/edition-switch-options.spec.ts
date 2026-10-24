@@ -44,7 +44,7 @@ describe('buildEditionSwitchOptions', () => {
 
     expect(options.map((o) => [o.format, o.concept, o.detail, o.current])).toEqual([
       ['Audiobook', 'audiobook', null, false],
-      ['EPUB', 'ebook', null, true],
+      ['Ebook', 'ebook', null, true],
       ['PDF', 'pdf', null, false],
       ['Physical', 'physical', null, false],
     ]);
@@ -133,10 +133,10 @@ describe('buildEditionSwitchOptions', () => {
 
     expect(options.map((o) => [o.format, o.progress, o.finished])).toEqual([
       ['Audiobook', 100, true],
-      ['EPUB', 42, false],
+      ['Ebook', 42, false],
       ['PDF', 0, false],
     ]);
-    expect(options.map((o) => o.description)).toEqual(['Audiobook, finished', 'EPUB, 42% read', 'PDF, not started']);
+    expect(options.map((o) => o.description)).toEqual(['Audiobook, finished', 'Ebook, 42% read', 'PDF, not started']);
   });
 
   it('describes every detail an edition has, not only the one shown', () => {

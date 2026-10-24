@@ -27,11 +27,11 @@ describe('library-transfer.copy', () => {
     it('formats bytes across the binary unit scale', () => {
       expect(formatBytes(0)).toBe('0 B');
       expect(formatBytes(512)).toBe('512 B');
-      expect(formatBytes(1024)).toBe('1 KiB');
-      expect(formatBytes(1536)).toBe('1.5 KiB');
-      expect(formatBytes(25 * 1024 * 1024)).toBe('25 MiB');
-      expect(formatBytes(2.5 * 1024 * 1024 * 1024)).toBe('2.5 GiB');
-      expect(formatBytes(5 * 1024 ** 4)).toBe('5 TiB');
+      expect(formatBytes(1024)).toBe('1 KB');
+      expect(formatBytes(1536)).toBe('1.5 KB');
+      expect(formatBytes(25 * 1024 * 1024)).toBe('25 MB');
+      expect(formatBytes(2.5 * 1024 * 1024 * 1024)).toBe('2.5 GB');
+      expect(formatBytes(5 * 1024 ** 4)).toBe('5 TB');
     });
 
     it('returns an empty string for unknown sizes', () => {
@@ -44,7 +44,7 @@ describe('library-transfer.copy', () => {
 
   describe('formatRate and formatEta', () => {
     it('formats a rate with a unit and suppresses non-positive rates', () => {
-      expect(formatRate(12 * 1024 * 1024)).toBe('12 MiB/s');
+      expect(formatRate(12 * 1024 * 1024)).toBe('12 MB/s');
       expect(formatRate(0)).toBeNull();
       expect(formatRate(null)).toBeNull();
     });
@@ -70,8 +70,8 @@ describe('library-transfer.copy', () => {
         38.4 * 1024 ** 3,
         22.1 * 1024 ** 3,
       );
-      expect(message).toContain('38.4 GiB');
-      expect(message).toContain('22.1 GiB');
+      expect(message).toContain('38.4 GB');
+      expect(message).toContain('22.1 GB');
       expect(message).toContain('temporary import and recovery space');
     });
 
@@ -103,7 +103,7 @@ describe('library-transfer.copy', () => {
         'choose-file',
       );
       expect(libraryTransferFailureCopy(failure('archive_operational_backup')).message).toContain(
-        'SelfHosted backup',
+        'self-hosted backup',
       );
       expect(libraryTransferFailureCopy(failure('archive_unsupported_version')).action).toBe(
         'choose-file',
@@ -118,8 +118,8 @@ describe('library-transfer.copy', () => {
         }),
       );
       expect(copy.action).toBe('retry');
-      expect(copy.message).toContain('2 GiB');
-      expect(copy.message).toContain('1 GiB');
+      expect(copy.message).toContain('2 GB');
+      expect(copy.message).toContain('1 GB');
     });
 
     it('maps session expiry and checksum failures to retry', () => {

@@ -206,7 +206,7 @@ export class CommandPalette {
   private readonly destinations: PaletteEntry[] = [
     { kind: 'action', id: 'go-library', label: 'Library', sub: 'Your books', icon: 'books', keywords: 'go home' },
     { kind: 'action', id: 'go-brain', label: 'Brain', sub: 'Topics and notes', icon: 'brain', keywords: 'go second brain topics' },
-    { kind: 'action', id: 'go-studio', label: 'Writing Studio', sub: 'Your documents', icon: 'pen-nib', keywords: 'go writing drafts' },
+    { kind: 'action', id: 'go-studio', label: 'Studio', sub: 'Your documents', icon: 'pen-nib', keywords: 'go writing drafts' },
     { kind: 'action', id: 'go-settings', label: 'Settings', sub: 'Library, assistant, backups and appearance', icon: 'gear-six', keywords: 'go preferences' },
   ];
 

@@ -9,6 +9,7 @@
  * failure sentence or a byte string itself.
  */
 
+import { formatFileSize, plural } from '../core/format';
 import { formatNostosDate } from '../core/date-formats';
 import type { LibraryTransferFailure } from './models/library-transfer.models';
 import type { MigrationActivationPhase } from './models/migration-http.dtos';
@@ -23,30 +24,11 @@ export interface TransferFailureCopy {
 }
 
 const NUMBER = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-const DECIMAL = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
-const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
+/** Human-readable byte size; the one file-size format, shared with Settings and Add book. */
+export const formatBytes = formatFileSize;
 
-/**
- * Human-readable byte size on the binary scale the archive contract uses
- * (plan §46). Ten or more units keep one decimal; below ten they keep one too,
- * because "4.7 GiB of 12.9 GiB" is the shape the plan asks for.
- */
-export function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return '';
-
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-
-  const formatted = unit === 0 ? NUMBER.format(value) : DECIMAL.format(value);
-  return `${formatted} ${BYTE_UNITS[unit]}`;
-}
-
-/** Transfer rate, e.g. "11.8 MiB/s"; null until a rate is meaningful. */
+/** Transfer rate, e.g. "11.8 MB/s"; null until a rate is meaningful. */
 export function formatRate(bytesPerSecond: number | null | undefined): string | null {
   if (
     bytesPerSecond === null ||
@@ -67,10 +49,10 @@ export function formatEta(seconds: number | null | undefined): string | null {
   if (seconds < 60) return 'Less than a minute remaining';
 
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `About ${minutes} minute${minutes === 1 ? '' : 's'} remaining`;
+  if (minutes < 60) return `About ${plural(minutes, 'minute')} remaining`;
 
   const hours = Math.round(minutes / 60);
-  return `About ${hours} hour${hours === 1 ? '' : 's'} remaining`;
+  return `About ${plural(hours, 'hour')} remaining`;
 }
 
 /** The three counts the replacement copy compares (plan §27). */
@@ -120,16 +102,16 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
   switch (failure.code) {
     case 'archive_not_portable':
       return {
-        title: 'Not a portable library archive',
-        message: 'This file is not a supported Nostos portable library archive.',
+        title: 'Not a library archive',
+        message: 'This file is not a supported Nostos library archive.',
         action: 'choose-file',
       };
     case 'archive_operational_backup':
       return {
-        title: 'This is a backup, not a portable archive',
+        title: 'This is a backup, not a library archive',
         message:
-          'This is a SelfHosted backup, not a portable library archive. Use a portable ' +
-          'Export library file to move data between Nostos installations.',
+          'This is a self-hosted backup, not a library archive. Use a library archive from ' +
+          'Export library to move data between Nostos installations.',
         action: 'choose-file',
       };
     case 'archive_unsupported_version':
@@ -199,7 +181,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         title: 'The host returned an unusable upload ticket',
         message:
           'An upload ticket did not match this archive’s session, so Nostos stopped before ' +
-          'sending the part. Retry the import; if it keeps happening, update the host.',
+          'sending the part. Try again; if it keeps happening, update the host.',
         action: 'retry',
       };
     case 'direct_upload_rejected':
@@ -207,7 +189,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         title: 'The storage target refused part of the archive',
         message:
           'The host’s storage target kept refusing an archive part. Nothing in your library ' +
-          'was changed. Retry the import; if it keeps happening, contact the host operator.',
+          'was changed. Try again; if it keeps happening, contact the host operator.',
         action: 'retry',
       };
     case 'direct_upload_receipt_pending':
@@ -236,7 +218,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       return {
         title: 'Export is not available on this host yet',
         message:
-          'This Nostos host cannot prepare a downloadable export archive yet. Update the ' +
+          'This Nostos host cannot prepare a downloadable library archive yet. Update the ' +
           'server, or export from a host with library migration enabled.',
         action: 'none',
       };
@@ -255,7 +237,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
     case 'migration_session_expired':
       return {
         title: 'Import session expired',
-        message: 'The import session expired. Retry, then select the same file again to continue.',
+        message: 'The import session expired. Try again, then select the same file again to continue.',
         action: 'retry',
       };
     case 'migration_file_identity_mismatch':
@@ -268,7 +250,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       return {
         title: 'Part of the file could not be verified',
         message:
-          'One part of the file could not be verified. Retry the import; if this keeps ' +
+          'One part of the file could not be verified. Try again; if this keeps ' +
           'happening, make a fresh export and use that file.',
         action: 'retry',
       };
@@ -302,7 +284,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
             title: 'Could not finish the import',
             message:
               'Activation failed before the library switch. Your original library is ' +
-              'unchanged. Retry to continue where the import stopped.',
+              'unchanged. Try again to continue where the import stopped.',
             action: 'retry',
           }
         : {
@@ -339,7 +321,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
     case 'portable_import_failed':
       return {
         title: 'Could not finish the import',
-        message: 'The import failed on the server. Retry to continue with this archive.',
+        message: 'The import failed on the server. Try again to continue with this archive.',
         action: 'retry',
       };
     case 'migration_not_found':

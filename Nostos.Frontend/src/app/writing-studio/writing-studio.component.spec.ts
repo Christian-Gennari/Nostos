@@ -1317,14 +1317,14 @@ describe('WritingStudio kept sources (#491)', () => {
     fixture.detectChanges();
   });
 
-  // 1. the References surface renders For this writing and Library as distinct surfaces,
+  // 1. the References surface renders For this document and Library as distinct surfaces,
   // and Topics/Books browsing is inside Library (not beside it).
-  it('renders For this writing and Library as distinct surfaces, and Topics/Books browsing inside Library', () => {
+  it('renders For this document and Library as distinct surfaces, and Topics/Books browsing inside Library', () => {
     const referenceTabs = Array.from(
       fixture.nativeElement.querySelectorAll('.reference-mode-switch .tab-btn'),
     ) as HTMLButtonElement[];
     expect(referenceTabs).toHaveLength(2);
-    expect(referenceTabs[0].textContent?.trim()).toBe('For this writing');
+    expect(referenceTabs[0].textContent?.trim()).toBe('For this document');
     expect(referenceTabs[1].textContent?.trim()).toBe('Library');
 
     // In 'writing' mode, inner Library tabs (Topics/Books) are not rendered
@@ -1371,7 +1371,7 @@ describe('WritingStudio kept sources (#491)', () => {
 
     const emptyText = fixture.nativeElement.querySelector('.reference-empty-state');
     expect(emptyText).toBeTruthy();
-    expect(emptyText.textContent).toContain('No sources are kept with this writing yet.');
+    expect(emptyText.textContent).toContain('No sources are kept in this document yet.');
     expect(fixture.nativeElement.querySelectorAll('.kept-sources-content .reference-source-row')).toHaveLength(0);
   });
 
@@ -1457,7 +1457,7 @@ describe('WritingStudio kept sources (#491)', () => {
     ) as HTMLButtonElement;
     expect(keepBtn.classList.contains('active')).toBe(true);
     expect(keepBtn.getAttribute('title')).toBe(
-      'Already kept with this writing; no change on click',
+      'Already kept in this document; no change on click',
     );
 
     keepBtn.click();
@@ -1477,9 +1477,9 @@ describe('WritingStudio kept sources (#491)', () => {
       '.reference-source-row .library-keep-action',
     ) as HTMLButtonElement;
     expect(keepBtn.disabled).toBe(true);
-    expect(keepBtn.getAttribute('title')).toBe('Open a writing to keep or insert sources');
+    expect(keepBtn.getAttribute('title')).toBe('Open a document to keep or insert sources');
     expect(fixture.nativeElement.querySelector('.reference-action-notice')?.textContent)
-      .toContain('Open a writing to keep or insert sources.');
+      .toContain('Open a document to keep or insert sources.');
 
     keepBtn.click();
     fixture.detectChanges();
@@ -1493,7 +1493,7 @@ describe('WritingStudio kept sources (#491)', () => {
     ) as HTMLButtonElement;
     expect(insertButton.disabled).toBe(true);
     expect(fixture.nativeElement.querySelector('.source-action-disabled-reason')?.textContent)
-      .toBe('Open a writing to keep or insert sources');
+      .toBe('Open a document to keep or insert sources');
   });
 
   // 7. remove action calls removeSource and drops the row locally.
@@ -1793,8 +1793,8 @@ describe('WritingStudio kept sources (#491)', () => {
     const back = fixture.nativeElement.querySelector(
       '.inspected-source-back',
     ) as HTMLButtonElement;
-    expect(back.textContent).toContain('For this writing');
-    expect(back.getAttribute('aria-label')).toBe('Back to For this writing');
+    expect(back.textContent).toContain('For this document');
+    expect(back.getAttribute('aria-label')).toBe('Back to For this document');
 
     back.click();
     fixture.detectChanges();
@@ -2039,7 +2039,7 @@ describe('WritingStudio kept sources (#491)', () => {
         expect(error).toHaveBeenCalledWith(expect.stringContaining('MLA 9'));
       });
 
-      it('builds the bibliography from the books cited in this writing', async () => {
+      it('builds the bibliography from the books cited in this document', async () => {
         const editor = (component as any).markdownEditor as MarkdownEditorStub;
         prefs.update({ citationStyle: 'mla' });
         component.keptSources.set([
@@ -2067,7 +2067,7 @@ describe('WritingStudio kept sources (#491)', () => {
 
         await component.insertBibliography();
         expect(bibliography).toHaveBeenCalledWith(['book-4', 'book-3'], expect.anything());
-        expect(toastService.info).toHaveBeenCalledWith('Nothing is cited in this writing yet');
+        expect(toastService.info).toHaveBeenCalledWith('Nothing is cited in this document yet');
 
         editor.hasBibliography.mockReturnValue(true);
         bibliography.mockClear();
@@ -2348,7 +2348,7 @@ describe('WritingStudio kept sources (#491)', () => {
     await component.openSource(sourceBeta as any);
 
     expect(navigate).not.toHaveBeenCalled();
-    expect(toastService.error).toHaveBeenCalledWith('Open a writing before opening a source');
+    expect(toastService.error).toHaveBeenCalledWith('Open a document before opening a source');
   });
 
   it('does not write an already-saved Writing merely to open a source', async () => {
@@ -2388,7 +2388,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(component.editorText()).toBe('Newest unsaved paragraph');
     expect(component.saveStatus()).toBe('Unsaved');
     expect(toastService.error).toHaveBeenCalledWith(
-      'Could not save this writing. Your draft is still open.',
+      'Could not save this document. Your draft is still open.',
     );
   });
 
@@ -2828,10 +2828,10 @@ describe('WritingStudio export menu (issue #1164)', () => {
 
   it('disables it for an empty writing, and says why', () => {
     open('doc', '   \n');
-    expect(component.exportBlockedReason()).toBe('This writing is empty');
+    expect(component.exportBlockedReason()).toBe('This document is empty');
     const item = exportItem();
     expect(item?.getAttribute('aria-disabled')).toBe('true');
-    expect(item?.textContent).toContain('This writing is empty');
+    expect(item?.textContent).toContain('This document is empty');
 
     component.openExport();
     expect(component.exportOpen()).toBe(false);

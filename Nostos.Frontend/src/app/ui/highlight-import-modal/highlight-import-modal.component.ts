@@ -26,8 +26,9 @@ import { InputDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
-import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept } from '../../core/book-format';
+import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../../core/book-format';
 import { ChoiceRowComponent } from '../choice-row/choice-row.component';
+import { plural } from '../../core/format';
 
 type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
 
@@ -91,6 +92,7 @@ export interface UnimportableEntry extends HighlightImportSkipped {
   styleUrl: './highlight-import-modal.component.css',
 })
 export class HighlightImportModal {
+  protected readonly unknownBook = UNKNOWN_BOOK;
   protected formatName(format: BookFormatConcept): string {
     return BOOK_FORMAT_LABEL[format];
   }
@@ -449,7 +451,7 @@ export class HighlightImportModal {
   }
 
   count(value: number, noun: string): string {
-    return `${value} ${noun}${value === 1 ? '' : 's'}`;
+    return plural(value, noun);
   }
 
   private toRow(file: File, book: HighlightImportPreviewBook): ReviewRow {

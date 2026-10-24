@@ -888,7 +888,7 @@ export class LibraryTransferCoordinator {
         this.failWith(
           this.failure(
             'migration_session_expired',
-            'The import session expired. Retry to continue.',
+            'The import session expired. Try again to continue.',
             true,
           ),
           status.job.id,
@@ -1063,7 +1063,7 @@ export class LibraryTransferCoordinator {
       this.failWith(
         this.failure(
           'archive_operational_backup',
-          'This is a SelfHosted backup, not a portable library archive.',
+          'This is a self-hosted backup, not a library archive.',
         ),
         undefined,
       );
@@ -1075,7 +1075,7 @@ export class LibraryTransferCoordinator {
         version ? 'archive_unsupported_version' : 'archive_not_portable',
         version
           ? 'This archive was created by an unsupported Nostos version.'
-          : 'This file is not a supported Nostos portable library archive.',
+          : 'This file is not a supported Nostos library archive.',
       ),
       undefined,
     );
@@ -1088,7 +1088,7 @@ export class LibraryTransferCoordinator {
       case 'RejectedOperationalBackupNotPortable':
         return this.failure(
           'archive_operational_backup',
-          'This is a SelfHosted backup, not a portable library archive.',
+          'This is a self-hosted backup, not a library archive.',
         );
       case 'RejectedInsufficientStorage':
         return {

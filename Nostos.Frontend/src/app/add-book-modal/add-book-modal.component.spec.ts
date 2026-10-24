@@ -467,7 +467,7 @@ describe('AddBookModal', () => {
 
     expect(component.isSubmitting()).toBe(false);
     expect(component.uploadError()).toContain('timed out');
-    expect(fixture.nativeElement.textContent).toContain('Retry upload');
+    expect(fixture.nativeElement.textContent).toContain('Try again');
 
     // The primary form action is also safe recovery: it must route back to the
     // already-created row rather than POST /api/books again.

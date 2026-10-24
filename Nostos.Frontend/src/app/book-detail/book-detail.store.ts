@@ -186,7 +186,7 @@ export class BookDetailStore {
       error: () => {
         // Revert on error
         this.book.update((curr) => (curr ? { ...curr, isFavorite: !newStatus } : null));
-        this.toast.error('Could not update the favorite');
+        this.toast.error('Could not update the favourite');
       },
     });
   }

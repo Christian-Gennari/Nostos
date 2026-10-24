@@ -331,8 +331,8 @@
               @if (info.enabled && info.catalogUrl) {
                 <div class="setting-row setting-row--stacked">
                   <div class="setting-label">
-                    <span class="label-text">Catalog address</span>
-                    <span class="label-desc">Add this catalog to a compatible e-reader or reading app. Use the separate reader credentials below &mdash; never your Nostos account password.</span>
+                    <span class="label-text">Catalogue address</span>
+                    <span class="label-desc">Add this catalogue to a compatible e-reader or reading app. Use the separate reader credentials below &mdash; never your Nostos account password.</span>
                   </div>
                   <div class="catalog-url-row">
                     <code class="catalog-url">{{ info.catalogUrl }}</code>
@@ -435,7 +435,7 @@
                 <div class="setting-row">
                   <div class="setting-label">
                     <span class="label-text">E-reader access is unavailable</span>
-                    <span class="label-desc">Nostos did not provide a catalog address, so no connection details are shown.</span>
+                    <span class="label-desc">Nostos did not provide a catalogue address, so no connection details are shown.</span>
                   </div>
                 </div>
               }
@@ -443,7 +443,7 @@
               @if (info.enabled && info.catalogUrl) {
                 <div class="setting-row setting-row--stacked">
                   <div class="setting-label">
-                    <span class="label-text">Catalog address</span>
+                    <span class="label-text">Catalogue address</span>
                     <span class="label-desc">Give this address to a compatible e-reader or reading app &mdash; it browses and downloads straight from your Nostos library, so nothing is copied and there is no second library to keep in sync.</span>
                   </div>
 
@@ -453,7 +453,7 @@
                       type="button"
                       appButton variant="secondary" size="sm"
                       (click)="copyCatalogUrl()"
-                      [attr.aria-label]="'Copy catalog address ' + info.catalogUrl"
+                      [attr.aria-label]="'Copy catalogue address ' + info.catalogUrl"
                     >
                       @if (copied()) {
                         <nostos-icon name="check" [size]="14"></nostos-icon>
@@ -468,11 +468,11 @@
                   @if (info.localOnly) {
                     <p appNotice tone="caution" class="catalog-note catalog-note--warning">
                       <nostos-icon name="warning" [size]="14"></nostos-icon>
-                      <span>This address only works on this computer. Open Nostos from the address your reader will use &mdash; your machine's address on your home network or Tailscale &mdash; and the catalog address will match it.</span>
+                      <span>This address only works on this computer. Open Nostos from the address your reader will use &mdash; your machine's address on your home network or Tailscale &mdash; and the catalogue address will match it.</span>
                     </p>
                   } @else {
                     <p class="catalog-note">
-                      Your reader has to be able to reach this server: the same home network or Tailscale network you are on now. In the reader's settings, look for &ldquo;catalog&rdquo; or &ldquo;OPDS catalog&rdquo; and enter the address above.
+                      Your reader has to be able to reach this server: the same home network or Tailscale network you are on now. In the reader's settings, look for &ldquo;catalogue&rdquo; or &ldquo;OPDS catalogue&rdquo; and enter the address above.
                     </p>
                   }
                 </div>
@@ -480,11 +480,15 @@
                 <div class="setting-row">
                   <div class="setting-label">
                     <span class="label-text">E-reader access is turned off</span>
-                    <span class="label-desc">This server is not publishing a catalog, so there is no address to connect to. It can be switched on where Nostos is configured, with <code class="inline-code">Opds:Enabled=true</code>.</span>
+                    <span class="label-desc">This server is not publishing a catalogue, so there is no address to connect to. It can be switched on where Nostos is configured, with <code class="inline-code">Opds:Enabled=true</code>.</span>
                   </div>
                 </div>
               }
             }
+          } @else {
+            <div class="settings-pane-loading">
+              <nostos-loading-indicator label="Loading e-reader access" />
+            </div>
           }
         </div>
       </section>
@@ -538,14 +542,14 @@
       <section class="settings-card" data-testid="assistant-settings-card">
         <div class="card-header">
           <div class="card-header-copy">
-            <h2>Reading assistant</h2>
+            <h2>Ask Nostos</h2>
           </div>
         </div>
 
         <div class="card-body">
           <div class="setting-row">
             <div class="setting-label">
-              <span class="label-text">Show reading assistant</span>
+              <span class="label-text">Show Ask Nostos</span>
               @if (assistantAvailable()) {
                 <span class="label-desc">Show the dock capsule for capturing thoughts while reading.</span>
               } @else if (managedAi() || !canConfigureAiProvider()) {
@@ -564,7 +568,7 @@
                   type="checkbox"
                   [checked]="assistantEnabled()"
                   (change)="setAssistantEnabled($event)"
-                  aria-label="Reading assistant"
+                  aria-label="Ask Nostos"
                   data-testid="assistant-enabled-toggle"
                 >
               </label>
@@ -575,7 +579,7 @@
                   [checked]="false"
                   disabled
                   aria-disabled="true"
-                  aria-label="Reading assistant"
+                  aria-label="Ask Nostos"
                   data-testid="assistant-enabled-toggle"
                 >
               </label>
@@ -1449,8 +1453,8 @@
         <div class="card-body">
           @if (supportsLibraryMigration()) {
             <p class="label-desc card-purpose" data-testid="backup-purpose">
-              Backups are for recovering this SelfHosted installation. They are not portable
-              library exports.
+              Backups are for recovering this self-hosted installation. They are not library
+              archives.
             </p>
           }
           <!-- Enable Toggle -->
@@ -1514,7 +1518,7 @@
             <app-dropdown
               class="select-sm"
               controlSize="compact"
-              ariaLabel="Max backups"
+              ariaLabel="Backups to keep"
               [options]="maxBackupOptions"
               [value]="settings().maxBackups.toString()"
               (valueChange)="changeMaxBackups($event)"
@@ -1770,7 +1774,8 @@
 
             @if (managedRestoreError(); as error) {
               <p
-                class="label-desc"
+                appNotice
+                tone="danger"
                 role="alert"
                 data-testid="managed-restore-error"
               >
@@ -1819,7 +1824,7 @@
 
         <div class="card-body">
           <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
-            Portable library archives are for moving your library between Nostos installations.
+            Library archives are for moving your library between Nostos installations.
           </p>
           <app-library-transfer-host
             [supportsSafeActivation]="supportsSafeActivation()"
@@ -1894,7 +1899,7 @@
           <div class="setting-row">
             <div class="setting-label">
               <span class="label-text">Your complete Nostos archive</span>
-              <span class="label-desc">Download one portable .nostos file containing your library, notes, Writing Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
+              <span class="label-desc">Download one library archive (.nostos) containing your library, notes, Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
               @if (portableExportBusy()) {
                 <span class="label-desc portable-export-status" aria-live="polite">
                   @if (portableExportProgress() !== null) {
@@ -2039,7 +2044,7 @@
             <section class="settings-card" data-testid="cloud-account-settings">
               <div class="card-header">
                 <div class="card-header-copy">
-                  <h2>Cloud account</h2>
+                  <h2>Nostos Cloud account</h2>
                 </div>
               </div>
               <div class="card-body">
@@ -2060,7 +2065,7 @@
                   <div class="setting-row" data-testid="cloud-account-management">
                     <div class="setting-label">
                       <span class="label-text">Account & billing</span>
-                      <span class="label-desc">Manage your hosted account, subscription, and purchases on nostos.page.</span>
+                      <span class="label-desc">Manage your Nostos Cloud account, subscription, and purchases on nostos.page.</span>
                     </div>
                     <a
                       appButton
@@ -2118,7 +2123,7 @@
       <app-confirm-modal
         [isOpen]="!!pendingManagedRestore()"
         heading="Replace your current library?"
-        description="Restoring this backup replaces your current active library, including books, notes, writing, and media, with its state at backup time. Later changes will no longer appear in your active library. Hosted recovery verifies the replacement before activation and retains previous resources for recovery."
+        description="Restoring this backup replaces your current active library, including books, notes, documents, and media, with its state at backup time. Later changes will no longer appear in your active library. Hosted recovery verifies the replacement before activation and retains previous resources for recovery."
         confirmLabel="Restore library"
         busyLabel="Restoring…"
         [busy]="managedRestoreBusy()"

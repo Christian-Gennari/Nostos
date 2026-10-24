@@ -30,7 +30,7 @@ import { SidebarCollections } from './sidebar-collections/sidebar-collections.co
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
 import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
-import { UNKNOWN_AUTHOR, type BookFormatConcept } from '../core/book-format';
+import { EBOOK_CATEGORY_LABEL_PLURAL, BOOK_FORMAT_LABEL, UNKNOWN_AUTHOR, formatOf, type BookFormatConcept } from '../core/book-format';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { BookSort } from '../core/dtos/book.enums';
@@ -60,7 +60,7 @@ function statusFilterLabel(value: string | null | undefined): string | null {
     case 'reading':
       return READING_STATUS_LABEL.reading;
     case 'favorites':
-      return 'Favorites';
+      return 'Favourites';
     case 'finished':
       return READING_STATUS_LABEL.finished;
     case 'unsorted':
@@ -77,7 +77,7 @@ function formatFilterLabel(value: string | null | undefined): string | null {
       return 'Audiobooks';
     case 'ebook':
     case 'epub':
-      return 'eBooks';
+      return EBOOK_CATEGORY_LABEL_PLURAL;
     case 'pdf':
       return 'PDFs';
     case 'physical':
@@ -789,58 +789,19 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * The list's plain-text format: words in sentence case ("Audio", "Physical")
-   * and file types as the acronyms they are ("EPUB", "PDF"). The grid's badge
-   * keeps `getFormatLabel`, which it sets in capitals.
-   */
-  listFormatLabel(book: Book): string {
-    const label = this.getFormatLabel(book);
-    return label === 'AUDIO' || label === 'PHYSICAL'
-      ? label.charAt(0) + label.slice(1).toLowerCase()
-      : label;
+  /** The list's plain-text format: the one shared name, "Audiobook", "EPUB", "PDF", "Physical". */
+  listFormatLabel(book: Book | EditionSummaryDto): string {
+    return formatOf(book).format;
   }
 
   /** The format icon's concept for one edition, drawn the way its label reads. */
   formatConcept(book: Book): BookFormatConcept {
-    if (book.type === 'audiobook') return 'audiobook';
-    if (this.getFormatLabel(book) === 'PDF') return 'pdf';
-    if (book.type === 'physical') return 'physical';
-    return 'ebook';
+    return formatOf(book).concept;
   }
 
+  /** The grid badge sets the same name in capitals. */
   getFormatLabel(book: Book | EditionSummaryDto): string {
-    const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
-    if (extension) {
-      return extension.toUpperCase();
-    }
-
-    const format = 'format' in book ? book.format?.trim().toLowerCase() : undefined;
-    if (format) {
-      switch (format) {
-        case 'audiobook':
-        case 'audio':
-          return 'AUDIO';
-        case 'ebook':
-        case 'epub':
-          return 'EPUB';
-        case 'physical':
-          return 'PHYSICAL';
-        default:
-          return format.toUpperCase();
-      }
-    }
-
-    switch (book.type) {
-      case 'audiobook':
-        return 'AUDIO';
-      case 'ebook':
-        return 'EPUB';
-      case 'physical':
-        return 'PHYSICAL';
-      default:
-        return book.type.toUpperCase();
-    }
+    return this.listFormatLabel(book).toUpperCase();
   }
 
   getLibraryCoverUrl(book: Book): string | null {
@@ -886,7 +847,7 @@ export class Library implements OnInit, OnDestroy {
       // Format icons come from the semantic registry, so a format means the same
       // glyph here, in the book row and in the audio reader.
       { type: 'audio', icon: NOSTOS_CONCEPTS.audiobook, label: 'Audiobook' },
-      { type: 'epub', icon: NOSTOS_CONCEPTS.ebook, label: 'eBook' },
+      { type: 'epub', icon: NOSTOS_CONCEPTS.ebook, label: BOOK_FORMAT_LABEL.ebook },
       { type: 'pdf', icon: NOSTOS_CONCEPTS.pdf, label: 'PDF' },
       { type: 'physical', icon: NOSTOS_CONCEPTS.physical, label: 'Physical book' },
     ];
@@ -996,7 +957,7 @@ export class Library implements OnInit, OnDestroy {
         this.rawBooks.update((books) =>
           books.map((b) => (b.id === book.id ? { ...b, isFavorite: !newStatus } : b)),
         );
-        this.toast.error('Could not update the favorite');
+        this.toast.error('Could not update the favourite');
       },
     });
   }

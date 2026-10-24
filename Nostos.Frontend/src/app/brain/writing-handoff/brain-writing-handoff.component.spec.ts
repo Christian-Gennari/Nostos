@@ -75,7 +75,7 @@ describe('BrainWritingHandoffComponent', () => {
     expect(keep.disabled).toBe(true);
 
     const group = fixture.nativeElement.querySelector('[role="radiogroup"]') as HTMLElement;
-    expect(group.getAttribute('aria-label')).toBe('Writing destination');
+    expect(group.getAttribute('aria-label')).toBe('Document destination');
     expect(group.querySelectorAll('input[type="radio"]').length).toBe(2);
 
     const destinations = [
@@ -98,7 +98,7 @@ describe('BrainWritingHandoffComponent', () => {
       '#brain-writing-handoff-description'
     ) as HTMLElement;
     expect(description.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      'Keep a reference to this note with a writing. The note stays in Brain; nothing is copied into your text.'
+      'Keep a reference to this note with a document. The note stays in Brain; nothing is copied into your text.'
     );
   });
 
@@ -109,7 +109,7 @@ describe('BrainWritingHandoffComponent', () => {
       '#brain-writing-handoff-description'
     ) as HTMLElement;
     expect(description.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      'Keep references to these 2 notes with a writing. The notes stay in Brain; nothing is copied into your text.'
+      'Keep references to these 2 notes with a document. The notes stay in Brain; nothing is copied into your text.'
     );
   });
 
@@ -158,12 +158,12 @@ describe('BrainWritingHandoffComponent', () => {
     http = TestBed.inject(HttpTestingController);
 
     const loading = fixture.nativeElement.querySelector('nostos-loading-indicator[role="status"]') as HTMLElement;
-    expect(loading?.textContent).toContain('Loading writings');
+    expect(loading?.textContent).toContain('Loading documents');
 
     http.expectOne('/api/writings').error(new ProgressEvent('network-error'));
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
-      'Writings could not be loaded.'
+      'Documents could not be loaded.'
     );
 
     const retry = fixture.nativeElement.querySelector('[role="alert"] button') as HTMLButtonElement;
@@ -178,7 +178,7 @@ describe('BrainWritingHandoffComponent', () => {
     expect(fixture.nativeElement.querySelector('.existing-destination')).toBeTruthy();
   });
 
-  it('preselects New writing when no document destinations exist', async () => {
+  it('preselects New document when no document destinations exist', async () => {
     await create(['note-1'], [folderWriting]);
 
     const newDestination = fixture.nativeElement.querySelector(
@@ -189,7 +189,7 @@ describe('BrainWritingHandoffComponent', () => {
     ) as HTMLButtonElement;
 
     expect(newDestination.checked).toBe(true);
-    expect(fixture.nativeElement.textContent).toContain('No writing documents yet.');
+    expect(fixture.nativeElement.textContent).toContain('No documents yet.');
     expect(fixture.nativeElement.querySelector('.title-field input[appInput]')).toBeTruthy();
     expect(keep.disabled).toBe(true);
   });
@@ -220,7 +220,7 @@ describe('BrainWritingHandoffComponent', () => {
     await create(['note-1'], writings);
 
     const filter = fixture.nativeElement.querySelector(
-      'input[aria-label="Filter existing writings"]'
+      'input[aria-label="Filter existing documents"]'
     ) as HTMLInputElement;
     expect(filter).toBeTruthy();
     filter.value = 'Draft 9';

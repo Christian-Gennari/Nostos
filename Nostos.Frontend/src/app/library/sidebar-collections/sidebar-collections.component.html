@@ -52,10 +52,10 @@
         (click)="toggleStatus('favorites')"
         [class.active]="filters.status() === 'favorites'"
         data-filter-kind="status"
-        title="Favorites"
+        title="Favourites"
       >
         <nostos-icon name="heart" [size]="16" weight="light"></nostos-icon>
-        <span class="label">Favorites</span>
+        <span class="label">Favourites</span>
         @if (statusCounts()?.favorites) {
           <span class="count-badge">{{ statusCounts()?.favorites }}</span>
         }
@@ -111,10 +111,10 @@
         class="nav-item"
         (click)="toggleFormat('ebook')"
         [class.active]="filters.format() === 'ebook'"
-        title="eBooks"
+        title="Ebooks"
       >
         <nostos-icon concept="ebook" [size]="16" weight="light"></nostos-icon>
-        <span class="label">eBooks</span>
+        <span class="label">Ebooks</span>
         @if (statusCounts()?.ebooks) {
           <span class="count-badge">{{ statusCounts()?.ebooks }}</span>
         }

@@ -7,6 +7,7 @@ import type {
   LibraryCollectionChangeDto,
 } from '../assistant.service';
 import { CheckboxDirective } from '../../check/check.directive';
+import { plural } from '../../../core/format';
 
 /** How many books the details list shows before it summarises the rest. */
 const BOOK_LIST_LIMIT = 40;
@@ -103,10 +104,6 @@ export class AssistantChangesetCardComponent {
     const step = changeset.steps[index];
     return step.dependsOn.some((dependency) => !changeset.steps[dependency]?.included);
   }
-}
-
-function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count} ${count === 1 ? one : many}`;
 }
 
 /** One short line of what happens, in the right tense, from the server's totals. */

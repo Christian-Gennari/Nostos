@@ -610,7 +610,7 @@ describe('Library', () => {
 
     expect(component.scopeLabel()).not.toContain('stoic');
     expect(label()).toBe(component.scopeLabel());
-    expect(label()).toContain('Favorites');
+    expect(label()).toContain('Favourites');
     expect(label()).toContain(' · ');
     // Every chip but the search one is a shelf chip, which phones hide because
     // the label above already names it.
@@ -799,7 +799,7 @@ describe('Library', () => {
 
     const format = row.querySelector('.col.format .list-format') as HTMLElement;
     expect(format).toBeTruthy();
-    expect(format.textContent?.trim()).toBe('EPUB');
+    expect(format.textContent?.trim()).toBe('Ebook');
     expect(row.querySelector('.format-badge')).toBeNull();
 
     // Exactly one status cluster per row, holding exactly the two toggles.
@@ -832,7 +832,7 @@ describe('Library', () => {
     const author = card.querySelector('.meta-author') as HTMLElement;
     expect(author.querySelector('.meta-author-name')?.textContent?.trim()).toBe('An Author');
     const marks = Array.from(author.querySelectorAll('.meta-mark')).map((el) => el.getAttribute('aria-label'));
-    expect(marks).toEqual(['Finished', 'Favorite']);
+    expect(marks).toEqual(['Finished', 'Favourite']);
   });
 
   it('leaves the author line bare for a book that is neither finished nor a favourite', () => {
@@ -859,9 +859,9 @@ describe('Library', () => {
 
   it('names list formats in words, keeping file types as acronyms', () => {
     const book = (type: string, fileName: string | null = null) => ({ type, fileName }) as unknown as Book;
-    expect(component.listFormatLabel(book('audiobook'))).toBe('Audio');
+    expect(component.listFormatLabel(book('audiobook'))).toBe('Audiobook');
     expect(component.listFormatLabel(book('physical'))).toBe('Physical');
-    expect(component.listFormatLabel(book('ebook'))).toBe('EPUB');
+    expect(component.listFormatLabel(book('ebook'))).toBe('Ebook');
     expect(component.listFormatLabel(book('ebook', 'paper.pdf'))).toBe('PDF');
   });
 

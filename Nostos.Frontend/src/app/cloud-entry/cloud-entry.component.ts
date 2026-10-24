@@ -1,3 +1,4 @@
+import { NoticeComponent } from '../ui/notice/notice.component';
 import { Component, effect, inject, ChangeDetectionStrategy } from '@angular/core';
 import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { Router } from '@angular/router';
@@ -20,6 +21,7 @@ import { CloudSignInComponent } from './cloud-sign-in.component';
     BrandLockupComponent,
     NostosDatePipe,
     CloudSignInComponent,
+    NoticeComponent,
   ],
   templateUrl: './cloud-entry.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,

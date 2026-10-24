@@ -289,7 +289,7 @@ describe('export resolve (issue #1164)', () => {
       const doc = await resolve([chapter('  \n', 'Blank'), chapter('Words.', 'Full')]);
       expect(doc.sections.map((s) => (s.type === 'chapter' ? s.title : ''))).toEqual(['Full']);
 
-      expect(exportBlockedReason({ type: 'Document', chapters: [{ markdown: ' \n\t' }] as never })).toBe('This writing is empty. Write something to export it.');
+      expect(exportBlockedReason({ type: 'Document', chapters: [{ markdown: ' \n\t' }] as never })).toBe('This document is empty. Write something to export it.');
       expect(exportBlockedReason({ type: 'Folder', chapters: [] })).toBe('This folder has no writings in it yet.');
       expect(exportBlockedReason({ type: 'Folder', chapters: [{ markdown: '' }, { markdown: '\n' }] as never })).toBe('Every writing in this folder is empty.');
       expect(exportBlockedReason({ type: 'Folder', chapters: [{ markdown: '' }, { markdown: 'x' }] as never })).toBeNull();

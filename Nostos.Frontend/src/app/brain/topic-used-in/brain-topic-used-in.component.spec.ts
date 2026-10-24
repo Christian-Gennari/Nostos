@@ -54,7 +54,7 @@ describe('BrainTopicUsedInComponent', () => {
     expect(host.querySelectorAll('button.used-in-chip')).toHaveLength(3);
     const more = host.querySelector('button.used-in-more') as HTMLButtonElement;
     expect(more.textContent?.trim()).toBe('+3');
-    expect(more.getAttribute('aria-label')).toBe('3 more writings');
+    expect(more.getAttribute('aria-label')).toBe('3 more documents');
 
     more.click();
     TestBed.tick();

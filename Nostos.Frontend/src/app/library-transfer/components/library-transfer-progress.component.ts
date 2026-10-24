@@ -74,7 +74,7 @@ export class LibraryTransferProgressComponent {
       : transferProgressLiveText(this.phase(), percent);
   });
 
-  /** "4.7 GiB of 12.9 GiB · 11.8 MiB/s · About 12 minutes remaining". */
+  /** "4.7 GB of 12.9 GB · 11.8 MB/s · About 12 minutes remaining". */
   readonly detailText = computed(() => {
     const total = this.totalBytes();
     const processed = this.bytesProcessed();

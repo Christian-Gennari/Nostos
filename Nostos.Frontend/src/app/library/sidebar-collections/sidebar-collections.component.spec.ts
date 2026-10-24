@@ -406,7 +406,7 @@ describe('SidebarCollections', () => {
       fixture.detectChanges();
 
       const labels = statusButtons().map((el) => el.textContent?.trim());
-      expect(labels).toEqual(['All books', 'Not started', 'Reading', 'Favorites', 'Finished']);
+      expect(labels).toEqual(['All books', 'Not started', 'Reading', 'Favourites', 'Finished']);
     });
 
     it('closes the Collections group with Unsorted, which still filters by status', () => {
@@ -422,7 +422,7 @@ describe('SidebarCollections', () => {
       const marked = Array.from(
         fixture.nativeElement.querySelectorAll('[data-filter-kind="status"] .label') as NodeListOf<HTMLElement>,
       ).map((el) => el.textContent?.trim());
-      expect(marked).toEqual(['All books', 'Not started', 'Reading', 'Favorites', 'Finished', 'Unsorted']);
+      expect(marked).toEqual(['All books', 'Not started', 'Reading', 'Favourites', 'Finished', 'Unsorted']);
 
       unsorted.click();
       fixture.detectChanges();
@@ -445,7 +445,7 @@ describe('SidebarCollections', () => {
       const count = (label: string) =>
         statusButton(label)?.querySelector('.count-badge')?.textContent?.trim() ?? null;
       expect(count('All books')).toBe('3');
-      expect(count('Favorites')).toBe('1');
+      expect(count('Favourites')).toBe('1');
       expect(count('Not started')).toBeNull();
       expect(count('Reading')).toBeNull();
     });

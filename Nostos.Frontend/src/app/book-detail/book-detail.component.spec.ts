@@ -483,7 +483,7 @@ describe('BookDetail reset progress', () => {
     // It precedes the notes feed in document order, so no scrolling past notes.
     expect(nav.compareDocumentPosition(fixture.nativeElement.querySelector('.detail-grid')))
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(editionTrigger()!.textContent?.trim()).toBe('EPUB');
+    expect(editionTrigger()!.textContent?.trim()).toBe('Ebook');
 
     editionMenu().items[0].click();
     expect(navigateSpy).toHaveBeenCalledWith(['/library', 'b2']);
@@ -502,7 +502,7 @@ describe('BookDetail reset progress', () => {
     );
 
     const { items, text } = editionMenu();
-    expect(text).toEqual(['Audiobook · 15% read', 'EPUB · 42% read', 'PDF · Finished']);
+    expect(text).toEqual(['Audiobook · 15% read', 'Ebook · 42% read', 'PDF · Finished']);
     expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, 'page', null]);
     // The status pill keeps the current edition's own figure.
     expect(statusChipButton()?.querySelector('.nostos-dropdown__detail')?.textContent?.trim()).toBe('· 42%');
@@ -526,8 +526,8 @@ describe('BookDetail reset progress', () => {
       }),
     );
 
-    expect(editionTrigger()!.textContent?.trim()).toBe('EPUB · 1st edition');
-    expect(editionMenu().text).toEqual(['EPUB · 1st edition · 42% read', 'EPUB · 2nd edition · Not started']);
+    expect(editionTrigger()!.textContent?.trim()).toBe('Ebook · 1st edition');
+    expect(editionMenu().text).toEqual(['Ebook · 1st edition · 42% read', 'Ebook · 2nd edition · Not started']);
   });
 
   // ── Collapsed notes feed (issue #1062) ──────────────────────────────────────

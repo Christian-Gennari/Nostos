@@ -1,3 +1,4 @@
+import { BOOK_FORMAT_LABEL } from '../../core/book-format';
 import { Component, computed, effect, inject, input, output, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
@@ -362,13 +363,13 @@ export function kindOf(book: {
 function formatLabel(kind: SwitchKind): string {
   switch (kind) {
     case 'audiobook':
-      return 'Audiobook';
+      return BOOK_FORMAT_LABEL.audiobook;
     case 'epub':
-      return 'EPUB';
+      return BOOK_FORMAT_LABEL.ebook;
     case 'pdf':
-      return 'PDF';
+      return BOOK_FORMAT_LABEL.pdf;
     default:
-      return 'EBook';
+      return BOOK_FORMAT_LABEL.ebook;
   }
 }
 

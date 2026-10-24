@@ -79,7 +79,7 @@ import {
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
-import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept } from '../core/book-format';
+import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../core/book-format';
 import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
 
 /** The writing the Studio opens on next time. */
@@ -276,7 +276,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   activeSidebarTab = signal<'brain' | 'notes'>('brain');
 
-  /** Reference surface top-level mode: "For this writing" vs "Library" (issue #491) */
+  /** Reference surface top-level mode: "For this document" vs "Library" (issue #491) */
   referenceMode = signal<'writing' | 'library'>('writing');
 
   /** Kept source notes for the active writing document */
@@ -421,7 +421,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!item) return 'Nothing to export yet';
     if (hasExportableContent(this.editorText())) return null;
     const parent = this.rootItems().find((candidate) => candidate.id === item.id)?.parentId;
-    return parent ? null : 'This writing is empty';
+    return parent ? null : 'This document is empty';
   });
   /** Where the settings open: the page, or the Citations list at a book missing details (#1157). */
   readonly pageSettingsStart = signal<{ view: 'main' | 'citations'; book: string | null }>({ view: 'main', book: null });
@@ -628,7 +628,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
    * kept-source / topic / book context rather than to a generic Library root.
    */
   inspectionReturnLabel = computed(() => {
-    if (this.referenceMode() === 'writing') return 'For this writing';
+    if (this.referenceMode() === 'writing') return 'For this document';
 
     if (this.activeSidebarTab() === 'brain') {
       const topicId = this.selectedTopicId();
@@ -1197,7 +1197,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /**
    * Put the chosen source where `@` was typed, and keep it with the writing so
-   * the Reference rail shows it under "For this writing". A passage is never
+   * the Reference rail shows it under "For this document". A passage is never
    * inserted whole: it opens in the viewer, and the sentences chosen there go
    * where the `@` was.
    */
@@ -1291,7 +1291,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   /**
-   * `/` → Bibliography: every book cited in this writing, in the chosen
+   * `/` → Bibliography: every book cited in this document, in the chosen
    * style. Its entries are live (issue #1157): they follow the style, the
    * books' details and what the writing goes on to cite.
    */
@@ -1316,7 +1316,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       style,
     );
     if (!markdown) {
-      this.toast.info('Nothing is cited in this writing yet');
+      this.toast.info('Nothing is cited in this document yet');
       return;
     }
     if (!editor.insertBlockMarkdown(markdown)) {
@@ -1874,7 +1874,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   sourceProvenance(note: Note): string {
-    const title = note.bookTitle?.trim() || 'Unknown book';
+    const title = note.bookTitle?.trim() || UNKNOWN_BOOK;
     const locator = this.sourceDisplayLocator(note);
     return locator ? `${title} · ${locator}` : title;
   }
@@ -1884,16 +1884,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   keepActionLabel(noteId: string): string {
-    if (!this.activeItem()) return 'Open a writing to keep or insert sources';
-    if (this.keepingNoteIds().has(noteId)) return 'Keeping with this writing';
+    if (!this.activeItem()) return 'Open a document to keep or insert sources';
+    if (this.keepingNoteIds().has(noteId)) return 'Keeping in this document';
     if (this.keptNoteIds().has(noteId)) {
-      return 'Already kept with this writing; no change on click';
+      return 'Already kept in this document; no change on click';
     }
-    return 'Keep with this writing';
+    return 'Keep in this document';
   }
 
   sourceActionDisabledReason(): string | null {
-    if (!this.activeItem()) return 'Open a writing to keep or insert sources';
+    if (!this.activeItem()) return 'Open a document to keep or insert sources';
     if (this.editorWordCount() === null) return 'The editor is not ready for insertion yet';
     return null;
   }
@@ -1952,7 +1952,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       passageTitle: passage.title,
     });
     if (!markdown || !this.activeItem() || !this.markdownEditor) {
-      this.toast.error('Open a writing and place the cursor in the editor first');
+      this.toast.error('Open a document and place the cursor in the editor first');
       return false;
     }
     if (await this.markdownEditor.insertMarkdown(markdown, footnoteOf(styled))) {
@@ -1994,7 +1994,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private async insertSourceMarkdown(markdown: string | null, styled: StyledInsertion | null = null, bookId: string | null = null): Promise<void> {
     if (!markdown) return;
     if (!this.activeItem() || !this.markdownEditor) {
-      this.toast.error('Open a writing and place the cursor in the editor first');
+      this.toast.error('Open a document and place the cursor in the editor first');
       return;
     }
 
@@ -2013,7 +2013,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
     const active = this.activeItem();
     if (!active) {
-      this.toast.error('Open a writing before opening a source');
+      this.toast.error('Open a document before opening a source');
       return;
     }
 
@@ -2103,7 +2103,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         await this.queueWritingSave(current, title, content, generation);
       } catch {
         if (generation === this.saveGeneration) this.saveStatus.set('Unsaved');
-        this.toast.error('Could not save this writing. Your draft is still open.');
+        this.toast.error('Could not save this document. Your draft is still open.');
         return false;
       }
 
@@ -2121,7 +2121,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     // Avoid ever choosing navigation over data safety if the document changes
     // continuously during the flush window.
     this.saveStatus.set('Unsaved');
-    this.toast.error('The writing changed while opening the source. Try again.');
+    this.toast.error('The document changed while opening the source. Try again.');
     return false;
   }
 

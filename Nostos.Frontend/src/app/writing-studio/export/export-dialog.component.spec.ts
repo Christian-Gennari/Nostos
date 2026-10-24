@@ -213,11 +213,31 @@ describe('ExportDialogComponent (issue #1164)', () => {
     expect(fixture.componentInstance.setup()).toEqual({ paper: 'letter', marginMm: 12.7, font: 'inter', lineSpacing: 2, citationStyle: 'apa' });
   });
 
-  it('cannot download an empty writing, and says why', async () => {
+  it('offers Try again after the citations fail, and asks once more', async () => {
+    exporter.resolve.mockRejectedValueOnce(new Error('offline'));
+    const errored = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await open('one');
+      expect(el('export-status')?.textContent).toContain('The citations could not be written');
+      const retry = el('export-retry') as HTMLButtonElement;
+      expect(retry.textContent?.trim()).toBe('Try again');
+
+      retry.click();
+      await settle();
+
+      expect(exporter.resolve).toHaveBeenCalledTimes(2);
+      expect(el('export-retry')).toBeNull();
+      expect((el('export-download') as HTMLButtonElement).disabled).toBe(false);
+    } finally {
+      errored.mockRestore();
+    }
+  });
+
+  it('cannot download an empty document, and says why', async () => {
     await open('empty');
 
     expect((el('export-download') as HTMLButtonElement).disabled).toBe(true);
-    expect(el('export-status')?.textContent).toContain('This writing is empty');
+    expect(el('export-status')?.textContent).toContain('This document is empty');
     expect(exporter.resolve).not.toHaveBeenCalled();
   });
 

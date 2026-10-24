@@ -17,7 +17,7 @@
       <span appIconTile class="handoff-mark" aria-hidden="true">
         <nostos-icon name="bookmark-simple" [size]="20"></nostos-icon>
       </span>
-      <h2 id="brain-writing-handoff-title" tabindex="-1">Keep with writing</h2>
+      <h2 id="brain-writing-handoff-title" tabindex="-1">Keep in a document</h2>
     </div>
     <button
       cdkFocusInitial
@@ -27,7 +27,7 @@
       [glyphSize]="16"
       type="button"
       class="handoff-close"
-      aria-label="Close writing picker"
+      aria-label="Close document picker"
       [disabled]="saving()"
       (click)="cancel()"
     ></button>
@@ -36,20 +36,20 @@
   <div class="handoff-content">
     <p id="brain-writing-handoff-description" class="handoff-description">
       @if (sourceCount() === 1) {
-        Keep a reference to this note with a writing. The note stays in Brain; nothing is copied into your text.
+        Keep a reference to this note with a document. The note stays in Brain; nothing is copied into your text.
       } @else {
-        Keep references to these {{ sourceCount() }} notes with a writing. The notes stay in Brain; nothing is copied into your text.
+        Keep references to these {{ sourceCount() }} notes with a document. The notes stay in Brain; nothing is copied into your text.
       }
     </p>
 
     @if (loadingDestinations()) {
       <div class="handoff-loading">
-        <nostos-loading-indicator label="Loading writings" />
+        <nostos-loading-indicator label="Loading documents" />
       </div>
     } @else if (destinationError()) {
-      <nostos-empty-state class="handoff-error" compact error message="Writings could not be loaded." (retry)="loadDestinations()" />
+      <nostos-empty-state class="handoff-error" compact error message="Documents could not be loaded." (retry)="loadDestinations()" />
     } @else {
-      <div class="handoff-selection" role="radiogroup" aria-label="Writing destination">
+      <div class="handoff-selection" role="radiogroup" aria-label="Document destination">
         <label
           class="destination-option new-destination"
           [class.selected]="newWritingMode()"
@@ -66,8 +66,8 @@
             <nostos-icon name="check" [size]="15"></nostos-icon>
           </span>
           <span class="destination-copy">
-            <strong>New writing</strong>
-            <small>Create a new writing document</small>
+            <strong>New document</strong>
+            <small>Create a new document</small>
           </span>
         </label>
 
@@ -80,7 +80,7 @@
               type="text"
               required
               autocomplete="off"
-              placeholder="Name this writing"
+              placeholder="Name this document"
               [value]="newWritingTitle()"
               [disabled]="saving()"
               (input)="newWritingTitle.set($any($event.target).value)"
@@ -94,18 +94,18 @@
             class="empty-destinations"
             compact
             concept="studio"
-            message="No writing documents yet. Create your first writing to keep this note with it."
+            message="No documents yet. Create your first document to keep this note in it."
           />
         } @else {
           <section class="existing-destinations" aria-labelledby="existing-writing-heading">
-            <h3 id="existing-writing-heading">Existing writing</h3>
+            <h3 id="existing-writing-heading">Existing document</h3>
             @if (documentDestinations().length > 8) {
               <nostos-search-field class="destination-filter">
                 <input
                   appInput
                   type="search"
-                  aria-label="Filter existing writings"
-                  placeholder="Filter writings…"
+                  aria-label="Filter existing documents"
+                  placeholder="Filter documents…"
                   [value]="destinationFilter()"
                   [disabled]="saving()"
                   (input)="destinationFilter.set($any($event.target).value)"
@@ -114,7 +114,7 @@
             }
 
             @if (filteredDestinations().length === 0) {
-              <nostos-empty-state class="empty-destinations filter-empty" compact message="No writings match that filter." />
+              <nostos-empty-state class="empty-destinations filter-empty" compact message="No documents match that filter." />
             } @else {
               <div
                 class="destination-list"
@@ -156,7 +156,7 @@
           [disabled]="saving()"
           (change)="openWritingAfterAdd.set($any($event.target).checked)"
         />
-        <span>Open writing after keeping</span>
+        <span>Open document after keeping</span>
       </label>
     }
   </div>
@@ -176,7 +176,7 @@
       @if (saving()) {
         <span>Keeping…</span>
       } @else {
-        <span>Keep with writing</span>
+        <span>Keep in a document</span>
       }
     </button>
   </app-dialog-actions>

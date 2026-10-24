@@ -334,7 +334,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
     throw new MigrationTransportError(
       'migration_transport_mode_unavailable',
       0,
-      'This host did not answer how library parts should be uploaded. Retry in a moment.',
+      'This host did not answer how library parts should be uploaded. Try again in a moment.',
       { cause: lastError },
     );
   }

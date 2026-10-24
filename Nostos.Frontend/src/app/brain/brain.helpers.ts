@@ -1,3 +1,4 @@
+import { plural } from '../core/format';
 import type { NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
 import type { TopicDto } from '../core/services/topics.service';
 import { normalizeSearchText } from '../core/search-text';
@@ -45,10 +46,8 @@ export function placeTitle(place: BrainPlace, topic: TopicDto | null): string {
   }
 }
 
-/** "1 note", "3 notes". */
-export function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
-}
+/** Re-exported: "1 note", "3 notes" come from core/format.ts. */
+export { plural };
 
 /** "65 notes", "1 passage", "43 notes without a topic". */
 export function countLabel(place: BrainPlace, total: number): string {

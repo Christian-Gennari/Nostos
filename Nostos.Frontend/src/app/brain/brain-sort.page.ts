@@ -48,6 +48,7 @@ import { BrainSortPositionService, sortQueueKey } from './brain-sort-position.se
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
 import { isOrder, stillBelongs } from './brain.helpers';
+import { UNKNOWN_BOOK } from '../core/book-format';
 
 const PAGE_SIZE = 25;
 const RECENT_SHOWN = 6;
@@ -92,6 +93,7 @@ interface Choice {
   host: { '(document:keydown.escape)': 'onEscape($event)' },
 })
 export class BrainSortPage {
+  protected readonly unknownBook = UNKNOWN_BOOK;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly notes = inject(NotesService);

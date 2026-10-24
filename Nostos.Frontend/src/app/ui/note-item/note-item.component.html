@@ -167,7 +167,7 @@
     <span class="note-item-dot" aria-hidden="true">·</span>
     }
     @if (showBook()) {
-    <span class="note-item-book">{{ note().bookTitle || 'Unknown book' }}</span>
+    <span class="note-item-book">{{ note().bookTitle || unknownBook }}</span>
     @if (note().bookAuthor) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ note().bookAuthor }}</span> }
     <span class="note-item-dot" aria-hidden="true">·</span>
     }
@@ -177,7 +177,7 @@
     @if (writings.length) {
     <span class="note-item-dot" aria-hidden="true">·</span>
     <button type="button" class="note-item-cited" [nostosMenuTriggerFor]="citedMenu">
-      Cited in {{ writings.length === 1 ? '1 writing' : writings.length + ' writings' }}
+      Cited in {{ writings.length === 1 ? '1 document' : writings.length + ' documents' }}
     </button>
     <ng-template #citedMenu>
       <nostos-menu aria-label="Writings that cite this note">
@@ -218,7 +218,7 @@
 <ng-template #noteMenu>
   <nostos-menu aria-label="Note actions">
     <button nostosMenuItem icon="pencil-simple" (triggered)="startEdit()">Edit note</button>
-    <button nostosMenuItem icon="bookmark-simple" (triggered)="keepWithWriting.emit()">Keep with writing…</button>
+    <button nostosMenuItem icon="bookmark-simple" (triggered)="keepWithWriting.emit()">Keep in a document…</button>
     @if (showMoreFromBook()) {
     <button nostosMenuItem icon="books" (triggered)="moreFromBook.emit()">More from this book</button>
     }

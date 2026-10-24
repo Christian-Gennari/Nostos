@@ -42,6 +42,7 @@ import {
 } from '../topic-picker-popover/topic-picker-popover.component';
 import { inlineTopicHref, noteLocationLabel, thoughtForDisplay, topicLookup } from './note-item.helpers';
 import type { Note } from '../../core/dtos/note.dtos';
+import { UNKNOWN_BOOK } from '../../core/book-format';
 
 /** What an edit changed. Fields that did not change are absent. */
 export interface NoteItemEdit {
@@ -115,6 +116,7 @@ export interface CitingWriting {
   },
 })
 export class NoteItemComponent {
+  protected readonly unknownBook = UNKNOWN_BOOK;
   readonly note = input.required<NoteSearchHit>();
   /** Every topic, for the picker. */
   readonly topics = input<readonly TopicDto[]>([]);

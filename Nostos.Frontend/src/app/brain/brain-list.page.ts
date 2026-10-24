@@ -64,6 +64,7 @@ import {
   type BrainPlace,
 } from './brain.helpers';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { UNKNOWN_BOOK } from '../core/book-format';
 
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -113,6 +114,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class BrainListPage {
+  protected readonly unknownBook = UNKNOWN_BOOK;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly notesService = inject(NotesService);
@@ -178,7 +180,7 @@ export class BrainListPage {
   readonly orderOptions: DropdownOption[] = ORDERS.map((value) => ({ value, label: ORDER_LABELS[value] }));
   readonly bookOptions = computed<DropdownOption[]>(() => [
     { value: '', label: 'All books' },
-    ...this.books().map((book) => ({ value: book.bookId, label: `${book.bookTitle || 'Unknown book'} (${book.noteCount})` })),
+    ...this.books().map((book) => ({ value: book.bookId, label: `${book.bookTitle || UNKNOWN_BOOK} (${book.noteCount})` })),
   ]);
   readonly bookTitle = computed(() => {
     const id = this.bookId();

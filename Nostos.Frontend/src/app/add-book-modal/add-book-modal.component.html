@@ -131,10 +131,10 @@
                   <span class="review-eyebrow">{{ isEditMode() ? 'Library record' : 'Ready to add' }}</span>
                   @if (seededFromSource()) {
                     <strong>From {{ seededSourceName() }}</strong>
-                    <span>{{ selectedAssetLabel() || (form.type === 'audiobook' ? 'Audiobook' : 'E-book') }}</span>
+                    <span>{{ selectedAssetLabel() || (form.type === 'audiobook' ? 'Audiobook' : 'Ebook') }}</span>
                   } @else if (flowIntent() === 'upload' || (flowIntent() === 'manual' && selectedFile())) {
                     <strong>{{ fileSummary() }}</strong>
-                    <span>{{ form.type === 'audiobook' ? 'Audiobook file' : 'E-book file' }}</span>
+                    <span>{{ form.type === 'audiobook' ? 'Audiobook file' : 'Ebook file' }}</span>
                   } @else if (flowIntent() === 'physical') {
                     <strong>Physical book</strong>
                     <span>Identify it by ISBN or enter the essentials yourself.</span>
@@ -174,7 +174,7 @@
                     [disabled]="isSubmitting()"
                     (click)="retryUpload()"
                   >
-                    Retry upload
+                    Try again
                   </button>
                 </div>
               }
@@ -1076,7 +1076,7 @@
                       ? 'Uploading…'
                       : 'Adding…'
                   : hasPendingUpload()
-                    ? 'Retry upload'
+                    ? 'Try again'
                     : isEditMode()
                       ? 'Save changes'
                       : seededFromSource()
