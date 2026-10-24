@@ -40,6 +40,7 @@ import { RadioDirective } from '../ui/check/check.directive';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
+import { planLimitMessage } from '../core/plan-limit-message';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -731,6 +732,8 @@ export class AddBookModal {
   }
 
   private describeUploadFailure(error: unknown): string {
+    const limit = planLimitMessage(error);
+    if (limit) return limit;
     const status = (error as { status?: number } | null)?.status;
     if (status === 0) {
       return 'The connection was interrupted. Your book is saved; retry the file when you are ready.';
