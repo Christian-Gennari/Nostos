@@ -4,30 +4,17 @@
       </header>
       <div class="settings-shell">
         @if (capabilitiesLoading()) {
-          <main class="settings-content" data-testid="settings-capabilities-loading">
-            <section class="settings-card">
-              <div class="card-body">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text">Loading settings…</span>
-                    <span class="label-desc">Checking which controls this Nostos server provides.</span>
-                  </div>
-                </div>
-              </div>
-            </section>
+          <main class="settings-content settings-state" data-testid="settings-capabilities-loading">
+            <nostos-loading-indicator label="Loading settings" />
           </main>
         } @else if (capabilitiesFailed()) {
-          <main class="settings-content" data-testid="settings-capabilities-error">
-            <section class="settings-card">
-              <div class="card-body">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text">Could not load settings</span>
-                    <span class="label-desc">Nostos could not determine which controls are available. Reload the page to try again.</span>
-                  </div>
-                </div>
-              </div>
-            </section>
+          <main class="settings-content settings-state" data-testid="settings-capabilities-error">
+            <nostos-empty-state
+              error
+              message="Could not load settings"
+              detail="Nostos could not determine which controls are available."
+              (retry)="retryCapabilities()"
+            />
           </main>
         } @else {
         <nav class="side-nav settings-nav" role="tablist" aria-label="Settings sections">
@@ -264,24 +251,20 @@
                 </p>
 
                 @if (providerSettingsLoading()) {
-                  <div class="setting-row" data-testid="book-providers-loading">
-                    <div class="setting-label">
-                      <span class="label-text">{{ copyProviders.loading }}</span>
-                    </div>
+                  <div class="settings-pane-loading" data-testid="book-providers-loading">
+                    <nostos-loading-indicator [label]="copyProviders.loading" />
                   </div>
                 } @else if (providerSettingsError()) {
-                  <div class="setting-row" data-testid="book-providers-load-failed">
-                    <div class="setting-label">
-                      <span class="label-text">{{ copyProviders.loadFailed }}</span>
-                      <span class="label-desc">{{ copyProviders.loadFailedHelp }}</span>
-                    </div>
-                  </div>
+                  <nostos-empty-state
+                    compact
+                    error
+                    data-testid="book-providers-load-failed"
+                    [message]="copyProviders.loadFailed"
+                    [detail]="copyProviders.loadFailedHelp"
+                    (retry)="loadProviderSettings()"
+                  />
                 } @else if (providerSettings().length === 0) {
-                  <div class="setting-row" data-testid="book-providers-empty">
-                    <div class="setting-label">
-                      <span class="label-text">{{ copyProviders.empty }}</span>
-                    </div>
-                  </div>
+                  <nostos-empty-state compact data-testid="book-providers-empty" [message]="copyProviders.empty" />
                 } @else {
                   @for (provider of providerSettings(); track provider.id) {
                     <div class="setting-row" [attr.data-testid]="'provider-row-' + provider.id">
@@ -336,12 +319,13 @@
 
         <div class="card-body">
           @if (opdsFailed() || (managedEreaderAccess() && managedOpdsFailed())) {
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text">Could not read this setting</span>
-                <span class="label-desc">Nostos could not load your e-reader access details. Reload the page to try again.</span>
-              </div>
-            </div>
+            <nostos-empty-state
+              compact
+              error
+              message="Could not read this setting"
+              detail="Nostos could not load your e-reader access details."
+              (retry)="retryEreaderAccess()"
+            />
           } @else if (opds(); as info) {
             @if (managedEreaderAccess()) {
               @if (info.enabled && info.catalogUrl) {
@@ -443,10 +427,8 @@
                     </div>
                   }
                 } @else {
-                  <div class="setting-row">
-                    <div class="setting-label">
-                      <span class="label-text">Loading e-reader access…</span>
-                    </div>
+                  <div class="settings-pane-loading">
+                    <nostos-loading-indicator label="Loading e-reader access" />
                   </div>
                 }
               } @else {
@@ -635,7 +617,10 @@
             <div class="setting-label">
               @if (managedAiUsageFailed()) {
                 <span class="label-text">Could not load usage</span>
-                <span class="label-desc">Nostos could not read your managed AI allowance. Reload Settings to try again.</span>
+                <span class="label-desc" role="alert">
+                  Nostos could not read your managed AI allowance.
+                  <button appButton variant="link" size="sm" type="button" (click)="loadManagedAiUsage()">Try again</button>
+                </span>
               } @else if (managedAiUsage(); as usage) {
                 <span class="label-text">Included allowance</span>
                 <span class="label-desc">
@@ -645,8 +630,8 @@
                   }
                 </span>
               } @else {
-                <span class="label-text">Loading usage…</span>
-                <span class="label-desc">Checking your current Ask Nostos allowance.</span>
+                <span class="label-text">Included allowance</span>
+                <span class="label-desc"><nostos-loading-indicator size="sm" label="Loading usage" /></span>
               }
             </div>
             @if (cloudAccountManagementUrl(); as accountUrl) {
@@ -693,12 +678,13 @@
 
         @if (aiLoadFailed()) {
           <div class="card-body">
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="label-text">{{ copy.loadFailed }}</span>
-                <span class="label-desc">The server did not answer the request for the current settings. Reload the page to try again.</span>
-              </div>
-            </div>
+            <nostos-empty-state
+              compact
+              error
+              [message]="copy.loadFailed"
+              detail="The server did not answer the request for the current settings."
+              (retry)="loadAiProvider()"
+            />
           </div>
         } @else {
           <div class="card-body">
@@ -1595,9 +1581,7 @@
         </div>
 
         @if (history().length === 0) {
-          <div class="empty-state">
-            No backups yet. Create your first backup to get started.
-          </div>
+          <nostos-empty-state compact icon="archive" message="No backups yet. Create your first backup to get started." />
         } @else {
           <div class="card-body">
             <button
@@ -1711,13 +1695,17 @@
 
           <div class="card-body">
             @if (managedBackupsLoading()) {
-              <p class="label-desc" role="status" aria-live="polite" data-testid="managed-backups-loading">
-                Loading backups…
-              </p>
+              <div class="settings-pane-loading" data-testid="managed-backups-loading">
+                <nostos-loading-indicator label="Loading backups" />
+              </div>
             } @else if (managedBackupsFailed()) {
-              <p class="label-desc" role="alert" data-testid="managed-backups-error">
-                Backups could not be loaded. Reload Settings to try again.
-              </p>
+              <nostos-empty-state
+                compact
+                error
+                data-testid="managed-backups-error"
+                message="Backups could not be loaded."
+                (retry)="retryManagedBackups()"
+              />
             } @else if (managedBackups(); as listing) {
               <p class="label-desc card-purpose" data-testid="managed-backups-retention">
                 Nostos backs up your library every night and keeps each backup for up to
@@ -1778,9 +1766,7 @@
                   }
                 }
               } @else {
-                <p class="empty-state" data-testid="managed-backups-empty">
-                  No nightly backups are available yet.
-                </p>
+                <nostos-empty-state compact data-testid="managed-backups-empty" message="No nightly backups are available yet." />
               }
             }
 

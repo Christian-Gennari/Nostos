@@ -159,12 +159,15 @@
   left: 50%;
   z-index: 1;
   margin: 0;
+  width: auto;
+  max-width: calc(100% - 2rem);
   transform: translate(-50%, -50%);
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  text-align: center;
   pointer-events: none;
+}
+
+/* A failed load offers "Try again": that one takes the pointer. */
+.map-status.is-actionable {
+  pointer-events: auto;
 }
 
 /*

@@ -220,13 +220,6 @@
 
 .empty-destinations {
   flex: 0 0 auto;
-  margin: 0.35rem 0 0;
-  padding: 0.8rem 0.9rem;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-surface);
-  color: var(--color-text-muted);
-  font-size: 0.84rem;
-  line-height: 1.5;
 }
 
 .filter-empty {
@@ -247,9 +240,9 @@
 
 
 .handoff-loading {
-  display: grid;
-  gap: 0.55rem;
-  padding-block: 0.2rem;
+  display: flex;
+  justify-content: center;
+  padding: 2.5rem 0;
 }
 
 @media (pointer: coarse), (hover: none) {
@@ -258,40 +251,6 @@
   }
 }
 
-.loading-copy {
-  margin-bottom: 0.2rem;
-  color: var(--color-text-muted);
-  font-size: 0.86rem;
-}
-
-.loading-row {
-  height: 3.15rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  background: var(--bg-surface-alt);
-  animation: loading-pulse 1.2s ease-in-out infinite alternate;
-}
-
-.handoff-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 5rem;
-  padding: 0.8rem 0;
-}
-
-.handoff-error p {
-  margin: 0;
-  color: var(--color-danger);
-  font-size: 0.9rem;
-}
-
-@keyframes loading-pulse {
-  to {
-    opacity: 0.52;
-  }
-}
 
 @media (max-width: 768px) {
   .handoff-header {
@@ -360,8 +319,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .destination-option,
-  .loading-row {
+  .destination-option {
     animation: none;
     transition: none;
   }

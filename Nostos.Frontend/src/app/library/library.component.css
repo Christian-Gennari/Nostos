@@ -167,38 +167,9 @@ app-sidebar-collections.no-transition {
   animation: chip-in 180ms var(--ease-out) both;
 }
 
+/* <nostos-empty-state> owns the look; in the grid it spans every column. */
 .books-empty-state {
   grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 3rem 1rem;
-  text-align: center;
-  color: var(--color-text-light);
-}
-
-.books-empty-state p {
-  margin: 0;
-  font-size: 1rem;
-  color: var(--color-text-main);
-}
-
-/* A failed load-more: the list end says so and offers the retry in the place
-   the next page would have loaded. */
-.books-load-more-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 2rem 0;
-  width: 100%;
-  color: var(--color-text-muted);
-}
-
-.books-load-more-error p {
-  margin: 0;
-  font-size: 0.95rem;
 }
 
 /* NEW: Search Bar Styles */
@@ -248,7 +219,6 @@ app-sidebar-collections.no-transition {
 .table-view {
   --table-grid-cols: minmax(260px, 3.2fr) minmax(130px, 1.6fr) 90px 90px minmax(90px, 110px);
   width: 100%;
-  padding-bottom: 7.5rem;
 }
 
 .table-header {
@@ -618,6 +588,11 @@ app-sidebar-collections.no-transition {
   /* A little more between rows than between columns, so each card's title
      reads with its own cover rather than the one below it. */
   gap: 3rem 2.5rem;
+}
+
+/* The clearance under the floating dock belongs to the page's end, after the
+   list end's spinner or Try again, not between the last row and them. */
+.container.lg {
   padding-bottom: 7.5rem;
 }
 

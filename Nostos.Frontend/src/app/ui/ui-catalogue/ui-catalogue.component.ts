@@ -30,6 +30,8 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
 import { BookCoverComponent } from '../book-cover/book-cover.component';
 import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
 import { QuoteBlockComponent } from '../quote-block/quote-block.component';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
+import { PagingStatusComponent } from '../paging-status/paging-status.component';
 import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import type { HighlightColour } from '../../reader/highlight-colours';
@@ -79,6 +81,8 @@ import { SettingsPopoverComponent } from '../settings-popover/settings-popover.c
     QuoteBlockComponent,
     TopicChipComponent,
     TopicOptionComponent,
+    EmptyStateComponent,
+    PagingStatusComponent,
   ],
   templateUrl: './ui-catalogue.component.html',
   styleUrl: './ui-catalogue.component.css',

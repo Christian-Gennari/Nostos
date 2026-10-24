@@ -92,6 +92,13 @@ export class BookDetailStore {
     this.loadCollections();
   }
 
+  /** Reads the book again after it failed to load. */
+  retry(id: string) {
+    this.error.set(null);
+    this.loadBook(id);
+    this.loadNotes(id);
+  }
+
   loadBook(id: string, options: { background?: boolean } = {}) {
     if (!options.background) this.loading.set(true);
 

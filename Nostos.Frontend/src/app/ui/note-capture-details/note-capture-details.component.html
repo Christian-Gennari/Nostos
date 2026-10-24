@@ -17,7 +17,7 @@
       </div>
       <div class="original-body" [attr.aria-busy]="loading()">
         @if (loading()) {
-          <p class="capture-help" role="status">Loading original…</p>
+          <nostos-loading-indicator class="capture-loading" label="Loading original" />
         }
         @if (original()) {
           <p class="original-text" data-testid="note-original-text">{{ original() }}</p>

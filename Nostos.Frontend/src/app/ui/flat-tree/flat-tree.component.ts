@@ -13,6 +13,7 @@ import { buildFlatTree, FlatTreeNode, TreeItem } from './flat-tree.helper';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { InlineRenameComponent } from '../inline-rename/inline-rename.component';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
 
 export interface DropIndicator {
   nodeId: string;
@@ -21,7 +22,7 @@ export interface DropIndicator {
 
 @Component({
   selector: 'app-flat-tree',
-  imports: [IconButtonComponent, InlineRenameComponent, DragDropModule, NostosIconComponent],
+  imports: [IconButtonComponent, InlineRenameComponent, DragDropModule, NostosIconComponent, EmptyStateComponent],
   templateUrl: './flat-tree.component.html',
   styleUrls: ['./flat-tree.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

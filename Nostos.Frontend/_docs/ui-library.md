@@ -31,6 +31,9 @@ ARIA contract, geometry, or state model is part of the product surface.
   interactions through a generic primitive just to remove CSS.
 - A shared appearance does not imply shared semantics: segmented controls deliberately
   share a recipe rather than one ARIA-switching component.
+- Use **`nostos-empty-state`** for "nothing here" and "could not be loaded", with
+  **Try again** as the one retry label; **`nostos-loading-indicator`** for page and
+  pane loads; **`nostos-paging-status`** at the end of a paged list.
 - Font sizes come from the type steps in `styles.css` where one fits:
   `--text-xs` 0.75rem, `--text-sm` 0.875rem, `--text-md` 1rem, `--text-lg` 1.15rem,
   `--text-xl` 1.35rem, `--text-2xl` 2.1rem. Each is the literal the stylesheets
@@ -847,6 +850,86 @@ The Studio's page: a TipTap editor that loads and saves Markdown.
 
 ---
 
+## EmptyStateComponent
+
+**Selector:** `nostos-empty-state`
+**File:** `src/app/ui/empty-state/`
+
+What a page or pane says when it has nothing to show, or when a load failed
+(issue #1202). One look everywhere: centred in the space it is given, an
+optional quiet glyph (`icon` or `concept`), one line in the reading ink, an
+optional quieter `detail` line, and the projected actions under them. No box,
+border or fill. `compact` is the same for a narrow pane (a sidebar list, the
+Reader's notes panel, a Studio reference pane, a settings card): less air, a
+24px glyph and the small type step.
+
+`error` makes it the in-page failure state: `role="alert"` and a **Try again**
+button that emits `retry` (`TRY_AGAIN` is the one retry label). Set
+`[retryable]="false"` when nothing can be retried; the message then says what
+to do. Projected actions (Back, Clear filters) sit before the retry.
+
+```html
+<nostos-empty-state concept="note" message="No notes yet." detail="Highlight text to add one." />
+<nostos-empty-state error message="Your books could not be loaded." (retry)="retryLoad()" />
+<nostos-empty-state compact message="No books match this search." />
+```
+
+| Input       | Type                     | Default | Description |
+| ----------- | ------------------------ | ------- | ----------- |
+| `icon`      | `NostosIconName \| null` | `null`  | A glyph; prefer `concept` for a Nostos thing |
+| `concept`   | `NostosConcept \| null`  | `null`  | A semantic icon (`note`, `topic`, `unsorted`…) |
+| `message`   | `string \| null`         | `null`  | The one line |
+| `detail`    | `string \| null`         | `null`  | A quieter second line |
+| `compact`   | `boolean`                | `false` | The narrow-pane variant |
+| `error`     | `boolean`                | `false` | A failed load: alert + Try again |
+| `retryable` | `boolean`                | `true`  | Whether `error` offers Try again |
+
+Loading uses `nostos-loading-indicator` for page and pane loads, not text or
+skeleton rows: the call site centres it where the content will be.
+
+---
+
+## PagingStatusComponent
+
+**Selector:** `nostos-paging-status`
+**File:** `src/app/ui/paging-status/`
+
+The end of a paged list (Library, Brain): the next page loads as the reader
+scrolls toward it (`InfiniteScrollDirective` on the list end), a small spinner
+shows while it comes, and a failed page is replaced in place by its message and
+an inline **Try again**. Nothing is asked again on its own after a failure.
+
+A **Load more** button stays in the tab order for keyboards and screen readers:
+out of sight until focused while scrolling does the work, and visible where the
+browser has no `IntersectionObserver`.
+
+```html
+<nostos-paging-status
+  [hasMore]="notes().length < total()"
+  [loading]="loading()"
+  [failed]="failed()"
+  [root]="scroller"
+  label="Loading more notes"
+  failedMessage="More notes could not be loaded."
+  (more)="loadMore()"
+  (retry)="loadPage()"
+/>
+```
+
+| Input           | Type              | Default                       | Description |
+| --------------- | ----------------- | ----------------------------- | ----------- |
+| `hasMore`       | `boolean`         | `false`                       | Whether a next page exists; nothing is drawn otherwise |
+| `loading`       | `boolean`         | `false`                       | A page is on its way |
+| `failed`        | `boolean`         | `false`                       | The last page failed |
+| `label`         | `string`          | `'Loading more'`              | What the spinner announces |
+| `failedMessage` | `string`          | `'More could not be loaded.'` | The failure line |
+| `root`          | `Element \| null` | `null`                        | The scrolling element; null is the viewport |
+| `rootMargin`    | `string`          | `'200px 0px'`                 | How far ahead to ask |
+
+Outputs: `more` (the end came into view, or Load more was pressed) and `retry`.
+
+---
+
 ## ToastContainerComponent
 
 **Selector:** `app-toast-container`  
@@ -912,10 +995,14 @@ desktop/mobile widths in light and dark themes.
 **Selector:** `[appInfiniteScroll]`  
 **File:** `src/app/core/directives/infinite-scroll.directive.ts`
 
-Attaches an `IntersectionObserver` to the host element (100px rootMargin). Emits `(scrolly)` when the element enters the viewport.
+The paging sentinel shared by Library and Brain (through `nostos-paging-status`).
+Emits `(reached)` when the host comes within `rootMargin` of `root` (the
+viewport by default). While `paused` is true (a page is loading, or the last
+one failed) nothing is emitted; when it turns false the host is observed
+afresh, so a list end still in view after a short page asks for the next one.
 
 ```html
-<div appInfiniteScroll (scrolly)="loadMore()"></div>
+<div appInfiniteScroll [root]="scroller" rootMargin="600px 0px" [paused]="loading()" (reached)="loadMore()"></div>
 ```
 
 ### TopicAutocompleteDirective

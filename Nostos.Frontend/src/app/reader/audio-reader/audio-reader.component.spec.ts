@@ -1368,7 +1368,7 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
     expect(reloaded.play).toHaveBeenCalled();
   });
 
-  it('shows the error with a Retry action once the reloads run out', () => {
+  it('shows the error with a Try again action once the reloads run out', () => {
     let fakePlayer = startPlaying();
     fakePlayer.config.onloaderror();
     for (const delay of AudioReader.RELOAD_DELAYS_MS) {
@@ -1382,7 +1382,7 @@ describe('AudioReader recovers from a dropped connection (issue #1058)', () => {
     expect(component.loadError()).toBe('Unable to load audio.');
     const error = fixture.nativeElement.querySelector('[data-testid="audio-load-error"]') as HTMLElement;
     const retry = error.querySelector('button') as HTMLButtonElement;
-    expect(retry.textContent).toContain('Retry');
+    expect(retry.textContent).toContain('Try again');
 
     retry.click();
     const reloaded = withPosition(mockPlayer(component));

@@ -143,9 +143,6 @@
   }
 
   @if (treeNodes().length === 0 && !isDragging()) {
-    <div class="empty-state" role="status">
-      <nostos-icon name="folder-open" [size]="15" weight="light"></nostos-icon>
-      <span>{{ emptyLabel() }}</span>
-    </div>
+    <nostos-empty-state compact [message]="emptyLabel()" />
   }
 </div>

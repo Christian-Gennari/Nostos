@@ -76,9 +76,9 @@
         </div>
         } @empty {
           @if (state.topicsLoaded()) {
-          <p class="topics-empty">Topics appear when you add one to a note.</p>
+          <nostos-empty-state compact message="Topics appear when you add one to a note." />
           } @else if (state.topicsFailed()) {
-          <p class="topics-empty" role="alert">Topics could not be loaded.</p>
+          <nostos-empty-state compact error message="Topics could not be loaded." (retry)="state.refresh()" />
           }
         }
       </div>

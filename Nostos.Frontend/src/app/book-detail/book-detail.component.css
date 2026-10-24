@@ -967,12 +967,6 @@
   margin-top: 1rem;
 }
 
-.notes-empty {
-  margin: 0;
-  padding: 1rem 0;
-  font-size: 0.9rem;
-  color: var(--color-text-light);
-}
 .edit-box {
   position: relative;
   background: var(--bg-surface);
@@ -990,14 +984,9 @@
   color: var(--color-text-light);
   font-style: italic;
 }
+/* <nostos-empty-state> owns the look; the page gives it more air. */
 .error-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
-  text-align: center;
-  color: var(--color-text-muted);
+  padding-block: 4rem;
 }
 /* Keep the positioning context for book content and its overlays. */
 .layout-content {

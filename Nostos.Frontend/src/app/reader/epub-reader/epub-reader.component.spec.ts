@@ -377,7 +377,7 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     expect(overlay!.textContent).toContain('Could not open this EPUB');
     expect([...overlay!.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
       'Back',
-      'Retry',
+      'Try again',
     ]);
     // A failed open must not report progress: the write barrier stays closed.
     expect(booksService.updateProgress.mock.calls.length).toBe(updatesBefore);

@@ -439,11 +439,20 @@
 }
 
 /* --- Empty State --- */
-.empty-state {
-  padding: 24px 0;
-  text-align: left;
-  color: var(--color-text-light);
-  font-size: var(--text-sm);
+/* A whole page or one card waiting: the shared indicator, centred. */
+.settings-state {
+  display: flex;
+  justify-content: center;
+}
+
+.settings-state nostos-loading-indicator {
+  padding: 4rem 0;
+}
+
+.settings-pane-loading {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0;
 }
 
 /* --- History List --- */

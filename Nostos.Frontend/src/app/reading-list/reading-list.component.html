@@ -51,15 +51,10 @@
   </form>
 
   @if (loadFailed()) {
-    <div class="reading-list__notice" role="alert">
-      <p>The reading list could not be loaded.</p>
-      <button appButton variant="secondary" type="button" (click)="reload()">Try again</button>
-    </div>
+    <nostos-empty-state error message="The reading list could not be loaded." (retry)="reload()" />
   } @else if (loaded()) {
     @if (count() === 0) {
-      <p class="reading-list__empty">
-        Nothing here yet. Add the first book you want to read.
-      </p>
+      <nostos-empty-state icon="bookmark-simple" message="Nothing here yet. Add the first book you want to read." />
     } @else {
       <section class="tier" aria-labelledby="next-up-heading">
         <div class="tier__head">
@@ -74,9 +69,11 @@
         </div>
 
         @if (next().length === 0) {
-          <p class="tier__empty">
-            Nothing lined up. Move a book here from Someday when you know it's coming soon.
-          </p>
+          <nostos-empty-state
+            class="tier__empty"
+            compact
+            message="Nothing lined up. Move a book here from Someday when you know it's coming soon."
+          />
         } @else {
           <ol class="shelf">
             @for (entry of next(); track entry.id; let first = $first; let last = $last) {
@@ -214,7 +211,7 @@
         </div>
 
         @if (someday().length === 0) {
-          <p class="tier__empty">Everything you want to read is lined up.</p>
+          <nostos-empty-state class="tier__empty" compact message="Everything you want to read is lined up." />
         } @else {
           <ul class="someday">
             @for (entry of someday(); track entry.id) {
@@ -316,6 +313,8 @@
         }
       </section>
     }
+  } @else {
+    <nostos-loading-indicator class="reading-list__loading" label="Loading the reading list" />
   }
 </div>
 

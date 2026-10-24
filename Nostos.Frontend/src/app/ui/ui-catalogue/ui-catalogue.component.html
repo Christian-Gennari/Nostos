@@ -651,6 +651,42 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-states">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-states">Empty, failed and paging states</h2>
+      </div>
+      <p>What a page or pane says when it has nothing, or when a load failed. Centred, no box; "Try again" is the only retry label.</p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Page</span>
+        <nostos-empty-state concept="note" message="No notes yet." detail="Highlight text or use the box above to add one.">
+          <button appButton variant="secondary" size="sm" type="button">Clear filters</button>
+        </nostos-empty-state>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Failed load</span>
+        <nostos-empty-state error message="Your books could not be loaded." />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Compact, for panes</span>
+        <nostos-empty-state compact message="No notes linked to this topic." />
+        <nostos-empty-state compact error message="Topics could not be loaded." />
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">List end</span>
+        <nostos-paging-status hasMore loading label="Loading more example" />
+        <nostos-paging-status hasMore failed failedMessage="More notes could not be loaded." />
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-book-cover">
     <div class="catalogue-section-heading">
       <div>

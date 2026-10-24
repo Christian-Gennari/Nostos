@@ -7,6 +7,7 @@
 .original-body { padding: 1.25rem 1.5rem; }
 .original-text { margin: 0; color: var(--color-text-main); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .capture-help { color: var(--color-text-muted); line-height: 1.5; }
+.capture-loading { display: flex; padding: 1rem 0; }
 @media (max-width: 768px) {
   .original-body { padding: 1rem; }
 }

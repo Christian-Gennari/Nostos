@@ -4,14 +4,14 @@
 
     <!-- Status sits ON the stage, centred, rather than in a strip below it. -->
     @if (loading()) {
-    <p class="map-status" role="status" aria-live="polite">Loading graph…</p>
+    <nostos-loading-indicator class="map-status" label="Loading graph" />
+    } @else if (loadFailed()) {
+    <nostos-empty-state class="map-status is-actionable" compact error message="The map could not be loaded." (retry)="retryLoad()" />
     } @else if (noConnections()) {
     @if (searchQuery.trim()) {
-    <p class="map-status" role="status" aria-live="polite">
-      No topics match “{{ searchQuery.trim() }}”.
-    </p>
+    <nostos-empty-state class="map-status" compact message="No topics match “{{ searchQuery.trim() }}”." />
     } @else {
-    <p class="map-status" role="status" aria-live="polite">No connections yet</p>
+    <nostos-empty-state class="map-status" compact concept="topicMap" message="No connections yet" />
     }
     }
 

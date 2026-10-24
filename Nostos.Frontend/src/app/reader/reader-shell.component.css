@@ -241,28 +241,6 @@
   gap: 0;
   background-color: var(--bg-surface);
 }
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  color: var(--color-text-muted);
-  text-align: center;
-}
-.empty-state nostos-icon {
-  color: var(--color-text-faint);
-}
-.empty-state p {
-  margin: 1rem 0 0.5rem 0;
-  font-weight: var(--fw-medium);
-  color: var(--color-text-main);
-  font-size: 0.85rem;
-}
-.empty-state small {
-  color: var(--color-text-light);
-  font-size: 0.78rem;
-}
 .toc-list {
   flex: 1;
   overflow-y: auto;
@@ -353,36 +331,10 @@
   border-color: var(--primary-fill);
 }
 
+/* <nostos-empty-state> owns the look; here it is centred in the reading pane. */
 .reader-load-error {
   margin: auto;
   width: min(32rem, calc(100% - 2rem));
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  text-align: center;
-  color: var(--color-text-muted);
-}
-.reader-load-error nostos-icon {
-  color: var(--color-text-light);
-}
-.reader-load-error h2 {
-  margin: 0;
-  font-family: 'Newsreader', serif;
-  font-size: 1.25rem;
-  color: var(--color-text-main);
-}
-.reader-load-error p {
-  margin: 0;
-  line-height: 1.5;
-}
-.reader-load-error-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
 }
 .reader-save-feedback {
   position: absolute;

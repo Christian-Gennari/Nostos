@@ -69,6 +69,7 @@ import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { ExternalMediaBookStatus, ExternalMediaService } from '../core/services/external-media.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
@@ -110,6 +111,7 @@ interface StatusConfirmCopy {
     ...NOSTOS_MENU,
     DropdownComponent,
     EditionSwitcherComponent,
+    EmptyStateComponent,
   ],
   providers: [BookDetailStore, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './book-detail.component.html',
@@ -405,11 +407,20 @@ export class BookDetail implements OnInit, OnDestroy {
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (id) {
+        this.routeBookId = id;
         this.notesExpanded.set(false);
         this.store.loadAllData(id);
       }
     });
   }
+
+  /** "Try again" after the book failed to load. */
+  retryLoad(): void {
+    if (this.routeBookId) this.store.retry(this.routeBookId);
+  }
+
+  /** The book the route asked for, kept for "Try again". */
+  private routeBookId: string | null = null;
 
   // --- UI Actions (Delegating to Store) ---
 

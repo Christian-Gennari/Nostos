@@ -1201,18 +1201,6 @@
   scrollbar-width: thin;
 }
 
-.reference-empty-state {
-  padding: 1.15rem 0.7rem;
-  color: var(--color-text-muted);
-  font-size: 0.84rem;
-  line-height: 1.55;
-  white-space: normal;
-}
-
-.reference-empty-state p {
-  margin: 0 0 0.6rem;
-}
-
 .reference-empty-link {
   min-height: 36px;
   padding-inline: 0;
@@ -1220,22 +1208,10 @@
   gap: 0.3rem;
 }
 
-.reference-state {
-  margin: 0;
-  padding: 0.85rem 0.55rem;
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
-  white-space: normal;
-}
-
-.reference-state-error {
-  color: var(--color-text-main);
-}
-
-.reference-state-error .nostos-button {
-  margin-left: 0.2rem;
-  color: var(--color-brand-accent);
+/* A pane's wait: the shared indicator, centred where the list will be. */
+.reference-loading {
+  display: flex;
+  padding: 1.5rem 0;
 }
 
 .reference-source-row {

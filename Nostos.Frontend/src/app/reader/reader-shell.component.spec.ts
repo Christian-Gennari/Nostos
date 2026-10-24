@@ -1011,11 +1011,11 @@ describe('ReaderShell shared save and load ownership (#479)', () => {
     ) as HTMLElement;
     expect(error).toBeTruthy();
     expect(error.textContent).toContain('Couldn’t open this book');
-    expect(error.textContent).toContain('Retry');
+    expect(error.textContent).toContain('Try again');
 
     booksGetSpy.mockReturnValueOnce(of(audiobook));
     const retry = Array.from(error.querySelectorAll('button') as NodeListOf<HTMLButtonElement>)
-      .find((button) => button.textContent?.trim() === 'Retry');
+      .find((button) => button.textContent?.trim() === 'Try again');
     expect(retry).toBeTruthy();
     retry!.click();
     fixture.detectChanges();
@@ -1771,6 +1771,38 @@ describe('ReaderShell note delete (no window.confirm)', () => {
 
     component.confirmNoteDelete();
     expect(notes.delete).toHaveBeenCalledWith('n1');
+    expect(component.pendingNoteDelete()).toBeNull();
+  });
+
+  it('asks in the Brain’s words and stays busy until the delete answers', async () => {
+    fixture = await configureReaderShell();
+    render();
+
+    const notes = TestBed.inject(NotesService) as unknown as { delete: ReturnType<typeof vi.fn> };
+    const answer = new Subject<void>();
+    notes.delete.mockReset();
+    notes.delete.mockReturnValue(answer);
+
+    const component = fixture.componentInstance;
+    component.onDeleteNote('n1');
+    render();
+    const card = () => fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
+    expect(card().textContent).toContain('Deleted notes are removed from their book and from every topic.');
+
+    component.confirmNoteDelete();
+    render();
+    expect(component.noteDeleting()).toBe(true);
+    expect(card().textContent).toContain('Deleting…');
+
+    // Neither a cancel nor a second confirm interrupts the delete in flight.
+    component.cancelNoteDelete();
+    component.confirmNoteDelete();
+    expect(notes.delete).toHaveBeenCalledTimes(1);
+    expect(component.pendingNoteDelete()).toBe('n1');
+
+    answer.next();
+    answer.complete();
+    expect(component.noteDeleting()).toBe(false);
     expect(component.pendingNoteDelete()).toBeNull();
   });
 

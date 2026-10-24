@@ -121,25 +121,9 @@
 
 /* An empty shelf is a sentence on the page, not a dashed box: nothing can be
    dropped here, so an outline only promised a target that does not exist. */
-.tier__empty,
-.reading-list__empty {
-  margin: 0;
-  padding: 1rem 0;
-  font-family: 'Newsreader', serif;
-  font-style: italic;
-  font-size: 1rem;
-  color: var(--color-text-muted);
-}
-
-.reading-list__notice {
+.reading-list__loading {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem 1rem;
-}
-
-.reading-list__notice p {
-  margin: 0;
+  padding: 4rem 0;
 }
 
 /* ------------------------------------------------------------ shared entry parts */

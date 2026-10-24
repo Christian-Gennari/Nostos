@@ -43,19 +43,11 @@
     </p>
 
     @if (loadingDestinations()) {
-      <div class="handoff-loading" role="status" aria-label="Loading writings">
-        <span class="loading-copy">Loading writings…</span>
-        <span class="loading-row" aria-hidden="true"></span>
-        <span class="loading-row" aria-hidden="true"></span>
-        <span class="loading-row" aria-hidden="true"></span>
+      <div class="handoff-loading">
+        <nostos-loading-indicator label="Loading writings" />
       </div>
     } @else if (destinationError()) {
-      <div class="handoff-error" role="alert">
-        <p>Writings could not be loaded.</p>
-        <button appButton variant="secondary" type="button" (click)="loadDestinations()">
-          Retry
-        </button>
-      </div>
+      <nostos-empty-state class="handoff-error" compact error message="Writings could not be loaded." (retry)="loadDestinations()" />
     } @else {
       <div class="handoff-selection" role="radiogroup" aria-label="Writing destination">
         <label
@@ -98,9 +90,12 @@
         }
 
         @if (documentDestinations().length === 0) {
-          <p class="empty-destinations">
-            No writing documents yet. Create your first writing to keep this note with it.
-          </p>
+          <nostos-empty-state
+            class="empty-destinations"
+            compact
+            concept="studio"
+            message="No writing documents yet. Create your first writing to keep this note with it."
+          />
         } @else {
           <section class="existing-destinations" aria-labelledby="existing-writing-heading">
             <h3 id="existing-writing-heading">Existing writing</h3>
@@ -119,7 +114,7 @@
             }
 
             @if (filteredDestinations().length === 0) {
-              <p class="empty-destinations filter-empty">No writings match that filter.</p>
+              <nostos-empty-state class="empty-destinations filter-empty" compact message="No writings match that filter." />
             } @else {
               <div
                 class="destination-list"

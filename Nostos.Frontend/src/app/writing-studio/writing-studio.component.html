@@ -451,28 +451,23 @@
         (scroll)="captureReferenceScroll($event)"
       >
         @if (!activeItem()) {
-          <div class="reference-empty-state">
-            <p>Keep notes here from Library or from Brain with Keep with writing. Open a writing to keep or insert sources.</p>
+          <nostos-empty-state class="reference-empty-state" compact message="Keep notes here from Library or from Brain with Keep with writing. Open a writing to keep or insert sources.">
             <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
               Browse Library
               <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
             </button>
-          </div>
+          </nostos-empty-state>
         } @else if (keptSourcesState() === 'loading') {
-          <p class="reference-state" role="status">Loading kept sources…</p>
+          <nostos-loading-indicator class="reference-loading" label="Loading kept sources" />
         } @else if (keptSourcesState() === 'error') {
-          <p class="reference-state reference-state-error" role="alert">
-            Kept sources could not be loaded.
-            <button appButton variant="ghost" size="sm" (click)="retryKeptSources()">Retry</button>
-          </p>
+          <nostos-empty-state compact error message="Kept sources could not be loaded." (retry)="retryKeptSources()" />
         } @else if (keptNotes().length === 0 && citedOnlyNotes().length === 0 && removedCitedCount() === 0) {
-          <div class="reference-empty-state">
-            <p>No sources are kept with this writing yet. Keep notes here from Library or from Brain with Keep with writing.</p>
+          <nostos-empty-state class="reference-empty-state" compact message="No sources are kept with this writing yet. Keep notes here from Library or from Brain with Keep with writing.">
             <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
               Browse Library
               <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
             </button>
-          </div>
+          </nostos-empty-state>
         } @else {
           <div class="notes-list kept-notes-list">
             @for (note of keptNotes(); track note.id) {
@@ -542,12 +537,9 @@
         >
           @if (!selectedTopicId()) {
             @if (topicIndexState() === 'loading') {
-              <p class="reference-state" role="status">Loading topics…</p>
+              <nostos-loading-indicator class="reference-loading" label="Loading topics" />
             } @else if (topicIndexState() === 'error') {
-              <p class="reference-state reference-state-error" role="alert">
-                Topics could not be loaded.
-                <button appButton variant="ghost" size="sm" (click)="retryTopicIndex()">Retry</button>
-              </p>
+              <nostos-empty-state compact error message="Topics could not be loaded." (retry)="retryTopicIndex()" />
             } @else {
               <div class="index-list">
                 @for (c of filteredTopics(); track c.id) {
@@ -559,7 +551,7 @@
                   </button>
                 }
                 @if (filteredTopics().length === 0) {
-                  <p class="reference-state">{{ noTopicsMatch }}</p>
+                  <nostos-empty-state compact [message]="noTopicsMatch" />
                 }
               </div>
             }
@@ -567,12 +559,9 @@
             <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Topics', back: backToTopicsAction }"></ng-container>
 
             @if (topicNotesState() === 'loading') {
-              <p class="reference-state" role="status">Loading topic notes…</p>
+              <nostos-loading-indicator class="reference-loading" label="Loading topic notes" />
             } @else if (topicNotesState() === 'error') {
-              <p class="reference-state reference-state-error" role="alert">
-                Notes for this topic could not be loaded.
-                <button appButton variant="ghost" size="sm" (click)="retryTopicNotes()">Retry</button>
-              </p>
+              <nostos-empty-state compact error message="Notes for this topic could not be loaded." (retry)="retryTopicNotes()" />
             } @else {
               <div class="notes-list reference-note-list">
                 @for (note of selectedTopicNotes(); track note.id) {
@@ -582,7 +571,7 @@
                   </div>
                 }
                 @if (selectedTopicNotes().length === 0) {
-                  <p class="reference-state">No notes linked to this topic.</p>
+                  <nostos-empty-state compact message="No notes linked to this topic." />
                 }
               </div>
             }
@@ -614,12 +603,9 @@
         >
           @if (!selectedBookId()) {
             @if (bookIndexState() === 'loading') {
-              <p class="reference-state" role="status">Loading books…</p>
+              <nostos-loading-indicator class="reference-loading" label="Loading books" />
             } @else if (bookIndexState() === 'error') {
-              <p class="reference-state reference-state-error" role="alert">
-                Books could not be loaded.
-                <button appButton variant="ghost" size="sm" (click)="retryBookIndex()">Retry</button>
-              </p>
+              <nostos-empty-state compact error message="Books could not be loaded." (retry)="retryBookIndex()" />
             } @else {
               <div class="index-list book-choice-list">
                 @for (book of filteredBooks(); track book.id) {
@@ -636,7 +622,7 @@
                   </button>
                 }
                 @if (filteredBooks().length === 0) {
-                  <p class="reference-state">No books match this search.</p>
+                  <nostos-empty-state compact message="No books match this search." />
                 }
               </div>
             }
@@ -644,12 +630,9 @@
             <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Books', back: backToBooksAction }"></ng-container>
 
             @if (bookNotesState() === 'loading') {
-              <p class="reference-state" role="status">Loading book notes…</p>
+              <nostos-loading-indicator class="reference-loading" label="Loading book notes" />
             } @else if (bookNotesState() === 'error') {
-              <p class="reference-state reference-state-error" role="alert">
-                Notes for this book could not be loaded.
-                <button appButton variant="ghost" size="sm" (click)="retryBookNotes()">Retry</button>
-              </p>
+              <nostos-empty-state compact error message="Notes for this book could not be loaded." (retry)="retryBookNotes()" />
             } @else {
               <div class="notes-list reference-note-list">
                 @for (note of selectedBookNotes(); track note.id) {
@@ -659,7 +642,7 @@
                   </div>
                 }
                 @if (selectedBookNotes().length === 0) {
-                  <p class="reference-state">No notes found in this book.</p>
+                  <nostos-empty-state compact message="No notes found in this book." />
                 }
               </div>
             }
@@ -687,6 +670,8 @@
     heading="Delete this item?"
     description="The document and everything inside it is removed. This cannot be undone."
     confirmLabel="Delete"
+    busyLabel="Deleting…"
+    [busy]="deletingItem()"
     (confirm)="confirmDeleteItem()"
     (cancel)="cancelDeleteItem()"
   >

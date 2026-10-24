@@ -7,6 +7,7 @@ import { NotesService } from '../core/services/notes.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
@@ -20,7 +21,15 @@ import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service'
 @Component({
   selector: 'app-brain-note-page',
   standalone: true,
-  imports: [RouterLink, ButtonComponent, NostosIconComponent, LoadingIndicatorComponent, NoteItemComponent, BrainNoteDialogsComponent],
+  imports: [
+    RouterLink,
+    ButtonComponent,
+    NostosIconComponent,
+    LoadingIndicatorComponent,
+    EmptyStateComponent,
+    NoteItemComponent,
+    BrainNoteDialogsComponent,
+  ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-note.page.html',
   styleUrls: ['./brain-note.page.css', './brain-touch.css'],
@@ -52,6 +61,11 @@ export class BrainNotePage {
       this.state.topicsRewritten();
       untracked(() => this.load(id));
     });
+  }
+
+  /** "Try again" after the note failed to load. */
+  retry(): void {
+    this.load(this.noteId());
   }
 
   private load(id: string | null): void {

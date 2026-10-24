@@ -127,29 +127,9 @@
   background: var(--bg-surface);
 }
 
+/* <nostos-empty-state> owns the look. */
 .error-state {
   width: min(30rem, 100%);
-  text-align: center;
-  color: var(--color-text-main);
-}
-
-.error-state h2 {
-  margin: 0 0 0.5rem;
-  font-family: inherit;
-  font-size: 1.15rem;
-}
-
-.error-state p {
-  margin: 0;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-}
-
-.error-actions {
-  display: flex;
-  justify-content: center;
-  gap: 0.625rem;
-  margin-top: 1rem;
 }
 
 

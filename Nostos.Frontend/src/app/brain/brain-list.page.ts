@@ -32,6 +32,8 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
@@ -102,6 +104,8 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     BrainNoteDialogsComponent,
     BrainTopicWordsComponent,
     BrainTopicUsedInComponent,
+    EmptyStateComponent,
+    PagingStatusComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',
@@ -226,7 +230,6 @@ export class BrainListPage {
   });
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
-  private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
   private seq = 0;
   private booksSeq = 0;
   private booksKey: string | null = null;
@@ -283,17 +286,6 @@ export class BrainListPage {
       if (version === rewritten) return;
       rewritten = version;
       untracked(() => this.refill());
-    });
-
-    // Load the next page when the end of the list comes into view.
-    effect((onCleanup) => {
-      const sentinel = this.sentinel()?.nativeElement;
-      if (!sentinel || typeof IntersectionObserver === 'undefined') return;
-      const observer = new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) this.loadMore();
-      }, { root: this.scroller()?.nativeElement ?? null, rootMargin: '600px 0px' });
-      observer.observe(sentinel);
-      onCleanup(() => observer.disconnect());
     });
 
     inject(DestroyRef).onDestroy(() => {

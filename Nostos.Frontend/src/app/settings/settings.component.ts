@@ -72,6 +72,8 @@ import {
 } from '../core/dtos/ai-provider.dtos';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { CheckboxDirective } from '../ui/check/check.directive';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ProgressComponent } from '../ui/progress/progress.component';
 
 const SLOW_STEP_THRESHOLD_MS = 30_000;
@@ -162,8 +164,7 @@ const BOOK_PROVIDER_COPY = {
     'Choose which free book and audiobook sources Nostos searches when you add a book. Sources you turn off stay out of Add Book and cannot be used until you turn them back on.',
   loading: 'Loading book sources…',
   loadFailed: 'Could not load the book sources.',
-  loadFailedHelp:
-    'The server did not answer the request for the provider list. Switch away and back to try again.',
+  loadFailedHelp: 'The server did not answer the request for the provider list.',
   empty: 'No book sources are available on this server.',
   saveFailed: 'Could not save this source. Your previous choice is still in effect.',
 } as const;
@@ -276,6 +277,8 @@ const defaultProgress: BackupProgress = {
     LibraryTransferHostComponent,
     SegmentedComponent,
     CheckboxDirective,
+    EmptyStateComponent,
+    LoadingIndicatorComponent,
   ],
   templateUrl: './settings.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -843,6 +846,22 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadCapabilities();
+  }
+
+  /** "Try again" after the capability read failed: back to the loading state. */
+  retryCapabilities(): void {
+    this.capabilitiesFailed.set(false);
+    this.loadCapabilities();
+  }
+
+  /** "Try again" after the e-reader access details failed to load. */
+  retryEreaderAccess(): void {
+    this.loadOpdsInfo();
+    if (this.deploymentCapabilities()?.deploymentMode === 'Cloud') this.loadManagedOpdsAccess();
+  }
+
+  retryManagedBackups(): void {
+    this.loadManagedBackups();
   }
 
   private loadCapabilities(): void {

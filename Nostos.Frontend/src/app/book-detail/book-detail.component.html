@@ -6,14 +6,9 @@
 
     @if (store.error()) {
     <div class="container md">
-      <div class="error-state">
-        <nostos-icon
-          name="warning-circle"
-          [size]="32"
-          style="margin-bottom: 1rem; color: var(--color-danger)"></nostos-icon>
-        <p>{{ store.error() }}</p>
-        <button appButton variant="secondary" routerLink="/library">Return to library</button>
-      </div>
+      <nostos-empty-state class="error-state" error icon="warning-circle" [message]="store.error()" (retry)="retryLoad()">
+        <a appButton variant="secondary" size="sm" routerLink="/library">Return to library</a>
+      </nostos-empty-state>
     </div>
     } @if (!store.loading() && !store.error() && store.book()) {
 
@@ -468,7 +463,7 @@
                 (restored)="noteActions.restored($event)"
               />
               } @empty {
-              <p class="notes-empty">No notes yet — jot down your first thought above.</p>
+              <nostos-empty-state class="notes-empty" compact concept="note" message="No notes yet — jot down your first thought above." />
               }
             </div>
           </div>
