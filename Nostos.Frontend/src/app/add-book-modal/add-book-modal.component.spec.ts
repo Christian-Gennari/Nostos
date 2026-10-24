@@ -527,10 +527,10 @@ describe('AddBookModal', () => {
     // index 0 is not it) and confirm the set empties rather than keeping a
     // stale id — the behaviour the old <select> could not express at all.
     const picker = fixture.nativeElement.querySelector('app-collection-picker');
-    const pressed = Array.from<Element>(picker.querySelectorAll('.option')).find(
-      (b) => b.getAttribute('aria-pressed') === 'true',
+    const checked = Array.from<HTMLInputElement>(picker.querySelectorAll('.option input[type=checkbox]')).find(
+      (box) => box.checked,
     )!;
-    (pressed as HTMLElement).click();
+    checked.click();
     fixture.detectChanges();
 
     expect(component.form.collectionIds).toEqual([]);
