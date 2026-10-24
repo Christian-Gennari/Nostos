@@ -157,8 +157,8 @@ describe('BrainWritingHandoffComponent', () => {
     fixture.detectChanges();
     http = TestBed.inject(HttpTestingController);
 
-    expect(fixture.nativeElement.querySelector('[role="status"][aria-label="Loading writings"]')).toBeTruthy();
-    expect(fixture.nativeElement.querySelectorAll('.loading-row').length).toBe(3);
+    const loading = fixture.nativeElement.querySelector('nostos-loading-indicator[role="status"]') as HTMLElement;
+    expect(loading?.textContent).toContain('Loading writings');
 
     http.expectOne('/api/writings').error(new ProgressEvent('network-error'));
     fixture.detectChanges();
@@ -166,7 +166,9 @@ describe('BrainWritingHandoffComponent', () => {
       'Writings could not be loaded.'
     );
 
-    (fixture.nativeElement.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    const retry = fixture.nativeElement.querySelector('[role="alert"] button') as HTMLButtonElement;
+    expect(retry.textContent?.trim()).toBe('Try again');
+    retry.click();
     fixture.detectChanges();
     http.expectOne('/api/writings').flush([documentWriting]);
     fixture.detectChanges();

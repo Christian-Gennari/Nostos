@@ -759,6 +759,23 @@ describe('TopicMapComponent', () => {
     expect(component.loading()).toBe(false);
   });
 
+  it('says the map could not load, not that there are no connections, and offers Try again', () => {
+    setTopics(topics);
+    http.expectOne('/api/topics/graph').flush('offline', { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    const status = fixture.nativeElement.querySelector('.map-status') as HTMLElement;
+    expect(status.getAttribute('role')).toBe('alert');
+    expect(status.textContent).toContain('could not be loaded');
+    expect(status.textContent).not.toContain('No connections yet');
+    const retry = status.querySelector('button') as HTMLButtonElement;
+    expect(retry.textContent?.trim()).toBe('Try again');
+
+    retry.click();
+    flushGraph();
+    expect(component.loadFailed()).toBe(false);
+  });
+
   it('disposes Sigma renderer on component destruction', () => {
     setTopics(topics);
     flushGraph();

@@ -241,15 +241,17 @@
   <div class="reader-body">
     <main class="reader-content">
       @if (loadError()) {
-      <div class="reader-load-error" role="alert" data-testid="reader-load-error">
-        <nostos-icon name="warning" [size]="28"></nostos-icon>
-        <h2>Couldn’t open this book</h2>
-        <p>{{ loadError() }}</p>
-        <div class="reader-load-error-actions">
-          <button appButton type="button" variant="secondary" (click)="goBack()">Book details</button>
-          <button appButton type="button" variant="primary" (click)="retryBookLoad()">Retry</button>
-        </div>
-      </div>
+      <nostos-empty-state
+        class="reader-load-error"
+        data-testid="reader-load-error"
+        error
+        icon="warning"
+        message="Couldn’t open this book"
+        [detail]="loadError()"
+        (retry)="retryBookLoad()"
+      >
+        <button appButton type="button" variant="secondary" size="sm" (click)="goBack()">Book details</button>
+      </nostos-empty-state>
       } @else if (!loading()) { @switch (fileType()) { @case ('pdf') {
       <app-pdf-reader
         [bookId]="book()!.id"
@@ -681,7 +683,7 @@
         <ng-container *ngTemplateOutlet="tocTemplate; context: { $implicit: toc() }"></ng-container>
 
         @if (toc().length === 0) {
-        <div class="empty-state">No table of contents available.</div>
+        <nostos-empty-state compact message="No table of contents available." />
         }
       </div>
     </aside>
@@ -761,11 +763,12 @@
           (jumpRequested)="onJumpToNote(row.note)"
         />
         } @empty {
-        <div class="empty-state">
-          <nostos-icon name="note" [size]="40"></nostos-icon>
-          <p>No notes yet.</p>
-          <small>Highlight text or use the box above to add one.</small>
-        </div>
+        <nostos-empty-state
+          compact
+          concept="note"
+          message="No notes yet."
+          detail="Highlight text or use the box above to add one."
+        />
         }
       </div>
     </aside>
@@ -845,8 +848,10 @@
   <app-confirm-modal
     [isOpen]="!!pendingNoteDelete()"
     heading="Delete this note?"
-    description="The note and its highlight link are removed. This cannot be undone."
+    description="Deleted notes are removed from their book and from every topic. This cannot be undone."
     confirmLabel="Delete"
+    busyLabel="Deleting…"
+    [busy]="noteDeleting()"
     (confirm)="confirmNoteDelete()"
     (cancel)="cancelNoteDelete()"
   >

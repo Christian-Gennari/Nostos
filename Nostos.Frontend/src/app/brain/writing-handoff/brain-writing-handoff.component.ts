@@ -25,6 +25,8 @@ import { DialogActionsComponent } from '../../ui/dialog-actions/dialog-actions.c
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { IconTileComponent } from '../../ui/icon-tile/icon-tile.component';
 import { CheckboxDirective } from '../../ui/check/check.directive';
@@ -49,6 +51,8 @@ export interface BrainWritingHandoffResult {
     InputDirective,
     IconButtonComponent,
     NostosIconComponent,
+    EmptyStateComponent,
+    LoadingIndicatorComponent,
   ],
   templateUrl: './brain-writing-handoff.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,

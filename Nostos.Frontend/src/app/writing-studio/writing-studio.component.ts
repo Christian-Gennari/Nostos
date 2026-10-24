@@ -16,12 +16,14 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DragDropModule } from '@angular/cdk/drag-drop';
-import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, forkJoin, map, of, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, finalize, forkJoin, map, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
 
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { TopicsService, TopicDto, NoteContextDto } from '../core/services/topics.service';
 import { BooksService, Book as BookDto } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
@@ -190,6 +192,8 @@ function writeCarets(carets: RememberedCaret[]): void {
     ExportDialogComponent,
     QuoteBlockComponent,
     TopicChipComponent,
+    EmptyStateComponent,
+    LoadingIndicatorComponent,
   ],
   templateUrl: './writing-studio.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -1638,25 +1642,36 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.pendingDelete.set(id);
   }
 
+  /** The delete is on its way: the confirm stays open and says so. */
+  readonly deletingItem = signal(false);
+
   cancelDeleteItem(): void {
-    this.pendingDelete.set(null);
+    if (!this.deletingItem()) this.pendingDelete.set(null);
   }
 
   confirmDeleteItem(): void {
     const id = this.pendingDelete();
-    if (!id) return;
-    this.pendingDelete.set(null);
+    if (!id || this.deletingItem()) return;
+    this.deletingItem.set(true);
 
-    this.writingsService.delete(id).subscribe(() => {
-      this.loadTree();
+    this.writingsService.delete(id).pipe(
+      finalize(() => {
+        this.deletingItem.set(false);
+        this.pendingDelete.set(null);
+      }),
+    ).subscribe({
+      next: () => {
+        this.loadTree();
 
-      writeCarets(readCarets().filter((entry) => entry.id !== id));
-      if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) writeStudioValue(STUDIO_LAST_WRITING_KEY, null);
-      if (this.activeItem()?.id === id) {
-        // The page stays: a deleted writing leaves a blank one behind.
-        this.activeItem.set(null);
-        this.startBlankPage();
-      }
+        writeCarets(readCarets().filter((entry) => entry.id !== id));
+        if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) writeStudioValue(STUDIO_LAST_WRITING_KEY, null);
+        if (this.activeItem()?.id === id) {
+          // The page stays: a deleted writing leaves a blank one behind.
+          this.activeItem.set(null);
+          this.startBlankPage();
+        }
+      },
+      error: () => this.toast.error('Could not delete it. Try again.'),
     });
   }
 

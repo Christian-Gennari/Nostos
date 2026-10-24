@@ -25,14 +25,16 @@
 
 
 @if (errorMessage()) {
-<div class="error-overlay" role="alert" aria-live="assertive">
-  <div class="error-state">
-    <h2>Could not open this EPUB</h2>
-    <p>{{ errorMessage() }}</p>
-    <div class="error-actions">
-      <button appButton type="button" variant="secondary" (click)="leaveReader()">Back</button>
-      <button appButton type="button" variant="primary" (click)="retryLoad()">Retry</button>
-    </div>
-  </div>
+<div class="error-overlay">
+  <nostos-empty-state
+    class="error-state"
+    error
+    icon="warning"
+    message="Could not open this EPUB"
+    [detail]="errorMessage()"
+    (retry)="retryLoad()"
+  >
+    <button appButton type="button" variant="secondary" size="sm" (click)="leaveReader()">Back</button>
+  </nostos-empty-state>
 </div>
 }

@@ -26,6 +26,8 @@ import { ButtonComponent } from '../button/button.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { RangeDirective } from '../range/range.directive';
+import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { PassageViewerRequest, PassageViewerService } from './passage-viewer.service';
 import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
 import { PdfDocument, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
@@ -53,7 +55,15 @@ let libronInjected = false;
 @Component({
   selector: 'app-passage-viewer',
   standalone: true,
-  imports: [ModalShell, ButtonComponent, IconButtonComponent, NostosIconComponent, RangeDirective],
+  imports: [
+    ModalShell,
+    ButtonComponent,
+    IconButtonComponent,
+    NostosIconComponent,
+    LoadingIndicatorComponent,
+    EmptyStateComponent,
+    RangeDirective,
+  ],
   templateUrl: './passage-viewer.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './passage-viewer.component.css',
@@ -227,6 +237,11 @@ export class PassageViewerComponent {
       },
       error: () => this.state.set('error'),
     });
+  }
+
+  /** "Try again" after the passage failed to open. */
+  retry(): void {
+    this.open(this.request());
   }
 
   close(): void {

@@ -33,7 +33,7 @@
 /* <nostos-search-field> owns the glass and its gutter. */
 .picker-search-input {
   /* 16px: anything smaller makes iOS zoom the page when the field takes focus. */
-  font-size: 1rem;
+  font-size: var(--text-md);
 }
 
 /* ---- The list, shared by both presentations --------------------------- */
@@ -48,7 +48,7 @@
   margin: 0;
   padding: 1.25rem 0.7rem;
   color: var(--color-text-light);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   text-align: center;
 }
 
@@ -61,7 +61,7 @@
   padding: 0.5rem 1rem;
   border-top: 1px solid var(--border-color);
   color: var(--color-text-light);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 .picker-foot kbd {
@@ -119,7 +119,7 @@
 
 @media (max-width: 768px) {
   .item {
-    font-size: 1rem;
+    font-size: var(--text-md);
   }
 
   /* Key hints describe a keyboard the phone does not have. */

@@ -32,6 +32,8 @@ import { IconButtonComponent } from '../../ui/icon-button/icon-button.component'
 import { ButtonComponent } from '../../ui/button/button.component';
 import { ChipComponent } from '../../ui/chip/chip.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import {
   TopicDto,
   TopicsService,
@@ -144,7 +146,15 @@ export interface MapSelection {
 @Component({
   selector: 'app-topic-map',
   standalone: true,
-  imports: [CommonModule, IconButtonComponent, ButtonComponent, ChipComponent, NostosIconComponent],
+  imports: [
+    CommonModule,
+    IconButtonComponent,
+    ButtonComponent,
+    ChipComponent,
+    NostosIconComponent,
+    LoadingIndicatorComponent,
+    EmptyStateComponent,
+  ],
   templateUrl: './topic-map.component.html',
   styleUrl: './topic-map.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -256,6 +266,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   /* State signals for the template. */
   readonly loading = signal(true);
+  /** The graph read failed: say so, rather than that there are no connections. */
+  readonly loadFailed = signal(false);
   readonly hoveredId = signal<string | null>(null);
   readonly selectedNodeId = signal<string | null>(null);
   readonly isFullscreen = signal(false);
@@ -360,8 +372,14 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   /* ── Data loading ── */
 
+  /** "Try again" after the graph failed to load. */
+  retryLoad(): void {
+    this.loadGraphData();
+  }
+
   private loadGraphData(): void {
     this.loading.set(true);
+    this.loadFailed.set(false);
     // A newer topic set supersedes a graph still on its way.
     this.graphRequest?.unsubscribe();
     this.graphRequest = this.topicsService.getGraph().subscribe({
@@ -378,6 +396,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       error: () => {
         if (this.destroyed) return;
         this.graphData = { nodes: [], edges: [] };
+        this.loadFailed.set(true);
         this.loading.set(false);
       },
     });

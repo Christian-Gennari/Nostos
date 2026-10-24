@@ -17,7 +17,7 @@
       <div class="cover-overlay" role="status" data-testid="audio-reconnecting">
         <nostos-loading-indicator size="lg" [decorative]="true" />
         <span>Reconnecting…</span>
-        <button appButton variant="overlay" size="sm" type="button" (click)="retryLoad()">Retry now</button>
+        <button appButton variant="overlay" size="sm" type="button" (click)="retryLoad()">Try again now</button>
       </div>
       } @else if (loading()) {
       <div class="cover-overlay" role="status" data-testid="audio-loading">
@@ -27,7 +27,7 @@
       } @if (loadError()) {
       <div class="cover-overlay cover-overlay-error" role="alert" data-testid="audio-load-error">
         <span>{{ loadError() }}</span>
-        <button appButton variant="overlay" size="sm" type="button" (click)="retryLoad()">Retry</button>
+        <button appButton variant="overlay" size="sm" type="button" (click)="retryLoad()">Try again</button>
       </div>
       }
     </div>

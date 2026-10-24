@@ -161,6 +161,7 @@ function readAloudFallbackNotice(code: string | null): string {
 
 import { PenSwatchesComponent } from '../ui/pen-swatches/pen-swatches.component';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 @Component({
   selector: 'app-reader-shell',
   standalone: true,
@@ -193,6 +194,7 @@ import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
     PenSwatchesComponent,
     QuoteBlockComponent,
     SettingsPopoverComponent,
+    EmptyStateComponent,
   ],
   providers: [ReadAloudController, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './reader-shell.component.html',
@@ -903,6 +905,8 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /** Note id awaiting delete confirmation (asked through ConfirmModal). */
   pendingNoteDelete = signal<string | null>(null);
+  /** The delete is on its way: the confirm shows it, as the Brain's does. */
+  readonly noteDeleting = signal(false);
 
   // Topic map for the note cards
   /** The topics by lower-cased name, for [[ ]] links in notes (the Brain's own). */
@@ -2001,24 +2005,32 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   cancelNoteDelete() {
-    this.pendingNoteDelete.set(null);
+    if (!this.noteDeleting()) this.pendingNoteDelete.set(null);
   }
 
   confirmNoteDelete() {
     const noteId = this.pendingNoteDelete();
-    if (!noteId) return;
-    this.pendingNoteDelete.set(null);
+    if (!noteId || this.noteDeleting()) return;
+    this.noteDeleting.set(true);
 
     const noteToDelete = this.dbNotes().find((n) => n.id === noteId);
 
     this.notesService.delete(noteId).subscribe({
       next: () => {
+        this.noteDeleting.set(false);
+        this.pendingNoteDelete.set(null);
         if (this.highlightCard()?.noteId === noteId) this.closeHighlightCard();
         if (this.fileType() === 'epub' && noteToDelete?.cfiRange)
           this.activeReader()?.removeHighlight(noteToDelete.cfiRange);
         if (this.fileType() === 'pdf') this.activeReader()?.removeHighlight(noteId);
 
         this.dbNotes.update((notes) => notes.filter((n) => n.id !== noteId));
+        this.toast.success('Note deleted');
+      },
+      error: () => {
+        this.noteDeleting.set(false);
+        this.pendingNoteDelete.set(null);
+        this.toast.error('Could not delete the note. Try again.');
       },
     });
   }

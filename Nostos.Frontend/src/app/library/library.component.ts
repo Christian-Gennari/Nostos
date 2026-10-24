@@ -29,7 +29,9 @@ import { SidebarCollections } from './sidebar-collections/sidebar-collections.co
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
 import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
-import { InfiniteScrollDirective } from '../core/directives/infinite-scroll.directive';
+import type { BookFormatConcept } from '../core/book-format';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { BookSort } from '../core/dtos/book.enums';
 import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
@@ -38,7 +40,6 @@ import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
@@ -125,7 +126,6 @@ interface WorkFormatGlyph {
     NostosDatePipe,
     RouterLink,
     NostosIconComponent,
-    LoadingIndicatorComponent,
     ViewToggleComponent,
     AddBookModal,
     ConfirmModal,
@@ -136,7 +136,8 @@ interface WorkFormatGlyph {
     InputDirective,
     DropdownComponent,
     SidebarCollections,
-    InfiniteScrollDirective,
+    EmptyStateComponent,
+    PagingStatusComponent,
     BookCoverComponent,
   ],
   templateUrl: './library.component.html',
@@ -795,6 +796,14 @@ export class Library implements OnInit, OnDestroy {
     return label === 'AUDIO' || label === 'PHYSICAL'
       ? label.charAt(0) + label.slice(1).toLowerCase()
       : label;
+  }
+
+  /** The format icon's concept for one edition, drawn the way its label reads. */
+  formatConcept(book: Book): BookFormatConcept {
+    if (book.type === 'audiobook') return 'audiobook';
+    if (this.getFormatLabel(book) === 'PDF') return 'pdf';
+    if (book.type === 'physical') return 'physical';
+    return 'ebook';
   }
 
   getFormatLabel(book: Book | EditionSummaryDto): string {

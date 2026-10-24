@@ -1040,7 +1040,7 @@ describe('Library', () => {
     );
 
     const buttons = [...host.querySelectorAll('.item-failure-actions .item-action')];
-    expect(buttons.map((b) => b.textContent!.trim())).toEqual(['Retry', 'Dismiss']);
+    expect(buttons.map((b) => b.textContent!.trim())).toEqual(['Try again', 'Dismiss']);
 
     buttons[0].dispatchEvent(new Event('click'));
     const feed = TestBed.inject(ImportService) as unknown as { retry: ReturnType<typeof vi.fn> };
@@ -1121,7 +1121,7 @@ describe('Library', () => {
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
-    const retry = host.querySelector('.books-load-more-error button') as HTMLButtonElement;
+    const retry = host.querySelector('nostos-paging-status [role="alert"] button') as HTMLButtonElement;
     expect(retry).not.toBeNull();
     expect(component.currentPage()).toBe(1);
     // The list itself is untouched.

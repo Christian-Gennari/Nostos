@@ -12,7 +12,7 @@
         data-filter-kind="status"
         title="All books"
       >
-        <nostos-icon name="books" [size]="16" weight="light"></nostos-icon>
+        <nostos-icon concept="library" [size]="16" weight="light"></nostos-icon>
         <span class="label">All books</span>
         @if (statusCounts()?.all) {
           <span class="count-badge">{{ statusCounts()?.all }}</span>
@@ -100,7 +100,7 @@
         [class.active]="filters.format() === 'audiobook'"
         title="Audiobooks"
       >
-        <nostos-icon name="headphones" [size]="16" weight="light"></nostos-icon>
+        <nostos-icon concept="audiobook" [size]="16" weight="light"></nostos-icon>
         <span class="label">Audiobooks</span>
         @if (statusCounts()?.audiobooks) {
           <span class="count-badge">{{ statusCounts()?.audiobooks }}</span>
@@ -113,7 +113,7 @@
         [class.active]="filters.format() === 'ebook'"
         title="eBooks"
       >
-        <nostos-icon name="book-open" [size]="16" weight="light"></nostos-icon>
+        <nostos-icon concept="ebook" [size]="16" weight="light"></nostos-icon>
         <span class="label">eBooks</span>
         @if (statusCounts()?.ebooks) {
           <span class="count-badge">{{ statusCounts()?.ebooks }}</span>
@@ -126,7 +126,7 @@
         [class.active]="filters.format() === 'pdf'"
         title="PDFs"
       >
-        <nostos-icon name="file-text" [size]="16" weight="light"></nostos-icon>
+        <nostos-icon concept="pdf" [size]="16" weight="light"></nostos-icon>
         <span class="label">PDFs</span>
         @if (statusCounts()?.pdfs) {
           <span class="count-badge">{{ statusCounts()?.pdfs }}</span>
@@ -203,7 +203,7 @@
         data-filter-kind="status"
         title="Unsorted"
       >
-        <nostos-icon name="tray" [size]="16" weight="light"></nostos-icon>
+        <nostos-icon concept="unsorted" [size]="16" weight="light"></nostos-icon>
         <span class="label">Unsorted</span>
         @if (statusCounts()?.unsorted) {
           <span class="count-badge">{{ statusCounts()?.unsorted }}</span>

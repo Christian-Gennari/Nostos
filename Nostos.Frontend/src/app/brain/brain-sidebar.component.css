@@ -186,12 +186,6 @@
   }
 }
 
-.topics-empty {
-  margin: 0.25rem 0.75rem;
-  color: var(--color-text-light);
-  font-size: var(--text-sm);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .topic-row,
   .row-actions {

@@ -13,10 +13,9 @@
 
   <main class="note-column" aria-label="Note">
     @if (failed()) {
-    <div class="empty-state" role="alert">
-      <p>This note could not be found. It may have been deleted.</p>
+    <nostos-empty-state error concept="note" message="This note could not be found. It may have been deleted." (retry)="retry()">
       <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
-    </div>
+    </nostos-empty-state>
     } @else if (note(); as current) {
     <app-note-item
       [note]="current"

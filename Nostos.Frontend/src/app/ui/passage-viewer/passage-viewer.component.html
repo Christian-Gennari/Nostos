@@ -36,10 +36,10 @@
   <div class="pv-body">
     @switch (state()) {
       @case ('loading') {
-      <p class="pv-status" role="status">Opening the passage…</p>
+      <nostos-loading-indicator class="pv-status" label="Opening the passage" />
       }
       @case ('error') {
-      <p class="pv-status" role="alert">This passage could not be opened.</p>
+      <nostos-empty-state class="pv-status" error message="This passage could not be opened." (retry)="retry()" />
       }
       @default {
         @if (isAudio()) {
@@ -116,9 +116,16 @@
             ></canvas>
           </div>
           @if (pdfStatus() === 'loading') {
-          <p class="pv-status pv-pdf-status" role="status">Opening the pages…</p>
+          <div class="pv-pdf-status">
+            <nostos-loading-indicator label="Opening the pages" />
+          </div>
           } @else if (pdfStatus() === 'error') {
-          <p class="pv-status pv-pdf-status" role="alert">These pages could not be opened. Open the passage in the book.</p>
+          <nostos-empty-state
+            class="pv-pdf-status"
+            error
+            [retryable]="false"
+            message="These pages could not be opened. Open the passage in the book."
+          />
           }
         </div>
         } @else if (body()) {

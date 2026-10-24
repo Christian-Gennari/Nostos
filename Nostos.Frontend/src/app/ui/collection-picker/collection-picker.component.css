@@ -18,7 +18,7 @@
 }
 
 .picker-clear {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
 }
 
 /* ── Chips: current membership, removable one at a time ─────────────────── */
@@ -65,7 +65,7 @@
   background: none;
   color: var(--color-text-main);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
 }

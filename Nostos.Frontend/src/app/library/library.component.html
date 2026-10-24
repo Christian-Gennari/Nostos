@@ -161,10 +161,13 @@
         [attr.aria-busy]="swapping() || loading()"
       >
         @if (loadFailed()) {
-        <div class="books-empty-state books-load-error" role="alert">
-          <p>Your books could not be loaded.</p>
-          <button appButton variant="secondary" size="sm" type="button" (click)="retryLoad()">Try again</button>
-        </div>
+        <nostos-empty-state
+          class="books-empty-state books-load-error"
+          error
+          icon="book"
+          message="Your books could not be loaded."
+          (retry)="retryLoad()"
+        />
         } @else if (!loading()) {
       @if (viewMode() === 'list') {
       <div class="table-view">
@@ -224,7 +227,7 @@
                 @if (failure.canRetry) {
                 <button type="button" appButton variant="primary" size="sm" class="item-action" (click)="retryImport(failure, $event)">
                   <nostos-icon name="arrow-counter-clockwise" [size]="13"></nostos-icon>
-                  <span>Retry</span>
+                  <span>Try again</span>
                 </button>
                 }
                 <button type="button" appButton variant="secondary" size="sm" class="item-action" (click)="dismissImport(failure, $event)">
@@ -299,15 +302,7 @@
             </span>
             } @else {
             <span class="list-format" [attr.data-type]="book.type">
-              @if (book.type === 'audiobook') {
-                <nostos-icon name="headphones" [size]="13"></nostos-icon>
-              } @else if (getFormatLabel(book) === 'PDF') {
-                <nostos-icon name="file-text" [size]="13"></nostos-icon>
-              } @else if (book.type === 'physical') {
-                <nostos-icon name="bookmark-simple" [size]="13"></nostos-icon>
-              } @else {
-                <nostos-icon name="book-open" [size]="13"></nostos-icon>
-              }
+              <nostos-icon [concept]="formatConcept(book)" [size]="13"></nostos-icon>
               {{ listFormatLabel(book) }}
             </span>
             }
@@ -346,19 +341,7 @@
           </div>
         </div>
         } @empty {
-        <div class="books-empty-state">
-          <nostos-icon name="book" [size]="40" weight="thin"></nostos-icon>
-          @if (searchQuery().trim()) {
-          <p>No books match "{{ searchQuery().trim() }}"</p>
-          <button appButton variant="secondary" size="sm" (click)="clearChip('search')">Clear search</button>
-          } @else if (activeFilterChips().length > 0) {
-          <p>Nothing matches these filters</p>
-          <button appButton variant="secondary" size="sm" (click)="filters.clearAll()">Clear filters</button>
-          } @else {
-          <p>Your library is empty</p>
-          <button appButton variant="primary" (click)="openAddModal()">Add your first book</button>
-          }
-        </div>
+        <ng-container *ngTemplateOutlet="booksEmpty"></ng-container>
         }
       </div>
       } @if (viewMode() === 'grid') {
@@ -415,15 +398,7 @@
               [class.audiobook]="book.type === 'audiobook'"
               [attr.data-type]="book.type"
             >
-              @if (book.type === 'audiobook') {
-              <nostos-icon name="headphones" [size]="11"></nostos-icon>
-              } @else if (getFormatLabel(book) === 'PDF') {
-              <nostos-icon name="file-text" [size]="11"></nostos-icon>
-              } @else if (book.type === 'physical') {
-              <nostos-icon name="bookmark-simple" [size]="11"></nostos-icon>
-              } @else {
-              <nostos-icon name="book-open" [size]="11"></nostos-icon>
-              }
+              <nostos-icon [concept]="formatConcept(book)" [size]="11"></nostos-icon>
               {{ getFormatLabel(book) }}
             </span>
             }
@@ -509,7 +484,7 @@
             @if (failure.canRetry) {
             <button type="button" appButton variant="primary" size="sm" class="item-action" (click)="retryImport(failure, $event)">
               <nostos-icon name="arrow-counter-clockwise" [size]="13"></nostos-icon>
-              <span>Retry</span>
+              <span>Try again</span>
             </button>
             }
             <button type="button" appButton variant="secondary" size="sm" class="item-action" (click)="dismissImport(failure, $event)">
@@ -524,48 +499,40 @@
         </div>
 
         } @empty {
-        <div class="books-empty-state">
-          <nostos-icon name="book" [size]="40" weight="thin"></nostos-icon>
-          @if (searchQuery().trim()) {
-          <p>No books match "{{ searchQuery().trim() }}"</p>
-          <button appButton variant="secondary" size="sm" (click)="clearChip('search')">Clear search</button>
-          } @else if (activeFilterChips().length > 0) {
-          <p>Nothing matches these filters</p>
-          <button appButton variant="secondary" size="sm" (click)="filters.clearAll()">Clear filters</button>
-          } @else {
-          <p>Your library is empty</p>
-          <button appButton variant="primary" (click)="openAddModal()">Add your first book</button>
-          }
-        </div>
+        <ng-container *ngTemplateOutlet="booksEmpty"></ng-container>
         }
       </div>
       }
       }
       </div>
-      @if (hasMoreBooks() && !loadFailed()) {
-      @if (loadMoreFailed()) {
-      <div class="books-load-more-error" role="alert">
-        <p>More books could not be loaded.</p>
-        <button appButton variant="ghost" size="sm" type="button" (click)="retryLoadMore()">Try again</button>
-      </div>
-      } @else {
-      <div
-        appInfiniteScroll
-        (scrolly)="loadMore()"
-        style="
-          display: flex;
-          justify-content: center;
-          padding: 2rem 0;
-          width: 100%;
-          min-height: 50px;
-        "
-      >
-        @if (loadingMore()) {
-        <nostos-loading-indicator label="Loading more books" size="xl" />
-        }
-      </div>
-      }
+      @if (!loadFailed()) {
+      <nostos-paging-status
+        [hasMore]="hasMoreBooks()"
+        [loading]="loadingMore()"
+        [failed]="loadMoreFailed()"
+        label="Loading more books"
+        failedMessage="More books could not be loaded."
+        (more)="loadMore()"
+        (retry)="retryLoadMore()"
+      />
       }
     </div>
   </div>
 </main>
+
+<!-- One empty state for both views (issue #1202). -->
+<ng-template #booksEmpty>
+  @if (searchQuery().trim()) {
+  <nostos-empty-state class="books-empty-state" icon="book" message='No books match "{{ searchQuery().trim() }}"'>
+    <button appButton variant="secondary" size="sm" type="button" (click)="clearChip('search')">Clear search</button>
+  </nostos-empty-state>
+  } @else if (activeFilterChips().length > 0) {
+  <nostos-empty-state class="books-empty-state" icon="book" message="Nothing matches these filters">
+    <button appButton variant="secondary" size="sm" type="button" (click)="filters.clearAll()">Clear filters</button>
+  </nostos-empty-state>
+  } @else {
+  <nostos-empty-state class="books-empty-state" icon="book" message="Your library is empty">
+    <button appButton variant="primary" type="button" (click)="openAddModal()">Add your first book</button>
+  </nostos-empty-state>
+  }
+</ng-template>

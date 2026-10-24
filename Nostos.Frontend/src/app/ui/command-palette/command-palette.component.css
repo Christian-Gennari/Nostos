@@ -191,7 +191,7 @@
 
 .palette-item-sub {
   color: var(--color-text-light);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.3;
 }
 
@@ -211,7 +211,7 @@
   margin: 0;
   padding: 2rem 1.25rem;
   color: var(--color-text-light);
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   text-align: center;
 }
 
@@ -281,7 +281,7 @@
 
   .palette-input {
     /* 16px or more keeps iOS from zooming the page on focus. */
-    font-size: 1rem;
+    font-size: var(--text-md);
   }
 
   .palette-cancel {

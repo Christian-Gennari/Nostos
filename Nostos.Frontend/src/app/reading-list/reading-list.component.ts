@@ -32,6 +32,8 @@ import { FormFieldComponent } from '../ui/form-field/form-field.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
 
@@ -79,6 +81,8 @@ function asIsbn(typed: string): string | null {
     NostosIconComponent,
     ...NOSTOS_MENU,
     TextareaDirective,
+    EmptyStateComponent,
+    LoadingIndicatorComponent,
   ],
   templateUrl: './reading-list.component.html',
   styleUrl: './reading-list.component.css',

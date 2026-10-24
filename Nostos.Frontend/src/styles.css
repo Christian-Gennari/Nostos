@@ -1501,13 +1501,16 @@
   --fw-semibold: 600;
 
   /* ── Typography Scale ──
-     Only `-xs` and `-sm` have readers. `-base`/`-lg`/`-xl`/`-2xl` were removed:
-     nothing referenced them, which is the same finding as the type scale being
-     mostly bypassed in favour of raw `rem` values. The scale is now the two
-     steps the app actually uses; extending it should come from the measured
-     scale (see docs/design/design-language.md), not from a guessed ladder. */
+     Measured, not guessed (issue #1212): each step is the rem literal the
+     component stylesheets already set most often at that size, so moving a
+     literal onto its token changes nothing on screen. A size between two
+     steps stays a literal until a design pass rounds it onto the scale. */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.35rem;
+  --text-2xl: 2.1rem;
   /* The page title (`.page-title`): Library, Brain, To read, Settings. */
   --page-title-size: 1.75rem;
 
@@ -1647,7 +1650,10 @@ p {
    bodies. Duplicated utilities are a drift risk with no upside — the copies do
    not vary per surface, and Angular's encapsulation means a global rule is
    exactly how a shared utility should be expressed. `check:design` fails if a
-   component redeclares it. */
+   component redeclares it.
+   `.visually-hidden-until-focus` is the same, but shows itself while a keyboard
+   focuses it (the paging fallback's "Load more"). */
+.visually-hidden-until-focus:not(:focus-visible),
 .visually-hidden {
   position: absolute;
   width: 1px;

@@ -69,7 +69,7 @@
 }
 
 .toolbar.is-topic .page-title {
-  font-size: 2.1rem;
+  font-size: var(--text-2xl);
 }
 
 .page-count {
@@ -232,30 +232,6 @@
   padding: 4rem 0;
 }
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.9rem;
-  padding: 3rem 0;
-  color: var(--color-text-muted);
-}
-
-.empty-state p {
-  max-width: 38rem;
-  margin: 0;
-  color: var(--color-text-main);
-  font-size: 1.05rem;
-  line-height: 1.55;
-}
-
-.list-end {
-  display: flex;
-  justify-content: center;
-  min-height: 1px;
-  padding: 1.5rem 0;
-}
-
 /* --- Selection bar -------------------------------------------------------- */
 .selection-bar {
   position: fixed;
@@ -389,10 +365,6 @@
   /* While selecting, the bar floats over the list's end: leave room for it. */
   .brain-list.is-selecting {
     padding-bottom: calc(var(--control-h-touch) + 2rem);
-  }
-
-  .list-end {
-    padding: 0.75rem 0;
   }
 
   .selection-bar {

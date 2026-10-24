@@ -187,26 +187,21 @@
 
   <main class="brain-list" [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes">
     @if (topicMissing()) {
-    <div class="empty-state" role="status">
-      <p>This topic is gone. It may have been merged into another or deleted.</p>
+    <nostos-empty-state concept="topic" message="This topic is gone. It may have been merged into another or deleted.">
       <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
-    </div>
+    </nostos-empty-state>
     } @else if (!loaded() && loading()) {
     <nostos-loading-indicator class="list-loading" label="Loading notes" />
     } @else if (failed() && !loaded()) {
-    <div class="empty-state" role="alert">
-      <p>Notes could not be loaded.</p>
-      <button appButton variant="secondary" size="sm" type="button" (click)="loadPage()">Try again</button>
-    </div>
+    <nostos-empty-state error concept="note" message="Notes could not be loaded." (retry)="loadPage()" />
     } @else if (loaded() && notes().length === 0) {
-    <div class="empty-state" role="status">
-      <p>{{ emptyText() }}</p>
+    <nostos-empty-state [concept]="place() === 'unsorted' ? 'unsorted' : 'note'" [message]="emptyText()">
       @if (filtersActive()) {
       <button appButton variant="secondary" size="sm" type="button" (click)="clearFilters()">Clear filters</button>
       } @else if (place() === 'unsorted') {
       <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
       }
-    </div>
+    </nostos-empty-state>
     } @else {
     @for (note of notes(); track note.id; let i = $index) {
       @if (order() === 'book' && startsBook(i)) {
@@ -243,15 +238,17 @@
         (restored)="noteActions.restored($event)"
       />
     }
-    <div class="list-end" #sentinel>
-      @if (failed()) {
-      <button appButton variant="ghost" size="sm" type="button" (click)="loadPage()">Try loading more again</button>
-      } @else if (notes().length < total()) {
-      <button appButton variant="ghost" size="sm" type="button" [disabled]="loading()" (click)="loadMore()">
-        {{ loading() ? 'Loading…' : 'Load more' }}
-      </button>
-      }
-    </div>
+    <nostos-paging-status
+      [hasMore]="notes().length < total()"
+      [loading]="loading()"
+      [failed]="failed()"
+      [root]="scroller"
+      rootMargin="600px 0px"
+      label="Loading more notes"
+      failedMessage="More notes could not be loaded."
+      (more)="loadMore()"
+      (retry)="loadPage()"
+    />
     }
   </main>
 </div>

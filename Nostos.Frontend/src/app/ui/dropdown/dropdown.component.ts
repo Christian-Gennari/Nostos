@@ -180,7 +180,7 @@ let nextDropdownId = 0;
       :host(.nostos-dropdown--compact) .nostos-dropdown__trigger {
         min-height: var(--dropdown-compact-height, var(--control-h-field-compact));
         padding: var(--dropdown-compact-padding, 0.4rem 0.7rem);
-        font-size: 0.875rem;
+        font-size: var(--text-sm);
       }
 
       @media (pointer: coarse), (hover: none) {

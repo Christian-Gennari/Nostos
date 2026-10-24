@@ -317,7 +317,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
   it('opens on a blank page with the rails closed and no empty state', () => {
     expect(component.blankPage()).toBe(true);
     expect(component.activeItem()).toBeNull();
-    expect(fixture.nativeElement.querySelector('.empty-state')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.editor-pane nostos-empty-state')).toBeNull();
     expect(fixture.nativeElement.querySelector('app-markdown-editor')).toBeTruthy();
     expect(component.showFileSidebar()).toBe(false);
     expect(component.showBrainSidebar()).toBe(false);
@@ -1057,6 +1057,32 @@ describe('WritingStudio delete (no window.confirm)', () => {
 
     component.confirmDeleteItem();
     expect(writings.delete).toHaveBeenCalledWith('doc-9');
+    expect(component.pendingDelete()).toBeNull();
+  });
+
+  it('keeps the confirm open and busy until the delete answers', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as {
+      delete: ReturnType<typeof vi.fn>;
+    };
+    const answer = new Subject<void>();
+    writings.delete.mockReturnValueOnce(answer);
+
+    component.deleteItem('doc-9');
+    component.confirmDeleteItem();
+    fixture.detectChanges();
+    expect(component.deletingItem()).toBe(true);
+    expect(component.pendingDelete()).toBe('doc-9');
+    expect(fixture.nativeElement.querySelector('.confirm-modal-card')?.textContent).toContain('Deleting…');
+
+    // Cancel and a second confirm do nothing while it is on its way.
+    component.cancelDeleteItem();
+    component.confirmDeleteItem();
+    expect(writings.delete).toHaveBeenCalledTimes(1);
+    expect(component.pendingDelete()).toBe('doc-9');
+
+    answer.next();
+    answer.complete();
+    expect(component.deletingItem()).toBe(false);
     expect(component.pendingDelete()).toBeNull();
   });
 

@@ -16,6 +16,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import ePub, { Book, Rendition, Contents } from 'epubjs';
 import { Subject, Subscription, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
@@ -255,7 +256,7 @@ const PASSAGE_POINTER_TOLERANCE = 5000;
 @Component({
   selector: 'app-epub-reader',
   standalone: true,
-  imports: [CommonModule, ButtonComponent, LoadingIndicatorComponent],
+  imports: [CommonModule, ButtonComponent, LoadingIndicatorComponent, EmptyStateComponent],
   templateUrl: './epub-reader.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './epub-reader.component.css',

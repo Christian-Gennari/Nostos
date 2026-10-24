@@ -1010,7 +1010,7 @@
   margin: 0;
   padding: 0 2px;
   color: var(--danger-ink);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.4;
 }
 
@@ -1139,7 +1139,7 @@
 
 @media (max-width: 430px) {
   .assistant-title {
-    font-size: 1rem;
+    font-size: var(--text-md);
   }
 
   .assistant-empty p {
@@ -1196,7 +1196,7 @@
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.2;
   padding: 0.28rem 0.5rem;
   cursor: pointer;

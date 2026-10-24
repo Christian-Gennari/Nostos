@@ -159,12 +159,15 @@
   left: 50%;
   z-index: 1;
   margin: 0;
+  width: auto;
+  max-width: calc(100% - 2rem);
   transform: translate(-50%, -50%);
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
-  text-align: center;
   pointer-events: none;
+}
+
+/* A failed load offers "Try again": that one takes the pointer. */
+.map-status.is-actionable {
+  pointer-events: auto;
 }
 
 /*
@@ -254,7 +257,7 @@
 .map-card-meta {
   margin: -0.3rem 0 0;
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -269,7 +272,7 @@
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
