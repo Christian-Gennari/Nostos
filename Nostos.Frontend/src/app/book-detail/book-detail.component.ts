@@ -48,7 +48,9 @@ interface PendingWorkAction {
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
+import { ProgressComponent } from '../ui/progress/progress.component';
+import { BookCoverComponent, bookCoverFormat } from '../ui/book-cover/book-cover.component';
+import { ConfirmModal, type ConfirmTone } from '../ui/confirm-modal/confirm-modal.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
@@ -62,19 +64,26 @@ import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { ExternalMediaBookStatus, ExternalMediaService } from '../core/services/external-media.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
-import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switcher.component';
 import { buildEditionSwitchOptions } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
 import { readPaperPage } from './paper-page-progress';
+
+interface StatusConfirmCopy {
+  heading: string;
+  description: string;
+  confirmLabel: string;
+  tone: ConfirmTone;
+}
 
 @Component({
   standalone: true,
@@ -88,6 +97,8 @@ import { readPaperPage } from './paper-page-progress';
     AddBookModal,
     EditionsModal,
     ConfirmModal,
+    ProgressComponent,
+    BookCoverComponent,
     TopicInputComponent,
     NoteItemComponent,
     BrainNoteDialogsComponent,
@@ -95,7 +106,6 @@ import { readPaperPage } from './paper-page-progress';
     ButtonComponent,
     IconButtonComponent,
     BadgeComponent,
-    DialogActionsComponent,
     ...NOSTOS_MENU,
     DropdownComponent,
     EditionSwitcherComponent,
@@ -244,25 +254,11 @@ export class BookDetail implements OnInit, OnDestroy {
   /** A pending work link/unlink awaiting confirmation (issue #143). */
   pendingWorkAction = signal<PendingWorkAction | null>(null);
 
-  /** The confirmation question, composed here so the modal stays generic. */
-  deleteHeading = computed(() => {
-    const title = this.store.book()?.title;
-    if (this.isLinkedExternally()) {
-      return title ? `Remove “${title}” from Nostos?` : 'Remove book from Nostos?';
-    }
-    return title ? `Delete “${title}”?` : 'Delete book?';
-  });
+  /** The format a cover-less book's placeholder names. */
+  readonly coverFormat = computed(() => bookCoverFormat(this.store.book()));
 
-  /** A linked book's files are not Nostos's to delete, and the dialog says so. */
-  deleteDescription = computed(() =>
-    this.isLinkedExternally()
-      ? 'This cannot be undone. The book, its notes and its reading progress are removed from Nostos. ' +
-        'Your original files stay where they are and are never modified or deleted by Nostos.'
-      : 'This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library.',
-  );
-  deleteConfirmLabel = computed(() =>
-    this.isLinkedExternally() ? 'Remove from Nostos' : 'Delete Permanently',
-  );
+  /** The delete confirmation's words; a linked book is only removed from Nostos. */
+  deleteCopy = computed(() => bookDeleteCopy(this.store.book()?.title, this.isLinkedExternally()));
 
   /** True when the hero's decorative cover art failed to load — the band falls back to flat colour. */
   heroArtFailed = signal(false);
@@ -279,7 +275,6 @@ export class BookDetail implements OnInit, OnDestroy {
   heroArtLoaded = signal(false);
 
   /** True once the stage cover has painted, for the same reason as above. */
-  coverLoaded = signal(false);
 
   onHeroArtError(): void {
     this.heroArtFailed.set(true);
@@ -289,14 +284,6 @@ export class BookDetail implements OnInit, OnDestroy {
     this.heroArtLoaded.set(true);
   }
 
-  /**
-   * Also bound to `error`, deliberately: a cover that fails must end up in the
-   * same state it had before this fade existed (a visible, empty frame) rather
-   * than being stranded at opacity 0.
-   */
-  onCoverLoad(): void {
-    this.coverLoaded.set(true);
-  }
 
   /**
    * URL for the hero band's art layers. Prefers the 640px thumbnail: the art is
@@ -499,6 +486,37 @@ export class BookDetail implements OnInit, OnDestroy {
     if (target === this.statusValue()) return;
     this.pendingStatus.set(target);
   }
+
+  /** The pending status change's question, for the shared confirm modal. */
+  readonly statusConfirm = computed<StatusConfirmCopy | null>(() => {
+    switch (this.pendingStatus()) {
+      case 'notstarted':
+        return {
+          heading: 'Reset to Not Started?',
+          description:
+            'This will override your current progress and clear your saved page position. ' +
+            'The next time you open this book, it will start from the beginning.',
+          confirmLabel: 'Reset Progress',
+          tone: 'danger',
+        };
+      case 'finished':
+        return {
+          heading: 'Mark as Finished?',
+          description: 'This will override your current reading progress and mark the book as 100% completed.',
+          confirmLabel: 'Mark as Finished',
+          tone: 'neutral',
+        };
+      case 'reading':
+        return {
+          heading: 'Mark as In Progress?',
+          description: "This will update the book's status back to in-progress.",
+          confirmLabel: 'Set In Progress',
+          tone: 'neutral',
+        };
+      default:
+        return null;
+    }
+  });
 
   cancelStatusChange(): void {
     this.pendingStatus.set(null);
@@ -722,7 +740,7 @@ export class BookDetail implements OnInit, OnDestroy {
     this.deleting.set(true);
     this.booksService.delete(b.id).subscribe({
       next: () => {
-        this.toast.success('Book deleted');
+        this.toast.success(bookDeletedToast(b.title, this.isLinkedExternally()));
         this.showDeleteConfirm.set(false);
         void this.router.navigate(['/library']);
       },

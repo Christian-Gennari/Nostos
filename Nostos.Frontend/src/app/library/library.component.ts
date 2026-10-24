@@ -26,10 +26,9 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { SidebarCollections } from './sidebar-collections/sidebar-collections.component';
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
-import { Subject, forkJoin } from 'rxjs';
+import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { InfiniteScrollDirective } from '../core/directives/infinite-scroll.directive';
-import { BloomArtDirective } from '../ui/bloom-art/bloom-art.directive';
 import { BookSort } from '../core/dtos/book.enums';
 import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
@@ -45,6 +44,10 @@ import type { NostosIconName } from '../ui/icon/nostos-icons';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { coverImageUrl } from '../core/cover-url';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
+import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { ExternalMediaService } from '../core/services/external-media.service';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -131,7 +134,7 @@ interface WorkFormatGlyph {
     DropdownComponent,
     SidebarCollections,
     InfiniteScrollDirective,
-    BloomArtDirective,
+    BookCoverComponent,
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css'],
@@ -153,12 +156,23 @@ export class Library implements OnInit, OnDestroy {
   /** The background-import feed. Owned by the service, not by this list. */
   readonly imports = inject(ImportService);
   private readonly libraryChanges = inject(LibraryChangesService);
+  private readonly cloudEntry = inject(CloudEntryService);
+  private readonly externalMedia = inject(ExternalMediaService);
 
   // Enums for Template Access
   BookSort = BookSort;
 
   loading = signal(true);
   loadingMore = signal(false);
+
+  /**
+   * The last page-one read failed. The results stage then says so in place of
+   * the list, so a failed read is never mistaken for an empty library.
+   */
+  loadFailed = signal(false);
+
+  /** The last load-more read failed; the list end offers a retry instead of scrolling on. */
+  loadMoreFailed = signal(false);
 
   /** True while the existing results blur out before the new page is swapped in. */
   swapping = signal(false);
@@ -228,11 +242,12 @@ export class Library implements OnInit, OnDestroy {
   deleteTarget = signal<Book | null>(null);
   deletingBook = signal(false);
 
-  /** The confirmation question, composed here so the modal stays generic. */
-  deleteHeading = computed(() => {
-    const target = this.deleteTarget();
-    return target ? `Delete “${target.title}”?` : 'Delete book?';
-  });
+  /** True when the book being deleted is linked from an external media folder. */
+  deleteTargetLinked = signal(false);
+  private deleteLookup?: Subscription;
+
+  /** The delete confirmation's words, shared with Book detail. */
+  deleteCopy = computed(() => bookDeleteCopy(this.deleteTarget()?.title, this.deleteTargetLinked()));
 
   books = computed(() => this.rawBooks());
 
@@ -393,13 +408,19 @@ export class Library implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.deleteLookup?.unsubscribe();
     this.document.body?.classList.remove('nostos-library');
   }
 
   refreshBooks(reset = true, showWaiting = true): void {
     if (reset) {
       this.currentPage.set(1);
-      if (!this.preferences.hasLoadedBooks()) {
+      if (this.loadFailed()) {
+        // Leaving the error state: the stage waits, empty, for the new page
+        // rather than flashing the stale list or an empty-library message.
+        this.loadFailed.set(false);
+        this.loading.set(true);
+      } else if (!this.preferences.hasLoadedBooks()) {
         // Genuine first paint: the results region stays empty until the page
         // lands. Nothing is scheduled here — the results resolve in as they
         // arrive, so the arrival needs no timer.
@@ -415,6 +436,7 @@ export class Library implements OnInit, OnDestroy {
     } else {
       this.loadingMore.set(true);
     }
+    this.loadMoreFailed.set(false);
 
     const seq = ++this.requestSeq;
 
@@ -428,7 +450,13 @@ export class Library implements OnInit, OnDestroy {
         },
         error: () => {
           if (seq !== this.requestSeq) return;
-          this.toast.error('Failed to load books');
+          if (reset) {
+            this.loadFailed.set(true);
+          } else {
+            // The page that failed was never added: step back so a retry asks for it again.
+            this.currentPage.update((p) => Math.max(1, p - 1));
+            this.loadMoreFailed.set(true);
+          }
           this.loading.set(false);
           this.loadingMore.set(false);
           this.swapping.set(false);
@@ -446,7 +474,7 @@ export class Library implements OnInit, OnDestroy {
    * change it may have missed arrives with the next announcement.
    */
   private refreshInPlace(): void {
-    if (this.loading() || this.loadingMore() || this.swapping()) return;
+    if (this.loading() || this.loadingMore() || this.swapping() || this.loadFailed()) return;
 
     const seq = ++this.requestSeq;
     // Everything already loaded, in one request when the server's page limit
@@ -515,6 +543,7 @@ export class Library implements OnInit, OnDestroy {
       }
       this.totalItems.set(data.totalCount);
       this.preferences.hasLoadedBooks.set(true);
+      if (reset) this.loadFailed.set(false);
       this.loading.set(false);
       this.loadingMore.set(false);
       this.swapping.set(false); // releases the in-phase: new books resolve in
@@ -553,10 +582,21 @@ export class Library implements OnInit, OnDestroy {
   }
 
   loadMore(): void {
-    if (!this.hasMoreBooks() || this.loadingMore()) return;
+    if (!this.hasMoreBooks() || this.loadingMore() || this.loadMoreFailed()) return;
 
     this.currentPage.update((p) => p + 1);
     this.refreshBooks(false);
+  }
+
+  /** The list end's "Try again": asks for the page that failed. */
+  retryLoadMore(): void {
+    this.loadMoreFailed.set(false);
+    this.loadMore();
+  }
+
+  /** The results stage's "Try again" after a failed first read. */
+  retryLoad(): void {
+    this.refreshBooks(true);
   }
 
   onSearch(event: Event): void {
@@ -839,6 +879,11 @@ export class Library implements OnInit, OnDestroy {
     return formats.filter((format) => presentFormats.has(format.type));
   }
 
+  /** The format a cover-less book's placeholder names. */
+  coverFormat(book: Book): BookCoverFormat | null {
+    return bookCoverFormat(book);
+  }
+
   getWorkFormatsTooltip(book: Book): string {
     const labels = this.getWorkFormatGlyphs(book).map((glyph) => glyph.label);
     return `Available in ${labels.join(', ')}`;
@@ -859,7 +904,30 @@ export class Library implements OnInit, OnDestroy {
 
   openDeleteModal(book: Book, event?: Event): void {
     event?.stopPropagation();
-    this.deleteTarget.set(book);
+    this.askDelete(book);
+  }
+
+  /**
+   * Opens the delete confirmation. A book with a file may be linked from an
+   * external media folder, whose files Nostos never deletes; on servers with
+   * that feature the dialog waits for the answer so it never promises a
+   * permanent delete it will not perform.
+   */
+  private askDelete(book: Book): void {
+    this.deleteLookup?.unsubscribe();
+    this.deleteTargetLinked.set(false);
+    if (!book.hasFile || !this.cloudEntry.supportsExternalMediaLibraries()) {
+      this.deleteTarget.set(book);
+      return;
+    }
+    this.deleteLookup = this.externalMedia.book(book.id).subscribe({
+      next: (state) => {
+        this.deleteTargetLinked.set(state.linked === true);
+        this.deleteTarget.set(book);
+      },
+      // Without the answer the book is treated as Nostos's own.
+      error: () => this.deleteTarget.set(book),
+    });
   }
 
   cancelDelete(): void {
@@ -877,7 +945,7 @@ export class Library implements OnInit, OnDestroy {
         this.rawBooks.update((books) => books.filter((b) => b.id !== target.id));
         this.totalItems.update((c) => Math.max(0, c - 1));
         this.refreshStatusCounts();
-        this.toast.success(`"${target.title}" deleted`);
+        this.toast.success(bookDeletedToast(target.title, this.deleteTargetLinked()));
         this.deleteTarget.set(null);
         this.deletingBook.set(false);
       },
@@ -892,9 +960,9 @@ export class Library implements OnInit, OnDestroy {
     event.stopPropagation();
     if (typeof bookOrId === 'string') {
       const found = this.rawBooks().find((b) => b.id === bookOrId) ?? null;
-      this.deleteTarget.set(found ?? ({ id: bookOrId, title: 'Book' } as Book));
+      this.askDelete(found ?? ({ id: bookOrId, title: 'Book' } as Book));
     } else {
-      this.deleteTarget.set(bookOrId);
+      this.askDelete(bookOrId);
     }
   }
 

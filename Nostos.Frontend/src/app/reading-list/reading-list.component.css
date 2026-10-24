@@ -254,78 +254,10 @@
   opacity: 0.6;
 }
 
-/* A wish has no artwork, so its cover is the title set on a cloth binding.
-   Each title gets its own hue (coverHue), mixed into the image ground so it
-   stays a tint in both themes; the darker band on the left is the spine. */
+/* A wish has no artwork: its cover is the shared quiet placeholder
+   (nostos-book-cover), the same one a cover-less book shows everywhere. */
 .cover {
-  /* Overridden per entry by the template's style binding. */
-  --cover-hue: 30;
-  --cover-cloth: color-mix(
-    in oklab,
-    hsl(var(--cover-hue) 45% 50%) 24%,
-    var(--surface-image-ground)
-  );
-  flex: 0 0 5.25rem;
-  height: 7.875rem;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 0.4rem;
-  padding: 0.55rem 0.3rem 0.5rem 0.55rem;
-  border-radius: 2px var(--radius-sm) var(--radius-sm) 2px;
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in oklab, hsl(var(--cover-hue) 45% 35%) 30%, transparent) 0 4px,
-      transparent 4px
-    ),
-    var(--cover-cloth);
   box-shadow: var(--cover-shadow);
-  color: var(--color-text-main);
-  overflow: hidden;
-  /* A long single word hyphenates; it only breaks bare when it must. */
-  hyphens: auto;
-  overflow-wrap: break-word;
-}
-
-.cover__title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
-  overflow: hidden;
-  font-family: 'Newsreader', serif;
-  font-size: 0.66rem;
-  font-weight: var(--fw-medium);
-  line-height: 1.2;
-  /* Break between words, and inside one only when it cannot fit at all. */
-  hyphens: manual;
-  overflow-wrap: anywhere;
-}
-
-.cover__author {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  font-size: 0.56rem;
-  line-height: 1.25;
-  hyphens: manual;
-  color: var(--color-text-muted);
-}
-
-/* At thumbnail size only the initial survives, set like a monogram. */
-.cover--small {
-  flex-basis: 2.25rem;
-  /* Also a width: in the Someday grid there is no flex basis to size it. */
-  width: 2.25rem;
-  height: 3.375rem;
-  padding: 0 0 0 3px;
-  justify-content: center;
-  align-items: center;
-  font-family: 'Newsreader', serif;
-  font-size: 1.05rem;
-  color: var(--color-text-muted);
 }
 
 /* ------------------------------------------------------------ next up */

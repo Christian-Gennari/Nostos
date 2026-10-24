@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, computed, Signal, signal, WritableSignal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { Library } from './library.component';
 import { BooksService } from '../core/services/books.service';
@@ -9,6 +9,8 @@ import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { ExternalMediaService } from '../core/services/external-media.service';
 import { ImportActivity } from '../core/dtos/import.dtos';
 import { PaginatedResponse } from '../core/dtos/book.dtos';
 import { Book } from '../core/dtos/book.dtos';
@@ -33,6 +35,10 @@ describe('Library', () => {
 
   /** "The library changed elsewhere", driven per test. */
   let libraryChanged: Subject<void>;
+
+  /** Whether the server links external media folders, and what it says about a book. */
+  let externalMediaSupported: WritableSignal<boolean>;
+  let externalMediaBook: ReturnType<typeof vi.fn>;
 
   function activity(overrides: Partial<ImportActivity> = {}): ImportActivity {
     return {
@@ -68,6 +74,8 @@ describe('Library', () => {
     importEntries = signal<ImportActivity[]>([]);
     importPatched = new Subject<Book>();
     libraryChanged = new Subject<void>();
+    externalMediaSupported = signal(false);
+    externalMediaBook = vi.fn(() => of({ linked: false, files: 1, unavailableFiles: 0 }));
     progressByBookId = computed(() => {
       const byBook = new Map<string, ImportActivity>();
       for (const entry of importEntries()) {
@@ -103,6 +111,11 @@ describe('Library', () => {
           } as unknown as CollectionsService,
         },
         { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
+        {
+          provide: CloudEntryService,
+          useValue: { supportsExternalMediaLibraries: () => externalMediaSupported() },
+        },
+        { provide: ExternalMediaService, useValue: { book: externalMediaBook } },
         {
           // The library reads the feed as signals: it starts the connection,
           // looks up the import driving a given book, and patches the single book
@@ -664,8 +677,12 @@ describe('Library', () => {
     const cell = fixture.nativeElement.querySelector('.col.title') as HTMLElement;
     expect(cell).toBeTruthy();
 
-    const ordered = Array.from(cell.children).map((el) => el.className.split(' ')[0]);
+    const ordered = Array.from(cell.children).map((el) =>
+      el.classList.contains('list-cover-frame') ? 'list-cover-frame' : el.className.split(' ')[0],
+    );
     expect(ordered).toEqual(['list-cover-frame', 'list-title-text', 'list-row-status']);
+    // The cover is the shared book-cover at the list's rung.
+    expect(cell.querySelector('nostos-book-cover.list-cover-frame.nostos-book-cover--sm')).toBeTruthy();
 
     // The toggles live INSIDE the status cluster, not loose in the cell, so the
     // cluster can own their spacing and hover reveal as one unit.
@@ -1061,6 +1078,93 @@ describe('Library', () => {
     empty.querySelector('button')!.click();
 
     expect(component.showAddModal()).toBe(true);
+  });
+
+  it('says the books could not load, not that the library is empty, when the list read fails', () => {
+    listSpy.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.refreshBooks(true);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const error = host.querySelector('.container.lg .books-load-error') as HTMLElement;
+    expect(error).not.toBeNull();
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.textContent).toContain('could not be loaded');
+    expect(host.textContent).not.toContain('Your library is empty');
+
+    // Try again reads the list once more and, on success, the stage is the list again.
+    listSpy.mockReturnValueOnce(of({ items: [importingBook({ id: 'b1', title: 'B1', status: 0 })], totalCount: 1 } as PaginatedResponse<Book>));
+    const calls = listSpy.mock.calls.length;
+    (error.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(listSpy.mock.calls.length).toBe(calls + 1);
+    expect(host.querySelector('.books-load-error')).toBeNull();
+    expect(component.books().map((b) => b.id)).toEqual(['b1']);
+  });
+
+  it('offers a retry at the list end when loading more fails, and asks for the same page again', () => {
+    // The list-end sentinel observes scrolling; jsdom has no observer to give it.
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    component.rawBooks.set([importingBook({ id: 'b1', title: 'B1', status: 0 })]);
+    component.totalItems.set(5);
+    fixture.detectChanges();
+
+    listSpy.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.loadMore();
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const retry = host.querySelector('.books-load-more-error button') as HTMLButtonElement;
+    expect(retry).not.toBeNull();
+    expect(component.currentPage()).toBe(1);
+    // The list itself is untouched.
+    expect(component.books().map((b) => b.id)).toEqual(['b1']);
+
+    // Scrolling does not hammer the failed page; only the button retries.
+    const calls = listSpy.mock.calls.length;
+    component.loadMore();
+    expect(listSpy.mock.calls.length).toBe(calls);
+
+    retry.click();
+    expect(listSpy.mock.calls.length).toBe(calls + 1);
+    expect(listSpy.mock.calls.at(-1)![0].page).toBe(2);
+    vi.unstubAllGlobals();
+  });
+
+  it('asks to delete an owned book permanently and toasts like the topic toast', () => {
+    const toast = TestBed.inject(ToastService);
+    const success = vi.spyOn(toast, 'success').mockImplementation(() => undefined as never);
+    const target = importingBook({ id: 'b1', title: 'Dune', status: 0, hasFile: true });
+    component.rawBooks.set([target]);
+
+    component.openDeleteModal(target);
+    expect(externalMediaBook).not.toHaveBeenCalled();
+    expect(component.deleteCopy().heading).toBe('Delete “Dune”?');
+    expect(component.deleteCopy().confirmLabel).toBe('Delete Permanently');
+
+    component.confirmDelete();
+    expect(success).toHaveBeenCalledWith('Deleted “Dune”');
+  });
+
+  it('says a linked book is only removed from Nostos, as Book detail does', () => {
+    externalMediaSupported.set(true);
+    externalMediaBook.mockReturnValueOnce(of({ linked: true, files: 1, unavailableFiles: 0 }));
+    const target = importingBook({ id: 'b1', title: 'Dune', status: 0, hasFile: true });
+
+    component.openDeleteModal(target);
+
+    expect(externalMediaBook).toHaveBeenCalledWith('b1');
+    expect(component.deleteTarget()?.id).toBe('b1');
+    expect(component.deleteCopy().heading).toBe('Remove “Dune” from Nostos?');
+    expect(component.deleteCopy().description).toContain('Your original files stay where they are');
+    expect(component.deleteCopy().confirmLabel).toBe('Remove from Nostos');
   });
 
   it('opens and closes Add Book without a separate acquisition chooser', () => {

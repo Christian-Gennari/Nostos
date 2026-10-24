@@ -27,6 +27,7 @@ import { ModalShell } from '../modal-shell/modal-shell.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SwitchComponent } from '../switch/switch.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-toggle.component';
+import { BookCoverComponent } from '../book-cover/book-cover.component';
 
 /**
  * Inspectable reference fixture for Nostos UI v1.
@@ -40,6 +41,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
   selector: 'app-ui-catalogue',
   standalone: true,
   imports: [
+    BookCoverComponent,
     BadgeComponent,
     BrandLockupComponent,
     NoticeComponent,

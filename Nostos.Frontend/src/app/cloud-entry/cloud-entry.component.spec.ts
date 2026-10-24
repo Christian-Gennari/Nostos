@@ -106,6 +106,20 @@ describe('CloudEntryComponent', () => {
     return choice;
   }
 
+  it('shows provisioning with the shared indeterminate progress bar and no extra spinner', () => {
+    mockEntry.view.set({ kind: 'provisioning' });
+    const fixture = TestBed.createComponent(CloudEntryComponent);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const bar = compiled.querySelector('nostos-progress.cloud-entry__progress') as HTMLElement;
+    expect(bar).toBeTruthy();
+    expect(bar.getAttribute('role')).toBe('progressbar');
+    expect(bar.getAttribute('aria-label')).toBe('Preparing your library');
+    expect(bar.classList.contains('nostos-progress--indeterminate')).toBe(true);
+    expect(compiled.querySelector('nostos-loading-indicator')).toBeNull();
+  });
+
   it('renders plan summary and active Continue to checkout button when selectedOffer is present', () => {
     const fixture = TestBed.createComponent(CloudEntryComponent);
     fixture.detectChanges();

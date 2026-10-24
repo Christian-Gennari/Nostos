@@ -288,8 +288,10 @@ for (const f of files) {
    Lowered 45 -> 43 by its grid/list half: the list's thumbnail shadow and its
    restyled format capsule (each with an rgba literal) are gone.
    Lowered 43 -> 41 by the Studio theme pass: the slide-over rails' two
-   `rgba(0, 0, 0, 0.15)` drop shadows are gone (a hairline edge instead). */
-const LITERAL_COLOUR_BUDGET = 41;
+   `rgba(0, 0, 0, 0.15)` drop shadows are gone (a hairline edge instead).
+   Lowered 41 -> 39 when Book Detail's hand-built reading-status dialog moved
+   onto app-confirm-modal: its two rgba() drop shadows are gone. */
+const LITERAL_COLOUR_BUDGET = 39;
 
 {
   const ALLOW = [

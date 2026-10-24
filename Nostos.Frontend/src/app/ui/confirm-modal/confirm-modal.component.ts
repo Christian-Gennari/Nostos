@@ -5,6 +5,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { ButtonComponent } from '../button/button.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
+import type { NostosIconName } from '../icon/nostos-icons';
 
 /**
  * Tone of the confirmation. `danger` is the destructive treatment (muted wine
@@ -63,6 +64,12 @@ export class ConfirmModal {
   trapFocus = input<boolean>(false);
 
   tone = input<ConfirmTone>('danger');
+
+  /**
+   * The danger tone's glyph, on the mark and the action. Trash by default; a
+   * destructive question that is not a delete (resetting progress) names its own.
+   */
+  icon = input<NostosIconName>('trash');
 
   confirm = output<void>();
   cancel = output<void>();

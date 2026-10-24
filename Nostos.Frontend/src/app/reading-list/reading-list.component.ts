@@ -32,10 +32,9 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
+import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
 
 /** Muted cloth hues for the typeset covers: rust, ochre, olive, green, teal, blue, violet, plum. */
-const COVER_HUES = [12, 38, 75, 140, 180, 210, 255, 320];
-
 /** Digits (and a trailing X) only, 10 or 13 long: what an ISBN looks like once its dashes are gone. */
 const ISBN_SHAPE = /^(?:\d{9}[\dXx]|\d{13})$/;
 
@@ -64,6 +63,7 @@ function asIsbn(typed: string): string | null {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    BookCoverComponent,
     DatePipe,
     FormsModule,
     RouterLink,
@@ -228,13 +228,6 @@ export class ReadingList implements OnInit {
   }
 
   // ---------------------------------------------------------------- shelf
-
-  /** The same title always gets the same binding, so a book is recognisable when it moves. */
-  coverHue(entry: ReadingListEntry): number {
-    let hash = 0;
-    for (const char of entry.title) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-    return COVER_HUES[Math.abs(hash) % COVER_HUES.length];
-  }
 
   isBusy(entry: ReadingListEntry): boolean {
     return this.busyIds().has(entry.id);

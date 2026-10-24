@@ -139,10 +139,10 @@
 
       <app-confirm-modal
         [isOpen]="!!deleteTarget()"
-        [heading]="deleteHeading()"
-        description="This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library."
-        confirmLabel="Delete Permanently"
-        busyLabel="Deleting…"
+        [heading]="deleteCopy().heading"
+        [description]="deleteCopy().description"
+        [confirmLabel]="deleteCopy().confirmLabel"
+        [busyLabel]="deleteCopy().busyLabel"
         [busy]="deletingBook()"
         (confirm)="confirmDelete()"
         (cancel)="cancelDelete()"
@@ -160,7 +160,12 @@
         [class.is-waiting]="loading()"
         [attr.aria-busy]="swapping() || loading()"
       >
-        @if (!loading()) {
+        @if (loadFailed()) {
+        <div class="books-empty-state books-load-error" role="alert">
+          <p>Your books could not be loaded.</p>
+          <button appButton variant="secondary" size="sm" type="button" (click)="retryLoad()">Try again</button>
+        </div>
+        } @else if (!loading()) {
       @if (viewMode() === 'list') {
       <div class="table-view">
         <div class="table-header">
@@ -174,15 +179,14 @@
         @for (book of books(); track book.id) {
         <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)">
           <div class="col title">
-            <div class="list-cover-frame">
-              @if (book.coverUrl) {
-                <img [src]="getLibraryCoverUrl(book)" [alt]="book.title" appBloomArt class="list-cover-img" loading="lazy" decoding="async" />
-              } @else {
-                <div class="list-cover-placeholder">
-                  <nostos-icon name="book" [size]="16" weight="light"></nostos-icon>
-                </div>
-              }
-            </div>
+            <nostos-book-cover
+              class="list-cover-frame"
+              size="sm"
+              reveal="bloom"
+              [src]="book.coverUrl ? getLibraryCoverUrl(book) : null"
+              [bookTitle]="book.title"
+              [format]="coverFormat(book)"
+            />
 
             <div class="list-title-text">
               <span class="list-book-title">{{ book.title }}</span>
@@ -390,18 +394,14 @@
               </div>
             }
 
-            @if (book.coverUrl) {
-            <img
-              [src]="getLibraryCoverUrl(book)"
-              appBloomArt
+            <nostos-book-cover
               class="cover-image"
-              alt="{{ book.title }} cover"
-              loading="lazy"
-              decoding="async"
+              size="fill"
+              reveal="bloom"
+              [src]="book.coverUrl ? getLibraryCoverUrl(book) : null"
+              [bookTitle]="book.title"
+              [format]="coverFormat(book)"
             />
-            } @else {
-            <nostos-icon name="book" [size]="48" weight="thin"></nostos-icon>
-            }
 
             @if (book.otherEditions && book.otherEditions.length > 0) {
             <span class="format-badge micro-glyphs" [attr.title]="getWorkFormatsTooltip(book)">
@@ -542,7 +542,13 @@
       }
       }
       </div>
-      @if (hasMoreBooks()) {
+      @if (hasMoreBooks() && !loadFailed()) {
+      @if (loadMoreFailed()) {
+      <div class="books-load-more-error" role="alert">
+        <p>More books could not be loaded.</p>
+        <button appButton variant="ghost" size="sm" type="button" (click)="retryLoadMore()">Try again</button>
+      </div>
+      } @else {
       <div
         appInfiniteScroll
         (scrolly)="loadMore()"
@@ -558,6 +564,7 @@
         <nostos-loading-indicator label="Loading more books" size="xl" />
         }
       </div>
+      }
       }
     </div>
   </div>

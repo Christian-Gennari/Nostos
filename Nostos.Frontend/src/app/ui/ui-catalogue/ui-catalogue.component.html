@@ -557,6 +557,37 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-book-cover">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-book-cover">Book cover</h2>
+      </div>
+      <p>A book's cover, or one quiet placeholder naming its format. Thumbnails take a rung; a surface that frames the cover itself uses fill.</p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Placeholder rungs</span>
+        <div class="catalogue-row" aria-label="Book cover sizes">
+          <nostos-book-cover size="xs" decorative />
+          <nostos-book-cover size="sm" format="ebook" decorative />
+          <nostos-book-cover size="md" format="audiobook" decorative />
+          <nostos-book-cover size="lg" format="pdf" decorative />
+        </div>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Fill, inside a surface's frame</span>
+        <div class="catalogue-row">
+          <div class="catalogue-cover-frame">
+            <nostos-book-cover size="fill" format="physical" bookTitle="A physical book" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-segmented">
     <div class="catalogue-section-heading">
       <div>

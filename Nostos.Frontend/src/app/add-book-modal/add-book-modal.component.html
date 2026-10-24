@@ -835,11 +835,7 @@
                             [disabled]="!!runningAcquisition()"
                             (click)="selectSourceItem(item)"
                           >
-                            @if (item.coverUrl) {
-                              <img class="source-cover" [src]="item.coverUrl" alt="" loading="lazy" />
-                            } @else {
-                              <span class="source-cover source-cover-empty" aria-hidden="true"></span>
-                            }
+                            <nostos-book-cover class="source-cover" size="md" [src]="item.coverUrl" decorative />
                             <span class="source-result-text">
                               <span class="source-result-title">{{ item.title }}</span>
                               @if (item.author) {

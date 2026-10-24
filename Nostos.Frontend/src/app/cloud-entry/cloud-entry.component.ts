@@ -6,6 +6,7 @@ import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup/brand-lockup.component';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
+import { ProgressComponent } from '../ui/progress/progress.component';
 import { CloudSignInComponent } from './cloud-sign-in.component';
 
 @Component({
@@ -13,6 +14,7 @@ import { CloudSignInComponent } from './cloud-sign-in.component';
   standalone: true,
   imports: [
     LoadingIndicatorComponent,
+    ProgressComponent,
     ButtonComponent,
     NostosIconComponent,
     BrandLockupComponent,

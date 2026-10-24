@@ -184,6 +184,23 @@ app-sidebar-collections.no-transition {
   color: var(--color-text-main);
 }
 
+/* A failed load-more: the list end says so and offers the retry in the place
+   the next page would have loaded. */
+.books-load-more-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 0;
+  width: 100%;
+  color: var(--color-text-muted);
+}
+
+.books-load-more-error p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 /* NEW: Search Bar Styles */
 /* <nostos-search-field>: fills the toolbar's middle track (capped at 480px
    there). The glass, its gutter and the clear button are the primitive's. */
@@ -400,33 +417,6 @@ app-sidebar-collections.no-transition {
 }
 
 /* Cover thumbnail in the list/title column */
-.list-cover-frame {
-  width: 32px;
-  height: 46px;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  flex-shrink: 0;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface);
-}
-
-.list-cover-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.list-cover-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-light);
-  background: var(--bg-surface);
-}
-
 .list-title-text {
   display: flex;
   flex-direction: column;
@@ -810,44 +800,8 @@ app-sidebar-collections.no-transition {
   transform: translateZ(0);
 }
 
-.cover-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-
-  /* --- FIX FOR PIXELATED IMAGES --- */
-  /* This tells the browser to use high-quality interpolation for downscaling */
-  image-rendering: high-quality;
-
-  /* Fixes jagged edges during 3D transforms */
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-
-  /* Overcover the frame's box by one device pixel on every side.
-     While `bloom-in` is running the artwork carries a `filter`, which promotes it
-     to its own composited layer, and that layer's edge snaps to a whole device
-     pixel. On a card whose layout box lands on a fractional coordinate the snapped
-     raster stops just short of the frame's inner edge, and for the whole tail of
-     the animation — from the moment the blur drops below ~1px until the animation
-     ends — one column of the frame's own `--surface-image-ground` shows through
-     between the artwork and the hairline border. Measured at 1920x1080 on the card
-     whose box edge is x=1203.59: the column reads rgb(31,35,43) on dark and
-     rgb(242,237,235) on light, i.e. exactly the ground token, then returns to
-     artwork the instant the animation ends and the filter is dropped.
-     The frame already clips (`overflow: hidden`) into its corner radius, so
-     overshooting costs nothing visually: it only guarantees the raster still
-     covers the box after the snap. `margin` is what keeps this at zero net layout
-     change — with `box-sizing: border-box` a `calc(100% + 2px)` box grown from the
-     top-left would otherwise push the image 1px right and down, which the centred
-     flex parent would then re-inset by 1px, undoing the overshoot on two of the
-     four sides. Both properties must move together; `max-width`/`max-height` are
-     cleared because they would clamp the width back to 100%. */
-  width: calc(100% + 2px);
-  height: calc(100% + 2px);
-  margin: -1px;
-  max-width: none;
-  max-height: none;
-}
+/* The cover is the shared nostos-book-cover filling this frame; it owns the
+   image, its bloom (and the 1px overscan the bloom needs) and the placeholder. */
 
 .book-card:hover .cover-wrapper {
   transform: translateY(-4px);

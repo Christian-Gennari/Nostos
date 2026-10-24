@@ -1708,10 +1708,20 @@ button {
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
-  outline: 0;
 
   cursor: pointer;
   font-family: inherit;
+}
+
+/* The one keyboard focus ring. Raw buttons and links used to show nothing
+   (`button { outline: 0 }`); now anything focused from the keyboard gets the
+   same ring the primitives draw (appButton, icon-btn, choice-row). `:where()`
+   keeps it at zero specificity, so every primitive's own :focus-visible rule —
+   its offset, or a halo in place of the ring — still wins and no control
+   draws two rings. Mouse and touch focus show nothing, as before. */
+:where(:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .icon-btn {

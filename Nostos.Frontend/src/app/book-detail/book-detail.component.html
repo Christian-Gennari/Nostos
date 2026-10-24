@@ -37,10 +37,10 @@
       <div class="art-fade" aria-hidden="true"></div>
 
       <div class="hero-inner">
-        <button class="btn-back" routerLink="/library">
-          <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
+        <a appButton variant="ghost" size="sm" class="back-link btn-back" routerLink="/library">
+          <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
           <span>Library</span>
-        </button>
+        </a>
 
         <div class="hero-copy">
           <div class="hero-eyebrow">
@@ -71,25 +71,15 @@
       <div class="stage-inner">
         <aside class="cover-card">
           <div class="cover-frame">
-            @if (store.book()?.coverUrl) {
-            <img
-              [src]="coverSrc()"
-              alt="Book cover"
+            <nostos-book-cover
               class="cover-img"
-              [class.loaded]="coverLoaded()"
+              size="fill"
+              reveal="fade"
               loading="eager"
-              decoding="async"
-              (load)="onCoverLoad()"
-              (error)="onCoverLoad()"
+              [src]="store.book()?.coverUrl ? coverSrc() : null"
+              [bookTitle]="store.book()?.title"
+              [format]="coverFormat()"
             />
-            } @else {
-            <div class="placeholder-cover">
-              <nostos-icon
-                name="book-open"
-                [size]="48" weight="thin"
-                color="#ccc"></nostos-icon>
-            </div>
-            }
 
             <div class="cover-overlay">
               <button
@@ -246,14 +236,12 @@
                   <span>{{ store.importPercent() }}%</span>
                 }
               </div>
-              @if (store.importPercent() !== null) {
-              <div class="detail-import-track" role="progressbar"
-                   [attr.aria-label]="store.importStage()"
-                   [attr.aria-valuenow]="store.importPercent()"
-                   aria-valuemin="0" aria-valuemax="100">
-                <span [style.width.%]="store.importPercent()"></span>
-              </div>
-              }
+              <!-- The shared bar; indeterminate until the import reports a percent. -->
+              <nostos-progress
+                class="detail-import-track"
+                [value]="store.importPercent()"
+                [label]="store.importStage()"
+              />
               @if (store.importConnectionState() === 'reconnecting') {
                 <p>Reconnecting to import progress…</p>
               } @else {
@@ -614,73 +602,27 @@
     }
   </div>
 
-  @if (pendingStatus()) {
-  <div class="reset-confirm-backdrop" (click)="cancelStatusChange()">
-    <div
-      class="reset-confirm-dialog status-confirm-dialog"
-      role="alertdialog"
-      aria-labelledby="status-confirm-title"
-      aria-describedby="status-confirm-body"
-      (click)="$event.stopPropagation()"
-    >
-      @if (pendingStatus() === 'notstarted') {
-        <h3 id="status-confirm-title">Reset to Not Started?</h3>
-        <p id="status-confirm-body">
-          This will override your current progress and clear your saved page position. The next time you open this book, it will start from the beginning.
-        </p>
-        <app-dialog-actions variant="inset">
-          <button appButton variant="ghost" size="sm" type="button" (click)="cancelStatusChange()" [disabled]="store.resettingProgress()">
-            Cancel
-          </button>
-          <button
-            appButton
-            variant="danger"
-            size="sm"
-            type="button"
-            (click)="confirmStatusChange()"
-            [busy]="store.resettingProgress()"
-            [disabled]="store.resettingProgress()"
-          >
-            {{ store.resettingProgress() ? 'Resetting…' : 'Reset Progress' }}
-          </button>
-        </app-dialog-actions>
-      } @else if (pendingStatus() === 'finished') {
-        <h3 id="status-confirm-title">Mark as Finished?</h3>
-        <p id="status-confirm-body">
-          This will override your current reading progress and mark the book as 100% completed.
-        </p>
-        <app-dialog-actions variant="inset">
-          <button appButton variant="ghost" size="sm" type="button" (click)="cancelStatusChange()">
-            Cancel
-          </button>
-          <button appButton variant="primary" size="sm" type="button" (click)="confirmStatusChange()">
-            Mark as Finished
-          </button>
-        </app-dialog-actions>
-      } @else if (pendingStatus() === 'reading') {
-        <h3 id="status-confirm-title">Mark as In Progress?</h3>
-        <p id="status-confirm-body">
-          This will update the book's status back to in-progress.
-        </p>
-        <app-dialog-actions variant="inset">
-          <button appButton variant="ghost" size="sm" type="button" (click)="cancelStatusChange()">
-            Cancel
-          </button>
-          <button appButton variant="primary" size="sm" type="button" (click)="confirmStatusChange()">
-            Set In Progress
-          </button>
-        </app-dialog-actions>
-      }
-    </div>
-  </div>
-  }
+  <!-- Reading-status changes overwrite progress, so they ask first. Resetting
+       to Not Started discards the saved position: the danger tone. -->
+  <app-confirm-modal
+    class="status-confirm"
+    [isOpen]="!!statusConfirm()"
+    [heading]="statusConfirm()?.heading ?? ''"
+    [description]="statusConfirm()?.description ?? ''"
+    [confirmLabel]="statusConfirm()?.confirmLabel ?? ''"
+    [tone]="statusConfirm()?.tone ?? 'neutral'"
+    icon="arrow-counter-clockwise"
+    (confirm)="confirmStatusChange()"
+    (cancel)="cancelStatusChange()"
+  >
+  </app-confirm-modal>
 
   <app-confirm-modal
     [isOpen]="showDeleteConfirm()"
-    [heading]="deleteHeading()"
-    [description]="deleteDescription()"
-    [confirmLabel]="deleteConfirmLabel()"
-    busyLabel="Deleting…"
+    [heading]="deleteCopy().heading"
+    [description]="deleteCopy().description"
+    [confirmLabel]="deleteCopy().confirmLabel"
+    [busyLabel]="deleteCopy().busyLabel"
     [busy]="deleting()"
     (confirm)="confirmDeleteBook()"
     (cancel)="cancelDeleteConfirm()"

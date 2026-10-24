@@ -597,7 +597,7 @@ describe('AddBookModal — From a Source', () => {
     expect(rows[0].textContent).toContain('E-book · Project Gutenberg');
 
     // The browser never talks to the source directly: the URL is Nostos's own.
-    expect(fixture.nativeElement.querySelector('.source-cover').getAttribute('src')).toBe(
+    expect(fixture.nativeElement.querySelector('.source-cover img').getAttribute('src')).toBe(
       '/api/providers/gutenberg/items/1342/cover',
     );
   });
