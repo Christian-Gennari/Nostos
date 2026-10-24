@@ -154,6 +154,8 @@ Or use the included Compose file: `docker compose up -d`. Then open **http://loc
 
 Everything Nostos keeps lives in the `/data` volume: the database, your books, local backups and the key ring in `/data/keys` that protects AI keys saved in Settings. Back up the whole volume, and keep it when you replace the container.
 
+- **Hardware:** the image runs on 64-bit Intel and AMD machines (`linux/amd64`) and on 64-bit Arm (`linux/arm64`): a Raspberry Pi 4 or 5 with a 64-bit OS, an Apple Silicon Mac, or an Arm NAS. Docker picks the right one for you. 32-bit systems are not supported.
+- **Memory:** Nostos uses about 110–125 MB when idle and about 220–330 MB with a small library (50 ebooks with covers and 5 audiobooks). Give it at least 512 MB; 1 GB leaves room for large imports and backups.
 - **Update:** `docker compose pull && docker compose up -d`. `latest` is published only after the full CI passes on `main` and that exact image has passed its start-up and persistence check; it never moves back to an older revision. To pin a build, set `NOSTOS_IMAGE_TAG=selfhosted-sha-<commit>`; a commit that only changes documentation shares its parent's image. Older `sha-*` tags are not SelfHosted builds.
 - **Books already on your server:** mount the folder at `/external/media` (read-only), then open **Settings → This server → External media**. See the [External media guide](docs/external-media.md).
 - **Coming from an older image?** Older images kept the key ring inside the container. Copy it into `/data/keys` before you replace the container, or re-enter your AI keys afterwards.

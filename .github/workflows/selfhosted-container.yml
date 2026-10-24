@@ -66,6 +66,9 @@ jobs:
           test -n "$runtime_user"
           test "$runtime_user" != "0"
 
+      - name: Smoke-test uploads, covers and audio
+        run: scripts/smoke-selfhosted-image.sh nostos-runtime:test 18083 X64
+
       - name: Verify named-volume persistence across container replacement
         run: |
           set -euo pipefail
@@ -128,3 +131,36 @@ jobs:
 
           curl -fsS "http://127.0.0.1:$port/" >/dev/null
 
+
+  # The published image is also built for arm64. This job builds it on an Arm
+  # runner, natively, and runs the same smoke test there, so a change that
+  # breaks arm64 (a native library, a platform-specific constant) shows up on
+  # the pull request instead of in the publish run.
+  runtime-validation-arm64:
+    if: ${{ !inputs.docs_only }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build production container for arm64
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          pull: true
+          load: true
+          tags: nostos-runtime:arm64
+          cache-from: type=gha,scope=selfhosted-image-arm64
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,scope=selfhosted-image-arm64,mode=max' || '' }}
+
+      - name: Smoke-test the arm64 container
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect -f '{{.Architecture}}' nostos-runtime:arm64)" = arm64
+          scripts/smoke-selfhosted-image.sh nostos-runtime:arm64 18080 Arm64

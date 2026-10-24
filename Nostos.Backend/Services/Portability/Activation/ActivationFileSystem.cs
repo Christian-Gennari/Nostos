@@ -58,7 +58,7 @@ internal static class ActivationFileSystem
     public static void FlushDirectory(string path)
     {
         if (!OperatingSystem.IsLinux()) return;
-        var fd = open(path, 0x10000); // O_RDONLY | O_DIRECTORY
+        var fd = open(path, ODirectory); // O_RDONLY | O_DIRECTORY
         if (fd < 0) throw new IOException("Cannot open activation directory for durability.");
         try
         {
@@ -66,6 +66,14 @@ internal static class ActivationFileSystem
         }
         finally { close(fd); }
     }
+
+    // O_DIRECTORY is not the same number on every CPU: 0x10000 on x86 and
+    // x64, 0x4000 on Arm. On Arm 0x10000 means O_DIRECT, which some
+    // filesystems refuse on a directory.
+    internal static int ODirectory =>
+        RuntimeInformation.ProcessArchitecture is Architecture.Arm64 or Architecture.Arm
+            ? 0x4000
+            : 0x10000;
 
     public static void Rename(string source, string target, bool overwrite = false)
     {

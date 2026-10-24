@@ -7,6 +7,7 @@ on:
       - "Dockerfile"
       - "compose.yml"
       - "README.md"
+      - "scripts/smoke-selfhosted-image.sh"
   workflow_run:
     workflows:
       - Public product CI
@@ -42,7 +43,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
@@ -78,6 +79,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The arm64 image is built on this amd64 runner. The Dockerfile builds
+      # the frontend and cross-compiles .NET natively, so QEMU only runs the
+      # runtime stage's apt install.
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -105,6 +114,15 @@ jobs:
             echo "No published image for parent $parent; building a new image."
             exit 0
           fi
+          # A parent published before the arm64 build was added is amd64
+          # only. Build instead, so every revision tag carries both platforms.
+          # Attestation manifests are listed as unknown/unknown and skipped.
+          platforms="$(docker buildx imagetools inspect "$IMAGE@$digest" --raw \
+            | jq -r '[.manifests[]?.platform | select(. != null and .os != "unknown") | "\(.os)/\(.architecture)"] | sort | unique | join(",")')"
+          if [ "$platforms" != "linux/amd64,linux/arm64" ]; then
+            echo "Parent image $digest is for '${platforms:-one platform}'; building a new image."
+            exit 0
+          fi
           docker buildx imagetools create --tag "$IMAGE:selfhosted-sha-$SOURCE_SHA" "$IMAGE@$digest"
           echo "::notice::Only documentation changed since $parent; selfhosted-sha-$SOURCE_SHA reuses its image $digest."
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
@@ -115,11 +133,18 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           pull: true
           push: true
-          # Written by the SelfHosted container job in CI, which has just
-          # built this revision on main.
-          cache-from: type=gha,scope=selfhosted-image
+          # Written by the SelfHosted container jobs in CI, which have just
+          # built this revision on main (amd64 here, arm64 on an Arm runner:
+          # its runtime layers match the ones built here). The publish scope
+          # holds this job's own cross-compiled arm64 layers.
+          cache-from: |
+            type=gha,scope=selfhosted-image
+            type=gha,scope=selfhosted-image-arm64
+            type=gha,scope=selfhosted-publish
+          cache-to: type=gha,scope=selfhosted-publish,mode=max
           build-args: |
             SOURCE_REVISION=${{ steps.source.outputs.sha }}
           # Only the immutable revision tag here. `latest` moves in the
@@ -132,9 +157,34 @@ jobs:
             org.opencontainers.image.title=Nostos
             org.opencontainers.image.description=SelfHosted Nostos reading, thinking and writing environment
 
+  # Each platform's image runs natively on a runner of that platform: the
+  # anonymous pull, the start-up and persistence check, and the smoke test of
+  # uploads, covers and audio. latest moves only when both pass.
+  verify:
+    name: Verify published image (${{ matrix.platform }})
+    needs: publish
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            dotnet_arch: X64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            dotnet_arch: Arm64
+
+    steps:
+      - name: Checkout exact published revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.publish.outputs.sha }}
+
       - name: Verify anonymous pull and persistent SelfHosted runtime
         env:
-          IMAGE_REF: ghcr.io/christian-gennari/nostos@${{ steps.reuse.outputs.digest || steps.build.outputs.digest }}
+          IMAGE_REF: ghcr.io/christian-gennari/nostos@${{ needs.publish.outputs.digest }}
         run: |
           set -euo pipefail
 
@@ -142,6 +192,9 @@ jobs:
           docker logout ghcr.io >/dev/null 2>&1 || true
           docker image rm "$IMAGE_REF" >/dev/null 2>&1 || true
           docker pull "$IMAGE_REF"
+          # The runner's own platform is the one pulled from the index; the
+          # smoke test below checks the architecture the app reports.
+          echo "Pulled for $(docker run --rm --entrypoint uname "$IMAGE_REF" -m)"
 
           volume="nostos-published-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           first="nostos-published-first"
@@ -204,9 +257,15 @@ jobs:
             --arg title "$title" \
             '.id == $id and .title == $title' >/dev/null
 
+      - name: Smoke-test uploads, covers and audio
+        env:
+          IMAGE_REF: ghcr.io/christian-gennari/nostos@${{ needs.publish.outputs.digest }}
+          DOTNET_ARCH: ${{ matrix.dotnet_arch }}
+        run: scripts/smoke-selfhosted-image.sh "$IMAGE_REF" 18083 "$DOTNET_ARCH"
+
   promote-latest:
     name: Promote verified image to latest
-    needs: publish
+    needs: [publish, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
