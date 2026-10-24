@@ -237,6 +237,59 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-settings-popover">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-settings-popover">Settings popover</h2>
+      </div>
+      <p>The panel a toolbar button opens (View settings, Page settings): under its button, a sheet on a phone. Escape or a press outside closes it.</p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Toolbar settings</span>
+        <div class="catalogue-row">
+          <button
+            #settingsTrigger
+            appButton
+            size="sm"
+            type="button"
+            [attr.aria-expanded]="catalogueSettingsOpen()"
+            (click)="catalogueSettingsOpen.set(!catalogueSettingsOpen())"
+            data-testid="catalogue-settings-trigger"
+          >
+            <nostos-icon name="text-aa" [size]="16" />
+            View settings
+          </button>
+          @if (catalogueSettingsOpen()) {
+            <nostos-settings-popover
+              [origin]="catalogueSettingsButton()?.nativeElement ?? null"
+              label="View settings"
+              testId="catalogue-settings-popover"
+              (dismissed)="catalogueSettingsOpen.set(false)"
+            >
+              <div class="catalogue-settings-panel">
+                <span class="catalogue-label" id="catalogue-settings-spacing">Line height</span>
+                <nostos-segmented
+                  fill
+                  aria-labelledby="catalogue-settings-spacing"
+                  [options]="segmentedOptions"
+                  [value]="selectedSegment()"
+                  (valueChange)="selectedSegment.set($event)"
+                />
+                <div class="catalogue-settings-switch">
+                  <span aria-hidden="true">Keep the line centred</span>
+                  <label appSwitch><input type="checkbox" aria-label="Keep the line centred" /></label>
+                </div>
+              </div>
+            </nostos-settings-popover>
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-dropdown">
     <div class="catalogue-section-heading">
       <div>

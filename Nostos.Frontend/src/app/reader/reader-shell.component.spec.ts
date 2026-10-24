@@ -1298,7 +1298,8 @@ describe('ReaderShell toolbar contract', () => {
 
   describe('App appearance row in View settings (#651)', () => {
     function appearanceButtons(): HTMLButtonElement[] {
-      return Array.from(fixture.nativeElement.querySelectorAll(
+      // View settings render in the overlay (the shared settings popover).
+      return Array.from(document.querySelectorAll(
         '[data-testid="reader-appearance"] .tp-swatch',
       ));
     }
@@ -1313,7 +1314,7 @@ describe('ReaderShell toolbar contract', () => {
       render();
       fixture.componentInstance.toggleTypo();
       render();
-      return fixture.nativeElement.querySelector('[data-testid="typo-panel"]');
+      return document.querySelector('[data-testid="typo-panel"]') as HTMLElement;
     }
 
     for (const fileName of ['iliad.epub', 'being-and-time.pdf']) {
@@ -1816,11 +1817,11 @@ describe('ReaderShell typography panel (EPUB)', () => {
 
     const toggle = fixture.nativeElement.querySelector('[data-testid="typo-toggle"]');
     expect(toggle).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('[data-testid="typo-panel"]')).toBeNull();
+    expect(document.querySelector('[data-testid="typo-panel"]')).toBeNull();
 
     toggle.click();
     render();
-    expect(fixture.nativeElement.querySelector('[data-testid="typo-panel"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="typo-panel"]')).toBeTruthy();
   });
 
   it('offers the same view control for a PDF, with the zoom rows and no typeface rows', async () => {
@@ -1835,10 +1836,10 @@ describe('ReaderShell typography panel (EPUB)', () => {
     toggle.click();
     render();
 
-    const panel = fixture.nativeElement.querySelector('[data-testid="typo-panel"]');
+    const panel = document.querySelector('[data-testid="typo-panel"]') as HTMLElement;
     expect(panel).toBeTruthy();
     const labels = [...panel.querySelectorAll('.typo-label')].map(
-      (e: HTMLElement) => e.textContent?.trim() ?? ''
+      (e: Element) => e.textContent?.trim() ?? ''
     );
     expect(labels).toContain('Reading mode');
     expect(labels).toContain('Zoom');
@@ -1866,7 +1867,7 @@ describe('ReaderShell typography panel (EPUB)', () => {
     render();
 
     const typefaces = Array.from(
-      fixture.nativeElement.querySelectorAll(
+      document.querySelectorAll(
         '[data-testid="typo-panel"] [aria-labelledby="typo-typeface"] .seg-opt',
       ) as NodeListOf<HTMLButtonElement>,
     );
@@ -2122,9 +2123,12 @@ describe('ReaderShell UI kit migration (#362)', () => {
     component.pendingSelectionText.set('Sing, goddess, the anger of Peleus son Achilles.');
     render();
 
-    const canonicalLabels = Array.from(
-      fixture.nativeElement.querySelectorAll('button.nostos-button') as NodeListOf<HTMLButtonElement>,
-    ).map((button) => button.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+    // View settings render in the overlay (the shared settings popover), so its
+    // Reset is looked for there as well as in the shell.
+    const canonicalLabels = [
+      ...(fixture.nativeElement.querySelectorAll('button.nostos-button') as NodeListOf<HTMLButtonElement>),
+      ...document.querySelectorAll<HTMLButtonElement>('[data-testid="typo-panel"] button.nostos-button'),
+    ].map((button) => button.textContent?.replace(/\s+/g, ' ').trim() ?? '');
 
     expect(canonicalLabels).toContain('Cancel');
     // The notes panel keeps its Save; an EPUB selection's actions are now

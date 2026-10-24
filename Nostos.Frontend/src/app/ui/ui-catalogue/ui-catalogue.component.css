@@ -280,3 +280,18 @@
   border-radius: var(--radius-popover);
   background: var(--bg-surface);
 }
+
+/* The settings popover example's rows. */
+.catalogue-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.catalogue-settings-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}

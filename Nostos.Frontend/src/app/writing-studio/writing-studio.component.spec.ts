@@ -980,7 +980,8 @@ describe('WritingStudio typewriter mode', () => {
     settingsToggle.click();
     fixture.detectChanges();
 
-    const centred = fixture.nativeElement.querySelector(
+    // The panel renders in the overlay (the shared settings popover).
+    const centred = document.querySelector(
       '[data-testid="page-settings"] input[aria-label^="Keep the line centred"]',
     ) as HTMLInputElement;
     expect(centred.checked).toBe(false);
@@ -990,11 +991,11 @@ describe('WritingStudio typewriter mode', () => {
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="page-settings"]')).toBeNull();
+    expect(document.querySelector('[data-testid="page-settings"]')).toBeNull();
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true }));
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="page-settings"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="page-settings"]')).toBeTruthy();
   });
 
   it('carries over typewriter centring set before it moved into the page settings', () => {

@@ -784,28 +784,14 @@ app-note-item.is-flashed {
   margin: 0;
 }
 
-/* EPUB typography: anchored directly under the Aa control that opens it, so the
-   panel and its trigger read as one thing. Tokens only. */
-.typo-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 39;
-  background: transparent;
-}
+/* View settings. The surface, its place under the Aa control, its width and
+   the phone sheet are nostos-settings-popover's (issue #1201); the panel's
+   own rules are only the rows inside it. It renders in the overlay, outside
+   .reader-layout, so nothing here may depend on an ancestor. */
 .typo-panel {
-  position: absolute;
-  right: 0.75rem;
-  top: calc(var(--header-height) + 0.5rem);
-  z-index: 40;
-  width: min(19rem, calc(100vw - 1.5rem));
-  padding: 0.875rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-popover);
-  box-shadow: var(--shadow-md);
+  gap: 1rem;
 }
 
 .typo-panel-heading {
@@ -1288,23 +1274,9 @@ app-note-item.is-flashed {
   background: transparent;
 }
 
-.reader-layout.immersive .reader-search-panel,
-.reader-layout.immersive .typo-panel {
+.reader-layout.immersive .reader-search-panel {
   top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 0.75rem);
   right: max(2rem, env(safe-area-inset-right, 0px));
-}
-
-.reader-layout.immersive .typo-panel {
-  padding: 1.25rem;
-  gap: 1rem;
-  /* Open panels pin the pager on screen, and the pager is drawn above them:
-     the panel ends above it and scrolls inside itself when it cannot fit. */
-  max-height: calc(
-    100dvh - var(--header-height) - env(safe-area-inset-top, 0px) - var(--pager-height) -
-      env(safe-area-inset-bottom, 0px) - 1.5rem
-  );
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 @media (max-width: 768px) {
@@ -1431,8 +1403,7 @@ app-note-item.is-flashed {
     grid-column: 1 / -1;
   }
 
-  .reader-layout.immersive .reader-search-panel,
-  .reader-layout.immersive .typo-panel {
+  .reader-layout.immersive .reader-search-panel {
     left: max(0.75rem, env(safe-area-inset-left, 0px));
     right: max(0.75rem, env(safe-area-inset-right, 0px));
     width: auto;
@@ -1455,30 +1426,29 @@ app-note-item.is-flashed {
    targets keep their 44px floor. Below 360px there is no room for a label
    column, so rows stack again and only the spacing is tightened. */
 @media (max-width: 480px) {
-  .reader-layout.immersive .typo-panel {
-    padding: 0.5rem 0.875rem 0.875rem;
+  .typo-panel {
     gap: 0.5rem;
   }
 
-  .reader-layout.immersive .typo-row {
+  .typo-row {
     gap: 0.25rem;
   }
 
-  .reader-layout.immersive .typo-steps > * {
+  .typo-steps > * {
     flex: 1 1 0;
     min-width: 0;
   }
 }
 
 @media (min-width: 360px) and (max-width: 480px) {
-  .reader-layout.immersive .typo-row:not(.typo-row-stacked) {
+  .typo-row:not(.typo-row-stacked) {
     display: grid;
     grid-template-columns: 5.75rem minmax(0, 1fr);
     align-items: center;
     column-gap: 0.5rem;
   }
 
-  .reader-layout.immersive .typo-row:not(.typo-row-stacked) .typo-hint {
+  .typo-row:not(.typo-row-stacked) .typo-hint {
     grid-column: 2;
   }
 }

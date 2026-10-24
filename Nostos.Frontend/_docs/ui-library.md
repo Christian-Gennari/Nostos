@@ -436,6 +436,43 @@ player bar used without looking sets `var(--control-h-touch)`.
   (rateChange)="setRate($event)" />
 ```
 
+## SettingsPopoverComponent
+
+**Selector:** `nostos-settings-popover`  
+**Files:** `src/app/ui/settings-popover/`
+
+The panel a toolbar button opens: the reader's View settings and the Studio's
+Page settings. It is one surface on the CDK overlay with one set of rules, so a
+new settings panel does not hand-roll its own positioning, scrim or Escape:
+
+- it hangs under its `origin` button (end-aligned, flipped when there is no
+  room) and follows it on scroll and resize;
+- its width is the `--settings-popover-width` token (19rem); below 640px
+  (`SETTINGS_POPOVER_SHEET_QUERY`) it is a full-width sheet on the bottom edge
+  with a grab handle;
+- Escape and a press outside emit `dismissed` (`'escape' | 'outside'`), and the
+  caller closes it. A press on `origin` is the button's own toggle. A layer
+  inside that handles Escape itself (a sub-view's "back") calls
+  `preventDefault()` and the panel leaves it alone;
+- focus moves in on opening (`initialFocus`: `true` for the first control, a
+  selector, or `false` when the caller places it) and back to `origin` when it
+  closes with focus inside it (`restoreFocus`). After a press elsewhere, focus
+  stays where the press went.
+
+It is non-modal (`role="dialog"`, `aria-modal="false"`) and does not dim the
+page: a setting is judged on the page itself. It exists while it is open, so
+wrap it in `@if`. The caller lays out the rows; the panel owns the surface and
+padding.
+
+```html
+@if (open()) {
+  <nostos-settings-popover [origin]="aaButton" label="View settings"
+                           (dismissed)="open.set(false)">
+    …rows…
+  </nostos-settings-popover>
+}
+```
+
 ## RangeDirective
 
 **Selector:** `input[type=range][appRange]`  
