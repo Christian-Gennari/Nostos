@@ -86,7 +86,7 @@
 
         <button appButton variant="primary" class="library-add-button" (click)="openAddModal()">
           <nostos-icon name="plus" [size]="18"></nostos-icon>
-          <span class="btn-text">Add Book</span>
+          <span class="btn-text">Add book</span>
         </button>
       </div>
     </header>
@@ -253,8 +253,8 @@
                 [pressed]="!!book.finishedAt"
                 [class.active]="book.finishedAt"
                 (click)="toggleFinished(book, $event)"
-                [attr.aria-label]="book.finishedAt ? 'Mark as unread' : 'Mark as read'"
-                [title]="book.finishedAt ? 'Mark as Unread' : 'Mark as Read'"
+                [attr.aria-label]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
+                [title]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
               ></button>
 
               <button
@@ -268,7 +268,7 @@
                 [class.active]="book.isFavorite"
                 (click)="toggleFavorite(book, $event)"
                 aria-label="Favorite"
-                title="Toggle Favorite"
+                title="Toggle favorite"
               ></button>
             </div>
           </div>
@@ -314,7 +314,7 @@
           </div>
 
           <div class="col date">
-            {{ book.createdAt | date : 'MMM d, y' }}
+            {{ book.createdAt | nostosDate }}
           </div>
 
           <div class="col actions-cell" (click)="$event.stopPropagation()">
@@ -439,8 +439,8 @@
               [pressed]="!!book.finishedAt"
               [class.active]="book.finishedAt"
               (click)="toggleFinished(book, $event)"
-              [attr.aria-label]="book.finishedAt ? 'Mark as unread' : 'Mark as read'"
-              [title]="book.finishedAt ? 'Mark as Unread' : 'Mark as Read'"
+              [attr.aria-label]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
+              [title]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
             ></button>
 
             <button
@@ -455,7 +455,7 @@
               [class.active]="book.isFavorite"
               (click)="toggleFavorite(book, $event)"
               aria-label="Favorite"
-              title="Toggle Favorite"
+              title="Toggle favorite"
             ></button>
 
             <div class="actions-overlay">

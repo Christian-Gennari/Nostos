@@ -90,7 +90,7 @@
                       {{ count(batch.noteCount, 'highlight') }} into {{ count(batch.bookCount, 'book') }}
                     </span>
                     <span class="highlight-row-sub">
-                      {{ batch.createdAtUtc | date: 'medium' }}
+                      {{ batch.createdAtUtc | nostosDate: 'datetime' }}
                     </span>
                   </span>
                   <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="undoRecent(batch)">

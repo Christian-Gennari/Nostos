@@ -62,7 +62,7 @@ public static class TopicsEndpoints
                         nc.Note.SelectedText,
                         nc.Note.CfiRange,
                         nc.Note.BookId,
-                        nc.Note.Book?.Title ?? "Unknown Book",
+                        nc.Note.Book?.Title ?? "Unknown book",
                         nc.Note.CreatedAt,
                         nc.Note.SourceAnchorKind,
                         nc.Note.SourceAnchorValue,

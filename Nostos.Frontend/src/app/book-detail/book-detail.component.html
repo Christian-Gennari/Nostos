@@ -12,7 +12,7 @@
           [size]="32"
           style="margin-bottom: 1rem; color: var(--color-danger)"></nostos-icon>
         <p>{{ store.error() }}</p>
-        <button appButton variant="secondary" routerLink="/library">Return to Library</button>
+        <button appButton variant="secondary" routerLink="/library">Return to library</button>
       </div>
     </div>
     } @if (!store.loading() && !store.error() && store.book()) {
@@ -144,7 +144,7 @@
               class="favorite-btn"
               [class.active]="store.book()?.isFavorite"
               (click)="toggleFavorite()"
-              title="Toggle Favorite"
+              title="Toggle favorite"
               aria-label="Toggle favorite"
             ></button>
           </div>
@@ -256,7 +256,7 @@
             } @else {
             <button appButton variant="primary" size="lg" class="primary-action" (click)="openReader()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
-              <span>Read Book</span>
+              <span>Read book</span>
             </button>
             }
 
@@ -278,7 +278,7 @@
             } @else if (store.book()?.type !== 'physical') {
             <button appButton variant="primary" size="lg" class="primary-action" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
-              <span>Upload File</span>
+              <span>Upload file</span>
             </button>
             }
 
@@ -356,7 +356,7 @@
             @if (store.book()?.personalReview) {
             <div class="personal-review">
               <div class="review-label">
-                <nostos-icon name="quotes" [size]="14"></nostos-icon> My Review
+                <nostos-icon name="quotes" [size]="14"></nostos-icon> My review
               </div>
               <!-- The clamp lives on this wrapper so the fade has a positioned box
                    that does not disturb the paragraph's own layout, and so the
@@ -422,13 +422,13 @@
 
           <div class="notes-container">
             <div class="notes-header">
-              <h3>Personal Notes</h3>
+              <h3>Personal notes</h3>
               <span appBadge>{{ store.notes().length }}</span>
             </div>
 
             <div class="new-note-box">
               <app-topic-input
-                placeholder="Jot down a thought..."
+                placeholder="Jot down a thought…"
                 [(ngModel)]="newNote"
                 [rows]="1"
                 (submitTrigger)="addNote()"
@@ -603,7 +603,7 @@
   </div>
 
   <!-- Reading-status changes overwrite progress, so they ask first. Resetting
-       to Not Started discards the saved position: the danger tone. -->
+       to Not started discards the saved position: the danger tone. -->
   <app-confirm-modal
     class="status-confirm"
     [isOpen]="!!statusConfirm()"

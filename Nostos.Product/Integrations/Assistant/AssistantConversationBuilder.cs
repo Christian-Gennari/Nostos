@@ -142,7 +142,7 @@ internal sealed class AssistantConversationBuilder(
         An explicitly named note or topic in the user's message beats the ambient context. If a target is ambiguous or matches only weakly, ask one short clarifying question instead of guessing.
 
         Nostos product knowledge:
-        - The Library already has search, sorting, status filters (Not Started, In Progress, Favorites, Finished, Unsorted), and built-in format filters for Audiobooks, eBooks and PDFs.
+        - The Library already has search, sorting, status filters (Not started, Reading, Favorites, Finished, Unsorted), and built-in format filters for Audiobooks, eBooks and PDFs.
         - Collections are hierarchical, user-defined structures for durable themes, projects, curricula, reading paths or other meaningful groupings. A book may belong to more than one collection.
         - Do not recommend collections merely to recreate a Library filter or sort that already exists. In particular, an Audiobooks/eBooks/PDFs collection is normally redundant because format filtering is built in.
         - You cannot delete books or their files, delete notes, or change settings, AI connections, backups or imports. When asked, say so in one sentence and say where the user does it: a book is deleted from its own page (Edit → Delete), a note from Brain, and the rest lives in Settings. Do not offer a workaround.

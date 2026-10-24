@@ -32,6 +32,18 @@ ARIA contract, geometry, or state model is part of the product surface.
 - A shared appearance does not imply shared semantics: segmented controls deliberately
   share a recipe rather than one ARIA-switching component.
 
+### Copy
+
+- **Sentence case** for every button, label, heading, menu item, tooltip and
+  `aria-label`: “Add book”, “Table of contents”, “Delete permanently”. Proper nouns
+  keep their capitals: Nostos, Brain, Studio, Ask Nostos, and Library or Settings
+  when they name the page.
+- **Reading status** wording comes from `src/app/core/reading-status.ts`: Not started,
+  Reading, Finished, and To read for the reading list.
+- A book without an author shows **Unknown author** (`UNKNOWN_AUTHOR` in `book-format.ts`).
+- Placeholders and pending labels end with an ellipsis character, “…”, not three dots.
+- Dates go through `nostosDate` (see Pipes); toast wording is under ToastContainerComponent.
+
 ---
 
 ## ButtonComponent
@@ -865,8 +877,12 @@ dismiss button remains keyboard reachable and carries both `aria-label` and `tit
 - identical message + variant pairs are deduplicated and restart as one toast;
 - the visible stack is capped at three;
 - every toast can be dismissed explicitly;
-- copy should be concise action/result language: “Book details saved.” rather than
+- copy should be concise action/result language: “Book details saved” rather than
   “Book details were saved successfully.”;
+- a one-sentence toast has no full stop; a toast with a second sentence (“Could not
+  save the note. Try again.”) punctuates both;
+- failures start “Could not …” (not “Failed to …”, “Unable to …” or “X could not be
+  …”); a named item is quoted: `Deleted “Title”`;
 - do not convert persistent Reader/open/retry failures into transient feedback merely
   for visual consistency.
 
@@ -908,6 +924,23 @@ Applied to a `<textarea>`. Listens for `input` events and pipes text + cursor po
 ---
 
 ## Pipes
+
+### NostosDatePipe
+
+**Name:** `nostosDate`  
+**File:** `src/app/ui/pipes/nostos-date.pipe.ts` (formats in `src/app/core/date-formats.ts`)
+
+Every date a reader sees has one of two shapes: a date, `d MMM y` ("24 Oct 2026"), or a
+date and time, `d MMM y, HH:mm` ("24 Oct 2026, 14:05"), in the browser's time zone and
+without naming it. Use the pipe in templates instead of Angular's `date` pipe, and
+`formatNostosDate()` in TypeScript instead of `toLocaleString()` or `Intl.DateTimeFormat`.
+
+```html
+{{ note.createdAt | nostosDate }}
+{{ backup.createdAtUtc | nostosDate: 'datetime' }}
+```
+
+A missing or unreadable value renders as an empty string.
 
 ### NoteFormatPipe
 

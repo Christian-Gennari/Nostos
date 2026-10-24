@@ -29,6 +29,7 @@ import { FlatTreeComponent } from '../../ui/flat-tree/flat-tree.component';
 import { ToastService } from '../../core/services/toast.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ReadingListService } from '../../core/services/reading-list.service';
+import { READING_STATUS_LABEL, TO_READ_LABEL } from '../../core/reading-status';
 import { LibraryChangesService } from '../../core/services/library-changes.service';
 import { RouterLink } from '@angular/router';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
@@ -59,6 +60,10 @@ export class SidebarCollections implements OnInit {
   private toast = inject(ToastService);
   /** Only its count is shown here; the list itself lives on its own page. */
   readonly readingList = inject(ReadingListService);
+
+  /** The shared reading status wording, so the sidebar says what Book detail says. */
+  protected readonly statusLabel = READING_STATUS_LABEL;
+  protected readonly toReadLabel = TO_READ_LABEL;
   private readonly libraryChanges = inject(LibraryChangesService);
 
   /**
@@ -194,7 +199,7 @@ export class SidebarCollections implements OnInit {
   load(): void {
     this.collectionsService.list().subscribe({
       next: (cols) => this.collections.set(cols),
-      error: () => this.toast.error('Failed to load collections'),
+      error: () => this.toast.error('Could not load collections'),
     });
   }
 
@@ -207,7 +212,7 @@ export class SidebarCollections implements OnInit {
   loadStatusCounts(): void {
     this.booksService.getStatusCounts().subscribe({
       next: (counts) => this.statusCounts.set(counts),
-      error: () => this.toast.error('Failed to load library status counts'),
+      error: () => this.toast.error('Could not load the library’s counts'),
     });
   }
 
@@ -280,7 +285,7 @@ export class SidebarCollections implements OnInit {
         this.loadCounts();
         this.select(newCol.id);
       },
-      error: () => this.toast.error('Could not create collection.'),
+      error: () => this.toast.error('Could not create the collection'),
     });
   }
 
@@ -351,7 +356,7 @@ export class SidebarCollections implements OnInit {
     this.deleting.set(true);
     this.collectionsService.delete(target.id).subscribe({
       next: () => {
-        this.toast.info('Collection deleted');
+        this.toast.success(target.name.trim() ? `Deleted “${target.name.trim()}”` : 'Collection deleted');
         this.load();
         this.loadCounts();
         if (this.filters.collectionId() === target.id) {
@@ -373,15 +378,15 @@ export class SidebarCollections implements OnInit {
     const body = (err as { error?: { title?: string; detail?: string } })?.error;
     switch (body?.title) {
       case 'collection_has_children':
-        return 'Move or delete the child collections first.';
+        return 'Move or delete the child collections first';
       case 'collection_name_conflict':
-        return body.detail || 'A collection with that name already exists here.';
+        return body.detail || 'A collection with that name already exists here';
       case 'collection_cycle':
-        return 'A collection cannot be moved into itself or its children.';
+        return 'A collection cannot be moved into itself or its children';
       case 'invalid_collection_parent':
-        return body.detail || 'The destination collection no longer exists.';
+        return body.detail || 'The destination collection no longer exists';
       default:
-        return body?.detail || 'Something went wrong.';
+        return body?.detail || 'Something went wrong';
     }
   }
 

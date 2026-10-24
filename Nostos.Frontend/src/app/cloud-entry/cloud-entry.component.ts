@@ -1,5 +1,5 @@
 import { Component, effect, inject, ChangeDetectionStrategy } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -18,7 +18,7 @@ import { CloudSignInComponent } from './cloud-sign-in.component';
     ButtonComponent,
     NostosIconComponent,
     BrandLockupComponent,
-    DatePipe,
+    NostosDatePipe,
     CloudSignInComponent,
   ],
   templateUrl: './cloud-entry.component.html',

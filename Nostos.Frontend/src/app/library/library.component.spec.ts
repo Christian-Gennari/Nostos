@@ -473,12 +473,12 @@ describe('Library', () => {
     expect(filterButtons).toHaveLength(0);
   });
 
-  it('does not render a "Reading" label anywhere in the library UI', () => {
-    expect(fixture.nativeElement.textContent).not.toContain('Reading');
-    const readingTooltips = Array.from(
+  it('never says "In Progress" or "Not Started": the statuses are sentence case', () => {
+    expect(fixture.nativeElement.textContent).not.toMatch(/In Progress|Not Started/);
+    const titleCaseTooltips = Array.from(
       fixture.nativeElement.querySelectorAll('[title]') as NodeListOf<HTMLElement>,
-    ).filter((el) => el.getAttribute('title')?.includes('Reading') ?? false);
-    expect(readingTooltips).toHaveLength(0);
+    ).filter((el) => /In Progress|Not Started/.test(el.getAttribute('title') ?? ''));
+    expect(titleCaseTooltips).toHaveLength(0);
   });
 
   it('filter changes trigger exactly one books request', () => {
@@ -601,7 +601,7 @@ describe('Library', () => {
       (fixture.nativeElement.querySelector('[data-testid="library-scope-label"]') as HTMLElement)
         .textContent?.trim();
 
-    expect(label()).toBe('All Books');
+    expect(label()).toBe('All books');
 
     component.filters.toggleStatus('favorites');
     component.filters.toggleCollection('c1');
@@ -1147,7 +1147,7 @@ describe('Library', () => {
     component.openDeleteModal(target);
     expect(externalMediaBook).not.toHaveBeenCalled();
     expect(component.deleteCopy().heading).toBe('Delete “Dune”?');
-    expect(component.deleteCopy().confirmLabel).toBe('Delete Permanently');
+    expect(component.deleteCopy().confirmLabel).toBe('Delete permanently');
 
     component.confirmDelete();
     expect(success).toHaveBeenCalledWith('Deleted “Dune”');
@@ -1197,7 +1197,7 @@ describe('Library', () => {
     component.filters.toggleStatus('reading');
     fixture.detectChanges();
 
-    expect(component.activeFilterChips()).toEqual([{ key: 'status', label: 'In Progress' }]);
+    expect(component.activeFilterChips()).toEqual([{ key: 'status', label: 'Reading' }]);
     expect(fixture.nativeElement.querySelector('.active-filters')).not.toBeNull();
   });
 

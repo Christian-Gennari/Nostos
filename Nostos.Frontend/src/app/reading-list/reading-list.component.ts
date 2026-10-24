@@ -10,7 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DatePipe } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Observable, finalize, switchMap, takeWhile, timer } from 'rxjs';
@@ -22,6 +22,7 @@ import { BookLookupError, BooksService } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ProvidersService } from '../core/services/providers.service';
 import { ReadingListService } from '../core/services/reading-list.service';
+import { TO_READ_LABEL } from '../core/reading-status';
 import { ToastService } from '../core/services/toast.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
@@ -64,7 +65,7 @@ function asIsbn(typed: string): string | null {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     BookCoverComponent,
-    DatePipe,
+    NostosDatePipe,
     FormsModule,
     RouterLink,
     AddBookModal,
@@ -92,6 +93,7 @@ export class ReadingList implements OnInit {
 
   private readonly titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
 
+  protected readonly toReadLabel = TO_READ_LABEL;
   readonly next = this.list.next;
   readonly someday = this.list.someday;
   readonly count = this.list.count;
@@ -223,7 +225,7 @@ export class ReadingList implements OnInit {
           // Back to the title field: the next book is one keystroke away.
           setTimeout(() => this.titleInput()?.nativeElement.focus(), 0);
         },
-        error: (error) => this.toast.error(this.describe(error, 'The book could not be added.')),
+        error: (error) => this.toast.error(this.describe(error, 'Could not add the book')),
       });
   }
 
@@ -262,7 +264,7 @@ export class ReadingList implements OnInit {
 
     this.track(entry.id, this.list.setNext(ids)).subscribe({
       error: (error) => {
-        this.toast.error(this.describe(error, 'The order could not be saved.'));
+        this.toast.error(this.describe(error, 'Could not save the order'));
         this.reload();
       },
     });
@@ -316,7 +318,7 @@ export class ReadingList implements OnInit {
       .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
         next: () => this.editTarget.set(null),
-        error: (error) => this.toast.error(this.describe(error, 'The changes could not be saved.')),
+        error: (error) => this.toast.error(this.describe(error, 'Could not save the changes')),
       });
   }
 
@@ -332,7 +334,7 @@ export class ReadingList implements OnInit {
       .pipe(finalize(() => this.removing.set(false)))
       .subscribe({
         next: () => this.removeTarget.set(null),
-        error: () => this.toast.error('The book could not be removed.'),
+        error: () => this.toast.error('Could not remove the book'),
       });
   }
 
@@ -396,10 +398,10 @@ export class ReadingList implements OnInit {
 
     this.track(entry.id, this.list.markAcquired(entry.id, bookId)).subscribe({
       next: () => {
-        if (!options?.quiet) this.toast.success(`“${entry.title}” is in your library.`);
+        if (!options?.quiet) this.toast.success(`“${entry.title}” is in your library`);
       },
       error: () =>
-        this.toast.error(`“${entry.title}” is in your library, but it could not leave this list.`),
+        this.toast.error(`“${entry.title}” is in your library, but it could not leave this list`),
     });
   }
 

@@ -10,7 +10,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -68,7 +68,7 @@ interface Choice {
   selector: 'app-brain-sort-page',
   standalone: true,
   imports: [
-    DatePipe,
+    NostosDatePipe,
     RouterLink,
     ...NOSTOS_MENU,
     ButtonComponent,

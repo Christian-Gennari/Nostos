@@ -835,7 +835,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card.textContent).toContain('up to 14 days');
     expect(
       card.querySelector('[data-testid="managed-backups-latest"]')?.textContent,
-    ).toContain('Last backup Oct 7, 2026');
+    ).toContain('Last backup 7 Oct 2026');
     expect(card.textContent).not.toContain('Archive');
     expect(card.textContent).not.toContain('protected media');
     expect(card.textContent).not.toContain('Completed');
@@ -1259,7 +1259,7 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(card).not.toBeNull();
     expect(text).toContain('Your included Ask Nostos allowance is nearly used.');
-    expect(text).toContain('Renews Oct 1.');
+    expect(text).toContain('Renews 1 Oct 2026.');
     expect(text).not.toContain('AI refill balance');
     expect(text).not.toContain('refill capacity');
     expect(card.querySelectorAll('.setting-row').length).toBe(1);
@@ -1416,7 +1416,7 @@ describe('SettingsComponent backup-only surface', () => {
     );
     expect(component.portableExportBusy()).toBe(false);
     expect(component.portableExportProgress()).toBeNull();
-    expect(toastMock.success).toHaveBeenCalledWith('Your Nostos export is ready.');
+    expect(toastMock.success).toHaveBeenCalledWith('Your Nostos export is ready');
   });
 
   it('leaves a clear inline error when Cloud export fails', () => {
@@ -1439,7 +1439,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(error.getAttribute('role')).toBe('alert');
     expect(error.textContent).toContain('Your data was not changed');
     expect(fixture.componentInstance.portableExportBusy()).toBe(false);
-    expect(toastMock.error).toHaveBeenCalledWith('Could not export your Nostos data.');
+    expect(toastMock.error).toHaveBeenCalledWith('Could not export your Nostos data');
   });
 
   it('offers notes as Markdown on SelfHosted and Cloud alike', () => {
@@ -1655,7 +1655,7 @@ describe('SettingsComponent backup-only surface', () => {
       .queryAll(By.css('button'))
       .map((b) => b.nativeElement.textContent.trim());
     expect(buttons).toContain('Back up now');
-    expect(buttons).toContain('Scan for Backups');
+    expect(buttons).toContain('Scan for backups');
   });
 
   it('uses the canonical button primitive instead of a Settings-local btn family', () => {
@@ -1920,7 +1920,7 @@ describe('SettingsComponent backup-only surface', () => {
     ) as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    expect(toastMock.error).toHaveBeenCalledWith('Could not enable e-reader access.');
+    expect(toastMock.error).toHaveBeenCalledWith('Could not enable e-reader access');
     expect(fixture.nativeElement.querySelector('[data-testid="managed-opds-disabled"]')).toBeTruthy();
   });
 
@@ -2969,9 +2969,9 @@ describe('SettingsComponent shared library transfer host', () => {
       fixture.nativeElement.querySelectorAll('button'),
     ).map((button: any) => (button.textContent ?? '').trim());
     expect(backupButtons).toContain('Back up now');
-    expect(backupButtons).toContain('Scan for Backups');
+    expect(backupButtons).toContain('Scan for backups');
     expect(transferCard.textContent).not.toContain('Back up now');
-    expect(transferCard.textContent).not.toContain('Scan for Backups');
+    expect(transferCard.textContent).not.toContain('Scan for backups');
   });
 
   it('runs the import happy path through the Settings host with the mock transport', async () => {

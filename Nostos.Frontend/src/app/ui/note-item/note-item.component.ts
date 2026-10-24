@@ -7,7 +7,7 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
@@ -81,7 +81,7 @@ export interface CitingWriting {
   selector: 'app-note-item',
   standalone: true,
   imports: [
-    DatePipe,
+    NostosDatePipe,
     FormsModule,
     RouterLink,
     CdkConnectedOverlay,

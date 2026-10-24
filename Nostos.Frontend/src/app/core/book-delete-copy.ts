@@ -28,7 +28,7 @@ export function bookDeleteCopy(title: string | null | undefined, linked: boolean
     heading: name ? `Delete “${name}”?` : 'Delete book?',
     description:
       'This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library.',
-    confirmLabel: 'Delete Permanently',
+    confirmLabel: 'Delete permanently',
     busyLabel: 'Deleting…',
   };
 }

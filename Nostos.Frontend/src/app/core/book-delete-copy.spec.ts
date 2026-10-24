@@ -5,7 +5,7 @@ describe('bookDeleteCopy', () => {
     const copy = bookDeleteCopy('Dune', false);
     expect(copy.heading).toBe('Delete “Dune”?');
     expect(copy.description).toContain('permanently deleted');
-    expect(copy.confirmLabel).toBe('Delete Permanently');
+    expect(copy.confirmLabel).toBe('Delete permanently');
     expect(copy.busyLabel).toBe('Deleting…');
   });
 

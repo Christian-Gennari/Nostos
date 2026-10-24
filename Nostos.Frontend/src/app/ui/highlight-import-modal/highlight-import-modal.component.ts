@@ -1,5 +1,6 @@
 import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
-import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
+import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
@@ -67,7 +68,7 @@ interface FileFailure {
     SearchFieldComponent,
     LoadingIndicatorComponent,
     DropZoneComponent,
-    DatePipe,
+    NostosDatePipe,
     NgTemplateOutlet,
     ModalShell,
     DialogActionsComponent,

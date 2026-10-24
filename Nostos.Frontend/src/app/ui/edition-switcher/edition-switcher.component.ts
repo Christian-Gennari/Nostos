@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { READING_STATUS_LABEL } from '../../core/reading-status';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { NOSTOS_CONCEPTS, type NostosConcept } from '../icon/nostos-concepts';
 import type { NostosIconName } from '../icon/nostos-icons';
@@ -160,7 +161,11 @@ export class EditionSwitcherComponent {
   }
 
   status(option: EditionSwitcherOption): string {
-    return option.finished ? 'Finished' : option.progress > 0 ? `${option.progress}% read` : 'Not started';
+    return option.finished
+      ? READING_STATUS_LABEL.finished
+      : option.progress > 0
+        ? `${option.progress}% read`
+        : READING_STATUS_LABEL.notstarted;
   }
 
   open(option: EditionSwitcherOption): void {

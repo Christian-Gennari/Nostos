@@ -16,6 +16,7 @@ import { BooksService, type BookListOptions } from '../core/services/books.servi
 import { CollectionsService } from '../core/services/collections.service';
 import { Collection } from '../core/dtos/collection.dtos';
 import { CommonModule, DOCUMENT } from '@angular/common';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
@@ -46,19 +47,20 @@ import { coverImageUrl } from '../core/cover-url';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
+import { READING_STATUS_LABEL } from '../core/reading-status';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
     case 'notstarted':
-      return 'Not Started';
+      return READING_STATUS_LABEL.notstarted;
     case 'reading':
-      return 'In Progress';
+      return READING_STATUS_LABEL.reading;
     case 'favorites':
       return 'Favorites';
     case 'finished':
-      return 'Finished';
+      return READING_STATUS_LABEL.finished;
     case 'unsorted':
       return 'Unsorted';
     default:
@@ -120,6 +122,7 @@ interface WorkFormatGlyph {
     SearchFieldComponent,
     ProgressComponent,
     CommonModule,
+    NostosDatePipe,
     RouterLink,
     NostosIconComponent,
     LoadingIndicatorComponent,
@@ -142,10 +145,10 @@ interface WorkFormatGlyph {
 })
 export class Library implements OnInit, OnDestroy {
   readonly sortOptions = [
-    { value: BookSort.LastRead, label: 'Last Read' },
-    { value: BookSort.Recent, label: 'Recently Added' },
+    { value: BookSort.LastRead, label: 'Last read' },
+    { value: BookSort.Recent, label: 'Recently added' },
     { value: BookSort.Title, label: 'Title (A-Z)' },
-    { value: BookSort.Rating, label: 'Highest Rated' },
+    { value: BookSort.Rating, label: 'Highest rated' },
   ] satisfies readonly DropdownOption[];
   private booksService = inject(BooksService);
   private collectionsService = inject(CollectionsService);
@@ -281,7 +284,7 @@ export class Library implements OnInit, OnDestroy {
       this.activeFilterChips()
         .filter((chip) => chip.key !== 'search')
         .map((chip) => chip.label)
-        .join(' · ') || 'All Books',
+        .join(' · ') || 'All books',
   );
 
   clearChip(key: string): void {
@@ -617,7 +620,7 @@ export class Library implements OnInit, OnDestroy {
   loadCollections(): void {
     this.collectionsService.list().subscribe({
       next: (data) => this.collections.set(data),
-      error: () => this.toast.error('Failed to load collections'),
+      error: () => this.toast.error('Could not load collections'),
     });
   }
 
@@ -762,7 +765,7 @@ export class Library implements OnInit, OnDestroy {
     // Already off the page (a filter, a search, another page): nothing will change
     // that on this fetch, so say so now.
     if (!isOnPage) {
-      this.toast.success(`Import finished — ${book.title} is in your library.`);
+      this.toast.success(`Import finished — “${book.title}” is in your library`);
       return;
     }
 
@@ -778,7 +781,7 @@ export class Library implements OnInit, OnDestroy {
     this.pendingReadyNotice = null;
 
     if (!this.rawBooks().some((book) => book.id === pending.id)) {
-      this.toast.success(`Import finished — ${pending.title} is in your library.`);
+      this.toast.success(`Import finished — “${pending.title}” is in your library`);
     }
   }
 
@@ -873,7 +876,7 @@ export class Library implements OnInit, OnDestroy {
       { type: 'audio', icon: NOSTOS_CONCEPTS.audiobook, label: 'Audiobook' },
       { type: 'epub', icon: NOSTOS_CONCEPTS.ebook, label: 'eBook' },
       { type: 'pdf', icon: NOSTOS_CONCEPTS.pdf, label: 'PDF' },
-      { type: 'physical', icon: NOSTOS_CONCEPTS.physical, label: 'Physical Book' },
+      { type: 'physical', icon: NOSTOS_CONCEPTS.physical, label: 'Physical book' },
     ];
 
     return formats.filter((format) => presentFormats.has(format.type));
@@ -951,7 +954,7 @@ export class Library implements OnInit, OnDestroy {
       },
       error: () => {
         this.deletingBook.set(false);
-        this.toast.error('Failed to delete book');
+        this.toast.error('Could not delete the book');
       },
     });
   }
@@ -981,7 +984,7 @@ export class Library implements OnInit, OnDestroy {
         this.rawBooks.update((books) =>
           books.map((b) => (b.id === book.id ? { ...b, isFavorite: !newStatus } : b)),
         );
-        this.toast.error('Failed to update favorite status');
+        this.toast.error('Could not update the favorite');
       },
     });
   }
@@ -1013,7 +1016,7 @@ export class Library implements OnInit, OnDestroy {
               : b,
           ),
         );
-        this.toast.error('Failed to update finished status');
+        this.toast.error('Could not update the status');
       },
     });
   }
@@ -1031,7 +1034,7 @@ export class Library implements OnInit, OnDestroy {
         this.rawBooks.update((books) =>
           books.map((b) => (b.id === book.id ? { ...b, rating: oldRating } : b)),
         );
-        this.toast.error('Failed to update rating');
+        this.toast.error('Could not update the rating');
       },
     });
   }

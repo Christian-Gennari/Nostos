@@ -201,7 +201,7 @@ export function desktopSelectionSpecs() {
     expect(saved[0].cfiRange).toMatch(/^epubcfi\(/);
 
     await revealEpubChrome(page);
-    await page.getByTitle('Notes & Highlights').click();
+    await page.getByTitle('Notes & highlights').click();
     await expect(page.locator('.notes-panel.open')).toContainText('Why this opening matters.');
   });
 

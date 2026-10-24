@@ -91,7 +91,7 @@ export class AddBookModal {
   static readonly SOURCE_SLOW_AFTER_MS = 2500;
 
   readonly bookTypeOptions = [
-    { value: 'physical', label: 'Physical Book' },
+    { value: 'physical', label: 'Physical book' },
     { value: 'ebook', label: 'E-book (EPUB, PDF)' },
     { value: 'audiobook', label: 'Audiobook' },
   ] satisfies readonly DropdownOption[];
@@ -483,11 +483,11 @@ export class AddBookModal {
             language: this.getFullLanguageName(data.language) || this.form.language,
             categories: data.categories || this.form.categories,
           };
-          this.toast.success('Metadata fetched successfully.');
+          this.toast.success('Metadata fetched');
         },
         error: (error: unknown) => {
           if (!(error instanceof BookLookupError)) {
-            this.toast.error('Unable to fetch book metadata.');
+            this.toast.error('Could not fetch the book’s metadata');
             return;
           }
 
@@ -498,7 +498,7 @@ export class AddBookModal {
                 ? 'No book metadata found for this ISBN.'
                 : error.reason === 'unavailable'
                   ? 'Book metadata services are temporarily unavailable. Please try again.'
-                  : 'Unable to fetch book metadata.';
+                  : 'Could not fetch the book’s metadata';
           this.toast.error(message);
         },
       });
@@ -611,7 +611,7 @@ export class AddBookModal {
         },
         error: () => {
           this.isSubmitting.set(false);
-          this.toast.error('Failed to update book');
+          this.toast.error('Could not update the book');
         },
       });
     } else {
@@ -631,7 +631,7 @@ export class AddBookModal {
             return;
           }
           if ((book.editionCount ?? 1) > 1) {
-            this.toast.info(`Added as another edition of “${book.title}”.`);
+            this.toast.info(`Added as another edition of “${book.title}”`);
           }
           if (wantsUpload) {
             this.handleFileUpload(book);
@@ -641,7 +641,7 @@ export class AddBookModal {
         },
         error: () => {
           this.isSubmitting.set(false);
-          this.toast.error('Failed to create book');
+          this.toast.error('Could not create the book');
         },
       });
     }
@@ -654,7 +654,7 @@ export class AddBookModal {
    */
   private handleExistingBook(book: BookModel, wantsUpload: boolean): void {
     if (!wantsUpload) {
-      this.toast.info(`“${book.title}” is already in your library.`);
+      this.toast.info(`“${book.title}” is already in your library`);
       this.finishAdd();
       return;
     }
@@ -1248,7 +1248,7 @@ export class AddBookModal {
             'Import started — it will appear in your library when it finishes.',
           );
           // The feed is opened here, on demand: the user just created work to
-          // watch, so the "Imports in Progress" section starts following it before
+          // watch, so the "Imports in progress" section starts following it before
           // the modal is even gone. Nothing in the library query is refetched.
           this.imports.ensureConnected();
           this.bookAdded.emit();

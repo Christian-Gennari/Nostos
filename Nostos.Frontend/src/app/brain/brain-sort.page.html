@@ -24,13 +24,13 @@
     } @else if (failed() && !note()) {
     <section class="sort-finished" role="alert">
       <p>The notes could not be loaded.</p>
-      <button appButton variant="secondary" type="button" (click)="leave()">Back to Unsorted</button>
+      <button appButton variant="secondary" type="button" (click)="leave()">Back to unsorted</button>
     </section>
     } @else if (note(); as current) {
     <article class="sort-note" [attr.aria-label]="'Note from ' + (current.bookTitle || 'an unknown book')">
       <p class="sort-source">
         {{ current.bookTitle || 'Unknown book' }}@if (current.bookAuthor) { · {{ current.bookAuthor }} } ·
-        {{ current.createdAt | date: 'd MMM y' }}@if (where(); as at) { · {{ at }} }
+        {{ current.createdAt | nostosDate }}@if (where(); as at) { · {{ at }} }
       </p>
       @if (passage()) {
       <h2 class="sort-passage-title"><nostos-icon concept="passage" [size]="18" />{{ current.passageTitle || 'Passage' }}</h2>

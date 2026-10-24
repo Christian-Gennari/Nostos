@@ -158,7 +158,7 @@ export class BrainNoteActionsService {
         if (deleted.length === ids.length) {
           this.toast.success(deleted.length === 1 ? 'Note deleted' : `${deleted.length} notes deleted`);
         } else {
-          this.toast.error(`${ids.length - deleted.length} of ${ids.length} notes could not be deleted.`);
+          this.toast.error(`Could not delete ${ids.length - deleted.length} of ${ids.length} notes`);
         }
       });
   }

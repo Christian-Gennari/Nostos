@@ -110,7 +110,7 @@ describe('SidebarCollections', () => {
   it('links to the reading list with its count, outside the filters', () => {
     fixture.detectChanges();
 
-    const link = fixture.nativeElement.querySelector('a.nav-item[title="To Read"]') as HTMLAnchorElement;
+    const link = fixture.nativeElement.querySelector('a.nav-item[title="To read"]') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe('/library/to-read');
     expect(link.querySelector('.count-badge')?.textContent?.trim()).toBe('7');
     expect(readingList.load).toHaveBeenCalledTimes(1);
@@ -123,7 +123,7 @@ describe('SidebarCollections', () => {
     readingList.count.set(0);
     fixture.detectChanges();
 
-    const link = fixture.nativeElement.querySelector('a.nav-item[title="To Read"]') as HTMLAnchorElement;
+    const link = fixture.nativeElement.querySelector('a.nav-item[title="To read"]') as HTMLAnchorElement;
     expect(link.querySelector('.count-badge')).toBeNull();
   });
 
@@ -301,7 +301,7 @@ describe('SidebarCollections', () => {
       openDelete('root-1');
       acceptDelete();
 
-      expect(toast.error).toHaveBeenCalledWith('Move or delete the child collections first.');
+      expect(toast.error).toHaveBeenCalledWith('Move or delete the child collections first');
       // The list is reloaded from the server on failure, so the tree reflects
       // reality rather than a stale optimistic removal.
       expect(component.collections()).toEqual([rootCollection]);
@@ -319,7 +319,7 @@ describe('SidebarCollections', () => {
       acceptDelete();
 
       expect(collectionsService.delete).toHaveBeenCalledWith('root-1');
-      expect(toast.info).toHaveBeenCalledWith('Collection deleted');
+      expect(toast.success).toHaveBeenCalledWith('Deleted “Root”');
     });
 
     it('names the collection in the question so the dialog is unambiguous', () => {
@@ -342,7 +342,7 @@ describe('SidebarCollections', () => {
 
       component.moveCollection(nestedCollection, 'nested-1');
 
-      expect(toast.error).toHaveBeenCalledWith('A collection cannot be moved into itself or its children.');
+      expect(toast.error).toHaveBeenCalledWith('A collection cannot be moved into itself or its children');
     });
 
     it('skips the request when the parent is unchanged', () => {
@@ -361,7 +361,7 @@ describe('SidebarCollections', () => {
 
       component.create();
 
-      expect(toast.error).toHaveBeenCalledWith('Could not create collection.');
+      expect(toast.error).toHaveBeenCalledWith('Could not create the collection');
     });
   });
 
@@ -373,7 +373,7 @@ describe('SidebarCollections', () => {
     }
 
     function statusButtons(): HTMLButtonElement[] {
-      // The first .nav-group is the status list (All Books … Finished).
+      // The first .nav-group is the status list (All books … Finished).
       return Array.from(
         navGroups()[0].querySelectorAll('.nav-item') as NodeListOf<HTMLButtonElement>,
       );
@@ -406,7 +406,7 @@ describe('SidebarCollections', () => {
       fixture.detectChanges();
 
       const labels = statusButtons().map((el) => el.textContent?.trim());
-      expect(labels).toEqual(['All Books', 'Not Started', 'In Progress', 'Favorites', 'Finished']);
+      expect(labels).toEqual(['All books', 'Not started', 'Reading', 'Favorites', 'Finished']);
     });
 
     it('closes the Collections group with Unsorted, which still filters by status', () => {
@@ -422,7 +422,7 @@ describe('SidebarCollections', () => {
       const marked = Array.from(
         fixture.nativeElement.querySelectorAll('[data-filter-kind="status"] .label') as NodeListOf<HTMLElement>,
       ).map((el) => el.textContent?.trim());
-      expect(marked).toEqual(['All Books', 'Not Started', 'In Progress', 'Favorites', 'Finished', 'Unsorted']);
+      expect(marked).toEqual(['All books', 'Not started', 'Reading', 'Favorites', 'Finished', 'Unsorted']);
 
       unsorted.click();
       fixture.detectChanges();
@@ -444,26 +444,27 @@ describe('SidebarCollections', () => {
 
       const count = (label: string) =>
         statusButton(label)?.querySelector('.count-badge')?.textContent?.trim() ?? null;
-      expect(count('All Books')).toBe('3');
+      expect(count('All books')).toBe('3');
       expect(count('Favorites')).toBe('1');
-      expect(count('Not Started')).toBeNull();
-      expect(count('In Progress')).toBeNull();
+      expect(count('Not started')).toBeNull();
+      expect(count('Reading')).toBeNull();
     });
 
-    it('does not show a "Reading" label or tooltip anywhere in the sidebar', () => {
+    it('names the in-progress filter "Reading", as Book detail does, never "In Progress"', () => {
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.textContent).not.toContain('Reading');
-      const readingTooltips = Array.from(
+      expect(statusButton('Reading').getAttribute('title')).toBe('Reading');
+      expect(fixture.nativeElement.textContent).not.toMatch(/In Progress|Not Started|To Read/);
+      const titleCaseTooltips = Array.from(
         fixture.nativeElement.querySelectorAll('[title]') as NodeListOf<HTMLElement>,
-      ).filter((el) => el.getAttribute('title')?.includes('Reading') ?? false);
-      expect(readingTooltips).toHaveLength(0);
+      ).filter((el) => /In Progress|Not Started|To Read/.test(el.getAttribute('title') ?? ''));
+      expect(titleCaseTooltips).toHaveLength(0);
     });
 
-    it('clicking "In Progress" sets the status filter (no URL involved)', async () => {
+    it('clicking "Reading" sets the status filter (no URL involved)', async () => {
       fixture.detectChanges();
 
-      statusButton('In Progress').click();
+      statusButton('Reading').click();
       await fixture.whenStable();
 
       expect(component.filters.status()).toBe('reading');
@@ -472,18 +473,18 @@ describe('SidebarCollections', () => {
     it('clicking the active status filter toggles it off', async () => {
       fixture.detectChanges();
 
-      statusButton('In Progress').click();
+      statusButton('Reading').click();
       await fixture.whenStable();
-      statusButton('In Progress').click();
+      statusButton('Reading').click();
       await fixture.whenStable();
 
       expect(component.filters.status()).toBe('all');
     });
 
-    it('clicking "Not Started" sets status=notstarted', async () => {
+    it('clicking "Not started" sets status=notstarted', async () => {
       fixture.detectChanges();
 
-      statusButton('Not Started').click();
+      statusButton('Not started').click();
       await fixture.whenStable();
 
       expect(component.filters.status()).toBe('notstarted');
@@ -493,7 +494,7 @@ describe('SidebarCollections', () => {
       component.select('c1');
       fixture.detectChanges();
 
-      statusButton('In Progress').click();
+      statusButton('Reading').click();
       await fixture.whenStable();
 
       expect(component.filters.collectionId()).toBe('c1');
@@ -522,13 +523,13 @@ describe('SidebarCollections', () => {
       expect(component.filters.format()).toBe('audiobook');
     });
 
-    it('clicking "All Books" clears status, format and collection', async () => {
+    it('clicking "All books" clears status, format and collection', async () => {
       component.select('c1');
       component.toggleStatus('reading');
       component.toggleFormat('ebook');
       fixture.detectChanges();
 
-      statusButton('All Books').click();
+      statusButton('All books').click();
       await fixture.whenStable();
 
       expect(component.filters.status()).toBe('all');
@@ -549,7 +550,7 @@ describe('SidebarCollections', () => {
       await fixture.whenStable();
 
       active = fixture.nativeElement.querySelector('.nav-item.active') as HTMLElement;
-      expect(active.textContent).toContain('In Progress');
+      expect(active.textContent).toContain('Reading');
       expect(active.textContent).not.toContain('Finished');
     });
 
@@ -582,7 +583,7 @@ describe('SidebarCollections', () => {
         fixture.detectChanges();
         expect(component.expanded()).toBe(true);
 
-        statusButton('In Progress').click();
+        statusButton('Reading').click();
         await fixture.whenStable();
 
         expect(component.expanded()).toBe(false);
@@ -600,7 +601,7 @@ describe('SidebarCollections', () => {
     it('desktop selection keeps the sidebar open and does not move focus', async () => {
       fixture.detectChanges();
 
-      statusButton('In Progress').click();
+      statusButton('Reading').click();
       await fixture.whenStable();
 
       expect(component.expanded()).toBe(true);

@@ -395,7 +395,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   editorText = signal('');
   editorTitle = signal('');
-  saveStatus = signal<'Saved' | 'Saving...' | 'Unsaved'>('Saved');
+  saveStatus = signal<'Saved' | 'Saving…' | 'Unsaved'>('Saved');
 
   // Zen (focus) mode — issue #49. Session-only: never persisted.
   isZen = signal(false);
@@ -1119,7 +1119,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       error: () => {
         if (this.activeItem()?.id !== writingId) return;
         this.keptSourcesState.set('error');
-        this.toast.error('Failed to load kept sources');
+        this.toast.error('Could not load the kept sources');
       },
     });
   }
@@ -1162,7 +1162,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
           next.delete(noteId);
           return next;
         });
-        this.toast.error('Failed to keep source');
+        this.toast.error('Could not keep the source');
         // Re-fetch kept list on error so UI does not leave an optimistic lie
         if (this.activeItem()?.id === active.id) this.loadKeptSources(active.id);
       },
@@ -1429,7 +1429,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   private palettePassageSource: PaletteChoice['source'] | null = null;
 
-  /** "Browse Reference" from an empty palette: the Books list, searched. */
+  /** "Browse reference" from an empty palette: the Books list, searched. */
   browseFromPalette(query: string): void {
     this.markdownEditor?.closeSourceQuery();
     this.setReferenceMode('library');
@@ -1482,7 +1482,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         }
       },
       error: () => {
-        this.toast.error('Failed to remove source');
+        this.toast.error('Could not remove the source');
         if (this.activeItem()?.id === active.id) this.loadKeptSources(active.id);
       },
     });
@@ -1561,7 +1561,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.loadTree();
       },
       error: () => {
-        this.toast.error('Failed to move item');
+        this.toast.error('Could not move the item');
         this.loadTree();
       },
     });
@@ -2118,7 +2118,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       // A newer debounce/flush superseded this request before it began.
       if (generation !== this.saveGeneration) return;
 
-      this.saveStatus.set('Saving...');
+      this.saveStatus.set('Saving…');
       try {
         const updated = await firstValueFrom(
           this.writingsService.update(item.id, { name: title, content }),

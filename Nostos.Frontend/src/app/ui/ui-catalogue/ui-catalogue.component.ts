@@ -126,9 +126,9 @@ export class UiCatalogueComponent {
 
   showCatalogueToast(type: ToastType): void {
     const messages: Record<ToastType, string> = {
-      success: 'Book details saved.',
-      error: 'Could not save book details.',
-      info: 'Metadata refresh started.',
+      success: 'Book details saved',
+      error: 'Could not save the book details',
+      info: 'Metadata refresh started',
     };
     this.toastService.show(messages[type], type, 30_000);
   }
@@ -142,9 +142,9 @@ export class UiCatalogueComponent {
   }
 
   showStackedCatalogueToasts(): void {
-    this.toastService.show('Book details saved.', 'success', 30_000);
-    this.toastService.show('Metadata refresh started.', 'info', 30_000);
-    this.toastService.show('Could not save book details.', 'error', 30_000);
+    this.toastService.show('Book details saved', 'success', 30_000);
+    this.toastService.show('Metadata refresh started', 'info', 30_000);
+    this.toastService.show('Could not save the book details', 'error', 30_000);
   }
 
   setTheme(theme: ThemeName): void {

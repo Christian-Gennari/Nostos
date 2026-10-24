@@ -248,7 +248,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
           },
           error: () => {
             this.saving.set(false);
-            this.toast.error('Writing could not be created');
+            this.toast.error('Could not create the writing');
           },
         });
       return;
@@ -290,7 +290,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
       },
       error: () => {
         this.saving.set(false);
-        this.toast.error('Kept sources could not be checked');
+        this.toast.error('Could not check the kept sources');
       },
     });
   }

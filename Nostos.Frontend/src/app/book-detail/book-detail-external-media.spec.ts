@@ -95,7 +95,7 @@ describe('BookDetail linked external media', () => {
 
     expect(dialog.textContent).toContain('Delete “A Novel”?');
     expect(dialog.textContent).toContain('The book file, annotations, and all reading progress');
-    expect(dialog.querySelector('.btn-confirm')?.textContent).toContain('Delete Permanently');
+    expect(dialog.querySelector('.btn-confirm')?.textContent).toContain('Delete permanently');
   });
 
   it('shows that the external file is unavailable and that notes are kept', async () => {

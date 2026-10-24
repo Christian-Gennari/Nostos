@@ -214,7 +214,7 @@ describe('CloudEntryComponent', () => {
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Deletion pending');
-    expect(compiled.textContent).toContain('October 15, 2026');
+    expect(compiled.textContent).toContain('15 Oct 2026');
     expect(compiled.querySelector('a[href="/api/portability/export"]')?.textContent)
       .toContain('Export my library');
     expect(compiled.textContent).toContain('Cancel deletion');

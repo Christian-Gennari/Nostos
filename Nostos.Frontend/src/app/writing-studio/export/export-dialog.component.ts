@@ -316,11 +316,11 @@ export class ExportDialogComponent {
       }
       rememberExportFormat(format.id);
       // Remembered for the next export of the same writing or folder.
-      this.exporter.saveSetup(this.targetId(), setup).catch(() => this.toast.show('The page setup could not be saved for next time.', 'error'));
+      this.exporter.saveSetup(this.targetId(), setup).catch(() => this.toast.show('Could not save the page setup for next time', 'error'));
       this.closed.emit();
     } catch (error) {
       console.error('Export failed', error);
-      this.toast.show(format.action === 'print' ? 'The print layout could not be opened. Try again.' : 'The file could not be made. Try again.', 'error');
+      this.toast.show(format.action === 'print' ? 'Could not open the print layout. Try again.' : 'Could not make the file. Try again.', 'error');
     } finally {
       this.downloading.set(false);
     }

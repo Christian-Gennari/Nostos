@@ -289,7 +289,7 @@ public sealed class BackupServiceTests
 
         var result = await h.Service.RestoreBackupAsync(created.Id);
         result.Success.Should().BeFalse();
-        result.Message.Should().Contain("Restore failed");
+        result.Message.Should().Contain("Could not restore the backup");
 
         // Maintenance mode is always exited and the failed restore left the
         // live database byte-for-byte untouched (rollback by non-replacement).

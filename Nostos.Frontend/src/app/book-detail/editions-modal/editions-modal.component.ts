@@ -41,7 +41,7 @@ export interface LinkCandidate extends LinkableBookDto {
  * disambiguation) and because link/unlink restructure a relationship across
  * books rather than editing this book's own fields. Keeping it out of the
  * Edit Book form matters for a concrete reason: that form is a deferred save
- * (`Save Changes` fires the one PUT, `Cancel` discards), while these mutations
+ * (`Save changes` fires the one PUT, `Cancel` discards), while these mutations
  * apply immediately — an unlink confirmed inside that form would survive a
  * Cancel that the user believed undid everything.
  *

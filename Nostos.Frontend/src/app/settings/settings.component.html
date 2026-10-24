@@ -641,7 +641,7 @@
                 <span class="label-desc">
                   {{ managedAiUsageCopy() }}
                   @if (usage.renewsAtUtc) {
-                    Renews {{ usage.renewsAtUtc | date: 'MMM d' }}.
+                    Renews {{ usage.renewsAtUtc | nostosDate }}.
                   }
                 </span>
               } @else {
@@ -1452,7 +1452,7 @@
             (click)="triggerBackup()"
           >
             @if (backingUp()) {
-              Backing up...
+              Backing up…
             } @else {
               <nostos-icon name="arrows-clockwise" [size]="16"></nostos-icon>
               Back up now
@@ -1562,18 +1562,18 @@
               (click)="scanForBackups()"
             >
               @if (importing()) {
-                Scanning...
+                Scanning…
               } @else {
                 <nostos-icon name="folder-simple" [size]="16"></nostos-icon>
-                Scan for Backups
+                Scan for backups
               }
             </button>
           </div>
 
-          <!-- Last Backup Info -->
+          <!-- Last backup info -->
           @if (status().lastBackupAt) {
             <div class="last-backup-info">
-              Last backup: {{ status().lastBackupAt | date:'medium' }}
+              Last backup {{ status().lastBackupAt | nostosDate: 'datetime' }}
               <span
                 appBadge
                 [tone]="status().lastBackupStatus === 'Completed' ? 'success' : 'danger'"
@@ -1624,7 +1624,7 @@
             @for (item of history(); track item.id) {
               <div class="history-item">
                 <div class="history-info">
-                  <span class="history-date">{{ item.createdAt | date:'medium' }}</span>
+                  <span class="history-date">{{ item.createdAt | nostosDate: 'datetime' }}</span>
                   <span class="history-meta">
                     {{ formatSize(item.sizeBytes) }}
                     @if (item.includeBookFiles) {
@@ -1726,7 +1726,7 @@
 
               @if (latestManagedBackup(); as latest) {
                 <p class="last-backup-info" data-testid="managed-backups-latest">
-                  Last backup {{ latest.createdAtUtc | date:'medium' }}
+                  Last backup {{ latest.createdAtUtc | nostosDate: 'datetime' }}
                 </p>
 
                 @if (supportsManagedRestore()) {
@@ -1757,7 +1757,7 @@
                       @for (backup of listing.backups; track backup.id) {
                         <div class="history-item" role="listitem" data-testid="managed-backup">
                           <div class="history-info">
-                            <span class="history-date">{{ backup.createdAtUtc | date:'medium' }}</span>
+                            <span class="history-date">{{ backup.createdAtUtc | nostosDate: 'datetime' }}</span>
                           </div>
                           <div class="history-actions">
                             <button

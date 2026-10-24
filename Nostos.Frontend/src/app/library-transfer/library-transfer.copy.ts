@@ -9,6 +9,7 @@
  * failure sentence or a byte string itself.
  */
 
+import { formatNostosDate } from '../core/date-formats';
 import type { LibraryTransferFailure } from './models/library-transfer.models';
 import type { MigrationActivationPhase } from './models/migration-http.dtos';
 
@@ -452,6 +453,6 @@ export function activationRecoveryNote(expiresAtUtc: string | null | undefined):
   if (Number.isNaN(expires)) return null;
   return (
     'Your previous library was kept as a recovery copy until ' +
-    `${new Date(expires).toLocaleString()}.`
+    `${formatNostosDate(expires, 'datetime')}.`
   );
 }
