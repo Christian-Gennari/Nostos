@@ -249,7 +249,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     if (!copy || !state) return null;
     switch (copy.action) {
       case 'retry':
-        return state.jobId ? 'Retry import' : 'Try again';
+        return 'Try again';
       case 'sign-in':
         return 'Try again';
       case 'choose-file':

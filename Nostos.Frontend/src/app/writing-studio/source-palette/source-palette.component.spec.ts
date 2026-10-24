@@ -123,7 +123,7 @@ describe('SourcePaletteComponent (issue #1039)', () => {
     await typeQuery('');
     expect(search).not.toHaveBeenCalled();
     expect(component.items().map((i) => i.id)).toEqual(['k']);
-    expect(component.heading()).toContain('Kept with this writing');
+    expect(component.heading()).toContain('Kept in this document');
   });
 
   it('says so when nothing matches, and offers the Reference rail', async () => {

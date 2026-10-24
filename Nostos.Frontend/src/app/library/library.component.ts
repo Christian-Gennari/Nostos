@@ -60,7 +60,7 @@ function statusFilterLabel(value: string | null | undefined): string | null {
     case 'reading':
       return READING_STATUS_LABEL.reading;
     case 'favorites':
-      return 'Favorites';
+      return 'Favourites';
     case 'finished':
       return READING_STATUS_LABEL.finished;
     case 'unsorted':
@@ -957,7 +957,7 @@ export class Library implements OnInit, OnDestroy {
         this.rawBooks.update((books) =>
           books.map((b) => (b.id === book.id ? { ...b, isFavorite: !newStatus } : b)),
         );
-        this.toast.error('Could not update the favorite');
+        this.toast.error('Could not update the favourite');
       },
     });
   }

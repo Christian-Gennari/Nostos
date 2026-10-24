@@ -136,7 +136,7 @@ describe('CloudEntryComponent', () => {
     expect(mockEntry.beginCheckout).toHaveBeenCalledWith('standard-monthly');
   });
 
-  it('renders View Cloud plans link when selectedOffer is null (direct login)', () => {
+  it('renders View Nostos Cloud plans link when selectedOffer is null (direct login)', () => {
     mockEntry.selectedOffer.set(null);
     mockEntry.view.set({
       kind: 'subscription_required',
@@ -156,11 +156,11 @@ describe('CloudEntryComponent', () => {
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain('Choose a plan on our pricing page to start your Cloud library');
+    expect(compiled.textContent).toContain('Choose a plan on our pricing page to start your Nostos Cloud library');
 
     const link = compiled.querySelector('a.nostos-button--primary') as HTMLAnchorElement;
     expect(link).toBeTruthy();
-    expect(link.textContent).toContain('View Cloud plans');
+    expect(link.textContent).toContain('View Nostos Cloud plans');
     expect(link.getAttribute('href')).toBe('https://nostos.page/pricing');
   });
 

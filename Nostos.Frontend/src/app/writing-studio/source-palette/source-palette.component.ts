@@ -117,7 +117,7 @@ export class SourcePaletteComponent {
   });
   readonly heading = computed(() => {
     const q = (this.query() ?? '').trim();
-    if (!q) return this.items().length ? 'Kept with this writing, and recent' : '';
+    if (!q) return this.items().length ? 'Kept in this document, and recent' : '';
     const corrected = this.answered();
     return corrected && corrected !== q.toLowerCase() && corrected !== q ? `Showing results for “${corrected}”` : '';
   });

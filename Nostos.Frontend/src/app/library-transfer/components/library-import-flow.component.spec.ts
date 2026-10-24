@@ -786,7 +786,7 @@ describe('LibraryImportFlowComponent', () => {
 
     expect(testId(harness, 'import-failed')?.getAttribute('role')).toBe('alert');
     expect(testId(harness, 'import-failed')?.textContent).toContain(
-      'Not a portable library archive',
+      'Not a library archive',
     );
 
     const action = testId(harness, 'import-failure-action');
@@ -821,8 +821,8 @@ describe('LibraryImportFlowComponent', () => {
     await waitForKind(harness, 'failed');
 
     const text = testId(harness, 'import-failed')?.textContent ?? '';
-    expect(text).toContain('This is a backup, not a portable archive');
-    expect(text).toContain('portable library archive');
+    expect(text).toContain('This is a backup, not a library archive');
+    expect(text).toContain('library archive');
   });
 
   it('offers retry for a retryable failure that has a durable job', async () => {
@@ -840,7 +840,7 @@ describe('LibraryImportFlowComponent', () => {
     if (state.kind === 'failed') expect(state.jobId).toBeTruthy();
 
     const action = testId(harness, 'import-failure-action') as HTMLButtonElement;
-    expect(action.textContent).toContain('Retry import');
+    expect(action.textContent).toContain('Try again');
     action.click();
     expect(retry).toHaveBeenCalledTimes(1);
   });

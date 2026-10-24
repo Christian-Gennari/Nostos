@@ -15,7 +15,7 @@ test.beforeEach(async ({ context }) => {
   await openReferenceRailOnLoad(context);
 });
 
-test('captured source survives Brain → Keep with writing → Studio on the real backend', async ({
+test('captured source survives Brain → Keep in a document → Studio on the real backend', async ({
   page,
 }) => {
   const { baseUrl } = loadFixture();
@@ -145,10 +145,10 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
     // Exercise the actual Brain handoff UI rather than creating the writing-note
     // relation directly through the API.
     await page.getByRole('button', { name: 'More actions for this note' }).click();
-    await page.getByRole('menuitem', { name: 'Keep with writing…' }).click();
+    await page.getByRole('menuitem', { name: 'Keep in a document…' }).click();
 
     const picker = page.getByRole('dialog', {
-      name: 'Keep with writing',
+      name: 'Keep in a document',
       exact: true,
     });
     await expect(picker).toBeVisible();
@@ -163,9 +163,9 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
     await expect(existingWriting).toBeVisible();
     await existingWriting.click();
 
-    await picker.getByLabel('Open writing after keeping').check();
+    await picker.getByLabel('Open document after keeping').check();
     await picker
-      .getByRole('button', { name: 'Keep with writing', exact: true })
+      .getByRole('button', { name: 'Keep in a document', exact: true })
       .click();
 
     await expect(page).toHaveURL(

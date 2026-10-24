@@ -270,8 +270,8 @@
                 [pressed]="!!book.isFavorite"
                 [class.active]="book.isFavorite"
                 (click)="toggleFavorite(book, $event)"
-                aria-label="Favorite"
-                title="Toggle favorite"
+                aria-label="Favourite"
+                title="Toggle favourite"
               ></button>
             </div>
           </div>
@@ -429,8 +429,8 @@
               [pressed]="!!book.isFavorite"
               [class.active]="book.isFavorite"
               (click)="toggleFavorite(book, $event)"
-              aria-label="Favorite"
-              title="Toggle favorite"
+              aria-label="Favourite"
+              title="Toggle favourite"
             ></button>
 
             <div class="actions-overlay">
@@ -468,7 +468,7 @@
             <nostos-icon name="check-circle" weight="fill" [size]="13" class="meta-mark meta-mark--finished" label="Finished"></nostos-icon>
             }
             @if (book.isFavorite) {
-            <nostos-icon name="heart" weight="fill" [size]="13" class="meta-mark meta-mark--favorite" label="Favorite"></nostos-icon>
+            <nostos-icon name="heart" weight="fill" [size]="13" class="meta-mark meta-mark--favorite" label="Favourite"></nostos-icon>
             }
           </div>
 

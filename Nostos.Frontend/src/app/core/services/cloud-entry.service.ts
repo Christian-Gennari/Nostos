@@ -294,7 +294,7 @@ export class CloudEntryService {
       const snapshot = await firstValueFrom(this.onboarding.reconcileSubscription(offerId));
       await this.applyOnboarding(snapshot);
     } catch {
-      this.actionError.set("We couldn't check your subscription right now. Try again.");
+      this.actionError.set("We could not check your subscription right now. Try again.");
     } finally {
       this.actionPending.set(false);
     }
@@ -349,12 +349,12 @@ export class CloudEntryService {
     } catch (error) {
       if (error instanceof HttpErrorResponse && error.status === 409) {
         this.actionError.set(
-          'This Cloud library already contains data, so the archive was not imported.',
+          'This Nostos Cloud library already contains data, so the archive was not imported.',
         );
       } else if (error instanceof HttpErrorResponse && error.status === 400) {
-        this.actionError.set('That file could not be imported as a Nostos portable library.');
+        this.actionError.set('That file could not be imported as a Nostos library archive.');
       } else {
-        this.actionError.set("We couldn't import that library right now. Try again.");
+        this.actionError.set("We could not import that library right now. Try again.");
       }
     } finally {
       this.actionPending.set(false);

@@ -594,7 +594,7 @@ describe('AddBookModal — From a Source', () => {
     expect(rows.length).toBe(1);
     expect(rows[0].textContent).toContain('Pride and Prejudice');
     expect(rows[0].textContent).toContain('Jane Austen');
-    expect(rows[0].textContent).toContain('E-book · Project Gutenberg');
+    expect(rows[0].textContent).toContain('EPUB · Project Gutenberg');
 
     // The browser never talks to the source directly: the URL is Nostos's own.
     expect(fixture.nativeElement.querySelector('.source-cover img').getAttribute('src')).toBe(

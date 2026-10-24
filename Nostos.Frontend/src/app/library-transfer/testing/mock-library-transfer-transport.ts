@@ -192,7 +192,7 @@ const ERROR_MESSAGES: Partial<Record<MigrationErrorCode, string>> = {
   migration_storage_exhausted: 'The host ran out of storage during the transfer.',
   migration_cannot_cancel: 'The job can no longer be cancelled.',
   migration_not_retryable: 'Only failed, cancelled or expired jobs can be retried.',
-  migration_storage_contended: 'Transfer capacity is busy. Retry shortly.',
+  migration_storage_contended: 'Transfer capacity is busy. Try again shortly.',
   migration_activation_busy: 'The library is in maintenance. Try again later.',
   migration_replacement_confirmation_required:
     'Replacing an existing library requires explicit confirmation.',

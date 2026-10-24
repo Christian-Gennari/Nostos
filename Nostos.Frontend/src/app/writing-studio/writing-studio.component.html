@@ -150,12 +150,12 @@
             [glyphSize]="18"
             weight="thin"
             title="More"
-            aria-label="More for this writing"
+            aria-label="More for this document"
             data-testid="studio-more"
             [nostosMenuTriggerFor]="studioMore"
           ></button>
           <ng-template #studioMore>
-            <nostos-menu aria-label="More for this writing">
+            <nostos-menu aria-label="More for this document">
               <button
                 nostosMenuItem
                 icon="download-simple"
@@ -251,7 +251,7 @@
         ></button>
       </div>
 
-      <!-- Top-level reference mode switch: "For this writing" vs "Library" (issue #491) -->
+      <!-- Top-level reference mode switch: "For this document" vs "Library" (issue #491) -->
       <div class="sidebar-tabs reference-mode-switch" role="tablist" aria-label="Reference surfaces">
         <button
           class="tab-btn toggle-opt"
@@ -260,7 +260,7 @@
           [class.active]="referenceMode() === 'writing'"
           (click)="setReferenceMode('writing')"
         >
-          <span>For this writing</span>
+          <span>For this document</span>
         </button>
         <button
           class="tab-btn toggle-opt"
@@ -395,12 +395,12 @@
                 (click)="keepNote(source.id)"
               >
                 <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
-                Keep with writing
+                Keep in a document
               </button>
             } @else if (keptNoteIds().has(source.id)) {
               <span class="source-kept-state">
                 <nostos-icon name="bookmark-simple" [size]="16" weight="fill"></nostos-icon>
-                Kept with this writing
+                Kept in this document
               </span>
             }
 
@@ -432,7 +432,7 @@
                       <hr nostosMenuSeparator />
                     }
                     <button nostosMenuItem icon="bookmark-simple" class="remove-source-action"
-                      (triggered)="removeKeptSource(source.id)">Remove from this writing</button>
+                      (triggered)="removeKeptSource(source.id)">Remove from this document</button>
                   }
                 </nostos-menu>
               </ng-template>
@@ -455,7 +455,7 @@
         (scroll)="captureReferenceScroll($event)"
       >
         @if (!activeItem()) {
-          <nostos-empty-state class="reference-empty-state" compact message="Keep notes here from Library or from Brain with Keep with writing. Open a writing to keep or insert sources.">
+          <nostos-empty-state class="reference-empty-state" compact message="Keep notes here from Library or from Brain with Keep in a document. Open a document to keep or insert sources.">
             <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
               Browse Library
               <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
@@ -466,7 +466,7 @@
         } @else if (keptSourcesState() === 'error') {
           <nostos-empty-state compact error message="Kept sources could not be loaded." (retry)="retryKeptSources()" />
         } @else if (keptNotes().length === 0 && citedOnlyNotes().length === 0 && removedCitedCount() === 0) {
-          <nostos-empty-state class="reference-empty-state" compact message="No sources are kept with this writing yet. Keep notes here from Library or from Brain with Keep with writing.">
+          <nostos-empty-state class="reference-empty-state" compact message="No sources are kept in this document yet. Keep notes here from Library or from Brain with Keep in a document.">
             <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
               Browse Library
               <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
@@ -483,8 +483,8 @@
                   icon="x"
                   [glyphSize]="16"
                   (click)="removeKeptSource(note.id, $event)"
-                  title="Remove from this writing"
-                  aria-label="Remove from this writing"
+                  title="Remove from this document"
+                  aria-label="Remove from this document"
                 ></button>
                 <ng-container *ngTemplateOutlet="sourceUse; context: { $implicit: note }"></ng-container>
               </div>
@@ -531,7 +531,7 @@
           </nostos-search-field>
         }
         @if (!activeItem()) {
-          <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
+          <p class="reference-action-notice">Open a document to keep or insert sources.</p>
         }
 
         <div
@@ -597,7 +597,7 @@
           </nostos-search-field>
         }
         @if (!activeItem()) {
-          <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
+          <p class="reference-action-notice">Open a document to keep or insert sources.</p>
         }
 
         <div

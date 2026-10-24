@@ -610,7 +610,7 @@ describe('Library', () => {
 
     expect(component.scopeLabel()).not.toContain('stoic');
     expect(label()).toBe(component.scopeLabel());
-    expect(label()).toContain('Favorites');
+    expect(label()).toContain('Favourites');
     expect(label()).toContain(' · ');
     // Every chip but the search one is a shelf chip, which phones hide because
     // the label above already names it.
@@ -832,7 +832,7 @@ describe('Library', () => {
     const author = card.querySelector('.meta-author') as HTMLElement;
     expect(author.querySelector('.meta-author-name')?.textContent?.trim()).toBe('An Author');
     const marks = Array.from(author.querySelectorAll('.meta-mark')).map((el) => el.getAttribute('aria-label'));
-    expect(marks).toEqual(['Finished', 'Favorite']);
+    expect(marks).toEqual(['Finished', 'Favourite']);
   });
 
   it('leaves the author line bare for a book that is neither finished nor a favourite', () => {

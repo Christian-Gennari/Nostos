@@ -34,7 +34,7 @@ export interface ExportSource {
 /** Why an export cannot be made, or null when it can. */
 export function exportBlockedReason(source: Pick<ExportSource, 'type' | 'chapters'>): string | null {
   if (source.chapters.some((chapter) => hasExportableContent(chapter.markdown))) return null;
-  if (source.type === 'Document') return 'This writing is empty. Write something to export it.';
+  if (source.type === 'Document') return 'This document is empty. Write something to export it.';
   return source.chapters.length ? 'Every writing in this folder is empty.' : 'This folder has no writings in it yet.';
 }
 

@@ -74,13 +74,13 @@ describe('NoteItemComponent', () => {
 
     fixture.componentRef.setInput('citedWritings', [{ id: 'w1', name: 'On Optimism' }]);
     fixture.detectChanges();
-    expect(element.querySelector('.note-item-meta button.note-item-cited')?.textContent?.trim()).toBe('Cited in 1 writing');
+    expect(element.querySelector('.note-item-meta button.note-item-cited')?.textContent?.trim()).toBe('Cited in 1 document');
 
     fixture.componentRef.setInput('citedWritings', [{ id: 'w1', name: 'On Optimism' }, { id: 'w2', name: 'Theodicy' }]);
     fixture.detectChanges();
     const button = element.querySelector('button.note-item-cited') as HTMLButtonElement;
     expect(button.getAttribute('type')).toBe('button');
-    expect(button.textContent?.trim()).toBe('Cited in 2 writings');
+    expect(button.textContent?.trim()).toBe('Cited in 2 documents');
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
 
     button.click();
@@ -372,7 +372,7 @@ describe('NoteItemComponent', () => {
       (element.querySelector('.note-item-more') as HTMLButtonElement).click();
       fixture.detectChanges();
       const items = Array.from(document.querySelectorAll('.nostos-menu-item')).map((item) => item.textContent?.trim());
-      expect(items).toEqual(['Edit note', 'Keep with writing…', 'Delete note']);
+      expect(items).toEqual(['Edit note', 'Keep in a document…', 'Delete note']);
       document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
     });
   });

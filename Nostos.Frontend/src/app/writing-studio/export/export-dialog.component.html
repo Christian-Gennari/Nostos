@@ -153,6 +153,9 @@
     } @else if (doc(); as resolved) {
       <span dialogActionsStart class="export-status" role="status" data-testid="export-status">{{ resolved.words }} {{ resolved.words === 1 ? 'word' : 'words' }}</span>
     }
+    @if (loadError() || resolveError()) {
+      <button dialogActionsStart appButton variant="ghost" size="sm" type="button" data-testid="export-retry" (click)="retry()">Try again</button>
+    }
     <button appButton variant="secondary" type="button" [disabled]="downloading()" (click)="cancel()">Cancel</button>
     <button appButton variant="primary" type="button" data-testid="export-download"
       [busy]="downloading()" [disabled]="!canDownload()" [attr.aria-describedby]="downloadReason() ? 'export-status' : null" (click)="download()">

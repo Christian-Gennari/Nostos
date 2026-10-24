@@ -56,7 +56,7 @@ describe('LibraryExportFlowComponent', () => {
   it('offers the portable-export explanation and action while idle', () => {
     const harness = setup();
 
-    expect(testId(harness, 'export-idle')?.textContent).toContain('portable .nostos archive');
+    expect(testId(harness, 'export-idle')?.textContent).toContain('library archive (.nostos)');
     expect(testId(harness, 'export-idle')?.textContent).toContain(
       'move your library to another Nostos installation',
     );

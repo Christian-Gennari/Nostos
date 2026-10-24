@@ -223,7 +223,7 @@ describe('AppDockComponent', () => {
     const iconOf = (title: string) =>
       (fixture.nativeElement.querySelector(`.dock-item[title="${title}"] nostos-icon`) as HTMLElement)
         .innerHTML;
-    expect(iconOf('Writing Studio')).toContain(firstPath(NOSTOS_ICONS['pen-nib'].fill));
+    expect(iconOf('Studio')).toContain(firstPath(NOSTOS_ICONS['pen-nib'].fill));
     expect(iconOf('Library')).toContain(firstPath(NOSTOS_ICONS.books.regular));
   });
 

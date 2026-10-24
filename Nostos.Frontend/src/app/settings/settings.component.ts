@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
-import { formatFileSize } from '../core/format';
+import { formatFileSize, plural } from '../core/format';
 import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -95,7 +95,7 @@ const AI_PROVIDER_COPY = {
   title: 'AI provider',
   intro:
     'Notes, voice recordings and book passages are sent directly to the OpenAI-compatible endpoints configured below.',
-  readingAssistant: 'Reading assistant',
+  readingAssistant: 'Ask Nostos',
   voiceTranscription: 'Voice transcription',
   voiceToggle: 'Enable voice transcription',
   voiceToggleHelp: 'Send voice recordings to the transcription endpoint.',
@@ -457,16 +457,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
       return 'Back up this installation or move your library to another Nostos.';
     }
     if (hasBackups) {
-      return 'Backups help you recover this SelfHosted installation.';
+      return 'Backups help you recover this self-hosted installation.';
     }
     if (hasMigration) {
       return 'Move your library to another Nostos installation.';
     }
     if (this.supportsManagedBackups()) {
-      return 'Nostos backs up your library every night. You can also download a portable archive of it.';
+      return 'Nostos backs up your library every night. You can also download a library archive of it.';
     }
     if (this.supportsCloudPortableExport()) {
-      return 'Download a portable archive of your Nostos library.';
+      return 'Download a library archive of your Nostos library.';
     }
 
     return 'Manage the data for your Nostos library.';
@@ -537,10 +537,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly dayThemeOption = computed(() => themeOption(this.dayTheme()));
   readonly nightThemeOption = computed(() => themeOption(this.nightTheme()));
 
-  /** Whether the server can run the assistant, for the Reading assistant card. */
+  /** Whether the server can run the assistant, for the Ask Nostos card. */
   readonly assistantAvailable = this.assistantStatus.available;
 
-  /** The persisted user intent for the Reading assistant toggle. */
+  /** The persisted user intent for the Ask Nostos toggle. */
   readonly assistantEnabled = this.preferences.assistantEnabled;
 
   /** Product-level voice intent, separate from provider configuration. */
@@ -806,7 +806,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       case 'temporarily_unavailable':
         return 'Managed Ask Nostos usage is temporarily unavailable.';
       default:
-        return 'Ask Nostos usage is managed with your Cloud plan.';
+        return 'Ask Nostos usage is managed with your Nostos Cloud plan.';
     }
   });
 
@@ -1540,7 +1540,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Copies the catalog address. The clipboard API is only available in a
+   * Copies the catalogue address. The clipboard API is only available in a
    * secure context (https, or localhost), so a failure is reported rather than
    * swallowed — the address on screen stays selectable as the fallback.
    */
@@ -1554,7 +1554,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     navigator.clipboard.writeText(url).then(
       () => {
         this.copied.set(true);
-        this.toast.success('Catalog address copied');
+        this.toast.success('Catalogue address copied');
         if (this.copiedTimeout !== null) clearTimeout(this.copiedTimeout);
         this.copiedTimeout = setTimeout(() => {
           this.copied.set(false);
@@ -1582,7 +1582,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
 
     const details = [
-      `Catalog: ${info.catalogUrl}`,
+      `Catalogue: ${info.catalogUrl}`,
       `Username: ${access.username}`,
       `Password: ${access.password}`,
     ].join('\n');
@@ -1819,7 +1819,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       next: (imported) => {
         this.importing.set(false);
         if (imported.length > 0) {
-          this.toast.success(`Found ${imported.length} backup(s) on disk.`);
+          this.toast.success(`Found ${plural(imported.length, 'backup')} on disk`);
         } else {
           this.toast.info('No new backups found on disk');
         }

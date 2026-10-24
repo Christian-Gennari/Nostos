@@ -207,7 +207,7 @@ const cloudAiRefillServiceMock = {
   getUsage: vi.fn((): Observable<CloudManagedAiUsage> => of(managedAiUsage)),
 };
 
-/** A reachable catalog address, as the server reports it behind its proxy. */
+/** A reachable catalogue address, as the server reports it behind its proxy. */
 const remoteInfo: OpdsInfo = {
   enabled: true,
   catalogUrl: 'https://omenhub.example.ts.net:5215/opds/',
@@ -1354,7 +1354,7 @@ describe('SettingsComponent backup-only surface', () => {
       '[data-testid="cloud-portable-export-action"]',
     ) as HTMLButtonElement;
 
-    expect(card.textContent).toContain('one portable .nostos file');
+    expect(card.textContent).toContain('one library archive (.nostos)');
     expect(card.textContent).toContain('stored EPUB, PDF, and audiobook files');
     expect(action.textContent).toContain('Export all my Nostos data');
   });
@@ -1534,7 +1534,7 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(
       fixture.nativeElement.querySelector('[data-testid="manage-library-summary"]')?.textContent,
-    ).toContain('Backups help you recover this SelfHosted installation.');
+    ).toContain('Backups help you recover this self-hosted installation.');
     expect(
       fixture.nativeElement.querySelector('.settings-nav-item.is-active')?.textContent.trim(),
     ).toBe('Backups & data');
@@ -1735,7 +1735,7 @@ describe('SettingsComponent backup-only surface', () => {
   // E-reader access (issue #187)
   // ------------------------------------------------------------------
 
-  it('renders the E-reader access card with the catalog address and one copy action', () => {
+  it('renders the E-reader access card with the catalogue address and one copy action', () => {
     const headers = cardHeaders();
     expect(headers).toContain('E-reader access');
     expect(
@@ -1756,7 +1756,7 @@ describe('SettingsComponent backup-only surface', () => {
 
     const text = cardBodyText();
     expect(text).toContain('e-reader');
-    expect(text).toMatch(/OPDS catalog/u);
+    expect(text).toMatch(/OPDS catalogue/u);
   });
 
   it('copies the address in one action and confirms it', async () => {
@@ -1819,7 +1819,15 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('.catalog-url')).toBeNull();
   });
 
-  it('shows the managed Cloud enable state and catalog without fabricating credentials', () => {
+  it('shows a loading indicator, not a blank card, while the e-reader details load', () => {
+    opdsServiceMock.getInfo.mockReturnValue(new Subject<OpdsInfo>().asObservable());
+    render();
+
+    expect(erCard()?.querySelector('nostos-loading-indicator')).toBeTruthy();
+    expect(cardBodyText()).not.toContain('Could not read this setting');
+  });
+
+  it('shows the managed Cloud enable state and catalogue without fabricating credentials', () => {
     capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedDisabled));
 
@@ -1862,7 +1870,7 @@ describe('SettingsComponent backup-only surface', () => {
     await flush();
 
     expect(writeText).toHaveBeenCalledWith(
-      `Catalog: ${remoteInfo.catalogUrl}\nUsername: ${managedIssued.username}\nPassword: ${managedIssued.password}`,
+      `Catalogue: ${remoteInfo.catalogUrl}\nUsername: ${managedIssued.username}\nPassword: ${managedIssued.password}`,
     );
   });
 
@@ -1954,8 +1962,8 @@ describe('SettingsComponent backup-only surface', () => {
   // Reading assistant (W1)
   // ------------------------------------------------------------------
 
-  it('renders the Reading assistant card with the available copy and an off toggle by default', () => {
-    expect(cardHeaders()).toContain('Reading assistant');
+  it('renders the Ask Nostos card with the available copy and an off toggle by default', () => {
+    expect(cardHeaders()).toContain('Ask Nostos');
 
     const card = assistantCard();
     expect(card).not.toBeNull();
@@ -2980,10 +2988,10 @@ describe('SettingsComponent shared library transfer host', () => {
 
     const pageText = (fixture.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
     expect(pageText).toContain(
-      'Portable library archives are for moving your library between Nostos installations.',
+      'Library archives are for moving your library between Nostos installations.',
     );
     expect(pageText).toContain(
-      'Backups are for recovering this SelfHosted installation. They are not portable library exports.',
+      'Backups are for recovering this self-hosted installation. They are not library archives.',
     );
 
     const transferCard = testId('library-transfer-card') as HTMLElement;

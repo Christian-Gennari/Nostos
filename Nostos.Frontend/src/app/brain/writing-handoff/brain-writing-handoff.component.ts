@@ -184,7 +184,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
     this.saving.set(true);
 
     if (this.newWritingMode()) {
-      const name = this.newWritingTitle().trim() || 'Untitled writing';
+      const name = this.newWritingTitle().trim() || 'Untitled document';
       this.writingsService
         .create({
           name,
@@ -205,7 +205,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
           },
           error: () => {
             this.saving.set(false);
-            this.toast.error('Could not create the writing');
+            this.toast.error('Could not create the document');
           },
         });
       return;

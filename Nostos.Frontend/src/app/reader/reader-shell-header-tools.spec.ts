@@ -244,7 +244,7 @@ describe('ReaderShell header tools', () => {
     const fixture = await render(pdfWithAudiobook);
 
     expect(headerTools(fixture)).toEqual([
-      'Table of contents',
+      'Contents',
       'Notes & highlights',
       'View settings',
       'More reading tools',
@@ -323,7 +323,7 @@ describe('ReaderShell header tools', () => {
   it('gives audio Contents, Notes and More, with no reading-only items', async () => {
     const fixture = await render(audioBook);
 
-    expect(headerTools(fixture)).toEqual(['Table of contents', 'Notes & highlights', 'More reading tools']);
+    expect(headerTools(fixture)).toEqual(['Contents', 'Notes & highlights', 'More reading tools']);
     expect(openMore(fixture)).toEqual(['Send feedback']);
     expect(document.querySelectorAll('[data-testid="reader-more-menu"] hr').length).toBe(0);
   });
@@ -354,7 +354,7 @@ describe('ReaderShell header tools', () => {
     pdf.destroy();
 
     const audio = await render(audioBook);
-    expect(headerTools(audio)).toEqual(['Table of contents', 'Notes & highlights']);
+    expect(headerTools(audio)).toEqual(['Contents', 'Notes & highlights']);
     expect(moreButton(audio)).toBeNull();
   });
 });

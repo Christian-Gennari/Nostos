@@ -70,9 +70,9 @@ export const USED_IN_FETCHED = 500;
       }
       @if (rest().length) {
         <button appChip type="button" class="often-chip used-in-more" [nostosMenuTriggerFor]="moreWritings"
-          [attr.aria-label]="rest().length === 1 ? '1 more writing' : rest().length + ' more writings'">+{{ rest().length }}</button>
+          [attr.aria-label]="rest().length === 1 ? '1 more document' : rest().length + ' more documents'">+{{ rest().length }}</button>
         <ng-template #moreWritings>
-          <nostos-menu aria-label="More writings that use this topic">
+          <nostos-menu aria-label="More documents that use this topic">
             @for (writing of rest(); track writing.id) {
               <button nostosMenuItem icon="file-text" (triggered)="open(writing)">{{ writing.name }}</button>
             }

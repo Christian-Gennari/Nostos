@@ -48,7 +48,7 @@
         <ng-template #sortMore>
           <nostos-menu aria-label="More for this note">
             <button nostosMenuItem icon="book-open" (triggered)="openSource(current)">{{ sourceLabel() }}</button>
-            <button nostosMenuItem icon="bookmark-simple" (triggered)="actions.keepWithWriting([current.id])">Keep with writing…</button>
+            <button nostosMenuItem icon="bookmark-simple" (triggered)="actions.keepWithWriting([current.id])">Keep in a document…</button>
             <hr nostosMenuSeparator />
             <button nostosMenuItem icon="trash" tone="danger" (triggered)="actions.askDelete([current.id])">Delete note</button>
           </nostos-menu>

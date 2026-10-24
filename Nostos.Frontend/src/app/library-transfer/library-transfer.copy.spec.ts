@@ -31,7 +31,7 @@ describe('library-transfer.copy', () => {
       expect(formatBytes(1536)).toBe('1.5 KB');
       expect(formatBytes(25 * 1024 * 1024)).toBe('25 MB');
       expect(formatBytes(2.5 * 1024 * 1024 * 1024)).toBe('2.5 GB');
-      expect(formatBytes(5 * 1024 ** 4)).toBe('5 TiB');
+      expect(formatBytes(5 * 1024 ** 4)).toBe('5 TB');
     });
 
     it('returns an empty string for unknown sizes', () => {
@@ -103,7 +103,7 @@ describe('library-transfer.copy', () => {
         'choose-file',
       );
       expect(libraryTransferFailureCopy(failure('archive_operational_backup')).message).toContain(
-        'SelfHosted backup',
+        'self-hosted backup',
       );
       expect(libraryTransferFailureCopy(failure('archive_unsupported_version')).action).toBe(
         'choose-file',

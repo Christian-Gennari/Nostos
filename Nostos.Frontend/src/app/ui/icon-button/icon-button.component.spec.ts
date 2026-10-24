@@ -194,7 +194,7 @@ describe('IconButtonComponent', () => {
       standalone: true,
       imports: [IconButtonComponent],
       template: `
-        <button appIconButton icon="heart" surface="overlay" [pressed]="true" aria-label="Favorite"></button>
+        <button appIconButton icon="heart" surface="overlay" [pressed]="true" aria-label="Favourite"></button>
         <button appIconButton icon="trash" aria-label="Delete"></button>
       `,
     })

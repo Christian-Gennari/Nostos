@@ -71,14 +71,6 @@ p {
   width: 100%;
 }
 
-.cloud-entry__error {
-  width: 100%;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color);
-  color: var(--color-danger);
-  font-size: var(--text-sm);
-}
-
 @media (max-width: 600px) {
   .cloud-entry {
     place-items: stretch;

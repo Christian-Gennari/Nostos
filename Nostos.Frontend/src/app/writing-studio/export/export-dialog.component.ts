@@ -142,7 +142,7 @@ export class ExportDialogComponent {
   readonly actionLabel = computed(() => ACTION_LABELS[this.format().action]);
   readonly downloadReason = computed(() => {
     if (this.loadError()) return this.loadError();
-    if (!this.source()) return 'Gathering the writing…';
+    if (!this.source()) return 'Gathering the document…';
     if (this.blockedReason()) return this.blockedReason();
     if (this.resolveError()) return this.resolveError();
     if (this.resolving() || !this.doc()) return 'Writing the citations…';
@@ -191,6 +191,16 @@ export class ExportDialogComponent {
     });
   }
 
+  /** After a failed load or citation pass: ask again, without closing the dialog. */
+  retry(): void {
+    if (this.loadError()) {
+      const id = this.targetId();
+      if (id) void this.loadTarget(id);
+      return;
+    }
+    this.scheduleResolve(this.source(), this.styleId(), this.order());
+  }
+
   private async loadTarget(id: string): Promise<void> {
     const run = ++this.loadRun;
     this.source.set(null);
@@ -209,7 +219,7 @@ export class ExportDialogComponent {
       this.source.set(source);
     } catch {
       if (run !== this.loadRun) return;
-      this.loadError.set('The writing could not be loaded. Check your connection and try again.');
+      this.loadError.set('The document could not be loaded. Check your connection and try again.');
     }
   }
 

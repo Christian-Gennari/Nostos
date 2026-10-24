@@ -174,7 +174,7 @@
                     [disabled]="isSubmitting()"
                     (click)="retryUpload()"
                   >
-                    Retry upload
+                    Try again
                   </button>
                 </div>
               }
@@ -1076,7 +1076,7 @@
                       ? 'Uploading…'
                       : 'Adding…'
                   : hasPendingUpload()
-                    ? 'Retry upload'
+                    ? 'Try again'
                     : isEditMode()
                       ? 'Save changes'
                       : seededFromSource()

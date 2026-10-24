@@ -1388,7 +1388,7 @@ describe('ReaderShell toolbar contract', () => {
         .filter((t): t is string => !!t);
 
     const header = titlesOf('.reader-header .icon-btn');
-    expect(header.filter((t) => t === 'Table of contents')).toHaveLength(1);
+    expect(header.filter((t) => t === 'Contents')).toHaveLength(1);
     expect(header.filter((t) => t === 'Notes & highlights')).toHaveLength(1);
     expect(header.filter((t) => t === 'View settings')).toHaveLength(1);
     // The highlight control merged into the notes panel: at 390px the header held

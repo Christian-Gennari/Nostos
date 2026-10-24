@@ -50,8 +50,8 @@
         icon="list"
         [glyphSize]="20"
         (click)="toggleToc()"
-        title="Table of contents"
-        aria-label="Table of contents"
+        title="Contents"
+        aria-label="Contents"
         [attr.aria-expanded]="tocOpen()"
         [class.active]="tocOpen()"
       ></button>
@@ -683,7 +683,7 @@
         <ng-container *ngTemplateOutlet="tocTemplate; context: { $implicit: toc() }"></ng-container>
 
         @if (toc().length === 0) {
-        <nostos-empty-state compact message="No table of contents available." />
+        <nostos-empty-state compact message="No contents available." />
         }
       </div>
     </aside>

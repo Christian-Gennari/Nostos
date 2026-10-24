@@ -69,7 +69,7 @@ function isNarrowViewport(): boolean {
           #brainRla="routerLinkActive"
           [class.pending]="pendingDestination() === '/brain'"
           class="dock-item"
-          title="The Brain"
+          title="Brain"
         >
           <span class="dock-icon">
             <nostos-icon
@@ -108,7 +108,7 @@ function isNarrowViewport(): boolean {
           #studioRla="routerLinkActive"
           [class.pending]="pendingDestination() === '/studio'"
           class="dock-item"
-          title="Writing Studio"
+          title="Studio"
         >
           <span class="dock-icon">
             <nostos-icon
