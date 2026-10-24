@@ -10,6 +10,7 @@ import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { SearchFieldComponent } from '../../ui/search-field/search-field.component';
+import { UNKNOWN_AUTHOR } from '../../core/book-format';
 
 /** One book in the current work, as the membership list needs it. */
 export interface WorkMember {
@@ -58,6 +59,8 @@ export interface LinkCandidate extends LinkableBookDto {
   styleUrl: './editions-modal.component.css',
 })
 export class EditionsModal {
+  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
+
   isOpen = input.required<boolean>();
 
   /** Every book in the current work, the current book included. */

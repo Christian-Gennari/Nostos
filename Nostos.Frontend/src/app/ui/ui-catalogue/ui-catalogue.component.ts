@@ -37,6 +37,7 @@ import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-optio
 import type { HighlightColour } from '../../reader/highlight-colours';
 import { PlaybackSpeedMenuComponent } from '../playback-speed-menu/playback-speed-menu.component';
 import { SettingsPopoverComponent } from '../settings-popover/settings-popover.component';
+import { TO_READ_LABEL } from '../../core/reading-status';
 
 /**
  * Inspectable reference fixture for Nostos UI v1.
@@ -89,6 +90,7 @@ import { SettingsPopoverComponent } from '../settings-popover/settings-popover.c
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class UiCatalogueComponent {
+  protected readonly toReadLabel = TO_READ_LABEL;
   private readonly themeService = inject(ThemeService);
   private readonly toastService = inject(ToastService);
 

@@ -23,6 +23,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scanTree } from './design-guardrails.mjs';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
@@ -1458,6 +1459,15 @@ if (process.argv.includes('--self-test')) {
   }
 }
 
+
+/**
+ * RULES 16+ — the primitive and copy guardrails of the UI audit (#1232): dates,
+ * Retry / "..." / Title Case / "Failed to", reading-status and author labels,
+ * hand-built empty and loading states, locally styled raw buttons, and raw range,
+ * search, cover and pen markup. They live in design-guardrails.mjs so
+ * design-guardrails.test.mjs can test each one on fixtures.
+ */
+for (const f of scanTree(ROOT)) findings.push(f);
 
 // ------------------------------------------------------------------- output
 const byRule = new Map();

@@ -50,6 +50,39 @@ ARIA contract, geometry, or state model is part of the product surface.
 - A book without an author shows **Unknown author** (`UNKNOWN_AUTHOR` in `book-format.ts`).
 - Placeholders and pending labels end with an ellipsis character, “…”, not three dots.
 - Dates go through `nostosDate` (see Pipes); toast wording is under ToastContainerComponent.
+- Failures start **Could not …** everywhere a reader sees them (toasts, inline errors,
+  empty states), not “Failed to”, “Unable to” or “Couldn’t”.
+
+### Design check
+
+`npm run check` (and CI) runs `scripts/check-design.mjs`, which includes the primitive
+and copy guardrails in `scripts/design-guardrails.mjs` (tested by
+`scripts/design-guardrails.test.mjs`, also part of `npm run check`). A finding names the
+file, the line and what to use instead. Specs are not scanned.
+
+| Rule | Fails on | Use |
+| --- | --- | --- |
+| `raw-date` | `\| date`, `DatePipe`, `formatDate(`, `toLocaleDateString` / `toLocaleTimeString`, `toLocaleString` on a date, `Intl.DateTimeFormat` outside `core/date-formats.ts` and the pipe | `nostosDate`, `formatNostosDate()` |
+| `copy-retry` | “Retry” as a whole label | “Try again” (`TRY_AGAIN`) |
+| `copy-ellipsis` | `...` in a label, placeholder, toast or text node | “…” |
+| `copy-title-case` | two capitalised words side by side in a label (“Add Book”) | sentence case; real names go in `PROPER_NOUNS` / `PROPER_PHRASES` |
+| `copy-could-not` | “Failed to”, “Unable to”, “Couldn’t” in a reader-facing string (not `console.*` or `new Error`) | “Could not …” |
+| `reading-status-label` | “In Progress”, “Not Started”, “To Read” anywhere; “Not started” / “To read” hard-coded outside `core/reading-status.ts` | `READING_STATUS_LABEL`, `TO_READ_LABEL` |
+| `unknown-author-label` | “Unknown author” hard-coded outside `core/book-format.ts` | `UNKNOWN_AUTHOR` |
+| `hand-built-empty-state` | an `*empty-state*` class on anything but `nostos-empty-state` (a class that places the primitive is fine) | `nostos-empty-state` |
+| `hand-built-loading` | a “Loading…” text node with no spinner beside it, `*spinner*` / `*skeleton*` classes, pulse/shimmer/spin keyframes | `nostos-loading-indicator` |
+| `raw-button` | a `<button>` without `appButton`, `appIconButton`, `appChip`, `appChoiceRow`, `appTopicOption`, `appIconTile` or a `nostosMenuItem*` directive, whose class its component CSS styles | the primitive, or an entry in `PRODUCT_BUTTONS` saying why it is a product control |
+| `raw-range` | `<input type="range">` without `appRange` | `appRange` |
+| `raw-search-field` | `<input type="search">` outside `nostos-search-field` | `nostos-search-field` |
+| `hand-built-cover` | cover placeholder/fallback classes outside `ui/book-cover` | `nostos-book-cover` |
+| `hand-built-pens` | pen dot/swatch classes, or a component listing `HIGHLIGHT_COLOURS`, outside `ui/pen-swatches` | `app-pen-swatches` |
+
+An exception is written next to the code, with its reason, on the line or in the
+comment block right above it: `<!-- design-allow hand-built-loading: one status line
+inside a result that is already shown -->` (or `// design-allow <rule>: <reason>` in
+TypeScript). A marker without a reason does not count. Prefer fixing the code; the
+lists in `design-guardrails.mjs` (`PRODUCT_BUTTONS`, `PRODUCT_KEYFRAMES`,
+`PROPER_NOUNS`) are for real product controls and real names only.
 
 ---
 
@@ -575,7 +608,7 @@ book", highlight import's "Choose a book", Studio's book index), each book is on
 <button type="button" appChoiceRow (click)="pick(book)">
   <span class="nostos-choice-row__text">
     <span class="nostos-choice-row__title">{{ book.title }}</span>
-    <span class="nostos-choice-row__sub">{{ book.author || 'Unknown author' }}</span>
+    <span class="nostos-choice-row__sub">{{ book.author || unknownAuthor }}</span>
     <span class="nostos-choice-row__meta">
       <nostos-icon [concept]="format" [size]="12" aria-hidden="true" /> {{ formatLabel }}
     </span>

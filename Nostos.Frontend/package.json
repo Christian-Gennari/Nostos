@@ -13,7 +13,7 @@
     "e2e:launcher-check": "node e2e/support/launch-regression.mjs",
     "profile:fade": "node tools/profile-fade.mjs",
     "check:css": "node scripts/check-css-integrity.mjs",
-    "check:design": "node scripts/check-design.mjs",
+    "check:design": "node --test scripts/design-guardrails.test.mjs && node scripts/check-design.mjs",
     "check": "npm run check:css && npm run check:theme && npm run check:design",
     "capture:baseline": "node scripts/capture-baseline.mjs",
     "check:freshness": "node scripts/check-freshness.mjs",

@@ -284,19 +284,11 @@
     font-size: var(--text-md);
   }
 
+  /* Phone only: a ghost appButton, at the touch height of the field beside it. */
   .palette-cancel {
     display: inline-flex;
     flex: none;
-    align-items: center;
     min-height: var(--control-h-touch);
-    padding: 0 0.625rem;
-    border: 0;
-    background: transparent;
-    color: var(--color-text-main);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 0.95rem;
-    font-weight: 500;
   }
 
   .palette-results {

@@ -33,12 +33,13 @@ import { READING_STATUS_LABEL, TO_READ_LABEL } from '../../core/reading-status';
 import { LibraryChangesService } from '../../core/services/library-changes.service';
 import { RouterLink } from '@angular/router';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
+import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { BrandLockupComponent } from '../../ui/brand-lockup/brand-lockup.component';
 
 @Component({
   standalone: true,
   selector: 'app-sidebar-collections',
-  imports: [InputDirective, 
+  imports: [InputDirective, IconButtonComponent, 
     CommonModule,
     FormsModule,
     RouterLink,

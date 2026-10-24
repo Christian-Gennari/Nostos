@@ -5,6 +5,7 @@ import { Observable, map } from 'rxjs';
 import { BooksService } from '../../core/services/books.service';
 import { TopicsService } from '../../core/services/topics.service';
 import { WritingsService } from '../../core/services/writings.service';
+import { UNKNOWN_AUTHOR } from '../../core/book-format';
 
 export type RecentKind = 'book' | 'topic' | 'document';
 
@@ -92,7 +93,7 @@ export class RecentItemsService {
       case 'book':
         return this.books
           .get(id)
-          .pipe(map((b) => ({ kind, id, label: b.title, sub: b.author || 'Unknown author' })));
+          .pipe(map((b) => ({ kind, id, label: b.title, sub: b.author || UNKNOWN_AUTHOR })));
       case 'topic':
         return this.topics
           .get(id)

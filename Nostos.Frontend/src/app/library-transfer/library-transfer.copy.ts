@@ -299,7 +299,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
     case 'migration_activation_failed':
       return failure.retryable
         ? {
-            title: 'Couldn’t finish the import',
+            title: 'Could not finish the import',
             message:
               'Activation failed before the library switch. Your original library is ' +
               'unchanged. Retry to continue where the import stopped.',
@@ -324,7 +324,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       };
     case 'portable_export_failed':
       return {
-        title: 'Couldn’t prepare the export',
+        title: 'Could not prepare the export',
         message: 'Nostos could not prepare the archive. Try the export again.',
         action: 'start-over',
       };
@@ -338,7 +338,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       };
     case 'portable_import_failed':
       return {
-        title: 'Couldn’t finish the import',
+        title: 'Could not finish the import',
         message: 'The import failed on the server. Retry to continue with this archive.',
         action: 'retry',
       };

@@ -173,7 +173,7 @@ describe('SwitchEditionDialog', () => {
     await settle();
 
     expect(router.navigate).not.toHaveBeenCalled();
-    expect(byTestId('switch-edition-declined')?.textContent).toContain('Couldn’t find this exact place');
+    expect(byTestId('switch-edition-declined')?.textContent).toContain('Could not find this exact place');
 
     byTestId('switch-edition-open-anyway')!.click();
     expect(router.navigate).toHaveBeenCalledWith(['/read', 'epub-1'], undefined);

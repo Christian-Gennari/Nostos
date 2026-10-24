@@ -140,14 +140,16 @@
           <span class="section-label">Collections</span>
           @if (!adding()) {
             <button
+              appIconButton
+              icon="plus"
+              size="xxs"
+              [glyphSize]="14"
               class="section-add"
               type="button"
               (click)="startAdd()"
               title="New collection"
               aria-label="New collection"
-            >
-              <nostos-icon name="plus" [size]="14"></nostos-icon>
-            </button>
+            ></button>
           }
         </div>
       </div>
@@ -225,15 +227,17 @@
         </span>
       }
       <button
+        appIconButton
+        [icon]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
+        [glyphSize]="18"
+        weight="thin"
         class="toggle-btn"
+        type="button"
         (click)="toggle()"
         [attr.aria-expanded]="expanded()"
         [attr.title]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
-      >
-        <nostos-icon
-          [name]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
-          [size]="18" weight="thin"></nostos-icon>
-      </button>
+        [attr.aria-label]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+      ></button>
     </div>
   </div>
 

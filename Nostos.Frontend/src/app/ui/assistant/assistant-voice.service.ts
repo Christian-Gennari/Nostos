@@ -311,13 +311,13 @@ export function recordingFileName(mimeType: string): string {
 /** Turn a backend ProblemDetails response into an actionable voice error. */
 export function errorFromTranscription(error: unknown): AssistantVoiceError {
   if (!(error instanceof HttpErrorResponse)) {
-    return { kind: 'failed', message: "Couldn't transcribe that recording. Try again." };
+    return { kind: 'failed', message: "Could not transcribe that recording. Try again." };
   }
 
   if (error.status === 0) {
     return {
       kind: 'failed',
-      message: "Couldn't reach Nostos to transcribe that recording. Check the connection and try again.",
+      message: "Could not reach Nostos to transcribe that recording. Check the connection and try again.",
     };
   }
 
@@ -361,7 +361,7 @@ export function errorFromTranscription(error: unknown): AssistantVoiceError {
         message: 'The transcription provider failed to process that recording. Try again or check its settings.',
       };
     default:
-      return { kind: 'failed', message: "Couldn't transcribe that recording. Try again." };
+      return { kind: 'failed', message: "Could not transcribe that recording. Try again." };
   }
 }
 

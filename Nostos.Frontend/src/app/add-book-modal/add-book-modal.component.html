@@ -282,7 +282,7 @@
                         [disabled]="!form.isbn || isFetching()"
                         (click)="fetchMetadata()"
                       >
-                        {{ isFetching() ? '...' : 'Fetch' }}
+                        {{ isFetching() ? '…' : 'Fetch' }}
                       </button>
                     </div>
                   </app-form-field>
@@ -599,7 +599,7 @@
                             type="text"
                             [(ngModel)]="form.asin"
                             name="asin"
-                            placeholder="ASIN (e.g. B00...)"
+                            placeholder="ASIN (e.g. B00…)"
                           />
                         } @else {
                           <div class="input-group-fetch">
@@ -622,7 +622,7 @@
                               [disabled]="!form.isbn || isFetching()"
                               (click)="fetchMetadata()"
                             >
-                              {{ isFetching() ? '...' : 'Fetch' }}
+                              {{ isFetching() ? '…' : 'Fetch' }}
                             </button>
                           </div>
                         }
@@ -667,7 +667,7 @@
                       </div>
                     }
 
-                    <app-form-field label="Personal Review / Notes" forId="book-personal-review">
+                    <app-form-field label="Personal review / notes" forId="book-personal-review">
                       <textarea
                         id="book-personal-review"
                         appTextarea
@@ -989,6 +989,9 @@
                       </p>
                     }
                     @if (!selectedDetail() && !sourceImportError()) {
+                      <!-- design-allow hand-built-loading: one quiet line inside a
+                           result that is already shown, naming the two facts still
+                           on their way; not a page or pane load. -->
                       <p class="source-hint" role="status">Loading formats and rights…</p>
                     }
                   </div>

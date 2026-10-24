@@ -1010,7 +1010,7 @@ describe('ReaderShell shared save and load ownership (#479)', () => {
       '[data-testid="reader-load-error"]',
     ) as HTMLElement;
     expect(error).toBeTruthy();
-    expect(error.textContent).toContain('Couldn’t open this book');
+    expect(error.textContent).toContain('Could not open this book');
     expect(error.textContent).toContain('Try again');
 
     booksGetSpy.mockReturnValueOnce(of(audiobook));

@@ -574,48 +574,6 @@
   }
 }
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--color-text-muted);
-  gap: 0;
-  text-align: center;
-  padding: 2rem;
-}
-.icon-circle {
-  width: 56px;
-  height: 56px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1.25rem;
-  color: var(--color-text-muted);
-}
-.empty-state h2 {
-  font-family: 'Newsreader', serif;
-  font-size: 1.5rem;
-  font-weight: 500;
-  color: var(--color-text-main);
-  margin: 0 0 0.5rem;
-}
-.empty-state .empty-subtext {
-  font-size: 0.9rem;
-  font-family: 'Hanken Grotesk', sans-serif;
-  color: var(--color-text-muted);
-  margin: 0 0 1.25rem;
-  max-width: 320px;
-  line-height: 1.5;
-}
-.empty-state .btn-outline {
-  margin-top: 0.5rem;
-}
-
 /* --- MOBILE OVERRIDES --- */
 .backdrop {
   position: fixed;
@@ -690,12 +648,6 @@
   .sidebar-header .icon-btn {
     width: 44px;
     height: 44px;
-  }
-
-  /* The empty state's "Open Sidebar" is the only way to reach documents when no
-     document is open. */
-  .empty-state .btn-outline {
-    min-height: 44px;
   }
 
   .header-doc-title {
@@ -982,17 +934,6 @@
   height: 32px;
 }
 
-.empty-state {
-  flex: 1 1 auto;
-  height: auto;
-  min-height: 0;
-}
-
-.empty-new-document,
-.empty-browse-files {
-  margin-top: 0.9rem;
-}
-
 .editor-footer,
 .editor-footer .editor-desk-telemetry {
   line-height: 1;
@@ -1124,8 +1065,7 @@
     height: 44px;
   }
 
-  .sidebar-left .files-new-document,
-  .empty-state .nostos-button {
+  .sidebar-left .files-new-document {
     min-height: 44px;
   }
 

@@ -29,7 +29,7 @@ import { SidebarCollections } from './sidebar-collections/sidebar-collections.co
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
 import { Subject, Subscription, forkJoin } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
-import type { BookFormatConcept } from '../core/book-format';
+import { UNKNOWN_AUTHOR, type BookFormatConcept } from '../core/book-format';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { BookSort } from '../core/dtos/book.enums';
@@ -145,6 +145,7 @@ interface WorkFormatGlyph {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Library implements OnInit, OnDestroy {
+  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   readonly sortOptions = [
     { value: BookSort.LastRead, label: 'Last read' },
     { value: BookSort.Recent, label: 'Recently added' },
