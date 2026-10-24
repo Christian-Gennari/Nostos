@@ -1,0 +1,22 @@
+{
+  "$schema": "../app-info-schema.json",
+  "name": "Nostos",
+  "available": true,
+  "exposable": true,
+  "dynamic_config": true,
+  "port": 5099,
+  "id": "nostos",
+  "tipi_version": 1,
+  "version": "2026.10.18",
+  "categories": ["books", "media"],
+  "description": "Nostos keeps reading, thinking and writing in one place. Collect physical books, EPUBs, PDFs and audiobooks, read or listen in the app, keep highlights and notes next to the page they came from, connect ideas across books and turn them into your own writing.",
+  "short_desc": "A home for your reading life: books, audiobooks, notes and writing.",
+  "author": "Christian Gennari",
+  "source": "https://github.com/Christian-Gennari/Nostos",
+  "website": "https://nostos.page",
+  "form_fields": [],
+  "supported_architectures": ["arm64", "amd64"],
+  "created_at": 1792831922919,
+  "updated_at": 1792831922919,
+  "min_tipi_version": "4.5.0"
+}

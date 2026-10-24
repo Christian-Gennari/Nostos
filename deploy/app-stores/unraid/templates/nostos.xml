@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Nostos</Name>
+  <Repository>ghcr.io/christian-gennari/nostos:latest</Repository>
+  <Registry>https://github.com/Christian-Gennari/Nostos/pkgs/container/nostos</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Christian-Gennari/Nostos/issues</Support>
+  <Project>https://github.com/Christian-Gennari/Nostos</Project>
+  <ReadMe>https://docs.nostos.page/get-started/quickstart/</ReadMe>
+  <TemplateURL>https://raw.githubusercontent.com/Christian-Gennari/nostos-unraid/main/templates/nostos.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Christian-Gennari/Nostos/main/deploy/app-stores/unraid/nostos-icon.png</Icon>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Overview>Nostos is a home for your reading life. Collect physical books, EPUBs, PDFs and audiobooks in one library. Read or listen in the app, keep highlights, notes and passages next to the page they came from, connect ideas across books in the Brain, and turn them into your own writing in the Writing Studio.&#xD;
+&#xD;
+Everything Nostos keeps lives in one folder: the SQLite database, your books, local backups and the key ring that protects AI keys saved in Settings. Back up that folder.&#xD;
+&#xD;
+No account is needed. The self-hosted app has no login of its own, so keep it on your home network or behind a VPN, or add authentication at a reverse proxy before exposing it to the internet.&#xD;
+&#xD;
+Books already on your server: map a folder to /external/media (read-only), then open Settings, This server, External media.&#xD;
+&#xD;
+The container runs as nobody:users (99:100), so files in the appdata folder belong to the same user as other Unraid apps. Keep the appdata folder on a disk or cache pool, not on a network share: SQLite needs local file locking.</Overview>
+  <Category>MediaApp:Books MediaServer:Books Productivity:</Category>
+  <ExtraSearchTerms>books ebooks epub pdf audiobooks reader library notes highlights opds writing</ExtraSearchTerms>
+  <Requires>A 64-bit server (amd64 or arm64). Give the container at least 512 MB of memory; 1 GB leaves room for large imports and backups.</Requires>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <License>AGPL-3.0-or-later</License>
+  <Screenshot>https://raw.githubusercontent.com/Christian-Gennari/Nostos/main/docs/screenshots/library.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Christian-Gennari/Nostos/main/docs/screenshots/reader.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Christian-Gennari/Nostos/main/docs/screenshots/book-details.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Christian-Gennari/Nostos/main/docs/screenshots/brain-list.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/Christian-Gennari/Nostos/main/docs/screenshots/writing-studio.png</Screenshot>
+  <Changes>[b]Initial template.[/b] Release notes: https://github.com/Christian-Gennari/Nostos/releases</Changes>
+  <Config Name="Web UI port" Target="8080" Default="5099" Mode="tcp" Description="Port for the Nostos web interface. Open http://[server]:5099 after the container starts." Type="Port" Display="always" Required="true" Mask="false">5099</Config>
+  <Config Name="Library data" Target="/data" Default="/mnt/user/appdata/nostos" Mode="rw" Description="Everything Nostos keeps: the database (nostos.db), books, local backups and the key ring in keys/. Back up this folder. Keep it on local storage, not a network share." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/nostos</Config>
+  <Config Name="External media (optional)" Target="/external/media" Default="" Mode="ro" Description="Optional. A folder of ebooks and audiobooks you already have. Nostos reads it in place and never changes it. After starting, open Settings, This server, External media." Type="Path" Display="always" Required="false" Mask="false"/>
+  <Config Name="Temporary files" Target="TMPDIR" Default="/tmp" Mode="" Description="Where Nostos writes temporary files. Keep /tmp: the image's own temp folder is only writable by its default user, and this template runs the container as 99:100." Type="Variable" Display="advanced-hide" Required="true" Mask="false">/tmp</Config>
+</Container>
