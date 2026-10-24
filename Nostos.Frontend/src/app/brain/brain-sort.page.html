@@ -36,7 +36,7 @@
       <h2 class="sort-passage-title"><nostos-icon concept="passage" [size]="18" />{{ current.passageTitle || 'Passage' }}</h2>
       }
       @if (quote()) {
-      <blockquote class="sort-quote" [class.is-opening]="passage()">{{ quote() }}</blockquote>
+      <blockquote appQuote size="lg" class="sort-quote" [pen]="pen()" [lines]="passage() ? 6 : null">{{ quote() }}</blockquote>
       }
       @if (thought()) {
       <p class="sort-thought" (click)="onThoughtClick($event)" [innerHTML]="thought() | noteFormat : state.lookup()"></p>

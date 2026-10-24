@@ -28,6 +28,9 @@ import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicato
 import { SwitchComponent } from '../switch/switch.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-toggle.component';
 import { BookCoverComponent } from '../book-cover/book-cover.component';
+import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
+import { QuoteBlockComponent } from '../quote-block/quote-block.component';
+import type { HighlightColour } from '../../reader/highlight-colours';
 
 /**
  * Inspectable reference fixture for Nostos UI v1.
@@ -66,6 +69,8 @@ import { BookCoverComponent } from '../book-cover/book-cover.component';
     SwitchComponent,
     ViewToggleComponent,
     TextareaDirective,
+    PenSwatchesComponent,
+    QuoteBlockComponent,
   ],
   templateUrl: './ui-catalogue.component.html',
   styleUrl: './ui-catalogue.component.css',
@@ -90,6 +95,7 @@ export class UiCatalogueComponent {
   ] satisfies readonly ViewToggleOption[];
   readonly modalOpen = signal(false);
   readonly renameDemo = signal(true);
+  readonly cataloguePen = signal<HighlightColour>('amber');
   readonly catalogueDropdownValue = signal('epub');
   readonly dropdownOptions = [
     { value: 'epub', label: 'EPUB' },

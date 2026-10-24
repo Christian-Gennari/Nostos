@@ -450,35 +450,25 @@
         [style.top.px]="place.top"
         [style.bottom.px]="place.bottom"
       >
-        <blockquote class="selection-quote">
-          <p class="selected-text" [title]="selectionPreview()">{{ selectionPreview() }}</p>
-        </blockquote>
+        <blockquote appQuote size="sm" [lines]="3" [pen]="highlightColour()" class="selection-quote selected-text"
+          [title]="selectionPreview()">{{ selectionPreview() }}</blockquote>
         <ng-container [ngTemplateOutlet]="selectionActions"></ng-container>
       </div>
       } @else {
       <div class="highlight-confirmation" [class.epub-actions]="fileType() === 'epub'" [class.has-note]="noteDraftOpen()" data-testid="selection-bar">
         <div class="confirmation-content">
-          <p class="selected-text">"{{ selectionPreview() }}"</p>
+          <blockquote appQuote size="sm" [pen]="highlightColour()" class="selected-text">{{ selectionPreview() }}</blockquote>
           <!-- The pens, where the mark is made: a dot picks the colour the
                offered passage is shown in and keeps it as the book's pen.
                Nothing is saved until Highlight or Save note. -->
           @if (!noteDraftOpen()) {
-          <div class="hl-pens selection-pens" role="group" aria-label="Highlight colour">
-            @for (pen of highlightColours; track pen.id) {
-              <button
-                type="button"
-                class="hl-pen"
-                [style.background]="'var(--highlight-' + pen.id + ')'"
-                [class.is-active]="highlightColour() === pen.id"
-                [attr.aria-pressed]="highlightColour() === pen.id"
-                [attr.aria-label]="pen.label + ' highlighter'"
-                [attr.title]="pen.label"
-                [attr.data-testid]="'selection-pen-' + pen.id"
-                [disabled]="highlightSaving()"
-                (click)="setHighlightColour(pen.id)"
-              ></button>
-            }
-          </div>
+          <app-pen-swatches
+            class="hl-pens selection-pens"
+            [value]="highlightColour()"
+            [disabled]="highlightSaving()"
+            testIdPrefix="selection-pen-"
+            (chosen)="setHighlightColour($event)"
+          />
           }
           <ng-container [ngTemplateOutlet]="selectionActions"></ng-container>
         </div>
@@ -491,12 +481,9 @@
            fine-pointer desktop, docked at the bottom on phones. -->
       <ng-template #highlightCardBody>
         @let anchoredCard = !!highlightCardPlacement();
-        <blockquote
-          class="selection-quote highlight-card-quote"
-          [style.border-left-color]="'var(--highlight-' + activeHighlightPen() + ')'"
-        >
-          <p class="selected-text" [title]="activeHighlightPreview()">{{ activeHighlightPreview() }}</p>
-        </blockquote>
+        <blockquote appQuote size="sm" [lines]="3" [pen]="activeHighlightPen()"
+          class="selection-quote highlight-card-quote selected-text"
+          [title]="activeHighlightPreview()">{{ activeHighlightPreview() }}</blockquote>
 
         @if (highlightNoteEditing()) {
           <div class="selection-note">
@@ -525,21 +512,12 @@
 
         @if (!highlightNoteEditing()) {
         <div class="highlight-card-tools">
-          <div class="hl-pens selection-pens" role="group" aria-label="Highlight colour">
-            @for (pen of highlightColours; track pen.id) {
-              <button
-                type="button"
-                class="hl-pen"
-                [style.background]="'var(--highlight-' + pen.id + ')'"
-                [class.is-active]="activeHighlightPen() === pen.id"
-                [attr.aria-pressed]="activeHighlightPen() === pen.id"
-                [attr.aria-label]="pen.label + ' highlighter'"
-                [attr.title]="pen.label"
-                [attr.data-testid]="'highlight-card-pen-' + pen.id"
-                (click)="recolourActiveHighlight(pen.id)"
-              ></button>
-            }
-          </div>
+          <app-pen-swatches
+            class="hl-pens selection-pens"
+            [value]="activeHighlightPen()"
+            testIdPrefix="highlight-card-pen-"
+            (chosen)="recolourActiveHighlight($event)"
+          />
           <div class="highlight-card-utilities">
             <button
               appIconButton
@@ -718,21 +696,12 @@
            the swatch is the label, so this stays a row of dots rather than a row
            of words. `aria-pressed` carries the choice to assistive tech, and the
            title is the one discoverable name for a dot (a #226 follow-up). -->
-      <div class="hl-pens" role="group" aria-label="Highlight colour">
-        @for (pen of highlightColours; track pen.id) {
-          <button
-            type="button"
-            class="hl-pen"
-            [style.background]="'var(--highlight-' + pen.id + ')'"
-            [class.is-active]="highlightColour() === pen.id"
-            [attr.aria-pressed]="highlightColour() === pen.id"
-            [attr.aria-label]="pen.label + ' highlighter'"
-            [attr.title]="pen.label"
-            [attr.data-testid]="'reader-highlight-pen-' + pen.id"
-            (click)="setHighlightColour(pen.id)"
-          ></button>
-        }
-      </div>
+      <app-pen-swatches
+        class="hl-pens"
+        [value]="highlightColour()"
+        testIdPrefix="reader-highlight-pen-"
+        (chosen)="setHighlightColour($event)"
+      />
       }
 
       <div class="quick-note">

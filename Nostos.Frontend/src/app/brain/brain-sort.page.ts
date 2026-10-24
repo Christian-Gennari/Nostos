@@ -26,6 +26,8 @@ import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import { ProgressComponent } from '../ui/progress/progress.component';
+import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { quotePen } from '../reader/highlight-colours';
 import { noteSourceLink } from '../core/note-source';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import {
@@ -74,6 +76,7 @@ interface Choice {
     LoadingIndicatorComponent,
     NoteFormatPipe,
     ProgressComponent,
+    QuoteBlockComponent,
     BrainNoteDialogsComponent,
   ],
   providers: [BrainTopicSuggestionsService, BrainNoteActionsService],
@@ -136,6 +139,11 @@ export class BrainSortPage {
   });
 
   readonly quote = computed(() => this.note()?.selectedText?.trim() ?? '');
+  /** The pen the quote was marked with; null keeps its rail neutral. */
+  readonly pen = computed(() => {
+    const note = this.note();
+    return note ? quotePen(note) : null;
+  });
   readonly thought = computed(() => thoughtForDisplay(this.note()?.content));
   readonly where = computed(() => {
     const note = this.note();

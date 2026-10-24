@@ -572,6 +572,56 @@ narrow layout.
 
 ---
 
+## QuoteBlockComponent
+
+**Selector:** `[appQuote]`
+**File:** `src/app/ui/quote-block/`
+
+A quotation from a book, drawn one way everywhere (issue #1203): the note's
+quote, Brain Sort, the Studio's source rows, the `@` source palette and the
+reader's selection and highlight card. Serif words beside a square 2px rail in
+the pen's colour (`highlightFillRef()`), and **no added quotation marks**: the
+rail says it is a quote. With no known pen the rail stays the neutral hairline.
+It goes on the element that holds the words, so a `<span>` inside a row's
+button (where a `<blockquote>` may not go) reads the same as a blockquote.
+
+```html
+<blockquote appQuote [pen]="quotePen(note)">{{ note.selectedText }}</blockquote>
+<span appQuote size="sm" [lines]="2" [pen]="pen">{{ preview }}</span>
+```
+
+| Input   | Type                            | Default | Description |
+| ------- | ------------------------------- | ------- | ----------- |
+| `pen`   | `HighlightColour \| null`       | `null`  | The pen; `quotePen(note)` gives null when the payload does not carry it |
+| `size`  | `'sm' \| 'md' \| 'lg'`          | `'md'`  | A row or panel, a note, a page of its own (Brain Sort) |
+| `lines` | `number \| null`                | `null`  | Clamp to this many lines |
+
+`--nostos-quote-ink` recolours the words (the Studio's manuscript ink); a
+consumer may set `--nostos-accent-rail-color` for its own neutral rail.
+
+---
+
+## PenSwatchesComponent
+
+**Selector:** `app-pen-swatches`
+**File:** `src/app/ui/pen-swatches/`
+
+The four highlighter pens as a labelled group of 22px dots with one active
+ring (`aria-pressed`), used by the reader's notes panel, selection bar and
+highlight card and by a note being edited. On touch each dot answers a 34x44px
+tap through an invisible `::before`, so neighbours on the 34px pitch never
+overlap.
+
+| Input / output  | Type                       | Description |
+| --------------- | -------------------------- | ----------- |
+| `value`         | `HighlightColour \| null`  | The chosen pen |
+| `disabled`      | `boolean`                  | While a save is in flight |
+| `label`         | `string`                   | The group's name (default "Highlight colour") |
+| `testIdPrefix`  | `string \| null`           | `data-testid="<prefix><pen>"` on each dot |
+| `(chosen)`      | `HighlightColour`          | A dot was picked |
+
+---
+
 ## StarRatingComponent
 
 **Selector:** `app-star-rating`  

@@ -38,20 +38,11 @@
     }
 
     @if (hasPen()) {
-    <div class="note-item-pens" role="group" aria-label="Highlight colour">
-      @for (pen of highlightColours; track pen.id) {
-      <button
-        type="button"
-        class="note-item-pen"
-        [style.background-color]="fillRef(pen.id)"
-        [class.is-active]="editColour() === pen.id"
-        [attr.aria-pressed]="editColour() === pen.id"
-        [attr.aria-label]="pen.label + ' highlighter'"
-        [title]="pen.label"
-        (click)="editColour.set(pen.id)"
-      ></button>
-      }
-    </div>
+    <app-pen-swatches
+      class="note-item-pens"
+      [value]="editColour()"
+      (chosen)="editColour.set($event)"
+    />
     }
 
     <span class="note-item-label">Your words</span>
@@ -88,10 +79,11 @@
 
   @if (quote()) {
   <blockquote
-    class="note-item-quote nostos-accent-rail"
+    appQuote
+    class="note-item-quote"
+    [pen]="pen()"
+    [lines]="isPassage() ? 4 : long() && !expanded() ? 5 : null"
     [class.is-opening]="isPassage()"
-    [class.is-clamped]="long() && !expanded()"
-    [style.--nostos-accent-rail-color]="penFill()"
   >{{ quote() }}</blockquote>
   }
 

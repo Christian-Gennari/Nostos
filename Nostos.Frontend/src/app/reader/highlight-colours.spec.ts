@@ -6,6 +6,7 @@ import {
   highlightFillRef,
   highlightFillVar,
   noteHighlightColour,
+  quotePen,
   readHighlightColour,
   resolveHighlightFill,
   writeHighlightColour,
@@ -85,5 +86,14 @@ describe('highlight colours', () => {
     expect(noteHighlightColour({ highlightColour: null })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
     expect(noteHighlightColour({ highlightColour: 'gray' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
     expect(noteHighlightColour({ cfiRange: '{not json' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
+  });
+
+  it('shows a quote in its pen only when the pen is known (issue #1203)', () => {
+    expect(quotePen({ selectedText: 'Sing', highlightColour: 'rose' })).toBe('rose');
+    // Recorded as none: the pen the highlight is drawn in.
+    expect(quotePen({ selectedText: 'Sing', highlightColour: null })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
+    // A payload without the field, or a note without a quotation: neutral.
+    expect(quotePen({ selectedText: 'Sing' })).toBeNull();
+    expect(quotePen({ selectedText: '', highlightColour: 'amber' })).toBeNull();
   });
 });

@@ -86,32 +86,16 @@
   margin-left: auto;
 }
 
-/* --- Quote ----------------------------------------------------------------- */
-.note-item-quote {
-  margin: 0;
-  padding: 0.1rem 0 0.1rem 1.15rem;
-  --nostos-accent-rail-width: 2px;
-  --nostos-accent-rail-color: var(--border-color);
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: 1.16rem;
-  line-height: 1.6;
-  text-wrap: pretty;
-  white-space: pre-line;
-}
-
+/* --- Quote -----------------------------------------------------------------
+   The look is the shared quote block (ui/quote-block); a passage's opening is
+   smaller and fades out under its clamp. */
 .note-item-quote.is-opening {
-  display: -webkit-box;
-  overflow: hidden;
   font-size: 1.04rem;
   white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
   mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
 }
 
-.note-item-quote.is-clamped,
 .note-item-thought.is-clamped {
   display: -webkit-box;
   overflow: hidden;
@@ -335,30 +319,6 @@ button.note-item-source {
   font-weight: var(--fw-medium);
 }
 
-.note-item-pens {
-  display: flex;
-  gap: 0.45rem;
-}
-
-.note-item-pen {
-  width: 1.35rem;
-  height: 1.35rem;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-round);
-  cursor: pointer;
-}
-
-.note-item-pen.is-active {
-  outline: 2px solid var(--color-text-main);
-  outline-offset: 2px;
-}
-
-.note-item-pen:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
 .note-item-edit-actions {
   display: flex;
   gap: 0.5rem;
@@ -436,21 +396,6 @@ button.note-item-source {
     min-height: 44px;
     margin: -0.6rem -0.5rem 0 -0.75rem;
     padding: 0.6rem 0.5rem 0 0.75rem;
-  }
-
-  /* The swatch is drawn inside a 44px button, its edge kept by an inset ring. */
-  .note-item-pen {
-    width: 44px;
-    height: 44px;
-    padding: 10px;
-    border: 0;
-    background-clip: content-box;
-    box-shadow: inset 0 0 0 10px var(--bg-body, var(--bg-surface)), inset 0 0 0 11px var(--border-color);
-  }
-
-  .note-item-pen.is-active,
-  .note-item-pen:focus-visible {
-    outline-offset: -8px;
   }
 }
 

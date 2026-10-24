@@ -72,6 +72,20 @@ export function noteHighlightColour(note: {
   return DEFAULT_HIGHLIGHT_COLOUR;
 }
 
+/**
+ * The pen a quotation is shown in, or null when it is not known: a note with
+ * no quotation, or a payload that does not carry the pen at all (a kept
+ * writing source). Null keeps a quote's rail neutral instead of guessing.
+ */
+export function quotePen(note: {
+  selectedText?: string | null;
+  highlightColour?: string | null;
+  cfiRange?: string | null;
+}): HighlightColour | null {
+  if (!note.selectedText || note.highlightColour === undefined) return null;
+  return noteHighlightColour(note);
+}
+
 /** localStorage key for a book's chosen pen. */
 export function highlightColourKey(bookId: string): string {
   return `nostos.highlight.${bookId}`;

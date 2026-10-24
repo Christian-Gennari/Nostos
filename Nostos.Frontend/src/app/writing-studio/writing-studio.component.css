@@ -1318,7 +1318,7 @@
   -webkit-line-clamp: 1;
 }
 
-.reference-source-preview {
+.reference-source-preview:not(.is-quote) {
   display: -webkit-box;
   min-width: 0;
   overflow: hidden;
@@ -1331,10 +1331,10 @@
   -webkit-line-clamp: 2;
 }
 
+/* A quotation is the shared quote block (ui/quote-block), in its pen when
+   the row knows it; its rail sits on the row's own text inset. */
 .reference-source-preview.is-quote {
-  color: var(--color-text-main);
-  font-family: 'Newsreader', Georgia, serif;
-  font-style: italic;
+  white-space: normal;
 }
 
 /* How a source is used in the open writing (issue #1162): its topics as

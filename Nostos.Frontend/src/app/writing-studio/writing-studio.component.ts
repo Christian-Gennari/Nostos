@@ -52,6 +52,8 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { quotePen } from '../reader/highlight-colours';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { ExportDialogComponent } from './export/export-dialog.component';
 import { hasExportableContent } from './export/export-resolve';
@@ -186,6 +188,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     ConfirmModal,
     NOSTOS_MENU,
     ExportDialogComponent,
+    QuoteBlockComponent,
   ],
   templateUrl: './writing-studio.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -1935,6 +1938,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
    * The passage viewer opened from Studio offers "Quote in writing": the
    * words selected in it go into the draft as a quotation from the passage.
    */
+  /** The pen a source row's quotation is shown in; null when the row does not know it. */
+  readonly quotePen = quotePen;
+
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) => this.quotePassageSelection(text, passage),
   };

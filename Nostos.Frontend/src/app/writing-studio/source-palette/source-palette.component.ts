@@ -19,6 +19,7 @@ import { BooksService } from '../../core/services/books.service';
 import { CloudAuthService } from '../../core/services/cloud-auth.service';
 import { NotesService } from '../../core/services/notes.service';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
+import { QuoteBlockComponent } from '../../ui/quote-block/quote-block.component';
 import {
   PaletteChoice,
   PaletteInsertMode,
@@ -77,7 +78,7 @@ interface PalettePlacement {
 @Component({
   selector: 'app-source-palette',
   standalone: true,
-  imports: [IconButtonComponent],
+  imports: [IconButtonComponent, QuoteBlockComponent],
   templateUrl: './source-palette.component.html',
   styleUrl: './source-palette.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,

@@ -227,7 +227,7 @@ describe('NoteItemComponent', () => {
   });
 
   describe('the highlight pen (issue #861)', () => {
-    const pens = () => Array.from(element.querySelectorAll<HTMLButtonElement>('.note-item-pen'));
+    const pens = () => Array.from(element.querySelectorAll<HTMLButtonElement>('.pen-swatch'));
 
     it('offers the four pens in edit, with the stored one selected, each drawn from a token', () => {
       render({ highlightColour: 'blue' });

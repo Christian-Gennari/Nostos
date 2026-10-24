@@ -41,9 +41,15 @@
                       </span>
                     </span>
                   }
-                  <span class="sp-lead" [class.is-quote]="!!item.selectedText">
-                    @for (seg of segments(item.lead); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
-                  </span>
+                  @if (item.selectedText) {
+                    <span appQuote size="sm" [lines]="2" [pen]="item.pen" class="sp-lead is-quote">
+                      @for (seg of segments(item.lead); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
+                    </span>
+                  } @else {
+                    <span class="sp-lead">
+                      @for (seg of segments(item.lead); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
+                    </span>
+                  }
                   <span class="sp-byline">
                     @for (seg of segments(byline(item)); track $index) {<span [class.sp-match]="seg.match">{{ seg.text }}</span>}
                     @if (item.kept) {
@@ -93,7 +99,11 @@
                     <span class="sp-passage-title">{{ shown.passageTitle ?? 'Passage' }}</span>
                   </span>
                 }
-                <p class="sp-preview-lead" [class.is-quote]="!!shown.selectedText">{{ shown.lead }}</p>
+                @if (shown.selectedText) {
+                  <p appQuote size="sm" [pen]="shown.pen" class="sp-preview-lead is-quote">{{ shown.lead }}</p>
+                } @else {
+                  <p class="sp-preview-lead">{{ shown.lead }}</p>
+                }
                 @if (shown.note) {
                   <p class="sp-note" id="source-preview-note">{{ shown.note }}</p>
                 }

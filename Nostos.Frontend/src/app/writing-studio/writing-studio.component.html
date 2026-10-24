@@ -789,7 +789,8 @@
       </span>
     }
     @if (hasQuotePreview(note)) {
-      <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
+      <span appQuote size="sm" class="reference-source-preview is-quote" [pen]="quotePen(note)"
+        [lines]="passageRowTitle(note) ? 1 : 2">{{ referencePreview(note) }}</span>
     } @else {
       <span class="reference-source-preview">{{ referencePreview(note) }}</span>
     }
