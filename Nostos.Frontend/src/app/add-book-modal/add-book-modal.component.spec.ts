@@ -480,6 +480,30 @@ describe('AddBookModal', () => {
     expect(component.uploadError()).toBeNull();
   });
 
+  it("shows the host's own words when an upload meets a plan limit", () => {
+    const books = TestBed.inject(BooksService);
+    const createdBook = { id: 'limited-row' } as unknown as Book;
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: createdBook, created: true }));
+    const upload = new Subject<any>();
+    vi.spyOn(books, 'uploadFile').mockReturnValue(upload);
+    component.form.title = 'Middlemarch';
+    component.form.type = 'ebook';
+    component.selectedFile.set(new File(['ebook'], 'middlemarch.epub', { type: 'application/epub+zip' }));
+
+    component.submit();
+    upload.error({
+      status: 403,
+      error: {
+        code: 'trial_upload_limit_reached',
+        detail: 'Your free trial includes 25 uploaded files, and you have used them all. Subscribe to keep adding books.',
+      },
+    });
+
+    expect(component.uploadError()).toBe(
+      'Your free trial includes 25 uploaded files, and you have used them all. Subscribe to keep adding books.',
+    );
+  });
+
   it('renders the multi-select picker with the hierarchy intact', () => {
     fixture.detectChanges();
     const options = Array.from<Element>(

@@ -14,6 +14,7 @@ import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
 import { isImportInFlight, importStageLabel } from '../core/dtos/import.dtos';
 import { clampPaperPage, paperPagePercent, writePaperPage } from './paper-page-progress';
+import { planLimitMessage } from '../core/plan-limit-message';
 
 @Injectable()
 export class BookDetailStore {
@@ -474,6 +475,8 @@ export class BookDetailStore {
   }
 
   private describeUploadFailure(error: unknown): string {
+    const limit = planLimitMessage(error);
+    if (limit) return limit;
     const status = (error as { status?: number } | null)?.status;
     if (status === 0) return 'The connection was interrupted. Try the upload again.';
     if (status === 408 || status === 504) return 'The upload timed out. Try again.';
