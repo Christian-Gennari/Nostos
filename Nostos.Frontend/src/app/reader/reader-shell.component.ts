@@ -57,6 +57,7 @@ import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component
 import { BrainStateService } from '../brain/brain-state.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
+import { ModalStack } from '../ui/modal-shell/modal-stack.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
@@ -388,6 +389,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private toast = inject(ToastService);
   private readonly assistant = inject(AssistantService);
+  private readonly modalStack = inject(ModalStack);
   readonly askNostosAvailable = this.assistant.surfaceAvailable;
   private readonly assistantContext = inject(AssistantContextService);
   private unregisterSelectionAssistantContext: (() => void) | null = null;
@@ -2216,6 +2218,9 @@ export class ReaderShell implements OnInit, OnDestroy {
       // handler close first regardless of document-listener registration order;
       // the next Escape may then dismiss the still-pending reader selection.
       if (this.assistant.isOpen()) return;
+      // A dialog or sheet above the reader owns Escape; it must not also
+      // close the drawer underneath it (a delete confirm over the notes).
+      if (this.modalStack.hasOpen()) return;
 
       if (this.searchPanelOpen()) {
         this.closeSearch();

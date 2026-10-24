@@ -92,6 +92,23 @@ describe('NoteItemComponent', () => {
     document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
   });
 
+  it('Escape in the edit form cancels the edit and goes no further (a drawer around it stays open)', () => {
+    render();
+    const outer = vi.fn();
+    document.addEventListener('keydown', outer);
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    (element.querySelector('.note-item-edit') as HTMLElement).dispatchEvent(event);
+    fixture.detectChanges();
+    document.removeEventListener('keydown', outer);
+
+    expect(fixture.componentInstance.editing()).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(outer).not.toHaveBeenCalled();
+  });
+
   it('draws the quote rule in the note’s pen', () => {
     render({ highlightColour: 'rose' });
 

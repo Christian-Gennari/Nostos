@@ -12,7 +12,7 @@
 
 <article class="note-item-body" [attr.aria-label]="'Note from ' + (note().bookTitle || 'an unknown book')">
   @if (editing()) {
-  <form class="note-item-edit" (ngSubmit)="saveEdit()" (keydown.escape)="cancelEdit()">
+  <form class="note-item-edit" (ngSubmit)="saveEdit()" (keydown.escape)="onEditEscape($event)">
     @if (isPassage()) {
     <label class="note-item-label" [attr.for]="'note-item-title-' + note().id">Passage title</label>
     <input

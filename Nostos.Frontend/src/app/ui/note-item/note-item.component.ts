@@ -308,6 +308,18 @@ export class NoteItemComponent {
     this.editing.set(false);
   }
 
+  /**
+   * Escape leaves the edit and nothing else: the note sits inside a reader or
+   * Brain drawer that would otherwise close under it. A control that already
+   * used the key (a topic list closing) leaves the edit open.
+   */
+  onEditEscape(event: Event): void {
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.cancelEdit();
+  }
+
   saveEdit(): void {
     const note = this.note();
     const content = this.editContent().trim();
