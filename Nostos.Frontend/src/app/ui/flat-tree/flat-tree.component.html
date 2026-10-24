@@ -2,6 +2,7 @@
   @for (node of treeNodes(); track node.id) {
     <div
       class="tree-row"
+      data-rename-row
       role="treeitem"
       [attr.data-node-id]="node.id"
       [attr.data-drop-zone]="dropIndicator()?.nodeId === node.id ? dropIndicator()?.zone : null"

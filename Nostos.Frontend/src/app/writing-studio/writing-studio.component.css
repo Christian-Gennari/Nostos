@@ -1683,46 +1683,29 @@
 }
 
 /* The keyboard shortcut sheet. */
-.shortcut-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-}
-
-.shortcut-sheet {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 71;
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100dvh - 64px);
-  overflow-y: auto;
-  transform: translate(-50%, -50%);
-  padding: 1rem 1.25rem 1.25rem;
-  color: var(--manuscript-ink);
-  background: var(--manuscript-paper);
-  border: 1px solid var(--manuscript-rule-strong);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: var(--editor-ui-shadow);
-  font-family: 'Hanken Grotesk', system-ui, sans-serif;
-}
-
 .shortcut-sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.5rem;
+  gap: 1rem;
 }
 
 .shortcut-sheet-header h2 {
   margin: 0;
+  color: var(--color-text-main);
   font-family: 'Newsreader', serif;
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: 500;
+  line-height: 1.25;
 }
 
 .shortcut-list {
   margin: 0;
+  padding: 0 1.5rem 0.75rem;
+}
+
+.shortcut-list > div:first-child {
+  border-top: 0;
 }
 
 .shortcut-list > div {
@@ -1730,13 +1713,13 @@
   grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
   gap: 1rem;
   padding: 0.4rem 0;
-  border-top: 1px solid var(--manuscript-rule);
+  border-top: 1px solid var(--border-color);
   font-size: 0.86rem;
 }
 
 .shortcut-list dt {
   white-space: nowrap;
-  color: var(--manuscript-ink-soft);
+  color: var(--color-text-muted);
 }
 
 .shortcut-list dd {
@@ -1745,7 +1728,7 @@
 
 .shortcut-list kbd {
   padding: 1px 6px;
-  border: 1px solid var(--manuscript-rule-strong);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font: inherit;
   font-size: 0.78rem;

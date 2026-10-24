@@ -48,4 +48,28 @@ export class BrainTopicPickerComponent {
   readonly chosen = output<string>();
   readonly confirmed = output<void>();
   readonly closed = output<void>();
+
+  /** Escape in the search field closes the picker and nothing behind it. */
+  onEscape(event: Event): void {
+    if (event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.closed.emit();
+  }
+
+  /**
+   * Enter in the search field picks. With a topic already chosen (and still in
+   * the list) it continues; otherwise it chooses the first match, so typing a
+   * name and pressing Enter twice is the whole keyboard path.
+   */
+  onEnter(event: Event): void {
+    event.preventDefault();
+    const selectedId = this.selectedId();
+    const candidates = this.candidates();
+    if (selectedId !== null && !this.confirmDisabled() && candidates.some((c) => c.id === selectedId)) {
+      this.confirmed.emit();
+    } else if (candidates.length > 0) {
+      this.chosen.emit(candidates[0].id);
+    }
+  }
 }

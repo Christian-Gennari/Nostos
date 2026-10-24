@@ -1,5 +1,7 @@
 import {
   AfterViewInit,
+  OnDestroy,
+  inject,
   ChangeDetectionStrategy,
   Component,
   ElementRef,
@@ -9,6 +11,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import type { TopicDto } from '../../core/services/topics.service';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
@@ -151,7 +154,7 @@ let nextPickerId = 0;
     `,
   ],
 })
-export class TopicPickerPopoverComponent implements AfterViewInit {
+export class TopicPickerPopoverComponent implements AfterViewInit, OnDestroy {
   /** Every topic there is, to choose from. */
   readonly topics = input<readonly TopicDto[]>([]);
   /** Names the note already has; they are not offered again. */
@@ -198,8 +201,28 @@ export class TopicPickerPopoverComponent implements AfterViewInit {
 
   readonly activeId = computed(() => (this.options().length ? this.optionId(this.active()) : null));
 
+  private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** What had focus when the picker opened: the control that asked for it. */
+  private origin: HTMLElement | null = null;
+
   ngAfterViewInit(): void {
+    const active = this.document.activeElement;
+    this.origin = active instanceof HTMLElement && active !== this.document.body ? active : null;
     queueMicrotask(() => this.field().nativeElement.focus());
+  }
+
+  ngOnDestroy(): void {
+    // Closing hands focus back to the opener, unless the user already moved it
+    // somewhere else on purpose (focus is then outside the picker).
+    const origin = this.origin;
+    this.origin = null;
+    if (!origin?.isConnected) return;
+    const active = this.document.activeElement;
+    if (!active || active === this.document.body || this.host.nativeElement.contains(active)) {
+      origin.focus({ preventScroll: true });
+    }
   }
 
   optionId(index: number): string {

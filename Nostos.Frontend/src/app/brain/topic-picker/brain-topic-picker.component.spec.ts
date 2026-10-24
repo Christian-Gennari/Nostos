@@ -124,6 +124,36 @@ describe('BrainTopicPickerComponent', () => {
     expect(query('.merge-picker').classList).toContain('note-inspector-picker');
   });
 
+  const press = (key: string) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    query('.merge-search-input').dispatchEvent(event);
+    fixture.detectChanges();
+    return event;
+  };
+
+  it('Enter in the search field chooses the first match, then continues', () => {
+    press('Enter');
+    expect(host.selectedId()).toBe('a');
+    expect(host.confirmed).toBe(0);
+
+    press('Enter');
+    expect(host.confirmed).toBe(1);
+  });
+
+  it('Enter does nothing when nothing matches', () => {
+    host.candidates.set([]);
+    fixture.detectChanges();
+    press('Enter');
+    expect(host.selectedId()).toBeNull();
+    expect(host.confirmed).toBe(0);
+  });
+
+  it('Escape in the search field closes the picker and is consumed', () => {
+    const event = press('Escape');
+    expect(host.closed).toBe(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('places projected content between the list and the actions', () => {
     const children = [...query('.merge-picker').children].map((child) => child.className);
     expect(children.indexOf('projected')).toBe(children.indexOf('merge-target-list') + 1);

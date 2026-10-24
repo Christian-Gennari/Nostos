@@ -53,6 +53,7 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { NO_TOPICS_MATCH } from '../ui/topic-option/topic-option.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
+import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
 import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
@@ -188,6 +189,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     ButtonComponent,
     InputDirective,
     ConfirmModal,
+    ModalShell,
     NOSTOS_MENU,
     ExportDialogComponent,
     QuoteBlockComponent,
@@ -961,11 +963,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     // Esc closes the topmost layer first, and only then brings the chrome back.
     // A layer inside (an open dropdown list) that already handled it wins.
     if (event.defaultPrevented) return;
-    if (this.shortcutsOpen()) {
-      this.shortcutsOpen.set(false);
-      event.preventDefault();
-      return;
-    }
+    // The shortcut sheet is a modal shell: it answers Escape itself.
     if (this.pageSettingsOpen()) {
       this.closePageSettings();
       event.preventDefault();

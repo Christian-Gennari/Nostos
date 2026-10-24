@@ -25,6 +25,7 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
+import { DrawerFocusDirective } from '../core/directives/drawer-focus.directive';
 import { SidebarCollections } from './sidebar-collections/sidebar-collections.component';
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
 import { Subject, Subscription, forkJoin } from 'rxjs';
@@ -135,6 +136,7 @@ interface WorkFormatGlyph {
     ChipComponent,
     InputDirective,
     DropdownComponent,
+    DrawerFocusDirective,
     SidebarCollections,
     EmptyStateComponent,
     PagingStatusComponent,

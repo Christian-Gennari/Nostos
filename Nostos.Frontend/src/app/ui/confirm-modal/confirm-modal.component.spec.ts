@@ -26,12 +26,40 @@ describe('ConfirmModal', () => {
     fixture.detectChanges();
   });
 
+  afterEach(() => vi.restoreAllMocks());
+
   it('is not visible when isOpen is false', () => {
     expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeNull();
   });
 
-  it('keeps focus trapping opt-in for existing confirmation callers', () => {
-    expect(component.trapFocus()).toBe(false);
+  it('traps focus by default, with Cancel focused first', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+    expect(component.trapFocus()).toBe(true);
+
+    fixture.componentRef.setInput('isOpen', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.btn-cancel'));
+  });
+
+  it('gives focus back to the control that opened it', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+
+    fixture.componentRef.setInput('isOpen', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).not.toBe(opener);
+
+    fixture.componentRef.setInput('isOpen', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 
   it('renders the caller-supplied heading, description and actions when open', () => {

@@ -701,13 +701,19 @@
   }
 
   @if (shortcutsOpen()) {
-    <div class="shortcut-sheet-backdrop" (click)="shortcutsOpen.set(false)"></div>
-    <section class="shortcut-sheet" role="dialog" aria-modal="false" aria-labelledby="shortcut-sheet-title" data-testid="shortcut-sheet">
-      <header class="shortcut-sheet-header">
+    <app-modal-shell
+      [isOpen]="true"
+      variant="dialog"
+      cardClass="shortcut-sheet"
+      [maxWidth]="'440px'"
+      ariaLabelledBy="shortcut-sheet-title"
+      (closed)="shortcutsOpen.set(false)"
+    >
+      <header class="shortcut-sheet-header" shellHeader>
         <h2 id="shortcut-sheet-title">Keyboard shortcuts</h2>
-        <button appIconButton icon="x" [glyphSize]="16" aria-label="Close shortcuts" title="Close (Esc)" (click)="shortcutsOpen.set(false)"></button>
+        <button appIconButton icon="x" size="xs" [glyphSize]="16" type="button" aria-label="Close shortcuts" title="Close (Esc)" (click)="shortcutsOpen.set(false)"></button>
       </header>
-      <dl class="shortcut-list">
+      <dl class="shortcut-list" data-testid="shortcut-sheet">
         <div><dt><kbd>&#64;</kbd></dt><dd>Find a source and put it on the page</dd></div>
         <div><dt><kbd>Ctrl</kbd> <kbd>'</kbd></dt><dd>Open the source palette</dd></div>
         <div><dt><kbd>/</kbd></dt><dd>On an empty line: headings, lists, divider, image, table</dd></div>
@@ -722,7 +728,7 @@
         <div><dt><kbd>Ctrl</kbd> <kbd>,</kbd></dt><dd>Page settings: theme, typeface, spacing</dd></div>
         <div><dt><kbd>Ctrl</kbd> <kbd>/</kbd></dt><dd>This sheet</dd></div>
       </dl>
-    </section>
+    </app-modal-shell>
   }
 </div>
 

@@ -9,7 +9,8 @@
  * On completion the controller reloads the page into the new generation.
  */
 
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
 import { A11yModule } from '@angular/cdk/a11y';
 
 import {
@@ -33,4 +34,24 @@ export class LibraryActivationOverlayComponent {
 
   readonly visible = computed(() => this.state() === 'in-progress');
   readonly phaseMessage = computed(() => activationPhaseMessage(this.phase()));
+
+  constructor() {
+    // The boundary must also block the keyboard shortcuts that open app-level
+    // surfaces (the command palette, Ask Nostos) and the Escape that would
+    // close what is behind it. Those listen on the document; this runs first,
+    // in the capture phase on the window, and stops them from seeing the key.
+    const doc = inject(DOCUMENT);
+    const block = (event: KeyboardEvent): void => {
+      const chord = (event.ctrlKey || event.metaKey) && ['k', 'j'].includes(event.key.toLowerCase());
+      if (!chord && event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    effect((onCleanup) => {
+      if (!this.visible()) return;
+      const view = doc.defaultView;
+      view?.addEventListener('keydown', block, true);
+      onCleanup(() => view?.removeEventListener('keydown', block, true));
+    });
+  }
 }

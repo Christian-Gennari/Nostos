@@ -83,7 +83,7 @@ export class ModalShell {
    * opener on close. On by default: a dialog that leaves focus behind its own
    * backdrop is a keyboard dead end.
    */
-  trapFocus = input<boolean>(false);
+  trapFocus = input<boolean>(true);
 
   /**
    * Whether a backdrop tap closes. Left at the callers' existing behaviour —

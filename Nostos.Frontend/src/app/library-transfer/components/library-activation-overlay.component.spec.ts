@@ -17,6 +17,31 @@ describe('LibraryActivationOverlayComponent', () => {
 
   afterEach(() => TestBed.resetTestingModule());
 
+  it('blocks the palette and assistant shortcuts while it covers the app, and releases them after', () => {
+    create();
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    const chord = (key: string) => {
+      const event = new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true, cancelable: true });
+      document.body.dispatchEvent(event);
+      return event;
+    };
+
+    fixture.componentRef.setInput('state', 'in-progress');
+    fixture.detectChanges();
+    TestBed.flushEffects?.();
+    expect(chord('k').defaultPrevented).toBe(true);
+    expect(chord('j').defaultPrevented).toBe(true);
+    expect(seen).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('state', 'idle');
+    fixture.detectChanges();
+    TestBed.flushEffects?.();
+    chord('k');
+    expect(seen).toHaveBeenCalledTimes(1);
+    document.removeEventListener('keydown', seen);
+  });
+
   it('renders nothing while activation is idle or completed', () => {
     create();
 
