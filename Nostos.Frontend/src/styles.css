@@ -526,6 +526,204 @@
   }
 }
 
+/* ── Page chrome: title, back link, toolbar edge, drawer scrim ──
+   One of each, shared by every page that has one (issue #1207). Before, page
+   titles were 1.75rem medium (Library, Brain), 2rem regular (To read) or 1.6rem
+   semibold (Settings); back links were built four ways; the Library and the
+   Brain each declared the same scroll-driven toolbar hairline; and only the
+   Library's drawer scrim blurred what was under it. */
+
+/* The page's own heading. Pages may shrink it on a phone; they do not restyle
+   it. */
+.page-title {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: var(--page-title-size);
+  font-weight: var(--fw-medium);
+  line-height: 2.4rem;
+}
+
+/* "← Library", "← All notes": `<a appButton variant="ghost" size="sm"
+   class="back-link" routerLink>` with a 14px arrow-left. Pulled left by the
+   button's own padding so the arrow lines up with the title under it. */
+.back-link {
+  align-self: flex-start;
+  margin-inline-start: -10px;
+}
+
+/* A sticky glass toolbar: no rule at rest, a hairline once content scrolls
+   under it. Browsers without scroll timelines keep the hairline, as before. */
+.toolbar-edge {
+  border-bottom: 1px solid var(--glass-border);
+}
+
+@supports (animation-timeline: scroll()) {
+  .toolbar-edge {
+    border-bottom-color: transparent;
+    animation: toolbar-edge linear both;
+    animation-timeline: scroll();
+    animation-range: 0 24px;
+  }
+}
+
+@keyframes toolbar-edge {
+  to {
+    border-bottom-color: var(--glass-border);
+  }
+}
+
+/* Behind a phone drawer (the Library's collections, the Brain's index). A
+   plain dim, no blur: the page under it is still the page you came from. */
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-backdrop);
+  background: var(--overlay-medium);
+}
+
+/* ── Side navigation rows ──
+   The Library's sidebar, the Brain's sidebar and the Settings nav are one
+   recipe: a group of rows, each an icon, a label and an optional count, with
+   the hover and selected tint painted by a pseudo-element so a sidebar can
+   morph it (the Library's collapsed rail narrows it to a 40px tile) without
+   moving the icon. The root carries `.side-nav`; everything here is scoped to
+   it, so the bare class names stay free elsewhere. A component may override a
+   rule (its styles load after these and tie on specificity); it should not
+   restate one. */
+.side-nav .sidebar-header {
+  flex: none;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* 16px puts the 40px mark on the Library rail's axis: 16 + 20 = 36. */
+  padding: 0 1rem;
+}
+
+.side-nav .nav-scroll-area {
+  flex: 1;
+  min-height: 0;
+  padding: 0.75rem 1rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  /* Groups are separated by more room than rows are, so the space itself says
+     where one group ends. */
+  gap: 1.75rem;
+}
+
+.side-nav .nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+/* The head owns the section's horizontal padding; a label inside it drops its
+   own, so a label with a control beside it starts where a bare one does. */
+.side-nav .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem 0 0.25rem 0.75rem;
+  margin-bottom: 0.15rem;
+}
+
+/* Sentence case at a readable size, not tracked capitals. --color-text-muted,
+   not --color-text-light: the light tone is below the 4.5:1 small-text floor on
+   the page ground. */
+.side-nav .section-label {
+  padding: 0.6rem 0.75rem 0.25rem;
+  margin-bottom: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.side-nav .section-head > .section-label {
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.side-nav .nav-item {
+  position: relative;
+  /* Own stacking context, so the tint (z-index -1) sits above the panel ground
+     and below the icon and label. */
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-row);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: -0.01em;
+  text-align: left;
+  text-decoration: none;
+  text-wrap: nowrap;
+  transition: color 0.12s ease;
+}
+
+.side-nav .nav-item::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: translateY(-50%);
+  border-radius: var(--radius-row);
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+
+/* The selected row is the soft tint the hover uses, with the label in full
+   ink: it names where you are without becoming the loudest thing on screen. */
+.side-nav .nav-item:hover,
+.side-nav .nav-item:is(.active, .is-active) {
+  color: var(--color-text-main);
+}
+
+.side-nav .nav-item:hover::before,
+.side-nav .nav-item:is(.active, .is-active)::before {
+  background: var(--bg-hover);
+}
+
+.side-nav .nav-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* A plain number, not a chip. Zero counts are not rendered at all. */
+.side-nav .nav-item .count-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-right: 4px;
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-nav .nav-item,
+  .side-nav .nav-item::before {
+    transition: none;
+  }
+}
+
 /* ══ LENS BLOOM — how art arrives ════════════════════════════════════════
    An image resolving out of defocus instead of popping sharp the instant the
    browser decodes it. Driven by the element's own `load`/`error` event
@@ -1307,6 +1505,8 @@
      scale (see docs/design/design-language.md), not from a guessed ladder. */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
+  /* The page title (`.page-title`): Library, Brain, To read, Settings. */
+  --page-title-size: 1.75rem;
 
   /* ── Container widths ── */
   --container-width-md: 800px;

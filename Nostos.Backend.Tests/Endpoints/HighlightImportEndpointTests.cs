@@ -106,6 +106,9 @@ public sealed class HighlightImportEndpointTests : IDisposable
         book.Match.Should().Be("suggested");
         book.BookId.Should().BeNull();
         book.Candidates.Select(candidate => candidate.BookId).Should().BeEquivalentTo([first.Id, second.Id]);
+        // Each candidate says its format, so the owner can tell the editions apart.
+        book.Candidates.Single(candidate => candidate.BookId == first.Id).Format.Should().Be("physical");
+        book.Candidates.Single(candidate => candidate.BookId == second.Id).Format.Should().Be("ebook");
     }
 
     [Fact]

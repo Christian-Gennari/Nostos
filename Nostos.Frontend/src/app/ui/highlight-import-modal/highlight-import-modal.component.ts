@@ -21,6 +21,9 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
+import { SearchFieldComponent } from '../search-field/search-field.component';
+import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept } from '../../core/book-format';
+import { ChoiceRowComponent } from '../choice-row/choice-row.component';
 
 type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
 
@@ -60,6 +63,8 @@ interface FileFailure {
   selector: 'app-highlight-import-modal',
   standalone: true,
   imports: [
+    ChoiceRowComponent,
+    SearchFieldComponent,
     LoadingIndicatorComponent,
     DropZoneComponent,
     DatePipe,
@@ -76,6 +81,10 @@ interface FileFailure {
   styleUrl: './highlight-import-modal.component.css',
 })
 export class HighlightImportModal {
+  protected formatName(format: BookFormatConcept): string {
+    return BOOK_FORMAT_LABEL[format];
+  }
+  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   private readonly service = inject(HighlightImportService);
   private readonly booksService = inject(BooksService);
   private readonly router = inject(Router);
@@ -188,6 +197,7 @@ export class HighlightImportModal {
               title: book.title,
               author: book.author ?? null,
               reason: '',
+              format: bookFormatConcept(book.type, book.fileName),
             })),
           );
           this.searching.set(false);

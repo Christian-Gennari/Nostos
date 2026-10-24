@@ -195,11 +195,76 @@ describe('FlatTreeComponent', () => {
       expect(selected).not.toHaveBeenCalled();
     });
 
+    const typeName = (value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    };
+
     it('saves on Enter without also selecting the row', () => {
-      input.value = 'New name';
+      typeName('New name');
       press('Enter');
       expect(saved).toHaveBeenCalledWith({ id: 'a', newName: 'New name' });
       expect(selected).not.toHaveBeenCalled();
+    });
+
+    it('saves when the field is left with a changed name', () => {
+      typeName('  Left behind  ');
+      input.dispatchEvent(new FocusEvent('blur'));
+      expect(saved).toHaveBeenCalledWith({ id: 'a', newName: 'Left behind' });
+    });
+
+    it('cancels, without saving, when the field is left unchanged or empty', () => {
+      const cancelled = vi.fn();
+      component.nodeRenameCancelled.subscribe(() => cancelled());
+      typeName('');
+      input.dispatchEvent(new FocusEvent('blur'));
+      expect(saved).not.toHaveBeenCalled();
+      expect(cancelled).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels on Escape', () => {
+      const cancelled = vi.fn();
+      component.nodeRenameCancelled.subscribe(() => cancelled());
+      typeName('Changed');
+      press('Escape');
+      expect(cancelled).toHaveBeenCalledTimes(1);
+      expect(saved).not.toHaveBeenCalled();
+    });
+
+    it('says under the field why an empty name cannot be saved', () => {
+      typeName('');
+      press('Enter');
+      fixture.detectChanges();
+      const error = fixture.nativeElement.querySelector('.inline-rename-error') as HTMLElement;
+      expect(error.textContent).toBe('A name is required.');
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(saved).not.toHaveBeenCalled();
+    });
+
+    it('refuses a sibling’s name when the owner asks for unique names', () => {
+      fixture.componentRef.setInput('rejectDuplicateNames', true);
+      fixture.detectChanges();
+      const sibling = component.items().find((item) => item.id !== 'a' && (item.parentId ?? null) === null)!;
+      typeName(sibling.name.toUpperCase());
+      press('Enter');
+      fixture.detectChanges();
+      expect(saved).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('.inline-rename-error')?.textContent).toContain('is already used here');
+    });
+
+    it('shows the owner’s refusal under the field', () => {
+      fixture.componentRef.setInput('renameError', 'A collection with that name already exists here.');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.inline-rename-error')?.textContent).toBe(
+        'A collection with that name already exists here.',
+      );
+    });
+
+    it('offers no Save or Cancel buttons', () => {
+      const row = fixture.nativeElement.querySelector('[data-node-id="a"]') as HTMLElement;
+      expect(row.querySelector('button[aria-label="Save name"]')).toBeNull();
+      expect(row.querySelector('button[aria-label="Cancel rename"]')).toBeNull();
     });
 
     it('leaves the arrow keys to the caret', () => {

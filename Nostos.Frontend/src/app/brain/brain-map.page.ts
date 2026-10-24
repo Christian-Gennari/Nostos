@@ -13,6 +13,7 @@ import { TopicMapComponent, type MapCamera } from './topic-map/topic-map.compone
 import { drawnTopics } from './topic-map/topic-map.helpers';
 import { BrainStateService } from './brain-state.service';
 import { plural } from './brain.helpers';
+import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 const FINDER_LIMIT = 6;
 
@@ -25,7 +26,7 @@ const FINDER_LIMIT = 6;
 @Component({
   selector: 'app-brain-map-page',
   standalone: true,
-  imports: [ButtonComponent, InputDirective, NostosIconComponent, TopicMapComponent],
+  imports: [SearchFieldComponent, ButtonComponent, InputDirective, NostosIconComponent, TopicMapComponent],
   templateUrl: './brain-map.page.html',
   styleUrls: ['./brain-map.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -32,6 +32,7 @@ import { ReadingListService } from '../../core/services/reading-list.service';
 import { LibraryChangesService } from '../../core/services/library-changes.service';
 import { RouterLink } from '@angular/router';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
+import { BrandLockupComponent } from '../../ui/brand-lockup/brand-lockup.component';
 
 @Component({
   standalone: true,
@@ -41,6 +42,7 @@ import { InputDirective } from '../../ui/form-control/form-control.directive';
     FormsModule,
     RouterLink,
     NostosIconComponent,
+    BrandLockupComponent,
     FlatTreeComponent,
     ConfirmModal,
   ],
@@ -88,6 +90,9 @@ export class SidebarCollections implements OnInit {
   expanded = this.preferences.sidebarExpanded;
   adding = signal(false);
   editingId = signal<string | null>(null);
+  /** Why the last rename was refused, said under the field (issue #1209). */
+  readonly renameError = signal<string | null>(null);
+  readonly renameBusy = signal(false);
   newName = model<string>('');
   private ignoreClick = false;
 
@@ -178,14 +183,12 @@ export class SidebarCollections implements OnInit {
       }
     }
 
-    if (!this.adding() && !this.editingId()) return;
+    // A rename closes itself: leaving its field saves or cancels it.
+    if (!this.adding()) return;
 
     const isInsideInputRow = target.closest('.nav-item.input-mode');
 
-    if (!isInsideInputRow) {
-      if (this.adding()) this.resetInput();
-      if (this.editingId()) this.cancelRename();
-    }
+    if (!isInsideInputRow) this.resetInput();
   }
 
   load(): void {
@@ -283,33 +286,40 @@ export class SidebarCollections implements OnInit {
 
   startRename(item: any): void {
     this.ignoreClick = true;
+    this.renameError.set(null);
     this.editingId.set(item.id);
   }
 
   cancelRename(): void {
+    if (this.renameBusy()) return;
+    this.renameError.set(null);
     this.editingId.set(null);
   }
 
+  /**
+   * The flat tree's rename has already refused an empty, unchanged or
+   * duplicate name, so this only saves. A refusal from the server stays in the
+   * field, under it, instead of closing it behind a toast.
+   */
   saveRename(id: string, newName: string): void {
-    if (!newName.trim()) {
-      this.cancelRename();
-      return;
-    }
+    if (this.renameBusy()) return;
     const collection = this.collections().find((c) => c.id === id);
+    this.renameBusy.set(true);
+    this.renameError.set(null);
     // Full-replace PUT: always send the current parentId (explicit null for
     // root) so a rename never reads as "move to root".
     this.collectionsService
       .update(id, { name: newName, parentId: collection?.parentId ?? null })
       .subscribe({
         next: () => {
+          this.renameBusy.set(false);
           this.editingId.set(null);
           this.load();
           this.loadCounts();
         },
         error: (err) => {
-          this.editingId.set(null);
-          this.toast.error(this.describeCollectionError(err));
-          this.load();
+          this.renameBusy.set(false);
+          this.renameError.set(this.describeCollectionError(err));
         },
       });
   }

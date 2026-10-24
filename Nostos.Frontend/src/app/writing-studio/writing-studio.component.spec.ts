@@ -64,6 +64,8 @@ class FlatTreeStub {
   readonly items = input.required<unknown[]>();
   readonly activeId = input<string | null>(null);
   readonly editingId = input<string | null>(null);
+  readonly renameError = input<string | null>(null);
+  readonly renameBusy = input(false);
   readonly nodeSelected = output<unknown>();
   readonly nodeMoved = output<unknown>();
   readonly nodeRenamed = output<unknown>();
@@ -204,7 +206,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(newDocument.classList.contains('nostos-button--sm')).toBe(true);
 
     const search = fixture.nativeElement.querySelector(
-      'input[placeholder="Search topics..."]',
+      'input[placeholder="Search topics…"]',
     ) as HTMLInputElement;
     expect(search.classList.contains('nostos-form-control')).toBe(true);
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
@@ -257,7 +259,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     fixture.detectChanges();
 
     const bookSearch = fixture.nativeElement.querySelector(
-      'input[placeholder="Search books..."]',
+      'input[placeholder="Search books…"]',
     ) as HTMLInputElement;
     expect(bookSearch.classList.contains('nostos-form-control')).toBe(true);
     expect(bookSearch.classList.contains('nostos-form-control--compact')).toBe(true);
@@ -265,7 +267,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     component.selectedBookId.set('book-1');
     fixture.detectChanges();
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search books..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search books…"]'),
     ).toBeNull();
 
     const back = fixture.nativeElement.querySelector('.goto-btn') as HTMLButtonElement;
@@ -274,6 +276,30 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(back.tagName).toBe('BUTTON');
     expect(back.classList.contains('nostos-button--ghost')).toBe(true);
     expect(back.classList.contains('nostos-button--sm')).toBe(true);
+  });
+
+  it('lists books to pick as choice rows with the format glyph and an author fallback', () => {
+    component.referenceMode.set('library');
+    component.activeSidebarTab.set('notes');
+    component.selectedBookId.set(null);
+    component.books.set([
+      { id: 'b1', title: 'Middlemarch', author: 'George Eliot', type: 'audiobook', fileName: null },
+      { id: 'b2', title: 'Moby-Dick', author: null, type: 'ebook', fileName: 'moby-dick.pdf' },
+    ] as never);
+    component.bookIndexState.set('loaded');
+    fixture.detectChanges();
+
+    const rows = Array.from(
+      fixture.nativeElement.querySelectorAll('.book-choice-list .book-choice') as NodeListOf<HTMLButtonElement>,
+    );
+    expect(rows.map((row) => row.classList.contains('nostos-choice-row'))).toEqual([true, true]);
+    expect(rows[0].querySelector('.nostos-choice-row__sub')?.textContent).toBe('George Eliot');
+    expect(rows[0].querySelector('.nostos-choice-row__meta')?.textContent?.trim()).toBe('Audiobook');
+    expect(rows[1].querySelector('.nostos-choice-row__sub')?.textContent).toBe('Unknown author');
+    expect(rows[1].querySelector('.nostos-choice-row__meta')?.textContent?.trim()).toBe('PDF');
+
+    rows[1].click();
+    expect(component.selectedBookId()).toBe('b2');
   });
 
   it('does not run the shared transform entry animation on Studio sidebars', () => {
@@ -1677,13 +1703,13 @@ describe('WritingStudio kept sources (#491)', () => {
     topicNotesScroll.scrollTop = 456;
     component.captureReferenceScroll({ target: topicNotesScroll } as unknown as Event);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
 
     component.inspectSource(note);
     fixture.detectChanges();
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
     expect(
       (fixture.nativeElement.querySelector('.inspected-source-back') as HTMLButtonElement).textContent,
@@ -1695,7 +1721,7 @@ describe('WritingStudio kept sources (#491)', () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     const search = fixture.nativeElement.querySelector(
-      'input[placeholder="Search topics..."]',
+      'input[placeholder="Search topics…"]',
     ) as HTMLInputElement;
     expect(search.value).toBe('Attention');
     const restoredIndex = fixture.nativeElement.querySelector(
@@ -1749,7 +1775,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(fixture.nativeElement.querySelectorAll('.inspected-source-card')).toHaveLength(1);
     expect(fixture.nativeElement.querySelectorAll('.reference-note-list .reference-source-row')).toHaveLength(0);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
 
     const back = fixture.nativeElement.querySelector(
@@ -1766,7 +1792,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(component.selectedTopicId()).toBe('c-1');
     expect(fixture.nativeElement.querySelectorAll('.reference-note-list .reference-source-row')).toHaveLength(1);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics…"]'),
     ).toBeNull();
   });
 

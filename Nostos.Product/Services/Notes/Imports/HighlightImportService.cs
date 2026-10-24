@@ -49,7 +49,7 @@ public sealed class HighlightImportService
                 bookId = linked.Id;
                 candidates =
                 [
-                    new HighlightImportCandidate(linked.Id, linked.Title, linked.Author, "Confirmed on an earlier import"),
+                    new HighlightImportCandidate(linked.Id, linked.Title, linked.Author, "Confirmed on an earlier import", linked.Format),
                     .. candidates.Where(candidate => candidate.BookId != linked.Id),
                 ];
             }
@@ -404,11 +404,30 @@ public sealed class HighlightImportService
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task<List<ImportLibraryBook>> LoadLibraryAsync(CancellationToken ct) =>
-        await _db.Books
+    private async Task<List<ImportLibraryBook>> LoadLibraryAsync(CancellationToken ct)
+    {
+        var rows = await _db.Books
             .AsNoTracking()
-            .Select(book => new ImportLibraryBook(book.Id, book.Title, book.Author, book.NormalizedIsbn))
+            .Select(book => new
+            {
+                book.Id,
+                book.Title,
+                book.Author,
+                book.NormalizedIsbn,
+                IsAudiobook = book is AudioBookModel,
+                IsPhysical = book is PhysicalBookModel,
+                book.FileDetails.FileName,
+            })
             .ToListAsync(ct);
+        return rows
+            .Select(row => new ImportLibraryBook(
+                row.Id,
+                row.Title,
+                row.Author,
+                row.NormalizedIsbn,
+                HighlightImportBookFormat.Of(row.IsAudiobook, row.IsPhysical, row.FileName)))
+            .ToList();
+    }
 
     private async Task<Dictionary<string, Guid>> LoadLinksAsync(
         string source,

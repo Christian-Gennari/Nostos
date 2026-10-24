@@ -21,7 +21,7 @@ const previewBook = (overrides: Partial<HighlightImportPreviewBook>): HighlightI
   newCount: 3,
   match: 'exact',
   bookId: 'b1',
-  candidates: [{ bookId: 'b1', title: 'Synthetic Book', author: 'Ada Reader', reason: 'Same title and author' }],
+  candidates: [{ bookId: 'b1', title: 'Synthetic Book', author: 'Ada Reader', reason: 'Same title and author', format: 'ebook' }],
   ...overrides,
 });
 
@@ -46,7 +46,7 @@ const suggested = previewBook({
   author: 'Fyodor Dostoyevsky',
   match: 'suggested',
   bookId: null,
-  candidates: [{ bookId: 'b2', title: 'Devils', author: 'Fyodor Dostoevsky', reason: 'Similar title and author' }],
+  candidates: [{ bookId: 'b2', title: 'Devils', author: 'Fyodor Dostoevsky', reason: 'Similar title and author', format: 'audiobook' }],
 });
 
 const missing = previewBook({
@@ -178,7 +178,7 @@ describe('HighlightImportModal', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-picker"]')).not.toBeNull();
 
-    component.choose(row, { bookId: 'b9', title: 'Demons', author: 'Dostoevsky', reason: '' });
+    component.choose(row, { bookId: 'b9', title: 'Demons', author: 'Dostoevsky', reason: '', format: 'physical' });
 
     expect(component.toCheck()[0].target).toEqual({
       kind: 'book',
@@ -187,6 +187,31 @@ describe('HighlightImportModal', () => {
       author: 'Dostoevsky',
     });
     expect(component.pickingRowId()).toBeNull();
+  });
+
+  it('lists the books to pick as choice rows with the format glyph, as the Editions dialog does', async () => {
+    await review(
+      previewBook({
+        ...suggested,
+        candidates: [
+          { bookId: 'b2', title: 'Devils', author: 'Fyodor Dostoevsky', reason: 'Similar title and author', format: 'audiobook' },
+          { bookId: 'b3', title: 'Demons', author: null, reason: '', format: 'pdf' },
+        ],
+      }),
+    );
+    component.openPicker(component.toCheck()[0]);
+    fixture.detectChanges();
+
+    const rows = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.highlight-picker-option'),
+    );
+    expect(rows.map((row) => row.classList.contains('nostos-choice-row'))).toEqual([true, true]);
+    expect(rows[0].querySelector('.nostos-choice-row__title')?.textContent).toBe('Devils');
+    expect(rows[0].querySelector('.nostos-choice-row__meta')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Audiobook · Similar title and author',
+    );
+    expect(rows[1].querySelector('.nostos-choice-row__sub')?.textContent).toBe('Unknown author');
+    expect(rows[1].querySelector('.nostos-choice-row__meta')?.textContent?.trim()).toBe('PDF');
   });
 
   it('undoes what it just imported', async () => {

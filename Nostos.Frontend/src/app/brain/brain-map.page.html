@@ -11,7 +11,7 @@
     </div>
 
     <div class="finder">
-      <nostos-icon name="magnifying-glass" [size]="18" class="finder-icon" />
+      <nostos-search-field>
       <input
         appInput
         controlSize="compact"
@@ -30,6 +30,7 @@
         (blur)="finderOpen.set(false)"
         (focus)="finderOpen.set(true)"
       />
+      </nostos-search-field>
       @if (finds().length) {
       <ul class="finds" id="map-finds" role="listbox" aria-label="Topics">
         @for (topic of finds(); track topic.id; let i = $index) {

@@ -4,8 +4,6 @@
   output,
   signal,
   computed,
-  effect,
-  viewChild,
   inject,
   ElementRef,
   ChangeDetectionStrategy,
@@ -14,7 +12,7 @@ import { DragDropModule, CdkDragMove } from '@angular/cdk/drag-drop';
 import { buildFlatTree, FlatTreeNode, TreeItem } from './flat-tree.helper';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
-import { InputDirective } from '../form-control/form-control.directive';
+import { InlineRenameComponent } from '../inline-rename/inline-rename.component';
 
 export interface DropIndicator {
   nodeId: string;
@@ -23,7 +21,7 @@ export interface DropIndicator {
 
 @Component({
   selector: 'app-flat-tree',
-  imports: [IconButtonComponent, InputDirective, DragDropModule, NostosIconComponent],
+  imports: [IconButtonComponent, InlineRenameComponent, DragDropModule, NostosIconComponent],
   templateUrl: './flat-tree.component.html',
   styleUrls: ['./flat-tree.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -36,6 +34,16 @@ export class FlatTreeComponent {
   readonly activeId = input<string | null>(null);
   readonly treatAllAsFolders = input(false);
   readonly editingId = input<string | null>(null);
+  /** The owner's refusal of the last rename (the server said no). */
+  readonly renameError = input<string | null>(null);
+  /** A rename is being saved: the field holds its text and waits. */
+  readonly renameBusy = input(false);
+  /**
+   * Refuse a name a sibling already has, before it is sent. On for the
+   * Library's collections (the server refuses them too); off for Studio's
+   * documents, where two drafts may share a name.
+   */
+  readonly rejectDuplicateNames = input(false);
   readonly emptyLabel = input('Nothing here yet');
   /**
    * `filled` marks the selected row with the solid primary pill (Studio's file
@@ -58,17 +66,20 @@ export class FlatTreeComponent {
   private draggedNode: FlatTreeNode | null = null;
   private wasExpanded = false;
 
-  private readonly renameInput = viewChild<ElementRef<HTMLInputElement>>('renameInput');
-
-  constructor() {
-    effect(() => {
-      const el = this.renameInput();
-      if (el) {
-        el.nativeElement.focus();
-        el.nativeElement.select();
-      }
-    });
-  }
+  /** The duplicate check for the row being renamed, when the owner wants one. */
+  readonly renameValidate = computed(() => {
+    const id = this.editingId();
+    if (!id || !this.rejectDuplicateNames()) return null;
+    const items = this.items();
+    const parentId = items.find((item) => item.id === id)?.parentId ?? null;
+    const taken = new Set(
+      items
+        .filter((item) => item.id !== id && (item.parentId ?? null) === parentId)
+        .map((item) => item.name.trim().toLocaleLowerCase()),
+    );
+    return (name: string) =>
+      taken.has(name.toLocaleLowerCase()) ? `“${name}” is already used here.` : null;
+  });
 
   readonly treeNodes = computed(() =>
     buildFlatTree(this.items(), this.expandedIds(), this.treatAllAsFolders()),
@@ -91,11 +102,6 @@ export class FlatTreeComponent {
 
   handleSelect(node: FlatTreeNode): void {
     this.nodeSelected.emit(node.originalData);
-  }
-
-  onRenameSave(id: string, event: Event): void {
-    const el = event.target as HTMLInputElement;
-    this.nodeRenameSaved.emit({ id, newName: el.value });
   }
 
   moveToRoot(node: FlatTreeNode, event: Event): void {

@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import type { BookFormatConcept } from '../book-format';
 
 /**
  * How sure the server is that a book on the device is a book in the library.
@@ -14,6 +15,8 @@ export interface HighlightImportCandidate {
   title: string;
   author: string | null;
   reason: string;
+  /** The library book's format, for the row's format glyph. */
+  format: BookFormatConcept;
 }
 
 export interface HighlightImportPreviewBook {

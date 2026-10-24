@@ -111,6 +111,7 @@ import {
   ReadAloudStatus,
 } from '../core/services/read-aloud.service';
 import { firstValueFrom } from 'rxjs';
+import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 const READ_ALOUD_VOICE_KEY = 'nostos.readAloud.voice';
 
@@ -158,6 +159,7 @@ function readAloudFallbackNotice(code: string | null): string {
   selector: 'app-reader-shell',
   standalone: true,
   imports: [
+    SearchFieldComponent,
     CommonModule,
     FormsModule,
     NostosIconComponent,

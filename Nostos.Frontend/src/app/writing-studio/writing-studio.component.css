@@ -201,26 +201,11 @@
   color: var(--color-text-main);
 }
 
-/* Search layout owns only the prefix icon; appInput owns field chrome/focus. */
+/* <nostos-search-field>: the panel only places it. */
 .search-box {
-  position: relative;
   margin: 0 1.15rem 1rem;
-  color: var(--color-text-muted);
   box-sizing: border-box;
   width: calc(100% - 2.3rem);
-}
-
-.search-box nostos-icon {
-  position: absolute;
-  top: 50%;
-  left: 0.85rem;
-  z-index: 1;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.search-box .nostos-form-control {
-  padding-left: 2.35rem;
 }
 
 /* Lists & Items */
@@ -249,6 +234,21 @@
 }
 .list-item:hover {
   background: var(--bg-hover);
+}
+
+/* Books are appChoiceRow, spaced as the Editions dialog's list, and inset to
+   the search field's edges above them. */
+.book-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-inline: 0.5rem;
+}
+
+.book-choice-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
 }
 
 .list-item-icon {
@@ -1503,12 +1503,7 @@
   white-space: nowrap;
 }
 
-.brain-detail-header .goto-btn {
-  min-height: 40px;
-  padding-left: 0.3rem;
-  color: var(--color-text-muted);
-  text-transform: none;
-}
+/* The shared `.back-link` (styles.css): appButton ghost sm, 14px arrow. */
 
 .inspected-source-panel {
   padding: 0.35rem 0.65rem 9rem;

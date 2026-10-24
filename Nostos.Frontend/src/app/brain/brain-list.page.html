@@ -1,5 +1,5 @@
 <div class="brain-scroller" #scroller (scroll)="onScroll($event)">
-  <header class="toolbar" [class.is-topic]="place() === 'topic'">
+  <header class="toolbar toolbar-edge" [class.is-topic]="place() === 'topic'">
     <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
     <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
       [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
@@ -13,10 +13,10 @@
       <span class="eyebrow"><nostos-icon concept="topic" [size]="12" />Topic</span>
       }
       @if (renamingTitle(); as current) {
-      <app-brain-topic-rename
+      <nostos-inline-rename
         variant="title"
         [name]="current.name"
-        [value]="topicActions.renameValue()"
+        requiredMessage="A topic needs a name."
         (valueChange)="topicActions.renameValue.set($event)"
         [error]="topicActions.renameError()"
         [busy]="topicActions.renaming()"
@@ -33,8 +33,7 @@
       }
     </div>
 
-    <div class="search-bar-container">
-      <nostos-icon name="magnifying-glass" [size]="18" class="search-icon" />
+    <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
       <input
         appInput
         controlSize="compact"
@@ -47,7 +46,7 @@
         (input)="onSearchInput($any($event.target).value)"
         (keydown.escape)="clearSearch()"
       />
-    </div>
+    </nostos-search-field>
 
     <div class="toolbar-right">
       <!-- Phone: order and book as square buttons; the open list shows the choice. -->

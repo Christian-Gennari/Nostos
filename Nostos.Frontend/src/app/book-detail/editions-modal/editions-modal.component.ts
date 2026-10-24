@@ -9,6 +9,7 @@ import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
 import { ButtonComponent } from '../../ui/button/button.component';
+import { SearchFieldComponent } from '../../ui/search-field/search-field.component';
 
 /** One book in the current work, as the membership list needs it. */
 export interface WorkMember {
@@ -51,7 +52,7 @@ export interface LinkCandidate extends LinkableBookDto {
 @Component({
   selector: 'app-editions-modal',
   standalone: true,
-  imports: [BadgeComponent, ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
+  imports: [SearchFieldComponent, BadgeComponent, ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
   templateUrl: './editions-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './editions-modal.component.css',

@@ -30,29 +30,10 @@
   margin: -0.35rem -0.4rem -0.35rem 0;
 }
 
-.picker-search {
-  position: relative;
-}
-
-.picker-search-icon {
-  position: absolute;
-  top: 50%;
-  left: 0.8rem;
-  transform: translateY(-50%);
-  color: var(--color-text-light);
-  pointer-events: none;
-}
-
+/* <nostos-search-field> owns the glass and its gutter. */
 .picker-search-input {
-  padding-left: 2.4rem;
   /* 16px: anything smaller makes iOS zoom the page when the field takes focus. */
   font-size: 1rem;
-}
-
-/* The dialog already has a close control beside it; the browser's own clear
-   glyph reads as a second one. */
-.picker-search-input::-webkit-search-cancel-button {
-  display: none;
 }
 
 /* ---- The list, shared by both presentations --------------------------- */

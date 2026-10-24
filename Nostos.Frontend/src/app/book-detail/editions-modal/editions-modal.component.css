@@ -220,26 +220,6 @@
 
 /* --- Link picker ------------------------------------------------------- */
 
-.manage-link-field {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.manage-link-field-icon {
-  position: absolute;
-  left: 0.6rem;
-  color: var(--color-text-muted);
-  pointer-events: none;
-}
-
-.manage-link-search {
-  /* appInput owns the ordinary search-field geometry, theme, placeholder and
-     focus contract. The editions surface only reserves space for its leading
-     search glyph. */
-  padding-left: 2rem;
-}
-
 /* Deliberately NOT height-capped or independently scrollable. The modal body is
    the single scroll container: a capped list nested inside a scrolling body
    gives two scroll areas, and the inner one can end flush against the card edge

@@ -175,6 +175,8 @@
     data-testid="reader-search-panel"
   >
     <div class="reader-search-row">
+      <!-- No clear button: Close sits right beside the field. -->
+      <nostos-search-field class="reader-search-field" size="sm" [clearable]="false">
       <input
         appInput
         controlSize="compact"
@@ -187,6 +189,7 @@
         [value]="searchQuery()"
         (input)="onSearchInput($event)"
       />
+      </nostos-search-field>
       <button
         appIconButton
         icon="x"

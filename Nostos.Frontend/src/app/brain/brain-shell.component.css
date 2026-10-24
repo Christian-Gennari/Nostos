@@ -63,12 +63,9 @@
       visibility 0s;
   }
 
+  /* The shared `.drawer-scrim` (styles.css), the Library's too. */
   .brain-backdrop {
     display: block;
-    position: fixed;
-    inset: 0;
-    z-index: var(--layer-backdrop);
-    background: var(--overlay-medium);
   }
 }
 

@@ -1,16 +1,6 @@
-<nav class="sidebar" aria-label="Brain">
+<nav class="side-nav sidebar" aria-label="Brain">
   <div class="sidebar-header">
-    <svg class="brand-lockup" viewBox="0 0 1840 512" role="img" aria-label="Nostos" focusable="false">
-      <g transform="scale(0.5)">
-        <rect class="brand-lockup__tile" x="0" y="0" width="1024" height="1024" rx="205" />
-        <path
-          class="brand-lockup__arch"
-          d="M 282 764 L 282 509 A 229 234 0 0 1 740 509 L 740 764 Z M 358 764 L 358 509 A 110 112 0 0 1 578 509 L 578 764 Z"
-          fill-rule="evenodd"
-        />
-      </g>
-      <text class="brand-lockup__word" x="625" y="345" font-size="255" font-weight="500" letter-spacing="-8">nostos</text>
-    </svg>
+    <nostos-brand-lockup />
   </div>
 
   <div class="nav-scroll-area">
@@ -57,10 +47,10 @@
         <div class="topic-row-shell" role="listitem">
           @if (isRenaming(topic)) {
           <div class="topic-row topic-row--renaming">
-            <app-brain-topic-rename
+            <nostos-inline-rename
               variant="row"
               [name]="topic.name"
-              [value]="actions.renameValue()"
+              requiredMessage="A topic needs a name."
               (valueChange)="actions.renameValue.set($event)"
               [error]="actions.renameError()"
               [busy]="actions.renaming()"

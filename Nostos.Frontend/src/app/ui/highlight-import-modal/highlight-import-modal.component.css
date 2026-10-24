@@ -385,8 +385,7 @@ summary.highlight-section-header:focus-visible {
   color: var(--color-text-light);
 }
 
-.highlight-link:focus-visible,
-.highlight-picker-option:focus-visible {
+.highlight-link:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -404,30 +403,21 @@ summary.highlight-section-header:focus-visible {
   width: 100%;
 }
 
+/* Rows are appChoiceRow, spaced as the Editions dialog's list. */
 .highlight-picker-list {
   display: flex;
   flex-direction: column;
+  gap: 0.4rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.highlight-picker-option {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  padding: 0.4rem 0.5rem;
-  border: 0;
-  border-radius: var(--radius-row);
-  background: none;
-  color: var(--color-text-main);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.highlight-picker-option:hover {
-  background: var(--bg-hover);
+.highlight-picker-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
 .highlight-picker-empty {

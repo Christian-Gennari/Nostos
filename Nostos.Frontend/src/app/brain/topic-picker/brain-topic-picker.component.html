@@ -22,14 +22,17 @@
     Linking adds an explicit <code>[[Topic]]</code> reference to the note.
   </p>
   }
-  <input appInput controlSize="compact" class="merge-search-input"
-    type="search"
-    placeholder="Search topics..."
-    [attr.aria-label]="searchLabel()"
-    [ngModel]="query()"
-    (ngModelChange)="query.set($event)"
-    (keydown.escape)="closed.emit()"
-  />
+  <!-- No clear button: the picker's Close sits above the field. -->
+  <nostos-search-field size="sm" [clearable]="false">
+    <input appInput controlSize="compact" class="merge-search-input"
+      type="search"
+      placeholder="Search topics…"
+      [attr.aria-label]="searchLabel()"
+      [ngModel]="query()"
+      (ngModelChange)="query.set($event)"
+      (keydown.escape)="closed.emit()"
+    />
+  </nostos-search-field>
   <div class="merge-target-list">
     @if (candidates().length === 0) {
     <span class="merge-picker-empty">{{ emptyText() }}</span>

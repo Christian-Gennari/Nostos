@@ -22,11 +22,17 @@ public sealed record HighlightImportPreviewBook(
     Guid? BookId,
     IReadOnlyList<HighlightImportCandidate> Candidates);
 
+/// <param name="Format">
+/// The library book's format, as the app's format concepts name it:
+/// <c>audiobook</c>, <c>ebook</c>, <c>pdf</c> or <c>physical</c>. The review
+/// step shows it beside each book to pick from, as the Editions dialog does.
+/// </param>
 public sealed record HighlightImportCandidate(
     Guid BookId,
     string Title,
     string? Author,
-    string Reason);
+    string Reason,
+    string Format);
 
 /// <summary>
 /// The owner's answer for one book in the file. A book with no decision is
@@ -83,4 +89,20 @@ internal sealed record ImportLibraryBook(
     Guid Id,
     string Title,
     string? Author,
-    string? NormalizedIsbn);
+    string? NormalizedIsbn,
+    string Format = HighlightImportBookFormat.Ebook);
+
+/// <summary>The format names a <see cref="HighlightImportCandidate"/> carries.</summary>
+internal static class HighlightImportBookFormat
+{
+    public const string Audiobook = "audiobook";
+    public const string Ebook = "ebook";
+    public const string Pdf = "pdf";
+    public const string Physical = "physical";
+
+    public static string Of(bool isAudiobook, bool isPhysical, string? fileName) =>
+        isAudiobook ? Audiobook
+        : isPhysical ? Physical
+        : fileName is not null && fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? Pdf
+        : Ebook;
+}

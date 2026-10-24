@@ -1,31 +1,6 @@
 <main class="cloud-entry">
   <section class="cloud-entry__card" aria-live="polite">
-    <!-- Same kit v1 lockup as the library sidebar: forest tile + white arch,
-         theme-invariant, with the wordmark in ink. -->
-    <svg
-      class="cloud-entry__brand"
-      viewBox="0 0 1840 512"
-      role="img"
-      aria-label="Nostos"
-      focusable="false"
-    >
-      <g transform="scale(0.5)">
-        <rect class="cloud-entry__brand-tile" x="0" y="0" width="1024" height="1024" rx="205" />
-        <path
-          class="cloud-entry__brand-arch"
-          d="M 282 764 L 282 509 A 229 234 0 0 1 740 509 L 740 764 Z M 358 764 L 358 509 A 110 112 0 0 1 578 509 L 578 764 Z"
-          fill-rule="evenodd"
-        />
-      </g>
-      <text
-        class="cloud-entry__brand-word"
-        x="625"
-        y="345"
-        font-size="255"
-        font-weight="500"
-        letter-spacing="-8"
-      >nostos</text>
-    </svg>
+    <nostos-brand-lockup class="cloud-entry__brand" />
 
     @switch (entry.view().kind) {
       @case ('loading') {

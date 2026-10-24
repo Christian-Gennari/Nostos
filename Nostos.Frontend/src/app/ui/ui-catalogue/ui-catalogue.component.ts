@@ -7,6 +7,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { THEMES, ThemeName, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
 import { BadgeComponent } from '../badge/badge.component';
+import { BrandLockupComponent } from '../brand-lockup/brand-lockup.component';
 import { NoticeComponent } from '../notice/notice.component';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
@@ -18,6 +19,8 @@ import { DropdownComponent, type DropdownOption } from '../dropdown/dropdown.com
 import { FormFieldComponent } from '../form-field/form-field.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { SegmentedComponent } from '../segmented/segmented.component';
+import { SearchFieldComponent } from '../search-field/search-field.component';
+import { InlineRenameComponent } from '../inline-rename/inline-rename.component';
 import { CheckboxDirective, RadioDirective } from '../check/check.directive';
 import { ProgressComponent } from '../progress/progress.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
@@ -38,6 +41,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
   standalone: true,
   imports: [
     BadgeComponent,
+    BrandLockupComponent,
     NoticeComponent,
     IconTileComponent,
     NostosIconComponent,
@@ -47,6 +51,8 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
     FormFieldComponent,
     IconButtonComponent,
     SegmentedComponent,
+    SearchFieldComponent,
+    InlineRenameComponent,
     CheckboxDirective,
     RadioDirective,
     ProgressComponent,
@@ -81,6 +87,7 @@ export class UiCatalogueComponent {
     { value: 'grid', icon: 'squares-four', label: 'Grid view' },
   ] satisfies readonly ViewToggleOption[];
   readonly modalOpen = signal(false);
+  readonly renameDemo = signal(true);
   readonly catalogueDropdownValue = signal('epub');
   readonly dropdownOptions = [
     { value: 'epub', label: 'EPUB' },

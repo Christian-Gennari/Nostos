@@ -51,6 +51,8 @@
         [items]="rootItems()"
         [activeId]="activeItem()?.id || null"
         [editingId]="editingId()"
+        [renameError]="renameError()"
+        [renameBusy]="renameBusy()"
         (nodeSelected)="handleItemSelected($event)"
         (nodeMoved)="handleItemMove($event)"
         (nodeRenamed)="startRename($event)"
@@ -300,12 +302,12 @@
             appButton
             variant="ghost"
             size="sm"
-            class="inspected-source-back"
+            class="back-link inspected-source-back"
             (click)="closeInspectedSource()"
             [attr.aria-label]="'Back to ' + inspectionReturnLabel()"
             [title]="'Back to ' + inspectionReturnLabel()"
           >
-            <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
+            <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
             <span class="inspected-source-context">Back to {{ inspectionReturnLabel() }}</span>
           </button>
         </div>
@@ -548,18 +550,17 @@
     @if (!inspectedSource() && referenceMode() === 'library') {
       @if (activeSidebarTab() === 'brain') {
         @if (!selectedTopicId()) {
-          <div class="search-box">
-            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+          <nostos-search-field class="search-box" size="sm">
             <input
               appInput
               controlSize="compact"
-              type="text"
-              placeholder="Search topics..."
+              type="search"
+              placeholder="Search topics…"
               aria-label="Search topics"
               [ngModel]="brainQuery()"
               (ngModelChange)="brainQuery.set($event)"
             />
-          </div>
+          </nostos-search-field>
         }
         @if (!activeItem()) {
           <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
@@ -621,18 +622,17 @@
       }
       @if (activeSidebarTab() === 'notes') {
         @if (!selectedBookId()) {
-          <div class="search-box">
-            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+          <nostos-search-field class="search-box" size="sm">
             <input
               appInput
               controlSize="compact"
-              type="text"
-              placeholder="Search books..."
+              type="search"
+              placeholder="Search books…"
               aria-label="Search books"
               [ngModel]="bookQuery()"
               (ngModelChange)="bookQuery.set($event)"
             />
-          </div>
+          </nostos-search-field>
         }
         @if (!activeItem()) {
           <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
@@ -652,18 +652,18 @@
                 <button appButton variant="ghost" size="sm" (click)="retryBookIndex()">Retry</button>
               </p>
             } @else {
-              <div class="index-list">
+              <div class="index-list book-choice-list">
                 @for (book of filteredBooks(); track book.id) {
-                  <button class="list-item" (click)="selectBook(book.id)">
-                    <div class="list-item-icon">
-                      <nostos-icon name="book" [size]="16"></nostos-icon>
-                    </div>
-                    <div class="list-item-content">
-                      <span class="name">{{ book.title }}</span>
-                      @if (book.author) {
-                        <span class="subtext">{{ book.author }}</span>
-                      }
-                    </div>
+                  <!-- The Editions dialog's book row: title, author, format. -->
+                  <button type="button" appChoiceRow class="book-choice" (click)="selectBook(book.id)">
+                    <span class="nostos-choice-row__text">
+                      <span class="nostos-choice-row__title">{{ book.title }}</span>
+                      <span class="nostos-choice-row__sub">{{ book.author || unknownAuthor }}</span>
+                      <span class="book-choice-format nostos-choice-row__meta">
+                        <nostos-icon [concept]="bookFormat(book)" [size]="12" aria-hidden="true"></nostos-icon>
+                        {{ formatLabel[bookFormat(book)] }}
+                      </span>
+                    </span>
                   </button>
                 }
                 @if (filteredBooks().length === 0) {
@@ -836,9 +836,9 @@
 
 <ng-template #referenceDetailHeader let-label="label" let-back="back">
   <div class="brain-detail-header">
-    <button appButton variant="ghost" size="sm" class="goto-btn" (click)="back()">
-      <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-      Back to {{ label }}
+    <button appButton variant="ghost" size="sm" class="back-link goto-btn" (click)="back()">
+      <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
+      <span>Back to {{ label }}</span>
     </button>
     <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
   </div>

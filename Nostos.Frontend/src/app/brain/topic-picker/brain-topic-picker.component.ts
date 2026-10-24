@@ -5,6 +5,7 @@ import type { TopicDto } from '../../core/services/topics.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
+import { SearchFieldComponent } from '../../ui/search-field/search-field.component';
 
 /**
  * Pick one existing topic from a searchable list, then confirm.
@@ -21,7 +22,7 @@ import { IconButtonComponent } from '../../ui/icon-button/icon-button.component'
 @Component({
   standalone: true,
   selector: 'app-brain-topic-picker',
-  imports: [FormsModule, ButtonComponent, IconButtonComponent, InputDirective],
+  imports: [SearchFieldComponent, FormsModule, ButtonComponent, IconButtonComponent, InputDirective],
   templateUrl: './brain-topic-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './brain-topic-picker.component.css',

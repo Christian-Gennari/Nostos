@@ -70,18 +70,16 @@
       </div>
 
       @if (editingId() === node.id) {
-        <input
-          #renameInput
-          appInput
-          controlSize="compact"
-          class="inline-rename-input"
-          type="text"
-          [value]="node.name"
-          (keydown.enter)="onRenameSave(node.id, $event)"
-          (keydown.escape)="nodeRenameCancelled.emit()"
-          (blur)="nodeRenameCancelled.emit()"
-          (click)="$event.stopPropagation()"
-          aria-label="Rename item"
+        <!-- The app's one inline rename: Enter or leaving the field saves,
+             Escape cancels, and a refusal is said under the field. -->
+        <nostos-inline-rename
+          class="tree-rename"
+          [name]="node.name"
+          [validate]="renameValidate()"
+          [error]="renameError()"
+          [busy]="renameBusy()"
+          (committed)="nodeRenameSaved.emit({ id: node.id, newName: $event })"
+          (cancelled)="nodeRenameCancelled.emit()"
         />
       } @else {
         <span class="node-name">{{ node.name }}</span>

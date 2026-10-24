@@ -60,80 +60,12 @@ a.nav-item {
   transition: none !important;
 }
 
-/* BRAND */
-.sidebar-header {
-  flex: none;
-  height: 68px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  /* 16px puts the 40px mark on the rail axis: 16 + 20 = 36. */
-  padding: 0 1rem;
-}
+/* The header, scroll area, groups, section labels and rows are the shared
+   `.side-nav` recipe (styles.css), the Brain sidebar's and the Settings nav's
+   too. What stays here is the rail: collapse, fold and the morphing tint.
 
-/* Kit v1 lockup: the tile mark plus the wordmark. Sized so the tile keeps the
-   40px footprint the rail is aligned to (16 + 20 = 36), which scales the whole
-   1840x512 lockup to 40px tall on the mark. */
-.brand-lockup {
-  display: block;
-  flex: none;
-  height: 40px;
-  width: auto;
-}
-/* The tile is the mark here, so it has to re-ink with the theme just like the
-   standalone mark: shape = tile fill, arch = the knockout. */
-.brand-lockup__tile {
-  fill: var(--brand-shape);
-}
-.brand-lockup__arch {
-  fill: var(--brand-doorway);
-}
-/* The kit's wordmark colour is Ink, so this follows --color-text-main (ink in
-   light, porcelain in dark, matching the hero lockup). Deliberately NOT
-   --color-primary: in dark that token is a desaturated green (#8fbfae), which
-   tints the wordmark green against the dark rail instead of reading neutral. */
-.brand-lockup__word {
-  fill: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-}
-
-/* SCROLL AREA */
-.nav-scroll-area {
-  flex: 1;
-  min-height: 0;
-  padding: 0.75rem 1rem;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  /* Groups are separated by more room than rows are, so the space itself
-     says where one group ends. */
-  gap: 1.75rem;
-}
-
-.nav-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
-
-/* The head owns the section's horizontal padding. The label inside drops its
-   own, so "Collections" starts at 12px — exactly where "MEDIA" does — instead
-   of inheriting the extra left padding and sitting 12px further in. */
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.6rem 0 0.25rem 0.75rem;
-  margin-bottom: 0.15rem;
-}
-
-.section-head > .section-label {
-  padding: 0;
-  margin-bottom: 0;
-}
+   BRAND: <nostos-brand-lockup>. The tile keeps the 40px footprint the rail is
+   aligned to (16 + 20 = 36); the wordmark fades with the labels (below). */
 
 .section-add {
   display: inline-flex;
@@ -163,17 +95,6 @@ a.nav-item {
   outline-offset: 1px;
 }
 
-.section-label {
-  /* Sentence case at a readable size, like the book page's section labels,
-     instead of tracked capitals. --color-text-muted, not --color-text-light:
-     the light tone is below the 4.5:1 small-text floor on the page ground. */
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  padding: 0.6rem 0.75rem 0.25rem;
-  margin-bottom: 0.15rem;
-}
-
 .root-drop-list {
   display: flex;
   flex-direction: column;
@@ -187,31 +108,7 @@ a.nav-item {
   min-height: 0;
 }
 
-/* --- NAV ITEMS --- */
-.nav-item {
-  position: relative;
-  /* Own stacking context so the pill (z-index -1) sits above the panel
-     background but below the icon and label. */
-  z-index: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  width: 100%;
-  padding: 0.45rem 0.75rem;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-row);
-  cursor: pointer;
-  color: var(--color-text-muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.88rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  text-decoration: none;
-  transition: color 0.12s ease;
-  text-wrap: nowrap;
-}
-
+/* --- NAV ITEMS (the shared `.side-nav .nav-item`) --- */
 /* --- ENTRY --- */
 /* One short fade per row on mount. It never re-runs on collapse/expand (the
    rows persist), and it only touches opacity, so it cannot move the rail. */
@@ -228,52 +125,16 @@ a.nav-item {
   animation: nav-item-in 0.3s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
 
-/* The pill is painted by a pseudo-element, so its geometry can morph between
+/* The tint is painted by a pseudo-element, so its geometry can morph between
    the full row and the rail square without touching the icon's position. */
 .nav-item::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  transform: translateY(-50%);
-  border-radius: var(--radius-row);
-  background: transparent;
-  /* width/height deliberately carry NO time: in the original shorthand they were
-     the leading items of a `transition: width var(--rail-motion), height ... 0.12s ease, background-color 0.12s ease` list, so they transitioned at 0s. Adding a duration here would be an unrelated motion change. */ transition: width var(--rail-motion), height var(--rail-motion), background-color 0.12s ease;;
+  transition: width var(--rail-motion), height var(--rail-motion), background-color 0.12s ease;
 }
 
-.nav-item:hover {
-  color: var(--color-text-main);
-}
-
-.nav-item:hover::before {
-  background: var(--bg-hover);
-}
-
-.nav-item:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-/* The selected row is only a tint now, so the standard ring reads on it; the
+/* The selected row is only a tint, so the standard ring reads on it; the
    extra pixel of inset keeps the ring inside the tile on the collapsed rail. */
 .nav-item.active:focus-visible {
   outline-offset: -3px;
-}
-
-/* The selected row is the soft tint the hover uses, with the label in full
-   ink: it names where you are without becoming the loudest thing on the
-   screen. (It was the filled `--selection-surface` pill, which in light made a
-   black block at the top-left that answered the black Add button opposite.) */
-.nav-item.active {
-  color: var(--color-text-main);
-}
-
-.nav-item.active::before {
-  background: var(--bg-hover);
 }
 
 /* Rail: the surface narrows to a 40px tile centred on the icon axis. It keeps
@@ -284,20 +145,6 @@ a.nav-item {
    touch. */
 .sidebar.collapsed .nav-item::before {
   width: 40px;
-}
-
-.nav-item .count-badge {
-  /* A plain number, not a chip: twelve chips down the rail were most of its
-     noise. Zero counts are not rendered at all (see the template). */
-  margin-left: auto;
-  padding-right: 4px;
-  color: var(--color-text-light);
-  /* The same number as the collections tree's count (and the Brain index's). */
-  font-size: 0.72rem;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  flex-shrink: 0;
 }
 
 /* Add Button Specifics */
@@ -329,28 +176,36 @@ input.sidebar-input {
    ~140ms, so nothing legible is left to be snapped away at the end. */
 .label,
 .nav-item .count-badge,
-.brand,
-.brand-lockup__word,
 .section-label {
   opacity: 1;
   transition: opacity var(--label-out);
 }
 
+/* The lockup's wordmark fades with the labels; its tile stays on the rail. */
+.sidebar {
+  --brand-lockup-word-opacity: 1;
+  --brand-lockup-word-transition: opacity var(--label-out);
+}
+
 /* Opening: let the rail get wide enough to hold the text before it fades in. */
 .sidebar:not(.collapsed) .label,
 .sidebar:not(.collapsed) .nav-item .count-badge,
-.sidebar:not(.collapsed) .brand,
-.sidebar:not(.collapsed) .brand-lockup__word,
 .sidebar:not(.collapsed) .section-label {
   transition: opacity var(--label-in);
 }
 
+.sidebar:not(.collapsed) {
+  --brand-lockup-word-transition: opacity var(--label-in);
+}
+
 .sidebar.collapsed .label,
 .sidebar.collapsed .nav-item .count-badge,
-.sidebar.collapsed .brand,
-.sidebar.collapsed .brand-lockup__word,
 .sidebar.collapsed .section-label {
   opacity: 0;
+}
+
+.sidebar.collapsed {
+  --brand-lockup-word-opacity: 0;
 }
 
 /* --- FOLDING VERTICAL GROUPS -----------------------------------------
@@ -482,8 +337,7 @@ input.sidebar-input {
     box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
   }
 
-  .sidebar .nav-item,
-  .sidebar .brand-lockup {
+  .sidebar .nav-item {
     animation: none;
   }
 
@@ -497,10 +351,12 @@ input.sidebar-input {
      was: the drawer is either fully open or fully off screen. */
   .sidebar.collapsed .label,
   .sidebar.collapsed .count-badge,
-  .sidebar.collapsed .brand,
-  .sidebar.collapsed .brand-lockup__word,
   .sidebar.collapsed .section-label {
     opacity: 1;
+  }
+
+  .sidebar.collapsed {
+    --brand-lockup-word-opacity: 1;
   }
 
   .sidebar.collapsed .collapsible {

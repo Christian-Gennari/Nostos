@@ -18,35 +18,12 @@
   gap: 2rem;
 }
 
-.reading-list__back {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-height: var(--control-h-md);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  text-decoration: none;
-}
-
-.reading-list__back:hover {
-  color: var(--color-text-main);
-}
-
 .reading-list__header {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   /* The back link already separates the header from the top of the page. */
   margin-top: -1rem;
-}
-
-.reading-list__header h1 {
-  margin: 0;
-  font-size: 2rem;
-  font-weight: var(--fw-regular);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
 }
 
 .reading-list__summary {

@@ -362,6 +362,74 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-search">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-search">Search field</h2>
+      </div>
+      <p>
+        A leading glass, the caller's own type="search" input, and a clear button once there is
+        something to clear. Placeholders end in "…".
+      </p>
+    </div>
+
+    <div class="catalogue-grid catalogue-grid--forms">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Toolbar · empty / filled</span>
+        <div class="catalogue-stack">
+          <nostos-search-field>
+            <input appInput controlSize="compact" type="search" placeholder="Search books…" aria-label="Search books example" />
+          </nostos-search-field>
+          <nostos-search-field>
+            <input appInput controlSize="compact" type="search" placeholder="Search books…" aria-label="Filled search example" value="Le Guin" />
+          </nostos-search-field>
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">size="sm" · clearable / beside a close button</span>
+        <div class="catalogue-stack">
+          <nostos-search-field size="sm">
+            <input appInput controlSize="compact" type="search" placeholder="Search your library…" aria-label="Dense search example" value="Gilead" />
+          </nostos-search-field>
+          <div class="catalogue-row catalogue-row--nowrap">
+            <nostos-search-field size="sm" [clearable]="false">
+              <input appInput controlSize="compact" type="search" placeholder="Search this book…" aria-label="Search beside close example" />
+            </nostos-search-field>
+            <button appIconButton type="button" icon="x" aria-label="Close search example"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="catalogue-section" aria-labelledby="catalogue-rename">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-rename">Inline rename</h2>
+      </div>
+      <p>
+        Enter or leaving the field saves, Escape cancels, a refusal is said under the field. No
+        Save or Cancel buttons.
+      </p>
+    </div>
+
+    <div class="catalogue-grid catalogue-grid--forms">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Row · as typed / refused</span>
+        <div class="catalogue-stack">
+          @if (renameDemo()) {
+            <nostos-inline-rename name="Fiction" [focusOnOpen]="false" (committed)="renameDemo.set(false)" (cancelled)="renameDemo.set(false)" />
+          } @else {
+            <button appButton variant="secondary" size="sm" type="button" (click)="renameDemo.set(true)">Rename again</button>
+          }
+          <nostos-inline-rename name="Essays" [focusOnOpen]="false" error="A collection with that name already exists here." />
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-switch">
     <div class="catalogue-section-heading">
       <div>
@@ -564,6 +632,54 @@
         <span class="catalogue-label">Rounded host · square rail</span>
         <div class="catalogue-rail-demo nostos-accent-rail">
           The surface keeps its restrained corners; the accent line does not bend with them.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="catalogue-section" aria-labelledby="catalogue-page-chrome">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-page-chrome">Page chrome</h2>
+      </div>
+      <p>
+        The brand lockup, the page title, the back link and the side-navigation rows the
+        Library, the Brain and Settings share.
+      </p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">nostos-brand-lockup</span>
+        <nostos-brand-lockup />
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Back link · page title</span>
+        <div class="catalogue-page-head">
+          <button appButton variant="ghost" size="sm" type="button" class="back-link">
+            <nostos-icon name="arrow-left" [size]="14" />
+            <span>Library</span>
+          </button>
+          <h3 class="page-title">To read</h3>
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">.side-nav rows</span>
+        <div class="side-nav catalogue-side-nav">
+          <div class="nav-group">
+            <span class="section-label">Places</span>
+            <button type="button" class="nav-item active">
+              <nostos-icon name="books" [size]="16" weight="light" />
+              <span class="label">All books</span>
+              <span class="count-badge">128</span>
+            </button>
+            <button type="button" class="nav-item">
+              <nostos-icon name="heart" [size]="16" weight="light" />
+              <span class="label">Favorites</span>
+              <span class="count-badge">9</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

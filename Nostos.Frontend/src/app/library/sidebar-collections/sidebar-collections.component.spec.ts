@@ -251,17 +251,39 @@ describe('SidebarCollections', () => {
       });
     });
 
-    it('shows the conflict message when a sibling name collides', () => {
+    it('keeps the field open with the conflict said under it when a sibling name collides', () => {
       collectionsService.update.mockReturnValue(
         throwError(() => ({
           error: { title: 'collection_name_conflict', detail: 'A collection named X already exists here.' },
         })),
       );
+      component.startRename({ id: 'nested-1' });
 
       component.saveRename('nested-1', 'X');
 
-      expect(toast.error).toHaveBeenCalledWith('A collection named X already exists here.');
+      expect(component.renameError()).toBe('A collection named X already exists here.');
+      expect(component.renameBusy()).toBe(false);
+      expect(component.editingId()).toBe('nested-1');
+      expect(toast.error).not.toHaveBeenCalledWith('A collection named X already exists here.');
+    });
+
+    it('closes the field once the rename is saved', () => {
+      collectionsService.update.mockReturnValue(of({}));
+      component.startRename({ id: 'root-1' });
+
+      component.saveRename('root-1', 'Renamed');
+
       expect(component.editingId()).toBeNull();
+      expect(component.renameError()).toBeNull();
+    });
+
+    it('leaves an open rename to its own field when the page is clicked', () => {
+      component.startRename({ id: 'root-1' });
+      component.onDocumentClick(new MouseEvent('click')); // the click that opened it
+      document.body.click();
+      component.onDocumentClick({ target: document.body } as unknown as MouseEvent);
+
+      expect(component.editingId()).toBe('root-1');
     });
   });
 
