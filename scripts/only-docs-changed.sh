@@ -8,7 +8,9 @@
 #
 # Documentation is Markdown anywhere except where the frontend serves or
 # imports it (Nostos.Frontend/public, Nostos.Frontend/src), plus everything
-# under the top-level docs/ directory.
+# under the top-level docs/ directory and the app-store packages in
+# deploy/app-stores/ (store templates and images; nothing there is built,
+# tested or copied into the image).
 set -uo pipefail
 
 base="${1:-}"
@@ -38,7 +40,7 @@ while IFS= read -r path; do
       echo "Code change: $path"
       exit 1
       ;;
-    docs/* | *.md)
+    docs/* | deploy/app-stores/* | *.md)
       ;;
     *)
       echo "Code change: $path"
