@@ -385,7 +385,6 @@ export class SidebarCollections implements OnInit {
       error: (err) => {
         this.toast.error(this.describeCollectionError(err));
         this.load();
-        this.deleteTarget.set(null);
         this.deleting.set(false);
       },
     });

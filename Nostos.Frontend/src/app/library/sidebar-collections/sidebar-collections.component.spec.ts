@@ -224,6 +224,22 @@ describe('SidebarCollections', () => {
     expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeNull();
   });
 
+  it('keeps the delete question open when the server refuses, and closes it when it deletes', () => {
+    fixture.detectChanges();
+    collectionsService.delete.mockReturnValueOnce(throwError(() => ({ error: {} })));
+
+    openDelete('c1');
+    acceptDelete();
+
+    expect(component.deleteTarget()?.id).toBe('c1');
+    expect(component.deleting()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeTruthy();
+
+    collectionsService.delete.mockReturnValueOnce(of(null));
+    acceptDelete();
+    expect(component.deleteTarget()).toBeNull();
+  });
+
   describe('rename', () => {
     it('sends the current parentId for a nested collection (rename must not move to root)', () => {
       collectionsService.list.mockReturnValue(of([rootCollection, nestedCollection]));

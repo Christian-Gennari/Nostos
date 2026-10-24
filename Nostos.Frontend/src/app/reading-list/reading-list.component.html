@@ -391,9 +391,10 @@
         type="submit"
         form="reading-list-edit-form"
         variant="primary"
+        [busy]="saving()"
         [disabled]="saving() || !editForm.title.trim()"
       >
-        Save
+        {{ saving() ? 'Saving…' : 'Save' }}
       </button>
     </app-dialog-actions>
   </app-modal-shell>

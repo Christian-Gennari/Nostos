@@ -6,6 +6,7 @@
     [maxHeight]="'90vh'"
     [layer]="100"
     [ariaLabel]="isEditMode() ? 'Edit book' : sourceMode() ? 'Find a book' : seededFromSource() ? 'Review book' : 'Add a book'"
+    [busy]="isSubmitting()"
     (closed)="closeModal.emit()"
   >
       <header class="modal-header" shellHeader>
@@ -38,6 +39,7 @@
           appIconButton
           icon="x"
           [glyphSize]="20"
+          [disabled]="isSubmitting()"
           (click)="closeModal.emit()"
           title="Close"
         ></button>
@@ -1020,7 +1022,7 @@
 
       @if (sourceMode()) {
         <app-dialog-actions shellActions>
-          <button appButton type="button" variant="secondary" (click)="closeModal.emit()">
+          <button appButton type="button" variant="secondary" [disabled]="isSubmitting()" (click)="closeModal.emit()">
             Cancel
           </button>
           <button appButton type="button" variant="secondary" (click)="showManualMode()">
@@ -1057,7 +1059,7 @@
               <span>Delete book</span>
             </button>
           }
-          <button appButton type="button" variant="secondary" (click)="closeModal.emit()">
+          <button appButton type="button" variant="secondary" [disabled]="isSubmitting()" (click)="closeModal.emit()">
             Cancel
           </button>
           @if (!awaitingLocalFile()) {
@@ -1066,6 +1068,7 @@
               type="submit"
               form="add-book-form"
               variant="primary"
+              [busy]="isSubmitting()"
               [disabled]="bookForm.invalid || !form.title.trim() || isSubmitting()"
             >
               {{

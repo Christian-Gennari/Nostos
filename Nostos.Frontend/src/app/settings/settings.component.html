@@ -389,9 +389,8 @@
                         <button
                           type="button"
                           appButton variant="secondary" size="sm"
-                          (click)="rotateManagedOpdsPassword()"
+                          (click)="requestManagedOpdsRotate()"
                           [disabled]="managedOpdsBusy() !== null"
-                          [busy]="managedOpdsBusy() === 'rotate'"
                           data-testid="rotate-managed-opds-password"
                         >
                           Regenerate password
@@ -2148,17 +2147,23 @@
       description="This overwrites your current database and book files with the backup data. A safety copy of the current database is made first, and you should restart the application after restore."
       confirmLabel="Restore"
       busyLabel="Restoring…"
+      icon="arrow-counter-clockwise"
       [busy]="restoring()"
       (confirm)="confirmRestore()"
       (cancel)="cancelRestore()"
     >
+      @if (restoring()) {
+        <p role="status" aria-live="polite">Restoring your library. Keep this page open.</p>
+      }
     </app-confirm-modal>
 
     <app-confirm-modal
       [isOpen]="!!pendingBackupDelete()"
-      heading="Delete this backup?"
+      [heading]="'Delete ' + backupName(pendingBackupDelete()) + '?'"
       description="The backup and its archive file are permanently removed."
-      confirmLabel="Delete"
+      confirmLabel="Delete backup"
+      busyLabel="Deleting…"
+      [busy]="deletingBackup()"
       (confirm)="confirmBackupDelete()"
       (cancel)="cancelBackupDelete()"
     >
@@ -2167,11 +2172,25 @@
 
     @if (managedEreaderAccess()) {
     <app-confirm-modal
+      [isOpen]="pendingOpdsRotate()"
+      heading="Regenerate the e-reader password?"
+      description="Readers still using the old password disconnect immediately. Save the new password when it is shown; it is not shown again."
+      confirmLabel="Regenerate"
+      busyLabel="Regenerating…"
+      icon="arrows-clockwise"
+      [busy]="managedOpdsBusy() === 'rotate'"
+      (confirm)="rotateManagedOpdsPassword()"
+      (cancel)="cancelManagedOpdsRotate()"
+    >
+    </app-confirm-modal>
+
+    <app-confirm-modal
       [isOpen]="pendingOpdsRevoke()"
       heading="Disable e-reader access?"
       description="Readers using these credentials will disconnect immediately. You can enable e-reader access again later with a new password."
-      confirmLabel="Disable"
+      confirmLabel="Disable access"
       busyLabel="Disabling…"
+      icon="x"
       [busy]="managedOpdsBusy() === 'revoke'"
       (confirm)="confirmManagedOpdsRevoke()"
       (cancel)="cancelManagedOpdsRevoke()"

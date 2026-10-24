@@ -322,6 +322,39 @@ describe('AddBookModal', () => {
     expect(component.isSubmitting()).toBe(false);
   });
 
+  it('cannot be closed by Escape, backdrop, Close or Cancel while the upload is running', () => {
+    const books = TestBed.inject(BooksService);
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: { id: 'new-book' } as unknown as Book, created: true }));
+    vi.spyOn(books, 'uploadFile').mockReturnValue(new Subject<any>());
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'ebook';
+    component.selectedFile.set(new File(['ebook'], 'magic-mountain.epub', { type: 'application/epub+zip' }));
+    const closed = vi.fn();
+    component.closeModal.subscribe(closed);
+
+    fixture.detectChanges();
+    component.submit();
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const submitButton = el.querySelector('button[type="submit"][form="add-book-form"]') as HTMLButtonElement;
+    expect(submitButton.getAttribute('aria-busy')).toBe('true');
+    expect((el.querySelector('#close-modal') as HTMLButtonElement).disabled).toBe(true);
+    const cancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    const backdrop = el.querySelector('.modal-backdrop') as HTMLElement;
+    for (const type of ['pointerdown', 'pointerup'] as const) {
+      const event = new Event(type, { bubbles: true }) as PointerEvent;
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      backdrop.dispatchEvent(event);
+    }
+    expect(closed).not.toHaveBeenCalled();
+  });
+
   it('keeps the add action locked after create returns while the file upload is running', () => {
     const books = TestBed.inject(BooksService);
     const createSpy = vi
