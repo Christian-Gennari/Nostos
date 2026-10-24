@@ -47,6 +47,9 @@
     </div>
 
     <div class="file-list">
+      @if (treeFailed()) {
+      <nostos-empty-state compact error message="Your writings could not be loaded." (retry)="loadTree()" />
+      } @else {
       <app-flat-tree
         [items]="rootItems()"
         [activeId]="activeItem()?.id || null"
@@ -60,6 +63,7 @@
         (nodeRenameSaved)="saveRename($event.id, $event.newName)"
         (nodeRenameCancelled)="cancelRename()"
       ></app-flat-tree>
+      }
     </div>
   </aside>
 

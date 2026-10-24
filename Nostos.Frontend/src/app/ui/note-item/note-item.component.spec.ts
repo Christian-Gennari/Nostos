@@ -186,7 +186,34 @@ describe('NoteItemComponent', () => {
       selectedText: NOTE.selectedText ?? undefined,
       highlightColour: 'blue',
     }]);
+    // The form waits for the save to settle.
+    expect(fixture.componentInstance.editing()).toBe(true);
+    expect(fixture.componentInstance.saving()).toBe(true);
+  });
+
+  function saveAndSettle(replaceNote: boolean): void {
+    render();
+    fixture.componentInstance.startEdit();
+    fixture.componentInstance.editContent.set('Words I do not want to lose.');
+    fixture.componentInstance.saveEdit();
+    fixture.componentRef.setInput('busy', true);
+    fixture.detectChanges();
+    if (replaceNote) fixture.componentRef.setInput('note', { ...NOTE, content: 'Words I do not want to lose.' });
+    fixture.componentRef.setInput('busy', false);
+    fixture.detectChanges();
+  }
+
+  it('closes the form once the saved note comes back', () => {
+    saveAndSettle(true);
     expect(fixture.componentInstance.editing()).toBe(false);
+    expect(fixture.componentInstance.saving()).toBe(false);
+  });
+
+  it('keeps the words in the form when the save failed', () => {
+    saveAndSettle(false);
+    expect(fixture.componentInstance.editing()).toBe(true);
+    expect(fixture.componentInstance.saving()).toBe(false);
+    expect(fixture.componentInstance.editContent()).toBe('Words I do not want to lose.');
   });
 
   it('emits nothing when an edit changed nothing', () => {

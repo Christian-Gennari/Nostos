@@ -22,6 +22,7 @@ import { AssistantService } from '../ui/assistant/assistant.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import { ProgressComponent } from '../ui/progress/progress.component';
@@ -77,6 +78,7 @@ interface Choice {
     LoadingIndicatorComponent,
     NoteFormatPipe,
     ProgressComponent,
+    EmptyStateComponent,
     QuoteBlockComponent,
     InputDirective,
     TopicChipComponent,
@@ -204,6 +206,11 @@ export class BrainSortPage {
     this.position.read().pipe(takeUntilDestroyed(this.destroyRef)).subscribe((saved) => {
       this.loadPage(saved?.queue === this.queueKey ? saved.noteId : null);
     });
+  }
+
+  /** Tries the first page again after it failed. */
+  retry(): void {
+    this.loadPage();
   }
 
   /** Fetches the next page; while resuming, keeps fetching (up to 8 pages) until the remembered note is found. */

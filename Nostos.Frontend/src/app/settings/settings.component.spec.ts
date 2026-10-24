@@ -1643,6 +1643,32 @@ describe('SettingsComponent backup-only surface', () => {
     expect(root.querySelector('#backup-history-list')?.textContent).toContain('Restore');
   });
 
+  it('words backup statuses and tones them: In progress is neutral, Failed the one alarm', () => {
+    const entry = (id: string, status: string) => ({
+      id,
+      createdAt: '2026-10-07T00:30:00Z',
+      sizeBytes: 1_024,
+      provider: 'Local',
+      status,
+      includeBookFiles: true,
+    });
+    backupServiceMock.getHistory.mockReturnValueOnce(
+      of([entry('a', 'InProgress'), entry('b', 'Completed'), entry('c', 'Failed')]) as never,
+    );
+    openManageLibraryPage();
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    (root.querySelector('[data-testid="backup-history-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const badges = Array.from(root.querySelectorAll('#backup-history-list .history-actions [appBadge]')) as HTMLElement[];
+    expect(badges.map((b) => b.textContent?.trim())).toEqual(['In progress', 'Completed', 'Failed']);
+    expect(badges[0].className).not.toMatch(/danger|success/);
+    expect(badges[1].className).toMatch(/success/);
+    expect(badges[2].className).toMatch(/danger/);
+  });
+
   it('exposes the automatic-backup toggle and manual backup action', () => {
     openManageLibraryPage();
     const toggles = fixture.debugElement.queryAll(By.css('input[type="checkbox"]'));

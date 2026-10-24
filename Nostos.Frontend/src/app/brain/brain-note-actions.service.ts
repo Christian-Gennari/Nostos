@@ -15,6 +15,8 @@ export interface BrainNoteHost {
   replace(note: NoteSearchHit): void;
   /** A note is gone. */
   remove(noteId: string): void;
+  /** An edit was saved: `note` is the saved note, `edit` what was changed. */
+  edited?(note: Note, edit: NoteItemEdit): void;
 }
 
 /**
@@ -102,12 +104,18 @@ export class BrainNoteActionsService {
     });
   }
 
-  /** Saves an edit, then shows the note as the server now has it. */
-  edit(edit: NoteItemEdit): void {
+  /**
+   * Saves an edit, then shows the note as the server now has it. `quiet` skips
+   * the "Note saved" toast (a pen change); a failure always toasts.
+   */
+  edit(edit: NoteItemEdit, options: { quiet?: boolean } = {}): void {
     this.setBusy([edit.id], true);
     const { id, ...dto } = edit;
     this.notes.update(id, dto).subscribe({
-      next: () => this.reload(id, 'Note saved'),
+      next: (saved) => {
+        this.host?.edited?.(saved, edit);
+        this.reload(id, options.quiet ? null : 'Note saved');
+      },
       error: () => {
         this.setBusy([id], false);
         this.toast.error('Could not save the note. Try again.');

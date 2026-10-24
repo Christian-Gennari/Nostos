@@ -1404,6 +1404,25 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(component.keptSourcesState()).toBe('loaded');
   });
 
+  it('says the file list could not be loaded, with Try again, and opens a failed writing with a toast', () => {
+    writingsService.list.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.loadTree();
+    fixture.detectChanges();
+
+    const list = fixture.nativeElement.querySelector('.file-list') as HTMLElement;
+    expect(list.querySelector('[role="alert"]')?.textContent).toContain('Your writings could not be loaded.');
+    expect(list.querySelector('app-flat-tree')).toBeNull();
+
+    (list.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(list.querySelector('[role="alert"]')).toBeNull();
+    expect(list.querySelector('app-flat-tree')).not.toBeNull();
+
+    writingsService.get.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.handleItemSelected({ id: 'doc-1', name: 'Chapter 1', type: 'Document' });
+    expect(toastService.error).toHaveBeenCalledWith('Could not open the writing. Try again.');
+  });
+
   // 4. keep action calls addSource with the active document id + note id.
   it('keep action calls addSource with active document id and note id', () => {
     component.activeItem.set(sampleDoc1);

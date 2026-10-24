@@ -23,6 +23,7 @@ import { CollectionsService } from '../../core/services/collections.service';
 import { Collection, CollectionCountDto } from '../../core/dtos/collection.dtos';
 import { LibraryStatusCountsDto } from '../../core/dtos/book.dtos';
 import { BooksService } from '../../core/services/books.service';
+import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import { ConfirmModal } from '../../ui/confirm-modal/confirm-modal.component';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { FlatTreeComponent } from '../../ui/flat-tree/flat-tree.component';
@@ -47,6 +48,7 @@ import { BrandLockupComponent } from '../../ui/brand-lockup/brand-lockup.compone
     BrandLockupComponent,
     FlatTreeComponent,
     ConfirmModal,
+    EmptyStateComponent,
   ],
   templateUrl: './sidebar-collections.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -197,17 +199,30 @@ export class SidebarCollections implements OnInit {
     if (!isInsideInputRow) this.resetInput();
   }
 
+  /** The collections or their counts could not be read: say so, not "No collections yet". */
+  readonly collectionsFailed = signal(false);
+  private countsFailed = signal(false);
+  readonly loadFailed = computed(() => this.collectionsFailed() || this.countsFailed());
+
   load(): void {
+    this.collectionsFailed.set(false);
     this.collectionsService.list().subscribe({
       next: (cols) => this.collections.set(cols),
-      error: () => this.toast.error('Could not load collections'),
+      error: () => this.collectionsFailed.set(true),
     });
   }
 
   loadCounts(): void {
+    this.countsFailed.set(false);
     this.collectionsService.getCounts().subscribe({
       next: (counts) => this.counts.set(counts),
+      error: () => this.countsFailed.set(true),
     });
+  }
+
+  retryLoad(): void {
+    this.load();
+    this.loadCounts();
   }
 
   loadStatusCounts(): void {

@@ -30,6 +30,8 @@ import {
   BackupSettings,
   BackupHistoryItem,
   BackupProgress,
+  backupStatusLabel,
+  backupStatusTone,
 } from '../core/dtos/backup.dtos';
 import { ManagedOpdsAccess, OpdsInfo } from '../core/dtos/opds.dtos';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -838,6 +840,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   /** Backup id awaiting archive-delete confirmation (asked through ConfirmModal). */
   pendingBackupDelete = signal<string | null>(null);
   progress = signal<BackupProgress>(defaultProgress);
+  readonly backupStatusLabel = backupStatusLabel;
+  readonly backupStatusTone = backupStatusTone;
   showSlowNotice = signal(false);
   private stepChangedAt = 0;
   private slowNoticeInterval: ReturnType<typeof setInterval> | null = null;

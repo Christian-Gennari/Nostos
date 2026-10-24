@@ -1562,9 +1562,9 @@
               Last backup {{ status().lastBackupAt | nostosDate: 'datetime' }}
               <span
                 appBadge
-                [tone]="status().lastBackupStatus === 'Completed' ? 'success' : 'danger'"
+                [tone]="backupStatusTone(status().lastBackupStatus)"
               >
-                {{ status().lastBackupStatus }}
+                {{ backupStatusLabel(status().lastBackupStatus) }}
               </span>
             </div>
           }
@@ -1624,9 +1624,9 @@
                 <div class="history-actions">
                   <span
                     appBadge
-                    [tone]="item.status === 'Completed' ? 'success' : item.status === 'Failed' ? 'danger' : 'neutral'"
+                    [tone]="backupStatusTone(item.status)"
                   >
-                    {{ item.status }}
+                    {{ backupStatusLabel(item.status) }}
                   </span>
                   @if (item.status === 'Completed') {
                     <button
@@ -1664,9 +1664,7 @@
             <div class="progress-step-label">
               Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
             </div>
-            <div class="progress-bar">
-              <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
-            </div>
+            <nostos-progress [value]="progress().percentComplete" [label]="progress().currentStep" />
             @if (showSlowNotice()) {
               <div appNotice tone="caution" class="slow-notice">
                 This step may take a few minutes for large libraries.

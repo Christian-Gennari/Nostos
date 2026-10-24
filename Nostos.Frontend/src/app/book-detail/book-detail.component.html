@@ -430,7 +430,7 @@
               ></app-topic-input>
 
               @if (newNote().length > 0) {
-              <button appButton variant="primary" size="sm" (click)="addNote()">Save</button>
+              <button appButton variant="primary" size="sm" [disabled]="store.noteSaving()" (click)="addNote()">Save</button>
               }
             </div>
 
@@ -463,7 +463,11 @@
                 (restored)="noteActions.restored($event)"
               />
               } @empty {
+              @if (store.notesFailed()) {
+              <nostos-empty-state class="notes-empty" compact error message="Your notes could not be loaded." (retry)="store.loadNotes(store.book()!.id)" />
+              } @else {
               <nostos-empty-state class="notes-empty" compact concept="note" message="No notes yet — jot down your first thought above." />
+              }
               }
             </div>
           </div>

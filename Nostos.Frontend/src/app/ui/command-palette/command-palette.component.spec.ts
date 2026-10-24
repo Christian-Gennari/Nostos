@@ -247,6 +247,24 @@ describe('CommandPalette', () => {
       expect(fixture.nativeElement.querySelector('.palette-empty').textContent).toContain('Nothing matches');
     });
 
+    it('says the search failed, with Try again, when nothing could be searched', () => {
+      booksList.mockReturnValue(throwError(() => new Error('offline')));
+      notesSearch.mockReturnValue(throwError(() => new Error('offline')));
+      openPalette();
+      type('zzzz');
+
+      const alert = fixture.nativeElement.querySelector('nostos-empty-state[role="alert"], nostos-empty-state [role="alert"]');
+      expect(alert?.textContent).toContain('Search could not be completed.');
+      expect(fixture.nativeElement.querySelector('.palette-empty')).toBeNull();
+
+      booksList.mockReturnValue(of({ items: [], totalCount: 0 }));
+      notesSearch.mockReturnValue(of([]));
+      component.retrySearch();
+      vi.advanceTimersByTime(250);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.palette-empty').textContent).toContain('Nothing matches');
+    });
+
     it('keeps a section when the other search fails', () => {
       notesSearch.mockReturnValue(throwError(() => new Error('notes search failed')));
       booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'Attention', author: null }], totalCount: 1 }));
