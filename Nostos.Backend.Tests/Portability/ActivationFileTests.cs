@@ -188,6 +188,29 @@ public sealed class ActivationFileTests
         verify.Should().Throw<Exception>();
     }
 
+    // The image ships for amd64 and arm64, where O_DIRECTORY has different
+    // values. Opening a regular file must fail on every architecture the tests
+    // run on, which only holds if the flag really is O_DIRECTORY there.
+    [Fact]
+    public void FlushDirectory_FlushesDirectories_AndRefusesRegularFiles()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var root = Path.Combine(Path.GetTempPath(), $"nostos-flush-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            ActivationFileSystem.FlushDirectory(root);
+            var file = Path.Combine(root, "file");
+            File.WriteAllText(file, "x");
+            Action onFile = () => ActivationFileSystem.FlushDirectory(file);
+            onFile.Should().Throw<IOException>();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     internal static IEnumerable<SelfHostedActivationPhase> Route(SelfHostedActivationPhase phase)
     {
         if (phase is SelfHostedActivationPhase.RollingBack or SelfHostedActivationPhase.RolledBack)

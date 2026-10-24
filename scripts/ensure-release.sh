@@ -84,6 +84,13 @@ fi
 if [ -n "$release_digest" ]; then
   echo "Image tag $version: present at $release_digest."
 else
+  # Releases from before the arm64 build are amd64 only. Say so rather than
+  # refuse: such a release is still runnable on amd64.
+  platforms="$(docker buildx imagetools inspect "$image@$source_digest" --raw 2>/dev/null \
+    | jq -r '[.manifests[]?.platform | select(. != null and .os != "unknown") | "\(.os)/\(.architecture)"] | unique | join(",")' 2>/dev/null || true)"
+  if [ "$platforms" != "linux/amd64,linux/arm64" ]; then
+    echo "::warning::$source_image is for '${platforms:-one platform}', not linux/amd64 and linux/arm64."
+  fi
   echo "Image tag $version: adding to $source_image ($source_digest)."
   write docker buildx imagetools create --tag "$image:$version" "$image@$source_digest"
 fi
