@@ -103,6 +103,19 @@ export class BrainTopicActionsService {
       return;
     }
 
+    // A name another topic already has is a merge: ask, as "Merge into…" does.
+    const key = name.toLocaleUpperCase();
+    const existing = this.state.topics().find((t) => t.id !== id && t.name.trim().toLocaleUpperCase() === key);
+    if (existing) {
+      this.renameId.set(null);
+      this.renameError.set(null);
+      this.mergeSource.set(topic);
+      this.mergeQuery.set('');
+      this.mergeTargetId.set(existing.id);
+      this.mergeConfirming.set(true);
+      return;
+    }
+
     this.renaming.set(true);
     this.renameError.set(null);
     this.topicsService.rename(id, name).subscribe({
