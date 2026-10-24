@@ -503,6 +503,49 @@ public sealed class HighlightImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_starter_draft_offers_the_passages_an_import_just_brought_in()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
+        var clippings = Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt");
+        var preview = await PreviewAsync(client, clippings);
+        var exact = preview.Books.Single(book => book.Title == "Pride and Prejudice");
+        var meditations = preview.Books.Single(book => book.Title == "Meditations (Penguin Classics)");
+
+        // Nothing imported yet: nothing to start from.
+        (await StarterAsync(client, null)).Should().BeEmpty();
+
+        var result = await CommitAsync(client, clippings,
+            new HighlightImportDecision(exact.SourceKey, austen.Id),
+            new HighlightImportDecision(meditations.SourceKey, Create: true));
+
+        var picked = await StarterAsync(client, result.BatchId!.Value.ToString());
+
+        // One passage per book, the one the reader wrote a note on first.
+        picked.Select(hit => hit.BookTitle).Should().Equal("Pride and Prejudice", "Meditations (Penguin Classics)");
+        picked[0].SelectedText.Should().StartWith("It is a truth universally acknowledged, that");
+        picked[0].Content.Should().Be("The famous opening.");
+        picked[0].BookAuthor.Should().Be("Jane Austen");
+
+        // Without a batch, the library's imported highlights answer the same.
+        (await StarterAsync(client, null)).Select(hit => hit.Id).Should().Equal(picked.Select(hit => hit.Id));
+        // An import that no longer exists offers nothing.
+        (await StarterAsync(client, Guid.NewGuid().ToString())).Should().BeEmpty();
+
+        (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await StarterAsync(client, null)).Should().BeEmpty();
+    }
+
+    private static async Task<List<NoteSearchHitDto>> StarterAsync(HttpClient client, string? batchIds)
+    {
+        var url = batchIds is null ? "/api/notes/imports/starter" : $"/api/notes/imports/starter?batchIds={batchIds}";
+        var response = await client.GetAsync(url);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<List<NoteSearchHitDto>>())!;
+    }
+
+    [Fact]
     public async Task A_readwise_export_imports_books_and_reports_what_it_left_out()
     {
         using var factory = new LibraryEndpointFactory();

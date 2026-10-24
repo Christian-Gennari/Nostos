@@ -203,6 +203,24 @@ public static class NotesEndpoints
                 Results.Ok(await importer.ListBatchesAsync(5, ct))
         );
 
+        // STARTER DRAFT (issue #1220): the imported highlights a first draft
+        // opens with. `batchIds` narrows it to an import just made; without
+        // it, the library's most recently imported highlights.
+        group.MapGet(
+            "/notes/imports/starter",
+            async (string? batchIds, HighlightImportService importer, CancellationToken ct) =>
+            {
+                var ids = (batchIds ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(value => Guid.TryParse(value, out var id) ? id : Guid.Empty)
+                    .Where(id => id != Guid.Empty)
+                    .Distinct()
+                    .Take(50)
+                    .ToList();
+                return Results.Ok(await importer.StarterPassagesAsync(ids, ct));
+            }
+        );
+
         // UNDO one import: removes the notes it created, nothing else.
         group.MapDelete(
             "/notes/imports/batches/{id}",
