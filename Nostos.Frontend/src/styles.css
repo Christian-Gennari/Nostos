@@ -913,7 +913,7 @@
   /* ── Accent — the palette's own primary, used as the accent role ──
      The artifact's prose accent is spruce #3a5d53, but spruce on this ground
      is only 2.64:1 and --color-accent is read as INK at 13 sites (the topic
-     tag, note-card's left border, flat-tree topic ink, the dock dot and
+     tag, the old note card's left border, flat-tree topic ink, the dock dot and
      focus outline, the route-progress gradient). So the accent takes the
      frontmatter's `primary` #a9cfc2 instead — which is the SAME HUE family as
      the prose spruce (hue 159.5 against 162.9), i.e. a lightening of the

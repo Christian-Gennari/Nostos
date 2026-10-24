@@ -765,19 +765,31 @@
       </div>
 
       <div class="notes-list">
-        @for (note of dbNotes(); track note.id) {
-        <app-note-card
-          [note]="note"
-          [attr.data-note-id]="note.id"
-          [class.is-flashed]="flashedNoteId() === note.id"
-          [topicMap]="topicMap()"
-          [showNavigation]="true"
-          [audioTime]="noteAudioTime(note)"
+        @for (row of noteRows(); track row.note.id) {
+        <app-note-item
+          [note]="row.item"
+          [class.is-flashed]="flashedNoteId() === row.note.id"
+          [topics]="brain.topics()"
+          [topicMap]="brain.lookup()"
+          [showBook]="false"
+          [showMoreFromBook]="false"
+          [canSelect]="false"
+          [inBook]="true"
+          [audioTime]="noteAudioTime(row.note)"
           [passageViewerOptions]="passageViewerOptions"
-          (update)="onUpdateNote($event)"
-          (delete)="onDeleteNote($event)"
-          (cardClick)="onJumpToNote(note)"
-        ></app-note-card>
+          [busy]="noteActions.busy().has(row.note.id)"
+          [suggestions]="suggestions.namesFor(row.note.id)"
+          [suggestionState]="suggestions.stateFor(row.note.id)"
+          (topicAdded)="noteActions.addTopic(row.item, $event)"
+          (topicRemoved)="noteActions.removeTopic(row.item, $event)"
+          (pickerOpened)="suggestions.request(row.item)"
+          (pickerClosed)="suggestions.closeFor(row.note.id)"
+          (edited)="onUpdateNote($event)"
+          (keepWithWriting)="noteActions.keepWithWriting([row.note.id])"
+          (deleteRequested)="onDeleteNote(row.note.id)"
+          (restored)="noteActions.restored($event)"
+          (jumpRequested)="onJumpToNote(row.note)"
+        />
         } @empty {
         <div class="empty-state">
           <nostos-icon name="note" [size]="40"></nostos-icon>
@@ -869,6 +881,9 @@
     (cancel)="cancelNoteDelete()"
   >
   </app-confirm-modal>
+
+  <!-- Keep with writing, from a note's menu in the notes panel. -->
+  <app-brain-note-dialogs />
 
   <!-- EPUB typography: typeface, text size, line height, margins. Anchored under
        the Aa control it belongs to, with a scrim so a click outside closes it and

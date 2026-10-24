@@ -12,7 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
 
-import { isPassage, passageSizeLabel, type NoteSearchHit } from '../../core/dtos/note.dtos';
+import { formatAudioTime, isPassage, passageSizeLabel, type NoteSearchHit } from '../../core/dtos/note.dtos';
 import { noteSourceLink } from '../../core/note-source';
 import type { TopicDto } from '../../core/services/topics.service';
 import {
@@ -31,7 +31,7 @@ import { InputDirective, TextareaDirective } from '../form-control/form-control.
 import { TopicInputComponent } from '../topic-input.component/topic-input.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NoteCaptureDetailsComponent } from '../note-capture-details/note-capture-details.component';
-import { PassageViewerService } from '../passage-viewer/passage-viewer.service';
+import { PassageViewerService, type PassageViewerRequest } from '../passage-viewer/passage-viewer.service';
 import {
   TopicPickerPopoverComponent,
   type TopicSuggestionState,
@@ -103,6 +103,7 @@ export interface CitingWriting {
     class: 'note-item',
     '[class.is-selected]': 'selected()',
     '[class.is-busy]': 'busy()',
+    '[class.is-read-only]': 'readOnly()',
     '[attr.data-note-id]': 'note().id',
   },
 })
@@ -116,14 +117,40 @@ export class NoteItemComponent {
    * into links. Built here from `topics` only when no list passes it.
    */
   readonly topicMap = input<ReadonlyMap<string, TopicDto> | null>(null);
-  /** False where a heading above already names the book. */
   /**
    * The writings that cite this note (issue #1162), newest edited first. When
    * there are any, the meta line says "Cited in N writings" as a quiet button
    * whose menu opens each one in the Studio.
    */
   readonly citedWritings = input<readonly CitingWriting[]>([]);
+  /** False where a heading above already names the book. */
   readonly showBook = input(true);
+  /**
+   * The note is shown inside its own open book (the reader's notes panel):
+   * "Open in book" turns into "Show in book" and asks for `jumpRequested`
+   * instead of opening the reader again.
+   */
+  readonly inBook = input(false);
+  /**
+   * The playback time an audiobook note was taken at, in seconds (issue #906).
+   * Shown at the start of the meta line; activating it asks for `jumpRequested`.
+   * Null shows nothing.
+   */
+  readonly audioTime = input<number | null>(null);
+  /**
+   * How the passage viewer opened from this note behaves (issue #1014). The
+   * reader passes its own "Open in book", which turns the open book.
+   */
+  readonly passageViewerOptions = input<Omit<PassageViewerRequest, 'noteId'> | null>(null);
+  /**
+   * Shows the note only: no menu, no topic chips or controls (its `[[links]]`
+   * stay in its words), no capture details. For a
+   * surface that offers its own actions around the note (the Studio's
+   * inspected source).
+   */
+  readonly readOnly = input(false);
+  /** False where the surface names the note's source itself: no meta line. */
+  readonly showMeta = input(true);
   /** Offer "More from this book" (not when the list is already that book). */
   readonly showMoreFromBook = input(true);
   /** A topic change for this note is in flight: its topic controls wait. */
@@ -149,6 +176,8 @@ export class NoteItemComponent {
   readonly selectedChange = output<boolean>();
   readonly deleteRequested = output<void>();
   readonly restored = output<Note>();
+  /** With `inBook` or an `audioTime`: go to the note's place in the open book. */
+  readonly jumpRequested = output<void>();
 
   private readonly passageViewer = inject(PassageViewerService);
   private readonly router = inject(Router);
@@ -172,7 +201,13 @@ export class NoteItemComponent {
   readonly isPassage = computed(() => isPassage(this.note()));
   readonly passageSize = computed(() => passageSizeLabel(this.note()));
   readonly quote = computed(() => this.note().selectedText?.trim() ?? '');
-  readonly thought = computed(() => thoughtForDisplay(this.note().content));
+  /**
+   * The note's words. Where the topics are listed as chips, lines holding only
+   * `[[Topic]]` references are left out; a read-only note has no chips, so it
+   * keeps them, as links.
+   */
+  readonly thought = computed(() =>
+    this.readOnly() ? (this.note().content ?? '').trim() : thoughtForDisplay(this.note().content));
   readonly topicNames = computed(() => this.note().topicNames ?? []);
   readonly location = computed(() => noteLocationLabel(this.note()));
 
@@ -199,6 +234,11 @@ export class NoteItemComponent {
 
   readonly source = computed(() => noteSourceLink(this.note()));
 
+  readonly audioTimeLabel = computed(() => {
+    const seconds = this.audioTime();
+    return seconds === null ? null : formatAudioTime(seconds);
+  });
+
   openPicker(): void {
     if (this.busy()) return;
     this.pickerOpen.set(true);
@@ -217,7 +257,7 @@ export class NoteItemComponent {
   }
 
   readPassage(): void {
-    this.passageViewer.open(this.note().id, {});
+    this.passageViewer.open(this.note().id, this.passageViewerOptions() ?? {});
   }
 
   /**

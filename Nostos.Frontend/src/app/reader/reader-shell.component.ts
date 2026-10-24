@@ -6,7 +6,6 @@ import { FormsModule } from '@angular/forms';
 // Services
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
-import { TopicsService, TopicDto } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 
 // DTOs & Interfaces
@@ -52,7 +51,12 @@ import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.comp
 import { EditionPlaceKeeper, KeeperPlace } from './switch-edition/edition-place-keeper';
 import { AlignmentService } from '../core/services/alignment.service';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
-import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteItemComponent } from '../ui/note-item/note-item.component';
+import { noteAsItem } from '../ui/note-item/note-item.helpers';
+import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
+import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
+import { BrainStateService } from '../brain/brain-state.service';
+import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
@@ -60,7 +64,7 @@ import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigat
 import { ThemePickerComponent } from '../ui/theme-picker/theme-picker.component';
 import { ToastService } from '../core/services/toast.service';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
-import { Passage, passageReadingMinutes, passageSizeLabel } from '../core/dtos/note.dtos';
+import { NoteSearchHit, Passage, passageReadingMinutes, passageSizeLabel } from '../core/dtos/note.dtos';
 import { PassageViewerRequest } from '../ui/passage-viewer/passage-viewer.service';
 import {
   PassageDraft,
@@ -168,7 +172,8 @@ function readAloudFallbackNotice(code: string | null): string {
     AudioReader,
     SwitchEditionDialog,
     TopicInputComponent,
-    NoteCardComponent,
+    NoteItemComponent,
+    BrainNoteDialogsComponent,
     IconButtonComponent,
     ButtonComponent,
     ConfirmModal,
@@ -184,13 +189,24 @@ function readAloudFallbackNotice(code: string | null): string {
     ModalShell,
     ThemePickerComponent,
   ],
-  providers: [ReadAloudController],
+  providers: [ReadAloudController, BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './reader-shell.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './reader-shell.component.css',
 })
 export class ReaderShell implements OnInit, OnDestroy {
   constructor() {
+    // The notes panel shows each note as the Brain does, topics included; its
+    // topic changes, Keep with writing and restores go through the Brain's own
+    // note actions. Edits and deletes stay here: they repaint the page.
+    this.brain.ensureLoaded();
+    // The [[ autocomplete offers the same topics, kept current by every change.
+    effect(() => this.autocompleteService.setTopics(this.brain.topics()));
+    this.noteActions.attach({
+      replace: (hit) => this.replaceNoteFromHit(hit),
+      remove: (noteId) => this.dbNotes.update((notes) => notes.filter((note) => note.id !== noteId)),
+    });
+
     // Read aloud follows whichever text reader is mounted.
     effect(() => {
       const source = this.activeReader()?.readAloud ?? null;
@@ -357,7 +373,9 @@ export class ReaderShell implements OnInit, OnDestroy {
   private location = inject(Location);
   private booksService = inject(BooksService);
   private notesService = inject(NotesService);
-  private topicsService = inject(TopicsService);
+  readonly brain = inject(BrainStateService);
+  readonly noteActions = inject(BrainNoteActionsService);
+  readonly suggestions = inject(BrainTopicSuggestionsService);
   private autocompleteService = inject(TopicAutocompleteService);
 
   private toast = inject(ToastService);
@@ -844,6 +862,16 @@ export class ReaderShell implements OnInit, OnDestroy {
   highlightSaving = signal(false);
 
   dbNotes = signal<Note[]>([]);
+  /**
+   * Each note's topics, by note id. The reader's own list of notes does not
+   * carry them, so they are read from the Brain's listing of this book.
+   */
+  readonly noteTopicNames = signal<ReadonlyMap<string, readonly string[]>>(new Map());
+  /** The notes panel's rows: each note, and the same note as its item shows it. */
+  readonly noteRows = computed(() => {
+    const topics = this.noteTopicNames();
+    return this.dbNotes().map((note) => ({ note, item: noteAsItem(note, topics.get(note.id)) }));
+  });
   quickNoteContent = signal('');
   quickNoteSaving = signal(false);
   /**
@@ -862,7 +890,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   pendingNoteDelete = signal<string | null>(null);
 
   // Topic map for the note cards
-  topicMap = signal<Map<string, TopicDto>>(new Map());
+  /** The topics by lower-cased name, for [[ ]] links in notes (the Brain's own). */
+  readonly topicMap = computed(() => this.brain.lookup());
 
   // --- UNIFIED READER LOGIC ---
   fileType = computed<'pdf' | 'epub' | 'audio' | null>(() => {
@@ -1014,7 +1043,6 @@ export class ReaderShell implements OnInit, OnDestroy {
       }),
       { explicit: true },
     );
-    this.loadTopics();
     this.watchBookNavigation();
     this.watchGroundedSourceNavigation();
   }
@@ -1239,18 +1267,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     void reader.goToSource(target);
   }
 
+  /** The topics changed (a note was saved): read them again. */
   loadTopics() {
-    this.topicsService.list().subscribe({
-      next: (topics) => {
-        // Populate service for autocomplete
-        this.autocompleteService.setTopics(topics);
-
-        // Populate map for NoteCard display
-        const map = new Map<string, TopicDto>();
-        topics.forEach((c) => map.set(c.name.trim().toLowerCase(), c));
-        this.topicMap.set(map);
-      },
-    });
+    this.brain.refresh();
   }
 
   // ------------------------------------------------------------------
@@ -1430,6 +1449,41 @@ export class ReaderShell implements OnInit, OnDestroy {
   loadNotes(bookId: string) {
     this.notesService.list(bookId).subscribe((notes) => {
       this.dbNotes.set(notes.reverse());
+    });
+    this.loadNoteTopics(bookId);
+  }
+
+  private noteTopicsSeq = 0;
+
+  /** Every note's topics in this book, read 200 at a time until all are in. */
+  private loadNoteTopics(bookId: string): void {
+    const seq = ++this.noteTopicsSeq;
+    const page = (held: Map<string, readonly string[]>, offset: number) =>
+      this.notesService.browse({ bookId, limit: 200, offset }).subscribe({
+        next: (result) => {
+          if (seq !== this.noteTopicsSeq) return;
+          result.items.forEach((hit) => held.set(hit.id, hit.topicNames ?? []));
+          const read = offset + result.items.length;
+          if (result.items.length && read < result.totalCount) page(held, read);
+          else this.noteTopicNames.set(held);
+        },
+      });
+    page(new Map(), 0);
+  }
+
+  /** A note as the Brain's actions now have it: its topics and its words. */
+  private replaceNoteFromHit(hit: NoteSearchHit): void {
+    this.noteTopicNames.update((current) => new Map(current).set(hit.id, hit.topicNames ?? []));
+    this.dbNotes.update((notes) =>
+      notes.map((note) => (note.id === hit.id ? { ...note, content: hit.content } : note)),
+    );
+  }
+
+  /** A [[link]] written in a note links a topic: show the note's topics as saved. */
+  private refreshNoteTopics(noteId: string): void {
+    this.notesService.get(noteId).subscribe({
+      next: (hit) =>
+        this.noteTopicNames.update((current) => new Map(current).set(hit.id, hit.topicNames ?? [])),
     });
   }
 
@@ -1719,6 +1773,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.notesService.update(note.id, { content }).subscribe({
       next: (updated) => {
         this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
+        this.refreshNoteTopics(updated.id);
         // The dotted rule under the mark follows whether it now has a note.
         this.activeReader()?.recolourHighlight?.(updated, noteHighlightColour(updated));
         this.highlightNoteSaving.set(false);
@@ -1913,6 +1968,8 @@ export class ReaderShell implements OnInit, OnDestroy {
         next: (updated) => {
           // Update local state so we see the change immediately without reload
           this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
+          this.refreshNoteTopics(updated.id);
+          this.loadTopics();
           // A changed pen, or a note added to or cleared from a highlight, is
           // redrawn on the page now, not at the next open.
           if (updated.cfiRange) {

@@ -16,7 +16,7 @@ Nostos UI v1 has four layers:
 | **Foundations** | `src/styles.css` token graph | colour, type, radius, elevation, motion, focus, control heights |
 | **Primitives** | `src/app/ui/` | Button, IconButton, Input/Textarea, Dropdown, Switch, Chip, Badge |
 | **Patterns** | shared composition/recipes | FormField, ModalShell + DialogActions, Toast, segmented visual recipe |
-| **Product components** | feature surfaces | BookCard, NoteCard, Reader transport, Studio editor/tree, assistant recording, acquisition workflows |
+| **Product components** | feature surfaces | BookCard, NoteItem, Reader transport, Studio editor/tree, assistant recording, acquisition workflows |
 
 The boundary is semantic, not visual similarity. Use a primitive when the control is
 an ordinary instance of that role. Keep a control product-owned when its interaction,
@@ -81,7 +81,7 @@ toggle state directly on that host.
 | `pressed` | `boolean \| null` | `null` | Emits `aria-pressed` only for a real toggle |
 
 Radius and surface-specific active treatment are intentionally **not** inputs. Reader,
-Library, NoteCard and Studio use different measured radii and selected-state contracts;
+Library, NoteItem and Studio use different measured radii and selected-state contracts;
 the primitive owns the stable icon-button box and glyph path, not those product semantics.
 
 ```html
@@ -524,40 +524,51 @@ Drag is disabled during inline rename (`editingId` matches node).
 
 ---
 
-## NoteCardComponent
+## NoteItemComponent
 
-**Selector:** `app-note-card`  
-**File:** `src/app/ui/note-card.component/`
+**Selector:** `app-note-item`  
+**File:** `src/app/ui/note-item/`
 
-Displays a single note with rich formatting. Supports inline editing, topic tags, and various display configurations.
+One note, the same everywhere a note is shown: the Brain's lists and note page,
+a book's notes, the reader's notes panel and the Studio's inspected source. No
+box: the quote in the pen's accent rail, the reader's own words, the topics as
+chips (open, remove, add with a picker), where the note comes from, and a `⋯`
+`nostos-menu` for the rest. A passage shows its title, size and opening and is
+read in the passage viewer. The item owns no data: it says what was asked for
+through outputs and shows whatever note it is given back. It sizes itself from
+its own width (a container query), so a narrow panel on a wide screen gets the
+narrow layout.
 
 ### Inputs
 
-| Input            | Type                      | Default | Description                      |
-| ---------------- | ------------------------- | ------- | -------------------------------- |
-| `note`           | `Note` (required)         | —       | Note data                        |
-| `topicMap`     | `Map<string, TopicDto>` | `null`  | For rendering `[[Topic]]` tags |
-| `showNavigation` | `boolean`                 | `true`  | Show "Go to book" link           |
-| `showActions`    | `boolean`                 | `true`  | Show edit/delete buttons         |
-| `showSource`     | `boolean`                 | `false` | Show book title source label     |
-| `showDate`       | `boolean`                 | `true`  | Show creation date               |
+| Input                  | Type                                  | Default | Description |
+| ---------------------- | ------------------------------------- | ------- | ----------- |
+| `note`                 | `NoteSearchHit` (required)            | —       | The note; `noteAsItem(note, topicNames)` turns a book's `Note` into one |
+| `topics` / `topicMap`  | `TopicDto[]` / `Map<string, TopicDto>` | `[]` / built | Every topic, for the picker, chips and inline `[[links]]` |
+| `citedWritings`        | `CitingWriting[]`                     | `[]`    | "Cited in N writings" in the meta line |
+| `showBook`             | `boolean`                             | `true`  | False where a heading already names the book |
+| `showMoreFromBook`     | `boolean`                             | `true`  | Offer "More from this book" |
+| `canSelect` / `selectable` / `selected` | `boolean`            | `true` / `false` / `false` | Multi-select in lists |
+| `busy`                 | `boolean`                             | `false` | A topic change is in flight |
+| `suggestions` / `suggestionState` | `string[]` / state         | `[]` / `'off'` | AI topic suggestions for the picker |
+| `inBook`               | `boolean`                             | `false` | Shown inside its own open book: "Show in book" emits `jumpRequested` instead of routing |
+| `audioTime`            | `number \| null`                      | `null`  | An audiobook note's time; leads the meta line and emits `jumpRequested` |
+| `passageViewerOptions` | `Omit<PassageViewerRequest, 'noteId'>` | `null` | Passed to the passage viewer (the reader's own "Open in book") |
+| `readOnly`             | `boolean`                             | `false` | Display only: no menu, chips or capture details; `[[links]]` stay in the words |
+| `showMeta`             | `boolean`                             | `true`  | False where the surface names the source itself |
 
 ### Outputs
 
-| Output         | Payload                          | Description                   |
-| -------------- | -------------------------------- | ----------------------------- |
-| `update`       | `{ id, content, selectedText? }` | Note edited and saved         |
-| `delete`       | `string` (note ID)               | Delete requested              |
-| `topicClick` | `TopicDto`                     | `[[Topic]]` tag clicked     |
-| `quoteClick`   | `Note`                           | "Insert quote" button clicked |
-| `cardClick`    | `Note`                           | Card body clicked             |
+`topicAdded`, `topicRemoved`, `pickerOpened`, `pickerClosed`, `edited`
+(`NoteItemEdit`: only what changed), `keepWithWriting`, `moreFromBook`,
+`selectRequested`, `selectedChange`, `deleteRequested`, `restored`, and
+`jumpRequested` (with `inBook` or `audioTime`).
 
 ### Features
 
-- **Inline editing:** `startEdit()` → textarea → `saveEdit()` (Enter) / `cancelEdit()` (Escape)
-- **Collapsible:** Notes > 250 chars show "Show more" / "Show less" toggle
-- **Topic tags:** Content rendered via `NoteFormatPipe` — `[[Topic]]` becomes clickable colored spans
-- **Selected text:** Displayed as a quote block above note content
+- **Editing:** "Edit note" in the menu opens the quote (or passage title), the four pens and the words, with Save / Cancel
+- **Long notes:** a quote over 420 characters or words over 600 are cut to five lines behind "Show all"
+- **Topic tags:** chips under the words; an inline `[[Topic]]` opens its topic in the app
 
 ---
 
@@ -599,7 +610,7 @@ Textarea with wiki-link autocomplete. Implements `ControlValueAccessor` for form
 **Selector:** `topic-autocomplete-panel`  
 **File:** `src/app/ui/topic-autocomplete-panel/`
 
-Dropdown overlay rendered by `TopicInputComponent` and `NoteCardComponent`. Reads `suggestions()` and `activeIndex()` from `TopicAutocompleteService`.
+Dropdown overlay rendered by `TopicInputComponent`. Reads `suggestions()` and `activeIndex()` from `TopicAutocompleteService`.
 
 ---
 

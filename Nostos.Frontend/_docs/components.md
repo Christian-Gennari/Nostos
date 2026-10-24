@@ -22,24 +22,24 @@ App (app-root)
     │       │
     │       ├── BookDetail (app-book-detail)     [route: /library/:id]
     │       │   ├── StarRatingComponent
-    │       │   ├── NoteCardComponent (many)
+    │       │   ├── NoteItemComponent (many)
     │       │   │   └── TopicInputComponent
     │       │   │       └── TopicAutocompletePanel
     │       │   └── AddBookModal (edit mode)
     │       │
     │       ├── Brain (app-brain-shell)         [route: /brain]
-    │       │   └── NoteCardComponent (many)
+    │       │   └── NoteItemComponent (many)
     │       │
     │       └── WritingStudio (app-writing-studio) [route: /studio]
     │           ├── FlatTreeComponent
     │           ├── MarkdownEditorComponent
-    │           └── NoteCardComponent (many)
+    │           └── NoteItemComponent (many)
     │
     └── ReaderShell (app-reader-shell)           [route: /read/:id]
         ├── EpubReader (app-epub-reader)
         ├── PdfReader (app-pdf-reader)
         ├── AudioReader (app-audio-reader)
-        ├── NoteCardComponent (many)
+        ├── NoteItemComponent (many)
         └── TopicInputComponent
             └── TopicAutocompletePanel
 ```

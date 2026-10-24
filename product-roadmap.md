@@ -508,6 +508,6 @@ Cannot export notes/highlights in bulk.
 |------|-----------|
 | Reading | `reader-shell.component.*`, `epub-reader.component.*`, `pdf-reader.component.*`, `audio-reader.component.*` |
 | Library | `library.component.*`, `sidebar-collections.component.*`, `add-book-modal.component.*`, `book-detail.component.*` |
-| Brain | `second-brain.component.*`, `concept-autocomplete.*`, `note-card.component.*` |
+| Brain | `second-brain.component.*`, `concept-autocomplete.*`, `note-item.component.*` |
 | Studio | `writing-studio.component.*`, `flat-tree.component.*`, `markdown-editor.component.*` |
 | Global | `styles.css`, `app.config.ts` |

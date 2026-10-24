@@ -1,4 +1,4 @@
-import { formatAudioTime, parseAudioSeconds, type NoteSearchHit } from '../../core/dtos/note.dtos';
+import { formatAudioTime, parseAudioSeconds, type Note, type NoteSearchHit } from '../../core/dtos/note.dtos';
 import { normalizeSearchText } from '../../core/search-text';
 import type { TopicDto } from '../../core/services/topics.service';
 
@@ -126,4 +126,35 @@ export function inlineTopicHref(event: MouseEvent): string | null {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
   const link = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>('a.topic-tag');
   return link?.getAttribute('href') ?? null;
+}
+
+/**
+ * A book's note (the reader's list, a Studio source) in the shape the note item
+ * shows, with the topics it carries. Those lists do not carry topics, so the
+ * caller supplies them; none shows none.
+ */
+export function noteAsItem(note: Note, topicNames: readonly string[] = []): NoteSearchHit {
+  return {
+    id: note.id,
+    bookId: note.bookId,
+    bookTitle: note.bookTitle ?? null,
+    bookAuthor: note.bookAuthor ?? null,
+    content: note.content ?? '',
+    selectedText: note.selectedText ?? null,
+    snippet: null,
+    topicNames: [...topicNames],
+    createdAt: note.createdAt,
+    cfiRange: note.cfiRange ?? null,
+    sourceAnchorKind: note.sourceAnchorKind,
+    sourceAnchorValue: note.sourceAnchorValue,
+    anchorVerified: note.anchorVerified,
+    captureSource: note.captureSource,
+    processingMode: note.processingMode,
+    hasRawContent: !!note.rawContent,
+    kind: note.kind,
+    passageTitle: note.passageTitle,
+    passageEnd: note.passageEnd,
+    passageWordCount: note.passageWordCount,
+    ...(note.highlightColour !== undefined ? { highlightColour: note.highlightColour } : {}),
+  };
 }

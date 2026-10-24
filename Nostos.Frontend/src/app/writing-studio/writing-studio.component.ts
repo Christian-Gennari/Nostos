@@ -26,7 +26,8 @@ import { TopicsService, TopicDto, NoteContextDto } from '../core/services/topics
 import { BooksService, Book as BookDto } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
-import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteItemComponent } from '../ui/note-item/note-item.component';
+import { noteAsItem } from '../ui/note-item/note-item.helpers';
 import { WritingDto, WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 import { Note, NoteSearchHit, Passage, isPassage } from '../core/dtos/note.dtos';
 import { PassageViewerRequest, PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
@@ -174,7 +175,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     NostosIconComponent,
     DragDropModule,
     FlatTreeComponent,
-    NoteCardComponent,
+    NoteItemComponent,
     MarkdownEditorComponent,
     SourcePaletteComponent,
     StudioPageSettingsComponent,
@@ -281,8 +282,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** Source currently being inspected. Browsing never mutates the writing. */
   inspectedSource = signal<Note | null>(null);
 
+  /** The inspected source as its note item shows it. */
+  readonly inspectedSourceItem = computed(() => {
+    const source = this.inspectedSource();
+    return source ? noteAsItem(source) : null;
+  });
+
   /**
-   * Kept sources mapped to Note shape for NoteCardComponent,
+   * Kept sources mapped to Note shape for the panel's rows,
    * in addedAt ascending order (chronological accretion).
    */
   keptNotes = computed<Note[]>(() => {

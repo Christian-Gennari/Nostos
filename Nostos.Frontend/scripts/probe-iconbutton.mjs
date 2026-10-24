@@ -537,7 +537,7 @@ const hasStates = surfaces.some((s) => s.states.some((x) => x.state === 'hover' 
   && surfaces.some((s) => s.states.some((x) => x.state === 'focus' && x.buttons.length));
 // Variant keys look like '24pxx24px r=50% cls="icon-btn xs delete"'.
 const hasXs = [...variants.keys()].some((k) => k.startsWith('24pxx24px'));
-// note-card's edit-mode buttons exist ONLY while editing. If that interaction ever
+// The note item's edit-mode buttons exist ONLY while editing. If that interaction ever
 // stops working they drop out of coverage silently, and a migration of them would
 // "pass" while being invisible to the probe.
 const hasEditMode = [...variants.values()].some((r) => r.where.has('brain-note-edit'));
@@ -546,7 +546,7 @@ if (total < 6) problems.push(`only ${total} buttons found — the probe is not s
 if (variants.size < 2) problems.push(`only ${variants.size} distinct variant(s) — the component would be verified one way only`);
 if (!hasStates) problems.push('no hover/focus state captured — the probe cannot prove what a screenshot cannot show');
 if (!hasXs) problems.push('the 24px .xs rung was not captured — that is the size most likely to break');
-if (!hasEditMode) problems.push('the note-card edit-mode buttons were not captured (the edit interaction did not fire)');
+if (!hasEditMode) problems.push('the note item edit-mode buttons were not captured (the edit interaction did not fire)');
 if (problems.length) {
   console.error('\n✖ probe coverage is insufficient, so nothing it reports can be trusted:');
   for (const p of problems) console.error(`   - ${p}`);

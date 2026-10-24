@@ -250,9 +250,9 @@ async function fingerprint(page) {
       .map((e) => (e.textContent || '').trim()).join('\u0001');
     const imgs = [...document.images].map((i) => `${i.currentSrc || i.src}|${i.naturalWidth}x${i.naturalHeight}`);
     const contentMaterial = [
-      gridText('.book-card, .topic-row, app-note-item, .note-card, .nav-item'),
+      gridText('.book-card, .topic-row, app-note-item, .nav-item'),
       imgs.join('\u0002'),
-      document.querySelectorAll('.book-card, .topic-row, app-note-item, .note-card').length,
+      document.querySelectorAll('.book-card, .topic-row, app-note-item').length,
     ].join('\u0003');
     let ch = 2166136261;
     for (let i = 0; i < contentMaterial.length; i++) {
@@ -264,7 +264,7 @@ async function fingerprint(page) {
       sheets,
       contentHash: (ch >>> 0).toString(16),
       contentCounts: {
-        cards: document.querySelectorAll('.book-card, .topic-row, app-note-item, .note-card').length,
+        cards: document.querySelectorAll('.book-card, .topic-row, app-note-item').length,
         images: document.images.length,
       },
     };
@@ -287,12 +287,12 @@ async function fingerprint(page) {
  */
 const CONTENT_HASH = () => {
   const text = [...document.querySelectorAll(
-    '.book-card, .topic-row, app-note-item, .note-card, .nav-item, .map-node, .meta-title, .book-title')]
+    '.book-card, .topic-row, app-note-item, .nav-item, .map-node, .meta-title, .book-title')]
     .map((e) => (e.textContent || '').trim()).join('\u0001');
   const imgs = [...document.images]
     .map((i) => `${i.currentSrc || i.src}|${i.naturalWidth}x${i.naturalHeight}`).join('\u0002');
   const material = [text, imgs,
-    document.querySelectorAll('.book-card, .topic-row, app-note-item, .note-card').length,
+    document.querySelectorAll('.book-card, .topic-row, app-note-item').length,
     document.images.length].join('\u0003');
   let h = 2166136261;
   for (let i = 0; i < material.length; i++) {
@@ -300,7 +300,7 @@ const CONTENT_HASH = () => {
     h = Math.imul(h, 16777619);
   }
   return { hash: (h >>> 0).toString(16), chars: material.length,
-    cards: document.querySelectorAll('.book-card, .topic-row, app-note-item, .note-card').length,
+    cards: document.querySelectorAll('.book-card, .topic-row, app-note-item').length,
     images: document.images.length };
 };
 

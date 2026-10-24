@@ -898,7 +898,7 @@
    Review and Synopsis). Deliberately a quiet text link rather than a pill: a
    bordered 35px capsule reads as a call to action, and two of them stacked
    inside one reading surface turned the card into an action list. This also
-   matches the idiom the Notes section below already uses (see `note-card`), so
+   matches the idiom the Notes section below already uses (see `note-item`), so
    the page ships ONE disclosure affordance instead of two competing ones. */
 /* The toggles are appButton variant="link"; the section owns the gap above. */
 .expand-btn {

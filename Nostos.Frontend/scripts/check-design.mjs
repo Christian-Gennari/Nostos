@@ -290,8 +290,10 @@ for (const f of files) {
    Lowered 43 -> 41 by the Studio theme pass: the slide-over rails' two
    `rgba(0, 0, 0, 0.15)` drop shadows are gone (a hairline edge instead).
    Lowered 41 -> 39 when Book Detail's hand-built reading-status dialog moved
-   onto app-confirm-modal: its two rgba() drop shadows are gone. */
-const LITERAL_COLOUR_BUDGET = 39;
+   onto app-confirm-modal: its two rgba() drop shadows are gone.
+   Lowered 39 -> 38 when the note card was removed (#1191): its floating
+   action pill carried an `rgba(0, 0, 0, 0.08)` shadow. */
+const LITERAL_COLOUR_BUDGET = 38;
 
 {
   const ALLOW = [

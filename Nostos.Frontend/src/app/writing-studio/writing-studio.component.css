@@ -368,15 +368,6 @@
   text-transform: none;
 }
 
-.inspected-source-card {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-}
-
 .source-insertion-actions {
   display: flex;
   flex-wrap: wrap;
@@ -401,35 +392,9 @@
   padding: 1rem 0.5rem;
 }
 
-/* Kept sources & Library note rows with contextual actions (issue #491) */
+/* Kept sources (issue #491) */
 .kept-sources-content {
   padding-top: 0.5rem;
-}
-
-.kept-note-row,
-.library-note-row {
-  position: relative;
-  margin-bottom: 0.85rem;
-}
-
-.kept-note-row app-note-card,
-.library-note-row app-note-card {
-  display: block;
-}
-
-.kept-note-actions,
-.library-note-actions {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.library-note-actions .icon-btn.active {
-  color: var(--color-brand-accent);
 }
 
 
@@ -1518,18 +1483,13 @@
   max-width: 100%;
 }
 
+/* The note sits on the panel itself, as it does in the Brain: no box. The
+   provenance line under it is its meta, so the item's closing hairline and
+   bottom space give way to it. */
 .inspected-source-card {
-  background: var(--bg-surface);
-}
-
-/* The inspector hides date, source badge, and actions. NoteCard still reserves
-   its empty 32px footer, so remove that unused slot only in this Studio card. */
-.inspected-source-card ::ng-deep .note-footer {
-  display: none;
-}
-
-.inspected-source-card ::ng-deep .note-card-container {
-  padding-bottom: 0.45rem;
+  min-width: 0;
+  padding: 0.35rem 0.3rem 0.45rem;
+  border-bottom: 0;
 }
 
 .inspected-source-provenance {

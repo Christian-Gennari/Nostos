@@ -112,6 +112,7 @@
   </button>
   }
 
+  @if (!readOnly()) {
   <div class="note-item-topics" role="group" aria-label="Topics">
     @for (chip of chips(); track chip.name) {
     <span class="note-item-topic">
@@ -171,15 +172,28 @@
   </div>
 
   <app-note-capture-details [note]="note()" (restored)="restored.emit($event)" />
+  }
 
+  @if (showMeta()) {
   <footer class="note-item-meta">
+    @if (audioTimeLabel(); as time) {
+    <button
+      type="button"
+      class="note-item-time"
+      data-testid="note-audio-time"
+      [attr.aria-label]="'Jump to ' + time"
+      title="Jump to this time"
+      (click)="jumpRequested.emit()"
+    >{{ time }}</button>
+    <span class="note-item-dot" aria-hidden="true">·</span>
+    }
     @if (showBook()) {
     <span class="note-item-book">{{ note().bookTitle || 'Unknown book' }}</span>
     @if (note().bookAuthor) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ note().bookAuthor }}</span> }
     <span class="note-item-dot" aria-hidden="true">·</span>
     }
     <time [attr.datetime]="note().createdAt">{{ note().createdAt | date: 'd MMM y' }}</time>
-    @if (location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
+    @if (audioTimeLabel() === null && location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
     @if (citedWritings(); as writings) {
     @if (writings.length) {
     <span class="note-item-dot" aria-hidden="true">·</span>
@@ -195,14 +209,21 @@
     </ng-template>
     }
     }
+    @if (inBook()) {
+    <button type="button" class="note-item-source" (click)="jumpRequested.emit()">
+      Show in book <nostos-icon name="arrow-right" [size]="12" />
+    </button>
+    } @else {
     <a class="note-item-source" [routerLink]="source().commands" [queryParams]="source().queryParams">
       Open in book <nostos-icon name="arrow-right" [size]="12" />
     </a>
+    }
   </footer>
+  }
   }
 </article>
 
-@if (!editing()) {
+@if (!editing() && !readOnly()) {
 <button
   appIconButton
   type="button"

@@ -33,7 +33,9 @@ import {
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
-import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteItemComponent } from '../ui/note-item/note-item.component';
+import { BrainStateService } from '../brain/brain-state.service';
+import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { AlignmentService } from '../core/services/alignment.service';
 import { EditionPlaceKeeper, rememberSwitched } from './switch-edition/edition-place-keeper';
 import { BooksService } from '../core/services/books.service';
@@ -186,17 +188,52 @@ class TopicInputStub implements ControlValueAccessor {
   registerOnTouched(): void {}
 }
 
-@Component({ selector: 'app-note-card', standalone: true, template: '' })
-class NoteCardStub {
-  note = input<unknown>(null);
+@Component({
+  selector: 'app-note-item',
+  standalone: true,
+  template: '',
+  host: { '[attr.data-note-id]': 'note()?.id' },
+})
+class NoteItemStub {
+  note = input<{ id: string } | null>(null);
+  topics = input<unknown>(null);
   topicMap = input<unknown>(null);
-  showNavigation = input(false);
+  showBook = input(true);
+  showMoreFromBook = input(true);
+  canSelect = input(true);
+  inBook = input(false);
   audioTime = input<number | null>(null);
   passageViewerOptions = input<unknown>(null);
-  update = output<unknown>();
-  delete = output<unknown>();
-  cardClick = output<unknown>();
+  busy = input(false);
+  suggestions = input<unknown>(null);
+  suggestionState = input<unknown>(null);
+  topicAdded = output<string>();
+  topicRemoved = output<string>();
+  pickerOpened = output<void>();
+  pickerClosed = output<void>();
+  edited = output<unknown>();
+  keepWithWriting = output<void>();
+  deleteRequested = output<void>();
+  restored = output<unknown>();
+  jumpRequested = output<void>();
 }
+
+/** The Brain's shared topics, as the notes panel reads them. */
+function brainStateStub() {
+  return {
+    topics: signal([]),
+    lookup: signal(new Map()),
+    ensureLoaded: vi.fn(),
+    refresh: vi.fn(),
+  };
+}
+
+const suggestionsStub = {
+  request: vi.fn(),
+  closeFor: vi.fn(),
+  namesFor: () => [],
+  stateFor: () => 'off',
+};
 
 const audiobook = {
   id: 'book-1',
@@ -268,9 +305,13 @@ async function configureReaderShell(
 
   TestBed.overrideComponent(ReaderShell, {
     remove: {
-      imports: [PdfReader, EpubReader, TopicInputComponent, NoteCardComponent],
+      imports: [PdfReader, EpubReader, TopicInputComponent, NoteItemComponent],
+      providers: [BrainTopicSuggestionsService],
     },
-    add: { imports: [PdfReaderStub, EpubReaderStub, TopicInputStub, NoteCardStub] },
+    add: {
+      imports: [PdfReaderStub, EpubReaderStub, TopicInputStub, NoteItemStub],
+      providers: [{ provide: BrainTopicSuggestionsService, useValue: suggestionsStub }],
+    },
   });
 
   await TestBed.configureTestingModule({
@@ -297,12 +338,15 @@ async function configureReaderShell(
         provide: NotesService,
         useValue: {
           list: vi.fn(() => of([])),
+          browse: vi.fn(() => of({ items: [], totalCount: 0 })),
+          get: vi.fn(() => of({ id: '', topicNames: [] })),
           create: vi.fn(),
           update: vi.fn(),
           delete: vi.fn(),
         },
       },
       { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
+      { provide: BrainStateService, useFactory: brainStateStub },
       { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
       {
         provide: AssistantService,
@@ -2978,6 +3022,41 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     expect(component.flashedNoteId()).toBe('n-1');
     const card = fixture.nativeElement.querySelector('.notes-panel [data-note-id="n-1"]');
     expect(card?.classList).toContain('is-flashed');
+  });
+
+  it('the notes panel shows each note as the Brain does, with its topics, and acts through the reader (#1191)', async () => {
+    const component = await openBook('iliad.epub', []);
+    const service = TestBed.inject(NotesService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    service['list'].mockReturnValue(of([note({ content: 'Rage first.' })]));
+    service['browse'].mockReturnValue(of({ items: [{ id: 'n-1', topicNames: ['wrath'] }], totalCount: 1 }));
+    service['update'].mockReturnValue(of(note({ content: 'Rage, first of all.' })));
+    component.loadNotes('book-hl');
+    render();
+
+    const item = fixture.debugElement.query(By.css('.notes-panel app-note-item')).componentInstance as {
+      note: () => { id: string; topicNames: string[]; content: string };
+      inBook: () => boolean;
+      showBook: () => boolean;
+      showMoreFromBook: () => boolean;
+      canSelect: () => boolean;
+      jumpRequested: { emit: () => void };
+      deleteRequested: { emit: () => void };
+      edited: { emit: (edit: unknown) => void };
+    };
+    expect(item.note()).toMatchObject({ id: 'n-1', content: 'Rage first.', topicNames: ['wrath'] });
+    expect(service['browse']).toHaveBeenCalledWith({ bookId: 'book-hl', limit: 200, offset: 0 });
+    expect([item.inBook(), item.showBook(), item.showMoreFromBook(), item.canSelect()]).toEqual([true, false, false, false]);
+
+    const jump = vi.spyOn(component, 'onJumpToNote');
+    item.jumpRequested.emit();
+    expect(jump).toHaveBeenCalledWith(expect.objectContaining({ id: 'n-1' }));
+
+    item.deleteRequested.emit();
+    expect(component.pendingNoteDelete()).toBe('n-1');
+
+    item.edited.emit({ id: 'n-1', content: 'Rage, first of all.' });
+    expect(service['update']).toHaveBeenCalledWith('n-1', expect.objectContaining({ content: 'Rage, first of all.' }));
+    expect(service['get']).toHaveBeenCalledWith('n-1');
   });
 
   it('gives Ask Nostos the opened passage as its context', async () => {
