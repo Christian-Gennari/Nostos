@@ -165,14 +165,25 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   readonly blockMenuPlacement = computed(() => {
     const rect = this.blockMenu()?.rect;
     if (!rect) return null;
-    const viewport = typeof window === 'undefined' ? 800 : window.innerHeight;
-    const below = viewport - rect.bottom - 12;
-    const above = rect.top - 12;
-    const cap = Math.min(360, viewport * 0.55);
+    // The visual viewport is what is on screen: with the soft keyboard up it is
+    // shorter than the window, and the menu must fit above the keyboard.
+    const vv = typeof window === 'undefined' ? null : window.visualViewport;
+    const layoutHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
+    const layoutWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
+    const viewTop = vv?.offsetTop ?? 0;
+    const viewBottom = vv ? vv.offsetTop + vv.height : layoutHeight;
+    const viewLeft = vv?.offsetLeft ?? 0;
+    const viewWidth = vv?.width ?? layoutWidth;
+    const below = viewBottom - rect.bottom - 12;
+    const above = rect.top - viewTop - 12;
+    const cap = Math.min(360, (viewBottom - viewTop) * 0.55);
+    // The menu is `min(300px, 100vw - 24px)` wide (see the stylesheet): keep all of it on screen.
+    const width = Math.min(300, viewWidth - 24);
+    const left = Math.max(viewLeft + 12, Math.min(rect.left, viewLeft + viewWidth - width - 12));
     if (below < Math.min(cap, 240) && above > below) {
-      return { top: null, bottom: viewport - rect.top + 6, left: rect.left, maxHeight: Math.min(cap, above) };
+      return { top: null, bottom: layoutHeight - rect.top + 6, left, maxHeight: Math.min(cap, above) };
     }
-    return { top: rect.bottom + 6, bottom: null, left: rect.left, maxHeight: Math.min(cap, below) };
+    return { top: rect.bottom + 6, bottom: null, left, maxHeight: Math.min(cap, below) };
   });
 
   /** Selection-bubble state, refreshed on every transaction. */

@@ -197,14 +197,6 @@
 /* The menus open in the overlay, outside this component, so these rules are
    global. The voices are nostosMenuItemRadio choices, which keep their labels
    in one column themselves. */
-/* A book that does not say its language lists every voice: more than a phone
-   screen holds, so the menu scrolls. */
-::ng-deep .read-aloud-menu.nostos-menu {
-  max-height: min(32rem, calc(100dvh - 7rem));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
 ::ng-deep .read-aloud-menu-heading {
   padding: 0.45rem 0.65rem 0.25rem;
   color: var(--color-text-light);

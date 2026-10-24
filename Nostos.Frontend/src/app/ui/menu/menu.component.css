@@ -4,6 +4,12 @@
   flex-direction: column;
   min-width: 11rem;
   max-width: min(20rem, calc(100vw - 16px));
+  /* A long list ("Used in", the editions, the voices) scrolls inside the
+     menu instead of running off the screen; a menu may set --menu-max-h. */
+  --menu-max-h: 24rem;
+  max-height: min(var(--menu-max-h), calc(100dvh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   border: 1px solid var(--border-color);
   /* Items keep 4px of padding inside, so the corner is theirs plus that. */

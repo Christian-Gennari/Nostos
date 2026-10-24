@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TopicPickerPopoverComponent } from './topic-picker-popover.component';
 
@@ -60,5 +60,73 @@ describe('TopicPickerPopoverComponent focus', () => {
     await fixture.whenStable();
 
     expect(document.activeElement).toBe(origin);
+  });
+});
+
+const TOPICS = [
+  { id: 't1', name: 'Memory', usageCount: 3 },
+  { id: 't2', name: 'Stoicism', usageCount: 1 },
+] as never;
+
+function phone(matches: boolean): void {
+  vi.stubGlobal(
+    'matchMedia',
+    (query: string) =>
+      ({ matches, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }) as unknown as MediaQueryList,
+  );
+}
+
+async function create() {
+  await TestBed.configureTestingModule({ imports: [TopicPickerPopoverComponent] }).compileComponents();
+  const fixture = TestBed.createComponent(TopicPickerPopoverComponent);
+  fixture.componentRef.setInput('topics', TOPICS);
+  await fixture.whenStable();
+  return fixture;
+}
+
+describe('TopicPickerPopoverComponent', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('is a popover on a wide screen', async () => {
+    phone(false);
+    const fixture = await create();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.picker')).not.toBeNull();
+    expect(el.querySelector('app-modal-shell')).toBeNull();
+    expect(el.querySelectorAll('[role="option"]').length).toBe(3 - 1);
+  });
+
+  it('is a sheet on a phone, on an overlay of its own, with the field and the list inside it', async () => {
+    phone(true);
+    const fixture = await create();
+    const el = fixture.nativeElement as HTMLElement;
+    // Not inside the host: the caller's overlay pane is transformed, which would
+    // break the shell's fixed backdrop.
+    expect(el.querySelector('.picker')).toBeNull();
+    expect(el.querySelector('app-modal-shell')).toBeNull();
+    const shell = document.querySelector('.cdk-overlay-container app-modal-shell');
+    expect(shell).not.toBeNull();
+    expect(shell!.querySelector('input[role="combobox"]')).not.toBeNull();
+    expect(shell!.querySelectorAll('[role="option"]').length).toBe(2);
+
+    fixture.destroy();
+    expect(document.querySelector('app-modal-shell')).toBeNull();
+  });
+
+  it('closes from the sheet Close button and chooses a topic on tap', async () => {
+    phone(true);
+    const fixture = await create();
+    const closed = vi.fn();
+    const chosen = vi.fn();
+    fixture.componentInstance.closed.subscribe(closed);
+    fixture.componentInstance.chosen.subscribe(chosen);
+    const shell = document.querySelector('app-modal-shell') as HTMLElement;
+
+    (shell.querySelector('[role="option"]') as HTMLElement).click();
+    expect(chosen).toHaveBeenCalledWith('Memory');
+
+    (shell.querySelector('button[aria-label="Close"]') as HTMLElement).click();
+    expect(closed).toHaveBeenCalledTimes(1);
+    fixture.destroy();
   });
 });

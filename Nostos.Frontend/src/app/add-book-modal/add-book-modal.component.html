@@ -3,7 +3,7 @@
     [isOpen]="true"
     variant="sheet"
     [maxWidth]="sourceMode() ? '960px' : '700px'"
-    [maxHeight]="'90vh'"
+    [maxHeight]="'90dvh'"
     [layer]="100"
     [ariaLabel]="isEditMode() ? 'Edit book' : sourceMode() ? 'Find a book' : seededFromSource() ? 'Review book' : 'Add a book'"
     (closed)="closeModal.emit()"

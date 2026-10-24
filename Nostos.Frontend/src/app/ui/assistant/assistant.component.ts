@@ -12,6 +12,7 @@ import {
   ChangeDetectionStrategy,
 } from '@angular/core';
 
+import { isPhoneViewport } from '../breakpoints';
 import { ButtonComponent } from '../button/button.component';
 import { Router } from '@angular/router';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
@@ -945,10 +946,6 @@ export class AssistantComponent {
   }
 
   private isPhoneViewport(): boolean {
-    if (typeof window === 'undefined') return false;
-    if (typeof window.matchMedia === 'function') {
-      return window.matchMedia('(max-width: 768px)').matches;
-    }
-    return window.innerWidth <= 768;
+    return isPhoneViewport();
   }
 }

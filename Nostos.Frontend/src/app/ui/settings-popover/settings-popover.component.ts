@@ -24,9 +24,10 @@ import {
   viewChild,
 } from '@angular/core';
 import { Subscription } from 'rxjs';
+import { PHONE_QUERY } from '../breakpoints';
 
 /** Below this width the panel is a sheet along the bottom edge, not a popover. */
-export const SETTINGS_POPOVER_SHEET_QUERY = '(max-width: 640px)';
+export const SETTINGS_POPOVER_SHEET_QUERY = PHONE_QUERY;
 
 export type SettingsPopoverDismissal = 'escape' | 'outside';
 
@@ -45,7 +46,7 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
  * one set of rules, on the CDK overlay:
  *
  * - it hangs under its button, and moves with it on scroll and resize;
- * - below 640px it is a sheet along the bottom edge, full width;
+ * - at phone width (768px) it is a sheet along the bottom edge, full width;
  * - Escape and a press outside it say so through `dismissed`, and the caller
  *   closes it (a press on its own button is that button's toggle, not outside);
  * - focus moves in when it opens, and back to the button when it closes with

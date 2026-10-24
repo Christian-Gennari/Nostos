@@ -724,6 +724,36 @@ function primitiveFindingsCss(css, relPath) {
   return out;
 }
 
+// The phone breakpoint is 768 (`ui/breakpoints.ts`); 480 is "very small phone" and
+// 900 is the Studio's compact layout. An overlay (sheet, drawer, popover, palette)
+// that switches layout at any other width drifts from the rest, so the sheets
+// stop agreeing on what a phone is. Only overlay stylesheets are checked: a page
+// layout may break wherever its content needs.
+const OVERLAY_STYLE_HOMES = [
+  'src/app/ui/modal-shell/', 'src/app/ui/settings-popover/', 'src/app/ui/menu/',
+  'src/app/ui/dropdown/', 'src/app/ui/command-palette/', 'src/app/ui/assistant/',
+  'src/app/ui/topic-picker-popover/', 'src/app/ui/topic-autocomplete-panel/',
+  'src/app/ui/confirm-modal/', 'src/app/ui/toast-container/',
+  'src/app/writing-studio/source-palette/', 'src/app/writing-studio/page-settings/',
+  'src/app/layout/utility-sheet/', 'src/app/library/sidebar-collections/',
+  'src/app/brain/brain-shell.',
+];
+const PHONE_WIDTHS = new Set([480, 768, 900]);
+
+function breakpointFindingsCss(css, relPath) {
+  if (!OVERLAY_STYLE_HOMES.some((home) => relPath.startsWith(home))) return [];
+  const clean = css.replace(/\/\*[\s\S]*?\*\//g, blankKeepLines);
+  const out = [];
+  for (const m of clean.matchAll(/@media[^{]*?\(\s*max-width\s*:\s*(\d+(?:\.\d+)?)px\s*\)/g)) {
+    const width = Number(m[1]);
+    // Narrower than a phone or wider than a tablet is not a phone breakpoint.
+    if (width < 320 || width > 1024 || PHONE_WIDTHS.has(width)) continue;
+    out.push({ index: m.index, rule: 'phone-breakpoint',
+      message: `max-width: ${width}px is not a phone breakpoint: use 768px (PHONE_MAX in ui/breakpoints.ts), or 480px / 900px.` });
+  }
+  return out;
+}
+
 function primitiveFindingsTs(masked, relPath) {
   const out = [];
   // Rendering the pens as a list is the pen-swatches component's job; other code
@@ -790,7 +820,7 @@ export function checkFile(relPath, raw, context = {}) {
     [...componentTemplates, ...templatesOf(relPath, raw).map((t) => t.html)]);
 
   if (relPath.endsWith('.css')) {
-    for (const f of [...stateFindingsCss(raw, relPath, hostClasses), ...primitiveFindingsCss(raw, relPath)]) {
+    for (const f of [...stateFindingsCss(raw, relPath, hostClasses), ...primitiveFindingsCss(raw, relPath), ...breakpointFindingsCss(raw, relPath)]) {
       add(f.rule, f.index, 1, raw, f.message);
     }
     return findings;
@@ -843,7 +873,7 @@ export function checkFile(relPath, raw, context = {}) {
       for (const f of dateFindingsTs(masked)) add('raw-date', f.index, 1, raw, `${f.what}: ${DATE_MESSAGE}`);
     }
     for (const s of inlineStylesOf(raw)) {
-      for (const f of [...stateFindingsCss(s.css, relPath, hostClasses), ...primitiveFindingsCss(s.css, relPath)]) {
+      for (const f of [...stateFindingsCss(s.css, relPath, hostClasses), ...primitiveFindingsCss(s.css, relPath), ...breakpointFindingsCss(s.css, relPath)]) {
         add(f.rule, f.index, s.line, s.css, f.message);
       }
     }

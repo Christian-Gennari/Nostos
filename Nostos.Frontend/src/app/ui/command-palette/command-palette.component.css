@@ -13,14 +13,14 @@
 
 .palette {
   position: fixed;
-  top: 12vh;
+  top: 12dvh;
   right: 0;
   left: 0;
   z-index: calc(var(--layer-system) + 1);
   display: flex;
   flex-direction: column;
   width: min(40rem, calc(100vw - 2rem));
-  max-height: min(70vh, 36rem);
+  max-height: min(70dvh, 36rem);
   margin-inline: auto;
   overflow: hidden;
   border: 1px solid var(--border-color);

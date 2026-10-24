@@ -44,8 +44,10 @@
     top: 0;
     left: 0;
     z-index: var(--layer-drawer);
-    width: min(300px, 86vw);
+    width: var(--drawer-width);
     height: 100%;
+    /* Clear of the notch, the home indicator and a landscape cut-out. */
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     border-right: 1px solid var(--border-color);
     box-shadow: var(--shadow-md);
     transform: translateX(-100%);

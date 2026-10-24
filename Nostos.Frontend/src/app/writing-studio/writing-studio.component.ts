@@ -12,6 +12,7 @@ import {
   ViewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -668,6 +669,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   });
 
   constructor() {
+    lockScrollWhile(() => this.drawerOpen());
     // The kept and cited sources, with their topics, once the ids settle.
     toObservable(this.sourceLookupKey)
       .pipe(

@@ -394,7 +394,7 @@ app-markdown-editor .block-menu {
   z-index: 45;
   box-sizing: border-box;
   width: min(300px, calc(100vw - 24px));
-  max-height: min(360px, 55vh);
+  max-height: min(360px, 55dvh);
   overflow-y: auto;
   padding: 4px;
   color: var(--manuscript-ink);

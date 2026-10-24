@@ -12,6 +12,7 @@ import {
   viewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { lockScrollWhile } from '../scroll-lock/scroll-lock.service';
 import { Router } from '@angular/router';
 import { ModalStack } from '../modal-shell/modal-stack.service';
 import { Observable, type OperatorFunction, Subject, catchError, debounceTime, forkJoin, map, of, switchMap } from 'rxjs';
@@ -245,6 +246,7 @@ export class CommandPalette {
   );
 
   constructor() {
+    lockScrollWhile(() => this.isOpen());
     // The app root starts this at boot so visits are recorded before the
     // palette has ever loaded; the call here keeps the component whole on its own.
     this.recent.watch(this.router);

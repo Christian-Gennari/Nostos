@@ -283,8 +283,10 @@ input.sidebar-input {
     top: 0;
     left: 0;
     z-index: var(--layer-drawer);
-    width: 280px;
+    width: var(--drawer-width);
     height: 100%;
+    /* Clear of the notch, the home indicator and a landscape cut-out. */
+    padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     border-right: 1px solid var(--border-color);
     transform: translateX(0);
     animation: none;
@@ -300,7 +302,7 @@ input.sidebar-input {
   }
 
   .sidebar.collapsed {
-    width: 280px;
+    width: var(--drawer-width);
     transform: translateX(-100%);
     box-shadow: none;
   }

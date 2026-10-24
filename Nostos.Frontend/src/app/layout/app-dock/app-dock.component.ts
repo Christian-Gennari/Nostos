@@ -23,17 +23,12 @@ import { NavigationHistoryService } from '../../core/services/navigation-history
 import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { isPhoneViewport } from '../../ui/breakpoints';
 import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
 import { AssistantLauncherService } from '../../ui/assistant/assistant-launcher.service';
 
 /** The phone rail's breakpoint, matching the dock's own stylesheet. */
-function isNarrowViewport(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (typeof window.matchMedia === 'function') {
-    return window.matchMedia('(max-width: 768px)').matches;
-  }
-  return window.innerWidth <= 768;
-}
+const isNarrowViewport = isPhoneViewport;
 
 @Component({
   standalone: true,
