@@ -60,16 +60,18 @@
     </article>
 
     <section class="sort-topics" aria-label="Topics for this note">
-      <label class="sort-field" for="sort-topic-field">
+      @if (chips().length) {
+      <div class="sort-chips" role="group" aria-label="Chosen topics">
         @for (chip of chips(); track chip) {
-        <span class="sort-chip">
-          <nostos-icon concept="topic" [size]="12" />{{ chip }}
-          <button appIconButton size="xxs" type="button" icon="x" [glyphSize]="11" class="sort-chip-remove"
-            [attr.aria-label]="'Remove ' + chip" (click)="removeChip(chip)"></button>
-        </span>
+        <app-topic-chip [name]="chip" [removable]="true" (removed)="removeChip(chip)" />
         }
+      </div>
+      }
+
+      <div class="sort-combo">
         <input
           #field
+          appInput
           id="sort-topic-field"
           type="text"
           class="sort-input"
@@ -85,22 +87,27 @@
           (input)="onInput($any($event.target).value)"
           (keydown)="onKeydown($event)"
         />
-      </label>
 
-      @if (matches().length) {
-      <ul class="sort-matches" id="sort-matches" role="listbox" aria-label="Matching topics">
-        @for (choice of matches(); track choice.kind + choice.name; let i = $index) {
-        <li role="option" class="sort-match" [id]="'sort-match-' + i" [class.is-active]="i === active()"
-          [attr.aria-selected]="i === active()" (mousedown)="$event.preventDefault()" (click)="addChip(choice.name)">
-          @if (choice.kind === 'create') {
-          <nostos-icon name="plus" [size]="13" />Create “{{ choice.name }}”
-          } @else {
-          <nostos-icon concept="topic" [size]="13" />{{ choice.name }}<span class="sort-count">{{ choice.count }}</span>
+        @if (matches().length) {
+        <ul class="sort-matches" id="sort-matches" role="listbox" aria-label="Matching topics">
+          @for (choice of matches(); track choice.kind + choice.name; let i = $index) {
+          <li
+            appTopicOption
+            role="option"
+            [id]="'sort-match-' + i"
+            [name]="choice.name"
+            [kind]="choice.kind"
+            [count]="choice.count"
+            [active]="i === active()"
+            [attr.aria-selected]="i === active()"
+            (mousedown)="$event.preventDefault()"
+            (mouseenter)="active.set(i)"
+            (click)="addChip(choice.name)"
+          ></li>
           }
-        </li>
+        </ul>
         }
-      </ul>
-      }
+      </div>
 
       @if (recentChoices().length) {
       <div class="sort-row">

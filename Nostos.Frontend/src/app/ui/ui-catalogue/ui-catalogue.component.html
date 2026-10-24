@@ -747,6 +747,50 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-topics">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-topics">Topics</h2>
+      </div>
+      <p>
+        One topic chip (a link or a button, optionally removable) and one option row for every topic
+        list: the mark, the name and a plain muted count.
+      </p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic chip · removable</span>
+        <div class="catalogue-row">
+          @for (topic of catalogueTopics(); track topic) {
+            <app-topic-chip
+              [name]="topic"
+              [removable]="true"
+              (removed)="catalogueTopics.set(catalogueTopics().filter((name) => name !== topic))"
+            />
+          }
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic chip · read only, and without a mark (a collection)</span>
+        <div class="catalogue-row">
+          <app-topic-chip name="Ethics" />
+          <app-topic-chip name="Philosophy shelf" [icon]="null" [removable]="true" removeLabel="Remove from Philosophy shelf" />
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic option rows</span>
+        <ul class="catalogue-topic-list" role="listbox" aria-label="Topic options example">
+          <li appTopicOption role="option" name="Virtue" [count]="12" [active]="true" aria-selected="true"></li>
+          <li appTopicOption role="option" name="Habit" [count]="3" aria-selected="false"></li>
+          <li appTopicOption role="option" kind="create" name="Practical wisdom" aria-selected="false"></li>
+        </ul>
+        <span class="catalogue-label">{{ noTopicsYet }}</span>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-toast">
     <div class="catalogue-section-heading">
       <div>

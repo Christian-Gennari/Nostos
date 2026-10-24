@@ -280,8 +280,13 @@
   margin-top: 1px;
 }
 
+/* A topic's usage: a plain muted number, as in every topic list. */
 .badge-count {
+  flex: none;
   margin-left: 0.5rem;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Detail Headers */
@@ -1338,7 +1343,7 @@
 }
 
 /* How a source is used in the open writing (issue #1162): its topics as
-   small pills, or a muted "Kept, not cited". Under the row, both columns. */
+   topic chips, or a muted "Kept, not cited". Under the row, both columns. */
 .reference-source-use {
   display: flex;
   grid-column: 1 / -1;
@@ -1346,26 +1351,6 @@
   gap: 0.25rem;
   /* Lines up with the row's text, which sits inside its button's padding. */
   padding: 0 0.35rem 0.1rem 0.55rem;
-}
-
-/* A topic pill opens its page in the Brain; it keeps the pill's look. */
-.reference-source-topic {
-  display: inline-flex;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-
-.reference-source-topic:hover .nostos-badge {
-  color: var(--color-text-main);
-}
-
-.reference-source-topic:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .reference-source-use.is-uncited {

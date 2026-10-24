@@ -49,10 +49,11 @@ import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
-import { BadgeComponent } from '../ui/badge/badge.component';
+import { NO_TOPICS_MATCH } from '../ui/topic-option/topic-option.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { quotePen } from '../reader/highlight-colours';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { ExportDialogComponent } from './export/export-dialog.component';
@@ -184,11 +185,11 @@ function writeCarets(carets: RememberedCaret[]): void {
     IconButtonComponent,
     ButtonComponent,
     InputDirective,
-    BadgeComponent,
     ConfirmModal,
     NOSTOS_MENU,
     ExportDialogComponent,
     QuoteBlockComponent,
+    TopicChipComponent,
   ],
   templateUrl: './writing-studio.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -1940,6 +1941,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
    */
   /** The pen a source row's quotation is shown in; null when the row does not know it. */
   readonly quotePen = quotePen;
+  readonly noTopicsMatch = NO_TOPICS_MATCH;
 
   readonly passageViewerOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) => this.quotePassageSelection(text, passage),

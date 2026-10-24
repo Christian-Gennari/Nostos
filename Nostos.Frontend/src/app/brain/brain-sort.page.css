@@ -108,75 +108,34 @@
   margin-top: 1.75rem;
 }
 
-.sort-field {
+/* The chosen topics are topic chips above the field; the field is appInput,
+   its matches the shared topic option rows (issue #1204). */
+.sort-chips {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 0.4rem;
-  min-height: 3.25rem;
-  padding: 0.45rem 0.75rem;
-  border: 1.5px solid var(--color-text-main);
-  border-radius: var(--radius-field);
-  background: var(--bg-input);
-  cursor: text;
 }
 
-.sort-field:focus-within {
-  box-shadow: 0 0 0 3px var(--color-accent-faint);
+.sort-combo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .sort-input {
-  flex: 1 1 10rem;
-  min-width: 8rem;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--color-text-main);
-  font: inherit;
+  width: 100%;
+  /* 16px: anything smaller makes iOS zoom the page when the field takes focus. */
   font-size: 1rem;
 }
 
-.sort-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.2rem 0.2rem 0.6rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-alt);
-  color: var(--color-text-main);
-  font-size: 0.9rem;
-}
-
 .sort-matches {
-  margin: -0.4rem 0 0;
+  margin: 0;
   padding: 0.3rem;
   list-style: none;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-popover);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
-}
-
-.sort-match {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.25rem;
-  padding: 0 0.6rem;
-  border-radius: var(--radius-popover-item);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.sort-match.is-active {
-  background: var(--bg-hover);
-}
-
-.sort-count {
-  margin-left: auto;
-  color: var(--color-text-light);
-  font-size: var(--text-xs);
 }
 
 .sort-row {
@@ -301,12 +260,11 @@ kbd {
 }
 
 @media (pointer: coarse), (hover: none) {
-  /* The chip keeps its size; the cross's larger box reaches past it. */
-  button.sort-chip-remove {
-    margin: -10px -10px -10px -6px;
+  .sort-chips {
+    gap: 1rem 1.25rem;
   }
 
-  .sort-field input {
+  .sort-input {
     min-height: var(--control-h-touch);
   }
 }

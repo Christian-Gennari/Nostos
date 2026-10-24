@@ -3,7 +3,7 @@
    need a dark counterpart or `npm run check:theme` fails (AGENTS.md §5). The
    selected-row recipe mirrors the sidebar's own fill/ink split
    (--selection-surface / --selection-ink) so a chosen collection reads the same
-   here as it does in the rail. */
+   here as it does in the rail. The box is the shared appCheckbox. */
 
 .picker {
   display: flex;
@@ -33,46 +33,10 @@
   padding: 0;
 }
 
+/* Each membership is the shared topic chip (ui/topic-chip) without a mark. */
 .chip {
   display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  font-size: 0.8125rem;
   max-width: 100%;
-}
-
-.chip-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-
-.chip-remove:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.chip-remove:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 1px;
 }
 
 /* ── Options: the checkbox list ─────────────────────────────────────────── */
@@ -114,37 +78,6 @@
 .option.selected {
   background: var(--selection-surface);
   color: var(--selection-ink);
-}
-
-.option:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -1px;
-}
-
-.option-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  /* --control-border, NOT --border-color. The box is the one control here whose
-     edge IS the affordance, and the hairline is invisible on dark (1.16:1, and
-     1.00:1 on row hover — see the token's note in styles.css). The box was also
-     filled with --bg-surface, which is the same value as the row behind it in
-     both themes, so the edge was carrying the entire affordance on its own with
-     nothing to fall back on. Transparent lets the row show through instead, so
-     the edge is the only thing that has to be legible. */
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--on-primary);
-}
-
-.option.selected .option-check {
-  background: var(--selection-ink);
-  border-color: var(--selection-ink);
-  color: var(--selection-surface);
 }
 
 .option-name {

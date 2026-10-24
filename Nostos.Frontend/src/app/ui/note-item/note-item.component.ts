@@ -30,6 +30,7 @@ import { InputDirective, TextareaDirective } from '../form-control/form-control.
 import { TopicInputComponent } from '../topic-input.component/topic-input.component';
 import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
 import { QuoteBlockComponent } from '../quote-block/quote-block.component';
+import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NoteCaptureDetailsComponent } from '../note-capture-details/note-capture-details.component';
 import { PassageViewerService, type PassageViewerRequest } from '../passage-viewer/passage-viewer.service';
@@ -98,6 +99,7 @@ export interface CitingWriting {
     TopicPickerPopoverComponent,
     PenSwatchesComponent,
     QuoteBlockComponent,
+    TopicChipComponent,
   ],
   templateUrl: './note-item.component.html',
   styleUrls: ['./note-item.component.css'],

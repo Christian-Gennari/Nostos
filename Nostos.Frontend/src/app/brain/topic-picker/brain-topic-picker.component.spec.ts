@@ -60,7 +60,7 @@ describe('BrainTopicPickerComponent', () => {
 
   it('lists the candidates with their note counts and names itself', () => {
     const rows = [...element.querySelectorAll('.merge-target')].map((row) =>
-      [...row.querySelectorAll('span')].map((part) => part.textContent),
+      [...row.querySelectorAll('.topic-option-name, .topic-option-count')].map((part) => part.textContent),
     );
     expect(rows).toEqual([['Alpha', '3'], ['Beta', '1']]);
     expect(query('.merge-picker').getAttribute('aria-label')).toBe('Choose a topic');

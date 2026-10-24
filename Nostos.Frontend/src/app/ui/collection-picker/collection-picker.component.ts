@@ -2,8 +2,9 @@ import { Component, computed, input, output, ChangeDetectionStrategy } from '@an
 import { CommonModule } from '@angular/common';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { buildFlatTree } from '../flat-tree/flat-tree.helper';
-import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { ButtonComponent } from '../button/button.component';
+import { CheckboxDirective } from '../check/check.directive';
+import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 
 /**
  * Multi-select control for a book's collection membership.
@@ -21,7 +22,7 @@ import { ButtonComponent } from '../button/button.component';
 @Component({
   selector: 'app-collection-picker',
   standalone: true,
-  imports: [CommonModule, NostosIconComponent, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, CheckboxDirective, TopicChipComponent],
   templateUrl: './collection-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './collection-picker.component.css',

@@ -589,11 +589,11 @@
                     <div class="list-item-content">
                       <span class="name">{{ c.name }}</span>
                     </div>
-                    <span appBadge class="badge-count">{{ c.usageCount }}</span>
+                    <span class="badge-count">{{ c.usageCount }}</span>
                   </button>
                 }
                 @if (filteredTopics().length === 0) {
-                  <p class="reference-state">No topics match this search.</p>
+                  <p class="reference-state">{{ noTopicsMatch }}</p>
                 }
               </div>
             }
@@ -799,7 +799,7 @@
 </ng-template>
 
 <!-- How a source is used in the open writing (issue #1162): a cited one shows
-     its topics as small pills; a kept one the writing does not cite says so. -->
+     its topics as topic chips; a kept one the writing does not cite says so. -->
 <ng-template #sourceUse let-note>
   @if (isCited(note.id)) {
     @if (citedTopics(note.id); as topics) {
@@ -807,12 +807,13 @@
         <span class="reference-source-use" role="list" aria-label="Topics of this source">
           @for (topic of topics; track topic) {
             <span role="listitem">
-              @if (topicIdFor(topic)) {
-                <button type="button" class="reference-source-topic" [title]="'Open ' + topic + ' in the Brain'"
-                  (click)="openTopic(topic)"><span appBadge>{{ topic }}</span></button>
-              } @else {
-                <span appBadge>{{ topic }}</span>
-              }
+              <app-topic-chip
+                class="reference-source-topic"
+                [name]="topic"
+                [actionable]="!!topicIdFor(topic)"
+                [title]="topicIdFor(topic) ? 'Open ' + topic + ' in the Brain' : null"
+                (activated)="openTopic(topic)"
+              />
             </span>
           }
         </span>

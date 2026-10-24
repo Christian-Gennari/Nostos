@@ -21,12 +21,14 @@ import { TopicsService } from '../core/services/topics.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
-import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { InputDirective } from '../ui/form-control/form-control.directive';
+import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
+import { TopicOptionComponent } from '../ui/topic-option/topic-option.component';
 import { quotePen } from '../reader/highlight-colours';
 import { noteSourceLink } from '../core/note-source';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
@@ -71,12 +73,14 @@ interface Choice {
     ...NOSTOS_MENU,
     ButtonComponent,
     ChipComponent,
-    IconButtonComponent,
     NostosIconComponent,
     LoadingIndicatorComponent,
     NoteFormatPipe,
     ProgressComponent,
     QuoteBlockComponent,
+    InputDirective,
+    TopicChipComponent,
+    TopicOptionComponent,
     BrainNoteDialogsComponent,
   ],
   providers: [BrainTopicSuggestionsService, BrainNoteActionsService],

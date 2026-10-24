@@ -107,27 +107,14 @@
   @if (!readOnly()) {
   <div class="note-item-topics" role="group" aria-label="Topics">
     @for (chip of chips(); track chip.name) {
-    <span class="note-item-topic">
-      @if (chip.id) {
-      <a class="note-item-topic-name" [routerLink]="['/brain/topics', chip.id]">
-        <nostos-icon concept="topic" [size]="12" />{{ chip.name }}
-      </a>
-      } @else {
-      <span class="note-item-topic-name"><nostos-icon concept="topic" [size]="12" />{{ chip.name }}</span>
-      }
-      <button
-        appIconButton
-        size="xxs"
-        type="button"
-        icon="x"
-        class="note-item-topic-remove"
-        [glyphSize]="11"
-        [disabled]="busy()"
-        [attr.aria-label]="'Remove topic ' + chip.name"
-        [title]="'Remove ' + chip.name"
-        (click)="topicRemoved.emit(chip.name)"
-      ></button>
-    </span>
+    <app-topic-chip
+      class="note-item-topic"
+      [name]="chip.name"
+      [link]="chip.id ? ['/brain/topics', chip.id] : null"
+      [removable]="true"
+      [disabled]="busy()"
+      (removed)="topicRemoved.emit(chip.name)"
+    />
     }
     <button
       type="button"

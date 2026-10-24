@@ -30,6 +30,8 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
 import { BookCoverComponent } from '../book-cover/book-cover.component';
 import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
 import { QuoteBlockComponent } from '../quote-block/quote-block.component';
+import { TopicChipComponent } from '../topic-chip/topic-chip.component';
+import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import type { HighlightColour } from '../../reader/highlight-colours';
 
 /**
@@ -71,6 +73,8 @@ import type { HighlightColour } from '../../reader/highlight-colours';
     TextareaDirective,
     PenSwatchesComponent,
     QuoteBlockComponent,
+    TopicChipComponent,
+    TopicOptionComponent,
   ],
   templateUrl: './ui-catalogue.component.html',
   styleUrl: './ui-catalogue.component.css',
@@ -96,6 +100,8 @@ export class UiCatalogueComponent {
   readonly modalOpen = signal(false);
   readonly renameDemo = signal(true);
   readonly cataloguePen = signal<HighlightColour>('amber');
+  readonly catalogueTopics = signal(['Virtue', 'Habit', 'The good life']);
+  readonly noTopicsYet = NO_TOPICS_YET;
   readonly catalogueDropdownValue = signal('epub');
   readonly dropdownOptions = [
     { value: 'epub', label: 'EPUB' },

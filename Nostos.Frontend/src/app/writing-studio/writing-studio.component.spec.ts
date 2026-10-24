@@ -211,8 +211,9 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
 
     const count = fixture.nativeElement.querySelector('.badge-count') as HTMLSpanElement;
+    // A topic's usage is a plain muted number, not a badge (issue #1204).
     expect(count.tagName).toBe('SPAN');
-    expect(count.classList.contains('nostos-badge')).toBe(true);
+    expect(count.classList.contains('nostos-badge')).toBe(false);
 
     const createButtons = Array.from(
       fixture.nativeElement.querySelectorAll('.sidebar-left .actions .icon-btn'),
@@ -2922,11 +2923,11 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
   const panel = (): HTMLElement => fixture.nativeElement.querySelector('.kept-sources-content') as HTMLElement;
   const touches = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="writing-touches"]');
 
-  it('shows the cited sources’ topics as pills and one Touches line, live from the document', () => {
+  it('shows the cited sources’ topics as topic chips and one Touches line, live from the document', () => {
     type(`${cite(cited)} and ${cite(alsoCited)}`);
 
     const rows = [...panel().querySelectorAll('.reference-source-row')] as HTMLElement[];
-    const pills = (row: HTMLElement) => [...row.querySelectorAll('.reference-source-use [appBadge], .reference-source-use .nostos-badge')].map((p) => p.textContent?.trim());
+    const pills = (row: HTMLElement) => [...row.querySelectorAll('.reference-source-use app-topic-chip')].map((p) => p.textContent?.trim());
     expect(pills(rows[0])).toEqual(['Theodicy', 'Optimism']);
     expect(pills(rows[1])).toEqual(['Optimism']);
     expect(touches()?.querySelector('.writing-touches-line')?.textContent?.trim()).toBe('Touches Optimism · Theodicy');
@@ -2942,7 +2943,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
 
     const rows = [...panel().querySelectorAll('.reference-source-row')] as HTMLElement[];
     expect(rows[2].querySelector('.reference-source-use.is-uncited')?.textContent?.trim()).toBe('Kept, not cited');
-    expect(rows[2].querySelector('.nostos-badge')).toBeNull();
+    expect(rows[2].querySelector('app-topic-chip')).toBeNull();
     expect(touches()?.textContent).not.toContain('Gardening');
   });
 
@@ -2982,7 +2983,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
     expect(getMany).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a cited source’s topic page in the Brain from its pill, keeping the pill’s look', async () => {
+  it('opens a cited source’s topic page in the Brain from its topic chip', async () => {
     type(cite(cited));
     // As saved: nothing to flush before leaving.
     component.activeItem.set({ ...doc, content: component.editorText() });
@@ -2990,9 +2991,9 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
     fixture.detectChanges();
     router.navigate.mockClear();
 
-    const pill = panel().querySelector('.reference-source-use button.reference-source-topic') as HTMLButtonElement;
+    const pill = panel().querySelector('.reference-source-use .reference-source-topic button.topic-chip-name') as HTMLButtonElement;
     expect(pill.getAttribute('type')).toBe('button');
-    expect(pill.querySelector('.nostos-badge')?.textContent?.trim()).toBe('Theodicy');
+    expect(pill.textContent?.trim()).toBe('Theodicy');
 
     pill.click();
     for (let i = 0; i < 20 && !router.navigate.mock.calls.length; i++) await vi.advanceTimersByTimeAsync(50);

@@ -622,6 +622,49 @@ overlap.
 
 ---
 
+## TopicChipComponent
+
+**Selector:** `app-topic-chip`
+**File:** `src/app/ui/topic-chip/`
+
+A topic on something (issue #1204): a quiet pill with the topic mark and the
+name, in the note's topics, Brain Sort's chosen topics, a cited source's topics
+in the Studio and, with `[icon]="null"`, a book's collections in the collection
+picker. The name opens the topic when given a `link`, or reports `activated`
+when `actionable` (the Studio saves the writing first). `removable` adds an
+`appIconButton` cross. On touch the name and the cross grow invisible 44px hit
+areas.
+
+| Input / output | Type                        | Default   | Description |
+| -------------- | --------------------------- | --------- | ----------- |
+| `name`         | `string` (required)         | —         | The topic |
+| `link`         | router link \| `null`       | `null`    | Opens the topic |
+| `actionable`   | `boolean`                   | `false`   | Without a link: the name is a button emitting `activated` |
+| `removable`    | `boolean`                   | `false`   | Show the cross, emitting `removed` |
+| `disabled`     | `boolean`                   | `false`   | Disables the cross |
+| `icon`         | `NostosConcept \| null`     | `'topic'` | The mark before the name |
+| `removeLabel`  | `string \| null`            | `null`    | The cross's name when not "Remove topic <name>" |
+
+---
+
+## TopicOptionComponent
+
+**Selector:** `[appTopicOption]`
+**File:** `src/app/ui/topic-option/`
+
+One row in any list of topics: the topic mark, the name and the usage count
+as a plain muted number (never a badge). `kind="create"` reads Create “name”
+after a plus; `kind="suggestion"` is muted. It goes on the element the list
+needs (`<li role="option">` or `<button>`), which keeps its role, id,
+`aria-selected` and events. Used by `app-topic-picker-popover`, the `[[`
+suggestions and Link a topic dialog, Brain Sort and the merge picker.
+
+The file also holds the one wording for an empty topic list:
+`NO_TOPICS_YET` ("No topics yet. Type a name to create one.") and
+`NO_TOPICS_MATCH` ("No topics match.").
+
+---
+
 ## StarRatingComponent
 
 **Selector:** `app-star-rating`  

@@ -39,38 +39,10 @@
   overflow-y: auto;
 }
 
-.merge-target {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  min-height: 40px;
-  padding: 0 0.65rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-row);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.82rem;
-  text-align: left;
-}
-
-.merge-target:hover,
-.merge-target.selected {
-  border-color: var(--color-primary-dim);
+/* The rows are the shared topic option row (ui/topic-option); the chosen
+ * one keeps the active fill. */
+.merge-target:hover {
   background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.merge-target-count {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--bg-body);
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  text-align: center;
 }
 
 /* Says what linking will actually do before it does it: the association this
@@ -106,15 +78,9 @@
   box-shadow: none;
 }
 
-.merge-target:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
 @media (max-width: 768px) {
   .merge-picker-cancel,
-  .merge-picker-confirm,
-  .merge-target {
+  .merge-picker-confirm {
     min-height: 44px;
   }
 

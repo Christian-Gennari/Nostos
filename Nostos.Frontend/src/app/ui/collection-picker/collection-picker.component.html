@@ -12,40 +12,31 @@
     <ul class="chips" aria-label="Selected collections">
       @for (collection of selected(); track collection.id) {
         <li class="chip">
-          <span class="chip-name">{{ collection.name }}</span>
-          <button
-            type="button"
-            class="chip-remove"
-            [attr.aria-label]="'Remove from ' + collection.name"
-            (click)="remove(collection.id)"
-          >
-            <nostos-icon name="x" [size]="12"></nostos-icon>
-          </button>
+          <app-topic-chip
+            [name]="collection.name"
+            [icon]="null"
+            [removable]="true"
+            [removeLabel]="'Remove from ' + collection.name"
+            (removed)="remove(collection.id)"
+          />
         </li>
       }
     </ul>
   }
 
-  <!-- role="group" + aria-pressed: these are toggles, not a radiogroup — more
-       than one may be active at once, which is the whole point of the change. -->
+  <!-- A checkbox per collection: more than one may be chosen at once, which
+       is the whole point of the control. -->
   <div class="options" role="group" [attr.aria-label]="label()">
     @for (option of options(); track option.id) {
-      <button
-        type="button"
+      <label
         class="option"
         [class.selected]="isSelected(option.id)"
         [style.--depth]="option.level"
-        [attr.aria-pressed]="isSelected(option.id)"
         [attr.data-collection-id]="option.id"
-        (click)="toggle(option.id)"
       >
-        <span class="option-check" aria-hidden="true">
-          @if (isSelected(option.id)) {
-            <nostos-icon name="check" [size]="12"></nostos-icon>
-          }
-        </span>
+        <input type="checkbox" appCheckbox [checked]="isSelected(option.id)" (change)="toggle(option.id)" />
         <span class="option-name">{{ option.name }}</span>
-      </button>
+      </label>
     } @empty {
       <p class="options-empty">No collections yet.</p>
     }
