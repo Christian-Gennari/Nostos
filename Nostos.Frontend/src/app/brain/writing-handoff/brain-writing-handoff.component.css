@@ -19,7 +19,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.15rem 1.5rem;
 }
 
 .handoff-heading {
@@ -40,12 +39,6 @@
   font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.25;
-}
-
-.handoff-close {
-  min-width: 44px;
-  min-height: 44px;
-  flex: 0 0 auto;
 }
 
 .handoff-content {
@@ -73,30 +66,21 @@
   min-height: 0;
 }
 
+/* The box, the selected fill and the text inks are the shared choice row
+   (ui/choice-row); this is only what a radio card adds. */
 .destination-option {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
   min-height: 52px;
   flex: 0 0 auto;
+  gap: 0.8rem;
   padding: 0.7rem 0.85rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
-.destination-option:hover {
+.destination-option:hover:not(.nostos-choice-row--selected) {
+  border-color: var(--color-primary-dim);
   background: var(--bg-hover);
-}
-
-.destination-option.selected {
-  border-color: var(--selection-surface);
-  background: var(--selection-surface);
-  color: var(--selection-ink);
 }
 
 .destination-option:focus-within {
@@ -124,7 +108,7 @@
   color: transparent;
 }
 
-.destination-option.selected .destination-check {
+.destination-option.nostos-choice-row--selected .destination-check {
   border-color: currentColor;
   color: currentColor;
 }
@@ -152,7 +136,7 @@
   line-height: 1.35;
 }
 
-.destination-option.selected .destination-copy small {
+.destination-option.nostos-choice-row--selected .destination-copy small {
   color: color-mix(in srgb, var(--selection-ink) 76%, transparent);
 }
 

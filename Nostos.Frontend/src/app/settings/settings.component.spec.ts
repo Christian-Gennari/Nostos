@@ -1760,6 +1760,27 @@ describe('SettingsComponent backup-only surface', () => {
     expect(backupServiceMock.restore).not.toHaveBeenCalled();
   });
 
+  it('downloads a backup from a link, without opening a window', () => {
+    openManageLibraryPage();
+    const component = fixture.componentInstance;
+    backupServiceMock.getDownloadUrl.mockReturnValue('/api/backup/download/b1');
+    const open = vi.spyOn(window, 'open');
+    let clicked: HTMLAnchorElement | null = null;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked = this;
+    });
+
+    component.downloadBackup('b1');
+
+    expect(open).not.toHaveBeenCalled();
+    expect(clicked).not.toBeNull();
+    expect(clicked!.getAttribute('href')).toBe('/api/backup/download/b1');
+    expect(clicked!.hasAttribute('download')).toBe(true);
+    expect(document.body.contains(clicked)).toBe(false);
+    click.mockRestore();
+    open.mockRestore();
+  });
+
   it('asks through ConfirmModal before deleting a backup', () => {
     openManageLibraryPage();
     const component = fixture.componentInstance;

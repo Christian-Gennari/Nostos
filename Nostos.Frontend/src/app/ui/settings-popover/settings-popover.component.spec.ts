@@ -16,7 +16,7 @@ import {
     <button #trigger type="button" id="trigger" (click)="open.set(!open())">Aa</button>
     <button type="button" id="elsewhere">Elsewhere</button>
     @if (open()) {
-      <nostos-settings-popover [origin]="trigger" label="View settings" testId="popover" (dismissed)="dismiss($event)">
+      <nostos-settings-popover [origin]="trigger" label="View settings" [heading]="heading" testId="popover" (dismissed)="dismiss($event)">
         <button type="button" id="first">First</button>
         <button type="button" id="second" (keydown.escape)="inner && $event.preventDefault()">Second</button>
       </nostos-settings-popover>
@@ -27,6 +27,7 @@ class Host {
   readonly open = signal(false);
   readonly dismissals: SettingsPopoverDismissal[] = [];
   inner = false;
+  heading: string | null = null;
   dismiss(reason: SettingsPopoverDismissal): void {
     this.dismissals.push(reason);
     this.open.set(false);
@@ -72,6 +73,23 @@ describe('SettingsPopoverComponent', () => {
   afterEach(() => {
     fixture.destroy();
     document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
+  });
+
+  it('shows the shared heading with one close button that says so', async () => {
+    await setup();
+    fixture.componentInstance.heading = 'View settings';
+    await open();
+
+    expect(panel()!.classList).toContain('nostos-surface');
+    expect(panel()!.querySelector('.nostos-surface-heading h2')?.textContent).toBe('View settings');
+    (panel()!.querySelector('.nostos-surface-heading button') as HTMLButtonElement).click();
+    expect(fixture.componentInstance.dismissals).toEqual(['close']);
+  });
+
+  it('has no heading row unless asked', async () => {
+    await setup();
+    await open();
+    expect(panel()!.querySelector('.nostos-surface-heading')).toBeNull();
   });
 
   it('opens on the overlay as a labelled, non-modal dialog and takes focus', async () => {
@@ -141,10 +159,10 @@ describe('SettingsPopoverComponent', () => {
   it('is a full-width sheet along the bottom edge on a phone, and follows the width as it changes', async () => {
     await setup(true);
     await open();
-    expect(pane()!.classList).toContain('nostos-settings-popover-pane--sheet');
+    expect(pane()!.classList).toContain('nostos-sheet-pane');
 
     breakpoint.next({ matches: false });
     expect(pane()!.classList).toContain('nostos-settings-popover-pane--popover');
-    expect(pane()!.classList).not.toContain('nostos-settings-popover-pane--sheet');
+    expect(pane()!.classList).not.toContain('nostos-sheet-pane');
   });
 });

@@ -5,16 +5,8 @@
 /* ---- Dialog: header --------------------------------------------------- */
 
 .picker-head {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
-.picker-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  padding: 0 1rem 0.9rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .picker-title {
@@ -23,11 +15,6 @@
   font-size: 1.05rem;
   font-weight: var(--fw-medium);
   line-height: 1.3;
-}
-
-.picker-close {
-  flex-shrink: 0;
-  margin: -0.35rem -0.4rem -0.35rem 0;
 }
 
 /* <nostos-search-field> owns the glass and its gutter. */

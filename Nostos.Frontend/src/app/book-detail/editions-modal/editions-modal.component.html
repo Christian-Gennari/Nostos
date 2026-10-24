@@ -1,5 +1,6 @@
 @if (isOpen()) {
 <app-modal-shell
+  closeLabel="Close editions"
   [isOpen]="true"
   variant="sheet"
   cardClass="editions-modal-card"
@@ -18,20 +19,6 @@
         <p class="editions-modal-subtitle">{{ bookTitle() }}</p>
         }
       </div>
-      <!-- The app's one icon button, not a hand-built copy of it. This surface was
-           the last dialog still rolling its own close control: a 44px box wrapping
-           a bare glyph, with its own hover, focus and disabled rules — three of the
-           five things `appIconButton` exists to own. -->
-      <button
-        appIconButton
-        icon="x"
-        [glyphSize]="20"
-        class="editions-modal-close"
-        title="Close"
-        aria-label="Close"
-        [disabled]="busy()"
-        (click)="close.emit()"
-      ></button>
     </header>
 
     <div class="editions-modal-body">

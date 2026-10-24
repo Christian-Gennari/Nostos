@@ -1,7 +1,7 @@
 <main class="layout-wrapper">
   <div class="layout-content" [attr.aria-busy]="store.loading()">
     @if (store.loading()) {
-    <nostos-loading-indicator class="book-detail-loading" label="Loading book" size="xl" />
+    <nostos-loading-indicator class="book-detail-loading" label="Loading book" />
     }
 
     @if (store.error()) {
@@ -577,7 +577,7 @@
                 <span class="label">Genres</span>
                 <div class="value tag-list">
                   @for(cat of store.book()?.categories?.split(','); track cat) {
-                  <span class="tag">{{ cat.trim() }}</span>
+                  <app-topic-chip [name]="cat.trim()" [icon]="null" />
                   }
                 </div>
               </div>
@@ -588,7 +588,7 @@
                   <!-- Renders EVERY membership, not just the first: the rail used
                        to show one name because the model only held one. -->
                   @for (name of getCollectionNames(store.book()!); track name) {
-                  <span class="tag">{{ name }}</span>
+                  <app-topic-chip [name]="name" [icon]="null" />
                   }
                 </div>
               </div>

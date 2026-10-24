@@ -41,6 +41,7 @@
      search sits at the top and the results stay above the keyboard. -->
 <ng-template #dialogTpl>
   <app-modal-shell
+    closeLabel="Close"
     [isOpen]="true"
     variant="sheet"
     [maxWidth]="'460px'"
@@ -48,24 +49,14 @@
     [layer]="130"
     [trapFocus]="true"
     [ariaLabelledBy]="auto.uid + '-title'"
-    [style.--modal-head-padding]="'0.85rem 1rem 0.9rem'"
+    [headDivider]="false"
+    [style.--modal-head-padding]="'0.85rem 1rem 0.7rem'"
     (closed)="cancel()"
   >
-    <div shellHeader class="picker-head">
-      <div class="picker-title-row">
-        <h2 [id]="auto.uid + '-title'" class="picker-title">Link a topic</h2>
-        <button
-          appIconButton
-          type="button"
-          icon="x"
-          [glyphSize]="18"
-          class="picker-close"
-          title="Close"
-          aria-label="Close"
-          (click)="cancel($event)"
-        ></button>
-      </div>
+    <h2 shellHeader [id]="auto.uid + '-title'" class="picker-title">Link a topic</h2>
 
+    <!-- The field is pinned under the title, full width, whatever the list does. -->
+    <div shellTabs class="picker-head">
       <!-- No clear button: the dialog's Close sits right above the field. -->
       <nostos-search-field class="picker-search" [clearable]="false">
         <input

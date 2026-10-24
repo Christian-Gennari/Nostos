@@ -25,11 +25,12 @@ import {
 } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { PHONE_QUERY } from '../breakpoints';
+import { IconButtonComponent } from '../icon-button/icon-button.component';
 
 /** Below this width the panel is a sheet along the bottom edge, not a popover. */
 export const SETTINGS_POPOVER_SHEET_QUERY = PHONE_QUERY;
 
-export type SettingsPopoverDismissal = 'escape' | 'outside';
+export type SettingsPopoverDismissal = 'escape' | 'outside' | 'close';
 
 /** Under its button, hanging from the button's trailing edge; flipped when there is no room. */
 const POSITIONS: ConnectedPosition[] = [
@@ -64,23 +65,47 @@ const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select
  *
  * A layer inside it that handles Escape itself (a sub-view's "back") calls
  * `preventDefault()`, and the panel leaves that Escape alone.
+ *
+ * `heading` adds the shared title row (the serif title and the one close
+ * button, which says `close` through `dismissed`); both panels use it so the
+ * reader's View settings and the Studio's Page settings look alike. Without a
+ * heading the panel is only its content.
+ *
+ * Focus return has one exception, on purpose: the Studio sets
+ * `[restoreFocus]="false"` because closing Page settings hands focus to the
+ * writing surface (the page the writer was typing on), not to the Aa button.
+ * Every other caller keeps the default and gets focus back on its button.
  */
 @Component({
   selector: 'nostos-settings-popover',
   standalone: true,
+  imports: [IconButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   // The panel renders in the overlay container, outside this host.
   encapsulation: ViewEncapsulation.None,
   template: `
     <ng-template #panel>
       <div
-        class="nostos-settings-popover-panel"
+        class="nostos-settings-popover-panel nostos-surface"
         role="dialog"
         aria-modal="false"
-        [attr.aria-label]="label()"
+        [attr.aria-label]="label() ?? heading()"
         [attr.aria-labelledby]="labelledBy()"
         [attr.data-testid]="testId()"
       >
+        @if (heading(); as title) {
+          <div class="nostos-surface-heading nostos-settings-popover-heading">
+            <h2>{{ title }}</h2>
+            <button
+              appIconButton
+              type="button"
+              icon="x"
+              [attr.aria-label]="'Close ' + title.toLowerCase()"
+              [attr.title]="'Close ' + title.toLowerCase()"
+              (click)="dismissed.emit('close')"
+            ></button>
+          </div>
+        }
         <ng-content />
       </div>
     </ng-template>
@@ -91,6 +116,8 @@ export class SettingsPopoverComponent implements AfterViewInit, OnDestroy {
   /** The button that opens it: the panel hangs from it and focus returns to it. */
   readonly origin = input.required<HTMLElement | null>();
   readonly label = input<string | null>(null);
+  /** A visible title with the shared close button; also the panel's accessible name. */
+  readonly heading = input<string | null>(null);
   readonly labelledBy = input<string | null>(null);
   readonly testId = input<string | null>(null);
   /**
@@ -203,7 +230,7 @@ export class SettingsPopoverComponent implements AfterViewInit, OnDestroy {
 
   private paneClasses(sheet: boolean): string[] {
     return sheet
-      ? ['nostos-settings-popover-pane', 'nostos-settings-popover-pane--sheet']
+      ? ['nostos-settings-popover-pane', 'nostos-sheet-pane']
       : ['nostos-settings-popover-pane', 'nostos-settings-popover-pane--popover'];
   }
 }

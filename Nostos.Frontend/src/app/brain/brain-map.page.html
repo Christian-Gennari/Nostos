@@ -34,12 +34,9 @@
       @if (finds().length) {
       <ul class="finds" id="map-finds" role="listbox" aria-label="Topics">
         @for (topic of finds(); track topic.id; let i = $index) {
-        <li role="option" [id]="'map-find-' + i" [attr.aria-selected]="i === activeFind()"
-          [class.is-active]="i === activeFind()"
-          (mousedown)="$event.preventDefault()" (mouseenter)="finderActive.set(i)" (click)="find(topic.id)">
-          <span class="find-name">{{ topic.name }}</span>
-          <span class="find-count">{{ topic.usageCount }}</span>
-        </li>
+        <li appTopicOption role="option" [id]="'map-find-' + i" [attr.aria-selected]="i === activeFind()"
+          [name]="topic.name" [count]="topic.usageCount" [active]="i === activeFind()"
+          (mousedown)="$event.preventDefault()" (mouseenter)="finderActive.set(i)" (click)="find(topic.id)"></li>
         }
       </ul>
       }
@@ -63,7 +60,11 @@
     @if (focusedWords(); as words) {
     <p mapCardDetail class="map-sample map-words">{{ words }}</p>
     } @else if (sample(); as line) {
-    <p mapCardDetail class="map-sample" [class.is-quote]="line.quote">{{ line.text }}</p>
+    @if (line.quote) {
+    <blockquote mapCardDetail appQuote size="sm" [lines]="3">{{ line.text }}</blockquote>
+    } @else {
+    <p mapCardDetail class="map-sample">{{ line.text }}</p>
+    }
     }
   </app-topic-map>
   }

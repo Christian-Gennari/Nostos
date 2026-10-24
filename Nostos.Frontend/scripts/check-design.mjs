@@ -1066,7 +1066,7 @@ function rawButtonWithoutPrimitive(html, relativePath) {
   const allowed = PRODUCT_RAW_BUTTON_CLASSES.get(relativePath) ?? new Set();
   for (const tag of clean.matchAll(/<button\b[^>]*>/gs)) {
     const raw = tag[0];
-    if (/\bapp(?:Button|IconButton|Chip|ChoiceRow)\b/.test(raw)) continue;
+    if (/\bapp(?:Button|IconButton|Chip|ChoiceRow|TopicOption)\b/.test(raw)) continue;
     // An item of the shared `nostos-menu` is a canonical primitive too: the
     // component owns its chrome and the CDK owns its behaviour.
     if (/\bnostosMenuItem\b/.test(raw)) continue;

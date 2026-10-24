@@ -1,5 +1,6 @@
 @if (isOpen()) {
   <app-modal-shell
+    closeLabel="Close"
     [isOpen]="true"
     variant="sheet"
     [maxWidth]="sourceMode() ? '960px' : '700px'"
@@ -34,15 +35,6 @@
             }}
           </p>
         </div>
-        <button
-          id="close-modal"
-          appIconButton
-          icon="x"
-          [glyphSize]="20"
-          [disabled]="isSubmitting()"
-          (click)="closeModal.emit()"
-          title="Close"
-        ></button>
       </header>
 
       <form id="add-book-form" (ngSubmit)="submit()" #bookForm="ngForm" class="modal-form">
@@ -121,13 +113,13 @@
             } @else {
               <section class="review-summary" aria-label="Book acquisition summary">
                 <div class="review-summary__visual" aria-hidden="true">
-                  @if (sourceCoverUrl(); as coverUrl) {
-                    <img class="review-cover" [src]="coverUrl" alt="" />
-                  } @else if (form.type === 'audiobook') {
-                    <nostos-icon concept="audiobook" [size]="22"></nostos-icon>
-                  } @else {
-                    <nostos-icon name="book" [size]="22"></nostos-icon>
-                  }
+                  <nostos-book-cover
+                    size="fill"
+                    [iconSize]="22"
+                    [decorative]="true"
+                    [src]="sourceCoverUrl()"
+                    [format]="form.type === 'audiobook' ? 'audiobook' : null"
+                  />
                 </div>
                 <div class="review-summary__copy">
                   <span class="review-eyebrow">{{ isEditMode() ? 'Library record' : 'Ready to add' }}</span>

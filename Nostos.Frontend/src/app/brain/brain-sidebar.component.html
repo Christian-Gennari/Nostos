@@ -66,9 +66,9 @@
             <span class="count">{{ topic.usageCount }}</span>
           </a>
           <div class="row-actions">
-            <button appIconButton type="button" size="xs" icon="pencil-simple" [glyphSize]="13" class="row-action"
+            <button appIconButton type="button" size="xxs" icon="pencil-simple" [glyphSize]="13" class="row-action"
               [attr.aria-label]="'Rename ' + topic.name" (click)="actions.startRename(topic, 'sidebar')"></button>
-            <button appIconButton type="button" size="xs" tone="danger" icon="trash" [glyphSize]="13"
+            <button appIconButton type="button" size="xxs" tone="danger" icon="trash" [glyphSize]="13"
               class="row-action danger" [attr.aria-label]="'Delete ' + topic.name"
               (click)="actions.openDelete(topic)"></button>
           </div>

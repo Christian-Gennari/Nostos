@@ -508,18 +508,7 @@
   background: var(--bg-hover);
 }
 
-.history-actions .icon-btn--danger {
-  color: var(--color-danger);
-  border-color: var(--color-danger);
-}
-
-.history-actions .icon-btn--danger:hover {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-/* --- Spin animation --- */
-
+/* The trash is quiet at rest; the icon button turns it red on hover. */
 
 /* --- Progress Bar --- */
 .progress-bar-container {
@@ -817,7 +806,8 @@
     display: none;
   }
 
-  .settings-nav-label {
+  .settings-nav-label,
+  .settings-nav-brand {
     display: none;
   }
 

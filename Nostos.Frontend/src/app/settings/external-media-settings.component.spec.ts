@@ -160,7 +160,7 @@ describe('ExternalMediaSettingsComponent', () => {
     fixture.detectChanges();
 
     expect(component.ready().failed).toBe(true);
-    const alert = fixture.nativeElement.querySelector('.nostos-paging-status__failed') as HTMLElement;
+    const alert = fixture.nativeElement.querySelector('.nostos-paging-status__failed [role="alert"], .nostos-paging-status__failed[role="alert"]') as HTMLElement;
     expect(alert.textContent).toContain('More items could not be loaded.');
 
     (alert.querySelector('button') as HTMLButtonElement).click();

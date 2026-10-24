@@ -1,4 +1,5 @@
 <app-modal-shell
+  closeLabel="Close document picker" [closeFocusInitial]="true"
   [isOpen]="true"
   variant="sheet"
   cardClass="handoff-dialog"
@@ -7,7 +8,7 @@
   [busy]="saving()"
   ariaLabelledBy="brain-writing-handoff-title"
   ariaDescribedBy="brain-writing-handoff-description"
-  [style.--modal-head-padding]="'0'"
+  [style.--modal-head-padding]="'1.15rem 1.5rem'"
   [style.--modal-card-padding]="'0'"
   [style.--modal-card-padding-narrow]="'0'"
   (closed)="cancel()"
@@ -19,18 +20,6 @@
       </span>
       <h2 id="brain-writing-handoff-title" tabindex="-1">Keep in a document</h2>
     </div>
-    <button
-      cdkFocusInitial
-      appIconButton
-      icon="x"
-      size="xs"
-      [glyphSize]="16"
-      type="button"
-      class="handoff-close"
-      aria-label="Close document picker"
-      [disabled]="saving()"
-      (click)="cancel()"
-    ></button>
   </header>
 
   <div class="handoff-content">
@@ -51,8 +40,9 @@
     } @else {
       <div class="handoff-selection" role="radiogroup" aria-label="Document destination">
         <label
+          appChoiceRow
           class="destination-option new-destination"
-          [class.selected]="newWritingMode()"
+          [selected]="newWritingMode()"
         >
           <input
             type="radio"
@@ -100,7 +90,7 @@
           <section class="existing-destinations" aria-labelledby="existing-writing-heading">
             <h3 id="existing-writing-heading">Existing document</h3>
             @if (documentDestinations().length > 8) {
-              <nostos-search-field class="destination-filter">
+              <nostos-search-field class="destination-filter" size="sm">
                 <input
                   appInput
                   type="search"
@@ -122,8 +112,9 @@
               >
                 @for (writing of filteredDestinations(); track writing.id) {
                   <label
+                    appChoiceRow
                     class="destination-option existing-destination"
-                    [class.selected]="selectedWritingId() === writing.id"
+                    [selected]="selectedWritingId() === writing.id"
                     [title]="writing.name"
                   >
                     <input

@@ -10,7 +10,10 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 export type TopicOptionKind = 'topic' | 'create' | 'suggestion';
 
 /** The one thing a topic list says when there are no topics to choose from. */
-export const NO_TOPICS_YET = 'No topics yet. Type a name to create one.';
+export const NO_TOPICS = 'No topics yet.';
+
+/** The same, where typing a name can create one. */
+export const NO_TOPICS_YET = `${NO_TOPICS} Type a name to create one.`;
 
 /** The one thing a topic list says when a search matches none. */
 export const NO_TOPICS_MATCH = 'No topics match.';
@@ -33,6 +36,7 @@ export const NO_TOPICS_MATCH = 'No topics match.';
   host: {
     class: 'topic-option',
     '[class.is-active]': 'active()',
+    '[class.is-selected]': 'selected()',
     '[class.is-suggestion]': "kind() === 'suggestion'",
     '[class.is-create]': "kind() === 'create'",
   },
@@ -45,6 +49,9 @@ export const NO_TOPICS_MATCH = 'No topics match.';
       <span class="topic-option-name">{{ name() }}</span>
       @if (count() !== null && count() !== undefined) {
         <span class="topic-option-count">{{ count() }}</span>
+      }
+      @if (selected()) {
+        <nostos-icon class="topic-option-check" name="check" [size]="14" />
       }
     }
   `,
@@ -76,6 +83,20 @@ export const NO_TOPICS_MATCH = 'No topics match.';
       :host(:focus-visible) {
         outline: var(--focus-ring-width) solid var(--focus-ring);
         outline-offset: -2px;
+      }
+
+      /* The chosen row (the merge picker): a check and a firmer name, so it is
+         not mistaken for the row the pointer is on. */
+      :host(.is-selected) {
+        background: var(--bg-hover);
+      }
+
+      :host(.is-selected) .topic-option-name {
+        font-weight: var(--fw-medium);
+      }
+
+      .topic-option-check {
+        color: var(--color-text-main);
       }
 
       :host(.is-suggestion) {
@@ -117,4 +138,6 @@ export class TopicOptionComponent {
   /** Notes that use the topic; null or absent shows no number. */
   readonly count = input<number | null | undefined>(null);
   readonly active = input(false);
+  /** The chosen row of a single-choice list: marked with a check, not just tinted. */
+  readonly selected = input(false);
 }

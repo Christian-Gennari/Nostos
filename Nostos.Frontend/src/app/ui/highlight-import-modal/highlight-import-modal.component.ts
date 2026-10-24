@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { NgTemplateOutlet } from '@angular/common';
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -20,7 +21,6 @@ import { BooksService } from '../../core/services/books.service';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../button/button.component';
-import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
@@ -74,6 +74,7 @@ export interface UnimportableEntry extends HighlightImportSkipped {
   selector: 'app-highlight-import-modal',
   standalone: true,
   imports: [
+    EmptyStateComponent,
     ChoiceRowComponent,
     SearchFieldComponent,
     LoadingIndicatorComponent,
@@ -83,7 +84,6 @@ export interface UnimportableEntry extends HighlightImportSkipped {
     ModalShell,
     DialogActionsComponent,
     ButtonComponent,
-    IconButtonComponent,
     NostosIconComponent,
     InputDirective,
   ],

@@ -944,6 +944,15 @@ app-sidebar-collections.no-transition {
   min-height: min(62vh, 560px);
 }
 
+/* The first load says so, a beat late: a response that lands at once never
+   shows it. It sits in the held-open stage, where the rows will be. */
+.results-loading {
+  display: flex;
+  justify-content: center;
+  padding-top: 8vh;
+  animation: library-content-in var(--library-swap-in) var(--ease-out) 350ms both;
+}
+
 /* The results resolve in on mount with the same fade the first paint used to
    get, which is what guarantees a fade when arriving in the library from another
    section (there the response can land before the swap state ever paints).

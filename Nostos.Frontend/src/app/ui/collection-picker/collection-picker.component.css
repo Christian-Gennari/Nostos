@@ -80,9 +80,3 @@
   white-space: nowrap;
 }
 
-.options-empty {
-  margin: 0;
-  padding: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}

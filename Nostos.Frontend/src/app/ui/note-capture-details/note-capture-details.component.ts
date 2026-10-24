@@ -6,12 +6,11 @@ import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicato
 import { ButtonComponent } from '../button/button.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
-import { IconButtonComponent } from '../icon-button/icon-button.component';
 
 /** Original wording is canonical note data, available without an assistant session. */
 @Component({
   selector: 'app-note-capture-details',
-  imports: [ButtonComponent, ModalShell, DialogActionsComponent, IconButtonComponent, LoadingIndicatorComponent],
+  imports: [ButtonComponent, ModalShell, DialogActionsComponent, LoadingIndicatorComponent],
   templateUrl: './note-capture-details.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './note-capture-details.component.css',

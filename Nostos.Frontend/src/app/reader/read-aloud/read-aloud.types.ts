@@ -1,3 +1,4 @@
+import { COMMON_PLAYBACK_RATES } from '../../ui/playback-speed-menu/playback-speed-menu.component';
 import { Signal } from '@angular/core';
 
 /** One spoken unit: a sentence, or a few short ones joined. */
@@ -65,4 +66,4 @@ export interface ReadAloudVoice {
 }
 
 /** Up to 1.5×: faster, a natural voice cannot render sentences as quickly as they are spoken. */
-export const READ_ALOUD_RATES = [0.75, 1, 1.25, 1.5] as const;
+export const READ_ALOUD_RATES: readonly number[] = COMMON_PLAYBACK_RATES.filter((rate) => rate <= 1.5);

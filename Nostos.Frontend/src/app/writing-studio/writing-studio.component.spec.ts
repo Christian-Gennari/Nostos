@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Component, input, output, Input } from '@angular/core';
+import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
+import { Component, input, output, Input, signal } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
@@ -210,7 +211,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(search.classList.contains('nostos-form-control')).toBe(true);
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
 
-    const count = fixture.nativeElement.querySelector('.badge-count') as HTMLSpanElement;
+    const count = fixture.nativeElement.querySelector('.index-list .topic-option-count') as HTMLSpanElement;
     // A topic's usage is a plain muted number, not a badge (issue #1204).
     expect(count.tagName).toBe('SPAN');
     expect(count.classList.contains('nostos-badge')).toBe(false);
@@ -242,7 +243,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     );
     expect(tabIcons.map((icon) => icon.componentInstance.name())).toEqual(['hash', 'book']);
 
-    const topicRow = fixture.nativeElement.querySelector('.list-item') as HTMLButtonElement;
+    const topicRow = fixture.nativeElement.querySelector('.index-list .topic-option') as HTMLButtonElement;
     expect(topicRow.tagName).toBe('BUTTON');
     expect(topicRow.classList.contains('nostos-button')).toBe(false);
 
@@ -463,6 +464,16 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }));
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="shortcut-sheet"]')).toBeTruthy();
+  });
+
+  it('names the platform modifier in the sheet and lists Search everything', () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true }));
+    fixture.detectChanges();
+    const sheet = fixture.nativeElement.querySelector('[data-testid="shortcut-sheet"]') as HTMLElement;
+    const keys = Array.from(sheet.querySelectorAll('kbd')).map((kbd) => kbd.textContent?.trim());
+    expect(keys).toContain(component.modKey);
+    expect(keys).not.toContain(component.modKey === 'Ctrl' ? '⌘' : 'Ctrl');
+    expect(sheet.textContent).toContain('Search everything');
   });
 
   it('keeps an open file drawer open when the window crosses the compact breakpoint', () => {
@@ -2974,6 +2985,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany } },
         { provide: Router, useValue: router },
+        { provide: AssistantLauncherService, useValue: { available: signal(false) } },
       ],
     }).compileComponents();
     localStorage.clear();

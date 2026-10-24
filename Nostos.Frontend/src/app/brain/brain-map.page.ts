@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
+import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
+import { TopicOptionComponent } from '../ui/topic-option/topic-option.component';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
@@ -26,7 +28,7 @@ const FINDER_LIMIT = 6;
 @Component({
   selector: 'app-brain-map-page',
   standalone: true,
-  imports: [SearchFieldComponent, ButtonComponent, InputDirective, NostosIconComponent, TopicMapComponent],
+  imports: [QuoteBlockComponent, TopicOptionComponent, SearchFieldComponent, ButtonComponent, InputDirective, NostosIconComponent, TopicMapComponent],
   templateUrl: './brain-map.page.html',
   styleUrls: ['./brain-map.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

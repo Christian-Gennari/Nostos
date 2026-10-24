@@ -12,7 +12,7 @@ const RATE_KEY = 'nostos.readAloud.rate';
 
 function readStoredRate(): number {
   try {
-    const rates = READ_ALOUD_RATES as readonly number[];
+    const rates = READ_ALOUD_RATES;
     const stored = Number(localStorage.getItem(RATE_KEY));
     // A speed above the fastest one offered (2× once was) becomes the fastest.
     if (stored > rates[rates.length - 1]) return rates[rates.length - 1];
@@ -173,7 +173,7 @@ export class ReadAloudController implements OnDestroy {
   }
 
   cycleRate(): void {
-    const rates = READ_ALOUD_RATES as readonly number[];
+    const rates = READ_ALOUD_RATES;
     const index = rates.indexOf(this.rate());
     this.setRate(rates[(index + 1) % rates.length]);
   }

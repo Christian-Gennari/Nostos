@@ -1264,7 +1264,7 @@ describe('LibraryImportFlowComponent', () => {
     harness.fixture.detectChanges();
 
     expect(testId(harness, 'import-activation-phase')?.textContent).toContain(
-      'Switching libraries…',
+      'Replacing the library on the server…',
     );
   });
 

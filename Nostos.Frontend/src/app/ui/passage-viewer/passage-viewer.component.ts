@@ -12,6 +12,7 @@ import {
   viewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { ProgressComponent } from '../progress/progress.component';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 
@@ -64,6 +65,7 @@ let libronInjected = false;
     LoadingIndicatorComponent,
     EmptyStateComponent,
     RangeDirective,
+    ProgressComponent,
   ],
   templateUrl: './passage-viewer.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,

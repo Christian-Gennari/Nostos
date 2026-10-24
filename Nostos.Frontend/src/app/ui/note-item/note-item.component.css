@@ -90,7 +90,6 @@
    The look is the shared quote block (ui/quote-block); a passage's opening is
    smaller and fades out under its clamp. */
 .note-item-quote.is-opening {
-  font-size: 1.04rem;
   white-space: normal;
   mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
@@ -284,10 +283,6 @@ button.note-item-source {
 @container (max-width: 640px) {
   .note-item-body {
     padding-right: 1.9rem;
-  }
-
-  .note-item-quote {
-    font-size: 1.06rem;
   }
 
   .note-item-passage {

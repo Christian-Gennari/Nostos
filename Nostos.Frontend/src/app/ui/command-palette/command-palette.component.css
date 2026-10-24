@@ -59,24 +59,9 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.palette-input-icon {
-  flex: none;
-  color: var(--color-text-light);
-}
-
-.palette-input {
+.palette-field {
   flex: 1;
   min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text-main);
-  font-family: inherit;
-  font-size: 1.05rem;
-}
-
-.palette-input::placeholder {
-  color: var(--color-text-light);
 }
 
 .palette-loading {
@@ -277,11 +262,6 @@
     gap: 0.625rem;
     min-height: 3.75rem;
     padding: env(safe-area-inset-top, 0px) 0.5rem 0 1rem;
-  }
-
-  .palette-input {
-    /* 16px or more keeps iOS from zooming the page on focus. */
-    font-size: var(--text-md);
   }
 
   /* Phone only: a ghost appButton, at the touch height of the field beside it. */

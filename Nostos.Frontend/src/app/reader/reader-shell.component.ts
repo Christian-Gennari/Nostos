@@ -1,4 +1,5 @@
 import { ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { PHONE_OR_TOUCH_QUERY } from '../ui/breakpoints';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
@@ -167,6 +168,7 @@ import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
   selector: 'app-reader-shell',
   standalone: true,
   imports: [
+    LoadingIndicatorComponent,
     SearchFieldComponent,
     CommonModule,
     FormsModule,

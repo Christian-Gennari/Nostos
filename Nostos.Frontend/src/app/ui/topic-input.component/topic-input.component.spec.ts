@@ -161,7 +161,7 @@ describe('TopicInputComponent topic linking', () => {
     const original = component.value;
 
     openDialog();
-    inPicker<HTMLButtonElement>('.picker-close')!.click();
+    inPicker<HTMLButtonElement>('.modal-close')!.click();
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -193,7 +193,7 @@ describe('TopicInputComponent topic linking', () => {
 
     const action = fixture.nativeElement.querySelector('.topic-link-action') as HTMLButtonElement;
     const option = items()[0];
-    const close = inPicker<HTMLButtonElement>('.picker-close')!;
+    const close = inPicker<HTMLButtonElement>('.modal-close')!;
 
     expect(action.tagName).toBe('BUTTON');
     expect(option.tagName).toBe('BUTTON');

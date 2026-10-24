@@ -8,11 +8,10 @@
   </section>
   @if (originalOpen()) {
     <app-modal-shell [isOpen]="true" maxWidth="640px" [layer]="120" [busy]="restoring()"
+      closeLabel="Close original wording" [closeFocusInitial]="true"
       ariaLabel="Original wording" (closed)="closeOriginal()">
       <div class="original-header" shellHeader>
         <h2>Original wording</h2>
-        <button appIconButton icon="x" type="button" aria-label="Close original wording"
-          cdkFocusInitial [disabled]="restoring()" (click)="closeOriginal()"></button>
       </div>
       <div class="original-body" [attr.aria-busy]="loading()">
         @if (loading()) {

@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { LinkableBookDto } from '../../core/dtos/book.dtos';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
-import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 import { BadgeComponent } from '../../ui/badge/badge.component';
@@ -53,7 +52,7 @@ export interface LinkCandidate extends LinkableBookDto {
 @Component({
   selector: 'app-editions-modal',
   standalone: true,
-  imports: [SearchFieldComponent, BadgeComponent, ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
+  imports: [SearchFieldComponent, BadgeComponent, ButtonComponent, ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, InputDirective, ModalShell],
   templateUrl: './editions-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './editions-modal.component.css',

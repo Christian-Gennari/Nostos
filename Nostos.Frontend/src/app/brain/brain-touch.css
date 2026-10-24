@@ -4,8 +4,7 @@
 @media (pointer: coarse), (hover: none) {
   button[appButton],
   a[appButton],
-  button[appChip],
-  a.topic-link {
+  button[appChip] {
     min-height: var(--control-h-touch);
   }
 

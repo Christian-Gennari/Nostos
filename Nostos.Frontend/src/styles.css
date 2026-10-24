@@ -1283,11 +1283,9 @@
      ::selection                     → --text-selection-bg
 
    Worth noting because it is an easy trap: `.brand` was never applied by any
-   template. The sidebar lockup uses `.brand-lockup`, `.brand-lockup__tile`,
-   `.brand-lockup__arch` and `.brand-lockup__word` (sidebar-collections.html),
-   and the only other `.brand` reference is a rule in that component's stylesheet
-   that is itself unreachable. So half of the deleted override was styling a
-   class that cannot appear. */
+   template. The lockup everywhere is `<nostos-brand-lockup>` (ui/brand-lockup),
+   which owns its own tile, arch and wordmark. So half of the deleted override
+   was styling a class that cannot appear. */
 
 /* Text on a primary fill. `--on-primary` replaces the surface tokens these
    rules used to borrow, which invert under a dark theme. The active row keeps a
@@ -2102,33 +2100,6 @@ a.topic-tag:focus-visible {
   font-weight: var(--fw-semibold);
 }
 
-.badge-count {
-  background: var(--bg-body);
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-weight: var(--fw-semibold);
-  border: 1px solid var(--border-color);
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--color-text-light);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  padding: 0.2rem 0.6rem;
-  border-radius: 100px;
-}
-
-.note-text {
-  line-height: 1.6;
-  color: var(--color-text-main);
-}
-
 /* ------------------------------
    GLASS SURFACES (shared material)
 ------------------------------ */
@@ -2628,5 +2599,94 @@ app-assistant {
 @media (max-width: 768px) {
   body.nostos-library {
     scrollbar-gutter: stable;
+  }
+}
+
+/* ------------------------------
+   OVERLAY SURFACE: nostos-menu and nostos-settings-popover
+------------------------------ */
+/* One floating surface, two guests. The menu and the settings panel render in
+   the CDK overlay, so these rules are global. `.nostos-surface` is the box
+   (border, corner, shadow, entrance); at phone width the overlay pane is
+   `.nostos-sheet-pane` and the same box becomes a sheet along the bottom edge
+   with a grab handle. Each component owns only what is inside the box. */
+.nostos-surface {
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-md);
+  font-family: 'Hanken Grotesk', sans-serif;
+  transform-origin: top right;
+  animation: nostos-surface-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes nostos-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+@keyframes nostos-sheet-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+}
+
+.nostos-sheet-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 72dvh;
+}
+
+.nostos-sheet-pane > .nostos-surface {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  border-width: 1px 0 0;
+  border-radius: var(--radius-popover) var(--radius-popover) 0 0;
+  padding-inline: max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-right, 0px));
+  padding-top: 0;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  animation-name: nostos-sheet-in;
+}
+
+.nostos-sheet-pane > .nostos-surface::before {
+  content: '';
+  display: block;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 4px;
+  margin: 0.625rem auto;
+  border-radius: var(--radius-pill);
+  background: var(--border-color);
+}
+
+/* The heading row a surface may carry: a title and the one close button. */
+.nostos-surface-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.nostos-surface-heading h2 {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.125rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nostos-surface,
+  .nostos-sheet-pane > .nostos-surface {
+    animation: none;
   }
 }

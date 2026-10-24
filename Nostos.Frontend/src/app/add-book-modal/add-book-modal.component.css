@@ -82,11 +82,6 @@
   background: var(--bg-surface);
   color: var(--color-text-light);
 }
-.review-cover {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 .review-summary__copy {
   display: flex;
   flex: 1 1 auto;
@@ -563,18 +558,6 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   object-fit: contain;
-}
-/* The source's cover, with the reason it is here: nothing to do about it. */
-.cover-from-source {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-/* A chosen book file, named under its zone. */
-.chosen-file {
-  margin: 0.35rem 0 0;
-  font-size: 0.74rem;
-  color: var(--color-text-light);
 }
 
 .source-format-families {

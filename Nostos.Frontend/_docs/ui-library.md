@@ -251,9 +251,26 @@ If changing status needs to be announced, put the appropriate live-region
 semantics on the status container/call site. Do not make the badge interactive;
 use `appChip` when the capsule can be activated.
 
-## Segmented-control visual recipe
+## Segmented controls (`nostos-segmented`, `.toggle-opt`)
 
-Segmented controls are a **pattern, not a semantic component**. The compact
+Two things share one look and keep their own semantics.
+
+**`nostos-segmented`** (`src/app/ui/segmented/`) is the single-choice setting:
+the reader's typeface, line height and margins, the PDF reading mode, the
+add-book source filter, the Studio's page width. It is a radio group, fixed:
+`role="radiogroup"` with `role="radio"` / `aria-checked`, one tab stop with
+roving focus, and arrow keys that move and select. Inputs: `options`
+(`{ value, label }[]`, required), `value` (required), `fill` (stretch the
+options across the host), `disabled`; output `valueChange`. The host is the
+track, so a call site labels it with its own `aria-labelledby`.
+
+```html
+<nostos-segmented aria-labelledby="line-spacing-label" [options]="spacing"
+                  [value]="lineSpacing()" (valueChange)="setLineSpacing($event)" />
+```
+
+**The recipe** for everything else (the Studio's tabs, the catalogue mirror) is a
+**pattern, not a semantic component**. The compact
 option recipe lives once in `src/styles.css` as `.toggle-opt` and its
 `.active`, hover and focus states. The enclosing track follows the existing
 Nostos treatment: `--bg-hover`, 3px padding, `--radius-md`, 2px gap and no
@@ -268,8 +285,9 @@ Keep the surface's real interaction contract:
   `aria-checked`;
 - pressed-button groups keep native buttons with `aria-pressed`.
 
-Do not create a SegmentedControl mega-component that switches ARIA modes through
-inputs. Shared appearance does not imply shared semantics. Large radio cards
+Do not make `nostos-segmented` switch ARIA modes through inputs; a surface whose
+semantics differ keeps the recipe and its own markup. The list/grid and list/map
+toggles are `nostos-view-toggle` (icon-only pressed buttons), not this. Shared appearance does not imply shared semantics. Large radio cards
 such as Settings' current theme choices are also not compact segmented controls
 just because they represent a choice.
 
@@ -322,7 +340,10 @@ the topic pickers). It frames the caller's own input:
   browser's own clear glyph is hidden.
 - `[clearable]="false"` where a Close button already sits beside or above the field
   (reader search, topic pickers), so two X's never mean two things.
-- `size="sm"` is the dense rung for panels and dialogs (15px glass, narrower gutter).
+- `size="sm"` is the dense rung for panels and dialogs (15px glass, narrower gutter);
+  `md` (the default) is a page toolbar's field.
+- `clearLabel` names the clear button (default "Clear search").
+- It needs an `appInput` inside it (the clear button reads the input's value).
 - Place it with a class on the host (`class="search-bar-container"`); do not restyle
   the glass or the input's gutter.
 
@@ -434,6 +455,13 @@ Dialog composition has three owners:
 2. **DialogActions** owns the ordinary footer/inset action-row composition.
 3. **Button** owns ordinary action styling.
 
+`closeLabel` gives the dialog its one close button: the shell draws an
+`appIconButton` "x" at the end of the header, disabled while `busy`, named by
+the label (`closeLabel="Close import review"`), and emits `closed`. Leave it out
+of the caller's header. `[closeFocusInitial]="true"` lets it take focus on open
+(a dialog with nothing to fill in). A confirmation, whose actions are its way
+out, leaves `closeLabel` unset.
+
 The caller still owns dialog content, labels, `dialog` vs `alertdialog`, working-area
 interactions and any special row controls. ConfirmModal and Editions therefore remain
 separate product components even though they can share shell/action primitives.
@@ -446,17 +474,17 @@ a compact question needs it.
 ```html
 <app-modal-shell
   [isOpen]="open()"
-  variant="dialog"
-  dialogRole="alertdialog"
-  ariaLabelledBy="confirm-title"
+  variant="sheet"
+  closeLabel="Close rename dialog"
+  ariaLabelledBy="rename-title"
 >
-  <div shellHeader><h2 id="confirm-title">Delete book?</h2></div>
+  <div shellHeader><h2 id="rename-title">Rename book</h2></div>
 
-  <p>This cannot be undone.</p>
+  <p>Change the title shown in your library.</p>
 
   <app-dialog-actions shellActions variant="inset" [stackOnNarrow]="true">
     <button appButton variant="secondary" type="button">Cancel</button>
-    <button appButton variant="danger" type="button">Delete</button>
+    <button appButton variant="primary" type="button">Save</button>
   </app-dialog-actions>
 </app-modal-shell>
 ```
@@ -478,7 +506,7 @@ dialog.
   (put `cdkFocusInitial` on the control that should take it; `app-confirm-modal` puts
   it on Cancel) and returns to the opener on close. Do not write a trap by hand.
 - **Escape** goes through `ModalStack` (`ui/modal-shell/modal-stack.service.ts`). Open
-  shells, the More sheet and the command palette register while open; only the top one
+  shells, the command palette and the other overlays register while open (a `nostos-menu` and the settings panel answer Escape themselves); only the top one
   answers, it skips a key a focused control already used (`defaultPrevented`, such as
   a dropdown closing its list) and it consumes the key (`preventDefault` and
   `stopPropagation`). A surface behind them (the reader) checks `hasOpen()` before
@@ -486,6 +514,45 @@ dialog.
 - A phone **drawer** (the Library's collections, the Brain's index) uses
   `[appDrawerFocus]` (`core/directives/drawer-focus.directive.ts`): focus moves to the
   current place on open and back to the opener on close, and Escape closes it.
+
+## Menu (`nostos-menu`)
+
+**Selectors:** `nostos-menu`, `[nostosMenuTriggerFor]`, `button[nostosMenuItem]`, `a[nostosMenuItem]`, `hr[nostosMenuSeparator]`
+**Files:** `src/app/ui/menu/` (`NOSTOS_MENU` is the one import for a template)
+
+The canonical action menu: a row's secondary actions, so the row itself can show
+one. Behaviour is the CDK menu's (overlay, arrow keys, type-ahead, Escape, focus
+return, `role="menu"`); the file gives it the Nostos surface. A single-choice value
+belongs in `app-dropdown`, not here.
+
+```html
+<button appIconButton icon="dots-three" aria-label="More" [nostosMenuTriggerFor]="more"></button>
+<ng-template #more>
+  <nostos-menu>
+    <button nostosMenuItem icon="pencil-simple" (triggered)="edit()">Edit</button>
+    <button nostosMenuItem icon="stack" hint="Group or split editions" (triggered)="editions()">Editions</button>
+    <a nostosMenuItem icon="paper-plane-tilt" href="https://…" target="_blank" rel="noopener noreferrer">Send feedback</a>
+    <hr nostosMenuSeparator />
+    <button nostosMenuItem icon="trash" tone="danger" (triggered)="remove()">Remove</button>
+  </nostos-menu>
+</ng-template>
+```
+
+| API | Description |
+| --- | --- |
+| `nostosMenuTriggerFor` | On any native button; opens the menu template. Outputs `menuOpened` / `menuClosed` (the dock's More button reads as pressed while open). The menu hangs from the trigger's trailing edge, flips when there is no room, follows it on scroll and closes when the trigger leaves the screen |
+| `nostosMenuItem` inputs | `icon` (a `NostosIconName`), `tone` (`'default' \| 'danger'`), `hint` (a quieter second line), `disabled`; output `triggered` |
+| `a[nostosMenuItem]` | A row that navigates keeps its own `href`; use a button that calls the router for an in-app route |
+| `nostosMenuItemRadio` / `nostosMenuGroup` | Choices, see below |
+| `--menu-max-h` | A long list scrolls inside the menu; a menu may set its own cap (default 24rem) |
+
+**Phone sheet.** At `PHONE_QUERY` (`ui/breakpoints.ts`, 768px) a menu opens as a
+bottom sheet instead of hanging from its trigger: the same `.nostos-surface` box
+as the settings panel inside a `.nostos-sheet-pane` (one corner, one shadow, one
+keyframe, one grab handle; `src/styles.css`), rows at the touch height. The
+trigger decides when it opens, so a resize while open leaves it as it was. The
+phone **More** menu in the dock is a `nostos-menu` (Send feedback where the
+deployment has a link, Search everything, Settings).
 
 ## Menu choices (`nostosMenuItemRadio`, `nostosMenuGroup`)
 
@@ -514,7 +581,9 @@ Wrap a set in `[nostosMenuGroup]` (`role="group"`). Do not fake a choice with
 **Selector:** `nostos-playback-speed-menu`  
 **Files:** `src/app/ui/playback-speed-menu/`
 
-The one playback-speed control (read aloud and the audiobook player). An
+The one playback-speed control (read aloud and the audiobook player). Read
+aloud lists the common rates up to 1.5× (its voices cannot render faster);
+the audiobook lists all of them and adds the fine step. An
 `appButton` capsule shows the rate and opens a `nostos-menu`: the common rates
 as `nostosMenuItemRadio` choices with the current one checked and, when `step`
 is set, a "− rate +" row of menu items that keep the menu open between presses.
@@ -522,10 +591,10 @@ is set, a "− rate +" row of menu items that keep the menu open between presses
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
 | `rate` | `number` | required | The rate playing now |
-| `rates` | `readonly number[]` | required | The common rates listed as choices |
+| `rates` | `readonly number[]` | required | The common rates listed as choices; `COMMON_PLAYBACK_RATES` (0.75, 1, 1.25, 1.5, 2) is the shared set |
 | `step` | `number \| null` | `null` | Fine step; `null` offers the presets only |
 | `min` / `max` | `number \| null` | slowest / fastest preset | The player's supported range; the step stays inside it |
-| `label` | `string` | `'Playback speed'` | Names the trigger and the menu |
+| `label` | `string` | `'Playback speed'` | Names the trigger and the menu; every player keeps this one name (`PLAYBACK_SPEED_LABEL`) |
 | `variant` | `ButtonVariant` | `'ghost'` | The trigger's appButton variant |
 
 Output: `rateChange(number)`. The trigger's height is the caller's, through
@@ -534,7 +603,7 @@ player bar used without looking sets `var(--control-h-touch)`.
 
 ```html
 <nostos-playback-speed-menu label="Playback speed" variant="secondary"
-  [rate]="rate()" [rates]="[0.8, 1, 1.25, 1.5, 2]" [step]="0.05" [min]="0.5" [max]="3"
+  [rate]="rate()" [rates]="COMMON_PLAYBACK_RATES" [step]="0.05" [min]="0.5" [max]="3"
   (rateChange)="setRate($event)" />
 ```
 
@@ -549,26 +618,36 @@ new settings panel does not hand-roll its own positioning, scrim or Escape:
 
 - it hangs under its `origin` button (end-aligned, flipped when there is no
   room) and follows it on scroll and resize;
-- its width is the `--settings-popover-width` token (19rem); below 640px
-  (`SETTINGS_POPOVER_SHEET_QUERY`) it is a full-width sheet on the bottom edge
-  with a grab handle;
-- Escape and a press outside emit `dismissed` (`'escape' | 'outside'`), and the
-  caller closes it. A press on `origin` is the button's own toggle. A layer
+- its width is the `--settings-popover-width` token (19rem); at phone width
+  (`PHONE_QUERY`, 768px; `SETTINGS_POPOVER_SHEET_QUERY` is the same query) it is a
+  full-width sheet on the bottom edge with a grab handle. The box is the shared
+  `.nostos-surface` and the sheet pane `.nostos-sheet-pane` (`src/styles.css`),
+  one surface, one keyframe and one handle with `nostos-menu`;
+- `heading` adds the shared title row: the serif title and the one close button
+  (named "Close <heading>"). The reader's View settings and the Studio's Page
+  settings both use it so they look alike. Without a heading the panel is only
+  its content;
+- Escape, a press outside and the heading's close button emit `dismissed`
+  (`'escape' | 'outside' | 'close'`), and the caller closes it. A press on `origin` is the button's own toggle. A layer
   inside that handles Escape itself (a sub-view's "back") calls
   `preventDefault()` and the panel leaves it alone;
 - focus moves in on opening (`initialFocus`: `true` for the first control, a
   selector, or `false` when the caller places it) and back to `origin` when it
   closes with focus inside it (`restoreFocus`). After a press elsewhere, focus
-  stays where the press went.
+  stays where the press went. The Studio is the one exception, on purpose: its
+  Page settings set `[restoreFocus]="false"` and close through `closePageSettings()`,
+  which hands focus to the writing surface (the page the writer was typing on), not
+  to the Aa button.
 
 It is non-modal (`role="dialog"`, `aria-modal="false"`) and does not dim the
 page: a setting is judged on the page itself. It exists while it is open, so
 wrap it in `@if`. The caller lays out the rows; the panel owns the surface and
-padding.
+padding. A sub-view inside it (the Studio's Typeface and Citation style lists)
+keeps a labelled **Back** button, not an icon alone.
 
 ```html
 @if (open()) {
-  <nostos-settings-popover [origin]="aaButton" label="View settings"
+  <nostos-settings-popover [origin]="aaButton" heading="View settings"
                            (dismissed)="open.set(false)">
     …rows…
   </nostos-settings-popover>
@@ -591,9 +670,13 @@ duration that arrives late still fills the track correctly.
 **Route:** `/ui-catalogue`  
 **Component:** `src/app/ui/ui-catalogue/`
 
-The catalogue renders the canonical Button/IconButton variants and sizes, native form
-controls, FormField help/error states, Switch, Chip, Badge/Status, segmented semantics,
-and ModalShell/DialogActions composition. It intentionally uses the production theme
+The catalogue renders the canonical Button/IconButton variants and sizes, Menu (with its
+phone sheet), the settings popover, Dropdown, native form controls and FormField states,
+SearchField, InlineRename, Switch/Checkbox/Chip/Badge, loading and progress, empty, failed
+and paging states, BookCover, the segmented recipe, accent rail, page chrome, quotes and
+pens, topics (chip, option rows), choice rows, ConfirmModal, DropZone, FlatTree,
+EditionSwitcher, CollectionPicker, StarRating, Range, the topic picker popover, NoteItem and
+NoteCaptureDetails, Toast, and ModalShell/DialogActions composition. It intentionally uses the production theme
 service and token graph. Playwright verifies light/dark, desktop/mobile, disabled,
 busy, destructive, validation, checked/selected, hover and focus states.
 
@@ -662,14 +745,14 @@ book", highlight import's "Choose a book", Studio's book index), each book is on
     <span class="nostos-choice-row__title">{{ book.title }}</span>
     <span class="nostos-choice-row__sub">{{ book.author || unknownAuthor }}</span>
     <span class="nostos-choice-row__meta">
-      <nostos-icon [concept]="format" [size]="12" aria-hidden="true" /> {{ formatLabel }}
+      <nostos-icon [concept]="format.concept" [size]="12" aria-hidden="true" /> {{ format.format }}
     </span>
   </span>
 </button>
 ```
 
-`bookFormatConcept(type, fileName)` and `BOOK_FORMAT_LABEL` (`src/app/core/book-format.ts`)
-give the format concept and its short name. A book with no author reads "Unknown author"
+`format` is `formatOf(book)` (`src/app/core/book-format.ts`): its `concept` is the icon
+and its `format` the short name (Audiobook, Ebook, PDF, Physical). A book with no author reads "Unknown author"
 everywhere (`UNKNOWN_AUTHOR`).
 
 ---
@@ -679,16 +762,18 @@ everywhere (`UNKNOWN_AUTHOR`).
 **Selector:** `app-flat-tree`  
 **Files:** `src/app/ui/flat-tree/`
 
-A generic hierarchical tree rendered as a flat list with indent levels. Used by the library sidebar (collections) and writing studio (file tree).
+A generic hierarchical tree rendered as a flat list with indent levels. Used by the library sidebar (collections, `appearance="quiet"`) and the writing studio (file tree). Its row actions are `appIconButton` at `size="xxs"`, as the Brain sidebar's are.
 
 ### Inputs
 
 | Input       | Type                  | Description                                                          |
 | ----------- | --------------------- | -------------------------------------------------------------------- |
-| `items`     | `any[]` (required)    | Flat array with `id`, `name`, `parentId` fields                      |
-| `activeId`  | `string \| undefined` | Currently selected node ID                                           |
-| `typeField` | `string`              | Property name to distinguish folder vs. document (default: `'type'`) |
-| `editingId` | `string \| undefined` | Node currently being renamed (shows `nostos-inline-rename`)          |
+| `items`     | `TreeItem[]` (required) | Flat array with `id`, `name`, `parentId` fields                    |
+| `activeId`  | `string \| null`      | Currently selected node ID                                           |
+| `treatAllAsFolders` | `boolean`     | Every item can hold children (Library collections); otherwise `type` tells a folder from a document |
+| `editingId` | `string \| null`      | Node currently being renamed (shows `nostos-inline-rename`)          |
+| `emptyLabel` | `string`             | What the tree says with no items (default "Nothing here yet")        |
+| `appearance` | `'filled' \| 'quiet'` | `filled` marks the selected row with a fill (the Studio's files); `quiet` uses the page's hover ground, as the sidebar rows beside it do (Library collections) |
 | `renameError` | `string \| null`     | The owner's refusal of the last rename, said under the field         |
 | `renameBusy` | `boolean`             | A rename is being saved                                              |
 | `rejectDuplicateNames` | `boolean`   | Refuse a sibling's name before sending (Library collections)         |
@@ -697,12 +782,12 @@ A generic hierarchical tree rendered as a flat list with indent levels. Used by 
 
 | Output                | Type                              | Description                      |
 | --------------------- | --------------------------------- | -------------------------------- |
-| `nodeSelected`        | `EventEmitter<TreeNode>`          | Node clicked                     |
-| `nodeMoved`           | `EventEmitter<TreeNodeMoveEvent>` | Drag-dropped onto new parent     |
-| `nodeRenamed`         | `EventEmitter<{id, name}>`        | Inline rename triggered          |
-| `nodeDeleted`         | `EventEmitter<string>`            | Delete requested                 |
-| `nodeRenameSaved`     | `EventEmitter<{id, newName}>`     | Rename sent (Enter, or blur with a changed name) |
-| `nodeRenameCancelled` | `EventEmitter<void>`              | Rename closed (Escape, or blur with nothing changed) |
+| `nodeSelected`        | `TreeItem`                        | Node clicked                     |
+| `nodeMoved`           | `{ item, newParentId }`           | Drag-dropped onto new parent     |
+| `nodeRenamed`         | `TreeItem`                        | Inline rename triggered          |
+| `nodeDeleted`         | `string`                          | Delete requested (the id)        |
+| `nodeRenameSaved`     | `{ id, newName }`                 | Rename sent (Enter, or blur with a changed name) |
+| `nodeRenameCancelled` | `void`                            | Rename closed (Escape, or blur with nothing changed) |
 
 ### Helper: `buildFlatTree()`
 
@@ -847,6 +932,11 @@ areas.
 | `disabled`     | `boolean`                   | `false`   | Disables the cross |
 | `icon`         | `NostosConcept \| null`     | `'topic'` | The mark before the name |
 | `removeLabel`  | `string \| null`            | `null`    | The cross's name when not "Remove topic <name>" |
+| `title`        | `string \| null`            | `null`    | The name's tooltip ("Open Virtue in the Brain") |
+
+Wherever a topic, a genre or a collection is shown as a name on a pill, it is this
+chip: the Brain's matching topics (`link`), a book's genres and collections
+(`[icon]="null"`), Brain Sort's chosen topics (`removable`). `.tag` is gone.
 
 ---
 
@@ -862,9 +952,15 @@ needs (`<li role="option">` or `<button>`), which keeps its role, id,
 `aria-selected` and events. Used by `app-topic-picker-popover`, the `[[`
 suggestions and Link a topic dialog, Brain Sort and the merge picker.
 
-The file also holds the one wording for an empty topic list:
-`NO_TOPICS_YET` ("No topics yet. Type a name to create one.") and
-`NO_TOPICS_MATCH` ("No topics match.").
+`selected` marks the chosen row of a single-choice list (the merge picker) with a
+check and a firmer name, so it is not mistaken for the row the pointer is on;
+`active` is the row the keyboard or pointer is on. The Brain Map's finder, the
+Studio's topic index and the pickers all use this row.
+
+The file also holds the one wording for an empty topic list: `NO_TOPICS` ("No
+topics yet."), `NO_TOPICS_YET` (the same where typing creates one: "No topics
+yet. Type a name to create one.") and `NO_TOPICS_MATCH` ("No topics match.", only
+when there is a query).
 
 ---
 
@@ -879,7 +975,7 @@ Click-to-rate stars (0–5). Clicking the same star resets to 0.
 | ---------- | --------- | ----------------------- |
 | `rating`   | `number`  | Current rating value    |
 | `readonly` | `boolean` | Disable interaction     |
-| `size`     | `string`  | CSS size for star icons |
+| `size`     | `number`  | Star size in px (default 18) |
 
 | Output         | Payload  |
 | -------------- | -------- |
@@ -980,9 +1076,10 @@ skeleton rows: the call site centres it where the content will be.
 **File:** `src/app/ui/paging-status/`
 
 The end of a paged list (Library, Brain): the next page loads as the reader
-scrolls toward it (`InfiniteScrollDirective` on the list end), a small spinner
-shows while it comes, and a failed page is replaced in place by its message and
-an inline **Try again**. Nothing is asked again on its own after a failure.
+scrolls toward it (`InfiniteScrollDirective` on the list end, asked 600px ahead,
+the same everywhere), a small spinner shows while it comes, and a failed page is
+replaced in place by the compact `nostos-empty-state` failure (its message and
+**Try again**). Nothing is asked again on its own after a failure.
 
 A **Load more** button stays in the tab order for keyboards and screen readers:
 out of sight until focused while scrolling does the work, and visible where the
@@ -1009,7 +1106,6 @@ browser has no `IntersectionObserver`.
 | `label`         | `string`          | `'Loading more'`              | What the spinner announces |
 | `failedMessage` | `string`          | `'More could not be loaded.'` | The failure line |
 | `root`          | `Element \| null` | `null`                        | The scrolling element; null is the viewport |
-| `rootMargin`    | `string`          | `'200px 0px'`                 | How far ahead to ask |
 
 Outputs: `more` (the end came into view, or Load more was pressed) and `retry`.
 
@@ -1070,6 +1166,270 @@ Assistant (`--layer-assistant`) and ordinary modal layers so system feedback is 
 hidden, while their top-edge placement avoids the bottom-anchored Assistant/Reader
 controls. The catalogue exposes success, info, error, long-copy and stacked states at
 desktop/mobile widths in light and dark themes.
+
+---
+
+## BookCoverComponent
+
+**Selector:** `nostos-book-cover`
+**File:** `src/app/ui/book-cover/`
+
+A book's cover, or, when it has none or the image fails, one quiet placeholder:
+the image ground with the book's format glyph, the same on every surface. Every
+cover is this component: the Library grid and list, the reading list, the command
+palette, the add-book results and review, and the audiobook player. No page draws
+an `<img>` of its own for a cover.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `src` | `string \| null` | `null` | The image URL; empty shows the placeholder, and a URL that fails to load does too |
+| `bookTitle` / `alt` | `string \| null` | `null` | The alternative text is built from the title unless `alt` overrides it |
+| `decorative` | `boolean` | `false` | For a cover beside its own title: announced as nothing |
+| `size` | `'xs' \| 'sm' \| 'md' \| 'lg' \| 'fill'` | `'sm'` | Thumbnail rungs (2:3), or `fill` for a frame the surface already owns |
+| `format` | `'audiobook' \| 'ebook' \| 'pdf' \| 'physical' \| null` | `null` | The glyph the placeholder shows; `bookCoverFormat(book)` derives it |
+| `reveal` | `'none' \| 'fade' \| 'bloom'` | `'none'` | How the art arrives |
+| `loading` | `'lazy' \| 'eager'` | `'lazy'` | |
+| `iconSize` | `number \| null` | `null` | Overrides the rung's glyph size |
+
+```html
+<nostos-book-cover size="fill" reveal="bloom" format="audiobook" [src]="coverSrc()" [bookTitle]="book().title" />
+```
+
+---
+
+## LoadingIndicatorComponent
+
+**Selector:** `nostos-loading-indicator`
+**File:** `src/app/ui/loading-indicator/`
+
+The one indeterminate spinner. It is a glyph only: the caller owns the region's
+geometry, its reserved space, and its error and empty states. By default it is a
+polite `role="status"` region with one accessible label; set `decorative` inside
+an existing live region so the wait is not announced twice.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `label` | `string` | `'Loading'` | What a screen reader hears ("Loading notes") |
+| `size` | `'sm' \| 'md' \| 'lg' \| 'xl'` | `'lg'` | 14, 16, 20 or 24px |
+| `decorative` | `boolean` | `false` | Hidden from assistive tech |
+
+A page or pane load uses the default size, centred where the content will be,
+with no text or skeleton rows. The Library and the Reader show one on their first
+load (the Library's a beat late, so a fast load never flashes it). Smaller rungs are
+for a spinner inside a control or a row.
+
+---
+
+## ProgressComponent
+
+**Selector:** `nostos-progress`
+**File:** `src/app/ui/progress/`
+
+The one progress bar, determinate (`value` 0–100) or indeterminate (`value` null).
+The host is the `progressbar` (role, `aria-valuenow`, label) unless `decorative`
+is set, for a surface whose own wrapper is the progressbar region with its caption
+inside. The Library's list row and cover overlay, the passage viewer's page strip
+and the import flow use it. The reader's page-position strip is a position marker
+with a knob and stays the reader's.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `value` | `number \| null` | `null` | Percent; null is indeterminate |
+| `size` | `'sm' \| 'md'` | `'sm'` | Track height |
+| `surface` | `'plain' \| 'overlay'` | `'plain'` | `overlay` for a bar over cover art |
+| `paused` | `boolean` | `false` | Stops the indeterminate motion |
+| `label` / `valueText` | `string \| null` | `null` | Accessible name and the spoken value |
+| `decorative` | `boolean` | `false` | The caller's wrapper is the progressbar |
+
+---
+
+## ConfirmModal
+
+**Selector:** `app-confirm-modal`
+**File:** `src/app/ui/confirm-modal/`
+
+The single in-app confirmation surface: every destructive or state-overwriting
+question goes through it, never `window.confirm()`. It is a `dialog` ModalShell
+that stays centred at every width, with the caller owning the wording and the
+pending state.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `isOpen` | `boolean` (required) | | |
+| `heading` | `string` (required) | | The question, ending in a question mark |
+| `description` | `string` | `''` | What happens, in a sentence |
+| `confirmLabel` / `cancelLabel` | `string` | `'Delete'` / `'Cancel'` | Name the action ("Delete note", not "OK") |
+| `busyLabel` | `string` | `'Working…'` | The confirm button's label while `busy` |
+| `busy` / `confirmDisabled` | `boolean` | `false` | |
+| `tone` | `'danger' \| 'neutral'` | `'danger'` | The mark and the confirm button's variant |
+| `icon` | `NostosIconName` | `'trash'` | The mark in the icon tile |
+| `stackOnNarrow` / `trapFocus` | `boolean` | `true` | |
+
+Outputs: `confirm`, `cancel` (Escape, the backdrop and Cancel). Focus starts on
+Cancel.
+
+---
+
+## NoticeComponent
+
+**Selector:** `[appNotice]`
+**File:** `src/app/ui/notice/`
+
+A message box inside a page or dialog: something happened, or something needs
+knowing before the next step. It owns the box (border, corner, fill, padding and,
+for `info`, the ink); the call site keeps its element, its `role` (`status` or
+`alert`), its layout and its type size. A transient message that floats over the
+page is a toast, not this.
+
+```html
+<p appNotice tone="danger" role="alert">{{ error }}</p>
+```
+
+`tone`: `'neutral'` (default), `'info'`, `'caution'`, `'danger'`.
+
+---
+
+## Checkbox and radio (`appCheckbox`, `appRadio`)
+
+**Selectors:** `input[type=checkbox][appCheckbox]`, `input[type=radio][appRadio]`
+**File:** `src/app/ui/check/`
+
+The canonical checkbox and radio. Like `appInput`, the native input stays the
+host, so `checked`, `disabled`, `name`, `(change)`, form participation and
+labelling stay the browser's; the directive only adds the class `styles.css` draws.
+Checked is the switch's forest fill with the on-primary tick in every theme. Use a
+switch (`label[appSwitch]`) for an immediate on/off setting, a checkbox for a choice that waits
+for a Save, and a radio for one of a small set.
+
+---
+
+## IconTileComponent
+
+**Selector:** `[appIconTile]`
+**File:** `src/app/ui/icon-tile/`
+
+The small rounded square behind an icon: the mark beside a dialog title, the
+format glyph on an edition row. Decoration around a `nostos-icon`, never a
+control, so the call site usually marks it `aria-hidden`.
+
+```html
+<span appIconTile tone="danger" [size]="26" aria-hidden="true"><nostos-icon name="trash" [size]="14" /></span>
+```
+
+`tone`: `'neutral'` (a hairline box, for dialog and panel marks), `'quiet'` (a
+borderless fill, inside a bordered row), `'danger'`. `size` is the square in px.
+
+---
+
+## EditionSwitcherComponent
+
+**Selector:** `nostos-edition-switcher`
+**File:** `src/app/ui/edition-switcher/`
+
+Switches between the editions of one book (EPUB, audiobook, PDF, physical) on the
+book page. A trigger names the current edition and opens a `nostos-menu`: each
+item is an edition with its format glyph, name and a hint ("37% read", "Finished",
+"Not started"); the current one is listed too, with a check and
+`aria-current="page"`. Items keep the order given, so the list holds still across
+a switch.
+
+| Input / output | Type | Description |
+| --- | --- | --- |
+| `options` | `EditionSwitcherOption[]` (required) | `{ id, format, concept, detail, current, progress, finished }` |
+| `label` | `string` (default `'Switch edition'`) | The nav landmark's name |
+| `switched` | `string` | The id of the edition to open; never the current one |
+
+---
+
+## CollectionPickerComponent
+
+**Selector:** `app-collection-picker`
+**File:** `src/app/ui/collection-picker/`
+
+Multi-select for a book's collection membership: a checkbox list over the same
+flattened hierarchy the sidebar shows, plus a row of chips (`app-topic-chip`,
+no mark) so the current memberships read without expanding anything. The parent
+owns the value and the component never mutates the array it is given.
+
+| Input / output | Type | Description |
+| --- | --- | --- |
+| `collections` | `Collection[]` (required) | The collections to choose from |
+| `selectedIds` | `string[]` | The current membership |
+| `label` | `string` (default `'Collections'`) | |
+| `selectedIdsChange` | `string[]` | The new set |
+
+With no collections it says "No collections yet." through `nostos-empty-state`.
+
+---
+
+## TopicPickerPopoverComponent
+
+**Selector:** `app-topic-picker-popover`
+**File:** `src/app/ui/topic-picker-popover/`
+
+Choose a topic for a note: type to filter, Enter takes the highlighted name, a new
+name creates the topic, and AI suggestions are a quiet group under the matches. A
+listbox driven from its own text field (focus stays in the field, the active
+option is announced through `aria-activedescendant`), shown in an overlay the
+caller positions; at phone width it is a sheet, so the list stays above the
+keyboard. Rows are `appTopicOption`.
+
+| Input / output | Type | Description |
+| --- | --- | --- |
+| `topics` | `TopicDto[]` | The topics to offer |
+| `exclude` | `string[]` | Names already on the note |
+| `suggestions` / `suggestionState` | `string[]` / `'off' \| 'loading' \| 'ready' \| 'error'` | `off` hides the group |
+| `label` / `placeholder` | `string` | Default `'Add a topic'` / `'Find or create a topic…'` |
+| `chosen` | `string` | The name picked or typed |
+| `closed` | `void` | Escape or outside press |
+
+---
+
+## PassageViewer
+
+**Selector:** `app-passage-viewer` (mounted once at the app root)
+**File:** `src/app/ui/passage-viewer/`
+
+A saved passage read on its own, page by page, wherever it was opened from; not a
+second reader. Open it with `PassageViewerService.open(noteId, options)` from a
+note card in the reader, a book page, Brain or the Studio; `openInBook` replaces
+the default "Open in book" (the reader turns its open book instead of reloading),
+and `quoteSelection` offers "Quote in writing" for selected text (the Studio). It
+is an `app-modal-shell` (with `closeLabel`) over `nostos-loading-indicator`,
+`nostos-empty-state` for a failed load and `nostos-progress` for the page strip.
+
+---
+
+## CommandPalette
+
+**Selector:** `app-command-palette` (loaded on first use); service `CommandPaletteService`
+**File:** `src/app/ui/command-palette/`
+
+"Search everything": books, topics, notes, collections, actions and an Ask Nostos
+row, in one box. Cmd/Ctrl+K toggles it from anywhere (the app root starts the
+listener); a phone has no chord, so the dock's More menu calls `open()`. The field
+is a `nostos-search-field` around an `appInput` combobox, results are a listbox,
+and Cancel (phone only) is a ghost `appButton`. Query prefixes narrow the scope
+(`parseQuery`). Escape goes through `ModalStack` like any overlay.
+
+---
+
+## NostosIconComponent
+
+**Selector:** `nostos-icon`
+**File:** `src/app/ui/icon/`
+
+The one icon path (Phosphor, one import point in `nostos-icons.ts`). Feature code
+never imports an icon package: `name` is a glyph from a closed union, `concept` is
+a stable product idea resolved through `NOSTOS_CONCEPTS` (`audiobook`, `topic`,
+`passage`…); `name` wins if both are given. Colour is `currentColor`.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` / `concept` | glyph / concept | `null` | One of the two is required |
+| `weight` | `'thin' \| 'light' \| 'regular' \| 'bold' \| 'fill' \| 'duotone'` | `'regular'` | `fill` for selected states |
+| `size` | `number` | `16` | px, on the shared `NOSTOS_ICON_SIZE` scale |
+| `label` | `string \| null` | `null` | Without it the icon is `aria-hidden`; with it, `role="img"` |
 
 ---
 

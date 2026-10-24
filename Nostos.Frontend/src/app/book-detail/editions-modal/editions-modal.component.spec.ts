@@ -206,7 +206,7 @@ describe('EditionsModal', () => {
     let closed = false;
     component.close.subscribe(() => (closed = true));
 
-    const close = fixture.nativeElement.querySelector('.editions-modal-close') as HTMLButtonElement;
+    const close = fixture.nativeElement.querySelector('.modal-close') as HTMLButtonElement;
     // The shared icon button, not a hand-rolled copy of one: that migration is
     // what this pins.
     expect(close.classList.contains('icon-btn')).toBe(true);

@@ -10,6 +10,7 @@ import {
   untracked,
   ViewChild,
 } from '@angular/core';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { PHONE_QUERY, isPhoneViewport } from '../ui/breakpoints';
 import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -123,6 +124,7 @@ interface WorkFormatGlyph {
   selector: 'app-library',
   standalone: true,
   imports: [
+    LoadingIndicatorComponent,
     SearchFieldComponent,
     ProgressComponent,
     CommonModule,

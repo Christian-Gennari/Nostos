@@ -13,7 +13,6 @@ import { AlignmentService } from '../../core/services/alignment.service';
 import { rememberSwitched } from './edition-place-keeper';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
-import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { NoticeComponent } from '../../ui/notice/notice.component';
@@ -54,7 +53,6 @@ interface DeclinedState {
     NoticeComponent,
     ModalShell,
     NostosIconComponent,
-    IconButtonComponent,
     ButtonComponent,
     LoadingIndicatorComponent,
   ],

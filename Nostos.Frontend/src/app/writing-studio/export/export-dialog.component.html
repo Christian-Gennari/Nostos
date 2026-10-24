@@ -1,4 +1,5 @@
 <app-modal-shell
+  closeLabel="Close export"
   [isOpen]="true"
   variant="sheet"
   cardClass="export-dialog"
@@ -11,7 +12,6 @@
 >
   <header class="export-header" shellHeader>
     <h2 id="export-dialog-title">Export</h2>
-    <button appIconButton icon="x" size="xs" [glyphSize]="16" type="button" aria-label="Close export" [disabled]="downloading()" (click)="cancel()"></button>
   </header>
 
   <div class="export-body" data-testid="export-dialog">

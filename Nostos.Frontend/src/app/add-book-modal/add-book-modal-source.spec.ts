@@ -693,7 +693,7 @@ describe('AddBookModal — From a Source', () => {
     component.seedFromSelectedItem();
     fixture.detectChanges();
 
-    const preview = fixture.nativeElement.querySelector('.review-cover') as HTMLImageElement;
+    const preview = fixture.nativeElement.querySelector('.review-summary__visual img') as HTMLImageElement;
     expect(preview).toBeTruthy();
     expect(preview.getAttribute('src')).toBe(pride.coverUrl);
 

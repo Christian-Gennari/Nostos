@@ -25,13 +25,13 @@ import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.
 import { Book } from '../../core/dtos/book.dtos';
 import { AUDIO_PLAYER_FACTORY, AudioPlayer, PlaylistTrack } from './track-playlist-player';
 
-import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
+import { BookCoverComponent } from '../../ui/book-cover/book-cover.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 
 import { ButtonComponent } from '../../ui/button/button.component';
 import { NOSTOS_MENU } from '../../ui/menu/menu.component';
-import { PlaybackSpeedMenuComponent } from '../../ui/playback-speed-menu/playback-speed-menu.component';
+import { COMMON_PLAYBACK_RATES, PlaybackSpeedMenuComponent } from '../../ui/playback-speed-menu/playback-speed-menu.component';
 import { RangeDirective } from '../../ui/range/range.directive';
 import { PassageDraft, PassageMark } from '../passage/passage-mark';
 import { formatAudioTime } from '../../core/dtos/note.dtos';
@@ -48,7 +48,7 @@ export const PLAYING_SAVE_INTERVAL_MS = 10_000;
     CommonModule,
     FormsModule,
     NostosIconComponent,
-    BloomArtDirective,
+    BookCoverComponent,
     LoadingIndicatorComponent,
     ButtonComponent,
     PlaybackSpeedMenuComponent,
@@ -185,7 +185,7 @@ export class AudioReader implements OnDestroy, IReader {
   // Playback speeds (issue #227 §2): a short preset list for the coarse choice,
   // with ±0.05 stepping in the same menu for the fine one. Remembered
   // reader-wide — a speed is a habit, not a property of one audiobook.
-  readonly availableRates = [0.8, 1, 1.25, 1.5, 2];
+  readonly availableRates = COMMON_PLAYBACK_RATES;
   readonly rateStep = 0.05;
   readonly rateMin = 0.5;
   readonly rateMax = 3;

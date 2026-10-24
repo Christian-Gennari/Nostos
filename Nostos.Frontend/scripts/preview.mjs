@@ -61,7 +61,7 @@ const CLOUD_FIXTURES = {
     accountManagementUrl: 'https://nostos.page/account',
     // The Cloud default (DeploymentConfiguration.DefaultCloudFeedbackUrl). With
     // null here the simulation hid every Cloud-only Feedback control, so shots
-    // of the dock or the More sheet did not show what Cloud users see.
+    // of the dock or the More menu did not show what Cloud users see.
     feedbackUrl: 'https://nostos.page/feedback?from=settings',
     supportsLibraryMigration: false,
     supportsSafeActivation: false,

@@ -117,7 +117,7 @@ describe('ReadAloudBarComponent', () => {
     const trigger = fixture.nativeElement.querySelector(
       '[data-testid="read-aloud-rate"] [data-testid="playback-speed-trigger"]',
     ) as HTMLButtonElement;
-    expect(trigger.getAttribute('aria-label')).toBe('Reading speed: 1×. Change speed');
+    expect(trigger.getAttribute('aria-label')).toBe('Playback speed: 1×. Change speed');
 
     trigger.click();
     fixture.detectChanges();

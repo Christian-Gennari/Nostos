@@ -11,6 +11,8 @@ import {
   untracked,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
+import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import { lockScrollWhile } from '../../ui/scroll-lock/scroll-lock.service';
 import { PHONE_QUERY, isPhoneViewport } from '../../ui/breakpoints';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -80,7 +82,7 @@ interface PalettePlacement {
 @Component({
   selector: 'app-source-palette',
   standalone: true,
-  imports: [IconButtonComponent, QuoteBlockComponent],
+  imports: [IconButtonComponent, QuoteBlockComponent, LoadingIndicatorComponent, EmptyStateComponent],
   templateUrl: './source-palette.component.html',
   styleUrl: './source-palette.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,

@@ -15,7 +15,6 @@ import {
 import { formatBytes } from '../library-transfer/library-transfer.copy';
 import { ButtonComponent } from '../ui/button/button.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
-import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
@@ -65,7 +64,6 @@ export const EXTERNAL_MEDIA_GUIDE_URL =
     NgTemplateOutlet,
     ButtonComponent,
     DialogActionsComponent,
-    IconButtonComponent,
     NostosIconComponent,
     ModalShell,
   ],

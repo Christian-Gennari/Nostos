@@ -1,4 +1,5 @@
 import { Component, computed, input, output, ChangeDetectionStrategy } from '@angular/core';
+import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { CommonModule } from '@angular/common';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { buildFlatTree } from '../flat-tree/flat-tree.helper';
@@ -22,7 +23,7 @@ import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 @Component({
   selector: 'app-collection-picker',
   standalone: true,
-  imports: [CommonModule, ButtonComponent, CheckboxDirective, TopicChipComponent],
+  imports: [CommonModule, ButtonComponent, CheckboxDirective, TopicChipComponent, EmptyStateComponent],
   templateUrl: './collection-picker.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './collection-picker.component.css',

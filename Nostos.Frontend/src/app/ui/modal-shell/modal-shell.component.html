@@ -24,8 +24,27 @@
       [cdkTrapFocusAutoCapture]="trapFocus()"
       (click)="$event.stopPropagation()"
     >
-      <div class="modal-head" [class.is-divided]="headDivider()">
-        <ng-content select="[shellHeader]"></ng-content>
+      <div class="modal-head" [class.is-divided]="headDivider()" [class.has-close]="!!closeLabel()">
+        <div class="modal-head-content">
+          <ng-content select="[shellHeader]"></ng-content>
+        </div>
+        @if (closeLabel(); as label) {
+          <!-- The one close control of a dialog. Callers name it (closeLabel)
+               and leave it out of their header. -->
+          <button
+            appIconButton
+            type="button"
+            icon="x"
+            class="modal-close"
+            [glyphSize]="20"
+            [attr.aria-label]="label"
+            title="Close"
+            [attr.cdkFocusInitial]="closeFocusInitial() ? '' : null"
+            [disabled]="busy()"
+            data-testid="modal-close"
+            (click)="closed.emit()"
+          ></button>
+        }
       </div>
 
       <ng-content select="[shellTabs]"></ng-content>

@@ -947,17 +947,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   border-color: var(--scrollbar-thumb);
 }
-.note-input {
-  width: 100%;
-  border: none;
-  background: 0 0;
-  outline: 0;
-  font-family: inherit;
-  font-size: 0.95rem;
-  resize: vertical;
-  min-height: 40px;
-  padding: 0.5rem;
-}
 .notes-feed {
   display: flex;
   flex-direction: column;
@@ -965,24 +954,6 @@
 /* The reveal for a collapsed feed's earlier notes, above the latest ones. */
 .notes-show-earlier {
   margin-top: 1rem;
-}
-
-.edit-box {
-  position: relative;
-  background: var(--bg-surface);
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-}
-.row-actions {
-  margin-top: 0.5rem;
-  display: flex;
-  gap: 0.5rem;
-}
-.note-meta-placeholder {
-  font-size: 0.85rem;
-  color: var(--color-text-light);
-  font-style: italic;
 }
 /* <nostos-empty-state> owns the look; the page gives it more air. */
 .error-state {
@@ -1069,11 +1040,6 @@
     padding-top: 2rem;
     border-top: 1px solid var(--border-color);
   }
-  .detail-cover-col {
-    width: 100%;
-    max-width: 240px;
-    margin: 0 auto;
-  }
 }
 @media (max-width: 480px) {
   .book-hero {
@@ -1089,9 +1055,6 @@
   .meta-strip {
     flex-direction: column;
     gap: 0.75rem;
-  }
-  .detail-cover-col {
-    max-width: 180px;
   }
 }
 

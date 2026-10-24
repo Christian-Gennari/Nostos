@@ -1,12 +1,7 @@
 <div class="workspace-layout">
-
-  <!-- While the More sheet is open the shell behind it is inert: out of the
-       accessibility tree and non-interactive. The sheet itself is a sibling,
-       so it stays live. -->
-  <main class="workspace-content" [attr.inert]="sheet.backgroundInert() ? '' : null">
+  <main class="workspace-content">
     <router-outlet />
   </main>
 
-  <app-app-dock [attr.inert]="sheet.backgroundInert() ? '' : null" />
-  <app-utility-sheet />
+  <app-app-dock />
 </div>
