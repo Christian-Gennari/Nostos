@@ -1,0 +1,25 @@
+<div class="inline-rename" [class.is-busy]="busy()">
+  <input
+    appInput
+    controlSize="compact"
+    #field
+    type="text"
+    class="inline-rename-input"
+    autocomplete="off"
+    spellcheck="false"
+    enterkeyhint="done"
+    [value]="draft()"
+    (input)="onInput($any($event.target).value)"
+    (keydown.enter)="onEnter($event)"
+    (keydown.escape)="onEscape($event)"
+    (blur)="onBlur()"
+    [attr.aria-label]="ariaLabel()"
+    [attr.aria-describedby]="shownError() ? errorId : null"
+    [attr.aria-busy]="busy() ? 'true' : null"
+    [invalid]="!!shownError()"
+    [readOnly]="busy()"
+  />
+  @if (shownError(); as message) {
+  <span class="inline-rename-error" role="alert" [id]="errorId">{{ message }}</span>
+  }
+</div>

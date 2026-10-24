@@ -403,6 +403,33 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-rename">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-rename">Inline rename</h2>
+      </div>
+      <p>
+        Enter or leaving the field saves, Escape cancels, a refusal is said under the field. No
+        Save or Cancel buttons.
+      </p>
+    </div>
+
+    <div class="catalogue-grid catalogue-grid--forms">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Row · as typed / refused</span>
+        <div class="catalogue-stack">
+          @if (renameDemo()) {
+            <nostos-inline-rename name="Fiction" [focusOnOpen]="false" (committed)="renameDemo.set(false)" (cancelled)="renameDemo.set(false)" />
+          } @else {
+            <button appButton variant="secondary" size="sm" type="button" (click)="renameDemo.set(true)">Rename again</button>
+          }
+          <nostos-inline-rename name="Essays" [focusOnOpen]="false" error="A collection with that name already exists here." />
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-switch">
     <div class="catalogue-section-heading">
       <div>

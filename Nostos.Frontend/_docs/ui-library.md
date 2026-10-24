@@ -417,6 +417,36 @@ Shared by every page that has one (issue #1207). Use these; do not restyle them.
 
 ---
 
+## InlineRenameComponent
+
+**Selector:** `nostos-inline-rename`
+**Files:** `src/app/ui/inline-rename/`
+
+The one way to rename a thing where its name is shown: the flat tree's rows (Library
+collections, Studio documents), a Brain topic in the index and at the top of its page.
+
+```html
+<nostos-inline-rename
+  [name]="topic.name"
+  [error]="renameError()"
+  [busy]="renaming()"
+  (committed)="save($event)"
+  (cancelled)="stopRenaming()"
+/>
+```
+
+- Opens focused with the old name selected.
+- **Enter** saves, **Escape** cancels, **leaving the field** saves if the name changed
+  and is not empty; an unchanged or emptied field just closes.
+- A name that cannot be used is said **under the field** and the field stays open:
+  empty on Enter (`requiredMessage`), refused by `[validate]` (a duplicate), or refused
+  by the server (`[error]`, hidden again once the user types).
+- No Save or Cancel buttons. `committed` carries the trimmed new name and only fires
+  when it differs from `name`; the owner decides what saving does.
+- `variant="title"` edits a page heading: the heading's face, a rule instead of a box.
+
+---
+
 ## FlatTreeComponent
 
 **Selector:** `app-flat-tree`  
@@ -431,7 +461,10 @@ A generic hierarchical tree rendered as a flat list with indent levels. Used by 
 | `items`     | `any[]` (required)    | Flat array with `id`, `name`, `parentId` fields                      |
 | `activeId`  | `string \| undefined` | Currently selected node ID                                           |
 | `typeField` | `string`              | Property name to distinguish folder vs. document (default: `'type'`) |
-| `editingId` | `string \| undefined` | Node currently being renamed (shows inline input)                    |
+| `editingId` | `string \| undefined` | Node currently being renamed (shows `nostos-inline-rename`)          |
+| `renameError` | `string \| null`     | The owner's refusal of the last rename, said under the field         |
+| `renameBusy` | `boolean`             | A rename is being saved                                              |
+| `rejectDuplicateNames` | `boolean`   | Refuse a sibling's name before sending (Library collections)         |
 
 ### Outputs
 
@@ -441,8 +474,8 @@ A generic hierarchical tree rendered as a flat list with indent levels. Used by 
 | `nodeMoved`           | `EventEmitter<TreeNodeMoveEvent>` | Drag-dropped onto new parent     |
 | `nodeRenamed`         | `EventEmitter<{id, name}>`        | Inline rename triggered          |
 | `nodeDeleted`         | `EventEmitter<string>`            | Delete requested                 |
-| `nodeRenameSaved`     | `EventEmitter<{id, name}>`        | Rename confirmed (Enter)         |
-| `nodeRenameCancelled` | `EventEmitter<void>`              | Rename cancelled (Escape / blur) |
+| `nodeRenameSaved`     | `EventEmitter<{id, newName}>`     | Rename sent (Enter, or blur with a changed name) |
+| `nodeRenameCancelled` | `EventEmitter<void>`              | Rename closed (Escape, or blur with nothing changed) |
 
 ### Helper: `buildFlatTree()`
 

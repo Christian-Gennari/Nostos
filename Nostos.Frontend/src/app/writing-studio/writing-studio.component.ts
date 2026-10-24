@@ -375,6 +375,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
 
   editingId = signal<string | null>(null);
+  /** Why the last rename was refused, said under the field (issue #1209). */
+  readonly renameError = signal<string | null>(null);
+  readonly renameBusy = signal(false);
 
   editorText = signal('');
   editorTitle = signal('');
@@ -1574,30 +1577,43 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   startRename(node: any) {
+    this.renameError.set(null);
     this.editingId.set(node.id);
   }
 
+  /**
+   * The flat tree's rename has already refused an empty or unchanged name, so
+   * this only saves. A refusal stays in the field, under it, rather than
+   * closing it and losing what was typed.
+   */
   saveRename(id: string, newName: string) {
-    if (!newName.trim()) {
-      this.cancelRename();
-      return;
-    }
-    // Opened after the save lands, so the editor title shows the new name.
+    if (this.renameBusy()) return;
+    this.renameBusy.set(true);
+    this.renameError.set(null);
+    this.writingsService.update(id, { name: newName }).subscribe({
+      next: () => {
+        this.renameBusy.set(false);
+        this.loadTree();
+        this.editingId.set(null);
+        this.recent.relabel('document', id, newName);
 
-    this.writingsService.update(id, { name: newName }).subscribe(() => {
-      this.loadTree();
-      this.editingId.set(null);
-      this.recent.relabel('document', id, newName);
-
-      if (this.activeItem()?.id === id) {
-        this.editorTitle.set(newName);
-        // Named by hand: it no longer follows its first line.
-        this.autoTitle = false;
-      }
+        // Opened after the save lands, so the editor title shows the new name.
+        if (this.activeItem()?.id === id) {
+          this.editorTitle.set(newName);
+          // Named by hand: it no longer follows its first line.
+          this.autoTitle = false;
+        }
+      },
+      error: () => {
+        this.renameBusy.set(false);
+        this.renameError.set('Could not rename it. Try again.');
+      },
     });
   }
 
   cancelRename() {
+    if (this.renameBusy()) return;
+    this.renameError.set(null);
     this.editingId.set(null);
   }
 

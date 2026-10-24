@@ -36,7 +36,7 @@ import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
-import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
+import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
 import { BrainTopicUsedInComponent, USED_IN_FETCHED } from './topic-used-in/brain-topic-used-in.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
@@ -98,7 +98,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     NoteItemComponent,
     NoticeComponent,
     TopicPickerPopoverComponent,
-    BrainTopicRenameComponent,
+    InlineRenameComponent,
     BrainNoteDialogsComponent,
     BrainTopicWordsComponent,
     BrainTopicUsedInComponent,

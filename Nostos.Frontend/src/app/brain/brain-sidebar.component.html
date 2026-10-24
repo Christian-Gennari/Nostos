@@ -47,10 +47,10 @@
         <div class="topic-row-shell" role="listitem">
           @if (isRenaming(topic)) {
           <div class="topic-row topic-row--renaming">
-            <app-brain-topic-rename
+            <nostos-inline-rename
               variant="row"
               [name]="topic.name"
-              [value]="actions.renameValue()"
+              requiredMessage="A topic needs a name."
               (valueChange)="actions.renameValue.set($event)"
               [error]="actions.renameError()"
               [busy]="actions.renaming()"

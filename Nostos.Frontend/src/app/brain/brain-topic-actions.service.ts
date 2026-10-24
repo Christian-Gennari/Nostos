@@ -104,6 +104,7 @@ export class BrainTopicActionsService {
     }
 
     this.renaming.set(true);
+    this.renameError.set(null);
     this.topicsService.rename(id, name).subscribe({
       next: (survivor) => {
         this.renaming.set(false);

@@ -51,6 +51,8 @@
         [items]="rootItems()"
         [activeId]="activeItem()?.id || null"
         [editingId]="editingId()"
+        [renameError]="renameError()"
+        [renameBusy]="renameBusy()"
         (nodeSelected)="handleItemSelected($event)"
         (nodeMoved)="handleItemMove($event)"
         (nodeRenamed)="startRename($event)"

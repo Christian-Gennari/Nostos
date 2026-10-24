@@ -64,6 +64,8 @@ class FlatTreeStub {
   readonly items = input.required<unknown[]>();
   readonly activeId = input<string | null>(null);
   readonly editingId = input<string | null>(null);
+  readonly renameError = input<string | null>(null);
+  readonly renameBusy = input(false);
   readonly nodeSelected = output<unknown>();
   readonly nodeMoved = output<unknown>();
   readonly nodeRenamed = output<unknown>();
