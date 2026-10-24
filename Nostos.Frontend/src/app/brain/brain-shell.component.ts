@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
+import { DrawerFocusDirective } from '../core/directives/drawer-focus.directive';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
@@ -19,7 +20,7 @@ import { BrainTopicActionsService } from './brain-topic-actions.service';
 @Component({
   selector: 'app-brain-shell',
   standalone: true,
-  imports: [RouterOutlet, BrainSidebarComponent, ConfirmModal, ModalShell, BrainTopicPickerComponent],
+  imports: [DrawerFocusDirective, RouterOutlet, BrainSidebarComponent, ConfirmModal, ModalShell, BrainTopicPickerComponent],
   // The topic dialogs live and die with the Brain.
   providers: [BrainTopicActionsService],
   templateUrl: './brain-shell.component.html',

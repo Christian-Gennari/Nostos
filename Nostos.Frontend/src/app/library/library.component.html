@@ -1,4 +1,4 @@
-<main class="layout-wrapper" [class.sidebar-collapsed]="!sidebarExpanded()">
+<main class="layout-wrapper" [class.sidebar-collapsed]="!sidebarExpanded()" [appDrawerFocus]="sidebarExpanded()" drawerPanel=".sidebar-panel" (drawerDismiss)="toggleSidebar()">
   @if (sidebarExpanded()) {
   <div class="mobile-backdrop drawer-scrim" (click)="toggleSidebar()"></div>
   }

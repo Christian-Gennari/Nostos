@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 
 import { UtilitySheetComponent } from './utility-sheet.component';
 import { UtilitySheetService } from './utility-sheet.service';
+import { ModalStack } from '../../ui/modal-shell/modal-stack.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
 
@@ -231,6 +232,24 @@ describe('UtilitySheetComponent', () => {
     expect(document.activeElement).toBe(trigger);
     await finishClose();
     expect(query('[data-testid="utility-sheet"]')).toBeNull();
+  });
+
+  it('leaves Escape to a layer above it, then closes on the next press', async () => {
+    await open();
+    const stack = TestBed.inject(ModalStack);
+    const above = {};
+    const release = stack.register(above);
+
+    const first = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(first);
+    expect(sheet.open()).toBe(true);
+    expect(first.defaultPrevented).toBe(false);
+
+    release();
+    const second = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(second);
+    expect(sheet.open()).toBe(false);
+    expect(second.defaultPrevented).toBe(true);
   });
 
   it('closes when the route changes underneath it and restores the trigger focus', async () => {

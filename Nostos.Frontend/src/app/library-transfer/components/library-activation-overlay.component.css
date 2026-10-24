@@ -1,9 +1,10 @@
 /* Full-viewport interaction boundary. Above the replacement dialog (layer
-   120) because the server owns the cutover once activation is accepted. */
+   120) and above the system layer (palette, toasts) because the server owns
+   the cutover once activation is accepted. */
 .activation-boundary {
   position: fixed;
   inset: 0;
-  z-index: 130;
+  z-index: calc(var(--layer-system) + 10);
   display: flex;
   align-items: center;
   justify-content: center;

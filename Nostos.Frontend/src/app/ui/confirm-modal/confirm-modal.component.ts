@@ -60,8 +60,11 @@ export class ConfirmModal {
   /** Stack the action buttons vertically on narrow screens. */
   stackOnNarrow = input<boolean>(true);
 
-  /** Opt-in focus containment for callers that need strict modal focus control. */
-  trapFocus = input<boolean>(false);
+  /**
+   * Focus containment: Cancel takes focus on open (the safe answer to a
+   * destructive question) and the opener gets it back on close.
+   */
+  trapFocus = input<boolean>(true);
 
   tone = input<ConfirmTone>('danger');
 

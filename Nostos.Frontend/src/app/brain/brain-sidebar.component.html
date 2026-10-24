@@ -44,7 +44,7 @@
 
       <div class="topic-list" role="list" aria-labelledby="brain-topics-label">
         @for (topic of state.sidebarTopics(); track topic.id) {
-        <div class="topic-row-shell" role="listitem">
+        <div class="topic-row-shell" role="listitem" data-rename-row>
           @if (isRenaming(topic)) {
           <div class="topic-row topic-row--renaming">
             <nostos-inline-rename

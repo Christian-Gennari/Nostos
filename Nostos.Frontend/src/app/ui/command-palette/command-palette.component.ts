@@ -13,6 +13,7 @@ import {
   ChangeDetectionStrategy,
 } from '@angular/core';
 import { Router } from '@angular/router';
+import { ModalStack } from '../modal-shell/modal-stack.service';
 import { Observable, type OperatorFunction, Subject, catchError, debounceTime, forkJoin, map, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
@@ -142,6 +143,7 @@ const NO_SERVER_RESULTS: ServerResults = { books: [], notes: [] };
 })
 export class CommandPalette {
   private router = inject(Router);
+  private stack = inject(ModalStack);
   private booksService = inject(BooksService);
   private collectionsService = inject(CollectionsService);
   private notesService = inject(NotesService);
@@ -291,6 +293,18 @@ export class CommandPalette {
       if (this.isOpen()) untracked(() => this.onOpened());
     });
 
+    // The palette is the top layer: a dialog under it must not take its Escape.
+    let release: (() => void) | null = null;
+    effect(() => {
+      const open = this.isOpen();
+      if (open && !release) release = this.stack.register(this);
+      else if (!open && release) {
+        release();
+        release = null;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => release?.());
+
     // Keep the highlighted row in view as the arrow keys move it.
     afterRenderEffect(() => {
       const id = this.activeId();
@@ -319,7 +333,7 @@ export class CommandPalette {
   onKeydown(event: KeyboardEvent): void {
     if (!this.isOpen()) return;
     if (event.key === 'Escape') {
-      event.preventDefault();
+      if (!this.stack.claimEscape(this, event)) return;
       this.dismiss();
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();

@@ -17,6 +17,7 @@ import {
   viewChild,
 } from '@angular/core';
 
+import { DOCUMENT } from '@angular/common';
 import { InputDirective } from '../form-control/form-control.directive';
 
 let nextErrorId = 0;
@@ -51,6 +52,10 @@ let nextErrorId = 0;
  *
  * `variant="title"` edits a page heading (the open topic's title): the field
  * takes the heading's face and a rule under it instead of a box.
+ *
+ * When it closes, focus goes back to the row it was opened on (the nearest
+ * `[data-rename-row]` ancestor, or the control that was focused when it opened):
+ * a rename that ends with focus on the page body strands a keyboard user.
  *
  * WHY THIS EXISTS: the flat tree cancelled on blur and showed no error; the
  * Brain's topic rename had Save/Cancel buttons and an inline error. Two ways to
@@ -109,11 +114,24 @@ export class InlineRenameComponent {
 
   private readonly field = viewChild.required<ElementRef<HTMLInputElement>>('field');
 
+  private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** The control that asked for the rename, as a fallback when there is no row. */
+  private readonly origin = (() => {
+    const active = this.document.activeElement;
+    return active instanceof HTMLElement && active !== this.document.body ? active : null;
+  })();
+  private row: HTMLElement | null = null;
+
   constructor() {
-    inject(DestroyRef).onDestroy(() => (this.destroyed = true));
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      this.returnFocus();
+    });
     // The field appears because the user asked to rename: put them in it with
     // the old name selected, so typing replaces it and Escape leaves it alone.
     afterNextRender(() => {
+      this.row = this.host.nativeElement.closest<HTMLElement>('[data-rename-row]');
       if (!this.focusOnOpen()) return;
       const field = this.field().nativeElement;
       field.focus();
@@ -170,6 +188,31 @@ export class InlineRenameComponent {
     // The owner's answer to this save is shown, even if it repeats the last one.
     this.ownerErrorDismissed.set(false);
     this.committed.emit(value);
+  }
+
+  /**
+   * Gives focus back once the field is gone, unless the user already moved it
+   * elsewhere (focus is then outside the field and not on the page body).
+   */
+  private returnFocus(): void {
+    const active = this.document.activeElement;
+    const stranded =
+      !active || active === this.document.body || this.host.nativeElement.contains(active);
+    if (!stranded) return;
+    const row = this.row;
+    const origin = this.origin;
+    setTimeout(() => {
+      const current = this.document.activeElement;
+      if (current && current !== this.document.body) return;
+      const target = row?.isConnected
+        ? row.hasAttribute('tabindex')
+          ? row
+          : row.querySelector<HTMLElement>('a[href], button:not([disabled])')
+        : origin?.isConnected
+          ? origin
+          : null;
+      target?.focus({ preventScroll: true });
+    });
   }
 
   private cancel(): void {

@@ -1,6 +1,16 @@
-import { Component, HostListener, input, output, ChangeDetectionStrategy } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  HostListener,
+  effect,
+  inject,
+  input,
+  output,
+  ChangeDetectionStrategy,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
+import { ModalStack } from './modal-stack.service';
 
 /**
  * How the shell presents itself.
@@ -68,8 +78,12 @@ export class ModalShell {
   /** True while the caller is saving: locks every dismissal path. */
   busy = input<boolean>(false);
 
-  /** Trap focus and return it to the opener when this dialog closes. */
-  trapFocus = input<boolean>(false);
+  /**
+   * Trap focus inside the dialog, move it in on open and give it back to the
+   * opener on close. On by default: a dialog that leaves focus behind its own
+   * backdrop is a keyboard dead end.
+   */
+  trapFocus = input<boolean>(true);
 
   /**
    * Whether a backdrop tap closes. Left at the callers' existing behaviour —
@@ -96,11 +110,27 @@ export class ModalShell {
   /** Pointer id when the current gesture began directly on the backdrop. */
   private backdropPointerId: number | null = null;
 
-  @HostListener('document:keydown.escape')
-  onEscape(): void {
-    if (this.isOpen() && !this.busy()) {
-      this.closed.emit();
-    }
+  private readonly stack = inject(ModalStack);
+
+  constructor() {
+    // Open shells form a stack: only the top one answers Escape.
+    let release: (() => void) | null = null;
+    effect(() => {
+      const open = this.isOpen();
+      if (open && !release) release = this.stack.register(this);
+      else if (!open && release) {
+        release();
+        release = null;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => release?.());
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  onEscape(event: Event): void {
+    if (!this.isOpen() || !this.stack.claimEscape(this, event)) return;
+    // Busy locks every dismissal, but the key is still spent here.
+    if (!this.busy()) this.closed.emit();
   }
 
   onBackdropPointerDown(event: PointerEvent): void {

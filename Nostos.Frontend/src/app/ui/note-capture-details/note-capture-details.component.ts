@@ -4,7 +4,6 @@ import { Note, NoteSearchHit } from '../../core/dtos/note.dtos';
 import { NotesService } from '../../core/services/notes.service';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { ButtonComponent } from '../button/button.component';
-import { A11yModule } from '@angular/cdk/a11y';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
@@ -12,7 +11,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 /** Original wording is canonical note data, available without an assistant session. */
 @Component({
   selector: 'app-note-capture-details',
-  imports: [ButtonComponent, A11yModule, ModalShell, DialogActionsComponent, IconButtonComponent, LoadingIndicatorComponent],
+  imports: [ButtonComponent, ModalShell, DialogActionsComponent, IconButtonComponent, LoadingIndicatorComponent],
   templateUrl: './note-capture-details.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './note-capture-details.component.css',

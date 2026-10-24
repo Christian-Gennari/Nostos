@@ -32,7 +32,6 @@ import {
   input,
   output,
 } from '@angular/core';
-import { A11yModule } from '@angular/cdk/a11y';
 
 import { MigrationPreflightResponseDto } from '../models/migration-http.dtos';
 import { LibraryActivationConflictFacts } from '../models/library-transfer.models';
@@ -49,7 +48,7 @@ import { IconTileComponent } from '../../ui/icon-tile/icon-tile.component';
   selector: 'app-library-replacement-dialog',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [IconTileComponent, NoticeComponent, A11yModule, ModalShell, NostosIconComponent, ButtonComponent, DialogActionsComponent],
+  imports: [IconTileComponent, NoticeComponent, ModalShell, NostosIconComponent, ButtonComponent, DialogActionsComponent],
   templateUrl: './library-replacement-dialog.component.html',
   styleUrl: './library-replacement-dialog.component.css',
 })

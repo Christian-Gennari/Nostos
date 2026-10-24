@@ -437,6 +437,21 @@ Do not turn ModalShell into a universal working-area component, and do not route
 inline row actions through DialogActions merely because they happen to live inside a
 dialog.
 
+### Keyboard contract
+
+- **Focus** is trapped by default (`trapFocus`, on): it moves into the dialog on open
+  (put `cdkFocusInitial` on the control that should take it; `app-confirm-modal` puts
+  it on Cancel) and returns to the opener on close. Do not write a trap by hand.
+- **Escape** goes through `ModalStack` (`ui/modal-shell/modal-stack.service.ts`). Open
+  shells, the More sheet and the command palette register while open; only the top one
+  answers, it skips a key a focused control already used (`defaultPrevented`, such as
+  a dropdown closing its list) and it consumes the key (`preventDefault` and
+  `stopPropagation`). A surface behind them (the reader) checks `hasOpen()` before
+  claiming Escape. A new overlay registers with `register()` and asks `claimEscape()`.
+- A phone **drawer** (the Library's collections, the Brain's index) uses
+  `[appDrawerFocus]` (`core/directives/drawer-focus.directive.ts`): focus moves to the
+  current place on open and back to the opener on close, and Escape closes it.
+
 ## Menu choices (`nostosMenuItemRadio`, `nostosMenuGroup`)
 
 **Files:** `src/app/ui/menu/`
@@ -595,6 +610,8 @@ collections, Studio documents), a Brain topic in the index and at the top of its
 - No Save or Cancel buttons. `committed` carries the trimmed new name and only fires
   when it differs from `name`; the owner decides what saving does.
 - `variant="title"` edits a page heading: the heading's face, a rule instead of a box.
+- When it closes, focus returns to the row (the nearest `[data-rename-row]` ancestor)
+  or, failing that, the control that was focused when it opened.
 
 ---
 

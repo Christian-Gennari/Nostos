@@ -1,6 +1,7 @@
 import { DOCUMENT } from '@angular/common';
 import {
   Component,
+  DestroyRef,
   ElementRef,
   HostListener,
   Injector,
@@ -19,6 +20,7 @@ import { filter } from 'rxjs';
 import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { CommandPaletteService } from '../../ui/command-palette/command-palette.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { ModalStack } from '../../ui/modal-shell/modal-stack.service';
 import { UtilitySheetService } from './utility-sheet.service';
 
 /**
@@ -235,10 +237,23 @@ export class UtilitySheetComponent implements OnDestroy {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
+  private readonly stack = inject(ModalStack);
   private returnFocus: HTMLElement | null = null;
   private exitTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
+    // The sheet is a layer like any dialog: Escape reaches only the top one.
+    let release: (() => void) | null = null;
+    effect(() => {
+      const open = this.sheet.open();
+      if (open && !release) release = this.stack.register(this);
+      else if (!open && release) {
+        release();
+        release = null;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => release?.());
+
     // Keep the panel mounted for its short exit transition, but release focus
     // and make it inert as soon as the menu closes. Focus is captured manually
     // on every open because the trap remains mounted briefly during an exit.
@@ -302,9 +317,9 @@ export class UtilitySheetComponent implements OnDestroy {
     if (this.sheet.open()) this.syncPosition();
   }
 
-  @HostListener('document:keydown.escape')
-  onEscape(): void {
-    if (this.sheet.open()) this.sheet.close();
+  @HostListener('document:keydown.escape', ['$event'])
+  onEscape(event: Event): void {
+    if (this.sheet.open() && this.stack.claimEscape(this, event)) this.sheet.close();
   }
 
   private syncPosition(): void {

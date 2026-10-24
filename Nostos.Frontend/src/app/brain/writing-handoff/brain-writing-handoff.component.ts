@@ -3,7 +3,6 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
-  HostListener,
   Injector,
   afterNextRender,
   OnInit,
@@ -112,7 +111,6 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
-  private returnFocusElement: HTMLElement | null = null;
 
   ngOnInit(): void {
     this.loadDestinations();
@@ -120,12 +118,6 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
 
   ngAfterViewInit(): void {
     this.destinationListScrollbarWidth.set(this.measureDestinationListScrollbarWidth());
-    const activeElement = this.document.activeElement;
-    this.returnFocusElement = activeElement instanceof HTMLElement ? activeElement : null;
-    setTimeout(() => {
-      const initialFocus = this.host.nativeElement.querySelector('.handoff-close') as HTMLButtonElement | null;
-      initialFocus?.focus({ preventScroll: true });
-    });
   }
 
   loadDestinations(): void {
@@ -173,45 +165,6 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
   cancel(): void {
     if (this.saving()) return;
     this.cancelled.emit();
-    this.restoreFocusAfterClose();
-  }
-
-  @HostListener('document:keydown', ['$event'])
-  onDocumentKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Tab') return;
-
-    const dialog = this.host.nativeElement.querySelector('.handoff-dialog') as HTMLElement | null;
-    if (!dialog) return;
-
-    const focusable = Array.from(
-      dialog.querySelectorAll(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
-      )
-    ) as HTMLElement[];
-    const visibleFocusable = focusable.filter(
-      (element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true'
-    );
-
-    if (!visibleFocusable.length) {
-      event.preventDefault();
-      const focusFallback = dialog.querySelector('.handoff-heading h2') as HTMLElement | null;
-      focusFallback?.focus({ preventScroll: true });
-      return;
-    }
-
-    const first = visibleFocusable[0];
-    const last = visibleFocusable[visibleFocusable.length - 1];
-    const active = this.document.activeElement;
-    if (!(active instanceof Node) || !dialog.contains(active)) {
-      event.preventDefault();
-      (event.shiftKey ? last : first).focus({ preventScroll: true });
-    } else if (event.shiftKey && active === first) {
-      event.preventDefault();
-      last.focus({ preventScroll: true });
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus({ preventScroll: true });
-    }
   }
 
   confirmFromTitle(event: Event): void {
@@ -337,18 +290,6 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
     }
 
     this.completed.emit({ succeededNoteIds: succeeded, failedNoteIds: [] });
-    this.restoreFocusAfterClose();
-  }
-
-  private restoreFocusAfterClose(): void {
-    const target = this.returnFocusElement;
-    if (!target) return;
-
-    setTimeout(() => {
-      if (target.isConnected && !this.host.nativeElement.contains(target)) {
-        target.focus({ preventScroll: true });
-      }
-    });
   }
 
   private measureDestinationListScrollbarWidth(): number {

@@ -30,7 +30,8 @@
       [attr.aria-label]="searchLabel()"
       [ngModel]="query()"
       (ngModelChange)="query.set($event)"
-      (keydown.escape)="closed.emit()"
+      (keydown.escape)="onEscape($event)"
+      (keydown.enter)="onEnter($event)"
     />
   </nostos-search-field>
   <div class="merge-target-list">

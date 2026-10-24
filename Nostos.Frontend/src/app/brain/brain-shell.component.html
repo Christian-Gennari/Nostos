@@ -1,4 +1,4 @@
-<div class="brain-layout" [class.drawer-open]="state.drawerOpen()" (keydown.escape)="closeDrawer()">
+<div class="brain-layout" [class.drawer-open]="state.drawerOpen()" [appDrawerFocus]="state.drawerOpen()" drawerPanel=".brain-sidebar-column" (drawerDismiss)="closeDrawer()">
   @if (state.drawerOpen()) {
   <div class="brain-backdrop drawer-scrim" aria-hidden="true" (click)="closeDrawer()"></div>
   }
