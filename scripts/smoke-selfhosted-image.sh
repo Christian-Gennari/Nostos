@@ -37,6 +37,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker rm -f "$name" >/dev/null 2>&1 || true
+echo "image size: $(( $(docker image inspect -f '{{.Size}}' "$image") / 1000000 )) MB"
 docker run -d --name "$name" -p "$port:8080" "$image" >/dev/null
 
 # Emulated arm64 starts slowly; allow three minutes.
