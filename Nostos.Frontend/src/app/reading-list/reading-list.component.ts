@@ -337,7 +337,10 @@ export class ReadingList implements OnInit {
       .remove(entry.id)
       .pipe(finalize(() => this.removing.set(false)))
       .subscribe({
-        next: () => this.removeTarget.set(null),
+        next: () => {
+          this.removeTarget.set(null);
+          this.toast.success(`Removed “${entry.title}” from your reading list`);
+        },
         error: () => this.toast.error('Could not remove the book'),
       });
   }

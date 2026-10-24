@@ -495,56 +495,35 @@ export class BookDetail implements OnInit, OnDestroy {
   selectStatusOption(target: string): void {
     if (target !== 'notstarted' && target !== 'reading' && target !== 'finished') return;
     if (target === this.statusValue()) return;
-    this.pendingStatus.set(target);
+    // Only a reset discards something (the saved position), so only it asks.
+    // Finished and Reading are one tap, as in the Library.
+    if (target === 'notstarted') this.pendingStatus.set(target);
+    else this.store.setFinished(target === 'finished');
   }
 
-  /** The pending status change's question, for the shared confirm modal. */
-  readonly statusConfirm = computed<StatusConfirmCopy | null>(() => {
-    switch (this.pendingStatus()) {
-      case 'notstarted':
-        return {
+  /** The reset question, for the shared confirm modal. */
+  readonly statusConfirm = computed<StatusConfirmCopy | null>(() =>
+    this.pendingStatus() === 'notstarted'
+      ? {
           heading: 'Reset to not started?',
           description:
             'This will override your current progress and clear your saved page position. ' +
             'The next time you open this book, it will start from the beginning.',
           confirmLabel: 'Reset progress',
           tone: 'danger',
-        };
-      case 'finished':
-        return {
-          heading: 'Mark as finished?',
-          description: 'This will override your current reading progress and mark the book as 100% completed.',
-          confirmLabel: 'Mark as finished',
-          tone: 'neutral',
-        };
-      case 'reading':
-        return {
-          heading: 'Mark as reading?',
-          description: "This will set the book's status back to Reading.",
-          confirmLabel: 'Mark as reading',
-          tone: 'neutral',
-        };
-      default:
-        return null;
-    }
-  });
+        }
+      : null,
+  );
 
   cancelStatusChange(): void {
+    if (this.store.resettingProgress()) return;
     this.pendingStatus.set(null);
   }
 
+  /** Stays open until the server answers; the store toasts the outcome. */
   confirmStatusChange(): void {
-    const target = this.pendingStatus();
-    if (!target) return;
-
-    this.pendingStatus.set(null);
-    if (target === 'notstarted') {
-      this.store.resetProgress();
-    } else if (target === 'finished') {
-      this.store.setFinished(true);
-    } else if (target === 'reading') {
-      this.store.setFinished(false);
-    }
+    if (this.pendingStatus() !== 'notstarted' || this.store.resettingProgress()) return;
+    this.store.resetProgress(() => this.pendingStatus.set(null));
   }
 
   addNote(): void {
@@ -676,9 +655,9 @@ export class BookDetail implements OnInit, OnDestroy {
     const action = this.pendingWorkAction();
     if (!action || this.store.linkingWork()) return;
 
-    this.pendingWorkAction.set(null);
-    if (action.kind === 'link') this.store.linkToWork(action.bookId);
-    else this.store.unlinkFromWork(action.bookId);
+    const done = () => this.pendingWorkAction.set(null);
+    if (action.kind === 'link') this.store.linkToWork(action.bookId, done);
+    else this.store.unlinkFromWork(action.bookId, done);
   }
 
   /** Composed here so the shared confirm modal stays generic. */
@@ -715,13 +694,13 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   cancelCoverDelete(): void {
+    if (this.store.removingCover()) return;
     this.coverDeletePending.set(false);
   }
 
   confirmCoverDelete(): void {
     if (!this.coverDeletePending()) return;
-    this.coverDeletePending.set(false);
-    this.store.deleteCover();
+    this.store.deleteCover(() => this.coverDeletePending.set(false));
   }
 
   onFileUploadSelected(event: Event) {

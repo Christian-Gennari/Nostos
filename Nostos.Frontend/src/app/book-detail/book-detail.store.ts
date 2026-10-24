@@ -74,6 +74,9 @@ export class BookDetailStore {
   /** True while a reset-progress command is in flight (duplicate-click guard). */
   readonly resettingProgress = signal(false);
 
+  /** True while a cover-remove command is in flight (keeps its confirm open). */
+  readonly removingCover = signal(false);
+
   /** True while a work link/unlink command is in flight (duplicate-click guard). */
   readonly linkingWork = signal(false);
 
@@ -304,7 +307,7 @@ export class BookDetailStore {
    * is refetched from the backend (the server owns the reset state) and the
    * user is told the next reader opening starts at the beginning.
    */
-  resetProgress() {
+  resetProgress(onSuccess?: () => void) {
     const b = this.book();
     if (!b || this.resettingProgress()) return;
 
@@ -316,6 +319,7 @@ export class BookDetailStore {
         next: () => {
           this.loadBook(b.id, { background: true });
           this.toast.success('Reading progress reset');
+          onSuccess?.();
         },
         error: () => this.toast.error('Could not reset progress'),
       });
@@ -331,7 +335,7 @@ export class BookDetailStore {
    * the displayed editions reflect the server's decision (including the merge of
    * whole groups, which the client cannot predict from two book ids).
    */
-  linkToWork(targetBookId: string) {
+  linkToWork(targetBookId: string, onSuccess?: () => void) {
     const b = this.book();
     if (!b || this.linkingWork()) return;
 
@@ -343,13 +347,14 @@ export class BookDetailStore {
         next: () => {
           this.loadBook(b.id, { background: true });
           this.toast.success('Linked as editions');
+          onSuccess?.();
         },
         error: () => this.toast.error('Could not link these books'),
       });
   }
 
   /** Split a book out into its own work. Defaults to the book being viewed. */
-  unlinkFromWork(bookId?: string) {
+  unlinkFromWork(bookId?: string, onSuccess?: () => void) {
     const b = this.book();
     if (!b || this.linkingWork()) return;
     const id = bookId ?? b.id;
@@ -362,6 +367,7 @@ export class BookDetailStore {
         next: () => {
           this.loadBook(b.id, { background: true });
           this.toast.success('Unlinked into its own edition set');
+          onSuccess?.();
         },
         error: () => this.toast.error('Could not unlink this edition'),
       });
@@ -471,14 +477,23 @@ export class BookDetailStore {
     });
   }
 
-  deleteCover() {
+  deleteCover(onSuccess?: () => void) {
     // Confirmed by the caller through ConfirmModal (book-detail.component).
     const b = this.book();
-    if (!b) return;
+    if (!b || this.removingCover()) return;
 
-    this.booksService.deleteCover(b.id).subscribe({
-      next: () => this.loadBook(b.id, { background: true }),
-    });
+    this.removingCover.set(true);
+    this.booksService
+      .deleteCover(b.id)
+      .pipe(finalize(() => this.removingCover.set(false)))
+      .subscribe({
+        next: () => {
+          this.loadBook(b.id, { background: true });
+          this.toast.success('Cover removed');
+          onSuccess?.();
+        },
+        error: () => this.toast.error('Could not remove the cover'),
+      });
   }
 
   uploadFile(file: File) {

@@ -1145,6 +1145,49 @@ describe('SettingsComponent backup-only surface', () => {
     expect(localStorage.getItem('nostos.theme')).toBe('light');
   });
 
+  it('keeps the backup delete question open and busy until the server answers', () => {
+    render();
+    const component = fixture.componentInstance;
+    const answer = new Subject<null>();
+    backupServiceMock.deleteBackup.mockReturnValueOnce(answer.asObservable());
+
+    component.pendingBackupDelete.set('b1');
+    component.confirmBackupDelete();
+    expect(component.deletingBackup()).toBe(true);
+    component.cancelBackupDelete();
+    expect(component.pendingBackupDelete()).toBe('b1');
+
+    answer.error(new Error('offline'));
+    expect(component.deletingBackup()).toBe(false);
+    expect(component.pendingBackupDelete()).toBe('b1');
+    expect(toastMock.error).toHaveBeenCalledWith('Could not delete the backup');
+
+    backupServiceMock.deleteBackup.mockReturnValueOnce(of(null));
+    component.confirmBackupDelete();
+    expect(component.pendingBackupDelete()).toBeNull();
+    expect(toastMock.success).toHaveBeenCalledWith('Backup deleted');
+  });
+
+  it('keeps the backup restore question open and busy until the server answers', () => {
+    render();
+    const component = fixture.componentInstance;
+    const answer = new Subject<{ success: boolean; message: string }>();
+    backupServiceMock.restore.mockReturnValueOnce(answer.asObservable());
+
+    component.pendingRestore.set('b1');
+    component.confirmRestore();
+    expect(component.restoring()).toBe(true);
+    expect(component.pendingRestore()).toBe('b1');
+    component.cancelRestore();
+    expect(component.pendingRestore()).toBe('b1');
+
+    answer.next({ success: true, message: 'Restored.' });
+    answer.complete();
+    expect(component.restoring()).toBe(false);
+    expect(component.pendingRestore()).toBeNull();
+    expect(toastMock.success).toHaveBeenCalledWith('Restored.');
+  });
+
   it('shows no owner-only controls or owner API calls while capabilities are loading', () => {
     const pending = new Subject<DeploymentCapabilities>();
     capabilitiesServiceMock.get.mockReturnValueOnce(pending.asObservable());
@@ -1897,7 +1940,14 @@ describe('SettingsComponent backup-only surface', () => {
     ) as HTMLButtonElement).click();
     fixture.detectChanges();
 
+    // Regenerating cuts off every reader on the old password, so it asks first.
+    expect(opdsServiceMock.rotateManagedPassword).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.pendingOpdsRotate()).toBe(true);
+    fixture.componentInstance.rotateManagedOpdsPassword();
+    fixture.detectChanges();
+
     expect(opdsServiceMock.rotateManagedPassword).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.pendingOpdsRotate()).toBe(false);
     expect(
       (fixture.nativeElement.querySelector('.managed-opds-password') as HTMLElement).textContent,
     ).toContain(managedRotated.password);

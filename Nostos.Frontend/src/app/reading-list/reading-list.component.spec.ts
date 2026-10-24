@@ -1,7 +1,7 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { AddBookModal, AddBookPrefill } from '../add-book-modal/add-book-modal.component';
 import { Collection } from '../core/dtos/collection.dtos';
@@ -360,6 +360,28 @@ describe('ReadingList', () => {
 
     expect(list.remove).toHaveBeenCalledWith('a');
     expect(component.removeTarget()).toBeNull();
+    expect(toast.success).toHaveBeenCalledWith('Removed “Pedro Páramo” from your reading list');
+  });
+
+  it('keeps the edit dialog open and the Save busy until the server answers', async () => {
+    await create([entry({ id: 'a', title: 'Stoner' })]);
+    const answer = new Subject<ReadingListEntry>();
+    list.update.mockReturnValueOnce(answer.asObservable());
+
+    component.openEdit(list.entries()[0]);
+    fixture.detectChanges();
+    component.saveEdit();
+    fixture.detectChanges();
+
+    const save = document.querySelector('button[type="submit"][form="reading-list-edit-form"]') as HTMLButtonElement;
+    expect(save.getAttribute('aria-busy')).toBe('true');
+    expect(save.textContent).toContain('Saving…');
+    component.closeEdit();
+    expect(component.editTarget()).not.toBeNull();
+
+    answer.next(entry({ id: "a", title: "Stoner" }));
+    answer.complete();
+    expect(component.editTarget()).toBeNull();
   });
 
   it('saves a reason and a recommender without touching what the entry already knows', async () => {

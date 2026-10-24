@@ -15,7 +15,7 @@
     (keydown)="onKeydown($event)"
   ></textarea>
   <div class="words-actions">
-    <button appButton variant="primary" size="sm" type="button" [disabled]="saving()" (click)="save()">
+    <button appButton variant="primary" size="sm" type="button" [busy]="saving()" [disabled]="saving()" (click)="save()">
       {{ saving() ? 'Saving…' : 'Save' }}
     </button>
     <button appButton variant="ghost" size="sm" type="button" [disabled]="saving()" (click)="cancel()">Cancel</button>

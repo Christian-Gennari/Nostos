@@ -377,7 +377,7 @@ describe('BookDetail reset progress', () => {
     expect(httpMock.match((req) => req.method === 'POST' && req.url === '/api/books/b1/progress/reset').length).toBe(0);
   });
 
-  it('asks status changes through the shared confirm modal: danger for reset, neutral otherwise', async () => {
+  it('asks only for the reset, in the danger tone; Finished is one tap, as in the Library', async () => {
     await setup(readableBook());
 
     openResetViaDropdown();
@@ -388,9 +388,36 @@ describe('BookDetail reset progress', () => {
 
     component.selectStatusOption('finished');
     fixture.detectChanges();
-    expect(resetDialog()!.textContent).toContain('Mark as finished?');
-    expect(resetDialog()!.querySelector('.confirm-mark')).toBeNull();
-    expect(resetDialog()!.querySelector('.btn-confirm.nostos-button--primary')).toBeTruthy();
+    expect(resetDialog()).toBeNull();
+    const put = httpMock.expectOne((req) => req.method === 'PUT' && req.url === '/api/books/b1');
+    expect(put.request.body).toEqual({ isFinished: true });
+    put.flush(readableBook({ progressPercent: 100, finishedAt: '2026-10-24T00:00:00Z' }));
+  });
+
+  it('keeps the reset question open and busy until the server answers, and open on failure', async () => {
+    await setup(readableBook());
+
+    openResetViaDropdown();
+    resetConfirmButton()!.click();
+    fixture.detectChanges();
+
+    // In flight: still up, locked, saying so.
+    expect(resetDialog()).toBeTruthy();
+    expect(resetDialog()!.textContent).toContain('Resetting…');
+    expect(resetConfirmButton()!.disabled).toBe(true);
+    expect(resetCancelButton()!.disabled).toBe(true);
+    component.cancelStatusChange();
+    expect(component.pendingStatus()).toBe('notstarted');
+
+    httpMock
+      .expectOne((req) => req.method === 'POST' && req.url === '/api/books/b1/progress/reset')
+      .flush({}, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    // Failed: the question stays, the button is usable again, a toast says why.
+    expect(resetDialog()).toBeTruthy();
+    expect(resetConfirmButton()!.disabled).toBe(false);
+    expect(toast.toasts().some((t) => t.message === 'Could not reset progress' && t.type === 'error')).toBe(true);
   });
 
   it('does nothing when the status change confirmation is cancelled', async () => {
@@ -1170,6 +1197,40 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
     httpMock
       .expectOne((req) => req.url === '/api/books/b1' && req.method === 'GET')
       .flush({ ...book, hasFile: true, coverUrl: null });
+    expect(component.coverDeletePending()).toBe(false);
+    drainTopics();
+  });
+
+  it('cover remove stays open and busy until the server answers, and stays on failure', async () => {
+    await setup();
+    const toast = TestBed.inject(ToastService);
+    const toastError = vi.spyOn(toast, 'error');
+    const toastSuccess = vi.spyOn(toast, 'success');
+
+    component.deleteCover();
+    component.confirmCoverDelete();
+    fixture.detectChanges();
+    expect(component.store.removingCover()).toBe(true);
+    expect(openModals()[0].textContent).toContain('Removing…');
+    component.cancelCoverDelete();
+    expect(component.coverDeletePending()).toBe(true);
+
+    httpMock
+      .expectOne((req) => req.url === '/api/books/b1/cover' && req.method === 'DELETE')
+      .flush({}, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(toastError).toHaveBeenCalledWith('Could not remove the cover');
+    expect(component.coverDeletePending()).toBe(true);
+    expect(component.store.removingCover()).toBe(false);
+
+    component.confirmCoverDelete();
+    httpMock
+      .expectOne((req) => req.url === '/api/books/b1/cover' && req.method === 'DELETE')
+      .flush(null);
+    httpMock
+      .expectOne((req) => req.url === '/api/books/b1' && req.method === 'GET')
+      .flush({ ...book, hasFile: true, coverUrl: null });
+    expect(toastSuccess).toHaveBeenCalledWith('Cover removed');
     expect(component.coverDeletePending()).toBe(false);
     drainTopics();
   });

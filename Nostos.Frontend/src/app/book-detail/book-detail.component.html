@@ -601,8 +601,8 @@
     }
   </div>
 
-  <!-- Reading-status changes overwrite progress, so they ask first. Resetting
-       to Not started discards the saved position: the danger tone. -->
+  <!-- Only resetting to Not started asks: it discards the saved position, so
+       it is the danger tone. Finished and Reading are one tap, as in the Library. -->
   <app-confirm-modal
     class="status-confirm"
     [isOpen]="!!statusConfirm()"
@@ -611,6 +611,8 @@
     [confirmLabel]="statusConfirm()?.confirmLabel ?? ''"
     [tone]="statusConfirm()?.tone ?? 'neutral'"
     icon="arrow-counter-clockwise"
+    busyLabel="Resetting…"
+    [busy]="store.resettingProgress()"
     (confirm)="confirmStatusChange()"
     (cancel)="cancelStatusChange()"
   >
@@ -635,7 +637,7 @@
     [heading]="workActionHeading()"
     [description]="workActionDescription()"
     [confirmLabel]="pendingWorkAction()?.kind === 'link' ? 'Link' : 'Unlink'"
-    busyLabel="Working…"
+    [busyLabel]="pendingWorkAction()?.kind === 'link' ? 'Linking…' : 'Unlinking…'"
     [busy]="store.linkingWork()"
     tone="neutral"
     (confirm)="confirmWorkAction()"
@@ -652,7 +654,9 @@
     [isOpen]="coverDeletePending()"
     heading="Remove cover image?"
     description="The book keeps everything else — only the cover image is removed."
-    confirmLabel="Remove"
+    confirmLabel="Remove cover"
+    busyLabel="Removing…"
+    [busy]="store.removingCover()"
     (confirm)="confirmCoverDelete()"
     (cancel)="cancelCoverDelete()"
   >

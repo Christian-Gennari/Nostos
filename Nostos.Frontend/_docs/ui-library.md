@@ -461,6 +461,13 @@ a compact question needs it.
 </app-modal-shell>
 ```
 
+**Busy.** One pattern for every dialog and confirm that waits on the server: the shell
+gets `[busy]` (Escape, backdrop and Cancel stop closing it), the action gets `[busy]`
+and an “…ing” label (`Saving…`, `Deleting…`), and the dialog stays open until the server
+answers. Success closes it and toasts (`Deleted “X”`); failure leaves it open with a
+`Could not …` toast so the reader can try again. `app-confirm-modal` does all of this
+from its `busy` input.
+
 Do not turn ModalShell into a universal working-area component, and do not route
 inline row actions through DialogActions merely because they happen to live inside a
 dialog.

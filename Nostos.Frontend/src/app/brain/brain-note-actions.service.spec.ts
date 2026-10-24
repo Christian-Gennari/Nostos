@@ -56,3 +56,58 @@ describe('BrainNoteActionsService edit', () => {
     expect(service.busy().has('n1')).toBe(false);
   });
 });
+
+describe('BrainNoteActionsService delete', () => {
+  let service: BrainNoteActionsService;
+  let del: ReturnType<typeof vi.fn>;
+  let toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+  const host = { replace: vi.fn(), remove: vi.fn() };
+
+  beforeEach(() => {
+    host.remove.mockReset();
+    del = vi.fn().mockReturnValue(of(undefined));
+    toast = { success: vi.fn(), error: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        BrainNoteActionsService,
+        { provide: NotesService, useValue: { delete: del } },
+        { provide: TopicsService, useValue: {} },
+        { provide: ToastService, useValue: toast },
+        { provide: BrainStateService, useValue: { refresh: vi.fn() } },
+      ],
+    });
+    service = TestBed.inject(BrainNoteActionsService);
+    service.attach(host);
+  });
+
+  it('words a note delete as a note', () => {
+    service.askDelete(['n1']);
+    expect(service.deleteHeading()).toBe('Delete this note?');
+    expect(service.deleteConfirmLabel()).toBe('Delete note');
+    service.confirmDelete();
+    expect(host.remove).toHaveBeenCalledWith('n1');
+    expect(toast.success).toHaveBeenCalledWith('Note deleted');
+    expect(service.deleteIds()).toEqual([]);
+  });
+
+  it('words a highlight delete as a highlight, through the same path', () => {
+    service.askDelete(['h1'], 'highlight');
+    expect(service.deleteHeading()).toBe('Delete this highlight?');
+    expect(service.deleteConfirmLabel()).toBe('Delete highlight');
+    expect(service.deleteDescription()).toContain('highlight');
+    service.confirmDelete();
+    expect(del).toHaveBeenCalledWith('h1');
+    expect(host.remove).toHaveBeenCalledWith('h1');
+    expect(toast.success).toHaveBeenCalledWith('Highlight deleted');
+  });
+
+  it('stays open, unbusy, with a Could not toast when nothing was deleted', () => {
+    del.mockReturnValue(throwError(() => new Error('offline')));
+    service.askDelete(['h1'], 'highlight');
+    service.confirmDelete();
+    expect(service.deleting()).toBe(false);
+    expect(service.deleteIds()).toEqual(['h1']);
+    expect(host.remove).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith('Could not delete the highlight');
+  });
+});

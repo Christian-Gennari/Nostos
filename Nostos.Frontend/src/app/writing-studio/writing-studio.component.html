@@ -671,9 +671,9 @@
   <!-- Deleting a writing asks through the shared modal instead of window.confirm(). -->
   <app-confirm-modal
     [isOpen]="!!pendingDelete()"
-    heading="Delete this item?"
-    description="The document and everything inside it is removed. This cannot be undone."
-    confirmLabel="Delete"
+    [heading]="deleteCopy().heading"
+    [description]="deleteCopy().description"
+    [confirmLabel]="deleteCopy().confirmLabel"
     busyLabel="Deleting…"
     [busy]="deletingItem()"
     (confirm)="confirmDeleteItem()"

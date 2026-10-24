@@ -1086,6 +1086,41 @@ describe('WritingStudio delete (no window.confirm)', () => {
     expect(component.pendingDelete()).toBeNull();
   });
 
+  it('names what it deletes, and toasts Deleted “X” only once the server says so', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as {
+      delete: ReturnType<typeof vi.fn>;
+    };
+    const toast = TestBed.inject(ToastService);
+    const success = vi.spyOn(toast, 'success');
+    const error = vi.spyOn(toast, 'error');
+    component.rootItems.set([
+      { id: 'f1', name: 'Essays', type: 'Folder', parentId: null } as never,
+      { id: 'd1', name: 'On Rome', type: 'Document', parentId: 'f1' } as never,
+    ]);
+
+    component.deleteItem('f1');
+    expect(component.deleteCopy().heading).toBe('Delete “Essays”?');
+    expect(component.deleteCopy().confirmLabel).toBe('Delete folder');
+    expect(component.deleteCopy().description).toContain('everything inside it');
+
+    // A failure leaves the question up, with the reason in a toast.
+    const failing = new Subject<void>();
+    writings.delete.mockReturnValueOnce(failing);
+    component.confirmDeleteItem();
+    failing.error(new Error('offline'));
+    expect(component.pendingDelete()).toBe('f1');
+    expect(component.deletingItem()).toBe(false);
+    expect(error).toHaveBeenCalledWith('Could not delete it. Try again.');
+    expect(success).not.toHaveBeenCalled();
+
+    component.cancelDeleteItem();
+    component.deleteItem('d1');
+    expect(component.deleteCopy().heading).toBe('Delete “On Rome”?');
+    expect(component.deleteCopy().confirmLabel).toBe('Delete document');
+    component.confirmDeleteItem();
+    expect(success).toHaveBeenCalledWith('Deleted “On Rome”');
+  });
+
   describe('New document / New folder', () => {
     type Mocked = {
       create: ReturnType<typeof vi.fn>;

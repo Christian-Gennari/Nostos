@@ -1651,23 +1651,41 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The delete is on its way: the confirm stays open and says so. */
   readonly deletingItem = signal(false);
 
+  /** The question names what is being deleted: a document or a folder, and which. */
+  readonly deleteCopy = computed(() => {
+    const id = this.pendingDelete();
+    const item = id ? this.rootItems().find((candidate) => candidate.id === id) : undefined;
+    const isFolder = item?.type === 'Folder';
+    const noun = isFolder ? 'folder' : 'document';
+    const name = item?.name?.trim();
+    return {
+      heading: name ? `Delete “${name}”?` : `Delete this ${noun}?`,
+      description: isFolder
+        ? 'The folder and everything inside it is removed. This cannot be undone.'
+        : 'The document is removed. This cannot be undone.',
+      confirmLabel: `Delete ${noun}`,
+      name: name || null,
+    };
+  });
+
   cancelDeleteItem(): void {
     if (!this.deletingItem()) this.pendingDelete.set(null);
   }
 
+  /** Stays open until the server answers: a failure leaves the question up. */
   confirmDeleteItem(): void {
     const id = this.pendingDelete();
     if (!id || this.deletingItem()) return;
+    const { name } = this.deleteCopy();
     this.deletingItem.set(true);
 
     this.writingsService.delete(id).pipe(
-      finalize(() => {
-        this.deletingItem.set(false);
-        this.pendingDelete.set(null);
-      }),
+      finalize(() => this.deletingItem.set(false)),
     ).subscribe({
       next: () => {
+        this.pendingDelete.set(null);
         this.loadTree();
+        this.toast.success(name ? `Deleted “${name}”` : 'Deleted');
 
         writeCarets(readCarets().filter((entry) => entry.id !== id));
         if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) writeStudioValue(STUDIO_LAST_WRITING_KEY, null);

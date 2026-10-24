@@ -39,12 +39,22 @@ export class BrainNoteActionsService {
   // Confirmations and dialogs the page renders.
   readonly deleteIds = signal<string[]>([]);
   readonly deleting = signal(false);
+  /** What the delete confirm calls the thing: a note, or a highlight on the page. */
+  readonly deleteKind = signal<'note' | 'highlight'>('note');
   readonly handoffIds = signal<string[]>([]);
 
   readonly deleteHeading = computed(() => {
     const count = this.deleteIds().length;
-    return count === 1 ? 'Delete this note?' : `Delete ${plural(count, 'note')}?`;
+    const noun = this.deleteKind();
+    return count === 1 ? `Delete this ${noun}?` : `Delete ${plural(count, noun)}?`;
   });
+
+  readonly deleteDescription = computed(() =>
+    this.deleteKind() === 'highlight'
+      ? 'The highlight and any note on it are removed from the page, from the book and from every topic. This cannot be undone.'
+      : 'Deleted notes are removed from their book and from every topic. This cannot be undone.');
+
+  readonly deleteConfirmLabel = computed(() => `Delete ${this.deleteKind()}`);
 
   attach(host: BrainNoteHost): void {
     this.host = host;
@@ -143,7 +153,9 @@ export class BrainNoteActionsService {
     });
   }
 
-  askDelete(noteIds: string[]): void {
+  /** Asks first. A highlight on a page is worded as one; a note is a note. */
+  askDelete(noteIds: string[], kind: 'note' | 'highlight' = 'note'): void {
+    this.deleteKind.set(kind);
     this.deleteIds.set(noteIds);
   }
 
@@ -161,12 +173,20 @@ export class BrainNoteActionsService {
         const deleted = results.filter((id): id is string => id !== null);
         deleted.forEach((id) => this.host?.remove(id));
         this.deleting.set(false);
+        const noun = this.deleteKind();
+        if (deleted.length === 0) {
+          // Nothing went: the question stays up so the reader can try again.
+          this.toast.error(`Could not delete the ${ids.length === 1 ? noun : plural(ids.length, noun)}`);
+          return;
+        }
         this.deleteIds.set([]);
         this.state.refresh();
         if (deleted.length === ids.length) {
-          this.toast.success(deleted.length === 1 ? 'Note deleted' : `${deleted.length} notes deleted`);
+          this.toast.success(deleted.length === 1
+            ? (noun === 'highlight' ? 'Highlight deleted' : 'Note deleted')
+            : `${deleted.length} ${noun}s deleted`);
         } else {
-          this.toast.error(`Could not delete ${ids.length - deleted.length} of ${ids.length} notes`);
+          this.toast.error(`Could not delete ${ids.length - deleted.length} of ${ids.length} ${noun}s`);
         }
       });
   }

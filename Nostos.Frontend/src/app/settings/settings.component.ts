@@ -21,6 +21,7 @@ import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { of } from 'rxjs';
 
 import { BackupService } from '../core/services/backup.service';
+import { formatNostosDate } from '../core/date-formats';
 import { OpdsService } from '../core/services/opds.service';
 import { ToastService } from '../core/services/toast.service';
 import { DAY_THEMES, NIGHT_THEMES, THEMES, ThemeChoice, ThemeName, ThemeService, themeOption } from '../core/services/theme.service';
@@ -727,6 +728,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   managedOpdsFailed = signal(false);
   managedOpdsBusy = signal<'enable' | 'rotate' | 'revoke' | null>(null);
   pendingOpdsRevoke = signal(false);
+  pendingOpdsRotate = signal(false);
 
   copied = signal(false);
   private copiedTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -840,6 +842,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** Backup id awaiting archive-delete confirmation (asked through ConfirmModal). */
   pendingBackupDelete = signal<string | null>(null);
+  deletingBackup = signal(false);
   progress = signal<BackupProgress>(defaultProgress);
   readonly backupStatusLabel = backupStatusLabel;
   readonly backupStatusTone = backupStatusTone;
@@ -1114,6 +1117,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.opdsService.rotateManagedPassword().subscribe({
       next: (access) => {
         this.managedOpdsBusy.set(null);
+        this.pendingOpdsRotate.set(false);
         this.managedOpds.set(access);
         this.managedOpdsFailed.set(false);
         this.toast.success('E-reader password regenerated. The previous password no longer works.');
@@ -1133,6 +1137,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   cancelManagedOpdsRevoke(): void {
     if (this.managedOpdsBusy() === 'revoke') return;
     this.pendingOpdsRevoke.set(false);
+  }
+
+  /** Regenerating disconnects every reader on the old password, so it asks first. */
+  requestManagedOpdsRotate(): void {
+    if (this.managedOpdsBusy() !== null) return;
+    this.pendingOpdsRotate.set(true);
+  }
+
+  cancelManagedOpdsRotate(): void {
+    if (this.managedOpdsBusy() === 'rotate') return;
+    this.pendingOpdsRotate.set(false);
   }
 
   confirmManagedOpdsRevoke(): void {
@@ -1844,13 +1859,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
   confirmRestore(): void {
     const id = this.pendingRestore();
     if (!id || this.restoring()) return;
-    this.pendingRestore.set(null);
 
+    // The question stays open (busy) until the server answers.
     this.restoring.set(true);
     this.startProgressPolling();
     this.backupService.restore(id).subscribe({
       next: (result) => {
         this.restoring.set(false);
+        this.pendingRestore.set(null);
         this.stopProgressPolling();
         this.progress.set(defaultProgress); this.showSlowNotice.set(false);
         if (result.success) {
@@ -1862,6 +1878,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.restoring.set(false);
+        this.pendingRestore.set(null);
         this.stopProgressPolling();
         this.progress.set(defaultProgress); this.showSlowNotice.set(false);
         this.toast.error('Could not restore the backup. Check the logs for details.');
@@ -1874,21 +1891,34 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   cancelBackupDelete(): void {
+    if (this.deletingBackup()) return;
     this.pendingBackupDelete.set(null);
   }
 
   confirmBackupDelete(): void {
     const id = this.pendingBackupDelete();
-    if (!id) return;
-    this.pendingBackupDelete.set(null);
+    if (!id || this.deletingBackup()) return;
 
+    this.deletingBackup.set(true);
     this.backupService.deleteBackup(id).subscribe({
       next: () => {
+        this.deletingBackup.set(false);
+        this.pendingBackupDelete.set(null);
         this.toast.success('Backup deleted');
         this.loadHistory();
       },
-      error: () => this.toast.error('Could not delete the backup'),
+      error: () => {
+        this.deletingBackup.set(false);
+        this.toast.error('Could not delete the backup');
+      },
     });
+  }
+
+  /** A backup is named by when it was made, e.g. “the backup from Oct 24, 2026, 9:41 AM”. */
+  backupName(id: string | null): string {
+    const item = this.history().find((held) => held.id === id);
+    const when = formatNostosDate(item?.createdAt, 'datetime');
+    return when ? `the backup from ${when}` : 'the backup';
   }
 
   private startProgressPolling(): void {

@@ -69,7 +69,7 @@
               <p class="ps-cite-error" role="alert">Give the year as four digits, like 1947.</p>
             }
             <div class="ps-cite-actions">
-              <button appButton size="sm" type="submit" [disabled]="saving() === entry.book.id">
+              <button appButton size="sm" type="submit" [busy]="saving() === entry.book.id" [disabled]="saving() === entry.book.id">
                 {{ saving() === entry.book.id ? 'Saving…' : 'Save' }}
               </button>
             </div>

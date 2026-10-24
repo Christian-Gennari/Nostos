@@ -1763,15 +1763,15 @@ describe('ReaderShell note delete (no window.confirm)', () => {
 
     const component = fixture.componentInstance;
     component.onDeleteNote('n1');
-    expect(component.pendingNoteDelete()).toBe('n1');
+    expect(component.noteActions.deleteIds()).toEqual(['n1']);
     expect(notes.delete).not.toHaveBeenCalled();
 
     render();
     expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeTruthy();
 
-    component.confirmNoteDelete();
+    component.noteActions.confirmDelete();
     expect(notes.delete).toHaveBeenCalledWith('n1');
-    expect(component.pendingNoteDelete()).toBeNull();
+    expect(component.noteActions.deleteIds()).toEqual([]);
   });
 
   it('asks in the Brain’s words and stays busy until the delete answers', async () => {
@@ -1789,21 +1789,21 @@ describe('ReaderShell note delete (no window.confirm)', () => {
     const card = () => fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
     expect(card().textContent).toContain('Deleted notes are removed from their book and from every topic.');
 
-    component.confirmNoteDelete();
+    component.noteActions.confirmDelete();
     render();
-    expect(component.noteDeleting()).toBe(true);
+    expect(component.noteActions.deleting()).toBe(true);
     expect(card().textContent).toContain('Deleting…');
 
     // Neither a cancel nor a second confirm interrupts the delete in flight.
-    component.cancelNoteDelete();
-    component.confirmNoteDelete();
+    component.noteActions.cancelDelete();
+    component.noteActions.confirmDelete();
     expect(notes.delete).toHaveBeenCalledTimes(1);
-    expect(component.pendingNoteDelete()).toBe('n1');
+    expect(component.noteActions.deleteIds()).toEqual(['n1']);
 
     answer.next();
     answer.complete();
-    expect(component.noteDeleting()).toBe(false);
-    expect(component.pendingNoteDelete()).toBeNull();
+    expect(component.noteActions.deleting()).toBe(false);
+    expect(component.noteActions.deleteIds()).toEqual([]);
   });
 
   it('cancelling performs nothing', async () => {
@@ -1816,8 +1816,8 @@ describe('ReaderShell note delete (no window.confirm)', () => {
 
     const component = fixture.componentInstance;
     component.onDeleteNote('n1');
-    component.cancelNoteDelete();
-    expect(component.pendingNoteDelete()).toBeNull();
+    component.noteActions.cancelDelete();
+    expect(component.noteActions.deleteIds()).toEqual([]);
     expect(notes.delete).not.toHaveBeenCalled();
   });
 });
@@ -2655,7 +2655,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
 
     const copy = el('selection-copy') as HTMLButtonElement;
     expect(copy).not.toBeNull();
-    expect(copy.getAttribute('aria-label')).toBe('Copy passage');
+    expect(copy.getAttribute('aria-label')).toBe('Copy text');
     expect(el('selection-cancel')!.classList.contains('nostos-button--ghost')).toBe(true);
 
     const css = readSource('./reader-shell.component.css');
@@ -2669,7 +2669,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     await capture(component);
 
     expect(el('selection-copy')).not.toBeNull();
-    expect(el('selection-copy')?.getAttribute('aria-label')).toBe('Copy passage');
+    expect(el('selection-copy')?.getAttribute('aria-label')).toBe('Copy text');
     expect(el('selection-cancel')!.classList.contains('nostos-button--secondary')).toBe(true);
   });
 
@@ -2687,7 +2687,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
 
     expect(writeText).toHaveBeenCalledWith('Sing, goddess, the anger of Achilles');
-    expect(success).toHaveBeenCalledWith('Passage copied');
+    expect(success).toHaveBeenCalledWith('Text copied');
     expect(stub().discardHighlight).toHaveBeenCalled();
     expect(stub().commitHighlight).not.toHaveBeenCalled();
     expect(el('selection-menu')).toBeNull();
@@ -3051,10 +3051,14 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
 
     (el('highlight-card-delete') as HTMLButtonElement).click();
     render();
-    expect(component.pendingNoteDelete()).toBe('n-1');
+    expect(component.noteActions.deleteIds()).toEqual(['n-1']);
     expect(notesService().delete).not.toHaveBeenCalled();
+    // The Brain's one dialog, worded for a highlight: no second confirm in the reader.
+    expect(document.querySelectorAll('.confirm-modal-card').length).toBe(1);
+    expect(document.querySelector('.confirm-modal-card')!.textContent).toContain('Delete this highlight?');
+    expect(document.querySelector('.confirm-modal-card .btn-confirm')!.textContent).toContain('Delete highlight');
 
-    component.confirmNoteDelete();
+    component.noteActions.confirmDelete();
     render();
     expect(notesService().delete).toHaveBeenCalledWith('n-1');
     expect(epub().removeHighlight).toHaveBeenCalledWith(CFI_OLD);
@@ -3117,7 +3121,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     expect(jump).toHaveBeenCalledWith(expect.objectContaining({ id: 'n-1' }));
 
     item.deleteRequested.emit();
-    expect(component.pendingNoteDelete()).toBe('n-1');
+    expect(component.noteActions.deleteIds()).toEqual(['n-1']);
 
     item.edited.emit({ id: 'n-1', content: 'Rage, first of all.' });
     expect(service['update']).toHaveBeenCalledWith('n-1', expect.objectContaining({ content: 'Rage, first of all.' }));
