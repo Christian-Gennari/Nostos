@@ -1511,7 +1511,7 @@ describe('WritingStudio kept sources (#491)', () => {
     keepBtn.click();
     fixture.detectChanges();
 
-    expect(toastService.error).toHaveBeenCalledWith('Failed to keep source');
+    expect(toastService.error).toHaveBeenCalledWith('Could not keep the source');
     expect(component.keptNoteIds().has('note-alpha')).toBe(false);
     expect(writingsService.listSources).toHaveBeenCalledWith('doc-1');
   });
@@ -2172,7 +2172,7 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(toast.error).toHaveBeenCalledWith('The editor is not ready for insertion yet');
     });
 
-    it('sends "Browse Reference" to the searched Books list', () => {
+    it('sends "Browse reference" to the searched Books list', () => {
       component.browseFromPalette('schopenhaur');
       expect(component.referenceMode()).toBe('library');
       expect(component.activeSidebarTab()).toBe('notes');

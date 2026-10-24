@@ -1,5 +1,6 @@
 import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { READING_STATUS_LABEL, readingStatusOf } from '../core/reading-status';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -304,11 +305,8 @@ export class BookDetail implements OnInit, OnDestroy {
    * "Reading", otherwise the book has not been started.
    */
   readonly readingStatus = computed<{ label: string; modifier: string }>(() => {
-    const b = this.store.book();
-    if (!b) return { label: 'Not Started', modifier: 'not-started' };
-    if (b.finishedAt) return { label: 'Finished', modifier: 'finished' };
-    if (b.progressPercent > 0 || b.lastLocation) return { label: 'Reading', modifier: 'reading' };
-    return { label: 'Not Started', modifier: 'not-started' };
+    const status = readingStatusOf(this.store.book());
+    return { label: READING_STATUS_LABEL[status], modifier: status === 'notstarted' ? 'not-started' : status };
   });
 
   // Template Refs for hidden file inputs
@@ -427,9 +425,9 @@ export class BookDetail implements OnInit, OnDestroy {
 
   /** The reading status choices, in the order a book moves through them. */
   readonly statusOptions: readonly DropdownOption[] = [
-    { value: 'notstarted', label: 'Not Started', icon: 'circle-dashed' },
-    { value: 'reading', label: 'Reading', icon: 'book-open' },
-    { value: 'finished', label: 'Finished', icon: 'check-circle' },
+    { value: 'notstarted', label: READING_STATUS_LABEL.notstarted, icon: 'circle-dashed' },
+    { value: 'reading', label: READING_STATUS_LABEL.reading, icon: 'book-open' },
+    { value: 'finished', label: READING_STATUS_LABEL.finished, icon: 'check-circle' },
   ];
 
   /** How far in, shown inside the Reading pill ("70%"). Only while reading:
@@ -492,25 +490,25 @@ export class BookDetail implements OnInit, OnDestroy {
     switch (this.pendingStatus()) {
       case 'notstarted':
         return {
-          heading: 'Reset to Not Started?',
+          heading: 'Reset to not started?',
           description:
             'This will override your current progress and clear your saved page position. ' +
             'The next time you open this book, it will start from the beginning.',
-          confirmLabel: 'Reset Progress',
+          confirmLabel: 'Reset progress',
           tone: 'danger',
         };
       case 'finished':
         return {
-          heading: 'Mark as Finished?',
+          heading: 'Mark as finished?',
           description: 'This will override your current reading progress and mark the book as 100% completed.',
-          confirmLabel: 'Mark as Finished',
+          confirmLabel: 'Mark as finished',
           tone: 'neutral',
         };
       case 'reading':
         return {
-          heading: 'Mark as In Progress?',
-          description: "This will update the book's status back to in-progress.",
-          confirmLabel: 'Set In Progress',
+          heading: 'Mark as reading?',
+          description: "This will set the book's status back to Reading.",
+          confirmLabel: 'Mark as reading',
           tone: 'neutral',
         };
       default:
@@ -746,7 +744,7 @@ export class BookDetail implements OnInit, OnDestroy {
       },
       error: () => {
         this.deleting.set(false);
-        this.toast.error('Failed to delete book');
+        this.toast.error('Could not delete the book');
       },
     });
   }

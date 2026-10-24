@@ -404,7 +404,7 @@ describe('ReadingList', () => {
 
     expect(list.markAcquired).toHaveBeenCalledWith('a', 'book-1');
     expect(list.entries()).toEqual([]);
-    expect(toast.success).toHaveBeenCalledWith('“Middlemarch” is in your library.');
+    expect(toast.success).toHaveBeenCalledWith('“Middlemarch” is in your library');
   });
 
   it('keeps the entry when Add Book is closed without making a book', async () => {

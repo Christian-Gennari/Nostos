@@ -5,7 +5,7 @@
     [maxWidth]="sourceMode() ? '960px' : '700px'"
     [maxHeight]="'90vh'"
     [layer]="100"
-    [ariaLabel]="isEditMode() ? 'Edit Book' : sourceMode() ? 'Find a book' : seededFromSource() ? 'Review Book' : 'Add a book'"
+    [ariaLabel]="isEditMode() ? 'Edit book' : sourceMode() ? 'Find a book' : seededFromSource() ? 'Review book' : 'Add a book'"
     (closed)="closeModal.emit()"
   >
       <header class="modal-header" shellHeader>
@@ -13,11 +13,11 @@
           <h2>
             {{
               isEditMode()
-                ? 'Edit Book'
+                ? 'Edit book'
                 : sourceMode()
                   ? 'Find a book'
                   : seededFromSource()
-                    ? 'Review Book'
+                    ? 'Review book'
                     : 'Add a book'
             }}
           </h2>
@@ -158,7 +158,7 @@
               </section>
 
               @if (uploadProgress() !== null) {
-                <div appNotice tone="info" class="upload-status" role="status">Uploading... {{ uploadProgress() }}%</div>
+                <div appNotice tone="info" class="upload-status" role="status">Uploading… {{ uploadProgress() }}%</div>
               }
 
               @if (uploadError(); as err) {
@@ -477,7 +477,7 @@
                         />
                       </app-form-field>
                       <app-form-field
-                        label="Place of Pub."
+                        label="Place of pub."
                         forId="book-place-of-publication"
                         labelNote="(Harvard)"
                       >
@@ -494,7 +494,7 @@
                     </div>
 
                     <div class="grid grid-2">
-                      <app-form-field label="Published Date" forId="book-published-date">
+                      <app-form-field label="Published date" forId="book-published-date">
                         <input
                           id="book-published-date"
                           appInput
@@ -539,13 +539,13 @@
                           type="text"
                           [(ngModel)]="form.categories"
                           name="categories"
-                          placeholder="Fiction, Sci-Fi..."
+                          placeholder="Fiction, sci-fi…"
                         />
                       </app-form-field>
                     </div>
 
                     <app-form-field
-                      [label]="form.type === 'audiobook' ? 'Duration' : 'Page Count'"
+                      [label]="form.type === 'audiobook' ? 'Duration' : 'Page count'"
                       [forId]="form.type === 'audiobook' ? 'book-duration' : 'book-page-count'"
                     >
                       @if (form.type === 'audiobook') {
@@ -640,7 +640,7 @@
 
                     @if (!isEditMode() && !seededFromSource()) {
                       <div class="asset-field">
-                        <span class="asset-field__label">Cover Image</span>
+                        <span class="asset-field__label">Cover image</span>
                         <label
                           appDropZone density="compact"
                           class="file-drop-zone file-drop-zone--cover"
@@ -675,7 +675,7 @@
                         rows="3"
                         [(ngModel)]="form.personalReview"
                         name="personalReview"
-                        placeholder="Your thoughts on this book..."
+                        placeholder="Your thoughts on this book…"
                       ></textarea>
                     </app-form-field>
                   </section>
@@ -1025,7 +1025,7 @@
             Add manually
           </button>
           <!-- The next step lives here, never below scrollable detail (#641).
-               It only seeds Review Book; that step's footer imports. -->
+               It only seeds Review book; that step's footer imports. -->
           <button
             appButton
             type="button"
@@ -1051,7 +1051,7 @@
               (click)="deleteBook.emit()"
             >
               <nostos-icon name="trash" [size]="14"></nostos-icon>
-              <span>Delete Book</span>
+              <span>Delete book</span>
             </button>
           }
           <button appButton type="button" variant="secondary" (click)="closeModal.emit()">
@@ -1075,9 +1075,9 @@
                   : hasPendingUpload()
                     ? 'Retry upload'
                     : isEditMode()
-                      ? 'Save Changes'
+                      ? 'Save changes'
                       : seededFromSource()
-                        ? 'Import Book'
+                        ? 'Import book'
                         : 'Add to Library'
               }}
             </button>

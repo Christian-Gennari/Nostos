@@ -234,7 +234,7 @@ public class BackupService : IBackupService
         }
 
         if (record is null)
-            return new RestoreResultDto(false, "Backup record not found.");
+            return new RestoreResultDto(false, "Backup not found");
 
         _logger.LogInformation("Starting restore from backup {Id}...", backupId);
         _settingsProvider.StartProgress(3);
@@ -251,7 +251,7 @@ public class BackupService : IBackupService
             }
 
             if (archivePath is null)
-                return new RestoreResultDto(false, "Could not retrieve backup archive. The local copy is unavailable.");
+                return new RestoreResultDto(false, "Could not retrieve the backup archive. The local copy is unavailable.");
 
             var actualChecksum = await ComputeFileChecksumAsync(archivePath);
             var expectedChecksum = "";
@@ -275,7 +275,7 @@ public class BackupService : IBackupService
 
             _settingsProvider.UpdateProgress("Completing restore", 90, 3, 3);
             _logger.LogInformation("Restore from backup {Id} completed.", backupId);
-            return new RestoreResultDto(true, "Restore completed successfully. Please restart the application to apply changes.");
+            return new RestoreResultDto(true, "Backup restored. Restart the application to apply the changes.");
         }
         catch (Portability.MigrationActivationException ex) when (ex.Code == Portability.MigrationActivationErrorCodes.Busy)
         {
@@ -284,7 +284,7 @@ public class BackupService : IBackupService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Restore from backup {Id} failed", backupId);
-            return new RestoreResultDto(false, $"Restore failed: {ex.Message}");
+            return new RestoreResultDto(false, $"Could not restore the backup: {ex.Message}");
         }
         finally
         {

@@ -83,7 +83,7 @@
       @if (activeItem(); as item) {
         <div class="header-doc-meta">
           <span class="header-doc-title" [title]="editorTitle() || item.name">{{ editorTitle() || item.name }}</span>
-          <span class="header-save-status" [class.is-saving]="saveStatus() === 'Saving...'">
+          <span class="header-save-status" [class.is-saving]="saveStatus() === 'Saving…'">
             {{ saveStatus() }}
           </span>
         </div>
@@ -172,7 +172,7 @@
             weight="thin"
             (click)="isZen() ? exitZen() : enterZen()"
             title="Focus: hide everything but the page — Esc to exit"
-            [attr.aria-label]="isZen() ? 'Exit Focus mode' : 'Enter Focus mode'"
+            [attr.aria-label]="isZen() ? 'Exit focus mode' : 'Enter focus mode'"
             [attr.aria-pressed]="isZen()"
           ></button>
         }

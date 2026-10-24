@@ -1443,7 +1443,7 @@ export class ReaderShell implements OnInit, OnDestroy {
         },
         error: () => {
           this.passageSaving.set(false);
-          this.toast.error('Could not save the passage.');
+          this.toast.error('Could not save the passage');
         },
       });
   }
@@ -1609,15 +1609,15 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!text || this.highlightSaving()) return;
     const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
     if (!clipboard) {
-      this.toast.error('Copying is not available in this browser.');
+      this.toast.error('Copying is not available in this browser');
       return;
     }
     clipboard.writeText(text).then(
       () => {
-        this.toast.success('Passage copied.');
+        this.toast.success('Passage copied');
         this.discardHighlight();
       },
-      () => this.toast.error('Could not copy the passage.'),
+      () => this.toast.error('Could not copy the passage'),
     );
   }
 
@@ -1789,7 +1789,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       error: () => {
         // The draft stays exactly as typed so a retry is one click.
         this.highlightNoteSaving.set(false);
-        this.toast.error('Could not save the note.');
+        this.toast.error('Could not save the note');
       },
     });
   }
@@ -1813,12 +1813,12 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!text) return;
     const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
     if (!clipboard) {
-      this.toast.error('Copying is not available in this browser.');
+      this.toast.error('Copying is not available in this browser');
       return;
     }
     clipboard.writeText(text).then(
-      () => this.toast.success('Passage copied.'),
-      () => this.toast.error('Could not copy the passage.'),
+      () => this.toast.success('Passage copied'),
+      () => this.toast.error('Could not copy the passage'),
     );
   }
 

@@ -933,7 +933,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // the library's PdfLoadedEvent is `{ pagesCount }` and nothing else, so the
     // old `if (pdfDoc)` guard was always false and the contents rail stayed
     // empty for every PDF — a 512-page book with 129 bookmarks rendered
-    // "No Table of Contents available." (issue #226 §1). `pagesLoaded.source`
+    // "No table of contents available." (issue #226 §1). `pagesLoaded.source`
     // IS the viewer application, and it carries the document.
     const doc = (event as any).source?.pdfDocument ?? null;
     if (doc && doc !== this.pdfDocRef) {

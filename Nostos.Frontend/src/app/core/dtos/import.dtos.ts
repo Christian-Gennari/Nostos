@@ -1,7 +1,7 @@
 import { AcquisitionState } from './provider.dtos';
 
 /**
- * One row of the "Imports in Progress" surface.
+ * One row of the "Imports in progress" surface.
  *
  * Deliberately NOT a library book: it describes work in flight, which must stay
  * visible whatever the library is filtered or sorted by. Two kinds of entry

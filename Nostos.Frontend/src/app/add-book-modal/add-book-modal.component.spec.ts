@@ -56,7 +56,7 @@ describe('AddBookModal', () => {
     expect(submitButton.getAttribute('form')).toBe('add-book-form');
     expect(submitButton.classList).toContain('nostos-button--primary');
     expect(submitButton.disabled).toBe(true);
-    expect(buttons.some((button) => button.textContent?.includes('Delete Book'))).toBe(false);
+    expect(buttons.some((button) => button.textContent?.includes('Delete book'))).toBe(false);
   });
 
   it('projects the edit-only destructive action into the leading slot and preserves callbacks', () => {
@@ -75,7 +75,7 @@ describe('AddBookModal', () => {
     const actions = fixture.nativeElement.querySelector('app-dialog-actions') as HTMLElement;
     const start = actions.querySelector('.nostos-dialog-actions__start') as HTMLElement;
     const deleteButton = Array.from(start.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Delete Book'),
+      button.textContent?.includes('Delete book'),
     ) as HTMLButtonElement;
     const cancelButton = Array.from(actions.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Cancel'),
@@ -438,7 +438,7 @@ describe('AddBookModal', () => {
     component.selectedCover.set(new File(['img'], 'cover.png', { type: 'image/png' }));
     component.submit();
 
-    expect(infoSpy).toHaveBeenCalledWith('“Meditations” is already in your library.');
+    expect(infoSpy).toHaveBeenCalledWith('“Meditations” is already in your library');
     expect(coverSpy).not.toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalledTimes(1);
   });

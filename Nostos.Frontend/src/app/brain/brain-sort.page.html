@@ -24,7 +24,7 @@
     } @else if (failed() && !note()) {
     <section class="sort-finished" role="alert">
       <p>The notes could not be loaded.</p>
-      <button appButton variant="secondary" type="button" (click)="leave()">Back to Unsorted</button>
+      <button appButton variant="secondary" type="button" (click)="leave()">Back to unsorted</button>
     </section>
     } @else if (note(); as current) {
     <article class="sort-note" [attr.aria-label]="'Note from ' + (current.bookTitle || 'an unknown book')">

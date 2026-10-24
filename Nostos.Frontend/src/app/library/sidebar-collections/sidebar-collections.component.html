@@ -10,10 +10,10 @@
         (click)="clearFilters()"
         [class.active]="!hasSelection()"
         data-filter-kind="status"
-        title="All Books"
+        title="All books"
       >
         <nostos-icon name="books" [size]="16" weight="light"></nostos-icon>
-        <span class="label">All Books</span>
+        <span class="label">All books</span>
         @if (statusCounts()?.all) {
           <span class="count-badge">{{ statusCounts()?.all }}</span>
         }
@@ -24,10 +24,10 @@
         (click)="toggleStatus('notstarted')"
         [class.active]="filters.status() === 'notstarted'"
         data-filter-kind="status"
-        title="Not Started"
+        [title]="statusLabel.notstarted"
       >
         <nostos-icon name="circle-dashed" [size]="16" weight="light"></nostos-icon>
-        <span class="label">Not Started</span>
+        <span class="label">{{ statusLabel.notstarted }}</span>
         @if (statusCounts()?.notStarted) {
           <span class="count-badge">{{ statusCounts()?.notStarted }}</span>
         }
@@ -38,10 +38,10 @@
         (click)="toggleStatus('reading')"
         [class.active]="filters.status() === 'reading'"
         data-filter-kind="status"
-        title="In Progress"
+        [title]="statusLabel.reading"
       >
         <nostos-icon name="book-open" [size]="16" weight="light"></nostos-icon>
-        <span class="label">In Progress</span>
+        <span class="label">{{ statusLabel.reading }}</span>
         @if (statusCounts()?.reading) {
           <span class="count-badge">{{ statusCounts()?.reading }}</span>
         }
@@ -66,10 +66,10 @@
         (click)="toggleStatus('finished')"
         [class.active]="filters.status() === 'finished'"
         data-filter-kind="status"
-        title="Finished"
+        [title]="statusLabel.finished"
       >
         <nostos-icon name="check-circle" [size]="16" weight="light"></nostos-icon>
-        <span class="label">Finished</span>
+        <span class="label">{{ statusLabel.finished }}</span>
         @if (statusCounts()?.finished) {
           <span class="count-badge">{{ statusCounts()?.finished }}</span>
         }
@@ -80,9 +80,9 @@
     <!-- Not a filter: these are books the reader does not have yet, so the
          entry leaves the library for a page of its own. -->
     <div class="nav-group">
-      <a class="nav-item" routerLink="/library/to-read" title="To Read">
+      <a class="nav-item" routerLink="/library/to-read" [title]="toReadLabel">
         <nostos-icon name="bookmark-simple" [size]="16" weight="light"></nostos-icon>
-        <span class="label">To Read</span>
+        <span class="label">{{ toReadLabel }}</span>
         @if (readingList.loaded() && readingList.count()) {
           <span class="count-badge">{{ readingList.count() }}</span>
         }
@@ -143,7 +143,7 @@
               class="section-add"
               type="button"
               (click)="startAdd()"
-              title="New Collection"
+              title="New collection"
               aria-label="New collection"
             >
               <nostos-icon name="plus" [size]="14"></nostos-icon>
@@ -164,7 +164,7 @@
               [(ngModel)]="newName"
               (keydown.enter)="create()"
               (keydown.escape)="resetInput()"
-              placeholder="Name..."
+              placeholder="Name…"
               autoFocus
             />
           </div>
@@ -245,7 +245,7 @@
     [isOpen]="!!deleteTarget()"
     [heading]="deleteHeading()"
     [description]="deleteDescription()"
-    confirmLabel="Delete Collection"
+    confirmLabel="Delete collection"
     busyLabel="Deleting…"
     [busy]="deleting()"
     (confirm)="confirmDelete()"

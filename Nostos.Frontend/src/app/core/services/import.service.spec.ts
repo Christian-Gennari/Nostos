@@ -219,7 +219,7 @@ describe('ImportService', () => {
     http.expectOne(`/api/books/${BOOK_ID}`).flush({ id: BOOK_ID } as Book);
 
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Flatland — import failed: The source refused the download.'),
+      expect.stringContaining('Could not import “Flatland”: The source refused the download'),
     );
 
     // A repeated terminal frame must not say it twice (it does re-read the one book,
@@ -251,7 +251,7 @@ describe('ImportService', () => {
     ]);
 
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Meditations — import failed: Import interrupted by server restart.'),
+      expect.stringContaining('Could not import “Meditations”: Import interrupted by server restart'),
     );
   });
 

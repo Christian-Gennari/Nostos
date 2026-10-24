@@ -333,9 +333,10 @@ export class ImportService {
 
     this.announcedFailures.add(activity.id);
 
-    const title = activity.title ?? 'An import';
-    const reason = activity.message?.trim();
-    this.toast.error(reason ? `${title} — import failed: ${reason}` : `${title} — import failed.`);
+    const title = activity.title?.trim();
+    const head = title ? `Could not import “${title}”` : 'Could not finish an import';
+    const reason = activity.message?.trim().replace(/\.$/, '');
+    this.toast.error(reason ? `${head}: ${reason}` : head);
   }
 
   /**

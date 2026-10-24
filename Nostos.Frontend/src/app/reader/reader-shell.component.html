@@ -50,8 +50,8 @@
         icon="list"
         [glyphSize]="20"
         (click)="toggleToc()"
-        title="Table of Contents"
-        aria-label="Table of Contents"
+        title="Table of contents"
+        aria-label="Table of contents"
         [attr.aria-expanded]="tocOpen()"
         [class.active]="tocOpen()"
       ></button>
@@ -60,8 +60,8 @@
         icon="notebook"
         [glyphSize]="20"
         (click)="toggleNotes()"
-        title="Notes & Highlights"
-        aria-label="Notes & Highlights"
+        title="Notes & highlights"
+        aria-label="Notes & highlights"
         [attr.aria-expanded]="notesOpen()"
         [class.active]="notesOpen()"
       ></button>
@@ -544,8 +544,8 @@
               icon="notebook"
               type="button"
               (click)="showActiveHighlightInNotes()"
-              aria-label="Show in Notes & Highlights"
-              title="Show in Notes & Highlights"
+              aria-label="Show in notes & highlights"
+              title="Show in notes & highlights"
               data-testid="highlight-card-show-in-notes"
             ></button>
             <button
@@ -680,14 +680,14 @@
         <ng-container *ngTemplateOutlet="tocTemplate; context: { $implicit: toc() }"></ng-container>
 
         @if (toc().length === 0) {
-        <div class="empty-state">No Table of Contents available.</div>
+        <div class="empty-state">No table of contents available.</div>
         }
       </div>
     </aside>
 
     <aside class="notes-panel" [class.open]="notesOpen()">
       <div class="notes-header">
-        <h2>Notes & Highlights</h2>
+        <h2>Notes & highlights</h2>
         <button appIconButton icon="x" [glyphSize]="20" (click)="toggleNotes()" aria-label="Close notes"></button>
       </div>
 
@@ -709,7 +709,7 @@
           <app-topic-input
             [ngModel]="quickNoteContent()"
             (ngModelChange)="onQuickNoteInput($event)"
-            placeholder="Add a quick note..."
+            placeholder="Add a quick note…"
             [rows]="2"
             (submitTrigger)="saveQuickNote()"
           ></app-topic-input>

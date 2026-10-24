@@ -170,7 +170,7 @@ export class BookDetailStore {
       error: () => {
         // Revert on error
         this.book.update((curr) => (curr ? { ...curr, isFavorite: !newStatus } : null));
-        this.toast.error('Failed to update favorite');
+        this.toast.error('Could not update the favorite');
       },
     });
   }
@@ -203,11 +203,11 @@ export class BookDetailStore {
     this.booksService.update(b.id, { isFinished }).subscribe({
       next: (updated) => {
         this.book.set(updated);
-        this.toast.success(isFinished ? 'Marked as finished' : 'Marked as in progress');
+        this.toast.success(isFinished ? 'Marked as finished' : 'Marked as reading');
       },
       error: () => {
         this.loadBook(b.id, { background: true });
-        this.toast.error('Failed to update status');
+        this.toast.error('Could not update the status');
       },
     });
   }
@@ -266,7 +266,7 @@ export class BookDetailStore {
     this.booksService.updateProgress(pending.bookId, pending.location, pending.percent).subscribe({
       error: () => {
         if (this.book()?.id === pending.bookId) this.loadBook(pending.bookId, { background: true });
-        this.toast.error('Failed to save the page');
+        this.toast.error('Could not save the page');
       },
     });
   }
@@ -278,7 +278,7 @@ export class BookDetailStore {
     this.book.update((curr) => (curr ? { ...curr, rating } : null));
 
     this.booksService.update(b.id, { rating } as any).subscribe({
-      error: () => this.toast.error('Failed to update rating'),
+      error: () => this.toast.error('Could not update the rating'),
     });
   }
 
@@ -301,7 +301,7 @@ export class BookDetailStore {
           this.loadBook(b.id, { background: true });
           this.toast.success('Reading progress reset');
         },
-        error: () => this.toast.error('Failed to reset progress'),
+        error: () => this.toast.error('Could not reset progress'),
       });
   }
 
@@ -398,7 +398,7 @@ export class BookDetailStore {
         },
         error: () => {
           this.linkCandidates.set([]);
-          this.toast.error('Could not load library books');
+          this.toast.error('Could not load the library’s books');
         },
       });
   }
@@ -442,7 +442,7 @@ export class BookDetailStore {
           this.loadBook(b.id, { background: true });
         }
       },
-      error: () => this.toast.error('Failed to upload cover'),
+      error: () => this.toast.error('Could not upload the cover'),
     });
   }
 
@@ -478,11 +478,11 @@ export class BookDetailStore {
     if (status === 0) return 'The connection was interrupted. Try the upload again.';
     if (status === 408 || status === 504) return 'The upload timed out. Try again.';
     if (status === 409) return 'This book is already importing or uploading a file. Wait until it finishes.';
-    if (status === 413) return 'This file is larger than this server allows.';
+    if (status === 413) return 'This file is larger than this server allows';
     if (status === 429) return 'Too many uploads are running right now. Try again in a moment.';
     if (status != null && status >= 400 && status < 500) {
-      return 'The server could not accept this file. Check the file and try again.';
+      return 'The server did not accept this file. Check the file and try again.';
     }
-    return 'The file could not be uploaded. Try again.';
+    return 'Could not upload the file. Try again.';
   }
 }

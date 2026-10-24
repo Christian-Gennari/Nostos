@@ -1452,7 +1452,7 @@
             (click)="triggerBackup()"
           >
             @if (backingUp()) {
-              Backing up...
+              Backing up…
             } @else {
               <nostos-icon name="arrows-clockwise" [size]="16"></nostos-icon>
               Back up now
@@ -1562,15 +1562,15 @@
               (click)="scanForBackups()"
             >
               @if (importing()) {
-                Scanning...
+                Scanning…
               } @else {
                 <nostos-icon name="folder-simple" [size]="16"></nostos-icon>
-                Scan for Backups
+                Scan for backups
               }
             </button>
           </div>
 
-          <!-- Last Backup Info -->
+          <!-- Last backup info -->
           @if (status().lastBackupAt) {
             <div class="last-backup-info">
               Last backup {{ status().lastBackupAt | nostosDate: 'datetime' }}

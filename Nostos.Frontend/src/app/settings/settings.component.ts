@@ -1072,7 +1072,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.managedOpdsBusy.set(null);
-        this.toast.error('Could not enable e-reader access.');
+        this.toast.error('Could not enable e-reader access');
       },
     });
   }
@@ -1089,7 +1089,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.managedOpdsBusy.set(null);
-        this.toast.error('Could not regenerate the e-reader password.');
+        this.toast.error('Could not regenerate the e-reader password');
       },
     });
   }
@@ -1113,11 +1113,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.pendingOpdsRevoke.set(false);
         this.managedOpds.set(access);
         this.managedOpdsFailed.set(false);
-        this.toast.success('E-reader access disabled.');
+        this.toast.success('E-reader access disabled');
       },
       error: () => {
         this.managedOpdsBusy.set(null);
-        this.toast.error('Could not disable e-reader access.');
+        this.toast.error('Could not disable e-reader access');
       },
     });
   }
@@ -1523,7 +1523,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     navigator.clipboard.writeText(url).then(
       () => {
         this.copied.set(true);
-        this.toast.success('Catalog address copied.');
+        this.toast.success('Catalog address copied');
         if (this.copiedTimeout !== null) clearTimeout(this.copiedTimeout);
         this.copiedTimeout = setTimeout(() => {
           this.copied.set(false);
@@ -1546,7 +1546,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       !access.password ||
       !navigator.clipboard
     ) {
-      this.toast.error('Connection details are not available to copy.');
+      this.toast.error('Connection details are not available to copy');
       return;
     }
 
@@ -1559,14 +1559,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
     navigator.clipboard.writeText(details).then(
       () => {
         this.copied.set(true);
-        this.toast.success('E-reader connection details copied.');
+        this.toast.success('E-reader connection details copied');
         if (this.copiedTimeout !== null) clearTimeout(this.copiedTimeout);
         this.copiedTimeout = setTimeout(() => {
           this.copied.set(false);
           this.copiedTimeout = null;
         }, COPIED_FEEDBACK_MS);
       },
-      () => this.toast.error('Could not copy the connection details automatically.'),
+      () => this.toast.error('Could not copy the connection details automatically'),
     );
   }
 
@@ -1593,7 +1593,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
           if (this.portableExportError() === null) {
             this.portableExportBusy.set(false);
             this.portableExportProgress.set(null);
-            this.toast.success('Your Nostos export is ready.');
+            this.toast.success('Your Nostos export is ready');
           }
         }
       },
@@ -1601,7 +1601,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.portableExportBusy.set(false);
         this.portableExportProgress.set(null);
         this.portableExportError.set(this.portableExportFailureMessage(error));
-        this.toast.error('Could not export your Nostos data.');
+        this.toast.error('Could not export your Nostos data');
       },
     });
   }
@@ -1611,7 +1611,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.portableExportBusy.set(false);
       this.portableExportProgress.set(null);
       this.portableExportError.set('Nostos returned an empty export. Try again.');
-      this.toast.error('Could not export your Nostos data.');
+      this.toast.error('Could not export your Nostos data');
       return;
     }
 
@@ -1662,7 +1662,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   loadData(): void {
     this.backupService.getStatus().subscribe({
       next: (s) => this.status.set(s),
-      error: () => this.toast.error('Failed to load backup status.'),
+      error: () => this.toast.error('Could not load the backup status'),
     });
 
     this.backupService.getSettings().subscribe({
@@ -1687,7 +1687,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.settings.set(s);
         this.refreshStatus();
       },
-      error: () => this.toast.error('Failed to update settings.'),
+      error: () => this.toast.error('Could not update the settings'),
     });
   }
 
@@ -1698,7 +1698,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.settings.set(s);
         this.refreshStatus();
       },
-      error: () => this.toast.error('Failed to update settings.'),
+      error: () => this.toast.error('Could not update the settings'),
     });
   }
 
@@ -1706,7 +1706,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     const value = parseInt(selected, 10);
     this.backupService.updateSettings({ intervalHours: value }).subscribe({
       next: (s) => this.settings.set(s),
-      error: () => this.toast.error('Failed to update settings.'),
+      error: () => this.toast.error('Could not update the settings'),
     });
   }
 
@@ -1714,7 +1714,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     const value = parseInt(selected, 10);
     this.backupService.updateSettings({ maxBackups: value }).subscribe({
       next: (s) => this.settings.set(s),
-      error: () => this.toast.error('Failed to update settings.'),
+      error: () => this.toast.error('Could not update the settings'),
     });
   }
 
@@ -1727,9 +1727,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.stopProgressPolling();
         this.progress.set(defaultProgress); this.showSlowNotice.set(false);
         if (result.status === 'Completed') {
-          this.toast.success(`Backup created successfully (${this.formatSize(result.sizeBytes)}).`);
+          this.toast.success(`Backup created (${this.formatSize(result.sizeBytes)})`);
         } else {
-          this.toast.error('Backup failed. Check the logs for details.');
+          this.toast.error('Could not create the backup. Check the logs for details.');
         }
         this.loadData();
       },
@@ -1737,7 +1737,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.backingUp.set(false);
         this.stopProgressPolling();
         this.progress.set(defaultProgress); this.showSlowNotice.set(false);
-        this.toast.error('Backup failed. Check the logs for details.');
+        this.toast.error('Could not create the backup. Check the logs for details.');
       },
     });
   }
@@ -1754,13 +1754,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
         if (imported.length > 0) {
           this.toast.success(`Found ${imported.length} backup(s) on disk.`);
         } else {
-          this.toast.info('No new backups found on disk.');
+          this.toast.info('No new backups found on disk');
         }
         this.loadHistory();
       },
       error: () => {
         this.importing.set(false);
-        this.toast.error('Failed to scan for backups.');
+        this.toast.error('Could not scan for backups');
       },
     });
   }
@@ -1797,7 +1797,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.restoring.set(false);
         this.stopProgressPolling();
         this.progress.set(defaultProgress); this.showSlowNotice.set(false);
-        this.toast.error('Restore failed. Check the logs for details.');
+        this.toast.error('Could not restore the backup. Check the logs for details.');
       },
     });
   }
@@ -1817,10 +1817,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
     this.backupService.deleteBackup(id).subscribe({
       next: () => {
-        this.toast.success('Backup deleted.');
+        this.toast.success('Backup deleted');
         this.loadHistory();
       },
-      error: () => this.toast.error('Failed to delete backup.'),
+      error: () => this.toast.error('Could not delete the backup'),
     });
   }
 

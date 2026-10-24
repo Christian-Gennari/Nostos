@@ -92,7 +92,7 @@ describe('BookDetail reset progress', () => {
     chip?.click();
     fixture.detectChanges();
     const items = statusOptions();
-    const notStartedItem = items.find((el) => el.textContent?.includes('Not Started'));
+    const notStartedItem = items.find((el) => el.textContent?.includes('Not started'));
     notStartedItem?.click();
     fixture.detectChanges();
   }
@@ -217,7 +217,7 @@ describe('BookDetail reset progress', () => {
     await setup(readableBook({ type: 'physical', hasFile: false, fileName: null }));
 
     const actions = fixture.nativeElement.querySelector('.primary-actions') as HTMLElement;
-    expect(actions.textContent).not.toContain('Upload File');
+    expect(actions.textContent).not.toContain('Upload file');
     expect(actions.querySelector('input[type="file"][accept*=".epub"]')).toBeNull();
 
     (actions.querySelector('.edit-metadata-btn') as HTMLButtonElement).click();
@@ -238,7 +238,7 @@ describe('BookDetail reset progress', () => {
     await setup(readableBook({ type: 'ebook', hasFile: false, fileName: null }));
 
     const actions = fixture.nativeElement.querySelector('.primary-actions') as HTMLElement;
-    expect(actions.textContent).toContain('Upload File');
+    expect(actions.textContent).toContain('Upload file');
     expect(actions.querySelector('input[type="file"][accept*=".epub"]')).toBeTruthy();
   });
 
@@ -252,7 +252,7 @@ describe('BookDetail reset progress', () => {
     expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
       .not.toContain('%'); // No fabricated percentage before the feed arrives.
     expect(fixture.nativeElement.querySelector('.primary-actions')?.textContent)
-      .not.toContain('Upload File');
+      .not.toContain('Upload file');
 
     const picker = vi.fn();
     component.fileInput = { nativeElement: { click: picker } } as any;
@@ -296,7 +296,7 @@ describe('BookDetail reset progress', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.detail-import-progress')).toBeNull();
     expect(fixture.nativeElement.querySelector('.primary-actions')?.textContent)
-      .toContain('Read Book');
+      .toContain('Read book');
   });
 
   it('renders a failed provider import without hiding its failure reason', async () => {
@@ -332,7 +332,7 @@ describe('BookDetail reset progress', () => {
 
     const dialog = resetDialog();
     expect(dialog).toBeTruthy();
-    expect(dialog!.textContent).toContain('Reset to Not Started?');
+    expect(dialog!.textContent).toContain('Reset to not started?');
     expect(dialog!.textContent).toContain('start from the beginning');
     expect(dialog!.querySelector('.nostos-dialog-actions--inset')).toBeTruthy();
     expect(resetConfirmButton()).toBeTruthy();
@@ -351,7 +351,7 @@ describe('BookDetail reset progress', () => {
 
     component.selectStatusOption('finished');
     fixture.detectChanges();
-    expect(resetDialog()!.textContent).toContain('Mark as Finished?');
+    expect(resetDialog()!.textContent).toContain('Mark as finished?');
     expect(resetDialog()!.querySelector('.confirm-mark')).toBeNull();
     expect(resetDialog()!.querySelector('.btn-confirm.nostos-button--primary')).toBeTruthy();
   });

@@ -1387,8 +1387,8 @@ describe('ReaderShell toolbar contract', () => {
         .filter((t): t is string => !!t);
 
     const header = titlesOf('.reader-header .icon-btn');
-    expect(header.filter((t) => t === 'Table of Contents')).toHaveLength(1);
-    expect(header.filter((t) => t === 'Notes & Highlights')).toHaveLength(1);
+    expect(header.filter((t) => t === 'Table of contents')).toHaveLength(1);
+    expect(header.filter((t) => t === 'Notes & highlights')).toHaveLength(1);
     expect(header.filter((t) => t === 'View settings')).toHaveLength(1);
     // The highlight control merged into the notes panel: at 390px the header held
     // five controls and left the book title 78px ("Being an…").
@@ -2655,7 +2655,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
 
     expect(writeText).toHaveBeenCalledWith('Sing, goddess, the anger of Achilles');
-    expect(success).toHaveBeenCalledWith('Passage copied.');
+    expect(success).toHaveBeenCalledWith('Passage copied');
     expect(stub().discardHighlight).toHaveBeenCalled();
     expect(stub().commitHighlight).not.toHaveBeenCalled();
     expect(el('selection-menu')).toBeNull();
@@ -2704,7 +2704,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     await Promise.resolve();
     render();
 
-    expect(error).toHaveBeenCalledWith('Could not copy the passage.');
+    expect(error).toHaveBeenCalledWith('Could not copy the passage');
     expect(el('selection-menu')).not.toBeNull();
   });
 });
