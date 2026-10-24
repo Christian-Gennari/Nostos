@@ -1,6 +1,6 @@
     <div class="settings-page">
       <header class="settings-page-header">
-        <h1 class="settings-page-title">Settings</h1>
+        <h1 class="page-title settings-page-title">Settings</h1>
       </header>
       <div class="settings-shell">
         @if (capabilitiesLoading()) {
@@ -30,11 +30,11 @@
             </section>
           </main>
         } @else {
-        <nav class="settings-nav" role="tablist" aria-label="Settings sections">
-          <span class="settings-nav-label" role="presentation">Preferences</span>
+        <nav class="side-nav settings-nav" role="tablist" aria-label="Settings sections">
+          <span class="section-label settings-nav-label" role="presentation">Preferences</span>
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'general'"
             [attr.aria-selected]="activeSettingsSection() === 'general'"
@@ -43,13 +43,13 @@
             (click)="setSettingsSection('general')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="sliders-horizontal" [size]="17"></nostos-icon>
+              <nostos-icon name="sliders-horizontal" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">General</span>
           </button>
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'library'"
             [attr.aria-selected]="activeSettingsSection() === 'library'"
@@ -58,13 +58,13 @@
             (click)="setSettingsSection('library')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="books" [size]="17"></nostos-icon>
+              <nostos-icon name="books" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">Library</span>
           </button>
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'assistant'"
             [attr.aria-selected]="activeSettingsSection() === 'assistant'"
@@ -73,19 +73,19 @@
             (click)="setSettingsSection('assistant')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="sparkle" [size]="17"></nostos-icon>
+              <nostos-icon name="sparkle" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">Assistant</span>
           </button>
           @if (hasInfrastructureSections()) {
-          <span class="settings-nav-label" role="presentation" data-testid="settings-nav-infrastructure-label">
+          <span class="section-label settings-nav-label" role="presentation" data-testid="settings-nav-infrastructure-label">
             {{ isCloud() ? 'Your account' : 'This server' }}
           </span>
           }
           @if (canConfigureAiProvider()) {
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'connections'"
             [attr.aria-selected]="activeSettingsSection() === 'connections'"
@@ -94,7 +94,7 @@
             (click)="setSettingsSection('connections')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="link-simple" [size]="17"></nostos-icon>
+              <nostos-icon name="link-simple" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">AI connections</span>
           </button>
@@ -102,7 +102,7 @@
           @if (supportsExternalMediaLibraries()) {
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'external'"
             [attr.aria-selected]="activeSettingsSection() === 'external'"
@@ -111,7 +111,7 @@
             (click)="setSettingsSection('external')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="folder-open" [size]="17"></nostos-icon>
+              <nostos-icon name="folder-open" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">External media</span>
           </button>
@@ -119,7 +119,7 @@
           @if (hasDataSection()) {
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'data'"
             [attr.aria-selected]="activeSettingsSection() === 'data'"
@@ -128,7 +128,7 @@
             (click)="setSettingsSection('data')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="archive" [size]="17"></nostos-icon>
+              <nostos-icon name="archive" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">Backups &amp; data</span>
           </button>
@@ -136,7 +136,7 @@
           @if (isCloud()) {
           <button
             type="button"
-            class="settings-nav-item"
+            class="nav-item settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'account'"
             [attr.aria-selected]="activeSettingsSection() === 'account'"
@@ -145,7 +145,7 @@
             (click)="setSettingsSection('account')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="user-circle" [size]="17"></nostos-icon>
+              <nostos-icon name="user-circle" [size]="16" weight="light"></nostos-icon>
             </span>
             <span class="settings-nav-copy">Account</span>
           </button>

@@ -49,7 +49,7 @@ const rawSource = css;
  * `--danger-deepen-to` is the fixed near-black that danger fills mix toward,
  * so the fill deepens in every theme; it is one value on purpose.
  */
-const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|container-width|fw|transition|glass-blur|modal-scrim-blur|sidebar-width|brand-|highlight-|control-h|focus-ring-width|dock-rail-h|dock-float-bottom|dock-bar-h|danger-deepen-to$)/;
+const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|container-width|fw|transition|glass-blur|modal-scrim-blur|sidebar-width|brand-|highlight-|control-h|focus-ring-width|page-title-size|dock-rail-h|dock-float-bottom|dock-bar-h|danger-deepen-to$)/;
 
 /**
  * Tokens whose value is a `color-mix()` of another token. They re-derive

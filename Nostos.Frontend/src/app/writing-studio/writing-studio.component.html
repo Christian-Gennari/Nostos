@@ -300,12 +300,12 @@
             appButton
             variant="ghost"
             size="sm"
-            class="inspected-source-back"
+            class="back-link inspected-source-back"
             (click)="closeInspectedSource()"
             [attr.aria-label]="'Back to ' + inspectionReturnLabel()"
             [title]="'Back to ' + inspectionReturnLabel()"
           >
-            <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
+            <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
             <span class="inspected-source-context">Back to {{ inspectionReturnLabel() }}</span>
           </button>
         </div>
@@ -836,9 +836,9 @@
 
 <ng-template #referenceDetailHeader let-label="label" let-back="back">
   <div class="brain-detail-header">
-    <button appButton variant="ghost" size="sm" class="goto-btn" (click)="back()">
-      <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-      Back to {{ label }}
+    <button appButton variant="ghost" size="sm" class="back-link goto-btn" (click)="back()">
+      <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
+      <span>Back to {{ label }}</span>
     </button>
     <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
   </div>

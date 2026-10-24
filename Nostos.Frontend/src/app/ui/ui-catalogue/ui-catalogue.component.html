@@ -569,6 +569,54 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-page-chrome">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Pattern</p>
+        <h2 id="catalogue-page-chrome">Page chrome</h2>
+      </div>
+      <p>
+        The brand lockup, the page title, the back link and the side-navigation rows the
+        Library, the Brain and Settings share.
+      </p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">nostos-brand-lockup</span>
+        <nostos-brand-lockup />
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Back link · page title</span>
+        <div class="catalogue-page-head">
+          <button appButton variant="ghost" size="sm" type="button" class="back-link">
+            <nostos-icon name="arrow-left" [size]="14" />
+            <span>Library</span>
+          </button>
+          <h3 class="page-title">To read</h3>
+        </div>
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">.side-nav rows</span>
+        <div class="side-nav catalogue-side-nav">
+          <div class="nav-group">
+            <span class="section-label">Places</span>
+            <button type="button" class="nav-item active">
+              <nostos-icon name="books" [size]="16" weight="light" />
+              <span class="label">All books</span>
+              <span class="count-badge">128</span>
+            </button>
+            <button type="button" class="nav-item">
+              <nostos-icon name="heart" [size]="16" weight="light" />
+              <span class="label">Favorites</span>
+              <span class="count-badge">9</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-toast">
     <div class="catalogue-section-heading">
       <div>

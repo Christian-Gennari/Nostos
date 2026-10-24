@@ -32,6 +32,7 @@ import { ReadingListService } from '../../core/services/reading-list.service';
 import { LibraryChangesService } from '../../core/services/library-changes.service';
 import { RouterLink } from '@angular/router';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
+import { BrandLockupComponent } from '../../ui/brand-lockup/brand-lockup.component';
 
 @Component({
   standalone: true,
@@ -41,6 +42,7 @@ import { InputDirective } from '../../ui/form-control/form-control.directive';
     FormsModule,
     RouterLink,
     NostosIconComponent,
+    BrandLockupComponent,
     FlatTreeComponent,
     ConfirmModal,
   ],

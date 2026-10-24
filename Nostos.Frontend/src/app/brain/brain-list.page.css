@@ -26,22 +26,7 @@
   background: var(--glass-bg-strong);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid var(--glass-border);
-}
-
-@supports (animation-timeline: scroll()) {
-  .toolbar {
-    border-bottom-color: transparent;
-    animation: brain-toolbar-edge linear both;
-    animation-timeline: scroll();
-    animation-range: 0 24px;
-  }
-}
-
-@keyframes brain-toolbar-edge {
-  to {
-    border-bottom-color: var(--glass-border);
-  }
+  /* The hairline is `.toolbar-edge` (styles.css), shared with the Library. */
 }
 
 .place-switch,
@@ -75,13 +60,9 @@
   text-transform: uppercase;
 }
 
+/* The shared `.page-title`, held to one line: a topic's name can be long. */
 .page-title {
-  margin: 0;
   overflow: hidden;
-  color: var(--color-text-main);
-  font-size: 1.75rem;
-  font-weight: var(--fw-medium);
-  line-height: 2.4rem;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;

@@ -1503,12 +1503,7 @@
   white-space: nowrap;
 }
 
-.brain-detail-header .goto-btn {
-  min-height: 40px;
-  padding-left: 0.3rem;
-  color: var(--color-text-muted);
-  text-transform: none;
-}
+/* The shared `.back-link` (styles.css): appButton ghost sm, 14px arrow. */
 
 .inspected-source-panel {
   padding: 0.35rem 0.65rem 9rem;

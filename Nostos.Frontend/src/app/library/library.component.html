@@ -1,6 +1,6 @@
 <main class="layout-wrapper" [class.sidebar-collapsed]="!sidebarExpanded()">
   @if (sidebarExpanded()) {
-  <div class="mobile-backdrop" (click)="toggleSidebar()"></div>
+  <div class="mobile-backdrop drawer-scrim" (click)="toggleSidebar()"></div>
   }
   <app-sidebar-collections
     class="sidebar-panel"
@@ -9,13 +9,13 @@
   ></app-sidebar-collections>
 
   <div class="library-right-side">
-    <header class="toolbar">
+    <header class="toolbar toolbar-edge">
       <!-- Static heading: the active-filter chips directly below (and the
            sidebar highlight) already name the current scope, so the heading
            never restates them. -->
       <!-- On a phone the active bottom dock already names the section, so the
            heading is screen-reader-only there. -->
-      <h1 id="library-title" class="library-title visually-hidden-phone">Library</h1>
+      <h1 id="library-title" class="page-title library-title visually-hidden-phone">Library</h1>
 
       <div class="search-bar-container">
         <nostos-icon name="magnifying-glass" [size]="18" class="search-icon"></nostos-icon>

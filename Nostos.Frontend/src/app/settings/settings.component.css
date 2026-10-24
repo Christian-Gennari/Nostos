@@ -10,14 +10,8 @@
   margin-bottom: 26px;
 }
 
-.settings-page-title {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--color-text-main);
-}
+/* The title is the shared `.page-title`; the nav is the shared `.side-nav`
+   row recipe (styles.css), the Library's and the Brain's sidebar rows. */
 
 .settings-shell {
   display: grid;
@@ -45,77 +39,26 @@
   border-radius: 0;
 }
 
-/* The nav is two groups: what you prefer, then what this server or account holds. */
-.settings-nav-label {
-  padding: 18px 10px 6px;
-  font-size: 0.68rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1.3;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
+/* The nav is two groups: what you prefer, then what this server or account
+   holds. The first label sits at the top of the column, level with the
+   content's first card. */
 .settings-nav-label:first-child {
   padding-top: 0;
 }
 
-.settings-nav-item {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: var(--radius-row);
-  background: transparent;
-  color: var(--color-text-light);
-  text-align: left;
-  font-family: inherit;
-  cursor: pointer;
-  transition:
-    background-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.settings-nav-item:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.settings-nav-item.is-active {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-  box-shadow: none;
-  outline: none;
-}
-
-.settings-nav-item:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 1px;
+.settings-nav-label:not(:first-child) {
+  margin-top: 1rem;
 }
 
 .settings-nav-icon {
-  width: 18px;
-  height: 18px;
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-}
-
-.settings-nav-item.is-active .settings-nav-icon {
-  color: var(--color-text-main);
+  flex: none;
 }
 
 .settings-nav-copy {
-  display: block;
   min-width: 0;
-  font-size: 0.82rem;
-  font-weight: var(--fw-medium);
-  line-height: 1.3;
-  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-content {
@@ -845,6 +788,8 @@
     scroll-padding-inline: 32px;
     overflow-x: auto;
     scrollbar-width: none;
+    /* The row scrolls; it must not widen the page to its own length. */
+    contain: inline-size;
   }
 
   .settings-nav::-webkit-scrollbar {
@@ -862,6 +807,11 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-pill);
     white-space: nowrap;
+  }
+
+  /* The row's tint follows the pill's shape here. */
+  .settings-nav-item::before {
+    border-radius: inherit;
   }
 
   .settings-nav-item.is-active {

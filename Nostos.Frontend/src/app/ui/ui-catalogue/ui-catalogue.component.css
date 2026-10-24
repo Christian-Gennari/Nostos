@@ -132,6 +132,16 @@
   font-size: var(--text-sm);
 }
 
+.catalogue-page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.catalogue-side-nav {
+  max-width: 280px;
+}
+
 .catalogue-dialog-preview {
   padding: 0;
   overflow: clip;

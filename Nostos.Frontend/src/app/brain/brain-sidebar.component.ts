@@ -5,6 +5,7 @@ import type { TopicDto } from '../core/services/topics.service';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { BrandLockupComponent } from '../ui/brand-lockup/brand-lockup.component';
 import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
@@ -18,7 +19,7 @@ import { isTopicSort } from './brain.helpers';
 @Component({
   selector: 'app-brain-sidebar',
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, DropdownComponent, IconButtonComponent, NostosIconComponent, BrainTopicRenameComponent],
+  imports: [RouterLink, RouterLinkActive, DropdownComponent, IconButtonComponent, NostosIconComponent, BrandLockupComponent, BrainTopicRenameComponent],
   templateUrl: './brain-sidebar.component.html',
   styleUrls: ['./brain-sidebar.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

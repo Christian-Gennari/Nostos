@@ -1,6 +1,6 @@
 <div class="brain-layout" [class.drawer-open]="state.drawerOpen()" (keydown.escape)="closeDrawer()">
   @if (state.drawerOpen()) {
-  <div class="brain-backdrop" aria-hidden="true" (click)="closeDrawer()"></div>
+  <div class="brain-backdrop drawer-scrim" aria-hidden="true" (click)="closeDrawer()"></div>
   }
   <app-brain-sidebar id="brain-sidebar" class="brain-sidebar-column" />
   <div class="brain-main">

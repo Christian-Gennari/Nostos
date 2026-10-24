@@ -1,5 +1,6 @@
 /* The Brain's sidebar, built like the Library's (sidebar-collections): the same
-   brand header, scroll area, groups, section label and place rows. Topic rows
+   brand header, scroll area, groups, section label and place rows, all from the
+   shared `.side-nav` recipe in styles.css. Topic rows
    are the Library's collection-row geometry (docs/brain-library-parity.md):
    34px, count at the right, hover rename/delete overlaid on the count. */
 :host {
@@ -15,125 +16,19 @@
   background: var(--bg-body);
 }
 
-.sidebar-header {
-  flex: none;
-  height: 68px;
-  display: flex;
-  align-items: center;
-  padding: 0 1rem;
-}
-
-.brand-lockup {
-  display: block;
-  flex: none;
-  height: 40px;
-  width: auto;
-}
-
-.brand-lockup__tile {
-  fill: var(--brand-shape);
-}
-
-.brand-lockup__arch {
-  fill: var(--brand-doorway);
-}
-
-.brand-lockup__word {
-  fill: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-}
-
+/* Room under the last topic for the floating dock. */
 .nav-scroll-area {
-  flex: 1;
-  min-height: 0;
-  padding: 0.75rem 1rem 6rem;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 1.75rem;
+  padding-bottom: 6rem;
 }
 
-.nav-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
-
+/* The order dropdown is taller than the Library's "+", so the head starts a
+   little higher to keep the label on the same line. */
 .section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.35rem 0 0.25rem 0.75rem;
-  margin-bottom: 0.15rem;
-}
-
-.section-label {
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
+  padding-top: 0.35rem;
 }
 
 .topic-sort {
   color: var(--color-text-light);
-}
-
-/* --- Place rows (the Library's .nav-item) --------------------------------- */
-.nav-item {
-  position: relative;
-  z-index: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  width: 100%;
-  padding: 0.45rem 0.75rem;
-  border-radius: var(--radius-row);
-  color: var(--color-text-muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.88rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  text-decoration: none;
-  text-wrap: nowrap;
-  transition: color 0.12s ease;
-}
-
-.nav-item::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  border-radius: var(--radius-row);
-  background: transparent;
-  transition: background-color 0.12s ease;
-}
-
-.nav-item:hover,
-.nav-item.active {
-  color: var(--color-text-main);
-}
-
-.nav-item:hover::before,
-.nav-item.active::before {
-  background: var(--bg-hover);
-}
-
-.nav-item:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.nav-item .count-badge {
-  margin-left: auto;
-  padding-right: 4px;
-  color: var(--color-text-light);
-  font-size: 0.72rem;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  flex-shrink: 0;
 }
 
 /* --- Topic rows (the Library's collection row) ---------------------------- */
@@ -298,8 +193,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav-item,
-  .nav-item::before,
   .topic-row,
   .row-actions {
     transition: none;

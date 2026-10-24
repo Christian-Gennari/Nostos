@@ -7,6 +7,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { THEMES, ThemeName, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
 import { BadgeComponent } from '../badge/badge.component';
+import { BrandLockupComponent } from '../brand-lockup/brand-lockup.component';
 import { NoticeComponent } from '../notice/notice.component';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
@@ -38,6 +39,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
   standalone: true,
   imports: [
     BadgeComponent,
+    BrandLockupComponent,
     NoticeComponent,
     IconTileComponent,
     NostosIconComponent,

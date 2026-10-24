@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { BrandLockupComponent } from '../ui/brand-lockup/brand-lockup.component';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { CloudSignInComponent } from './cloud-sign-in.component';
@@ -14,6 +15,7 @@ import { CloudSignInComponent } from './cloud-sign-in.component';
     LoadingIndicatorComponent,
     ButtonComponent,
     NostosIconComponent,
+    BrandLockupComponent,
     DatePipe,
     CloudSignInComponent,
   ],

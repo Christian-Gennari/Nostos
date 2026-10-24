@@ -1,11 +1,11 @@
 <div class="reading-list">
-  <a class="reading-list__back" routerLink="/library">
+  <a appButton variant="ghost" size="sm" class="back-link" routerLink="/library">
     <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
     <span>Library</span>
   </a>
 
   <header class="reading-list__header">
-    <h1 id="reading-list-title">To read</h1>
+    <h1 id="reading-list-title" class="page-title">To read</h1>
     <p class="reading-list__summary">{{ summary() }}</p>
   </header>
 

@@ -371,6 +371,21 @@ probably belongs to the product layer instead.
 
 ---
 
+## Page chrome
+
+Shared by every page that has one (issue #1207). Use these; do not restyle them.
+
+| Piece | How | Notes |
+| --- | --- | --- |
+| Page title | `<h1 class="page-title">` | `--page-title-size` (1.75rem), medium weight, 2.4rem line. Library, Brain, To read, Settings. A page may shrink it on a phone. |
+| Back link | `<a appButton variant="ghost" size="sm" class="back-link" routerLink="…">` with `<nostos-icon name="arrow-left" [size]="14" />` and the label in a `<span>` | `.back-link` pulls it left by its padding so the arrow lines up with the title. An in-panel back that does not navigate (Studio's reference panel) is the same thing on a `<button>`. |
+| Brand lockup | `<nostos-brand-lockup />` | `src/app/ui/brand-lockup/`. The tile + wordmark, 40px on the mark. `--brand-lockup-word-opacity` and `--brand-lockup-word-transition` let a host fade the word (the Library's collapsed rail). |
+| Side navigation | `.side-nav` on the root, then `.sidebar-header`, `.nav-scroll-area`, `.nav-group`, `.section-head`, `.section-label`, `.nav-item` (`.active` or `.is-active`), `.count-badge` | `styles.css`. The Library sidebar, the Brain sidebar and the Settings nav. The tint is a `::before`, so a sidebar can morph it without moving the icon. |
+| Toolbar edge | `.toolbar-edge` on a sticky glass toolbar | No hairline at rest, one once content scrolls under it (scroll-driven; older browsers keep the hairline). |
+| Drawer scrim | `.drawer-scrim` behind a phone drawer | A plain `--overlay-medium` dim, no blur. Show it only at drawer widths. |
+
+---
+
 ## FlatTreeComponent
 
 **Selector:** `app-flat-tree`  

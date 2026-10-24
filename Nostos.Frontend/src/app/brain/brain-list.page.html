@@ -1,5 +1,5 @@
 <div class="brain-scroller" #scroller (scroll)="onScroll($event)">
-  <header class="toolbar" [class.is-topic]="place() === 'topic'">
+  <header class="toolbar toolbar-edge" [class.is-topic]="place() === 'topic'">
     <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
     <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
       [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">

@@ -101,9 +101,7 @@ app-sidebar-collections.no-transition {
   z-index: 5;
   padding: 1.5rem 3rem;
   /* No standing rule: at rest the toolbar is the top of the page. The hairline
-     arrives once books scroll under the glass (see the scroll-driven rule
-     below); browsers without scroll timelines keep it, as before. */
-  border-bottom: 1px solid var(--glass-border);
+     arrives once books scroll under the glass (`.toolbar-edge`, styles.css). */
   margin-bottom: 0;
   /* Single row: heading left, controls right, search in the middle track.
      Both side tracks are at least their content wide and otherwise share the
@@ -121,21 +119,6 @@ app-sidebar-collections.no-transition {
   column-gap: 2rem;
 }
 
-@supports (animation-timeline: scroll()) {
-  .toolbar {
-    border-bottom-color: transparent;
-    animation: library-toolbar-edge linear both;
-    animation-timeline: scroll();
-    animation-range: 0 24px;
-  }
-}
-
-@keyframes library-toolbar-edge {
-  to {
-    border-bottom-color: var(--glass-border);
-  }
-}
-
 /* The first row starts one deliberate step under the toolbar. The global
    container's 2rem top padding stacked on the toolbar's old 2rem margin, with
    a hairline between them: 64px of band that read as a gap, not as room. */
@@ -145,13 +128,9 @@ app-sidebar-collections.no-transition {
 
 /* --- STATIC HEADING ---
    Fixed text, so no reserved box, no cross-fade layers, no ellipsis dance. */
+/* The shared `.page-title`; the toolbar only keeps it on one line. */
 .library-title {
-  margin: 0;
   flex: 0 0 auto;
-  font-size: 1.75rem;
-  font-weight: var(--fw-medium);
-  line-height: 2.4rem;
-  color: var(--color-text-main);
   white-space: nowrap;
 }
 
@@ -1189,16 +1168,9 @@ app-sidebar-collections.no-transition {
   }
 
   /* 4. Mobile Backdrop */
+  /* The shared `.drawer-scrim` (styles.css), shown only at drawer widths. */
   .mobile-backdrop {
     display: block;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: var(--overlay-medium);
-    z-index: var(--layer-backdrop); /* Behind drawer, above normal app chrome/content */
-    backdrop-filter: blur(2px);
   }
 
   /* 5. Toolbar Tweaks */
