@@ -209,7 +209,7 @@ export function importedNoteLocation(note: {
 
 /** True for a note whose anchor is another reading app's own position. */
 export function isImportedAnchor(kind: string | undefined): boolean {
-  return /^(koreader|kobo)_/i.test(kind ?? '');
+  return /^(koreader|kobo|kindle|readwise)_/i.test(kind ?? '');
 }
 
 export interface CreateNoteDto {

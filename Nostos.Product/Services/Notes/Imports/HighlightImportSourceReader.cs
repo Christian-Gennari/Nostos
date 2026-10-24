@@ -1,34 +1,64 @@
+using System.Text.RegularExpressions;
 using Nostos.Backend.Services.Library;
 
 namespace Nostos.Backend.Services.Notes.Imports;
 
 /// <summary>
-/// Turns an uploaded e-reader file into the one shape the import works on.
-/// The source is decided by content, not by file name: a SQLite header is a
-/// Kobo database, anything else is read as a KOReader sidecar.
+/// Turns an uploaded file into the one shape the import works on. The source
+/// is decided by content, not by file name: a SQLite header is a Kobo
+/// database, a Readwise header row is a Readwise CSV export, a Lua table is a
+/// KOReader sidecar, and lines of ten <c>=</c> are a Kindle's My Clippings.txt.
 /// </summary>
 internal static class HighlightImportSourceReader
 {
     public const string Kobo = "kobo";
     public const string Koreader = "koreader";
+    public const string Kindle = "kindle";
+    public const string Readwise = "readwise";
     private const long MaxSidecarBytes = 2 * 1024 * 1024;
+    // Years of Kindle clippings or a full Readwise export are a few MB.
+    private const long MaxTextBytes = 64 * 1024 * 1024;
 
-    public static (string Source, IReadOnlyList<ImportSourceBook> Books) Read(string path)
+    internal const string Unrecognised =
+        "This file is not one Nostos can import highlights from. Choose KoboReader.sqlite, a KOReader metadata.lua, a Kindle's My Clippings.txt or a Readwise CSV export.";
+
+    private static readonly Regex LuaTable = new(@"\A\s*(?:--[^\n]*\n\s*)*return\s*\{", RegexOptions.CultureInvariant);
+
+    public static ImportSourceFile Read(string path)
     {
         if (KoboDatabaseReader.HasSqliteHeader(path))
-            return (Kobo, ReadKobo(path));
+            return new ImportSourceFile(Kobo, ReadKobo(path), []);
 
-        if (new FileInfo(path).Length > MaxSidecarBytes)
-            throw new FormatException("This file is not a Kobo database or a KOReader metadata file.");
+        var length = new FileInfo(path).Length;
+        if (length > MaxTextBytes)
+            throw new FormatException(Unrecognised);
+
+        // UTF-8 with or without a byte-order mark, as both devices write it.
+        var text = File.ReadAllText(path);
+
+        if (ReadwiseCsvParser.Looks(text))
+        {
+            var (books, skipped) = ReadwiseCsvParser.Parse(text);
+            return new ImportSourceFile(Readwise, books, skipped);
+        }
+
+        if (!LuaTable.IsMatch(text) && KindleClippingsParser.Looks(text))
+        {
+            var (books, skipped) = KindleClippingsParser.Parse(text);
+            return new ImportSourceFile(Kindle, books, skipped);
+        }
+
+        if (length > MaxSidecarBytes)
+            throw new FormatException(Unrecognised);
 
         try
         {
-            return (Koreader, [ReadKoreader(File.ReadAllText(path))]);
+            return new ImportSourceFile(Koreader, [ReadKoreader(text)], []);
         }
         catch (FormatException)
         {
             // The sidecar parser's own message assumes the file is a sidecar.
-            throw new FormatException("This file is not a Kobo database or a KOReader metadata file.");
+            throw new FormatException(Unrecognised);
         }
     }
 

@@ -181,7 +181,7 @@ export class CommandPalette {
       out.push({ kind: 'action', id: 'capture', label: 'Capture a thought', sub: 'Opens Ask Nostos', icon: 'sparkle', keywords: 'note ask assistant ai' });
     }
     out.push(
-      { kind: 'action', id: 'import-highlights', label: 'Import e-reader highlights', sub: 'Kobo and KOReader notes', icon: 'download-simple', keywords: 'kobo koreader' },
+      { kind: 'action', id: 'import-highlights', label: 'Import highlights', sub: 'Kobo, KOReader, Kindle and Readwise', icon: 'download-simple', keywords: 'kobo koreader kindle readwise clippings e-reader' },
       {
         kind: 'action',
         id: 'toggle-theme',

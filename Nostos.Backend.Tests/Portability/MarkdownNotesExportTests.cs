@@ -98,6 +98,17 @@ public sealed class MarkdownNotesExportTests
             .Words.Should().Be("From 1:05 to 2:10, in “Opening”");
         MarkdownNotesRenderer.Locate(Note(kind: "physical_page", value: "17"))
             .Words.Should().Be("Page 17 (as noted)");
+        // Kindle and Readwise positions are theirs, said as theirs (#1219).
+        MarkdownNotesRenderer.Locate(Note(kind: "kindle_location", value: "5-7"))
+            .Words.Should().Be("Location 5–7 on Kindle");
+        MarkdownNotesRenderer.Locate(Note(kind: "kindle_page", value: "12"))
+            .Words.Should().Be("Page 12 on Kindle");
+        MarkdownNotesRenderer.Locate(Note(kind: "kindle_unknown", value: "annotation:abc"))
+            .Words.Should().Be("From Kindle");
+        MarkdownNotesRenderer.Locate(Note(kind: "readwise_page", value: "88"))
+            .Words.Should().Be("Page 88 in Readwise");
+        MarkdownNotesRenderer.Locate(Note(kind: "readwise_order", value: "3"))
+            .Words.Should().Be("From Readwise");
 
         var epub = MarkdownNotesRenderer.Locate(Note(cfiRange: "epubcfi(/6/8[ch3]!/4/2,/1:0,/1:5)"));
         epub.Words.Should().Be("Section 4 of the book");

@@ -64,7 +64,7 @@ You can use the hosted service, [Nostos Cloud](https://nostos.page), or run it y
 - **Passages:** save a long stretch of a book, a range of PDF pages or a clip of an audiobook, and read or play it again on its own.
 - **Switch between ebook and audiobook:** if you have both editions, continue in the other one near where you are.
 - **Read aloud:** listen to any EPUB or PDF with your device's voice or a natural voice from a speech server.
-- **Bring your e-reader highlights:** import highlights from Kobo and KOReader, review them, then add them to the right books.
+- **Bring your highlights:** import highlights and notes from Kobo, KOReader, a Kindle's `My Clippings.txt` or a Readwise CSV export, review them, then add them to the right books.
 
 <div align="center">
   <img width="2880" height="1800" alt="Nostos EPUB reader open at the first chapter of Moby-Dick" src="docs/screenshots/reader.png" />

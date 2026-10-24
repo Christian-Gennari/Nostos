@@ -175,8 +175,9 @@ public static class NotesEndpoints
         // written on a guess: `preview` reads the file and proposes a library
         // book per device book; `commit` takes the same file again with the
         // owner's decisions. Stateless on purpose — the server keeps no upload
-        // between the two calls. The file is a Kobo database or a KOReader
-        // sidecar, told apart by content.
+        // between the two calls. The file is a Kobo database, a KOReader
+        // sidecar, a Kindle's My Clippings.txt or a Readwise CSV export (#1219),
+        // told apart by content.
         group.MapPost(
             "/notes/imports/preview",
             (HttpRequest request, HighlightImportService importer, CancellationToken ct) =>
@@ -265,12 +266,12 @@ public static class NotesEndpoints
     {
         const long maxBytes = 256L * 1024 * 1024;
         if (!request.HasFormContentType)
-            return Results.BadRequest(new { error = "Expected multipart/form-data with a KoboReader.sqlite or KOReader metadata.lua file." });
+            return Results.BadRequest(new { error = "Expected multipart/form-data with a highlights file." });
 
         var form = await request.ReadFormAsync(ct);
         var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
         if (file is null)
-            return Results.BadRequest(new { error = "A KoboReader.sqlite or KOReader metadata.lua file is required." });
+            return Results.BadRequest(new { error = "Choose a highlights file to import." });
         if (file.Length <= 0 || file.Length > maxBytes)
             return Results.BadRequest(new { error = "The file must be between 1 byte and 256 MB." });
 

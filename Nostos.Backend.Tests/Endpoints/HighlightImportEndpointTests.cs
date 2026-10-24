@@ -435,6 +435,111 @@ public sealed class HighlightImportEndpointTests : IDisposable
         (await UploadAsync(client, "commit", otherDatabase)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task Kindle_clippings_go_through_the_same_preview_commit_and_undo()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
+        await CreateBookAsync(client, "Walden; or, Life in the Woods", "Henry David Thoreau");
+        var clippings = Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt");
+
+        var preview = await PreviewAsync(client, clippings);
+
+        preview.Source.Should().Be("kindle");
+        var exact = preview.Books.Single(book => book.Title == "Pride and Prejudice");
+        exact.Match.Should().Be("exact");
+        exact.BookId.Should().Be(austen.Id);
+        exact.AnnotationCount.Should().Be(1);
+        var walden = preview.Books.Single(book => book.Title == "Walden");
+        walden.Match.Should().Be("suggested");
+        walden.BookId.Should().BeNull();
+        preview.Books.Single(book => book.Title == "Meditations (Penguin Classics)").Match.Should().Be("none");
+        preview.Skipped.Should().HaveCount(3)
+            .And.Contain(entry => entry.Reason == KindleClippingsParser.BookmarkReason && entry.Title == "Pride and Prejudice");
+
+        var meditations = preview.Books.Single(book => book.Title == "Meditations (Penguin Classics)");
+        var result = await CommitAsync(client, clippings,
+            new HighlightImportDecision(exact.SourceKey, austen.Id),
+            new HighlightImportDecision(meditations.SourceKey, Create: true));
+
+        result.Source.Should().Be("kindle");
+        result.Books.Single(book => book.SourceKey == exact.SourceKey).ImportedCount.Should().Be(1);
+        var created = result.Books.Single(book => book.SourceKey == meditations.SourceKey);
+        created.Created.Should().BeTrue();
+        result.Books.Single(book => book.SourceKey == walden.SourceKey).Status.Should().Be("skipped");
+
+        await using (var db = CreateContext(factory.DatabasePath))
+        {
+            var note = await db.Notes.AsNoTracking().SingleAsync(candidate => candidate.BookId == austen.Id);
+            note.SelectedText.Should().StartWith("It is a truth universally acknowledged, that");
+            note.Content.Should().Be("The famous opening.");
+            note.SourceAnchorKind.Should().Be("kindle_location");
+            note.SourceAnchorValue.Should().Be("5-7");
+            // A Kindle location is not a page anyone can cite.
+            note.AnchorVerified.Should().BeFalse();
+
+            var paper = await db.Books.AsNoTracking().SingleAsync(book => book.Id == created.BookId);
+            paper.Title.Should().Be("Meditations (Penguin Classics)");
+            paper.Author.Should().Be("Marcus Aurelius");
+            var pageNote = await db.Notes.AsNoTracking().SingleAsync(candidate => candidate.BookId == paper.Id);
+            (pageNote.SourceAnchorKind, pageNote.SourceAnchorValue, pageNote.AnchorVerified).Should().Be(("kindle_page", "12", false));
+        }
+
+        // The same file again adds nothing, and the books are remembered.
+        var again = await PreviewAsync(client, clippings);
+        again.Books.Single(book => book.SourceKey == exact.SourceKey).NewCount.Should().Be(0);
+        again.Books.Single(book => book.SourceKey == meditations.SourceKey).Match.Should().Be("remembered");
+        var repeat = await CommitAsync(client, clippings, new HighlightImportDecision(exact.SourceKey, austen.Id));
+        repeat.BatchId.Should().BeNull();
+        repeat.Books.Single(book => book.SourceKey == exact.SourceKey).DuplicateCount.Should().Be(1);
+
+        (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        await using (var db = CreateContext(factory.DatabasePath))
+        {
+            (await db.Notes.CountAsync()).Should().Be(0);
+            (await db.Books.CountAsync()).Should().Be(3, "undo removes notes, never books the owner chose to add");
+        }
+    }
+
+    [Fact]
+    public async Task A_readwise_export_imports_books_and_reports_what_it_left_out()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen");
+        var export = Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", "readwise-export.csv");
+
+        var preview = await PreviewAsync(client, export);
+
+        preview.Source.Should().Be("readwise");
+        preview.Books.Should().HaveCount(3);
+        var book = preview.Books.Single(candidate => candidate.SourceKey == "readwise:asin:B00SYNTH01");
+        book.Match.Should().Be("exact");
+        book.NewCount.Should().Be(3);
+        preview.Books.Single(candidate => candidate.Title == "How to Read Slowly").Notice
+            .Should().Be(ReadwiseCsvParser.ArticleNotice);
+        preview.Skipped!.Select(entry => entry.Reason).Should().BeEquivalentTo(
+            ReadwiseCsvParser.TweetReason, ReadwiseCsvParser.PodcastReason, ReadwiseCsvParser.EmptyReason);
+
+        var result = await CommitAsync(client, export, new HighlightImportDecision(book.SourceKey, austen.Id));
+        result.Books.Single(candidate => candidate.SourceKey == book.SourceKey).ImportedCount.Should().Be(3);
+
+        var again = await CommitAsync(client, export, new HighlightImportDecision(book.SourceKey, austen.Id));
+        again.Books.Single(candidate => candidate.SourceKey == book.SourceKey).DuplicateCount.Should().Be(3);
+
+        await using var db = CreateContext(factory.DatabasePath);
+        var notes = await db.Notes.AsNoTracking().Where(note => note.BookId == austen.Id).ToListAsync();
+        notes.Should().HaveCount(3);
+        notes.Should().AllSatisfy(note =>
+        {
+            note.SourceAnchorKind.Should().Be("readwise_location");
+            note.AnchorVerified.Should().BeFalse();
+        });
+        notes.Should().Contain(note => note.SelectedText == null && note.Content == "A note with no highlight.");
+        (await db.NoteImportBatches.SingleAsync()).Source.Should().Be("readwise");
+    }
+
     private const string Schema =
         """
             -- Column layout of Kobo firmware 4.38.23828 (the Bookmark table in

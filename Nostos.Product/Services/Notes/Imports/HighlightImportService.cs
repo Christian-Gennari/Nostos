@@ -9,7 +9,7 @@ using Nostos.Shared.Dtos;
 namespace Nostos.Backend.Services.Notes.Imports;
 
 /// <summary>
-/// E-reader highlight import in two steps (issue #656): <see cref="PreviewAsync"/>
+/// Highlight import in two steps (issue #656; Kindle and Readwise, #1219): <see cref="PreviewAsync"/>
 /// reads a file and proposes where each book goes without writing anything;
 /// <see cref="CommitAsync"/> imports exactly the books the owner decided on.
 /// Each commit is a batch that <see cref="UndoAsync"/> can take back.
@@ -18,6 +18,8 @@ public sealed class HighlightImportService
 {
     public const string Remembered = "remembered";
     private const string KoboClientId = "kobo-import";
+    private const string KindleClientId = "kindle-import";
+    private const string ReadwiseClientId = "readwise-import";
     private readonly NostosDbContext _db;
     private readonly INoteService _notes;
     private readonly ILibraryService _library;
@@ -31,7 +33,7 @@ public sealed class HighlightImportService
 
     public async Task<HighlightImportPreview> PreviewAsync(string path, CancellationToken ct = default)
     {
-        var (source, sourceBooks) = HighlightImportSourceReader.Read(path);
+        var (source, sourceBooks, skipped) = HighlightImportSourceReader.Read(path);
         var library = await LoadLibraryAsync(ct);
         var links = await LoadLinksAsync(source, sourceBooks, ct);
 
@@ -67,10 +69,11 @@ public sealed class HighlightImportService
                 newCount,
                 match,
                 bookId,
-                candidates));
+                candidates,
+                sourceBook.Notice));
         }
 
-        return new HighlightImportPreview(source, books);
+        return new HighlightImportPreview(source, books, skipped);
     }
 
     public async Task<HighlightImportResult> CommitAsync(
@@ -80,7 +83,7 @@ public sealed class HighlightImportService
         Guid? batchId = null,
         CancellationToken ct = default)
     {
-        var (source, sourceBooks) = HighlightImportSourceReader.Read(path);
+        var (source, sourceBooks, _) = HighlightImportSourceReader.Read(path);
         var bySourceKey = decisions
             .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
@@ -113,7 +116,7 @@ public sealed class HighlightImportService
                 var title = KoreaderNoteImportService.Clean(sourceBook.Title);
                 if (title is null)
                 {
-                    results.Add(Skipped(sourceBook, "The device has no title for this book."));
+                    results.Add(Skipped(sourceBook, "The file has no title for this book."));
                     continue;
                 }
 
@@ -291,8 +294,9 @@ public sealed class HighlightImportService
     /// Which of a book's annotations are new for the given library book. A
     /// Kobo bookmark id is globally unique, so it is looked up across the whole
     /// library (a note moved to another book is still the same highlight). A
-    /// KOReader position is only meaningful inside one book and is compared
-    /// together with its text, exactly as the original sidecar import does.
+    /// KOReader position, a Kindle location and a Readwise row are only
+    /// meaningful inside one book and are compared together with their text,
+    /// exactly as the original sidecar import does.
     /// </summary>
     private async Task<List<PlannedNote>> PlanAsync(
         string source,
@@ -301,7 +305,13 @@ public sealed class HighlightImportService
         CancellationToken ct)
     {
         var isKobo = source == HighlightImportSourceReader.Kobo;
-        var clientId = isKobo ? KoboClientId : KoreaderNoteImportService.ClientId;
+        var clientId = source switch
+        {
+            HighlightImportSourceReader.Kobo => KoboClientId,
+            HighlightImportSourceReader.Kindle => KindleClientId,
+            HighlightImportSourceReader.Readwise => ReadwiseClientId,
+            _ => KoreaderNoteImportService.ClientId,
+        };
 
         var planned = sourceBook.Annotations
             .Select(annotation =>

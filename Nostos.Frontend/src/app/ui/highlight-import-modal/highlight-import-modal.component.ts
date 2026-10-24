@@ -6,12 +6,15 @@ import { Router } from '@angular/router';
 import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  HIGHLIGHT_IMPORT_SOURCE_LABEL,
   HighlightImportBatch,
   HighlightImportCandidate,
   HighlightImportDecision,
   HighlightImportPreviewBook,
   HighlightImportResultBook,
   HighlightImportService,
+  HighlightImportSkipped,
+  HighlightImportSource,
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
 import { ModalShell } from '../modal-shell/modal-shell.component';
@@ -48,8 +51,14 @@ interface FileFailure {
   message: string;
 }
 
+/** What a file holds that the import leaves out, and why. */
+export interface UnimportableEntry extends HighlightImportSkipped {
+  fileName: string;
+}
+
 /**
- * Import highlights and notes from an e-reader (issue #656).
+ * Import highlights and notes from an e-reader (issue #656), a Kindle's
+ * My Clippings.txt or a Readwise CSV export (issue #1219).
  *
  * Nothing is written until the owner has seen where every book is going.
  * Books whose identity is certain arrive already decided; a book that only
@@ -102,6 +111,11 @@ export class HighlightImportModal {
 
   readonly rows = signal<ReviewRow[]>([]);
   readonly failures = signal<FileFailure[]>([]);
+  /** Bookmarks, web articles and the like: shown, never imported. */
+  readonly unimportable = signal<UnimportableEntry[]>([]);
+  readonly unimportableCount = computed(() =>
+    this.unimportable().reduce((total, entry) => total + entry.count, 0),
+  );
 
   /** Grouped by what the server found, so a row never jumps as it is answered. */
   readonly ready = computed(() =>
@@ -238,6 +252,7 @@ export class HighlightImportModal {
 
     this.rows.set([]);
     this.failures.set([]);
+    this.unimportable.set([]);
     this.results.set([]);
     this.batchIds.set([]);
     this.undone.set(null);
@@ -251,6 +266,8 @@ export class HighlightImportModal {
       try {
         const preview = await firstValueFrom(this.service.preview(file));
         this.rows.update((rows) => [...rows, ...preview.books.map((book) => this.toRow(file, book))]);
+        const skipped = (preview.skipped ?? []).map((entry) => ({ ...entry, fileName: file.name }));
+        if (skipped.length > 0) this.unimportable.update((all) => [...all, ...skipped]);
       } catch (error) {
         this.fail(file, this.failureMessage(error));
       }
@@ -413,6 +430,7 @@ export class HighlightImportModal {
     this.rows.set([]);
     this.results.set([]);
     this.failures.set([]);
+    this.unimportable.set([]);
     this.undoError.set(null);
     this.closePicker();
   }
@@ -424,6 +442,10 @@ export class HighlightImportModal {
     if (book.importedCount > 0) parts.push(`${book.importedCount} new`);
     if (book.duplicateCount > 0) parts.push(`${book.duplicateCount} already imported`);
     return parts.length > 0 ? parts.join(' · ') : 'Nothing to import';
+  }
+
+  sourceName(source: HighlightImportSource): string {
+    return HIGHLIGHT_IMPORT_SOURCE_LABEL[source] ?? source;
   }
 
   count(value: number, noun: string): string {
