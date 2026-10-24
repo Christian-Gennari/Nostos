@@ -21,8 +21,8 @@ import { BrainNoteActionsService } from './brain-note-actions.service';
     <app-confirm-modal
       [isOpen]="actions.deleteIds().length > 0"
       [heading]="actions.deleteHeading()"
-      description="Deleted notes are removed from their book and from every topic. This cannot be undone."
-      confirmLabel="Delete"
+      [description]="actions.deleteDescription()"
+      [confirmLabel]="actions.deleteConfirmLabel()"
       busyLabel="Deleting…"
       [busy]="actions.deleting()"
       (confirm)="actions.confirmDelete()"

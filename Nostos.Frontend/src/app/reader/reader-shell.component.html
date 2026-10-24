@@ -353,8 +353,8 @@
             class="selection-copy"
             (click)="copySelection()"
             [disabled]="highlightSaving()"
-            aria-label="Copy passage"
-            title="Copy passage"
+            aria-label="Copy text"
+            title="Copy text"
             data-testid="selection-copy"
           ></button>
           @if (canMarkPassage()) {
@@ -381,8 +381,8 @@
               class="selection-ask"
               (click)="askNostosAboutSelection()"
               [disabled]="highlightSaving()"
-              aria-label="Ask Nostos about passage"
-              title="Ask Nostos about passage"
+              aria-label="Ask Nostos about this"
+              title="Ask Nostos about this"
               data-testid="selection-ask-nostos"
             ></button>
           }
@@ -527,8 +527,8 @@
               icon="copy"
               type="button"
               (click)="copyActiveHighlight()"
-              aria-label="Copy passage"
-              title="Copy passage"
+              aria-label="Copy text"
+              title="Copy text"
               data-testid="highlight-card-copy"
             ></button>
             @if (askNostosAvailable()) {
@@ -537,8 +537,8 @@
                 icon="sparkle"
                 type="button"
                 (click)="askNostosAboutHighlight()"
-                aria-label="Ask Nostos about passage"
-                title="Ask Nostos about passage"
+                aria-label="Ask Nostos about this"
+                title="Ask Nostos about this"
                 data-testid="highlight-card-ask-nostos"
               ></button>
             }
@@ -848,20 +848,7 @@
   </header>
   }
 
-  <!-- Note delete asks through the shared modal instead of window.confirm(). -->
-  <app-confirm-modal
-    [isOpen]="!!pendingNoteDelete()"
-    heading="Delete this note?"
-    description="Deleted notes are removed from their book and from every topic. This cannot be undone."
-    confirmLabel="Delete"
-    busyLabel="Deleting…"
-    [busy]="noteDeleting()"
-    (confirm)="confirmNoteDelete()"
-    (cancel)="cancelNoteDelete()"
-  >
-  </app-confirm-modal>
-
-  <!-- Keep with writing, from a note's menu in the notes panel. -->
+  <!-- Delete and Keep with writing, from a note's menu or a highlight's card: the Brain's own dialogs. -->
   <app-brain-note-dialogs />
 
   <!-- View settings: typeface, text size, line height, margins (EPUB) or the

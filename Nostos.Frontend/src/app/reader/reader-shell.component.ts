@@ -56,7 +56,6 @@ import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
 import { BrainStateService } from '../brain/brain-state.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { ModalStack } from '../ui/modal-shell/modal-stack.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
@@ -180,7 +179,6 @@ import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
     BrainNoteDialogsComponent,
     IconButtonComponent,
     ButtonComponent,
-    ConfirmModal,
     InputDirective,
     TextareaDirective,
     ReadAloudBarComponent,
@@ -212,7 +210,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     effect(() => this.autocompleteService.setTopics(this.brain.topics()));
     this.noteActions.attach({
       replace: (hit) => this.replaceNoteFromHit(hit),
-      remove: (noteId) => this.dbNotes.update((notes) => notes.filter((note) => note.id !== noteId)),
+      remove: (noteId) => this.noteRemoved(noteId),
       edited: (saved, edit) => this.noteEdited(saved, edit),
     });
 
@@ -907,11 +905,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     return pinned === null ? null : formatAudioTime(Number(pinned));
   });
   saveFeedback = signal<string | null>(null);
-
-  /** Note id awaiting delete confirmation (asked through ConfirmModal). */
-  pendingNoteDelete = signal<string | null>(null);
-  /** The delete is on its way: the confirm shows it, as the Brain's does. */
-  readonly noteDeleting = signal(false);
 
   // Topic map for the note cards
   /** The topics by lower-cased name, for [[ ]] links in notes (the Brain's own). */
@@ -1639,7 +1632,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     }
     clipboard.writeText(text).then(
       () => {
-        this.toast.success('Passage copied');
+        this.toast.success('Text copied');
         this.discardHighlight();
       },
       () => this.toast.error('Could not copy the passage'),
@@ -1842,7 +1835,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       return;
     }
     clipboard.writeText(text).then(
-      () => this.toast.success('Passage copied'),
+      () => this.toast.success('Text copied'),
       () => this.toast.error('Could not copy the passage'),
     );
   }
@@ -1998,39 +1991,22 @@ export class ReaderShell implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * One delete path for notes and highlights: the Brain's actions ask, delete
+   * and toast (a highlight gets highlight wording); the page cleanup is below.
+   */
   onDeleteNote(noteId: string) {
-    this.pendingNoteDelete.set(noteId);
+    const note = this.dbNotes().find((held) => held.id === noteId);
+    this.noteActions.askDelete([noteId], note?.cfiRange ? 'highlight' : 'note');
   }
 
-  cancelNoteDelete() {
-    if (!this.noteDeleting()) this.pendingNoteDelete.set(null);
-  }
-
-  confirmNoteDelete() {
-    const noteId = this.pendingNoteDelete();
-    if (!noteId || this.noteDeleting()) return;
-    this.noteDeleting.set(true);
-
-    const noteToDelete = this.dbNotes().find((n) => n.id === noteId);
-
-    this.notesService.delete(noteId).subscribe({
-      next: () => {
-        this.noteDeleting.set(false);
-        this.pendingNoteDelete.set(null);
-        if (this.highlightCard()?.noteId === noteId) this.closeHighlightCard();
-        if (this.fileType() === 'epub' && noteToDelete?.cfiRange)
-          this.activeReader()?.removeHighlight(noteToDelete.cfiRange);
-        if (this.fileType() === 'pdf') this.activeReader()?.removeHighlight(noteId);
-
-        this.dbNotes.update((notes) => notes.filter((n) => n.id !== noteId));
-        this.toast.success('Note deleted');
-      },
-      error: () => {
-        this.noteDeleting.set(false);
-        this.pendingNoteDelete.set(null);
-        this.toast.error('Could not delete the note. Try again.');
-      },
-    });
+  /** A note is gone: take its highlight off the page and out of the list. */
+  private noteRemoved(noteId: string): void {
+    const removed = this.dbNotes().find((n) => n.id === noteId);
+    if (this.highlightCard()?.noteId === noteId) this.closeHighlightCard();
+    if (this.fileType() === 'epub' && removed?.cfiRange) this.activeReader()?.removeHighlight(removed.cfiRange);
+    if (this.fileType() === 'pdf') this.activeReader()?.removeHighlight(noteId);
+    this.dbNotes.update((notes) => notes.filter((n) => n.id !== noteId));
   }
 
   onJumpToNote(note: Note) {
