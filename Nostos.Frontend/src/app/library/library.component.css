@@ -290,7 +290,12 @@ app-sidebar-collections.no-transition {
   visibility: visible;
 }
 
-.icon-btn {
+/* The cover discs are appIconButton overlays (`.icon-btn--overlay`), which own
+   their round, frosted shape. These rules tie with that `:host` rule at (0,2,0),
+   so without the exclusion whichever stylesheet Angular inserted last won: open
+   another screen with an icon button first and the discs became transparent 6px
+   squares until a reload (#1267). */
+.icon-btn:not(.icon-btn--overlay) {
   /* `position: relative` is what makes the BUTTON the containing block for the
      tip below, not the absolutely positioned cluster, so the tip tracks the
      button it belongs to. */
@@ -312,7 +317,7 @@ app-sidebar-collections.no-transition {
     color var(--transition-fast);
 }
 
-.icon-btn:hover {
+.icon-btn:not(.icon-btn--overlay):hover {
   background: var(--bg-hover);
   color: var(--color-text-main);
 }
@@ -322,7 +327,7 @@ app-sidebar-collections.no-transition {
    --color-danger itself is a red meant to be read on light: on dark it lands
    near 3.2:1 and fails as an icon ink. The fill stays the neutral --bg-hover,
    matching the card's delete disc, which also avoids a danger-tinted surface. */
-.icon-btn.delete:hover {
+.icon-btn.delete:not(.icon-btn--overlay):hover {
   color: color-mix(in srgb, var(--color-danger) 55%, var(--color-text-main));
 }
 
