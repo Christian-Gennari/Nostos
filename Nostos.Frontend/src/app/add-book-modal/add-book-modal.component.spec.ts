@@ -322,10 +322,14 @@ describe('AddBookModal', () => {
     expect(component.isSubmitting()).toBe(false);
   });
 
-  it('cannot be closed by Escape, backdrop, Close or Cancel while the upload is running', () => {
+  it('can be closed while the file uploads, and closing does not cancel the upload', () => {
+    // A long upload keeps going behind the scenes once the modal is closed; the
+    // library shows the book and the server's processing progress when it lands.
+    // Locking the modal for the whole upload trapped the app (#1264).
     const books = TestBed.inject(BooksService);
     vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: { id: 'new-book' } as unknown as Book, created: true }));
-    vi.spyOn(books, 'uploadFile').mockReturnValue(new Subject<any>());
+    const upload = new Subject<any>();
+    vi.spyOn(books, 'uploadFile').mockReturnValue(upload);
     component.form.title = 'The Magic Mountain';
     component.form.type = 'ebook';
     component.selectedFile.set(new File(['ebook'], 'magic-mountain.epub', { type: 'application/epub+zip' }));
@@ -339,20 +343,16 @@ describe('AddBookModal', () => {
     const el = fixture.nativeElement as HTMLElement;
     const submitButton = el.querySelector('button[type="submit"][form="add-book-form"]') as HTMLButtonElement;
     expect(submitButton.getAttribute('aria-busy')).toBe('true');
-    expect((el.querySelector('[data-testid="modal-close"]') as HTMLButtonElement).disabled).toBe(true);
     const cancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
       (button) => button.textContent?.trim() === 'Cancel',
     ) as HTMLButtonElement;
-    expect(cancel.disabled).toBe(true);
+    expect(cancel.disabled).toBe(false);
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    const backdrop = el.querySelector('.modal-backdrop') as HTMLElement;
-    for (const type of ['pointerdown', 'pointerup'] as const) {
-      const event = new Event(type, { bubbles: true }) as PointerEvent;
-      Object.defineProperty(event, 'pointerId', { value: 1 });
-      backdrop.dispatchEvent(event);
-    }
-    expect(closed).not.toHaveBeenCalled();
+    const close = el.querySelector('[data-testid="modal-close"]') as HTMLButtonElement;
+    expect(close.disabled).toBe(false);
+    close.click();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(upload.observed).toBe(true);
   });
 
   it('keeps the add action locked after create returns while the file upload is running', () => {
