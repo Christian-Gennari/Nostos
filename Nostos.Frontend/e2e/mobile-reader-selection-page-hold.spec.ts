@@ -9,7 +9,7 @@
  * off-grid offset, and the next turn added a page width to that offset instead
  * of landing on page 3. Holding the offset keeps the page where the text is.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -30,6 +30,41 @@ const iframeSelection = (page: Page) =>
     .frameLocator('#epub-viewer iframe')
     .locator('body')
     .evaluate((body) => body.ownerDocument.getSelection()?.toString() ?? '');
+
+/**
+ * A finger on the book. Android cancels the touch when the long press hands it
+ * to the native selection handles; no touch events follow the handle drag.
+ */
+async function dispatchTouch(target: Locator, type: 'touchstart' | 'touchcancel'): Promise<void> {
+  await target.evaluate((el, type) => {
+    const win = el.ownerDocument.defaultView as Window & {
+      Touch: typeof Touch;
+      TouchEvent: typeof TouchEvent;
+    };
+    const touch = new win.Touch({
+      identifier: 1,
+      target: el,
+      clientX: 100,
+      clientY: 200,
+      pageX: 100,
+      pageY: 200,
+      screenX: 100,
+      screenY: 200,
+      radiusX: 2,
+      radiusY: 2,
+      force: 1,
+    });
+    const active = type === 'touchcancel' ? [] : [touch];
+    el.dispatchEvent(new win.TouchEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      touches: active,
+      targetTouches: active,
+      changedTouches: [touch],
+    }));
+  }, type);
+}
 
 async function seedEpub(baseUrl: string, title: string): Promise<string> {
   const created = await apiPost<any>(baseUrl, '/api/books/', {
@@ -92,6 +127,11 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
   expect(picked.start, 'a paragraph is on the visible page').toBeGreaterThanOrEqual(0);
   expect(picked.end, 'a paragraph begins on the next page').toBeGreaterThanOrEqual(0);
 
+  // The finger that starts the long press. The hold must exist before the
+  // selection does, because the browser reveals the word while it is still
+  // down.
+  await dispatchTouch(frame.locator('p').nth(picked.start), 'touchstart');
+
   const bar = page.locator('[data-testid="selection-bar"]');
   const offered = await frame.locator('p').nth(picked.start).evaluate((p, { index, width }) => {
     const doc = p.ownerDocument;
@@ -120,9 +160,14 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
   await expect(bar).toBeVisible();
   await expect(bar.locator('.selected-text')).toContainText(offered.text.trim());
 
+  // Android cancels the touch when the long press hands the gesture to the
+  // native selection handles. The drag that follows fires no touch events.
+  await dispatchTouch(frame.locator('p').nth(picked.start), 'touchcancel');
+
   // Extend the selection from the visible page to the one after it, as a
-  // handle dragged past the page edge does. The debounced touch capture starts
-  // the hold; the reveal below is the browser asking the stage to move.
+  // handle dragged past the page edge does, and reveal the endpoint in the
+  // same step: the browser does both before epub.js's debounced capture can
+  // re-arm the hold.
   const extended = await frame.locator('body').evaluate((body, { startIndex, endIndex, from }) => {
     const doc = body.ownerDocument;
     const paragraphs = [...doc.querySelectorAll('p')];
@@ -134,6 +179,7 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
     const selection = doc.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);
+    paragraphs[endIndex].scrollIntoView({ inline: 'nearest', block: 'nearest' });
     return {
       selected: selection.toString(),
       start: fromText.textContent!.slice(from + 40, from + 64),
@@ -143,14 +189,11 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
     extended.start.replace(/\s+/g, ' ').trim(),
   );
 
-  const beforeReveal = await stage(page);
-  await frame.locator('p').nth(picked.end).evaluate((p) => {
-    p.scrollIntoView({ inline: 'nearest', block: 'nearest' });
-  });
-  await page.waitForTimeout(400);
-  // The page did not move, so the handle cannot have taken the selection onto
-  // the next page, and there is no off-grid offset to turn from.
-  expect(await stage(page)).toEqual(beforeReveal);
+  // Let the capture and any deferred release settle. The page must still be
+  // the one the selection started on, so the handle cannot have taken the
+  // selection onto the next page and there is no off-grid offset to turn from.
+  await page.waitForTimeout(600);
+  expect(await stage(page)).toEqual(held);
   await expect(bar).toBeVisible();
   expect(await iframeSelection(page)).toBe(extended.selected);
 

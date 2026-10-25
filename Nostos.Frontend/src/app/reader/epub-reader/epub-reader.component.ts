@@ -120,6 +120,15 @@ const TYPOGRAPHY_STYLE_ID = 'nostos-typography';
 const READER_FONTS_STYLE_ID = 'nostos-reader-fonts';
 
 /**
+ * Grace period before handing the page back after a touch that did not turn a
+ * page. A touch capture is deferred (rAF, then epub.js's debounced
+ * selectionchange), and Android cancels the touch as soon as a long press
+ * hands it to the native selection handles (#1254). Releasing on the event
+ * itself dropped the page hold exactly as the handle drag began.
+ */
+const PAGE_HOLD_RELEASE_MS = 500;
+
+/**
  * Quiet window for coalescing a burst of typography changes into ONE
  * re-pagination.
  *
@@ -404,6 +413,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    */
   private pageScroller: HTMLElement | null = null;
   private pinnedPageOffset: { left: number; top: number } | null = null;
+  private pageHoldReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Progress writes stay closed until the saved position has been applied. The
@@ -500,7 +510,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
             // A re-layout invalidates the held offset: let epub.js place the
             // section itself rather than restoring a position from the old
             // geometry (#1254).
-            this.releasePageHold();
+            this.releasePageHold(false);
             this.rendition.resize(clientWidth, clientHeight);
           } catch (e) {
             console.warn('Rendition resize failed (book might not be ready):', e);
@@ -1079,6 +1089,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    * offset.
    */
   private holdPageForSelection(): void {
+    this.cancelPageHoldRelease();
     const scroller = this.resolvePageScroller();
     if (!scroller || this.pinnedPageOffset) return;
 
@@ -1086,11 +1097,51 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     scroller.addEventListener('scroll', this.restorePinnedPageOffset, { passive: true });
   }
 
-  /** Hand the page back: navigation, dismissal, save, re-layout, teardown. */
-  private releasePageHold(): void {
+  /**
+   * Give the page back only once it is clear the touch did not become a
+   * selection. Android sends `touchcancel` when a long press hands the gesture
+   * to the native selection handles, before the selection is captured; a
+   * `touchend` can also arrive before the deferred capture. Releasing on either
+   * event drops the hold mid-gesture (#1254), so check the live selection at
+   * the deadline instead.
+   */
+  private schedulePageHoldRelease(): void {
+    this.cancelPageHoldRelease();
+    this.pageHoldReleaseTimer = setTimeout(() => {
+      this.pageHoldReleaseTimer = null;
+      if (this.hasLiveSelection()) return;
+      this.releasePageHold();
+    }, PAGE_HOLD_RELEASE_MS);
+  }
+
+  private cancelPageHoldRelease(): void {
+    if (this.pageHoldReleaseTimer === null) return;
+    clearTimeout(this.pageHoldReleaseTimer);
+    this.pageHoldReleaseTimer = null;
+  }
+
+  /** A native selection anywhere in the book, or a passage already captured. */
+  private hasLiveSelection(): boolean {
+    if (this.assistantSelection()?.trim()) return true;
+    for (const doc of this.interactionDocuments.keys()) {
+      const selection = doc.getSelection?.();
+      if (selection && !selection.isCollapsed && selection.toString().trim()) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Hand the page back: navigation, dismissal, save, re-layout, teardown.
+   * Restores the held offset once more unless the geometry is being replaced:
+   * the reveal's last scroll event can land after the release, and leaving it
+   * there is exactly the off-grid page this hold exists to prevent.
+   */
+  private releasePageHold(restore = true): void {
+    this.cancelPageHoldRelease();
     if (!this.pinnedPageOffset) return;
-    this.pinnedPageOffset = null;
     this.pageScroller?.removeEventListener('scroll', this.restorePinnedPageOffset);
+    if (restore) this.restorePinnedPageOffset();
+    this.pinnedPageOffset = null;
   }
 
   /**
@@ -1101,7 +1152,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private readonly restorePinnedPageOffset = (): void => {
     const held = this.pinnedPageOffset;
     const scroller = this.pageScroller;
-    if (!held || !scroller) return;
+    if (!held || !scroller?.isConnected) return;
     if (scroller.scrollLeft !== held.left) scroller.scrollLeft = held.left;
     if (scroller.scrollTop !== held.top) scroller.scrollTop = held.top;
   };
@@ -1638,7 +1689,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.searchCorpusPromise = null;
     if (this.epubBook) {
       this.clearContentsInteractionListeners();
-      this.releasePageHold();
+      this.releasePageHold(false);
       this.pageScroller = null;
       this.annotationManager?.destroy();
       this.annotationManager = null;
@@ -1733,7 +1784,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.selectionCaptured.emit(text);
       this.selectionAnchored.emit(anchor);
     });
-    this.annotationManager.setOnSelectionAbandoned(() => this.selectionDismissed.emit());
+    this.annotationManager.setOnSelectionAbandoned(() => {
+      this.releasePageHold();
+      this.selectionDismissed.emit();
+    });
     this.annotationManager.init();
 
     rendition.on('relocated', (location: any) => {
@@ -2057,11 +2111,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         durationMs: now - start.at,
       });
 
-      // A live selection keeps the page held for the handle drags that follow;
-      // a tap or swipe with none hands it back (and a page turn releases it in
-      // beginNavigation anyway).
+      // A tap with no selection hands the page back after the deferred capture
+      // has had its chance; a live selection keeps it held for the handle
+      // drags that follow (and a page turn releases it in beginNavigation).
       if (!action) {
-        if (!selectedText()) this.releasePageHold();
+        this.schedulePageHoldRelease();
         return;
       }
       if (action === 'next') this.next();
@@ -2071,7 +2125,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const onTouchCancel = () => {
       touchStart = null;
       clickSuppression = null;
-      this.releasePageHold();
+      // Android cancels the touch when a long press hands the gesture to the
+      // native selection handles. Do not release here: the selection and its
+      // reveal arrive after this event, and dropping the hold now is what let
+      // the handle drag move the page (#1254).
+      this.schedulePageHoldRelease();
     };
 
     // Desktop selection: the browser reveals the endpoint during the drag,
@@ -2492,7 +2550,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
     this.keyboardDocuments.clear();
     this.clearContentsInteractionListeners();
-    this.releasePageHold();
+    this.releasePageHold(false);
     this.pageScroller = null;
     this.searchAvailable.set(false);
     this.clearSearch();
