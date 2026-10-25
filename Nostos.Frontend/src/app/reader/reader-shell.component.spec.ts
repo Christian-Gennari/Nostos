@@ -2486,6 +2486,66 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-note-input')).not.toBeNull();
   });
 
+  it('phones: the docked bar reads quote and pens, labelled utilities, then decisions (#1255)', async () => {
+    const component = await openBook();
+    // The EPUB stub does not implement passages by default; this test is about
+    // the action's placement, so give it one.
+    (stub() as unknown as { passageMarkFromSelection?: () => null }).passageMarkFromSelection = () => null;
+    component.dockedLayout.set(true);
+    await capture(component);
+    render();
+
+    const bar = el('selection-bar')!;
+    const quoteRow = bar.querySelector('.selection-quote-row')!;
+    expect(quoteRow.querySelector('.selected-text')?.textContent).toContain('Sing, goddess');
+    expect(quoteRow.querySelector('app-pen-swatches')).not.toBeNull();
+
+    const utilities = bar.querySelector('.selection-utilities')!;
+    expect(utilities.contains(el('selection-copy'))).toBe(true);
+    expect(utilities.contains(el('selection-ask-nostos'))).toBe(true);
+    expect(utilities.contains(el('selection-more'))).toBe(true);
+    // Ask Nostos shares the row with Copy and More instead of sitting alone.
+    expect(utilities.querySelectorAll('button')).toHaveLength(3);
+
+    const decisions = bar.querySelector('.selection-decisions')!;
+    for (const id of ['selection-cancel', 'selection-add-note', 'selection-highlight']) {
+      expect(decisions.contains(el(id)), `${id} stays a decision`).toBe(true);
+    }
+
+    // The fixed/auto-placed 44px grid that dropped Ask onto its own row is gone.
+    const css = readSource('./reader-shell.component.css');
+    expect(css).not.toContain('grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr)');
+  });
+
+  it('phones: Mark passage lives in the shared More menu, and a note hides the utilities (#1255)', async () => {
+    const component = await openBook();
+    (stub() as unknown as { passageMarkFromSelection?: () => null }).passageMarkFromSelection = () => null;
+    component.dockedLayout.set(true);
+    await capture(component);
+    render();
+
+    const more = el('selection-more') as HTMLButtonElement;
+    expect(more).not.toBeNull();
+    expect(more.getAttribute('aria-label')).toBe('More selection actions');
+    // The occasional, two-step action no longer costs the bar a third button.
+    expect(el('selection-mark-passage')).toBeNull();
+
+    more.click();
+    render();
+    const mark = [...document.querySelectorAll<HTMLElement>('.nostos-menu-item')]
+      .find((node) => node.dataset['testid'] === 'selection-mark-passage');
+    expect(mark?.textContent).toContain('Mark passage');
+    document.querySelectorAll('.cdk-overlay-container').forEach((node) => node.remove());
+
+    // Writing a note keeps only the quote, the field and Cancel + Save note.
+    component.openNoteDraft();
+    render();
+    const bar = el('selection-bar')!;
+    expect(bar.querySelector('.selection-utilities')).toBeNull();
+    expect(el('selection-add-note')).toBeNull();
+    expect(el('selection-save-note')).not.toBeNull();
+  });
+
   it('docked bar: a pen dot picks the colour without saving; Highlight saves in it', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);

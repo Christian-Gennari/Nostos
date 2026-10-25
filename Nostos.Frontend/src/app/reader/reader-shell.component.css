@@ -536,8 +536,9 @@
   gap: 6px;
 }
 
-/* Copy is a utility, not a choice about the mark: it sits apart, leading. */
-.selection-copy {
+/* Copy is a utility, not a choice about the mark: in the anchored menu it sits
+   apart, leading. The docked bar groups it with Ask Nostos instead. */
+.selection-menu .selection-copy {
   margin-right: auto;
 }
 
@@ -552,16 +553,31 @@
   resize: vertical;
 }
 
-/* Docked selection surfaces wrap instead of squeezing the quote to nothing.
-   Both text readers expose the same contextual choices; placement still adapts
-   to the available viewport. */
-.highlight-confirmation .confirmation-content {
-  flex-wrap: wrap;
+/* The docked bar is three explicit groups (#1255): the passage and its pens,
+   the labelled utilities, then the decisions. Phones stack them (see the phone
+   block); a wide docked bar keeps them on one line and wraps only if it must. */
+.selection-quote-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.selection-utilities {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.selection-decisions {
+  justify-content: flex-end;
 }
 
 /* Stacked, the column must not wrap: a wrapping column is a multi-line flex
    container, whose line is as wide as its widest item, so the nowrap quote
-   (663px of passage at 412px) stretched the actions and Save note with it. */
+   stretched the actions and Save note with it (39f6dfd1). */
 .highlight-confirmation.has-note .confirmation-content {
   flex-direction: column;
   flex-wrap: nowrap;
@@ -922,27 +938,46 @@ app-note-item.is-flashed {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .confirmation-content {
+  .highlight-confirmation .confirmation-content {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.5rem;
     padding: 0.5rem 0.75rem;
+  }
+  /* #1255: the docked bar is three rows, each placed by markup. The quote gives
+     way to the pens on the first line; a wider bar keeps them on one row. */
+  .selection-quote-row {
+    flex: none;
     gap: 0.75rem;
   }
-  /* Docked selection actions need the same two-row contract for EPUB and PDF
-     now that both surfaces expose Copy + Ask Nostos. The quote gets the first
-     row; actions may wrap rather than shrinking or overflowing a 320–390px
-     viewport. */
-  /* The quote shares the first row with the pen dots and gives way to them. */
-  .highlight-confirmation .selected-text {
-    flex: 1 1 0;
+  /* With or without the pens beside it, the quote gives way: its text never
+     wraps, so an unconstrained width would scroll the whole bar sideways. */
+  .selection-quote-row .selected-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
   }
-  /* Stacked above the note field there are no dots to share a row with, and a
-     zero basis would collapse the quote's height. */
-  .highlight-confirmation.has-note .selected-text {
-    flex: none;
-  }
-  .highlight-confirmation .confirmation-actions {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
+  /* Utilities above the decisions, aligned to the thumb side. Ghost buttons
+     carry visible words, and keep the touch floor the bar has always had. */
+  .selection-utilities {
     justify-content: flex-end;
+    gap: 0.25rem;
+  }
+  .selection-utilities > button {
+    min-height: var(--control-h-touch);
+  }
+  .selection-more {
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
+  }
+  .selection-decisions {
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+  /* Cancel leads; the commit pair keeps the thumb corner. */
+  .selection-decisions .selection-cancel {
+    margin-right: auto;
   }
 }
 
@@ -957,6 +992,17 @@ app-note-item.is-flashed {
   }
   .progress-display.logical-pager {
     max-width: 184px;
+  }
+  /* Three labelled decisions at 320px: tighten the gaps and the inline padding,
+     never the touch height, so Cancel + Add note + Highlight stay on one row. */
+  .selection-utilities {
+    gap: 0.125rem;
+  }
+  .selection-decisions {
+    gap: 0.375rem;
+  }
+  .selection-decisions .reader-confirm-action {
+    padding-inline: 0.625rem;
   }
 }
 
@@ -1297,40 +1343,6 @@ app-note-item.is-flashed {
 
   .reader-layout.immersive .progress-display > span {
     max-width: 100%;
-  }
-
-  /* Utilities above, annotation choices below: five actions stay compact
-     without wrapping the primary action onto a row of its own. */
-  .highlight-confirmation .confirmation-actions {
-    display: grid;
-    grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.5rem;
-  }
-
-  .highlight-confirmation .selection-copy {
-    grid-column: 1;
-    margin-right: 0;
-  }
-
-  .highlight-confirmation .selection-ask {
-    grid-column: 2;
-  }
-
-  .highlight-confirmation .selection-cancel {
-    grid-column: 3 / -1;
-    justify-self: end;
-  }
-
-  .highlight-confirmation .selection-note-action {
-    grid-column: 1 / 3;
-  }
-
-  .highlight-confirmation .selection-primary {
-    grid-column: 3 / -1;
-  }
-
-  .highlight-confirmation.has-note .selection-primary {
-    grid-column: 1 / -1;
   }
 
   .reader-layout.immersive .reader-search-panel {
