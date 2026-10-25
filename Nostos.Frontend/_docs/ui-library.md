@@ -469,7 +469,10 @@ separate product components even though they can share shell/action primitives.
 `DialogActions` supports `variant="footer"` for a pinned/divided form footer and
 `variant="inset"` inside an already padded compact dialog. `dialogActionsStart`
 projects the uncommon leading action; `stackOnNarrow` stacks the trailing pair when
-a compact question needs it.
+a compact question needs it. On a phone the footer keeps all its actions on one row
+for as long as they fit: the leading action sits on the content's left edge
+(`margin-right: auto`) and the trailing pair on its right, and it is the row — not
+the leading action — that wraps onto a second line when the width runs out.
 
 ```html
 <app-modal-shell
