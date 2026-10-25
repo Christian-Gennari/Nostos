@@ -192,8 +192,9 @@
   line-height: 1.3;
 }
 
-/* On a phone the shared footer moves its leading text under the buttons.
-   Here it is a short status, so it keeps its place on the same row. */
+/* The shared footer keeps one row until the actions genuinely do not fit, but
+   its leading slot is free to wrap. Here the leading item is a short status
+   line, so it is pinned to the same row and allowed to shrink instead. */
 @media (max-width: 480px) {
   :host ::ng-deep .export-actions.nostos-dialog-actions--footer {
     flex-wrap: nowrap;

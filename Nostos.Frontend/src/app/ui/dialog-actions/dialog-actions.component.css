@@ -43,20 +43,14 @@
 }
 
 @media (max-width: 480px) {
+  /* One row while the actions fit. The groups keep their natural widths, so a
+     leading action only moves to a row of its own when the row is genuinely too
+     narrow — and `margin-right: auto` (base rule) keeps it on the content's left
+     edge in both arrangements. Forcing `width: 100%` here used to strand the
+     destructive action alone on a second row even when all three fit (#1258). */
   .nostos-dialog-actions--footer {
     flex-wrap: wrap;
     padding-inline: 1rem;
-  }
-
-  .nostos-dialog-actions--footer .nostos-dialog-actions__start:not(:empty) {
-    order: 2;
-    width: 100%;
-    margin-right: 0;
-  }
-
-  .nostos-dialog-actions--footer .nostos-dialog-actions__end {
-    order: 1;
-    width: 100%;
   }
 
   .nostos-dialog-actions--stack-narrow .nostos-dialog-actions__end {
