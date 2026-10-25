@@ -499,6 +499,11 @@ answers. Success closes it and toasts (`Deleted “X”`); failure leaves it ope
 `Could not …` toast so the reader can try again. `app-confirm-modal` does all of this
 from its `busy` input.
 
+Not for a file upload. Add book keeps its Close, Cancel, Escape and backdrop working while
+the file uploads: closing it leaves the upload running in the background, and the library
+shows the book and its processing once the file lands. A long audiobook upload must never
+trap the app behind the dialog (#1264).
+
 Do not turn ModalShell into a universal working-area component, and do not route
 inline row actions through DialogActions merely because they happen to live inside a
 dialog.
