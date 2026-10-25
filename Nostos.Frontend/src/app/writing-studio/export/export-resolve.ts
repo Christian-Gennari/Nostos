@@ -3,6 +3,7 @@ import type { CitationStyle } from '../citations/citation-styles';
 import type {
   ExportBlock,
   ExportDocument,
+  ExportFootnote,
   ExportInline,
   ExportSection,
   ExportWarning,
@@ -131,13 +132,12 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
     }
   });
 
-  // 3 and 4. Placement and pairing, chapter by chapter.
+  // 3 and 4. Placement and pairing, chapter by chapter (sliced per block).
   for (let index = 0; index < chapters.length; index++) {
     const blocks = chapters[index].blocks;
-    if (renderer.placement === 'note') moveCitationsToNotes(blocks, index, newNote);
-    else moveNotesIntoText(blocks, index, renderer.placement);
-    pairFootnotes(blocks, index, newNote, (message) => warnings.add('footnote', index, message));
-    await slicer.tick();
+    if (renderer.placement === 'note') await moveCitationsToNotes(blocks, index, newNote, slicer);
+    else await moveNotesIntoText(blocks, index, renderer.placement, slicer);
+    await pairFootnotes(blocks, index, newNote, (message) => warnings.add('footnote', index, message), slicer);
   }
   // A marker inside a note cannot be followed in any format.
   for (const note of notes) stripMarkers(note.inlines);
@@ -147,6 +147,7 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
   const order: number[] = [];
   for (const chapter of chapters) {
     for (const container of containers(chapter.blocks, 0)) {
+      await slicer.tick();
       walkInlines(container.inlines, (inline) => {
         if (inline.type === 'note' && !numbers.has(inline.id)) {
           numbers.set(inline.id, order.length + 1);
@@ -154,7 +155,6 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
         }
       });
     }
-    await slicer.tick();
   }
 
   const written = new Map<RawInline, string>();
@@ -188,11 +188,11 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
   }
   for (let index = 0; index < chapters.length; index++) {
     for (const container of containers(chapters[index].blocks, index)) {
+      await slicer.tick();
       walkInlines(container.inlines, (inline) => {
         if (inline.type === 'cite' && inline.ref.as !== 'bib') record(inline, renderer.inText(inline.ref), index);
       });
     }
-    await slicer.tick();
   }
 
   // 6. One bibliography.
@@ -249,13 +249,22 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
       sections.push({ type: 'group', folderId: path[depth].id, title: path[depth].title, depth: depth + 1 });
     }
     previousPath = path;
-    const blocks = toExportBlocks(chapter.blocks, (inlines) => convert(inlines, index));
-    words += countWords(blocks);
+    const blocks: ExportBlock[] = [];
+    for (const block of chapter.blocks) {
+      await slicer.tick();
+      const converted = toExportBlock(block, (inlines) => convert(inlines, index));
+      if (!converted) continue;
+      blocks.push(converted);
+      words += countWords([converted]);
+    }
     sections.push({ type: 'chapter', writingId: chapter.input.writingId, title: chapter.input.title, depth: path.length, blocks });
-    await slicer.tick();
   }
 
-  const footnotes = order.map((id) => ({ number: numbers.get(id)!, children: convert(notes[id].inlines, notes[id].chapter) }));
+  const footnotes: ExportFootnote[] = [];
+  for (const id of order) {
+    await slicer.tick();
+    footnotes.push({ number: numbers.get(id)!, children: convert(notes[id].inlines, notes[id].chapter) });
+  }
   slicer.finish();
 
   return {
@@ -365,8 +374,14 @@ function takeBibliographies(blocks: RawBlock[]): { book: string; text: string }[
 /* ------------------------------------------------------------------ */
 
 /** A note style: every citation in the writing becomes a footnote. */
-function moveCitationsToNotes(blocks: RawBlock[], chapter: number, newNote: (inlines: RawInline[], chapter: number) => number): void {
+async function moveCitationsToNotes(
+  blocks: RawBlock[],
+  chapter: number,
+  newNote: (inlines: RawInline[], chapter: number) => number,
+  slicer: Slicer,
+): Promise<void> {
   for (const container of containers(blocks, chapter)) {
+    await slicer.tick();
     if (container.block?.type === 'fndef') continue;
     let moved = false;
     const moveIn = (list: RawInline[]) => {
@@ -406,10 +421,16 @@ function moveCitationsToNotes(blocks: RawBlock[], chapter: number, newNote: (inl
 }
 
 /** An author–date or house style: a footnote that is only the Studio's citation goes back into the sentence. */
-function moveNotesIntoText(blocks: RawBlock[], chapter: number, placement: 'in-text' | 'house'): void {
+async function moveNotesIntoText(
+  blocks: RawBlock[],
+  chapter: number,
+  placement: 'in-text' | 'house',
+  slicer: Slicer,
+): Promise<void> {
   const all = containers(blocks, chapter);
   const markers = new Map<number, { inline: RawInline; container: Container }[]>();
   for (const container of all) {
+    await slicer.tick();
     if (container.block?.type === 'fndef') continue;
     walkInlines(container.inlines, (inline, list) => {
       if (inline.type !== 'fnref') return;
@@ -421,6 +442,7 @@ function moveNotesIntoText(blocks: RawBlock[], chapter: number, placement: 'in-t
   }
   const definitions = blocks.filter((block): block is Extract<RawBlock, { type: 'fndef' }> => block.type === 'fndef');
   for (const definition of definitions) {
+    await slicer.tick();
     const cite = onlyCitation(definition.children);
     const matching = markers.get(definition.number) ?? [];
     if (!cite || matching.length !== 1) continue;
@@ -450,18 +472,20 @@ function moveNotesIntoText(blocks: RawBlock[], chapter: number, placement: 'in-t
 /* 4. Pairing                                                          */
 /* ------------------------------------------------------------------ */
 
-function pairFootnotes(
+async function pairFootnotes(
   blocks: RawBlock[],
   chapter: number,
   newNote: (inlines: RawInline[], chapter: number) => number,
   warn: (message: string) => void,
-): void {
+  slicer: Slicer,
+): Promise<void> {
   const definitions = blocks.filter((block): block is Extract<RawBlock, { type: 'fndef' }> => block.type === 'fndef');
   const byNumber = new Map<number, Extract<RawBlock, { type: 'fndef' }>>();
   for (const definition of definitions) if (!byNumber.has(definition.number)) byNumber.set(definition.number, definition);
   const used = new Set<RawBlock>();
 
   for (const container of containers(blocks, chapter)) {
+    await slicer.tick();
     if (container.block?.type === 'fndef') continue;
     const pair = (list: RawInline[]) => {
       for (let i = 0; i < list.length; i++) {
@@ -487,6 +511,7 @@ function pairFootnotes(
   }
 
   for (const definition of definitions) {
+    await slicer.tick();
     const index = blocks.indexOf(definition);
     if (used.has(definition)) {
       blocks.splice(index, 1);
@@ -615,50 +640,48 @@ function toExportInlines(
   return merged;
 }
 
+/** One raw block as a finished one, or null when nothing of it is left to print. */
+function toExportBlock(block: RawBlock, convert: (inlines: RawInline[]) => ExportInline[]): ExportBlock | null {
+  switch (block.type) {
+    case 'paragraph': {
+      const children = convert(block.children);
+      // A paragraph that was only a moved citation's line is nothing now.
+      if (inlineText(children).trim() === '' && !children.some((c) => c.type === 'image' || c.type === 'footnoteRef')) return null;
+      return { type: 'paragraph', children };
+    }
+    case 'heading':
+      return { type: 'heading', level: block.level, children: convert(block.children) };
+    case 'blockquote':
+      return { type: 'blockquote', blocks: toExportBlocks(block.blocks, convert) };
+    case 'list':
+      return {
+        type: 'list',
+        ordered: block.ordered,
+        start: block.start,
+        items: block.items.map((item) => ({ blocks: toExportBlocks(item.blocks, convert), checked: item.checked })),
+      };
+    case 'table':
+      return {
+        type: 'table',
+        align: block.align,
+        header: block.header.map((cell) => convert(cell)),
+        rows: block.rows.map((row) => row.map((cell) => convert(cell))),
+      };
+    case 'code':
+      return { type: 'code', language: block.language, text: block.text };
+    case 'rule':
+      return { type: 'rule' };
+    case 'fndef':
+      // Paired or turned into a paragraph before this point.
+      return null;
+  }
+}
+
 function toExportBlocks(blocks: RawBlock[], convert: (inlines: RawInline[]) => ExportInline[]): ExportBlock[] {
   const out: ExportBlock[] = [];
   for (const block of blocks) {
-    switch (block.type) {
-      case 'paragraph': {
-        const children = convert(block.children);
-        // A paragraph that was only a moved citation's line is nothing now.
-        if (inlineText(children).trim() !== '' || children.some((c) => c.type === 'image' || c.type === 'footnoteRef')) {
-          out.push({ type: 'paragraph', children });
-        }
-        break;
-      }
-      case 'heading':
-        out.push({ type: 'heading', level: block.level, children: convert(block.children) });
-        break;
-      case 'blockquote':
-        out.push({ type: 'blockquote', blocks: toExportBlocks(block.blocks, convert) });
-        break;
-      case 'list':
-        out.push({
-          type: 'list',
-          ordered: block.ordered,
-          start: block.start,
-          items: block.items.map((item) => ({ blocks: toExportBlocks(item.blocks, convert), checked: item.checked })),
-        });
-        break;
-      case 'table':
-        out.push({
-          type: 'table',
-          align: block.align,
-          header: block.header.map((cell) => convert(cell)),
-          rows: block.rows.map((row) => row.map((cell) => convert(cell))),
-        });
-        break;
-      case 'code':
-        out.push({ type: 'code', language: block.language, text: block.text });
-        break;
-      case 'rule':
-        out.push({ type: 'rule' });
-        break;
-      case 'fndef':
-        // Paired or turned into a paragraph before this point.
-        break;
-    }
+    const one = toExportBlock(block, convert);
+    if (one) out.push(one);
   }
   return out;
 }

@@ -329,7 +329,7 @@ describe('export resolve (issue #1164)', () => {
   });
 
   describe('a long writing', () => {
-    it('resolves about 100,000 words without holding the page for long', async () => {
+    it('resolves about 100,000 words, giving the page a turn as it goes', async () => {
       const paragraph = (i: number) =>
         `Paragraph ${i} carries an ordinary amount of prose so that the whole writing is long, with a citation [(Kant, 1992)](nostos:cite/b2?as=reference) in it and a footnote.[^${i}]`;
       const blocks: string[] = [];
@@ -342,7 +342,6 @@ describe('export resolve (issue #1164)', () => {
       const gaps: number[] = [];
       let last = performance.now();
 
-      const started = performance.now();
       const doc = await resolve(markdown, 'note', {
         slicing: {
           budgetMs: 12,
@@ -360,9 +359,81 @@ describe('export resolve (issue #1164)', () => {
       expect(doc.footnotes).toHaveLength(9000);
       expect(doc.footnotes[1].children).toEqual([{ type: 'text', text: 'Note 1.' }]);
       expect(gaps.length).toBeGreaterThan(10);
-      // Each stretch of work is a slice, never the whole job; generous for a busy test machine.
-      expect(Math.max(...gaps)).toBeLessThan(Math.max(250, (performance.now() - started) / 4));
+      // No wall-clock bound here: how long a slice takes is the machine's
+      // business, and CI timing is not a contract. Slice length is asserted
+      // deterministically below (see #1253); the milliseconds are in its report.
       expect(splitMarkdown(markdown).length).toBeGreaterThan(5);
+    });
+
+    /**
+     * Every tick gives the page a turn whatever the clock says, so `yields` is
+     * exactly the number of ticks the resolver asked for — the same count on a
+     * fast phone and on a loaded CI runner (no `performance.now()`, no bound to
+     * flake). These assert the shape of the slicing, not its speed.
+     */
+    const virtualSlicing = (counter: { yields: number }) => ({
+      budgetMs: 0,
+      now: () => 0,
+      yieldToPage: async () => {
+        counter.yields++;
+      },
+    });
+
+    it('ticks inside every pass, per block and per note, not once per chapter', async () => {
+      const blocks: string[] = [];
+      const notes: string[] = [];
+      for (let i = 1; i <= 300; i++) {
+        blocks.push(`Paragraph ${i} with a citation [(Kant, 1992)](nostos:cite/b2?as=reference) and a footnote.[^${i}]`);
+        notes.push(`[^${i}]: Note ${i}.`);
+      }
+      const markdown = [...blocks, ...notes].join('\n\n');
+
+      const counter = { yields: 0 };
+      let atFirstRender = -1;
+      let afterLastRender = 0;
+      const base = renderer('note');
+      const counting: typeof base = {
+        ...base,
+        note: (ref, subsequent) => {
+          if (atFirstRender < 0) atFirstRender = counter.yields;
+          afterLastRender = counter.yields;
+          return base.note(ref, subsequent);
+        },
+      };
+      const doc = await resolve(markdown, 'note', { renderer: counting, slicing: virtualSlicing(counter) });
+
+      expect(doc.footnotes).toHaveLength(600);
+      // Reading, placement, pairing and numbering each tick per block.
+      expect(atFirstRender).toBeGreaterThanOrEqual(4 * blocks.length);
+      // The finished-document pass ticks per block, the footnote pass per note.
+      expect(counter.yields - afterLastRender).toBeGreaterThanOrEqual(blocks.length + doc.footnotes.length);
+      // However often it yields, the document is the same.
+      expect(JSON.stringify(doc)).toBe(JSON.stringify(await resolve(markdown, 'note')));
+    });
+
+    it('ticks between the citations it writes again, not once per chapter', async () => {
+      const count = 300;
+      const markdown = Array.from(
+        { length: count },
+        (_, i) => `Paragraph ${i + 1} cites [(Kant, 1992)](nostos:cite/b2?as=reference).`,
+      ).join('\n\n');
+
+      const counter = { yields: 0 };
+      let atFirstRender = -1;
+      let afterLastRender = 0;
+      const base = renderer('in-text');
+      const counting: typeof base = {
+        ...base,
+        inText: (ref) => {
+          if (atFirstRender < 0) atFirstRender = counter.yields;
+          afterLastRender = counter.yields;
+          return base.inText(ref);
+        },
+      };
+      await resolve(markdown, 'in-text', { renderer: counting, slicing: virtualSlicing(counter) });
+
+      // Every citation written again is separated from the last by a tick.
+      expect(afterLastRender - atFirstRender).toBeGreaterThanOrEqual(count - 1);
     });
 
     it('splits only between top-level paragraphs, never in a code fence or a list', () => {
