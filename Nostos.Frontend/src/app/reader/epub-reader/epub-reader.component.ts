@@ -1310,6 +1310,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       return;
     }
 
+    // The reassert moves the page itself; a selection hold must not fight it.
+    this.releasePageHold();
     try {
       await rendition.display(target.cfi);
     } catch (error) {
@@ -1636,6 +1638,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       for (const c of this.renderedContents()) {
         if (c?.document) this.applyTextScale(c.document);
       }
+      // A re-layout invalidates the held offset (#1254).
+      this.releasePageHold(false);
       this.rendition.themes.fontSize(`${size}%`);
     }
     this.persistFontSize();
@@ -2254,6 +2258,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const key = JSON.stringify(this.typography());
     if (key === this.appliedTypographyKey) return;
     this.appliedTypographyKey = key;
+    // A re-layout invalidates the held offset (#1254).
+    this.releasePageHold(false);
     this.applyTypographyToOpenContents();
     // The margin is padding on our own container; the binding updates in the
     // next change-detection pass, so measure the page after that.
@@ -2359,6 +2365,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // rendition to 0 would collapse it, so wait for the next pass instead.
     if (clientWidth <= 0 || clientHeight <= 0) return;
     try {
+      // A re-layout invalidates the held offset (#1254).
+      this.releasePageHold(false);
       this.rendition.resize(clientWidth, clientHeight);
     } catch {
       // Not laid out yet — the ResizeObserver path will catch up.

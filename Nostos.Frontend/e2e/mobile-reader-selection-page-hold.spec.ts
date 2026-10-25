@@ -17,6 +17,9 @@ import { apiPost, loadFixture } from './support/fixture';
 
 // Multi-page fixture: 12 pages at 390px with default typography.
 const EPUB = readFileSync(path.join(__dirname, 'assets', 'reader-margins.epub'));
+// The same chapter with an in-book link at its top (#jump) to a paragraph a
+// few pages in (#later), as a footnote or cross-reference is.
+const LINKED_EPUB = readFileSync(path.join(__dirname, 'assets', 'reader-links.epub'));
 
 /** epub.js's page position: the stage box it creates inside #epub-page. */
 const stage = (page: Page) =>
@@ -66,7 +69,7 @@ async function dispatchTouch(target: Locator, type: 'touchstart' | 'touchcancel'
   }, type);
 }
 
-async function seedEpub(baseUrl: string, title: string): Promise<string> {
+async function seedEpub(baseUrl: string, title: string, epub: Buffer = EPUB): Promise<string> {
   const created = await apiPost<any>(baseUrl, '/api/books/', {
     type: 'ebook',
     title,
@@ -74,7 +77,7 @@ async function seedEpub(baseUrl: string, title: string): Promise<string> {
   });
   const bookId = created?.book?.id ?? created?.bookId ?? created?.id;
   const form = new FormData();
-  form.append('file', new Blob([EPUB], { type: 'application/epub+zip' }), 'page-hold.epub');
+  form.append('file', new Blob([new Uint8Array(epub)], { type: 'application/epub+zip' }), 'page-hold.epub');
   const res = await fetch(`${baseUrl}/api/books/${bookId}/file`, { method: 'POST', body: form });
   if (!res.ok) throw new Error(`upload -> ${res.status}`);
   return bookId;
@@ -205,4 +208,37 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
   await next.click();
   await expect.poll(async () => (await stage(page)).left).toBe(held.left + held.width);
   expect((await stage(page)).left % held.width).toBe(0);
+});
+
+test('phone: tapping an in-book link still moves the page while the touch hold waits to release', async ({ page }) => {
+  const { baseUrl } = loadFixture();
+  const bookId = await seedEpub(baseUrl, `Page hold link ${Date.now()}`, LINKED_EPUB);
+  await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
+  const frame = page.frameLocator('#epub-viewer iframe');
+  const link = frame.locator('#jump');
+  await link.waitFor({ timeout: 45_000 });
+  await expect(page.locator('.loading-overlay')).toHaveClass(/is-hidden/);
+  await page.waitForTimeout(800);
+
+  const first = await stage(page);
+  expect(first.left).toBe(0);
+
+  // A real tap: touchstart arms the hold and touchend only schedules its
+  // release, but epub.js's link handler moves the page on the click inside
+  // that grace period. The tap's compatibility mouseup must hand the page back
+  // first, or the hold puts the link's page move straight back.
+  await link.tap();
+
+  // The page lands on the linked paragraph, on the page grid.
+  await expect.poll(async () => (await stage(page)).left).toBeGreaterThan(0);
+  await page.waitForTimeout(600);
+  const landed = await stage(page);
+  expect(landed.left % landed.width).toBe(0);
+  const index = landed.left / landed.width;
+  const target = await frame.locator('#later').evaluate((p) => {
+    const rect = p.getBoundingClientRect();
+    return { left: rect.left, right: rect.right };
+  });
+  expect(target.right, 'the linked paragraph is on the page shown').toBeGreaterThan(index * landed.width);
+  expect(target.left).toBeLessThan((index + 1) * landed.width);
 });
