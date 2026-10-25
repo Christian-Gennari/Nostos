@@ -386,6 +386,26 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private readonly interactionDocuments = new Map<Document, () => void>();
 
   /**
+   * epub.js's page position (#1254). A paginated rendition lays a whole section
+   * out inside one wide iframe and turns pages by setting `scrollLeft` on the
+   * stage box it creates inside `#epub-page` (`.epub-container`: `overflow:
+   * hidden`, but still scrollable by the browser and by script). That box is
+   * the nearest scrollable ancestor of the book's text, so revealing a
+   * selection endpoint — exactly what dragging a phone's selection handle
+   * does — scrolls it to an arbitrary offset. epub.js reads that as a page
+   * move, and the next turn adds one page width to the off-grid offset, which
+   * is why the reader gets stranded between two pages. While a selection is
+   * live the offset is held and any scroll put back, so the page under the
+   * text cannot move.
+   *
+   * This became reachable when #874 left a touch selection native: before it,
+   * every touch capture cleared the selection, so a phone had no handles to
+   * drag.
+   */
+  private pageScroller: HTMLElement | null = null;
+  private pinnedPageOffset: { left: number; top: number } | null = null;
+
+  /**
    * Progress writes stay closed until the saved position has been applied. The
    * rendition reports its opening section as soon as it lays out, and writing
    * that used to overwrite the reader's real position whenever the restore
@@ -477,6 +497,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         if (page) {
           const { clientWidth, clientHeight } = page;
           try {
+            // A re-layout invalidates the held offset: let epub.js place the
+            // section itself rather than restoring a position from the old
+            // geometry (#1254).
+            this.releasePageHold();
             this.rendition.resize(clientWidth, clientHeight);
           } catch (e) {
             console.warn('Rendition resize failed (book might not be ready):', e);
@@ -1036,11 +1060,59 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   // --- Grounded source navigation protection ---
 
   /**
+   * The scrollable stage epub.js created for the current rendition. Resolved
+   * lazily and re-resolved if a new rendition replaced it.
+   */
+  private resolvePageScroller(): HTMLElement | null {
+    const cached = this.pageScroller;
+    if (cached?.isConnected && cached.parentElement?.id === 'epub-page') return cached;
+
+    const page = this.elementRef.nativeElement.querySelector('#epub-page');
+    const scroller = (page?.querySelector(':scope > .epub-container') as HTMLElement | null) ?? null;
+    this.pageScroller = scroller;
+    return scroller;
+  }
+
+  /**
+   * Hold the page under a live selection. Idempotent: extending a selection
+   * (or a capture confirming one already being dragged) keeps the original
+   * offset.
+   */
+  private holdPageForSelection(): void {
+    const scroller = this.resolvePageScroller();
+    if (!scroller || this.pinnedPageOffset) return;
+
+    this.pinnedPageOffset = { left: scroller.scrollLeft, top: scroller.scrollTop };
+    scroller.addEventListener('scroll', this.restorePinnedPageOffset, { passive: true });
+  }
+
+  /** Hand the page back: navigation, dismissal, save, re-layout, teardown. */
+  private releasePageHold(): void {
+    if (!this.pinnedPageOffset) return;
+    this.pinnedPageOffset = null;
+    this.pageScroller?.removeEventListener('scroll', this.restorePinnedPageOffset);
+  }
+
+  /**
+   * Undo a selection reveal. A scroll event cannot be cancelled, so the held
+   * offset is put back as soon as it lands; the restore's own scroll event then
+   * matches the held values and goes no further.
+   */
+  private readonly restorePinnedPageOffset = (): void => {
+    const held = this.pinnedPageOffset;
+    const scroller = this.pageScroller;
+    if (!held || !scroller) return;
+    if (scroller.scrollLeft !== held.left) scroller.scrollLeft = held.left;
+    if (scroller.scrollTop !== held.top) scroller.scrollTop = held.top;
+  };
+
+  /**
    * Start a navigation operation. Bumps the generation and cancels any
    * grounded protection: a new navigation — including the reader's own page
    * turn, keyboard or TOC — must never be fought by a delayed reassert.
    */
   private beginNavigation(): number {
+    this.releasePageHold();
     this.navigationGeneration++;
     this.cancelGroundedNavigation();
     this.annotationManager?.clearLandingMark();
@@ -1391,6 +1463,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const rendition = this.rendition;
     if (!rendition) return false;
 
+    // Read aloud moves the page itself; a selection hold must not fight it.
+    this.releasePageHold();
     this.readAloudMoves++;
     try {
       await rendition.display(target);
@@ -1564,6 +1638,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.searchCorpusPromise = null;
     if (this.epubBook) {
       this.clearContentsInteractionListeners();
+      this.releasePageHold();
+      this.pageScroller = null;
       this.annotationManager?.destroy();
       this.annotationManager = null;
       this.epubBook.destroy();
@@ -1649,6 +1725,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.annotationManager.setHighlightColour(this.highlightColour());
     this.annotationManager.setTheme(this.themeService.mode());
     this.annotationManager.setOnSelectionCaptured((text, anchor) => {
+      // A touch capture (no anchored menu) is a live native selection whose
+      // handles are about to move; hold the page under it (#1254). A mouse
+      // capture has already finished its drag and opens an anchored menu.
+      if (anchor === null) this.holdPageForSelection();
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
       this.selectionAnchored.emit(anchor);
@@ -1947,6 +2027,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         at: Date.now(),
         target: event.target,
       };
+      // A long-press creates the selection (and the browser reveals it) before
+      // the finger lifts, and its handles fire no touch events afterwards.
+      // Holding here covers the whole gesture (#1254).
+      this.holdPageForSelection();
     };
 
     const onTouchEnd = (event: TouchEvent) => {
@@ -1973,7 +2057,13 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         durationMs: now - start.at,
       });
 
-      if (!action) return;
+      // A live selection keeps the page held for the handle drags that follow;
+      // a tap or swipe with none hands it back (and a page turn releases it in
+      // beginNavigation anyway).
+      if (!action) {
+        if (!selectedText()) this.releasePageHold();
+        return;
+      }
       if (action === 'next') this.next();
       else this.previous();
     };
@@ -1981,6 +2071,18 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const onTouchCancel = () => {
       touchStart = null;
       clickSuppression = null;
+      this.releasePageHold();
+    };
+
+    // Desktop selection: the browser reveals the endpoint during the drag,
+    // before mouseup. On release the annotation manager captures the selection
+    // (and clears it), so a plain click is the only case with none to keep.
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 0) this.holdPageForSelection();
+    };
+
+    const onMouseUp = () => {
+      if (!selectedText()) this.releasePageHold();
     };
 
     // A mouse over a saved highlight shows it can be opened. Painted marks are
@@ -2008,6 +2110,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     doc.addEventListener('touchstart', onTouchStart, { passive: true });
     doc.addEventListener('touchend', onTouchEnd, { passive: true });
     doc.addEventListener('touchcancel', onTouchCancel, { passive: true });
+    doc.addEventListener('mousedown', onMouseDown);
+    doc.addEventListener('mouseup', onMouseUp);
 
     this.interactionDocuments.set(doc, () => {
       doc.removeEventListener('click', onClick);
@@ -2016,6 +2120,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       doc.removeEventListener('touchstart', onTouchStart);
       doc.removeEventListener('touchend', onTouchEnd);
       doc.removeEventListener('touchcancel', onTouchCancel);
+      doc.removeEventListener('mousedown', onMouseDown);
+      doc.removeEventListener('mouseup', onMouseUp);
     });
   }
 
@@ -2279,13 +2385,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   commitHighlight(content = '', colour?: HighlightColour): void {
     const committed = this.annotationManager?.commitHighlight(content, colour);
     void committed?.then((success) => {
-      if (success) this.assistantSelection.set(null);
+      if (success) {
+        this.assistantSelection.set(null);
+        this.releasePageHold();
+      }
     });
   }
 
   discardHighlight(): void {
     this.annotationManager?.discardHighlight();
     this.assistantSelection.set(null);
+    this.releasePageHold();
   }
 
   /**
@@ -2382,6 +2492,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
     this.keyboardDocuments.clear();
     this.clearContentsInteractionListeners();
+    this.releasePageHold();
+    this.pageScroller = null;
     this.searchAvailable.set(false);
     this.clearSearch();
     this.searchCorpus = null;
