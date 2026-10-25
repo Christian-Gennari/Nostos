@@ -69,7 +69,8 @@ public sealed record NostosProductEndpointPolicies(
     string? OpdsAuthorizationPolicy = null,
     string? MigrationAuthorizationPolicy = null,
     bool MapMigrationTransferEndpoints = true,
-    string? ManagedBackupsAuthorizationPolicy = null)
+    string? ManagedBackupsAuthorizationPolicy = null,
+    bool MapResumableBookUploadEndpoints = false)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -459,6 +460,8 @@ public static class NostosProductComposition
         policies ??= NostosProductEndpointPolicies.None;
 
         routes.MapBooksEndpoints(policies);
+        if (policies.MapResumableBookUploadEndpoints)
+            routes.MapBookUploadEndpoints(policies);
         routes.MapAlignmentEndpoints(policies);
         routes.MapProviderEndpoints(policies);
         routes.MapProviderSettingsEndpoints();

@@ -2,6 +2,7 @@ using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
 using Nostos.Backend.Services;
+using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.Library;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
@@ -306,8 +307,13 @@ public static class BooksEndpoints
         // files)
         group.MapDelete(
             "/{id}",
-            async (Guid id, ILibraryService library, IBookAssetStorage storage, IBookTextLifecycle bookText, CancellationToken ct) =>
+            async (Guid id, ILibraryService library, IBookAssetStorage storage, IBookTextLifecycle bookText, HttpContext http, CancellationToken ct) =>
             {
+                // An unfinished resumable upload would otherwise keep staging
+                // bytes for a row that no longer exists.
+                if (http.RequestServices.GetService<BookUploadService>() is { } uploads)
+                    await uploads.DiscardForBookAsync(id, ct);
+
                 var result = await library.DeleteBookAsync(id, ct);
                 if (LibraryHttpMapper.MapError(result) is { } error)
                     return error;
@@ -318,17 +324,16 @@ public static class BooksEndpoints
             }
         );
 
-        // Upload file
+        // Upload file (legacy whole-request contract; still the Cloud path)
         uploadGroup.MapPost(
             "/{id}/file",
             async (
                 Guid id,
                 HttpRequest request,
                 IBookRepository repo,
-                IBookAssetStorage storage,
-                MediaMetadataService metadataService,
-                IBookTextIngestionScheduler bookTextScheduler,
+                BookFileCommit commit,
                 BookFileMutationGate fileMutationGate,
+                ILoggerFactory loggerFactory,
                 CancellationToken ct
             ) =>
             {
@@ -354,7 +359,30 @@ public static class BooksEndpoints
                     return Results.Conflict(new { code = "book_import_in_progress",
                         message = "This book is still importing. Wait until it finishes before uploading a file." });
 
-                var form = await request.ReadFormAsync(ct);
+                // Count what actually arrived so a truncated whole-request
+                // upload is diagnosable: the declared Content-Length alone
+                // cannot say how far the body got.
+                var counting = new CountingRequestBodyStream(request.Body);
+                request.Body = counting;
+
+                IFormCollection form;
+                try
+                {
+                    form = await request.ReadFormAsync(ct);
+                }
+                catch (Exception exception)
+                    when (exception is BadHttpRequestException or IOException or InvalidDataException)
+                {
+                    loggerFactory.CreateLogger("Nostos.BookUpload").LogWarning(
+                        exception,
+                        "Legacy book file upload for {BookId} was interrupted after " +
+                        "{BytesReceived} of {DeclaredBytes} bytes.",
+                        id,
+                        counting.BytesRead,
+                        request.ContentLength ?? -1);
+                    throw;
+                }
+
                 var file = form.Files.FirstOrDefault();
                 if (file is null)
                     return Results.BadRequest("Missing file.");
@@ -363,49 +391,10 @@ public static class BooksEndpoints
                 if (!allowed)
                     return Results.BadRequest($"Unsupported file type: {file.ContentType}");
 
-                await using (var metadataStream = file.OpenReadStream())
-                {
-                    metadataService.EnrichBookMetadata(book, metadataStream);
-                }
-
-                await using (var uploadStream = file.OpenReadStream())
-                {
-                    await storage.SaveBookFileAsync(id, uploadStream, file.FileName, ct);
-                }
-
-                // A book holds either one primary file or a track list, never
-                // both. The uploaded file replaces the tracks; they are removed
-                // only now that the replacement is safely stored.
-                if (book.FileDetails.TracksJson is not null)
-                {
-                    book.FileDetails.TracksJson = null;
-                    if (request.HttpContext.RequestServices.GetService<IBookTrackStorage>() is { } trackStorage)
-                        await trackStorage.DeleteTracksAsync(id, ct);
-                }
-
-                book.FileDetails.HasFile = true;
-                book.FileDetails.FileName = $"book{Path.GetExtension(file.FileName)}";
-                // A local-upload row is incomplete until the canonical file
-                // metadata is persisted. Success is the lifecycle boundary;
-                // failed/interrupted attempts deliberately leave UploadPending.
-                if (book.Status == BookStatus.UploadPending)
-                {
-                    book.Status = BookStatus.Ready;
-                    book.StatusMessage = null;
-                }
-
-                // Clear old locations/chapters if a new file is uploaded
-                book.FileDetails.LocationsJson = null;
-
-                await repo.UpdateAsync(book);
-
-                // Upload/replacement is a source-revision event. Scheduling
-                // invalidates any old searchable revision immediately; the
-                // scheduler deliberately degrades without failing the valid
-                // primary file upload if extraction/indexing cannot start.
-                await bookTextScheduler.ScheduleAsync(
-                    id,
-                    book.FileDetails.FileName,
+                await commit.CommitStreamAsync(
+                    book,
+                    file.OpenReadStream,
+                    file.FileName,
                     ct);
 
                 return Results.Ok(new { uploaded = true });

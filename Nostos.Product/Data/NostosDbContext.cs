@@ -92,6 +92,12 @@ public class NostosDbContext : DbContext
     public DbSet<MigrationExportArtifactRecord> MigrationExportArtifactRecords => Set<MigrationExportArtifactRecord>();
     public DbSet<MigrationStorageReservationRecord> MigrationStorageReservations => Set<MigrationStorageReservationRecord>();
 
+    // Resumable book-file uploads (#1266). Host-local operational state: the
+    // book row stays visible while a file is arriving, and this session is the
+    // only record that it is in progress.
+    public DbSet<BookUploadSessionRecord> BookUploadSessionRecords => Set<BookUploadSessionRecord>();
+    public DbSet<BookUploadPartReceiptRecord> BookUploadPartReceiptRecords => Set<BookUploadPartReceiptRecord>();
+
     // A few legacy import/repository paths still add a BookModel directly.
     // Keep those writes valid now that WorkId is a required foreign key. The
     // library service always assigns the work explicitly; this is only a
@@ -1001,6 +1007,53 @@ public class NostosDbContext : DbContext
             e.ToTable(t => t.HasCheckConstraint(
                 "CK_MigrationChunkReceiptRecords_Bounds",
                 "\"ChunkIndex\" >= 0 AND \"OffsetBytes\" >= 0 AND \"LengthBytes\" > 0"));
+        });
+
+        modelBuilder.Entity<BookUploadSessionRecord>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.Property(s => s.OwnerKey).IsRequired();
+            e.Property(s => s.FileName).IsRequired();
+            e.Property(s => s.FileSha256).IsRequired();
+            e.Property(s => s.Version).IsConcurrencyToken();
+
+            // One active upload per (owner, book); NULL for every terminal row,
+            // and SQLite allows many NULLs in a unique index.
+            e.HasIndex(s => s.ActiveSessionKey).IsUnique();
+            e.HasIndex(s => new { s.OwnerKey, s.BookId });
+            e.HasIndex(s => s.ExpiresAtUtc);
+
+            e.HasOne<BookModel>()
+                .WithMany()
+                .HasForeignKey(s => s.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_BookUploadSessionRecords_Bounds",
+                    "\"TotalBytes\" > 0 AND \"ReceivedBytes\" >= 0 " +
+                    "AND \"ReceivedBytes\" <= \"TotalBytes\" " +
+                    "AND \"ChunkSize\" > 0 AND \"TotalChunks\" > 0");
+                t.HasCheckConstraint(
+                    "CK_BookUploadSessionRecords_State",
+                    "\"State\" >= 0 AND \"State\" <= 7");
+            });
+        });
+
+        modelBuilder.Entity<BookUploadPartReceiptRecord>(e =>
+        {
+            e.HasKey(r => new { r.SessionId, r.PartIndex });
+            e.Property(r => r.Sha256).IsRequired();
+
+            e.HasOne<BookUploadSessionRecord>()
+                .WithMany()
+                .HasForeignKey(r => r.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_BookUploadPartReceiptRecords_Bounds",
+                "\"PartIndex\" >= 0 AND \"OffsetBytes\" >= 0 AND \"LengthBytes\" > 0"));
         });
 
         modelBuilder.Entity<MigrationExportArtifactRecord>(e =>

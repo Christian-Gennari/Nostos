@@ -1,4 +1,5 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
@@ -24,7 +25,8 @@ public static class DeploymentCapabilitiesEndpoints
             Results.Ok(ToResponse(
                 deployment,
                 services.GetService<IMigrationPhaseAvailability>(),
-                services.GetService<IExternalMediaAvailability>())))
+                services.GetService<IExternalMediaAvailability>(),
+                services.GetService<IBookFileUploadStore>())))
             .AllowAnonymous();
         return routes;
     }
@@ -32,7 +34,8 @@ public static class DeploymentCapabilitiesEndpoints
     public static DeploymentCapabilitiesResponse ToResponse(
         DeploymentDescriptor deployment,
         IMigrationPhaseAvailability? migrationAvailability = null,
-        IExternalMediaAvailability? externalMedia = null) =>
+        IExternalMediaAvailability? externalMedia = null,
+        IBookFileUploadStore? bookFileUploadStore = null) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -74,7 +77,11 @@ public static class DeploymentCapabilitiesEndpoints
             // is the feature's own status, so Settings can show how to set
             // one up instead of hiding that the feature exists.
             SupportsExternalMediaLibraries: deployment.Mode == DeploymentMode.SelfHosted
-                && externalMedia is not null);
+                && externalMedia is not null,
+            // Same registration the upload routes require: a host that maps the
+            // resumable contract registers this store, and a host that does not
+            // stays on the legacy whole-request upload.
+            SupportsResumableBookUploads: bookFileUploadStore is not null);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -96,4 +103,5 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsManagedBackups = false,
     bool SupportsAccountDeletion = false,
     bool SupportsManagedBackupRestore = false,
-    bool SupportsExternalMediaLibraries = false);
+    bool SupportsExternalMediaLibraries = false,
+    bool SupportsResumableBookUploads = false);
