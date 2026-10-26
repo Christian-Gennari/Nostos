@@ -5,8 +5,8 @@
     <img alt="Nostos" src="docs/brand/logo-light.svg" width="276" />
   </picture>
 
-  <p><strong>A home for your reading life.</strong></p>
-  <p>Bring your books together, keep your thoughts with their source, and turn what you read into your own writing.</p>
+  <p><strong>Open-source, self-hosted commonplace book for readers and writers.</strong></p>
+  <p>Bring your books together, keep thoughts with their sources, and turn what you read into your own writing.</p>
 
   <p>
     <a href="https://nostos.page">Website</a> •
@@ -32,14 +32,19 @@
 </div>
 
 ## What is Nostos?
-
-Nostos keeps reading, thinking and writing in one place. Collect your physical books, EPUBs, PDFs and audiobooks. Read or listen in the app, save highlights, notes and whole passages next to the page they came from, connect ideas across books, and bring it all into a draft when you are ready to write.
-
-It follows one simple loop: **Read → Notice → Capture → Return → Write.**
-
-It is deliberately quiet. There are no feeds, streaks or scores. The optional assistant stays out of the way until you ask for it.
-
-You can use the hosted service, [Nostos Cloud](https://nostos.page), or run it yourself. This repository is the complete, open-source **SelfHosted** app.
+ 
+ Nostos is an open-source, self-hosted commonplace book for people who read and write. It brings physical books, EPUBs, PDFs and audiobooks into one quiet library, keeps saved passages and notes attached to the exact page they came from, and lets you bring quotations into your drafts with verified citations.
+ 
+ It connects the whole journey in one place: **Read → Notice → Capture → Return → Write.**
+ 
+ - **Read & listen:** Read EPUBs and PDFs with adjustable typography, or listen to audiobooks (multi-track files play as one book).
+ - **Capture & return:** Highlights and notes stay attached to their source. Topics connect ideas across books in the Brain.
+ - **Write:** Type `@` in the Writing Studio to pull a kept passage into your draft with attribution attached. Export with real footnotes to Word, PDF, Markdown or rich text for Substack.
+ - **Own your data:** Runs locally as a single Docker container with SQLite. Export notes and highlights as plain Markdown or full `.nostos` backups anytime.
+ 
+ It is deliberately quiet. There are no social feeds, streaks or engagement mechanics. The optional assistant stays out of the way until you ask for it.
+ 
+ You can use the hosted service, [Nostos Cloud](https://nostos.page), or run it yourself. This repository is the complete, open-source **SelfHosted** app.
 
 ---
 
@@ -140,20 +145,22 @@ On SelfHosted, you connect your own AI provider in **Settings → AI connections
 The easiest way to start: **[get started at nostos.page](https://nostos.page/start)** and see [plans and pricing](https://nostos.page/pricing).
 
 ### Self-host with Docker
-
-```bash
-docker volume create nostos-data
-docker run -d \
-  --name nostos \
-  -p 5099:8080 \
-  -v nostos-data:/data \
-  --restart unless-stopped \
-  ghcr.io/christian-gennari/nostos:latest
-```
-
-Or use the included Compose file: `docker compose up -d`. Then open **http://localhost:5099**. No account or subscription needed.
-
-Everything Nostos keeps lives in the `/data` volume: the database, your books, local backups and the key ring in `/data/keys` that protects AI keys saved in Settings. Back up the whole volume, and keep it when you replace the container.
+ 
+ ```bash
+ docker volume create nostos-data
+ docker run -d \
+   --name nostos \
+   -p 5099:8080 \
+   -v nostos-data:/data \
+   --restart unless-stopped \
+   ghcr.io/christian-gennari/nostos:latest
+ ```
+ 
+ Or use the included Compose file: `docker compose up -d`. Then open **http://localhost:5099**. No account or subscription needed.
+ 
+ App-store packages are also available for **Unraid**, **CasaOS**, **Umbrel**, **Runtipi** and **selfh.st**.
+ 
+ Everything Nostos keeps lives in the `/data` volume: the database, your books, local backups and the key ring in `/data/keys` that protects AI keys saved in Settings. Back up the whole volume, and keep it when you replace the container.
 
 - **Hardware:** the image runs on 64-bit Intel and AMD machines (`linux/amd64`) and on 64-bit Arm (`linux/arm64`): a Raspberry Pi 4 or 5 with a 64-bit OS, an Apple Silicon Mac, or an Arm NAS. Docker picks the right one for you. 32-bit systems are not supported.
 - **Memory:** Nostos uses about 110–125 MB when idle and about 220–330 MB with a small library (50 ebooks with covers and 5 audiobooks). Give it at least 512 MB; 1 GB leaves room for large imports and backups.
