@@ -472,3 +472,68 @@ describe('ChunkUploadEngine — cancellation, pause and progress', () => {
     expect(seen.map((chunk) => chunk.lengthBytes)).toEqual([CHUNK, CHUNK, 100]);
   });
 });
+
+describe('ChunkUploadEngine — non-migration parts (#1266)', () => {
+  it('addresses the supplied part transport with the session and never a job', async () => {
+    const calls: Array<{ sessionId: string; index: number; lengthBytes: number }> = [];
+    const engine = new ChunkUploadEngine(undefined, stubDigest(), { random: () => 0.5 });
+    const run = engine.start({
+      session: sessionFor(2 * CHUNK + 100),
+      file: fileOfSize(2 * CHUNK + 100),
+      concurrency: 2,
+      partTransport: {
+        async uploadPart(sessionId, chunk) {
+          calls.push({
+            sessionId,
+            index: chunk.index,
+            lengthBytes: chunk.lengthBytes,
+          });
+        },
+      },
+    });
+
+    await expect(run.done).resolves.toEqual({ kind: 'completed' });
+    expect(calls.map((call) => call.sessionId)).toEqual([
+      'session-1',
+      'session-1',
+      'session-1',
+    ]);
+    expect(calls.map((call) => call.index)).toEqual([0, 1, 2]);
+    expect(calls.map((call) => call.lengthBytes)).toEqual([CHUNK, CHUNK, 100]);
+  });
+
+  it('recomputes and resends once on the book part hash-mismatch code', async () => {
+    let hashCalls = 0;
+    const digest: FileDigest = {
+      sha256: async () => 'f'.repeat(64),
+      sha256Chunk: async () => {
+        hashCalls += 1;
+        return 'a'.repeat(64);
+      },
+      fingerprint: async () => 'nostos-fp-v1:stub',
+    };
+    let attempts = 0;
+    const engine = new ChunkUploadEngine(undefined, digest, { random: () => 0.5 });
+    const run = engine.start({
+      session: sessionFor(100, { chunkSize: 100 }),
+      file: fileOfSize(100),
+      hashMismatchCode: 'book_upload_part_hash_mismatch',
+      partTransport: {
+        async uploadPart() {
+          attempts += 1;
+          if (attempts === 1) {
+            throw Object.assign(new Error('hash mismatch'), {
+              code: 'book_upload_part_hash_mismatch',
+              status: 422,
+              retryable: false,
+            });
+          }
+        },
+      },
+    });
+
+    await expect(run.done).resolves.toEqual({ kind: 'completed' });
+    expect(attempts).toBe(2);
+    expect(hashCalls).toBe(2);
+  });
+});

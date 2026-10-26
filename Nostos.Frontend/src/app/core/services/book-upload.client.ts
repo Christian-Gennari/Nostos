@@ -8,12 +8,17 @@ import {
 import { firstValueFrom, fromEvent, Observable, takeUntil } from 'rxjs';
 
 import {
+  BOOK_UPLOAD_BASE_SEGMENT,
   BookUploadCreateRequestDto,
   BookUploadErrorCode,
   BookUploadPartResultDto,
   BookUploadStatusDto,
 } from '../dtos/book-upload.dtos';
-import { isTransientStatus, parseRetryAfterMs, readErrorBody } from '../../library-transfer/services/migration-transport-error';
+import {
+  isTransientStatus,
+  parseRetryAfterMs,
+  readErrorBody,
+} from '../../library-transfer/services/migration-transport-error';
 
 /**
  * HTTP adapter for the resumable book-file contract (#1266).
@@ -58,7 +63,7 @@ export class BookUploadClient {
     onProgress: (loaded: number, total: number) => void,
     signal?: AbortSignal,
   ): Promise<BookUploadPartResultDto> {
-    const response = await this.request(
+    return this.requestEvents(
       this.http.put<BookUploadPartResultDto>(
         `${this.base(bookId)}/${sessionId}/parts/${partIndex}`,
         blob,
@@ -75,7 +80,6 @@ export class BookUploadClient {
       signal,
       onProgress,
     );
-    return response as BookUploadPartResultDto;
   }
 
   complete(bookId: string, sessionId: string, signal?: AbortSignal): Promise<BookUploadStatusDto> {
@@ -97,7 +101,19 @@ export class BookUploadClient {
   }
 
   private base(bookId: string): string {
-    return `/api/books/${bookId}/file/uploads`;
+    return `/api/books/${bookId}${BOOK_UPLOAD_BASE_SEGMENT}`;
+  }
+
+  private request<T>(source: Observable<T>, signal?: AbortSignal): Promise<T> {
+    return this.awaitWithAbort(source, signal);
+  }
+
+  private requestEvents<T>(
+    source: Observable<HttpEvent<T>>,
+    signal: AbortSignal | undefined,
+    onProgress: (loaded: number, total: number) => void,
+  ): Promise<T> {
+    return this.awaitWithAbort(this.withProgress(source, onProgress), signal);
   }
 
   /**
@@ -105,37 +121,33 @@ export class BookUploadClient {
    * Unsubscribing on abort also drops the underlying XHR, so a cancelled
    * upload stops moving bytes immediately.
    */
-  private async request<T>(
-    source: Observable<T>,
+  private async awaitWithAbort<T>(
+    events: Observable<T>,
     signal?: AbortSignal,
-    onUploadProgress?: (loaded: number, total: number) => void,
   ): Promise<T> {
-    if (!signal) return firstValueFrom(source);
+    if (signal?.aborted) throw abortedError();
 
-    if (signal.aborted) throw abortedError();
     try {
-      const events = onUploadProgress
-        ? this.withProgress(source, onUploadProgress)
-        : source;
-      return await firstValueFrom(events.pipe(takeUntil(fromEvent(signal, 'abort'))));
+      return signal
+        ? await firstValueFrom(events.pipe(takeUntil(fromEvent(signal, 'abort'))))
+        : await firstValueFrom(events);
     } catch (error) {
-      if (signal.aborted) throw abortedError();
+      if (signal?.aborted) throw abortedError();
       throw mapBookUploadError(error);
     }
   }
 
   private withProgress<T>(
-    source: Observable<T>,
+    source: Observable<HttpEvent<T>>,
     report: (loaded: number, total: number) => void,
   ): Observable<T> {
     return new Observable<T>((subscriber) => {
       const subscription = source.subscribe({
         next: (event) => {
-          const typed = event as unknown as HttpEvent<unknown>;
-          if (typed.type === HttpEventType.UploadProgress) {
-            report(typed.loaded, typed.total ?? 0);
-          } else if (typed.type === HttpEventType.Response) {
-            subscriber.next(typed.body as T);
+          if (event.type === HttpEventType.UploadProgress) {
+            report(event.loaded, event.total ?? 0);
+          } else if (event.type === HttpEventType.Response) {
+            subscriber.next(event.body as T);
           }
         },
         error: (error) => subscriber.error(error),
@@ -153,9 +165,9 @@ export class BookUploadTransportError extends Error {
     readonly status: number,
     message: string,
     readonly retryAfterMs?: number,
-    readonly cause?: unknown,
+    cause?: unknown,
   ) {
-    super(message);
+    super(message, cause === undefined ? undefined : { cause });
     this.name = 'BookUploadTransportError';
   }
 

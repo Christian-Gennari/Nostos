@@ -55,21 +55,35 @@ export const BOOK_UPLOAD_LIMITS = {
   partBytes: 16 * 1024 * 1024,
 } as const;
 
-/** Stable failure codes: server codes plus the two this client can produce. */
+/** Path below `/api/books/{id}`; parity-checked against the C# route group. */
+export const BOOK_UPLOAD_BASE_SEGMENT = '/file/uploads';
+
+/** Codes the server emits. Parity-checked against `BookUploadException`. */
+export const BOOK_UPLOAD_SERVER_ERROR_CODES = [
+  'book_upload_not_found',
+  'book_upload_book_not_found',
+  'book_upload_invalid_request',
+  'book_upload_unsupported_type',
+  'book_upload_invalid_state',
+  'book_upload_in_progress',
+  'book_upload_part_conflict',
+  'book_upload_part_hash_mismatch',
+  'book_upload_part_range_invalid',
+  'book_upload_file_hash_mismatch',
+  'book_upload_expired',
+  'book_upload_storage_exhausted',
+] as const;
+
+export type BookUploadServerErrorCode = (typeof BOOK_UPLOAD_SERVER_ERROR_CODES)[number];
+
+/** Codes produced only inside the browser. */
+export const BOOK_UPLOAD_CLIENT_ERROR_CODES = [
+  'book_upload_publish_failed',
+  'request_aborted',
+  'network_error',
+  'unexpected_error',
+] as const;
+
 export type BookUploadErrorCode =
-  | 'book_upload_not_found'
-  | 'book_upload_book_not_found'
-  | 'book_upload_invalid_request'
-  | 'book_upload_unsupported_type'
-  | 'book_upload_invalid_state'
-  | 'book_upload_in_progress'
-  | 'book_upload_part_conflict'
-  | 'book_upload_part_hash_mismatch'
-  | 'book_upload_part_range_invalid'
-  | 'book_upload_file_hash_mismatch'
-  | 'book_upload_expired'
-  | 'book_upload_storage_exhausted'
-  | 'book_upload_publish_failed'
-  | 'request_aborted'
-  | 'network_error'
-  | 'unexpected_error';
+  | BookUploadServerErrorCode
+  | (typeof BOOK_UPLOAD_CLIENT_ERROR_CODES)[number];
