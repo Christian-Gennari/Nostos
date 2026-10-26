@@ -130,7 +130,7 @@ On SelfHosted, you connect your own AI provider in **Settings → AI connections
 
 ### Your library stays yours
 
-- **Portable:** export your whole library as a `.nostos` archive and import it into any Nostos, hosted or self-hosted.
+- **Portable:** export your whole library as a `.nostos` archive and import it into any Nostos, Nostos Cloud or self-hosted.
 - **Your notes in plain Markdown:** download your notes, highlights, passages and topics as a .zip of Markdown files, one per book and one per topic, with `[[Topic]]` links kept. Open it in Obsidian or any text editor.
 - **Use the files you already have (SelfHosted):** point Nostos at a folder of books on your server. It reads them in place and never changes them.
 - **Backups:** SelfHosted has local backup and restore. Nostos Cloud makes daily managed backups, which you can see in Settings.
