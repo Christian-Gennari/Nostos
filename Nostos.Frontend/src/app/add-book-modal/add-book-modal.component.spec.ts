@@ -450,7 +450,7 @@ describe('AddBookModal', () => {
     expect(el.querySelector('input[name="author"]')).toBeNull();
   });
 
-  it('asks before close, Escape, backdrop and Cancel, and Keep open keeps the run', () => {
+  it('asks before close, Escape, backdrop and Stop upload, and Keep open keeps the run', () => {
     const { stopSpy, closed } = startResumableUpload();
     const el = fixture.nativeElement as HTMLElement;
     const question = () => el.querySelector('.confirm-modal-card') as HTMLElement | null;
@@ -485,11 +485,16 @@ describe('AddBookModal', () => {
     keepOpen();
     expect(closed).not.toHaveBeenCalled();
 
-    const cancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
+    // The upload view replaces the footer: one Stop upload, no second Cancel.
+    const footerCancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
       (button) => button.textContent?.trim() === 'Cancel',
+    );
+    expect(footerCancel).toBeUndefined();
+    const stop = Array.from(el.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Stop upload',
     ) as HTMLButtonElement;
-    expect(cancel).toBeTruthy();
-    cancel.click();
+    expect(stop).toBeTruthy();
+    stop.click();
     fixture.detectChanges();
     expectQuestion();
     keepOpen();

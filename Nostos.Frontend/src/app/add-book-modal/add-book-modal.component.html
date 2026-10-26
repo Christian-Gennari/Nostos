@@ -1113,7 +1113,9 @@
             {{ sourcePrimaryAction().label }}
           </button>
         </app-dialog-actions>
-      } @else {
+      } @else if (!uploadViewOpen()) {
+        <!-- The upload view carries its own single Stop upload action, so the
+             footer steps aside instead of offering a second Cancel (#1275). -->
         <app-dialog-actions shellActions>
           @if (isEditMode()) {
             <button
