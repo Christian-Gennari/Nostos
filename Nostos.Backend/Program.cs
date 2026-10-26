@@ -21,6 +21,7 @@ using Nostos.Backend.Providers.LibriVox;
 using Nostos.Backend.Serialization;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
+using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
@@ -263,6 +264,16 @@ builder.Services.AddSingleton<IBookAssetStorage>(
     sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddSingleton<IBookTrackStorage>(
     sp => sp.GetRequiredService<ExternalMediaBookStorage>());
+
+// Resumable book-file uploads (#1266). The staging store lives beside the
+// migration transfer root but in its own namespace. The capability endpoint
+// advertises exactly this registration, and the route group is mapped only
+// because of it — a host without the store never offers the contract.
+builder.Services.AddSingleton<BookUploadWriteGate>();
+builder.Services.AddSingleton<IBookFileUploadStore, LocalBookFileUploadStore>();
+builder.Services.AddScoped<IBookUploadOwnerProvider, SelfHostedBookUploadOwnerProvider>();
+builder.Services.AddScoped<BookUploadService>();
+builder.Services.AddHostedService<BookUploadCleanupService>();
 builder.Services.AddNostosSelfHostedHealthChecks();
 
 builder.Services.AddSingleton<BackupSettingsProvider>();
@@ -475,7 +486,9 @@ app.UseStaticFiles(Nostos.Product.Http.NostosFrontendStaticFiles.CreateOptions()
 // ------------------------------
 
 // Map the public product API with the SelfHosted host's provider-neutral policy.
-app.MapNostosProductEndpoints(opdsOptions, NostosProductEndpointPolicies.None);
+app.MapNostosProductEndpoints(
+    opdsOptions,
+    NostosProductEndpointPolicies.None with { MapResumableBookUploadEndpoints = true });
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
 

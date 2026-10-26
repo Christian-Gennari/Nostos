@@ -393,6 +393,14 @@ public sealed class PortableCompletenessInventoryTests
                 "Host-local operational migration transfer receipts: accepted chunk offsets, lengths and hashes used to resume uploads. " +
                 "These are local operational transfer receipts, not user library content, and must never be serialized into portable archives."),
 
+            ["BookUploadSessionRecord"] = ExcludedEntity(
+                "Host-local operational book-file upload state (#1266): resumable session, owner key, staging reference and byte accounting. " +
+                "This is in-flight transfer state, not user library content, and must never be serialized into portable archives."),
+
+            ["BookUploadPartReceiptRecord"] = ExcludedEntity(
+                "Host-local operational book-file upload receipts (#1266): accepted part offsets, lengths and hashes used to resume an upload. " +
+                "These are in-flight transfer receipts, not user library content, and must never be serialized into portable archives."),
+
             ["MigrationExportArtifactRecord"] = ExcludedEntity(
                 "Host-local operational migration storage and retention metadata: generated export archive file references, retention deadlines and deletion timestamps. " +
                 "This is local operational storage/retention state, not user library content, and must never be serialized into portable archives."),

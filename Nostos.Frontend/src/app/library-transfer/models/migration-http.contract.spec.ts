@@ -16,6 +16,11 @@ import {
   SERVER_MIGRATION_ERROR_CODES,
 } from './migration-http.dtos';
 import {
+  BOOK_UPLOAD_BASE_SEGMENT,
+  BOOK_UPLOAD_LIMITS,
+  BOOK_UPLOAD_SERVER_ERROR_CODES,
+} from '../../core/dtos/book-upload.dtos';
+import {
   CHUNK_HASH_HEADER_NAME,
   MIGRATION_BASE_PATH,
 } from '../services/http-library-transfer-transport';
@@ -34,6 +39,9 @@ const backendSources = import.meta.glob(
     '../../../../../Nostos.Product/Services/Portability/Activation/MigrationActivationContracts.cs',
     '../../../../../Nostos.Product/Services/Portability/Activation/MigrationActivationHttpContracts.cs',
     '../../../../../Nostos.Backend/Middleware/LibraryMaintenanceMiddleware.cs',
+    '../../../../../Nostos.Product/Services/BookUpload/BookUploadContracts.cs',
+    '../../../../../Nostos.Product/Endpoints/BookUploadHttpContracts.cs',
+    '../../../../../Nostos.Product/Endpoints/BookUploadEndpoints.cs',
   ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
@@ -50,6 +58,13 @@ const CONTRACT_MODELS = backendSource('MigrationContracts.cs');
 const ACTIVATION_CONTRACTS = backendSource('MigrationActivationContracts.cs');
 const ACTIVATION_HTTP = backendSource('MigrationActivationHttpContracts.cs');
 const MIDDLEWARE = backendSource('LibraryMaintenanceMiddleware.cs');
+const BOOK_CONTRACTS = backendSource('BookUploadContracts.cs');
+const BOOK_HTTP_CONTRACTS = backendSource('BookUploadHttpContracts.cs');
+const BOOK_ENDPOINTS = backendSource('BookUploadEndpoints.cs');
+
+const BOOK_DTO_SOURCE =
+  Object.entries(appSources).find(([path]) => path.endsWith('/book-upload.dtos.ts'))?.[1] ?? '';
+if (!BOOK_DTO_SOURCE) throw new Error('book-upload.dtos.ts raw source was not found.');
 
 const TS_SOURCE = appSources['./migration-http.dtos.ts'];
 if (!TS_SOURCE) throw new Error('migration-http.dtos.ts raw source was not found.');
@@ -92,6 +107,19 @@ function interfaceProperties(name: string): string[] {
   const match = TS_SOURCE.match(new RegExp(`export interface ${name}\\s*\\{([\\s\\S]*?)\\n\\}`));
   if (!match) throw new Error(`TS DTO ${name} was not found.`);
   return [...match[1].matchAll(/^\s*(\w+)\??:/gm)].map((property) => property[1]);
+}
+
+/** Same reader as `interfaceProperties`, for a second TypeScript DTO file. */
+function interfacePropertiesIn(source: string, name: string): string[] {
+  const match = source.match(new RegExp(`export interface ${name}\\s*\\{([\\s\\S]*?)\\n\\}`));
+  if (!match) throw new Error(`TS DTO ${name} was not found.`);
+  return [...match[1].matchAll(/^\s*(\w+)\??:/gm)].map((property) => property[1]);
+}
+
+function extractTsUnionMembersIn(source: string, name: string): string[] {
+  const match = source.match(new RegExp(`export type ${name} =([\\s\\S]*?);`));
+  if (!match) throw new Error(`TS union ${name} was not found.`);
+  return [...match[1].matchAll(/'([A-Za-z]+)'/g)].map((member) => member[1]);
 }
 
 function extractEnumMembers(source: string, name: string): string[] {
@@ -275,5 +303,67 @@ describe('migration HTTP contract parity with the backend source', () => {
     expect(MIDDLEWARE).toContain('new MigrationErrorResponse');
     expect(MIDDLEWARE).toContain('migration_activation_busy');
     expect(MIDDLEWARE).toMatch(/RetryAfter\s*=\s*"5"/);
+  });
+});
+
+describe('resumable book upload contract parity with the backend source (#1266)', () => {
+  it('mirrors every wire record field', () => {
+    const pairs: Array<[source: string, record: string, ts: string]> = [
+      [BOOK_CONTRACTS, 'BookUploadCreateRequest', 'BookUploadCreateRequestDto'],
+      [BOOK_CONTRACTS, 'BookUploadStatus', 'BookUploadStatusDto'],
+      [BOOK_CONTRACTS, 'BookUploadPartResult', 'BookUploadPartResultDto'],
+    ];
+
+    for (const [source, record, ts] of pairs) {
+      const contractFields = recordParameters(source, record);
+      const clientFields = interfacePropertiesIn(BOOK_DTO_SOURCE, ts);
+
+      for (const field of contractFields) {
+        expect(clientFields, `${record}.${field} -> ${ts}`).toContain(camelCase(field));
+      }
+      for (const field of clientFields) {
+        expect(contractFields.map(camelCase), `${ts}.${field} -> ${record}`).toContain(field);
+      }
+    }
+  });
+
+  it('mirrors the session states', () => {
+    expect(
+      extractTsUnionMembersIn(BOOK_DTO_SOURCE, 'BookUploadState').sort(),
+    ).toEqual(extractEnumMembers(BOOK_CONTRACTS, 'BookUploadState').sort());
+  });
+
+  it('mirrors every stable server error code', () => {
+    const body = BOOK_CONTRACTS.match(
+      /public sealed class BookUploadException([\s\S]*?)\n\}/,
+    )?.[1];
+    expect(body, 'BookUploadException class not found').toBeTruthy();
+    const serverCodes = [
+      ...body!.matchAll(/public const string \w+ = "([a-z_]+)";/g),
+    ].map((match) => match[1]);
+
+    expect([...BOOK_UPLOAD_SERVER_ERROR_CODES].sort()).toEqual([...new Set(serverCodes)].sort());
+  });
+
+  it('mirrors the size limits', () => {
+    expect(BOOK_UPLOAD_LIMITS.maxBookBytes).toBe(
+      extractLimit(BOOK_CONTRACTS, 'MaxBookBytes'),
+    );
+    expect(BOOK_UPLOAD_LIMITS.partBytes).toBe(MIGRATION_LIMITS.defaultChunkBytes);
+    expect(BOOK_CONTRACTS).toContain(
+      'PartBytes = Services.Portability.MigrationContractLimits.DefaultChunkBytes',
+    );
+  });
+
+  it('mirrors the route group and the mandatory part headers', () => {
+    expect(BOOK_UPLOAD_BASE_SEGMENT).toBe('/file/uploads');
+    expect(BOOK_ENDPOINTS).toContain(
+      `"/{bookId:guid}${BOOK_UPLOAD_BASE_SEGMENT}"`,
+    );
+    expect(BOOK_ENDPOINTS).toContain('/parts/{partIndex:int}');
+    expect(BOOK_ENDPOINTS).toContain('/complete');
+    expect(BOOK_ENDPOINTS).toContain('/pause');
+    expect(BOOK_ENDPOINTS).toContain('MigrationChunkHeaders.ChunkHashHeaderName');
+    expect(BOOK_HTTP_CONTRACTS).toContain('BookUploadErrorResponse');
   });
 });

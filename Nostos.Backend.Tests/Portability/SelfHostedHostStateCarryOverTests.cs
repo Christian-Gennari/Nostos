@@ -84,6 +84,8 @@ public sealed class SelfHostedHostStateCarryOverTests
             nameof(Nostos.Backend.Data.Models.AlignmentAnchorModel),
             nameof(Nostos.Backend.Data.Models.ExternalMediaLinkModel),
             nameof(Nostos.Backend.Data.Models.WritingCitationModel),
+            nameof(Nostos.Backend.Data.Models.BookUploadSessionRecord),
+            nameof(Nostos.Backend.Data.Models.BookUploadPartReceiptRecord),
         ]);
     }
 

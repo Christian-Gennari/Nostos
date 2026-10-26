@@ -9,6 +9,10 @@ import { Book, LinkableBookDto } from '../core/dtos/book.dtos';
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
 import { BooksService } from '../core/services/books.service';
+import {
+  BookUploadService,
+  describeBookUploadFailure,
+} from '../core/services/book-upload.service';
 import { NotesService } from '../core/services/notes.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
@@ -20,6 +24,7 @@ import { planLimitMessage } from '../core/plan-limit-message';
 export class BookDetailStore {
   // Dependencies
   private booksService = inject(BooksService);
+  private bookUploads = inject(BookUploadService);
   private notesService = inject(NotesService);
   private collectionsService = inject(CollectionsService);
   private toast = inject(ToastService);
@@ -501,6 +506,21 @@ export class BookDetailStore {
     if (!b || this.isImporting() || this.uploadingFile()) return;
 
     this.uploadingFile.set(true);
+
+    // A resumable upload is owned by the root service: navigating away does
+    // not throw away the parts already received, and picking the same file
+    // again resumes it.
+    if (this.bookUploads.supportsResumable()) {
+      void this.bookUploads
+        .upload(b.id, file)
+        .then(() => this.loadBook(b.id, { background: true }))
+        .catch((error: unknown) =>
+          this.toast.error(describeBookUploadFailure(error)),
+        )
+        .finally(() => this.uploadingFile.set(false));
+      return;
+    }
+
     this.booksService.uploadFile(b.id, file).pipe(
       finalize(() => this.uploadingFile.set(false)),
     ).subscribe({

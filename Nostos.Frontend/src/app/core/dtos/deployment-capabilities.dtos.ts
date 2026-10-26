@@ -45,4 +45,10 @@ export interface DeploymentCapabilities {
    * `deploymentMode`.
    */
   supportsExternalMediaLibraries?: boolean;
+  /**
+   * Resumable, chunked book-file uploads (#1266). When true the host maps the
+   * part-upload contract and accepts a re-sent part after a dropped
+   * connection. Absent/false keeps the legacy whole-request upload.
+   */
+  supportsResumableBookUploads?: boolean;
 }

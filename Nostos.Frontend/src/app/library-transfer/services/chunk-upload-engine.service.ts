@@ -11,11 +11,7 @@
  * and wires it to signals; tests construct it directly against the mock.
  */
 
-import {
-  BrowserMigrationChunk,
-  MigrationSessionStatusDto,
-  chunkLength,
-} from '../models/migration-http.dtos';
+import { BrowserMigrationChunk, chunkLength } from '../models/migration-http.dtos';
 import {
   DEFAULT_CHUNK_MAX_ATTEMPTS,
   DEFAULT_UPLOAD_CONCURRENCY,
@@ -23,16 +19,55 @@ import {
   TransferCancelledError,
   TransferProgress,
 } from '../models/library-transfer.models';
-import {
-  LibraryTransferTransport,
-  MigrationTransportError,
-} from './library-transfer-transport';
+import { MigrationTransportError } from './library-transfer-transport';
 import { TransferRateEstimator } from './transfer-rate-estimator';
 
+/**
+ * The part of a server session this engine needs. A migration session status
+ * satisfies it as-is; a book upload supplies the same facts under its own
+ * contract, so the retry, backoff and progress code has one implementation.
+ */
+export interface ChunkUploadSession {
+  sessionId: string;
+  totalBytes: number;
+  chunkSize: number;
+  totalChunks: number;
+  receivedChunks: number[];
+}
+
+/**
+ * Narrow seam for hosts whose parts are not migration chunks (#1266 book
+ * uploads). When supplied, the engine addresses this transport instead of the
+ * migration one; retries, progress and durable accounting stay identical.
+ */
+export interface ChunkPartTransport {
+  uploadPart(
+    sessionId: string,
+    chunk: BrowserMigrationChunk,
+    onProgress: (loaded: number, total: number) => void,
+    signal: AbortSignal,
+  ): Promise<unknown>;
+}
+
+/** The migration call the engine makes when no part transport is supplied. */
+export interface ChunkPartUploader {
+  uploadChunk(
+    jobId: string,
+    sessionId: string,
+    request: BrowserMigrationChunk,
+    onProgress: (loaded: number, total: number) => void,
+    signal: AbortSignal,
+  ): Promise<unknown>;
+}
+
 export interface ChunkUploadRequest {
-  jobId: string;
-  session: MigrationSessionStatusDto;
+  /** Required for the migration path; absent for a book upload. */
+  jobId?: string;
+  session: ChunkUploadSession;
   file: Blob;
+  partTransport?: ChunkPartTransport;
+  /** Server code meaning "recompute and resend this part once". */
+  hashMismatchCode?: string;
   concurrency?: number;
   maxAttempts?: number;
   signal?: AbortSignal;
@@ -53,7 +88,7 @@ export class ChunkUploadEngine {
   private readonly now: () => number;
 
   constructor(
-    private readonly transport: LibraryTransferTransport,
+    private readonly transport: ChunkPartUploader | undefined,
     private readonly digest: FileDigest,
     options: ChunkUploadEngineOptions = {},
   ) {
@@ -89,7 +124,7 @@ export class ChunkUploadRun {
   private lastProgress: TransferProgress;
 
   constructor(
-    private readonly transport: LibraryTransferTransport,
+    private readonly transport: ChunkPartUploader | undefined,
     private readonly digest: FileDigest,
     private readonly random: () => number,
     now: () => number,
@@ -228,7 +263,7 @@ export class ChunkUploadRun {
           sha256,
           blob,
         };
-        await this.transport.uploadChunk(
+        await this.sendChunk(
           jobId,
           session.sessionId,
           chunk,
@@ -252,7 +287,9 @@ export class ChunkUploadRun {
         if (this.cancelled) throw new TransferCancelledError('Upload was cancelled.');
 
         const transportError = asTransportError(error);
-        if (transportError.code === 'migration_chunk_hash_mismatch' && !recomputedHash) {
+        const hashMismatch =
+          this.request.hashMismatchCode ?? 'migration_chunk_hash_mismatch';
+        if (transportError.code === hashMismatch && !recomputedHash) {
           recomputedHash = true;
           sha256 = await this.digest.sha256Chunk(blob);
           continue;
@@ -262,6 +299,23 @@ export class ChunkUploadRun {
         await this.sleep(this.backoffMs(attempt, transportError.retryAfterMs));
       }
     }
+  }
+
+  /** Migration chunks carry a job; book parts carry only their session. */
+  private sendChunk(
+    jobId: string | undefined,
+    sessionId: string,
+    chunk: BrowserMigrationChunk,
+    onProgress: (loaded: number, total: number) => void,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    if (this.request.partTransport) {
+      return this.request.partTransport.uploadPart(sessionId, chunk, onProgress, signal);
+    }
+    if (!this.transport || !jobId) {
+      throw new Error('A chunk upload needs either a job or a part transport.');
+    }
+    return this.transport.uploadChunk(jobId, sessionId, chunk, onProgress, signal);
   }
 
   private backoffMs(attempt: number, retryAfterMs?: number): number {
@@ -338,8 +392,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.floor(value)));
 }
 
-function asTransportError(error: unknown): MigrationTransportError {
+/** The fields the retry loop needs; book uploads carry their own code table. */
+interface EngineTransportError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+}
+
+function asTransportError(error: unknown): EngineTransportError {
   if (error instanceof MigrationTransportError) return error;
+  if (isRetryableFailure(error)) return error;
   if (error instanceof TransferCancelledError) {
     return new MigrationTransportError('request_aborted', 0, error.message);
   }
@@ -348,5 +411,16 @@ function asTransportError(error: unknown): MigrationTransportError {
     0,
     error instanceof Error ? error.message : 'Chunk upload failed.',
     { cause: error },
+  );
+}
+
+/** Structural so a feature transport need not import the migration error type. */
+function isRetryableFailure(error: unknown): error is EngineTransportError {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as Partial<EngineTransportError>;
+  return (
+    typeof candidate.code === 'string' &&
+    typeof candidate.message === 'string' &&
+    typeof candidate.retryable === 'boolean'
   );
 }

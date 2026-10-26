@@ -347,6 +347,126 @@ namespace Nostos.Backend.Migrations
                     b.UseTphMappingStrategy();
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookUploadPartReceiptRecord", b =>
+                {
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PartIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LengthBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("OffsetBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ReceivedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SessionId", "PartIndex");
+
+                    b.ToTable("BookUploadPartReceiptRecords", t =>
+                        {
+                            t.HasCheckConstraint("CK_BookUploadPartReceiptRecords_Bounds", "\"PartIndex\" >= 0 AND \"OffsetBytes\" >= 0 AND \"LengthBytes\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookUploadSessionRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActiveSessionKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ChunkSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ClientContentType")
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientFingerprint")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ReceivedBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TotalBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TotalChunks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActiveSessionKey")
+                        .IsUnique();
+
+                    b.HasIndex("BookId");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("OwnerKey", "BookId");
+
+                    b.ToTable("BookUploadSessionRecords", t =>
+                        {
+                            t.HasCheckConstraint("CK_BookUploadSessionRecords_Bounds", "\"TotalBytes\" > 0 AND \"ReceivedBytes\" >= 0 AND \"ReceivedBytes\" <= \"TotalBytes\" AND \"ChunkSize\" > 0 AND \"TotalChunks\" > 0");
+
+                            t.HasCheckConstraint("CK_BookUploadSessionRecords_State", "\"State\" >= 0 AND \"State\" <= 7");
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.CollectionModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1463,6 +1583,24 @@ namespace Nostos.Backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Work");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookUploadPartReceiptRecord", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.BookUploadSessionRecord", null)
+                        .WithMany()
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookUploadSessionRecord", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.BookModel", null)
+                        .WithMany()
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.CollectionModel", b =>

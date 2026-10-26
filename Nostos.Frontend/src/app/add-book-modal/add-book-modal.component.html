@@ -151,7 +151,7 @@
               </section>
 
               @if (uploadProgress() !== null) {
-                <div appNotice tone="info" class="upload-status" role="status">Uploading… {{ uploadProgress() }}%</div>
+                <div appNotice tone="info" class="upload-status" role="status">{{ uploadStatusText() }}</div>
               }
 
               @if (uploadError(); as err) {

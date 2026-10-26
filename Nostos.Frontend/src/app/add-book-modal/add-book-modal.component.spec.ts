@@ -3,6 +3,7 @@ import { of, Subject, throwError } from 'rxjs';
 
 import { AddBookModal } from './add-book-modal.component';
 import { Book, BookLookupError, BooksService } from '../core/services/books.service';
+import { BookUploadService } from '../core/services/book-upload.service';
 import { ToastService } from '../core/services/toast.service';
 
 const collections = [
@@ -353,6 +354,66 @@ describe('AddBookModal', () => {
     close.click();
     expect(closed).toHaveBeenCalledTimes(1);
     expect(upload.observed).toBe(true);
+  });
+
+  it('uses the resumable upload when the host advertises it', async () => {
+    const books = TestBed.inject(BooksService);
+    const create = vi.spyOn(books, 'createOrMatch').mockReturnValue(
+      of({ book: { id: 'new-book' } as unknown as Book, created: true }),
+    );
+    const legacy = vi.spyOn(books, 'uploadFile');
+    const uploads = TestBed.inject(BookUploadService);
+    vi.spyOn(uploads, 'supportsResumable').mockReturnValue(true);
+    const resumable = vi
+      .spyOn(uploads, 'upload')
+      .mockReturnValue(Promise.resolve({ state: 'Complete' } as never));
+
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'ebook';
+    const file = new File(['ebook'], 'magic-mountain.epub', {
+      type: 'application/epub+zip',
+    });
+    component.selectedFile.set(file);
+
+    component.submit();
+
+    await vi.waitFor(() => expect(resumable).toHaveBeenCalledTimes(1));
+    expect(resumable).toHaveBeenCalledWith(
+      'new-book',
+      file,
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
+    expect(legacy).not.toHaveBeenCalled();
+    // The row stays visible while parts arrive; only the legacy whole-request
+    // path needs UploadPending to hide an incomplete book.
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ fileUploadExpected: false }),
+    );
+  });
+
+  it('shows resumable failure copy and keeps the created row for a retry', async () => {
+    const books = TestBed.inject(BooksService);
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(
+      of({ book: { id: 'new-book' } as unknown as Book, created: true }),
+    );
+    const uploads = TestBed.inject(BookUploadService);
+    vi.spyOn(uploads, 'supportsResumable').mockReturnValue(true);
+    vi.spyOn(uploads, 'upload').mockReturnValue(
+      Promise.reject({ code: 'book_upload_expired', status: 410 }),
+    );
+
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'ebook';
+    component.selectedFile.set(
+      new File(['ebook'], 'magic-mountain.epub', { type: 'application/epub+zip' }),
+    );
+
+    component.submit();
+
+    await vi.waitFor(() => expect(component.uploadError()).toContain('expired'));
+    expect(component.uploadError()).toContain('same file to resume');
+    expect(component.hasPendingUpload()).toBe(true);
+    expect(component.isSubmitting()).toBe(false);
   });
 
   it('keeps the add action locked after create returns while the file upload is running', () => {

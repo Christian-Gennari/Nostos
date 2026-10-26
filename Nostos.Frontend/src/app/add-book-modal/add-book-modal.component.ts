@@ -42,6 +42,11 @@ import { ProgressComponent } from '../ui/progress/progress.component';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
 import { planLimitMessage } from '../core/plan-limit-message';
+import {
+  BookUploadService,
+  BookUploadPhase,
+  describeBookUploadFailure,
+} from '../core/services/book-upload.service';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -99,6 +104,8 @@ export class AddBookModal {
   private booksService = inject(BooksService);
   private providers = inject(ProvidersService);
   private toast = inject(ToastService);
+  /** Resumable uploads outlive this modal, so they are owned by a root service. */
+  private bookUploads = inject(BookUploadService);
   /** The import feed: opened on demand once an import has actually been queued. */
   private imports = inject(ImportService);
 
@@ -222,6 +229,19 @@ export class AddBookModal {
     return size ? `${file.name} · ${size}` : file.name;
   });
   uploadProgress = signal<number | null>(null);
+  /** Which visible stage the resumable path is in; null on the legacy path. */
+  uploadPhase = signal<BookUploadPhase | null>(null);
+  readonly uploadStatusText = computed(() => {
+    const percent = this.uploadProgress() ?? 0;
+    switch (this.uploadPhase()) {
+      case 'preparing':
+        return `Preparing file… ${percent}%`;
+      case 'finishing':
+        return 'Finishing upload…';
+      default:
+        return `Uploading… ${percent}%`;
+    }
+  });
   uploadStartTime: number | null = null;
 
   // Drag-over highlight for the two dropzones. The native file input stretched
@@ -413,6 +433,7 @@ export class AddBookModal {
     };
     this.clearChosenFiles();
     this.uploadProgress.set(null);
+    this.uploadPhase.set(null);
     this.uploadError.set(null);
     this.pendingUploadBook.set(null);
     this.existingWithFile.set(null);
@@ -618,12 +639,14 @@ export class AddBookModal {
     } else {
       this.existingWithFile.set(null);
       const wantsUpload = this.form.type !== 'physical' && this.selectedFile() !== null;
+      const resumable = this.bookUploads.supportsResumable();
       this.booksService.createOrMatch({
         ...payload,
-        // A digital row created for a chosen local file is not a completed
-        // library item until /file succeeds. Metadata-only digital books omit
-        // this flag and remain legitimate Ready rows without a file.
-        fileUploadExpected: wantsUpload,
+        // The legacy one-request path marks an incomplete row so the library
+        // does not present it before /file succeeds. The resumable contract
+        // keeps the book visible while its parts arrive: the upload session,
+        // not the row's status, says a transfer is in progress.
+        fileUploadExpected: wantsUpload && !resumable,
       }).subscribe({
         next: ({ book, created }) => {
           this.bookCreated.emit(book.id);
@@ -698,6 +721,12 @@ export class AddBookModal {
     this.uploadError.set(null);
     this.isSubmitting.set(true);
     this.uploadStartTime = performance.now();
+
+    if (this.bookUploads.supportsResumable()) {
+      this.uploadResumable(createdBook, file);
+      return;
+    }
+
     this.booksService.uploadFile(createdBook.id, file).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.UploadProgress) {
@@ -705,24 +734,56 @@ export class AddBookModal {
           this.uploadProgress.set(percent);
         }
         if (event.type === HttpEventType.Response) {
-          const elapsed = performance.now() - (this.uploadStartTime ?? 0);
-          this.pendingUploadBook.set(null);
-          this.uploadError.set(null);
-          setTimeout(
-            () => {
-              this.uploadProgress.set(null);
-              this.uploadCoverIfNeeded(createdBook.id);
-            },
-            Math.max(0, 1200 - elapsed),
-          );
+          this.onUploadComplete(createdBook);
         }
       },
       error: (error: unknown) => {
         this.uploadProgress.set(null);
+        this.uploadPhase.set(null);
         this.isSubmitting.set(false);
         this.uploadError.set(this.describeUploadFailure(error));
       },
     });
+  }
+
+  /**
+   * Chunked upload owned by the root service. Closing this modal does not
+   * cancel it (#1264); the same file picked again later resumes from the
+   * server's receipts.
+   */
+  private uploadResumable(createdBook: BookModel, file: File): void {
+    this.uploadPhase.set('preparing');
+    this.uploadProgress.set(0);
+    void this.bookUploads
+      .upload(createdBook.id, file, {
+        onProgress: (progress) => {
+          this.uploadPhase.set(progress.phase);
+          this.uploadProgress.set(progress.percent);
+        },
+      })
+      .then(() => this.onUploadComplete(createdBook))
+      .catch((error: unknown) => {
+        this.uploadProgress.set(null);
+        this.uploadPhase.set(null);
+        this.isSubmitting.set(false);
+        this.uploadError.set(
+          describeBookUploadFailure(error, { bookSaved: true }),
+        );
+      });
+  }
+
+  private onUploadComplete(createdBook: BookModel): void {
+    const elapsed = performance.now() - (this.uploadStartTime ?? 0);
+    this.pendingUploadBook.set(null);
+    this.uploadError.set(null);
+    setTimeout(
+      () => {
+        this.uploadProgress.set(null);
+        this.uploadPhase.set(null);
+        this.uploadCoverIfNeeded(createdBook.id);
+      },
+      Math.max(0, 1200 - elapsed),
+    );
   }
 
   retryUpload(): void {

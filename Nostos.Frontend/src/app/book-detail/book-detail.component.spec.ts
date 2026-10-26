@@ -7,6 +7,7 @@ import { of, Subject } from 'rxjs';
 import { BookDetail } from './book-detail.component';
 import { Book } from '../core/dtos/book.dtos';
 import { ToastService } from '../core/services/toast.service';
+import { BookUploadService } from '../core/services/book-upload.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { bookNotes, brainReads, cardNote, notesPage } from './book-detail.testing';
@@ -248,6 +249,26 @@ describe('BookDetail reset progress', () => {
       .flush('timeout', { status: 504, statusText: 'Gateway Timeout' });
 
     expect(errorToast).toHaveBeenCalledWith('The upload timed out. Try again.');
+  });
+
+  it('uses the resumable contract when the host advertises it', async () => {
+    await setup(readableBook());
+    const uploads = TestBed.inject(BookUploadService);
+    vi.spyOn(uploads, 'supportsResumable').mockReturnValue(true);
+    const done = vi.fn().mockResolvedValue({ state: 'Complete' });
+    const upload = vi.spyOn(uploads, 'upload').mockImplementation(done);
+    const file = new File(['replacement'], 'meditations.epub', {
+      type: 'application/epub+zip',
+    });
+
+    component.store.uploadFile(file);
+
+    expect(upload).toHaveBeenCalledWith('b1', file);
+    httpMock.expectNone('/api/books/b1/file');
+    await vi.waitFor(() => expect(done).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(httpMock.match('/api/books/b1')).toHaveLength(1));
+    httpMock.match('/api/books/b1').forEach((request) => request.flush(readableBook()));
+    await vi.waitFor(() => expect(component.store.uploadingFile()).toBe(false));
   });
 
   it('does not offer file upload for a physical metadata-only book', async () => {

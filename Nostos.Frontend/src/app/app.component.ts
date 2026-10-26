@@ -20,6 +20,7 @@ import { PassageViewerComponent } from './ui/passage-viewer/passage-viewer.compo
 import { PassageViewerService } from './ui/passage-viewer/passage-viewer.service';
 import { SwUpdateService } from './core/services/sw-update.service';
 import { ThemeService } from './core/services/theme.service';
+import { DeploymentCapabilitiesService } from './core/services/deployment-capabilities.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
 import { CloudEntryComponent } from './cloud-entry/cloud-entry.component';
 import { HostedBrowserIntegrationService } from './core/services/hosted-browser-integration.service';
@@ -87,6 +88,10 @@ export class App {
     // Likewise Cmd/Ctrl+J before the deferred Ask Nostos shell has loaded.
     this.assistantLauncher.start();
     inject(RecentItemsService).watch(this.router);
+    // Warm the runtime capability contract before the first upload click, so
+    // Add book can choose the resumable path synchronously. A failed read
+    // leaves the legacy whole-request upload in place.
+    inject(DeploymentCapabilitiesService).get().subscribe({ error: () => {} });
     void this.cloudEntry.initialize();
 
     effect(() => {
