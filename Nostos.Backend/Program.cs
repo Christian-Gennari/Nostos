@@ -272,7 +272,6 @@ builder.Services.AddSingleton<IBookTrackStorage>(
 builder.Services.AddSingleton<BookUploadWriteGate>();
 builder.Services.AddSingleton<IBookFileUploadStore, LocalBookFileUploadStore>();
 builder.Services.AddScoped<IBookUploadOwnerProvider, SelfHostedBookUploadOwnerProvider>();
-builder.Services.AddScoped<BookFileCommit>();
 builder.Services.AddScoped<BookUploadService>();
 builder.Services.AddHostedService<BookUploadCleanupService>();
 builder.Services.AddNostosSelfHostedHealthChecks();

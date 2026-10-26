@@ -168,6 +168,9 @@ public static class NostosProductComposition
         services.TryAddScoped<IBookTextIngestionScheduler, NoOpBookTextIngestionScheduler>();
         services.TryAddScoped<IBookTextLifecycle, BookTextLifecycle>();
         services.AddScoped<BookTextIngestionEngine>();
+        // The legacy single-POST upload commits through this on every host,
+        // Cloud included, so it is registered here rather than per host (#1266).
+        services.TryAddScoped<Nostos.Backend.Services.BookUpload.BookFileCommit>();
         // Embeddings are optional: with no host-supplied provider or vector
         // store these fallbacks keep the embedding pass a no-op.
         services.TryAddSingleton<IEmbeddingProvider, NoOpEmbeddingProvider>();

@@ -17,9 +17,9 @@ namespace Nostos.Backend.Services.BookUpload;
 public sealed class BookFileCommit(
     IBookRepository repo,
     IBookAssetStorage storage,
-    IBookTrackStorage? trackStorage,
     MediaMetadataService metadataService,
-    IBookTextIngestionScheduler textScheduler)
+    IBookTextIngestionScheduler textScheduler,
+    IBookTrackStorage? trackStorage = null)
 {
     /// <summary>Legacy path: enrich from one read of the request stream, then save a fresh read.</summary>
     public async Task CommitStreamAsync(
