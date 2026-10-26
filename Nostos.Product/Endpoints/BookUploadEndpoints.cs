@@ -151,9 +151,17 @@ public static class BookUploadEndpoints
                 {
                     return BookUploadHttpErrors.PartTooLarge();
                 }
-                catch (OperationCanceledException)
+                catch (BadHttpRequestException exception)
                 {
-                    LogInterrupted(logger, bookId, partIndex, counting, request);
+                    // Kestrel reports a client that vanished mid-body as a bad
+                    // request rather than an IO failure. It is still exactly the
+                    // interruption this warning exists to make diagnosable.
+                    LogInterrupted(logger, bookId, partIndex, counting, request, exception);
+                    throw;
+                }
+                catch (OperationCanceledException exception)
+                {
+                    LogInterrupted(logger, bookId, partIndex, counting, request, exception);
                     throw;
                 }
                 catch (IOException exception)
@@ -165,6 +173,14 @@ public static class BookUploadEndpoints
                 }
                 catch (BookUploadException exception)
                 {
+                    // A short body can surface as a range failure instead of
+                    // an IO error; the received-byte count still tells a
+                    // truncated part from a genuinely malformed request.
+                    if (request.ContentLength is { } declared
+                        && counting.BytesRead < declared)
+                    {
+                        LogInterrupted(logger, bookId, partIndex, counting, request, exception);
+                    }
                     return BookUploadHttpErrors.From(exception);
                 }
             });

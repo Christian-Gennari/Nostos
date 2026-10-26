@@ -358,7 +358,7 @@ describe('AddBookModal', () => {
 
   it('uses the resumable upload when the host advertises it', async () => {
     const books = TestBed.inject(BooksService);
-    vi.spyOn(books, 'createOrMatch').mockReturnValue(
+    const create = vi.spyOn(books, 'createOrMatch').mockReturnValue(
       of({ book: { id: 'new-book' } as unknown as Book, created: true }),
     );
     const legacy = vi.spyOn(books, 'uploadFile');
@@ -384,6 +384,11 @@ describe('AddBookModal', () => {
       expect.objectContaining({ onProgress: expect.any(Function) }),
     );
     expect(legacy).not.toHaveBeenCalled();
+    // The row stays visible while parts arrive; only the legacy whole-request
+    // path needs UploadPending to hide an incomplete book.
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ fileUploadExpected: false }),
+    );
   });
 
   it('shows resumable failure copy and keeps the created row for a retry', async () => {

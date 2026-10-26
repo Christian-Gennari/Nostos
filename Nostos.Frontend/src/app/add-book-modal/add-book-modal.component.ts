@@ -639,12 +639,14 @@ export class AddBookModal {
     } else {
       this.existingWithFile.set(null);
       const wantsUpload = this.form.type !== 'physical' && this.selectedFile() !== null;
+      const resumable = this.bookUploads.supportsResumable();
       this.booksService.createOrMatch({
         ...payload,
-        // A digital row created for a chosen local file is not a completed
-        // library item until /file succeeds. Metadata-only digital books omit
-        // this flag and remain legitimate Ready rows without a file.
-        fileUploadExpected: wantsUpload,
+        // The legacy one-request path marks an incomplete row so the library
+        // does not present it before /file succeeds. The resumable contract
+        // keeps the book visible while its parts arrive: the upload session,
+        // not the row's status, says a transfer is in progress.
+        fileUploadExpected: wantsUpload && !resumable,
       }).subscribe({
         next: ({ book, created }) => {
           this.bookCreated.emit(book.id);

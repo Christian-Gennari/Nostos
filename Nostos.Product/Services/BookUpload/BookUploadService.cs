@@ -168,6 +168,13 @@ public sealed class BookUploadService(
         try
         {
             using var lease = await writeGate.EnterAsync(sessionId, ct);
+
+            // The session row was loaded before this request waited for the
+            // gate. Another part may have committed its receipt and bumped the
+            // optimistic-concurrency version in the meantime; keeping that
+            // stale instance would make two legitimate parts collide (409)
+            // even though the gate serialized them.
+            db.ChangeTracker.Clear();
             session = await FindAsync(bookId, sessionId, ct);
             EnsureNotExpired(session);
             if (session.StateValue is not (BookUploadState.Created

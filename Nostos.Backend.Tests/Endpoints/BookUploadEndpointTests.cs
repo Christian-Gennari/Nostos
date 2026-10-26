@@ -76,6 +76,40 @@ public sealed class BookUploadEndpointTests
     }
 
     [Fact]
+    public async Task Concurrent_parts_each_get_a_receipt()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+        var book = await CreateBookAsync(client);
+
+        // Two requests that both read the session before either receipt is
+        // committed. The write gate must serialize them and the second must
+        // re-read the bumped version rather than fail optimistic concurrency.
+        var total = PartBytes + 4099;
+        var bytes = new byte[total];
+        new Random(1267).NextBytes(bytes);
+        var created = await CreateSessionAsync(
+            client, book.Id, bytes.Length, "concurrent.txt", Sha256Hex(bytes));
+        var session = await ReadStatusAsync(created);
+
+        var responses = await Task.WhenAll(
+            PutPartAsync(client, book.Id, session.SessionId, 0, bytes),
+            PutPartAsync(client, book.Id, session.SessionId, 1, bytes));
+        try
+        {
+            responses.Should().OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
+
+            var current = await client.GetFromJsonAsync<UploadStatusDto>(
+                $"/api/books/{book.Id}/file/uploads");
+            current!.ReceivedParts.Should().Equal(0, 1);
+        }
+        finally
+        {
+            foreach (var response in responses) response.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task Repeating_a_received_part_is_idempotent()
     {
         using var factory = new LibraryEndpointFactory();
