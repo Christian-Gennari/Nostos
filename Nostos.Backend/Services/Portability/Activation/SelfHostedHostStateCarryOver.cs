@@ -48,6 +48,14 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Clear,
             "Import undo batches describe notes of the replaced library generation; a whole-library replacement must not leave stale batches that claim ownership of the new generation."),
         new(
+            typeof(BookUploadSessionRecord),
+            HostStateCarryOverKind.Clear,
+            "In-flight book-file uploads (#1266) target books of the replaced library generation; a matching book GUID is not the same book after a whole-library replacement, so sessions are cleared and their staging is swept as orphaned."),
+        new(
+            typeof(BookUploadPartReceiptRecord),
+            HostStateCarryOverKind.Clear,
+            "Part receipts belong to the book-upload sessions above and are cleared with them."),
+        new(
             typeof(NoteImportBatchNote),
             HostStateCarryOverKind.Clear,
             "Undo batch-to-note links carry the old generation's note identity. A matching GUID is not provenance into the imported library, so all links are cleared with their batches."),
