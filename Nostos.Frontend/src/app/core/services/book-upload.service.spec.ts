@@ -10,6 +10,7 @@ import { BookUploadStatusDto } from '../dtos/book-upload.dtos';
 import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
 import { FileDigestService } from '../../library-transfer/services/file-digest.service';
+import { TransferCancelledError } from '../../library-transfer/models/library-transfer.models';
 import {
   BookUploadService,
   describeBookUploadFailure,
@@ -122,6 +123,40 @@ describe('BookUploadService', () => {
     expect(phases).toContain('preparing');
     expect(phases).toContain('uploading');
     expect(phases).toContain('finishing');
+  });
+
+  it('stops a run, aborts its in-flight parts and pauses the session', async () => {
+    const service = TestBed.inject(BookUploadService);
+    const file = new File(['abcdefghij'], 'book.txt', { type: 'text/plain' });
+
+    const upload = service.upload(BOOK_ID, file);
+    // The rejection is asserted below; attach now so it is never unhandled.
+    const settled = upload.catch((error: unknown) => error);
+
+    const create = await waitForRequests(
+      http,
+      (request) => request.method === 'POST' && request.url.endsWith('/file/uploads'),
+    );
+    create[0].flush(status());
+
+    // Two parts are on the wire when the stop lands.
+    await waitForRequests(http, partPredicate, 2);
+
+    const stopped = service.stop(BOOK_ID);
+
+    const pause = await waitForRequests(
+      http,
+      (request) =>
+        request.method === 'POST' &&
+        request.url.endsWith(`/${SESSION_ID}/pause`),
+    );
+    pause[0].flush(status({ state: 'Paused' }));
+
+    await expect(settled).resolves.toBeInstanceOf(TransferCancelledError);
+    await expect(stopped).resolves.toBeUndefined();
+
+    // The run is gone: a later stop is a no-op, not a second pause.
+    await expect(service.stop(BOOK_ID)).resolves.toBeUndefined();
   });
 
   it('completes a session whose every part is already receipted', async () => {
