@@ -7,7 +7,7 @@
     [maxHeight]="'90dvh'"
     [layer]="100"
     [ariaLabel]="isEditMode() ? 'Edit book' : sourceMode() ? 'Find a book' : seededFromSource() ? 'Review book' : 'Add a book'"
-    (closed)="closeModal.emit()"
+    (closed)="requestClose()"
   >
       <header class="modal-header" shellHeader>
         <div>
@@ -38,16 +38,93 @@
 
       <form id="add-book-form" (ngSubmit)="submit()" #bookForm="ngForm" class="modal-form">
         <div class="modal-body">
+          <!-- Once the file moves, the form is replaced by the one thing that
+               matters: what is uploading, how far it has got, and the one way
+               out. Reuses the shell, progress bar and button primitives; no
+               second card or hand-built bar (#1275). -->
+          @if (uploadViewOpen()) {
+            <section
+              class="upload-view"
+              data-testid="add-book-upload-view"
+              aria-labelledby="upload-view-heading"
+            >
+              <div class="upload-view__head">
+                <span appIconTile [size]="40" aria-hidden="true">
+                  <nostos-icon name="upload-simple" [size]="22"></nostos-icon>
+                </span>
+                <div class="upload-view__copy">
+                  <span class="review-eyebrow">
+                    {{ uploadError() ? 'Upload interrupted' : 'Adding your book' }}
+                  </span>
+                  <h3 id="upload-view-heading">{{ uploadBookTitle() }}</h3>
+                  @if (uploadFileName(); as fileName) {
+                    <p data-testid="add-book-upload-file">{{ fileName }}</p>
+                  }
+                </div>
+              </div>
+
+              @if (uploadError(); as err) {
+                <div appNotice tone="danger" class="upload-failure" role="alert">
+                  <span class="upload-failure__message">
+                    <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
+                    {{ err }}
+                  </span>
+                </div>
+                <div class="upload-view__actions">
+                  <button
+                    appButton
+                    type="button"
+                    variant="primary"
+                    data-testid="add-book-upload-retry"
+                    [disabled]="isSubmitting()"
+                    (click)="retryUpload()"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    appButton
+                    type="button"
+                    variant="secondary"
+                    data-testid="add-book-upload-stop"
+                    [disabled]="uploadStopping()"
+                    (click)="requestStopUpload()"
+                  >
+                    Stop upload
+                  </button>
+                </div>
+              } @else {
+                <div class="upload-view__progress">
+                  <nostos-progress
+                    size="md"
+                    [value]="uploadProgress() ?? 0"
+                    [label]="uploadStatusText()"
+                  />
+                  <p class="upload-view__status" role="status">{{ uploadStatusText() }}</p>
+                </div>
+                <button
+                  appButton
+                  type="button"
+                  variant="secondary"
+                  data-testid="add-book-upload-stop"
+                  [disabled]="uploadStopping()"
+                  (click)="requestStopUpload()"
+                >
+                  Stop upload
+                </button>
+              }
+            </section>
+          }
+
           <!-- The import's state belongs to the whole dialog, not to the tab the
                user happened to start it from: the form stays editable while a
                download runs, and a failure has to be visible from anywhere. -->
-          @if (sourceImportError(); as err) {
+          @if (!uploadViewOpen() && sourceImportError(); as err) {
             <p class="source-error">
               <nostos-icon name="warning-circle" [size]="14"></nostos-icon> {{ err }}
             </p>
           }
 
-          @if (runningAcquisition(); as job) {
+          @if (!uploadViewOpen() && runningAcquisition(); as job) {
             <div class="source-progress" role="status" aria-live="polite">
               <div class="source-progress-head">
                 <span>{{ stageLabel(job) }}</span>
@@ -61,7 +138,7 @@
                 Cancel import
               </button>
             </div>
-          } @else if (acquisition(); as job) {
+          } @else if (!uploadViewOpen() && acquisition(); as job) {
             @if (job.state === 'failed') {
               <p class="source-error">
                 <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
@@ -75,7 +152,7 @@
 
           <!-- Acquisition-first add / direct edit. The full bibliographic record
                is one shallow disclosure away, never the default task. -->
-          @if (!sourceMode()) {
+          @if (!uploadViewOpen() && !sourceMode()) {
           <div class="review-flow">
             @if (awaitingLocalFile()) {
               <section class="acquisition-start" aria-labelledby="local-upload-heading">
@@ -1011,9 +1088,9 @@
         </div>
       </form>
 
-      @if (sourceMode()) {
+      @if (!uploadViewOpen() && sourceMode()) {
         <app-dialog-actions shellActions>
-          <button appButton type="button" variant="secondary" (click)="closeModal.emit()">
+          <button appButton type="button" variant="secondary" (click)="requestClose()">
             Cancel
           </button>
           <button appButton type="button" variant="secondary" (click)="showManualMode()">
@@ -1050,10 +1127,10 @@
               <span>Delete book</span>
             </button>
           }
-          <button appButton type="button" variant="secondary" (click)="closeModal.emit()">
+          <button appButton type="button" variant="secondary" (click)="requestClose()">
             Cancel
           </button>
-          @if (!awaitingLocalFile()) {
+          @if (!uploadViewOpen() && !awaitingLocalFile()) {
             <button
               appButton
               type="submit"
@@ -1081,5 +1158,21 @@
           }
         </app-dialog-actions>
       }
-  </app-modal-shell>
+    </app-modal-shell>
+
+  <!-- Closing during an upload is a real choice, not a dismissal (#1275).
+       Neutral tone: the book and the received parts are kept, and the file can
+       resume from the book's page within this session. -->
+  <app-confirm-modal
+    [isOpen]="confirmStopOpen()"
+    heading="Stop the upload?"
+    description="Your book is saved. You can resume this file from the book's page for the rest of this session."
+    confirmLabel="Stop upload"
+    cancelLabel="Keep open"
+    busyLabel="Stopping…"
+    tone="neutral"
+    [busy]="uploadStopping()"
+    (confirm)="stopUpload()"
+    (cancel)="cancelStopUpload()"
+  ></app-confirm-modal>
 }

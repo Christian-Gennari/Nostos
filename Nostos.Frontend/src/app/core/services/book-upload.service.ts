@@ -29,12 +29,22 @@ export interface BookUploadProgress {
   percent: number;
   /** Bytes the server has durably receipted (0 while hashing). */
   uploadedBytes: number;
+  /** Bytes moved including bodies still in flight; what `percent` tracks. */
+  movedBytes: number;
   totalBytes: number;
 }
 
 export interface BookUploadOptions {
   signal?: AbortSignal;
   onProgress?: (progress: BookUploadProgress) => void;
+}
+
+/** One in-flight run, kept so a caller can stop it without owning the File. */
+interface BookUploadRun {
+  controller: AbortController;
+  promise: Promise<BookUploadStatusDto>;
+  /** The pause request scheduled by a cancellation or dropped connection. */
+  getPause(): Promise<void>;
 }
 
 /**
@@ -56,7 +66,7 @@ export class BookUploadService {
   private readonly digest = inject(FileDigestService);
   private readonly capabilities = inject(DeploymentCapabilitiesService);
 
-  private readonly runs = new Map<string, Promise<BookUploadStatusDto>>();
+  private readonly runs = new Map<string, BookUploadRun>();
 
   /**
    * True only when the host advertised the resumable contract and bootstrap
@@ -79,14 +89,57 @@ export class BookUploadService {
     options: BookUploadOptions = {},
   ): Promise<BookUploadStatusDto> {
     const active = this.runs.get(bookId);
-    if (active) return active;
+    if (active) return active.promise;
 
-    let run: Promise<BookUploadStatusDto>;
-    run = this.start(bookId, file, options).finally(() => {
-      if (this.runs.get(bookId) === run) this.runs.delete(bookId);
+    const controller = new AbortController();
+    const external = options.signal;
+    const forwardAbort = () => controller.abort();
+    if (external) {
+      if (external.aborted) controller.abort();
+      else external.addEventListener('abort', forwardAbort, { once: true });
+    }
+
+    // The run owns its own controller so a surface that did not start it (or no
+    // longer holds its signal) can still stop it. A caller-owned signal is
+    // forwarded rather than replaced, so existing callers keep that behaviour.
+    const pauseState: { current: Promise<void> } = { current: Promise.resolve() };
+    const record: BookUploadRun = {
+      controller,
+      getPause: () => pauseState.current,
+      promise: this.start(
+        bookId,
+        file,
+        { ...options, signal: controller.signal },
+        (pause) => {
+          pauseState.current = pause;
+        },
+      ),
+    };
+    record.promise = record.promise.finally(() => {
+      external?.removeEventListener('abort', forwardAbort);
+      if (this.runs.get(bookId) === record) this.runs.delete(bookId);
     });
-    this.runs.set(bookId, run);
-    return run;
+    this.runs.set(bookId, record);
+    return record.promise;
+  }
+
+  /**
+   * Stops a run the caller can no longer see (#1275). In-flight parts are
+   * aborted by the engine, the session is paused so the same file resumes, and
+   * the promise resolves only once that pause attempt has finished. Safe to
+   * call for a book with no active run.
+   */
+  async stop(bookId: string): Promise<void> {
+    const run = this.runs.get(bookId);
+    if (!run) return;
+
+    run.controller.abort();
+    try {
+      await run.promise;
+    } catch {
+      // Stopping is the expected outcome; the caller already chose to end it.
+    }
+    await run.getPause();
   }
 
   /** The server's current unfinished session, used by resume affordances. */
@@ -98,13 +151,20 @@ export class BookUploadService {
     bookId: string,
     file: File,
     options: BookUploadOptions,
+    onPauseScheduled: (pause: Promise<void>) => void,
   ): Promise<BookUploadStatusDto> {
     this.assertAcceptable(file);
     const signal = options.signal;
     if (signal?.aborted) throw abortedError();
 
     const report = options.onProgress ?? (() => {});
-    report({ phase: 'preparing', percent: 0, uploadedBytes: 0, totalBytes: file.size });
+    report({
+      phase: 'preparing',
+      percent: 0,
+      uploadedBytes: 0,
+      movedBytes: 0,
+      totalBytes: file.size,
+    });
 
     // Whole-file SHA-256 is streamed by the worker-backed digest service;
     // this call never materializes the file as one ArrayBuffer.
@@ -115,7 +175,13 @@ export class BookUploadService {
         const percent = totalBytes > 0 ? Math.round((bytesRead / totalBytes) * 100) : 0;
         if (percent === lastHashedPercent) return;
         lastHashedPercent = percent;
-        report({ phase: 'preparing', percent, uploadedBytes: 0, totalBytes });
+        report({
+          phase: 'preparing',
+          percent,
+          uploadedBytes: 0,
+          movedBytes: bytesRead,
+          totalBytes,
+        });
       },
     });
 
@@ -137,9 +203,18 @@ export class BookUploadService {
         phase: 'finishing',
         percent: 100,
         uploadedBytes: status.totalBytes,
+        movedBytes: status.totalBytes,
         totalBytes: status.totalBytes,
       });
       return status;
+    }
+
+    // A stop can land while the create request is in flight, before this side
+    // has a session id. Now it does: pause it so the server does not keep a
+    // session that looks busy to the next attempt.
+    if (signal?.aborted) {
+      onPauseScheduled(this.pauseInBackground(bookId, status.sessionId));
+      throw abortedError();
     }
 
     const session: ChunkUploadSession = {
@@ -183,6 +258,7 @@ export class BookUploadService {
               ? Math.min(99, Math.round((moved / progress.totalBytes) * 100))
               : 0,
           uploadedBytes: progress.uploadedBytes,
+          movedBytes: moved,
           totalBytes: progress.totalBytes,
         });
       },
@@ -191,7 +267,7 @@ export class BookUploadService {
     try {
       const outcome = await run.done;
       if (outcome.kind === 'cancelled') {
-        void this.pauseInBackground(bookId, session.sessionId);
+        onPauseScheduled(this.pauseInBackground(bookId, session.sessionId));
         throw new TransferCancelledError('The upload was cancelled.');
       }
     } catch (error) {
@@ -201,7 +277,7 @@ export class BookUploadService {
       // session resumable before the page loses track of it.
       const failure = error as { retryable?: boolean; status?: number } | null;
       if (failure?.retryable || failure?.status === 0) {
-        void this.pauseInBackground(bookId, session.sessionId);
+        onPauseScheduled(this.pauseInBackground(bookId, session.sessionId));
       }
       throw error;
     }
@@ -210,6 +286,7 @@ export class BookUploadService {
       phase: 'finishing',
       percent: 100,
       uploadedBytes: status.totalBytes,
+      movedBytes: status.totalBytes,
       totalBytes: status.totalBytes,
     });
 

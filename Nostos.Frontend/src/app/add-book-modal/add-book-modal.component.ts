@@ -41,6 +41,7 @@ import { RadioDirective } from '../ui/check/check.directive';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
+import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { planLimitMessage } from '../core/plan-limit-message';
 import {
   BookUploadService,
@@ -83,6 +84,7 @@ export interface AddBookPrefill {
     ButtonComponent,
     BadgeComponent,
     SegmentedComponent,
+    ConfirmModal,
   ],
   templateUrl: './add-book-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -231,18 +233,54 @@ export class AddBookModal {
   uploadProgress = signal<number | null>(null);
   /** Which visible stage the resumable path is in; null on the legacy path. */
   uploadPhase = signal<BookUploadPhase | null>(null);
+  /** Bytes behind the percentage, so the upload line can say how much is left. */
+  private readonly uploadByteProgress = signal<{ loaded: number; total: number } | null>(null);
+  /** The stop question, asked through the shared confirm modal. */
+  readonly confirmStopOpen = signal(false);
+  /** True while the chosen Stop is being carried out (pause in flight). */
+  readonly uploadStopping = signal(false);
+  /**
+   * The focused upload view: the file's own run, whether it is moving or has
+   * failed and can be retried. Never the ordinary form (#1275).
+   */
+  readonly uploadViewOpen = computed(
+    () =>
+      this.uploadProgress() !== null ||
+      (this.pendingUploadBook() !== null && this.uploadError() !== null),
+  );
+  /** A book file is actively moving; closing must ask before it disappears. */
+  readonly isUploading = computed(
+    () => this.pendingUploadBook() !== null && this.isSubmitting(),
+  );
+  readonly uploadBookTitle = computed(
+    () => this.pendingUploadBook()?.title || this.form.title || 'This book',
+  );
+  readonly uploadFileName = computed(() => this.selectedFile()?.name ?? '');
   readonly uploadStatusText = computed(() => {
     const percent = this.uploadProgress() ?? 0;
+    const bytes = this.uploadByteProgress();
+    const moved =
+      bytes && bytes.total > 0
+        ? ` · ${formatFileSize(bytes.loaded)} of ${formatFileSize(bytes.total)}`
+        : '';
     switch (this.uploadPhase()) {
       case 'preparing':
         return `Preparing file… ${percent}%`;
       case 'finishing':
         return 'Finishing upload…';
       default:
-        return `Uploading… ${percent}%`;
+        return `Uploading… ${percent}%${moved}`;
     }
   });
   uploadStartTime: number | null = null;
+
+  /** Distinguishes this modal's run from an older one whose callbacks arrive late. */
+  private uploadGeneration = 0;
+  private activeUploadBookId: string | null = null;
+  private stopRequested = false;
+  private legacyUploadSub: Subscription | null = null;
+  private beforeUnloadAttached = false;
+  private destroyed = false;
 
   // Drag-over highlight for the two dropzones. The native file input stretched
   // across each zone still owns the actual drop, so these only toggle styling.
@@ -251,7 +289,13 @@ export class AddBookModal {
 
   constructor() {
     // A closed or destroyed modal must not leave catalogue requests running.
-    inject(DestroyRef).onDestroy(() => this.cancelSourceRequests());
+    inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
+      this.detachBeforeUnload();
+      this.legacyUploadSub?.unsubscribe();
+      this.legacyUploadSub = null;
+      this.cancelSourceRequests();
+    });
 
     effect(() => {
       // Only external modal inputs are allowed to reinitialize the draft.
@@ -366,6 +410,7 @@ export class AddBookModal {
   }
 
   fillForm(b: BookModel) {
+    this.resetUploadState();
     this.form = {
       type: b.type || 'physical',
       title: b.title,
@@ -432,10 +477,7 @@ export class AddBookModal {
       personalReview: null,
     };
     this.clearChosenFiles();
-    this.uploadProgress.set(null);
-    this.uploadPhase.set(null);
-    this.uploadError.set(null);
-    this.pendingUploadBook.set(null);
+    this.resetUploadState();
     this.existingWithFile.set(null);
     this.isFetching.set(false);
     this.isSubmitting.set(false);
@@ -717,55 +759,84 @@ export class AddBookModal {
       return;
     }
 
+    const generation = ++this.uploadGeneration;
+    this.activeUploadBookId = createdBook.id;
+    this.stopRequested = false;
     this.pendingUploadBook.set(createdBook);
     this.uploadError.set(null);
     this.isSubmitting.set(true);
     this.uploadStartTime = performance.now();
+    this.uploadProgress.set(0);
+    this.uploadByteProgress.set({ loaded: 0, total: file.size });
+    this.attachBeforeUnload();
 
     if (this.bookUploads.supportsResumable()) {
-      this.uploadResumable(createdBook, file);
+      this.uploadResumable(createdBook, file, generation);
       return;
     }
 
-    this.booksService.uploadFile(createdBook.id, file).subscribe({
+    this.legacyUploadSub = this.booksService.uploadFile(createdBook.id, file).subscribe({
       next: (event) => {
+        if (this.isStaleUpload(generation)) return;
         if (event.type === HttpEventType.UploadProgress) {
           const percent = Math.round((event.loaded / (event.total ?? 1)) * 100);
           this.uploadProgress.set(percent);
+          this.uploadByteProgress.set({
+            loaded: event.loaded,
+            total: event.total ?? file.size,
+          });
         }
         if (event.type === HttpEventType.Response) {
           this.onUploadComplete(createdBook);
         }
       },
       error: (error: unknown) => {
+        if (this.isStaleUpload(generation)) return;
         this.uploadProgress.set(null);
         this.uploadPhase.set(null);
+        this.uploadByteProgress.set(null);
         this.isSubmitting.set(false);
+        this.detachBeforeUnload();
         this.uploadError.set(this.describeUploadFailure(error));
       },
     });
   }
 
   /**
-   * Chunked upload owned by the root service. Closing this modal does not
-   * cancel it (#1264); the same file picked again later resumes from the
-   * server's receipts.
+   * Chunked upload owned by the root service. Closing this modal no longer
+   * hides it: the close paths ask first, and Stop pauses the session through
+   * the service so the same file can resume (#1275).
    */
-  private uploadResumable(createdBook: BookModel, file: File): void {
+  private uploadResumable(
+    createdBook: BookModel,
+    file: File,
+    generation: number,
+  ): void {
     this.uploadPhase.set('preparing');
     this.uploadProgress.set(0);
     void this.bookUploads
       .upload(createdBook.id, file, {
         onProgress: (progress) => {
+          if (this.isStaleUpload(generation)) return;
           this.uploadPhase.set(progress.phase);
           this.uploadProgress.set(progress.percent);
+          this.uploadByteProgress.set({
+            loaded: progress.movedBytes,
+            total: progress.totalBytes,
+          });
         },
       })
-      .then(() => this.onUploadComplete(createdBook))
+      .then(() => {
+        if (this.isStaleUpload(generation)) return;
+        this.onUploadComplete(createdBook);
+      })
       .catch((error: unknown) => {
+        if (this.isStaleUpload(generation)) return;
         this.uploadProgress.set(null);
         this.uploadPhase.set(null);
+        this.uploadByteProgress.set(null);
         this.isSubmitting.set(false);
+        this.detachBeforeUnload();
         this.uploadError.set(
           describeBookUploadFailure(error, { bookSaved: true }),
         );
@@ -776,10 +847,12 @@ export class AddBookModal {
     const elapsed = performance.now() - (this.uploadStartTime ?? 0);
     this.pendingUploadBook.set(null);
     this.uploadError.set(null);
+    this.detachBeforeUnload();
     setTimeout(
       () => {
-        this.uploadProgress.set(null);
-        this.uploadPhase.set(null);
+        if (this.destroyed) return;
+        // Keep the upload view up until finishAdd resets it: clearing the
+        // progress first would flash the form back while a cover uploads.
         this.uploadCoverIfNeeded(createdBook.id);
       },
       Math.max(0, 1200 - elapsed),
@@ -835,7 +908,101 @@ export class AddBookModal {
   }
 
   // Escape and the backdrop now belong to `app-modal-shell`, which emits
-  // `closed`; both were hand-rolled here before.
+  // `closed`; both were hand-rolled here before. Every one of those paths, and
+  // the footer's Cancel, funnels through `requestClose` so a running upload is
+  // never closed unseen (#1275).
+
+  /**
+   * Every dismissal path funnels here: a running upload must not vanish
+   * invisibly, so closing asks first and only the Stop answer ends the run.
+   */
+  requestClose(): void {
+    if (this.isUploading()) {
+      this.confirmStopOpen.set(true);
+      return;
+    }
+    this.closeModal.emit();
+  }
+
+  /** The Stop control in the upload view. A failed run has nothing to stop. */
+  requestStopUpload(): void {
+    if (!this.isUploading()) {
+      void this.stopUpload();
+      return;
+    }
+    this.confirmStopOpen.set(true);
+  }
+
+  cancelStopUpload(): void {
+    if (this.uploadStopping()) return;
+    this.confirmStopOpen.set(false);
+  }
+
+  /**
+   * Stop upload: abort in-flight requests and pause the resumable session
+   * through the root service, so the saved row and the same file survive this
+   * session. Closing then leaves the library refreshed.
+   */
+  async stopUpload(): Promise<void> {
+    if (this.uploadStopping()) return;
+    this.uploadStopping.set(true);
+    this.stopRequested = true;
+    this.legacyUploadSub?.unsubscribe();
+    this.legacyUploadSub = null;
+
+    const generation = this.uploadGeneration;
+    const bookId = this.activeUploadBookId;
+    try {
+      if (bookId) await this.bookUploads.stop(bookId);
+    } finally {
+      if (generation !== this.uploadGeneration) return;
+      this.resetUploadState();
+      this.isSubmitting.set(false);
+      this.closeModal.emit();
+      this.bookAdded.emit();
+    }
+  }
+
+  /** True once this run's callbacks may no longer paint the modal. */
+  private isStaleUpload(generation: number): boolean {
+    return this.destroyed || this.stopRequested || generation !== this.uploadGeneration;
+  }
+
+  /** A refresh or tab close loses a File the browser cannot hand back. */
+  private readonly onBeforeUnload = (event: BeforeUnloadEvent): void => {
+    if (!this.isUploading()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+
+  private attachBeforeUnload(): void {
+    if (this.beforeUnloadAttached) return;
+    window.addEventListener('beforeunload', this.onBeforeUnload);
+    this.beforeUnloadAttached = true;
+  }
+
+  private detachBeforeUnload(): void {
+    if (!this.beforeUnloadAttached) return;
+    window.removeEventListener('beforeunload', this.onBeforeUnload);
+    this.beforeUnloadAttached = false;
+  }
+
+  /** Clears every trace of a file run so a reopened Add book starts clean. */
+  private resetUploadState(): void {
+    this.uploadGeneration += 1;
+    this.activeUploadBookId = null;
+    this.stopRequested = false;
+    this.legacyUploadSub?.unsubscribe();
+    this.legacyUploadSub = null;
+    this.detachBeforeUnload();
+    this.confirmStopOpen.set(false);
+    this.uploadStopping.set(false);
+    this.uploadProgress.set(null);
+    this.uploadPhase.set(null);
+    this.uploadByteProgress.set(null);
+    this.uploadError.set(null);
+    this.pendingUploadBook.set(null);
+  }
 
   // ------------------------------------------------------------------
   // From a source (issue #167)

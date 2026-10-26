@@ -3,7 +3,11 @@ import { of, Subject, throwError } from 'rxjs';
 
 import { AddBookModal } from './add-book-modal.component';
 import { Book, BookLookupError, BooksService } from '../core/services/books.service';
-import { BookUploadService } from '../core/services/book-upload.service';
+import {
+  BookUploadProgress,
+  BookUploadService,
+} from '../core/services/book-upload.service';
+import { BookUploadStatusDto } from '../core/dtos/book-upload.dtos';
 import { ToastService } from '../core/services/toast.service';
 
 const collections = [
@@ -11,6 +15,16 @@ const collections = [
   { id: 'child', name: 'Child', parentId: 'root' },
   { id: 'other', name: 'Other', parentId: null },
 ];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe('AddBookModal', () => {
   let component: AddBookModal;
@@ -29,6 +43,64 @@ describe('AddBookModal', () => {
     fixture.componentRef.setInput('collections', collections);
     await fixture.whenStable();
   });
+
+  /**
+   * Starts a resumable file run that stays active until the test resolves it,
+   * with one progress report already on screen. Returns the handles the close
+   * and stop paths are asserted through.
+   */
+  function startResumableUpload() {
+    const books = TestBed.inject(BooksService);
+    const createSpy = vi.spyOn(books, 'createOrMatch').mockReturnValue(
+      of({
+        book: { id: 'new-book', title: 'The Magic Mountain' } as unknown as Book,
+        created: true,
+      }),
+    );
+    const uploads = TestBed.inject(BookUploadService);
+    vi.spyOn(uploads, 'supportsResumable').mockReturnValue(true);
+    const stopSpy = vi.spyOn(uploads, 'stop').mockResolvedValue();
+    const run = deferred<BookUploadStatusDto>();
+    let report: ((progress: BookUploadProgress) => void) | null = null;
+    const uploadSpy = vi.spyOn(uploads, 'upload').mockImplementation((_id, _file, options) => {
+      report = options?.onProgress ?? null;
+      report?.({ phase: 'uploading', percent: 22, uploadedBytes: 22, movedBytes: 22, totalBytes: 100 });
+      return run.promise;
+    });
+    const closed = vi.fn();
+    const added = vi.fn();
+    component.closeModal.subscribe(closed);
+    component.bookAdded.subscribe(added);
+
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'ebook';
+    component.selectedFile.set(
+      new File(['ebook'], 'magic-mountain.epub', { type: 'application/epub+zip' }),
+    );
+    fixture.detectChanges();
+    component.submit();
+    fixture.detectChanges();
+
+    return {
+      books,
+      createSpy,
+      uploads,
+      stopSpy,
+      uploadSpy,
+      run,
+      closed,
+      added,
+      report: (progress: BookUploadProgress) => report?.(progress),
+    };
+  }
+
+  function pressBackdrop(element: HTMLElement, pointerId = 1): void {
+    for (const type of ['pointerdown', 'pointerup'] as const) {
+      const event = new Event(type, { bubbles: true }) as PointerEvent;
+      Object.defineProperty(event, 'pointerId', { value: pointerId });
+      element.dispatchEvent(event);
+    }
+  }
 
   it('exposes the dialog role', () => {
     fixture.detectChanges();
@@ -323,10 +395,9 @@ describe('AddBookModal', () => {
     expect(component.isSubmitting()).toBe(false);
   });
 
-  it('can be closed while the file uploads, and closing does not cancel the upload', () => {
-    // A long upload keeps going behind the scenes once the modal is closed; the
-    // library shows the book and the server's processing progress when it lands.
-    // Locking the modal for the whole upload trapped the app (#1264).
+  it('asks before closing while the legacy upload runs, and Stop ends the request', async () => {
+    // #1265 stopped the modal from trapping the user for the whole upload. The
+    // upload is still allowed to be ended, but closing now asks first (#1275).
     const books = TestBed.inject(BooksService);
     vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: { id: 'new-book' } as unknown as Book, created: true }));
     const upload = new Subject<any>();
@@ -342,18 +413,161 @@ describe('AddBookModal', () => {
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    const submitButton = el.querySelector('button[type="submit"][form="add-book-form"]') as HTMLButtonElement;
-    expect(submitButton.getAttribute('aria-busy')).toBe('true');
-    const cancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
-      (button) => button.textContent?.trim() === 'Cancel',
-    ) as HTMLButtonElement;
-    expect(cancel.disabled).toBe(false);
+    expect(el.querySelector('[data-testid="add-book-upload-view"]')).toBeTruthy();
+    expect(el.querySelector('input[name="title"]')).toBeNull();
 
     const close = el.querySelector('[data-testid="modal-close"]') as HTMLButtonElement;
     expect(close.disabled).toBe(false);
     close.click();
-    expect(closed).toHaveBeenCalledTimes(1);
+    fixture.detectChanges();
+
+    expect(closed).not.toHaveBeenCalled();
+    expect(el.querySelector('.confirm-modal-card')?.textContent).toContain('Stop the upload?');
     expect(upload.observed).toBe(true);
+
+    (el.querySelector('.confirm-modal-card .btn-confirm') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    await vi.waitFor(() => {
+      expect(closed).toHaveBeenCalledTimes(1);
+      expect(upload.observed).toBe(false);
+      expect(el.querySelector('[data-testid="add-book-upload-view"]')).toBeNull();
+    });
+  });
+
+  it('replaces the form with the focused upload view when the file starts moving', () => {
+    startResumableUpload();
+    const el = fixture.nativeElement as HTMLElement;
+    const view = el.querySelector('[data-testid="add-book-upload-view"]') as HTMLElement;
+
+    expect(view).toBeTruthy();
+    expect(view.textContent).toContain('The Magic Mountain');
+    expect(view.textContent).toContain('magic-mountain.epub');
+    expect(view.querySelector('nostos-progress')).toBeTruthy();
+    expect(view.textContent).toContain('Uploading… 22% · 22 B of 100 B');
+    expect(el.querySelector('button[data-testid="add-book-upload-stop"]')).toBeTruthy();
+    expect(el.querySelector('input[name="title"]')).toBeNull();
+    expect(el.querySelector('input[name="author"]')).toBeNull();
+  });
+
+  it('asks before close, Escape, backdrop and Cancel, and Keep open keeps the run', () => {
+    const { stopSpy, closed } = startResumableUpload();
+    const el = fixture.nativeElement as HTMLElement;
+    const question = () => el.querySelector('.confirm-modal-card') as HTMLElement | null;
+    const keepOpen = () => {
+      (el.querySelector('.confirm-modal-card .btn-cancel') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    };
+    const expectQuestion = () => {
+      expect(question()?.textContent).toContain('Stop the upload?');
+      expect(closed).not.toHaveBeenCalled();
+    };
+
+    (el.querySelector('[data-testid="modal-close"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expectQuestion();
+    keepOpen();
+    expect(component.isUploading()).toBe(true);
+    expect(stopSpy).not.toHaveBeenCalled();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expectQuestion();
+    // Escape again answers the question, not the sheet underneath it.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+    expect(question()).toBeNull();
+    expect(closed).not.toHaveBeenCalled();
+
+    pressBackdrop(el.querySelector('.modal-backdrop') as HTMLElement);
+    fixture.detectChanges();
+    expectQuestion();
+    keepOpen();
+    expect(closed).not.toHaveBeenCalled();
+
+    const cancel = Array.from(el.querySelectorAll('app-dialog-actions button')).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement;
+    expect(cancel).toBeTruthy();
+    cancel.click();
+    fixture.detectChanges();
+    expectQuestion();
+    keepOpen();
+
+    expect(stopSpy).not.toHaveBeenCalled();
+    expect(component.uploadProgress()).toBe(22);
+  });
+
+  it('Stops the run through the service and closes with the saved book', async () => {
+    const { stopSpy, closed, added } = startResumableUpload();
+    const el = fixture.nativeElement as HTMLElement;
+
+    (el.querySelector('[data-testid="add-book-upload-stop"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(el.querySelector('.confirm-modal-card')?.textContent).toContain('Stop the upload?');
+
+    (el.querySelector('.confirm-modal-card .btn-confirm') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    await vi.waitFor(() => {
+      expect(stopSpy).toHaveBeenCalledWith('new-book');
+      expect(closed).toHaveBeenCalledTimes(1);
+      expect(added).toHaveBeenCalledTimes(1);
+    });
+    expect(component.uploadProgress()).toBeNull();
+    expect(component.isSubmitting()).toBe(false);
+    expect(el.querySelector('[data-testid="add-book-upload-view"]')).toBeNull();
+  });
+
+  it('a reopened Add book starts clean even when the old run reports late', async () => {
+    const { closed, report } = startResumableUpload();
+    const el = fixture.nativeElement as HTMLElement;
+
+    (el.querySelector('[data-testid="modal-close"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (el.querySelector('.confirm-modal-card .btn-confirm') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(closed).toHaveBeenCalledTimes(1));
+
+    fixture.componentRef.setInput('isOpen', false);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('isOpen', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The stopped run's callback is still alive in the service; it must not
+    // paint onto the fresh form.
+    report({ phase: 'uploading', percent: 60, uploadedBytes: 60, movedBytes: 60, totalBytes: 100 });
+    fixture.detectChanges();
+
+    expect(component.uploadProgress()).toBeNull();
+    expect(component.isUploading()).toBe(false);
+    expect(el.querySelector('[data-testid="add-book-upload-view"]')).toBeNull();
+    expect(el.querySelector('input[name="title"]')).toBeTruthy();
+  });
+
+  it('warns before leaving the page only while the file is uploading', async () => {
+    const onAdd = vi.spyOn(window, 'addEventListener');
+    const onRemove = vi.spyOn(window, 'removeEventListener');
+    const { run } = startResumableUpload();
+
+    const attached = onAdd.mock.calls.filter(([type]) => type === 'beforeunload');
+    expect(attached).toHaveLength(1);
+    const handler = attached[0][1] as (event: BeforeUnloadEvent) => void;
+
+    const event = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent;
+    handler(event);
+    expect(event.defaultPrevented).toBe(true);
+
+    run.resolve({} as BookUploadStatusDto);
+    await vi.waitFor(() => {
+      expect(
+        onRemove.mock.calls.some(
+          ([type, listener]) => type === 'beforeunload' && listener === handler,
+        ),
+      ).toBe(true);
+    });
+    expect(component.isUploading()).toBe(false);
   });
 
   it('uses the resumable upload when the host advertises it', async () => {
@@ -416,7 +630,7 @@ describe('AddBookModal', () => {
     expect(component.isSubmitting()).toBe(false);
   });
 
-  it('keeps the add action locked after create returns while the file upload is running', () => {
+  it('hides the form while the file runs and never creates or uploads twice', () => {
     const books = TestBed.inject(BooksService);
     const createSpy = vi
       .spyOn(books, 'createOrMatch')
@@ -434,16 +648,16 @@ describe('AddBookModal', () => {
     component.submit();
     fixture.detectChanges();
 
-    const submitButton = fixture.nativeElement.querySelector(
-      'button[type="submit"][form="add-book-form"]',
-    ) as HTMLButtonElement;
-
+    const el = fixture.nativeElement as HTMLElement;
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(uploadSpy).toHaveBeenCalledTimes(1);
     expect(component.isSubmitting()).toBe(true);
-    expect(submitButton.disabled).toBe(true);
-    expect(submitButton.textContent).toContain('Uploading…');
+    expect(el.querySelector('[data-testid="add-book-upload-view"]')).toBeTruthy();
+    expect(el.querySelector('input[name="title"]')).toBeNull();
+    expect(el.querySelector('button[type="submit"][form="add-book-form"]')).toBeNull();
 
+    // Enter or a programmatic re-entry is still the same pending upload, never
+    // a second create or a second file request.
     component.submit();
 
     expect(createSpy).toHaveBeenCalledTimes(1);
