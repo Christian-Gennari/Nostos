@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 /** Read one of this component's own source files for a static guard. */
 const readSource = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf-8');
 
-import { ReaderShell, selectionPreview } from './reader-shell.component';
+import { PROGRESS_SCOPE_KEY, ReaderShell, selectionPreview } from './reader-shell.component';
 import { ToastService } from '../core/services/toast.service';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
@@ -102,6 +102,8 @@ class PdfReaderStub {
     pageCount?: number;
     pageLabel?: string | null;
     percentage: number;
+    chapterPercentage?: number | null;
+    chapterLabel?: string | null;
   }>({ label: '', percentage: 0 });
   currentLocationTarget = signal<unknown>(null);
   goTo = vi.fn();
@@ -160,7 +162,12 @@ class EpubReaderStub {
   previous = vi.fn();
   // IReader surface the shell reads once the reader is active.
   toc = signal<unknown[]>([]);
-  progress = signal({ label: '', percentage: 0 });
+  progress = signal<{
+    label: string;
+    percentage: number;
+    chapterPercentage?: number | null;
+    chapterLabel?: string | null;
+  }>({ label: '', percentage: 0 });
   currentLocationTarget = signal<unknown>(null);
   goToSource = vi.fn(() => Promise.resolve());
 }
@@ -3196,5 +3203,131 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
 
     component.askNostosAboutHighlight();
     expect(TestBed.inject(AssistantService).requestSurfaceOpen).toHaveBeenCalled();
+  });
+});
+
+describe('ReaderShell book/chapter progress toggle (#1269)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+  const epubBook = { ...audiobook, id: 'book-epub-scope', fileName: 'magic-mountain.epub' } as Book;
+  const pdfBook = { ...audiobook, id: 'book-pdf-scope', fileName: 'being-and-time.pdf' } as Book;
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    mockMatchMedia();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  async function openEpub(): Promise<EpubReaderStub> {
+    booksGetSpy.mockReturnValue(of(epubBook));
+    fixture = await configureReaderShell();
+    render();
+    const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
+      .componentInstance as EpubReaderStub;
+    (fixture.componentInstance as unknown as { epubReader: EpubReaderStub }).epubReader = stub;
+    fixture.componentInstance.ready.set(true);
+    return stub;
+  }
+
+  const toggle = () =>
+    fixture.nativeElement.querySelector('[data-testid="reader-progress-toggle"]') as HTMLButtonElement | null;
+  const fillWidth = () =>
+    (fixture.nativeElement.querySelector('.reader-progress-fill') as HTMLElement).style.width;
+  const label = () =>
+    (fixture.nativeElement.querySelector('.progress-display span') as HTMLElement).textContent!.trim();
+
+  it('flips the bar between book and chapter, says so briefly, and remembers it', async () => {
+    const stub = await openEpub();
+    stub.progress.set({ label: '97% • 7', percentage: 97, chapterPercentage: 62, chapterLabel: '7' });
+    render();
+
+    expect(fillWidth()).toBe('97%');
+    expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle()!.getAttribute('aria-label')).toBe('Show chapter progress');
+
+    vi.useFakeTimers();
+    toggle()!.click();
+    render();
+    expect(fillWidth()).toBe('62%');
+    expect(toggle()!.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle()!.getAttribute('aria-label')).toBe('Show book progress');
+    expect(label()).toBe('Chapter progress');
+    expect(localStorage.getItem(PROGRESS_SCOPE_KEY)).toBe('chapter');
+
+    vi.advanceTimersByTime(1200);
+    render();
+    expect(label()).toBe('62% of 7');
+
+    toggle()!.click();
+    vi.advanceTimersByTime(1200);
+    render();
+    expect(fillWidth()).toBe('97%');
+    expect(label()).toBe('97% • 7');
+    expect(localStorage.getItem(PROGRESS_SCOPE_KEY)).toBe('book');
+  });
+
+  it('opens the next book in the remembered mode', async () => {
+    localStorage.setItem(PROGRESS_SCOPE_KEY, 'chapter');
+    const stub = await openEpub();
+    stub.progress.set({ label: '40% • Snow', percentage: 40, chapterPercentage: 5, chapterLabel: 'Snow' });
+    render();
+
+    expect(fillWidth()).toBe('5%');
+    expect(label()).toBe('5% of Snow');
+  });
+
+  it('a book with no chapters keeps the book bar and offers no toggle', async () => {
+    localStorage.setItem(PROGRESS_SCOPE_KEY, 'chapter');
+    const stub = await openEpub();
+    stub.progress.set({ label: '30%', percentage: 30, chapterPercentage: null, chapterLabel: null });
+    render();
+
+    expect(toggle()).toBeNull();
+    const track = fixture.nativeElement.querySelector('.reader-progress-toggle') as HTMLElement;
+    expect(track.getAttribute('aria-hidden')).toBe('true');
+    expect(fillWidth()).toBe('30%');
+    expect(label()).toBe('30%');
+  });
+
+  it('keeps the PDF page field and puts the mode on the bar title', async () => {
+    booksGetSpy.mockReturnValue(of(pdfBook));
+    fixture = await configureReaderShell();
+    render();
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    stub.progress.set({
+      label: '',
+      pageNumber: 12,
+      pageCount: 162,
+      percentage: 7,
+      chapterPercentage: 40,
+      chapterLabel: 'Introduction',
+    });
+    render();
+
+    toggle()!.click();
+    render();
+    expect(fillWidth()).toBe('40%');
+    expect(toggle()!.title).toBe('Chapter progress: tap for book progress');
+    expect((fixture.nativeElement.querySelector('.page-input') as HTMLInputElement).value).toBe('12');
+  });
+
+  it('gives the toggle a 44px touch target with no animated fill', () => {
+    const css = readSource('./reader-shell.component.css');
+    const toggleRule = css.slice(css.indexOf('.reader-progress-toggle {'), css.indexOf('.reader-progress-track {'));
+    expect(toggleRule).toContain('min-height: 44px');
+    const fillRule = css.slice(css.indexOf('.reader-progress-fill {'), css.indexOf('.reader-progress-fill::after'));
+    expect(fillRule).not.toContain('transition');
   });
 });

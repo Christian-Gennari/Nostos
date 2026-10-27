@@ -250,6 +250,27 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     });
   });
 
+  it('reports chapter progress next to the book progress it saves (#1269)', () => {
+    setupComponent();
+    const reader = fixture.componentInstance as any;
+    reader.totalPages = 100;
+    reader.toc.set([
+      { label: 'Introduction', target: 1, children: [] },
+      { label: 'Division One', target: 11, children: [{ label: '§1', target: 21, children: [] }] },
+    ]);
+    const sent = vi.spyOn(reader.progressUpdater$, 'next');
+
+    reader.updateProgressState(15);
+
+    expect(reader.progress()).toMatchObject({
+      percentage: 15,
+      chapterPercentage: 50,
+      chapterLabel: 'Division One',
+    });
+    // Saved progress stays book-relative whatever the bar shows.
+    expect(sent).toHaveBeenCalledWith(expect.objectContaining({ percentage: 15 }));
+  });
+
   it('follows the light theme with the established surround and light library theme', () => {
     themeService.setChoice('light');
     setupComponent();

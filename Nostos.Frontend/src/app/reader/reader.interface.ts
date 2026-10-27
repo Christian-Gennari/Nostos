@@ -14,6 +14,14 @@ export interface TocItem {
 export interface ReaderProgress {
   label: string; // "Page 5 of 200" or "05:12 / 14:00 or 12% of book"
   percentage: number; // 0 to 100 (for progress bars)
+  /**
+   * 0–100 through the current chapter; null when no chapter can be placed
+   * (#1269). Presentation only: `percentage` stays book-relative and is what is
+   * saved, synced and shown in the library.
+   */
+  chapterPercentage?: number | null;
+  /** The chapter `chapterPercentage` measures, when it has a title. */
+  chapterLabel?: string | null;
   tooltip?: string; // "1% ≈ 4 min" (The pop-up hint) (For ebook)
   pageNumber?: number; // Current page number (For PDF readers)
   pageCount?: number; // Total number of pages (For PDF readers)

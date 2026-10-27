@@ -1205,9 +1205,23 @@ app-note-item.is-flashed {
   pointer-events: auto;
 }
 
+/* The bar's hit area: a 44px-tall row around the 2px line, so a thumb can
+   tap it (#1269). A raw button: the line is the whole control. */
+.reader-progress-toggle {
+  flex: 1 1 8rem;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
 .reader-progress-track {
   position: relative;
-  flex: 1 1 8rem;
+  flex: 1 1 auto;
   height: 2px;
   background: var(--border-color);
   border-radius: var(--radius-pill);

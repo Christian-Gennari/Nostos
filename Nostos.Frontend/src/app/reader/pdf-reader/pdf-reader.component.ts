@@ -57,6 +57,7 @@ import {
   ReaderSourceTarget,
   TocItem,
 } from '../reader.interface';
+import { chapterRangeAt } from './pdf-chapter-progress';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 import {
   shouldSuppressTouchClick,
@@ -1052,6 +1053,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         return;
       }
       this.toc.set(await this.mapPdfOutline(outline, pdfDoc));
+      this.refreshChapterProgress();
     } catch (err) {
       console.error('Error fetching PDF outline', err);
       this.toc.set([]);
@@ -1585,20 +1587,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     return this.pageLabels()[pageNumber - 1] ?? String(pageNumber);
   }
 
-  /** The deepest outline entry that starts on or before a page. */
+  /**
+   * The deepest outline entry that starts on or before a page. The same helper
+   * places the chapter bar, so the title and the range cannot disagree.
+   */
   private chapterTitleAt(pageNumber: number): string | null {
-    let best: { label: string; page: number } | null = null;
-    const visit = (items: TocItem[]) => {
-      for (const item of items) {
-        const page = Number(item.target);
-        if (Number.isInteger(page) && page <= pageNumber && (!best || page >= best.page)) {
-          best = { label: item.label, page };
-        }
-        visit(item.children ?? []);
-      }
-    };
-    visit(this.toc());
-    return (best as { label: string } | null)?.label.trim() || null;
+    return chapterRangeAt(this.toc(), pageNumber, Math.max(this.totalPages, pageNumber))?.label ?? null;
   }
 
   private clearNativeSelection(): void {
@@ -1628,11 +1622,14 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     // Physical PDF page remains authoritative for every navigation key. A
     // printed/logical label is presentation only and is shown alongside it.
+    const chapter = chapterRangeAt(this.toc(), page, this.totalPages);
     this.progress.set({
       label: pageLabel
         ? `p. ${pageLabel} · PDF ${page} of ${this.totalPages}`
         : `Page ${page} of ${this.totalPages}`,
       percentage,
+      chapterPercentage: chapter ? Math.floor(chapter.fraction * 100) : null,
+      chapterLabel: chapter?.label ?? null,
       pageNumber: page,
       pageCount: this.totalPages,
       pageLabel,
@@ -1640,6 +1637,21 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     const location = JSON.stringify({ pageNumber: page, yPercent: 0, rects: [] });
     this.progressUpdater$.next({ location, percentage });
+  }
+
+  /**
+   * The outline can arrive after the first page was reported: place the
+   * current page in it without another progress write.
+   */
+  private refreshChapterProgress(): void {
+    const current = this.progress();
+    if (!current.pageNumber) return;
+    const chapter = chapterRangeAt(this.toc(), current.pageNumber, this.totalPages);
+    this.progress.set({
+      ...current,
+      chapterPercentage: chapter ? Math.floor(chapter.fraction * 100) : null,
+      chapterLabel: chapter?.label ?? null,
+    });
   }
 
   private logicalPageLabel(page: number): string | null {

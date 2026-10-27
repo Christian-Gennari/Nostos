@@ -121,6 +121,20 @@ import { SearchFieldComponent } from '../ui/search-field/search-field.component'
 
 const READ_ALOUD_VOICE_KEY = 'nostos.readAloud.voice';
 
+/** What the EPUB/PDF progress bar measures, reader-wide (#1269). */
+export type ProgressScope = 'book' | 'chapter';
+export const PROGRESS_SCOPE_KEY = 'nostos.reader-progress-scope';
+/** How long "Chapter progress" / "Book progress" stays in the label slot after a flip. */
+const PROGRESS_SCOPE_FLASH_MS = 1200;
+
+function readStoredProgressScope(): ProgressScope {
+  try {
+    return localStorage.getItem(PROGRESS_SCOPE_KEY) === 'chapter' ? 'chapter' : 'book';
+  } catch {
+    return 'book';
+  }
+}
+
 function readStoredReadAloudVoice(): string | null {
   try {
     return localStorage.getItem(READ_ALOUD_VOICE_KEY);
@@ -1024,8 +1038,66 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   toc = computed(() => this.activeReader()?.toc() ?? []);
   progressState = computed(() => this.activeReader()?.progress());
-  progressLabel = computed(() => this.progressState()?.label ?? '');
+  /**
+   * Book or chapter progress on the bar (#1269). The choice is presentation
+   * only and remembered for every book; the readers always report both, and
+   * the saved progress stays book-relative.
+   */
+  readonly progressScope = signal<ProgressScope>(readStoredProgressScope());
+  /** "Chapter progress" / "Book progress", briefly, after a flip. */
+  readonly progressScopeFlash = signal<string | null>(null);
+  private progressScopeFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The toggle exists only when the reader can place a chapter. */
+  chapterProgressAvailable = computed(() => this.progressState()?.chapterPercentage != null);
+  /** Chapter only when chosen AND available; otherwise silently the book bar. */
+  effectiveProgressScope = computed<ProgressScope>(() =>
+    this.progressScope() === 'chapter' && this.chapterProgressAvailable() ? 'chapter' : 'book',
+  );
+  progressFillPercent = computed(() => {
+    const state = this.progressState();
+    if (!state) return 0;
+    return this.effectiveProgressScope() === 'chapter'
+      ? (state.chapterPercentage ?? 0)
+      : state.percentage;
+  });
+  progressScopeToggleLabel = computed(() =>
+    this.effectiveProgressScope() === 'chapter' ? 'Show book progress' : 'Show chapter progress',
+  );
+  progressScopeTitle = computed(() =>
+    this.effectiveProgressScope() === 'chapter'
+      ? 'Chapter progress: tap for book progress'
+      : 'Book progress: tap for chapter progress',
+  );
+
+  progressLabel = computed(() => {
+    const flash = this.progressScopeFlash();
+    if (flash) return flash;
+    const state = this.progressState();
+    if (!state) return '';
+    if (this.effectiveProgressScope() === 'chapter') {
+      return `${state.chapterPercentage}% of ${state.chapterLabel || 'chapter'}`;
+    }
+    return state.label ?? '';
+  });
   progressTooltip = computed(() => this.progressState()?.tooltip ?? '');
+
+  toggleProgressScope(): void {
+    if (!this.chapterProgressAvailable()) return;
+    const next: ProgressScope = this.effectiveProgressScope() === 'chapter' ? 'book' : 'chapter';
+    this.progressScope.set(next);
+    try {
+      localStorage.setItem(PROGRESS_SCOPE_KEY, next);
+    } catch {
+      // The choice still applies for this session.
+    }
+    if (this.progressScopeFlashTimer) clearTimeout(this.progressScopeFlashTimer);
+    this.progressScopeFlash.set(next === 'chapter' ? 'Chapter progress' : 'Book progress');
+    this.progressScopeFlashTimer = setTimeout(() => {
+      this.progressScopeFlashTimer = null;
+      this.progressScopeFlash.set(null);
+    }, PROGRESS_SCOPE_FLASH_MS);
+  }
 
   nextPage() {
     this.activeReader()?.next();
@@ -1068,6 +1140,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.progressScopeFlashTimer) clearTimeout(this.progressScopeFlashTimer);
     this.placeKeeper.stop();
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
     this.activeReader()?.clearSearch?.();
