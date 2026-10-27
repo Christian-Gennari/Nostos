@@ -127,6 +127,7 @@ Progress is saved on every page turn / audio position change:
 **File:** `src/app/reader/epub-reader/epub-reader.component.ts`
 
 - Renders via `epub.js` `Rendition` into a container div
+- **Saved position on open:** the saved CFI is restored through the same settle protection as a grounded source (re-asserted through the opening re-layouts, then verified on the visible page). Progress writes stay closed until it is confirmed or given up; neither writes a position, so opening a book never overwrites the saved one. A page turn during the settle wins and is saved (#1271).
 - **Location caching:** On first open, generates all locations and sends to `BooksService.saveLocations()`. On subsequent opens, loads cached locations for instant percentage calculation.
 - **Text selection:** Handled by `EpubAnnotationManager`
 - **Highlights:** Yellow background highlights on annotated passages, stored by CFI range
