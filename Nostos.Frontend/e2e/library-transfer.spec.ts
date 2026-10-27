@@ -882,7 +882,7 @@ test('scenario e1: a non-archive file is rejected without touching the library',
   await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('import-failed')).toContainText('Not a library archive');
   await expect(page.getByTestId('import-failed')).toContainText(
-    'This file is not a supported Nostos portable library archive.',
+    'This file is not a supported Nostos library archive.',
   );
   await expect(page.getByTestId('library-activation-overlay')).toHaveCount(0);
 
