@@ -234,6 +234,40 @@ public sealed class HighlightImportService
         return new HighlightImportResult(!isNewBatch || added.Count > 0 ? batch.Id : null, source, results);
     }
 
+    /// <summary>
+    /// The passages a starter draft opens with (issue #1220), as the notes the
+    /// Studio quotes: from the given imports, or, with none given, from the
+    /// most recently imported highlights in the library.
+    /// </summary>
+    public async Task<IReadOnlyList<NoteSearchHitDto>> StarterPassagesAsync(
+        IReadOnlyCollection<Guid> batchIds,
+        CancellationToken ct = default)
+    {
+        var notes = batchIds.Count > 0
+            ? _db.NoteImportBatchNotes
+                .AsNoTracking()
+                .Where(entry => batchIds.Contains(entry.BatchId))
+                .Select(entry => entry.Note)
+            : _db.Notes.AsNoTracking().Where(note => note.CaptureSource == "import");
+
+        // Bounded: a whole Kindle history is thousands of highlights, and the
+        // most recent ones are the ones the reader just brought in.
+        var candidates = await notes
+            .Where(note => note.SelectedText != null && note.SelectedText != "")
+            .OrderByDescending(note => note.CreatedAt)
+            .Take(StarterCandidateLimit)
+            .Select(note => new StarterPassageCandidate(
+                note.Id, note.BookId, note.SelectedText, note.Content, note.CreatedAt))
+            .ToListAsync(ct);
+
+        var picked = StarterPassageSelector.Pick(candidates);
+        return picked.Count == 0
+            ? []
+            : await _notes.GetManyAsync(picked.Select(candidate => candidate.NoteId).ToList(), ct);
+    }
+
+    private const int StarterCandidateLimit = 2000;
+
     public async Task<IReadOnlyList<HighlightImportBatchSummary>> ListBatchesAsync(
         int take,
         CancellationToken ct = default)

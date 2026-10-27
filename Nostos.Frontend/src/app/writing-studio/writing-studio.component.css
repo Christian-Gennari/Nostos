@@ -319,6 +319,35 @@
  * The stage owns safe padding around the manuscript.
  * The manuscript flows as a seamless, frameless desk surface.
  */
+/* The empty Studio's offer of a starter draft (issue #1220): one line of
+   plain text above the page, in the page's own measure. No card. */
+.starter-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem 0.85rem;
+  padding: 0.75rem 1.25rem 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.starter-offer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.starter-offer-actions .nostos-button {
+  gap: 0.3rem;
+}
+
+.starter-offer-dismiss {
+  color: var(--color-text-light);
+}
+
 .editor-wrapper {
   --studio-inline-gutter: 0px;
   --studio-top-gutter: 0px;

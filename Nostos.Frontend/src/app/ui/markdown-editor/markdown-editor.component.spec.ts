@@ -59,6 +59,26 @@ describe('MarkdownEditorComponent', () => {
       expect(emitted.at(-1)).toContain('[^1]: Ibid.');
     });
 
+    it('puts the caret on a fresh line after the text, ahead of the footnotes (issue #1220)', async () => {
+      const start = '> A quote.[^1]\n\nMy note.\n\n[^1]: Ibid.';
+      await create(start);
+
+      expect(await component.restoreTransientState({ at: 'body-end' }, start)).toBe(true);
+      await component.insertMarkdown('I write here.');
+
+      expect(emitted.at(-1)).toBe('> A quote.[^1]\n\nMy note.\n\nI write here.\n\n[^1]: Ibid.');
+    });
+
+    it('puts the caret at the end of a writing without footnotes, reusing an empty last line', async () => {
+      const start = 'First paragraph.';
+      await create(start);
+
+      expect(await component.restoreTransientState({ at: 'body-end' }, start)).toBe(true);
+      expect(component.currentMarkdown().trim()).toBe(start);
+      await component.insertMarkdown('Second.');
+      expect(emitted.at(-1)).toBe('First paragraph.\n\nSecond.');
+    });
+
     it('adds a footnote at the end of the writing without moving the caret', async () => {
       await create('First paragraph.\n\nSecond paragraph.');
 

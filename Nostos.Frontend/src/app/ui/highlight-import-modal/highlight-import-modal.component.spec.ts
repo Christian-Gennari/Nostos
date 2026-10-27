@@ -12,6 +12,8 @@ import {
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
 import { Book, PaginatedResponse } from '../../core/dtos/book.dtos';
+import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
+import type { NoteSearchHit } from '../../core/dtos/note.dtos';
 
 const previewBook = (overrides: Partial<HighlightImportPreviewBook>): HighlightImportPreviewBook => ({
   sourceKey: 'vol-1',
@@ -212,6 +214,63 @@ describe('HighlightImportModal', () => {
     );
     expect(rows[1].querySelector('.nostos-choice-row__sub')?.textContent).toBe('Unknown author');
     expect(rows[1].querySelector('.nostos-choice-row__meta')?.textContent?.trim()).toBe('PDF');
+  });
+
+  describe('a starter draft from the import (issue #1220)', () => {
+    const hit = { id: 'n1', bookId: 'b1', bookTitle: 'Synthetic Book', content: '', selectedText: 'A passage.' } as NoteSearchHit;
+    const imported = async (batchId: string | null = 'batch-1', books = [resultBook({})]) => {
+      await review(previewBook({}));
+      vi.spyOn(service, 'commit').mockReturnValue(of({ batchId, source: 'kobo', books }));
+      await component.importReviewed();
+      fixture.detectChanges();
+    };
+    const action = () => fixture.nativeElement.querySelector('[data-testid="highlight-start-draft"]') as HTMLButtonElement | null;
+
+    beforeEach(() => localStorage.removeItem('nostos.studio.starterDraftOffer'));
+
+    it('offers one quiet action once highlights are in, and opens the Studio on the draft it makes', async () => {
+      const starter = TestBed.inject(StarterDraftService);
+      const passages = vi.spyOn(starter, 'passages').mockResolvedValue([hit]);
+      const create = vi.spyOn(starter, 'create').mockResolvedValue('w-new');
+      await imported();
+
+      expect(action()?.textContent).toContain('Start a draft from these');
+      action()!.click();
+      await vi.waitFor(() => expect(router.navigate).toHaveBeenCalled());
+
+      // The passages come from this import, not the whole library.
+      expect(passages).toHaveBeenCalledWith(['batch-1']);
+      expect(create).toHaveBeenCalledWith([hit]);
+      expect(router.navigate).toHaveBeenCalledWith(['/studio'], { queryParams: { writingId: 'w-new' } });
+      expect(service.isOpen()).toBe(false);
+      // The empty Studio does not offer it a second time.
+      expect(localStorage.getItem('nostos.studio.starterDraftOffer')).toBe('taken');
+    });
+
+    it('is not offered when nothing new came in, or once the import is undone', async () => {
+      await imported(null, [resultBook({ importedCount: 0, duplicateCount: 3 })]);
+      expect(action()).toBeNull();
+
+      await imported();
+      expect(action()).not.toBeNull();
+      vi.spyOn(service, 'undo').mockReturnValue(of({ removed: 3 }));
+      await component.undoImport();
+      fixture.detectChanges();
+      expect(action()).toBeNull();
+    });
+
+    it('says so and stays open when the draft cannot be made', async () => {
+      const starter = TestBed.inject(StarterDraftService);
+      vi.spyOn(starter, 'passages').mockRejectedValue(new Error('offline'));
+      await imported();
+
+      await component.startDraft();
+      fixture.detectChanges();
+
+      expect(text()).toContain('The draft could not be started. Try again.');
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(service.isOpen()).toBe(true);
+    });
   });
 
   it('undoes what it just imported', async () => {
