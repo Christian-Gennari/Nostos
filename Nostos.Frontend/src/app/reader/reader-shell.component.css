@@ -260,7 +260,9 @@
   white-space: normal;
   background: transparent;
   color: var(--color-text-main);
-  border-radius: var(--radius-row);
+  /* Square, like the PDF outline: a radius curls the row's hairline up at both
+     ends and leaves the square accent rail a gap in each corner (#1261). */
+  border-radius: 0;
   transition:
     background-color 0.2s,
     color 0.2s;
