@@ -788,9 +788,8 @@ describe('EpubReader theme-following normalization', () => {
    * lays out; the saved position arrives from the Book the shell passed down.
    * Persisting the opening section is what silently reset a reader's position.
    */
-  it('never persists the opening section — the write follows the restore', async () => {
+  it('never persists the opening section over the saved position', async () => {
     const OPENING_CFI = 'epubcfi(/6/2!/4/1:0)';
-    const LIVE_CFI = 'epubcfi(/6/4)'; // what the fake rendition reports live
 
     fixture = TestBed.createComponent(EpubReader);
     fixture.componentRef.setInput('bookId', 'book-1');
@@ -804,10 +803,10 @@ describe('EpubReader theme-following normalization', () => {
     expect(renditions[0].display).toHaveBeenCalledWith(OPENING_CFI);
     expect(booksService.get).not.toHaveBeenCalled();
 
-    // … and the only position written is where the reader actually sits.
+    // … and neither the opening section nor where the unconfirmed restore
+    // left the page is written over the saved position (#1271).
     const writes = booksService.updateProgress.mock.calls.slice(writesBefore);
-    expect(writes).toHaveLength(1);
-    expect(writes[0]).toEqual(['book-1', LIVE_CFI, expect.any(Number)]);
+    expect(writes).toEqual([]);
   });
 
   /**
@@ -1923,5 +1922,97 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(displayCallsFor(TARGET_CFI)).toBe(2); // no further retries
     expect(progressWritesWith(STALE_CFI)).toEqual([]);
+  });
+
+  describe('restoring the saved position on open (#1271)', () => {
+    /** Open a book whose saved position is TARGET_CFI, with page geometry from the start. */
+    async function openAtSavedPosition() {
+      fixture = TestBed.createComponent(EpubReader);
+      fixture.componentRef.setInput('bookId', 'book-1');
+      fixture.componentRef.setInput('book', { id: 'book-1', lastLocation: TARGET_CFI } as never);
+      fixture.detectChanges();
+      const page = fixture.nativeElement.querySelector('#epub-page') as HTMLElement;
+      Object.defineProperty(page, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => pageRect(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    it('keeps the restored page through the opening re-layout and writes nothing', async () => {
+      rangeRect = onPage();
+      await openAtSavedPosition();
+      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+      // The opening re-layout re-displays the long section's start.
+      rangeRect = offPage();
+      emitRelocated(STALE_CFI);
+      emitResized();
+      await vi.advanceTimersByTimeAsync(400); // quiet → verify → displaced → reassert
+      expect(displayCallsFor(TARGET_CFI)).toBe(2);
+
+      rangeRect = onPage();
+      await vi.advanceTimersByTimeAsync(400); // confirmed
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+      // The saved position is already right: opening writes nothing at all.
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+    });
+
+    it('holds every progress write until the restore is confirmed', async () => {
+      rangeRect = onPage();
+      await openAtSavedPosition();
+
+      // Opening churn while settling never reaches the backend …
+      emitRelocated(STALE_CFI);
+      emitResized();
+      await vi.advanceTimersByTimeAsync(1300);
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+
+      // … and once confirmed, the reader's own moves are saved as usual.
+      fixture.componentInstance.next();
+      emitRelocated(USER_CFI);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(booksService.updateProgress).toHaveBeenCalledTimes(1);
+      expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
+    });
+
+    it('lets a page turn during the settle win over the re-assert', async () => {
+      rangeRect = offPage();
+      await openAtSavedPosition();
+      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+      emitResized(); // settle in flight
+      fixture.componentInstance.next();
+      emitRelocated(USER_CFI);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(rendition.next).toHaveBeenCalledTimes(1);
+      expect(displayCallsFor(TARGET_CFI)).toBe(1); // not snapped back
+      expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
+      expect(progressWritesWith(TARGET_CFI)).toEqual([]);
+    });
+
+    it('a failed restore unlocks without writing and shows no passage message', async () => {
+      rangeRect = offPage(); // the saved page never makes it on screen
+      await openAtSavedPosition();
+      emitRelocated(STALE_CFI);
+
+      await vi.advanceTimersByTimeAsync(400); // reassert
+      await vi.advanceTimersByTimeAsync(400); // fail
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(displayCallsFor(TARGET_CFI)).toBe(2);
+      expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+
+      // Unlocked: a move by the reader is saved.
+      fixture.componentInstance.next();
+      emitRelocated(USER_CFI);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
+    });
   });
 });

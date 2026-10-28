@@ -227,6 +227,9 @@ const GROUNDED_SETTLE_QUIET_MS = 400;
  */
 const GROUNDED_SETTLE_MAX_MS = 2000;
 
+/** How a protected navigation ended: kept on screen, given up, or replaced. */
+type GroundedOutcome = 'confirmed' | 'failed' | 'superseded';
+
 interface LocatedPassage {
   cfi: string;
   href: string;
@@ -386,6 +389,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     reassertedAfterReflow: boolean;
     /** Ends the in-flight settle wait (quiet timer + resize listeners). */
     cancelSettle: (() => void) | null;
+    /**
+     * The saved reading position being restored on open (#1271), not a cited
+     * passage: a failure keeps the page quietly instead of showing the
+     * "could not locate this passage" message.
+     */
+    restore: boolean;
+    /** Told once how the protection ended. */
+    onEnd: ((outcome: GroundedOutcome) => void) | null;
   } | null = null;
 
   /** Keydown listeners registered inside each iframe's contents document. */
@@ -1177,6 +1188,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     href: string | null,
     offset: number | null,
     markSentence = false,
+    restore: { onEnd: (outcome: GroundedOutcome) => void } | null = null,
   ): void {
     this.groundedNavigation = {
       generation,
@@ -1188,6 +1200,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       layoutWidth: this.groundedLayoutWidth(href),
       reassertedAfterReflow: false,
       cancelSettle: null,
+      restore: restore !== null,
+      onEnd: restore?.onEnd ?? null,
     };
   }
 
@@ -1201,6 +1215,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     if (!target || (generation !== undefined && target.generation !== generation)) return;
     this.groundedNavigation = null;
     target.cancelSettle?.();
+    target.onEnd?.('superseded');
   }
 
   /**
@@ -1352,6 +1367,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     target.cancelSettle?.();
     this.updateProgressState(target.cfi);
     if (target.markSentence) this.markLandingSentence(target.href, target.offset);
+    target.onEnd?.('confirmed');
   }
 
   /**
@@ -1390,7 +1406,52 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     this.groundedNavigation = null;
     target.cancelSettle?.();
-    this.failGroundedSourceNavigation(error);
+    if (target.restore) {
+      console.warn('Could not keep the saved reading position on screen:', error ?? target.cfi);
+    } else {
+      this.failGroundedSourceNavigation(error);
+    }
+    target.onEnd?.('failed');
+  }
+
+  /**
+   * Open at the saved reading position and keep it there (#1271). A resolved
+   * display is not a settled one: on open the reader box changes size several
+   * times (chrome, the resize debounce, fonts, margins), and each re-layout
+   * re-displays the section's last seen location, which in a long section is
+   * its start. The saved CFI is therefore protected exactly like a grounded
+   * target: re-asserted through the settle and verified on the page.
+   *
+   * Resolves once the protection ends. Only 'superseded' means the reader
+   * moved; the other outcomes must not write a position over the saved one.
+   */
+  private async restoreSavedPosition(rendition: Rendition, cfi: string): Promise<GroundedOutcome> {
+    const generation = this.beginNavigation();
+    const outcome = new Promise<GroundedOutcome>((resolve) => {
+      this.protectGroundedTarget(generation, cfi, this.spineHrefForCfi(cfi), null, false, {
+        onEnd: resolve,
+      });
+    });
+
+    try {
+      await rendition.display(cfi);
+    } catch (error) {
+      this.failGroundedNavigation(generation, error);
+      return outcome;
+    }
+    if (generation !== this.navigationGeneration) return outcome;
+    this.watchGroundedSettle(generation);
+    return outcome;
+  }
+
+  /** The spine item a CFI points into, so its range is found in the right section. */
+  private spineHrefForCfi(cfi: string): string | null {
+    try {
+      const href = (this.epubBook?.spine as any)?.get?.(cfi)?.href;
+      return typeof href === 'string' && href.length > 0 ? href : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1850,6 +1911,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // from the Book the shell already holds — no second GET, whose late answer
     // used to lose the race against the first progress write.
     const restoreLocation = this.book()?.lastLocation ?? null;
+    let reportOnUnlock = true;
 
     rendition
       .display()
@@ -1877,17 +1939,19 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
         if (!restoreLocation) return;
 
-        await rendition.display(restoreLocation).catch((err: unknown) => {
-          console.warn('Could not restore the saved reading position:', err);
-        });
+        // Progress stays closed until the restored page has survived the
+        // opening re-layouts. Only a move by the reader reports a new place;
+        // a confirmed or failed restore leaves the saved position as it was.
+        const outcome = await this.restoreSavedPosition(rendition, restoreLocation);
+        reportOnUnlock = outcome === 'superseded';
       })
       .catch((err) => {
         console.error('Failed to render book:', err);
         this.failOpen();
       })
       .finally(() => {
-        if (this.errorMessage()) return;
-        this.unlockProgress();
+        if (this.errorMessage() || rendition !== this.rendition) return;
+        this.unlockProgress(reportOnUnlock);
 
         // The opening display consumes a queued source once, before the saved
         // position is restored. A source that arrives during that restore was
@@ -1932,15 +1996,16 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   /**
-   * Opens the progress stream and reports where the reader actually is. Called
-   * once the opening display (and the restore, when there is one) has settled,
-   * so the opening section can never overwrite the saved position
-   * (issue #225 §1.2).
+   * Opens the progress stream and, unless `report` is false, reports where the
+   * reader actually is. Called once the opening display (and the restore, when
+   * there is one) has settled, so the opening section can never overwrite the
+   * saved position (issue #225 §1.2). A restore that was confirmed or failed
+   * passes false: the saved position is already the right one (#1271).
    */
-  private unlockProgress(): void {
+  private unlockProgress(report = true): void {
     this.progressUnlocked = true;
     const cfi = this.getCurrentLocation() ?? this.currentCfi;
-    if (cfi) this.updateProgressState(cfi);
+    if (cfi && report) this.updateProgressState(cfi);
     // Search navigation reuses goToSource(), which deliberately queues requests
     // while progress is locked. Do not expose search until the opening display
     // and saved-position restore are finished, or a query can become a stranded
