@@ -50,6 +50,8 @@ interface PendingWorkAction {
 // UI Components
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, LinkCandidate, WorkMember } from './editions-modal/editions-modal.component';
+import { PhotoQuote, PhotoQuoteModal } from './photo-quote/photo-quote-modal.component';
+import { tesseractLanguage } from './photo-quote/page-ocr';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { BookCoverComponent, bookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { ConfirmModal, type ConfirmTone } from '../ui/confirm-modal/confirm-modal.component';
@@ -100,6 +102,7 @@ interface StatusConfirmCopy {
     LoadingIndicatorComponent,
     AddBookModal,
     EditionsModal,
+    PhotoQuoteModal,
     ConfirmModal,
     ProgressComponent,
     BookCoverComponent,
@@ -486,6 +489,38 @@ export class BookDetail implements OnInit, OnDestroy {
     if (typed !== this.paperPage()) this.store.setPaperPage(typed);
     // Show the clamped value even when the store kept the same page.
     input.value = this.paperPage()?.toString() ?? '';
+  }
+
+  // --- PHOTO QUOTE (issue #1292) ---
+
+  /** The photographed page, while its quote is being picked. */
+  readonly photoQuotePhoto = signal<Blob | null>(null);
+  readonly photoQuoteLanguage = computed(() => tesseractLanguage(this.store.book()?.language));
+
+  @ViewChild('photoQuoteInput') photoQuoteInput?: ElementRef<HTMLInputElement>;
+
+  /** Opens the camera on a phone, the file picker elsewhere. */
+  takePhotoQuote(): void {
+    const input = this.photoQuoteInput?.nativeElement;
+    if (!input) return;
+    input.value = '';
+    input.click();
+  }
+
+  onPhotoQuoteChosen(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Cleared at once, so picking the same photo again is still a change.
+    input.value = '';
+    if (file) this.photoQuotePhoto.set(file);
+  }
+
+  closePhotoQuote(): void {
+    this.photoQuotePhoto.set(null);
+  }
+
+  savePhotoQuote(quote: PhotoQuote): void {
+    this.store.addPhotoQuote(quote, () => this.photoQuotePhoto.set(null));
   }
 
   /** The current status as a dropdown value. */

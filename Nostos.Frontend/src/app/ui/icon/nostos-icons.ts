@@ -110,6 +110,7 @@ import books from '@phosphor-icons/core/regular/books.svg';
 import brain from '@phosphor-icons/core/regular/brain.svg';
 import buildings from '@phosphor-icons/core/regular/buildings.svg';
 import calendarBlank from '@phosphor-icons/core/regular/calendar-blank.svg';
+import camera from '@phosphor-icons/core/regular/camera.svg';
 import caretDown from '@phosphor-icons/core/regular/caret-down.svg';
 import caretLeft from '@phosphor-icons/core/regular/caret-left.svg';
 import caretRight from '@phosphor-icons/core/regular/caret-right.svg';
@@ -241,6 +242,7 @@ export const NOSTOS_ICONS = {
   'brain': { regular: brain, thin: brainThin, light: brainLight, fill: brainFill, },
   'buildings': { regular: buildings, },
   'calendar-blank': { regular: calendarBlank, },
+  'camera': { regular: camera, },
   'caret-down': { regular: caretDown, },
   'caret-left': { regular: caretLeft, },
   'caret-right': { regular: caretRight, },
