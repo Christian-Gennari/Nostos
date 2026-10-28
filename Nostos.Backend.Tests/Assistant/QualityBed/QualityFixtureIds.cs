@@ -24,6 +24,10 @@ internal static class QualityFixtureIds
     // B7: indexed-book shell whose ingestion is scheduled but never completed
     // (Pending state, for the C15 indexing-pending turn).
     public static readonly Guid BookGranaryLedger = Guid.Parse("a7777777-7777-4777-8777-777777777777");
+    // B8/B9: one work in two editions, paper and EPUB (C22 paper-book quotes).
+    public static readonly Guid BookValleyRoadPaper = Guid.Parse("a8888888-8888-4888-8888-888888888888");
+    public static readonly Guid BookValleyRoadEpub = Guid.Parse("a9999999-9999-4999-8999-999999999999");
+    public static readonly Guid WorkValleyRoad = Guid.Parse("d8888888-8888-4888-8888-888888888888");
 
     public const string TitleSaltMeridian = "The Salt Meridian";
     public const string TitleCartographer = "The Cartographer's Daughter";
@@ -32,6 +36,7 @@ internal static class QualityFixtureIds
     public const string TitleSleeperCar = "Sleeper Car North";
     public const string TitleMarginalia = "Commonplace Book";
     public const string TitleGranaryLedger = "The Granary Ledger";
+    public const string TitleValleyRoad = "The Valley Road";
 
     // --- Topics (>=6, all linked) ---
     public static readonly Guid TopicAttention = Guid.Parse("d1111111-1111-4111-8111-111111111111");
@@ -72,4 +77,6 @@ internal static class QualityFixtureIds
         "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
     public const string ShaCartographer =
         "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2";
+    public const string ShaValleyRoad =
+        "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3";
 }

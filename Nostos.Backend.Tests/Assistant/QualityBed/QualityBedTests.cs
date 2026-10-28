@@ -41,7 +41,7 @@ public sealed class QualityBedDeterministicTests
 
         // The catalogue is complete: every scenario runs unless filtered.
         if (config.ScenarioIds.Count == 0 && config.Reps == 1)
-            Assert.Equal(21, models.SelectMany(m => m.Scenarios).Count());
+            Assert.Equal(22, models.SelectMany(m => m.Scenarios).Count());
 
         var resultsPath = Path.Combine(config.OutDir, "quality-scripted", "results.json");
         Assert.True(File.Exists(resultsPath), $"expected {resultsPath}");
@@ -114,7 +114,7 @@ public sealed class QualityBedFixtureTests : IDisposable
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<NostosDbContext>>();
         await using var db = await factory.CreateDbContextAsync();
 
-        Assert.Equal(7, await db.Books.CountAsync());
+        Assert.Equal(9, await db.Books.CountAsync());
         Assert.Equal(3, await db.Collections.CountAsync());
         Assert.Equal(21, await db.Notes.CountAsync());
         Assert.Equal(7, await db.Topics.CountAsync());
