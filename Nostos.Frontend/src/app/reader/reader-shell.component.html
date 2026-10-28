@@ -889,9 +889,30 @@
     <div class="toolbar-center">
       <button appIconButton icon="caret-left" [glyphSize]="20" (click)="prevPage()" title="Previous" aria-label="Previous page"></button>
 
-      <div class="reader-progress-track" aria-hidden="true">
-        <span class="reader-progress-fill" [style.width.%]="progressState()?.percentage ?? 0"></span>
+      <!-- Tap the bar to measure the chapter instead of the book (#1269). The
+           2px line sits in a 44px-tall hit area; it is a button only when the
+           reader can place a chapter, otherwise the plain book bar. -->
+      @if (chapterProgressAvailable()) {
+      <button
+        type="button"
+        class="reader-progress-toggle"
+        [attr.aria-pressed]="effectiveProgressScope() === 'chapter'"
+        [attr.aria-label]="progressScopeToggleLabel()"
+        [title]="progressScopeTitle()"
+        (click)="toggleProgressScope()"
+        data-testid="reader-progress-toggle"
+      >
+        <span class="reader-progress-track">
+          <span class="reader-progress-fill" [style.width.%]="progressFillPercent()"></span>
+        </span>
+      </button>
+      } @else {
+      <div class="reader-progress-toggle" aria-hidden="true">
+        <span class="reader-progress-track">
+          <span class="reader-progress-fill" [style.width.%]="progressFillPercent()"></span>
+        </span>
       </div>
+      }
 
       <div
         class="progress-display"

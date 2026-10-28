@@ -1048,7 +1048,9 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
     new Set(['manage-member-action'])],
   ['src/app/reader/reader-shell.component.html',
-    new Set(['typo-opt', 'typo-step'])],
+    // The progress line is the control (#1269): a tap switches book and
+    // chapter progress, in a 44px hit area around a 2px line.
+    new Set(['typo-opt', 'typo-step', 'reader-progress-toggle'])],
   ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item',
     // The stat corner (#1040) is low-opacity text that cycles words, characters
     // and reading time on click: a readout, not an ordinary button.

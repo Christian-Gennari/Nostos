@@ -49,7 +49,9 @@ interface TocItem {
 }
 interface ReaderProgress {
   label: string;
-  percentage: number;
+  percentage: number;                 // book-relative: what is saved and synced
+  chapterPercentage?: number | null;  // 0–100 through the current chapter; null = no chapter
+  chapterLabel?: string | null;       // the chapter it measures
   tooltip?: string;
   pageNumber?: number;
   pageCount?: number;
@@ -121,6 +123,17 @@ Progress is saved on every page turn / audio position change:
 
 - `location`: CFI string (epub), page number (pdf), time in seconds (audio)
 - `percentage`: 0–100 normalized progress
+
+The EPUB/PDF bar can show **book or chapter** progress (#1269). Tapping the bar
+(a button with a 44px hit area around the 2px line) switches it; the choice is
+reader-wide at `nostos.reader-progress-scope`. It is presentation only: the
+readers always report both values and save `percentage`. A book whose TOC or
+outline places no chapter keeps the book bar and has no toggle. The EPUB label
+reads `62% of 7` in chapter mode; PDF keeps its page field and the bar's title
+names the mode. Chapter ranges come from `epub-chapter-progress.ts` (TOC → spine
+ranges, then epub.js locations; until locations exist, the section's own
+pagination) and `pdf-chapter-progress.ts` (outline pages). Several TOC entries
+inside one EPUB file share one range.
 
 ## EpubReader
 

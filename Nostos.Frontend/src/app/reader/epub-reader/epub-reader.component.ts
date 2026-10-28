@@ -67,6 +67,16 @@ import {
   sentenceSpanInResource,
   type EpubSpineSource,
 } from './epub-grounded-source';
+import {
+  chapterFractionFromLocations,
+  chapterFractionFromPages,
+  chapterLocationBounds,
+  chapterRangeForSpine,
+  EpubChapterLocations,
+  EpubChapterRange,
+  epubChapterRanges,
+  spineIndexFromCfi,
+} from './epub-chapter-progress';
 import { EpubReadAloud, type ReadAloudEpubContent } from './epub-read-aloud';
 import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
 import { registerNostosReaderThemes, selectNostosReaderTheme } from './epub-reader-theme';
@@ -197,6 +207,13 @@ export function spinePercentFrom(
  * "3h 43m left" was one 1,000-character location treated as one minute, so it
  * was fiction presented with minute precision (issue #225 §1.3).
  */
+/** A chapter title short enough for the progress pill. */
+function shortChapterLabel(label: string | null | undefined): string | null {
+  const trimmed = label?.trim();
+  if (!trimmed) return null;
+  return trimmed.length > 32 ? `${trimmed.slice(0, 31)}…` : trimmed;
+}
+
 export function progressLabel(percent: number, chapter: string | null): string {
   return chapter ? `${percent}% • ${chapter}` : `${percent}%`;
 }
@@ -436,6 +453,16 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   /** Spine index of the displayed section — the coarse fallback position. */
   private spineIndex = signal<number | null>(null);
+
+  /**
+   * Chapter bar state (#1269): the book's chapters as spine ranges, their
+   * location indexes once locations exist, and what the last `relocated`
+   * reported about the page's end and its place in the section.
+   */
+  private chapterRanges: EpubChapterRange[] = [];
+  private chapterBounds: EpubChapterLocations[] | null = null;
+  private pageEndCfi: string | null = null;
+  private sectionPage: { page: number | null; total: number | null } = { page: null, total: null };
 
   // Track if locations are fully generated
   private locationsReady = signal(false);
@@ -1766,6 +1793,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.assistantLocation.set(null);
     this.assistantSelection.set(null);
     this.progressUnlocked = false;
+    this.chapterRanges = [];
+    this.chapterBounds = null;
+    this.pageEndCfi = null;
+    this.sectionPage = { page: null, total: null };
     this.errorMessage.set(null);
     this.sourceNavigationMessage.set(null);
 
@@ -1861,6 +1892,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.assistantLocation.set(location.start.cfi);
       this.currentHref.set(location.start.href);
       this.spineIndex.set(typeof location.start.index === 'number' ? location.start.index : null);
+      this.pageEndCfi = typeof location.end?.cfi === 'string' ? location.end.cfi : null;
+      this.sectionPage = {
+        page: location.start.displayed?.page ?? null,
+        total: location.start.displayed?.total ?? null,
+      };
       this.updateProgressState(location.start.cfi);
     });
 
@@ -1870,6 +1906,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         if (epubBook.navigation) {
           const toc = this.mapTocItems(epubBook.navigation.toc);
           this.toc.set(toc);
+          this.chapterRanges = epubChapterRanges(
+            toc,
+            this.epubSpineSources()
+              .sort((a, b) => a.index - b.index)
+              .map((item) => item.href),
+          );
+          this.chapterBounds = null;
+          if (this.currentCfi) this.updateProgressState(this.currentCfi, false);
         }
 
         // --- OPTIMIZATION START ---
@@ -1879,6 +1923,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
             // Cache HIT: Load saved locations
             if (dto.locations) {
               epubBook.locations.load(dto.locations);
+              this.chapterBounds = null;
               this.locationsReady.set(true);
               if (this.currentCfi) this.updateProgressState(this.currentCfi);
             }
@@ -1889,6 +1934,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
             // is never left on "Calculating…" with no position at all
             // (issue #225 §1.4).
             epubBook.locations.generate(1000).then(() => {
+              this.chapterBounds = null;
               this.locationsReady.set(true);
               if (this.currentCfi) this.updateProgressState(this.currentCfi);
 
@@ -1968,7 +2014,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   // --- Helpers ---
 
-  private updateProgressState(cfi: string) {
+  private updateProgressState(cfi: string, report = true) {
     if (!this.epubBook) return;
 
     // Locations give the precise percentage. Until they exist — generation can
@@ -1980,10 +2026,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         ? Math.floor(this.epubBook.locations.percentageFromCfi(cfi) * 100)
         : spinePercentFrom(this.spineIndex(), this.spineLength());
 
+    const chapter = this.chapterProgress(cfi);
     this.progress.set({
       label: progressLabel(percent, this.activeChapterLabel()),
       percentage: percent,
+      chapterPercentage: chapter?.percentage ?? null,
+      chapterLabel: chapter?.label ?? null,
     });
+    if (!report) return;
 
     // While a grounded navigation is still settling, relocated events describe
     // epub.js's reflow churn (it re-displays the view's stale location) rather
@@ -2013,11 +2063,43 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.searchAvailable.set(true);
   }
 
+  /**
+   * How far through its chapter the page is (#1269). Precise from locations
+   * once they exist, else from the section's own pagination. Null when the TOC
+   * places no chapter at all.
+   */
+  private chapterProgress(cfi: string): { percentage: number; label: string | null } | null {
+    const spine = this.spineIndex() ?? spineIndexFromCfi(cfi);
+    const range = chapterRangeForSpine(this.chapterRanges, spine);
+    if (!range || spine === null) return null;
+
+    let fraction: number;
+    const locations = this.epubBook?.locations as any;
+    if (this.locationsReady() && locations?.length?.() > 0) {
+      this.chapterBounds ??= chapterLocationBounds(this.chapterRanges, locations._locations ?? []);
+      const bounds = this.chapterBounds[this.chapterRanges.indexOf(range)];
+      const end = this.pageEndCfi ? locations.locationFromCfi(this.pageEndCfi) : null;
+      fraction = chapterFractionFromLocations(
+        bounds,
+        locations.locationFromCfi(cfi),
+        typeof end === 'number' && end >= 0 ? end : null,
+      );
+    } else {
+      fraction = chapterFractionFromPages(
+        range,
+        spine,
+        this.sectionPage.page,
+        this.sectionPage.total,
+      );
+    }
+
+    const label = this.activeChapterLabel() ?? shortChapterLabel(range.label);
+    return { percentage: Math.floor(fraction * 100), label };
+  }
+
   /** Label of the TOC entry the displayed section belongs to, for the pill. */
   private activeChapterLabel(): string | null {
-    const label = this.activeTocItem()?.label?.trim();
-    if (!label) return null;
-    return label.length > 32 ? `${label.slice(0, 31)}…` : label;
+    return shortChapterLabel(this.activeTocItem()?.label);
   }
 
   /**

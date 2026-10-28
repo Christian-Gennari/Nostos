@@ -615,6 +615,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // --- Transport: play, skip, chapter and time are the player's own controls.
   'src/app/reader/audio-reader/audio-reader.component.html': ['chapter-btn', 'time-label-btn', 'skip-btn', 'play-btn'],
   'src/app/reader/read-aloud/read-aloud-bar.component.html': ['read-aloud-toggle'],
+  // The EPUB/PDF progress line is the control: tapping it switches book and
+  // chapter progress (#1269), in a 44px hit area around a 2px line.
+  'src/app/reader/reader-shell.component.html': ['reader-progress-toggle'],
 
   // --- Acquisition, Brain and Studio product rows (also in check-design RULE 15).
   'src/app/add-book-modal/add-book-modal.component.html': ['source-result'],
