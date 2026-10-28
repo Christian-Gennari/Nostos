@@ -141,6 +141,7 @@ inside one EPUB file share one range.
 
 - Renders via `epub.js` `Rendition` into a container div
 - **Saved position on open:** the saved CFI is restored through the same settle protection as a grounded source (re-asserted through the opening re-layouts, then verified on the visible page). Progress writes stay closed until it is confirmed or given up; neither writes a position, so opening a book never overwrites the saved one. A page turn during the settle wins and is saved (#1271).
+- **Marking a passage on a phone:** while a book is open the viewport meta says `interactive-widget=resizes-visual`, so the on-screen keyboard overlays the page instead of shrinking the reader, and the docked selection bar rides above it on `--reader-keyboard-inset` (from `visualViewport`); the document's own value is put back when the reader goes (`reader-keyboard-viewport.ts`). As a safety net for any other resize, a captured selection holds an anchor at its start: no progress is written while it is held, and a re-layout re-displays the selection's start through the same settle protection. Save, Cancel or dismissal end it after a 1 s grace window (the keyboard closing); a real navigation ends it at once (#1270).
 - **Location caching:** On first open, generates all locations and sends to `BooksService.saveLocations()`. On subsequent opens, loads cached locations for instant percentage calculation.
 - **Text selection:** Handled by `EpubAnnotationManager`
 - **Highlights:** Yellow background highlights on annotated passages, stored by CFI range

@@ -89,7 +89,7 @@ export async function buildLongEpub(): Promise<{ bytes: Buffer; targetCfi: strin
   return { bytes, targetCfi };
 }
 
-async function seedBook(baseUrl: string, bytes: Buffer): Promise<string> {
+export async function seedBook(baseUrl: string, bytes: Buffer): Promise<string> {
   const created = await apiPost<any>(baseUrl, '/api/books/', {
     type: 'ebook',
     title: `Restore ${Date.now()}`,

@@ -5,6 +5,9 @@
   width: 100vw;
   overflow: hidden;
   --header-height: 56px;
+  /* How much of the reader the on-screen keyboard covers (#1270). The shell
+     sets it inline from visualViewport while a book is open. */
+  --reader-keyboard-inset: 0px;
   --toolbar-height: 60px;
   --panel-width: 380px;
 }
@@ -442,7 +445,9 @@
 
 .highlight-confirmation {
   position: absolute;
-  bottom: 0;
+  /* Above the on-screen keyboard, which overlays the reader rather than
+     shrinking it (#1270); the shell keeps the variable at its height. */
+  bottom: var(--reader-keyboard-inset);
   left: 0;
   right: 0;
   z-index: 50;

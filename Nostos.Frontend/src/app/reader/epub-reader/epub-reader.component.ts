@@ -246,6 +246,31 @@ const GROUNDED_SETTLE_QUIET_MS = 400;
  */
 const GROUNDED_SETTLE_MAX_MS = 2000;
 
+/**
+ * How long the passage just marked keeps the page after Save or Cancel
+ * (#1270). Closing the phone keyboard resizes the reader once more, after the
+ * selection bar is already gone; that re-layout must land on the passage too.
+ */
+const SELECTION_ANCHOR_GRACE_MS = 1000;
+
+/**
+ * The passage being marked, held as the page to keep (#1270). On a phone the
+ * keyboard (Add note) or the browser toolbar resizes the reader while the
+ * selection bar is up; epub.js then re-paginates the section and re-displays
+ * its last seen location, which deep in a long section is pages away. While
+ * an anchor is held no position is saved, and a re-layout re-displays the
+ * selection's start through the grounded settle.
+ */
+interface SelectionAnchorState {
+  /** Start of the selected range: the page that must stay on screen. */
+  cfi: string;
+  /** Save, Cancel or dismissal happened; the anchor ends after the grace window. */
+  released: boolean;
+  releaseTimer: ReturnType<typeof setTimeout> | null;
+  /** Generation of the re-anchor in flight, if any. */
+  settling: number | null;
+}
+
 /** How a protected navigation ended: kept on screen, given up, or replaced. */
 type GroundedOutcome = 'confirmed' | 'failed' | 'superseded';
 
@@ -409,14 +434,20 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     /** Ends the in-flight settle wait (quiet timer + resize listeners). */
     cancelSettle: (() => void) | null;
     /**
-     * The saved reading position being restored on open (#1271), not a cited
-     * passage: a failure keeps the page quietly instead of showing the
-     * "could not locate this passage" message.
+     * The saved reading position being restored on open (#1271), or the
+     * passage being marked (#1270), not a cited passage: a failure keeps the
+     * page quietly instead of showing the "could not locate this passage"
+     * message.
      */
     restore: boolean;
     /** Told once how the protection ended. */
     onEnd: ((outcome: GroundedOutcome) => void) | null;
   } | null = null;
+
+  /** The passage being marked, kept on the page through re-layouts (#1270). */
+  private selectionAnchor: SelectionAnchorState | null = null;
+  /** Set while a re-anchor starts its own navigation, which must not drop the anchor. */
+  private reanchoring = false;
 
   /** Keydown listeners registered inside each iframe's contents document. */
   private readonly keyboardDocuments = new Map<Document, () => void>();
@@ -554,7 +585,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
             this.rendition.resize(clientWidth, clientHeight);
           } catch (e) {
             console.warn('Rendition resize failed (book might not be ready):', e);
+            return;
           }
+          // The re-layout re-displays epub.js's last seen location; bring the
+          // passage being marked back instead (#1270).
+          if (this.selectionAnchor) void this.reanchorOnSelection(this.selectionAnchor);
         }
       }
     });
@@ -1204,6 +1239,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    */
   private beginNavigation(): number {
     this.releasePageHold();
+    if (!this.reanchoring) this.dropSelectionAnchor();
     this.navigationGeneration++;
     this.cancelGroundedNavigation();
     this.annotationManager?.clearLandingMark();
@@ -1441,6 +1477,90 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.failGroundedSourceNavigation(error);
     }
     target.onEnd?.('failed');
+  }
+
+  /**
+   * Hold the page under the passage just captured (#1270). A touch selection
+   * is offered again as its handles move; the anchor follows it.
+   */
+  private holdSelectionAnchor(): void {
+    const pending = this.annotationManager?.pendingSelection();
+    const start = pending ? cfiRangeEnds(pending.cfiRange)?.start : null;
+    if (!start) return;
+    const current = this.selectionAnchor;
+    if (current) {
+      if (current.releaseTimer) clearTimeout(current.releaseTimer);
+      current.releaseTimer = null;
+      current.released = false;
+      current.cfi = start;
+      return;
+    }
+    this.selectionAnchor = { cfi: start, released: false, releaseTimer: null, settling: null };
+  }
+
+  /**
+   * The passage was saved or dropped. The anchor stays for a short grace
+   * window, because the keyboard closing re-lays the page out once more.
+   */
+  private releaseSelectionAnchor(): void {
+    const anchor = this.selectionAnchor;
+    if (!anchor || anchor.released) return;
+    anchor.released = true;
+    this.endSelectionAnchorAfterGrace(anchor);
+  }
+
+  private endSelectionAnchorAfterGrace(anchor: SelectionAnchorState): void {
+    if (anchor.releaseTimer) clearTimeout(anchor.releaseTimer);
+    anchor.releaseTimer = setTimeout(() => {
+      anchor.releaseTimer = null;
+      // A re-anchor still settling ends the anchor itself when it is done.
+      if (this.selectionAnchor === anchor && anchor.settling === null) this.selectionAnchor = null;
+    }, SELECTION_ANCHOR_GRACE_MS);
+  }
+
+  /** A real navigation (page turn, TOC, search, a new book) ends the anchor at once. */
+  private dropSelectionAnchor(): void {
+    const anchor = this.selectionAnchor;
+    if (!anchor) return;
+    if (anchor.releaseTimer) clearTimeout(anchor.releaseTimer);
+    this.selectionAnchor = null;
+  }
+
+  /**
+   * After a re-layout, show the passage being marked again and keep it there
+   * through epub.js's settle, exactly like a restored position (#1271). Nothing
+   * is saved: the page the reader was on is already their progress.
+   */
+  private async reanchorOnSelection(anchor: SelectionAnchorState): Promise<void> {
+    const rendition = this.rendition;
+    if (!rendition) return;
+
+    this.reanchoring = true;
+    let generation: number;
+    try {
+      generation = this.beginNavigation();
+    } finally {
+      this.reanchoring = false;
+    }
+    anchor.settling = generation;
+    this.protectGroundedTarget(generation, anchor.cfi, this.spineHrefForCfi(anchor.cfi), null, false, {
+      onEnd: (outcome) => {
+        if (anchor.settling !== generation) return;
+        anchor.settling = null;
+        // A newer re-anchor or a real navigation took over; it decides.
+        if (outcome === 'superseded') return;
+        if (anchor.released && this.selectionAnchor === anchor) this.endSelectionAnchorAfterGrace(anchor);
+      },
+    });
+
+    try {
+      await rendition.display(anchor.cfi);
+    } catch (error) {
+      this.failGroundedNavigation(generation, error);
+      return;
+    }
+    if (generation !== this.navigationGeneration) return;
+    this.watchGroundedSettle(generation);
   }
 
   /**
@@ -1878,12 +1998,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       // handles are about to move; hold the page under it (#1254). A mouse
       // capture has already finished its drag and opens an anchored menu.
       if (anchor === null) this.holdPageForSelection();
+      this.holdSelectionAnchor();
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
       this.selectionAnchored.emit(anchor);
     });
     this.annotationManager.setOnSelectionAbandoned(() => {
       this.releasePageHold();
+      this.releaseSelectionAnchor();
       this.selectionDismissed.emit();
     });
     this.annotationManager.init();
@@ -2041,8 +2163,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // epub.js's reflow churn (it re-displays the view's stale location) rather
     // than where the reader has been grounded. Holding them back keeps the
     // transient position out of the saved progress; confirmGroundedNavigation
-    // emits the verified target once protection ends.
-    if (this.groundedNavigation) return;
+    // emits the verified target once protection ends. The same holds while a
+    // passage is being marked: a re-layout's churn is not where the reader is
+    // (#1270).
+    if (this.groundedNavigation || this.selectionAnchor) return;
 
     this.progressUpdater$.next({ location: cfi, percentage: percent });
   }
@@ -2604,6 +2728,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       if (success) {
         this.assistantSelection.set(null);
         this.releasePageHold();
+        this.releaseSelectionAnchor();
       }
     });
   }
@@ -2612,6 +2737,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.annotationManager?.discardHighlight();
     this.assistantSelection.set(null);
     this.releasePageHold();
+    this.releaseSelectionAnchor();
   }
 
   /**
@@ -2698,6 +2824,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
     this.cancelGroundedNavigation();
+    this.dropSelectionAnchor();
     this.resizeObserver?.disconnect();
     if (this.fontApplyTimer) clearTimeout(this.fontApplyTimer);
     if (this.typographyApplyTimer) clearTimeout(this.typographyApplyTimer);
