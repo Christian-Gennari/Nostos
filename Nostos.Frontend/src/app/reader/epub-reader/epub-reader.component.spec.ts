@@ -13,6 +13,7 @@ import {
   fontFamilyFromStored,
   libronFontFaceCss,
   marginInsetPercent,
+  markGlyphElements,
   progressLabel,
   resolveGroundedEpubResourceHref,
   spinePercentFrom,
@@ -881,7 +882,10 @@ describe('typographyCss', () => {
   it('overrides explicit publisher fonts on normal reading text and headings', () => {
     const css = typographyCss({ fontFamily: 'sans', lineHeight: 2.0, margin: 'wide' });
     expect(css).toContain(
-      'body,body p,body blockquote,body li,body dt,body dd,body figcaption,body caption,body td,body th,body h1,body h2,body h3,body h4,body h5,body h6{font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;}',
+      'body,body p,body blockquote,body li,body dt,body dd,body figcaption,body caption,body td,body th,body h1,body h2,body h3,body h4,body h5,body h6,',
+    );
+    expect(css).toContain(
+      '{font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;}',
     );
     expect(css).toContain('line-height:2 !important');
     expect(css).not.toContain('font-size');
@@ -910,6 +914,7 @@ describe('typographyCss', () => {
 
     document.head.append(publisher, nostos);
     document.body.appendChild(host);
+    markGlyphElements(document);
 
     try {
       const prose = host.querySelector<HTMLElement>('[data-testid="prose"]')!;
@@ -924,6 +929,42 @@ describe('typographyCss', () => {
       expect(getComputedStyle(code).fontFamily).toContain('PublisherCode');
       expect(getComputedStyle(pre).fontFamily).toContain('PublisherCode');
       expect(getComputedStyle(icon).fontFamily).toContain('PublisherIcons');
+    } finally {
+      host.remove();
+      nostos.remove();
+      publisher.remove();
+    }
+  });
+
+  it('reaches running text inside publisher-styled inline elements', () => {
+    // The Curley Spinoza conversion: every text run is a span that names its own font.
+    const publisher = document.createElement('style');
+    publisher.textContent =
+      '.S-DefaultFontStyle{font-family:"Times New Roman"}' +
+      'strong{font-family:Arial}' +
+      '.ref{font-family:"PublisherSerif"}';
+
+    const nostos = document.createElement('style');
+    nostos.textContent = typographyCss({ fontFamily: 'sans', lineHeight: 1.6, margin: 'normal' });
+
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<p><strong data-testid="label">Post. 1</strong>' +
+      '<span class="S-DefaultFontStyle" data-testid="run">: The human body ' +
+      '<a class="ref" href="#" data-testid="link">IIP13</a></span>' +
+      '<code><span class="S-DefaultFontStyle" data-testid="in-code">x</span></code></p>';
+
+    document.head.append(publisher, nostos);
+    document.body.appendChild(host);
+    markGlyphElements(document);
+
+    try {
+      const font = (id: string) =>
+        getComputedStyle(host.querySelector<HTMLElement>(`[data-testid="${id}"]`)!).fontFamily;
+      expect(font('run')).toContain('system-ui');
+      expect(font('label')).toContain('system-ui');
+      expect(font('link')).toContain('system-ui');
+      expect(font('in-code')).toContain('Times New Roman');
     } finally {
       host.remove();
       nostos.remove();

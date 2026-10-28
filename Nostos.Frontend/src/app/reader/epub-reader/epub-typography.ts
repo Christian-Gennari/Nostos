@@ -146,6 +146,56 @@ const READING_FONT_SELECTOR = [
 ].join(',');
 
 /**
+ * Inline elements that carry running text. Converted books often wrap every
+ * run in one, e.g. `<p><span class="S-DefaultFontStyle">…</span></p>` with
+ * `.S-DefaultFontStyle{font-family:"Times New Roman"}`, so a typeface that only
+ * reached the blocks above would stop at the span. Code-like elements and
+ * anything inside them keep their fonts, as do glyph-only elements tagged by
+ * {@link markGlyphElements}.
+ */
+const INLINE_TEXT_TAGS = [
+  'span',
+  'a',
+  'em',
+  'i',
+  'strong',
+  'b',
+  'cite',
+  'small',
+  'big',
+  'sup',
+  'sub',
+  'abbr',
+  'q',
+  'dfn',
+  'mark',
+  'u',
+  's',
+  'font',
+];
+
+export const GLYPH_ATTRIBUTE = 'data-nostos-glyph';
+
+const INLINE_TEXT_SELECTOR =
+  `body :is(${INLINE_TEXT_TAGS.join(',')})` +
+  `:not([${GLYPH_ATTRIBUTE}],:is(pre,code,kbd,samp,tt,svg,math) *)`;
+
+/** Text made only of whitespace and Private Use Area code points, where icon fonts put their glyphs. */
+const GLYPH_ONLY_TEXT = /^[\s\p{Co}]*$/u;
+
+/**
+ * Tag inline elements that hold no readable text — only icon-font glyphs, or
+ * nothing at all (an icon drawn by `::before`) — so a chosen reading typeface
+ * leaves their publisher font alone. A section's markup does not change after
+ * it renders, so one pass per contents document is enough.
+ */
+export function markGlyphElements(doc: Document): void {
+  for (const el of Array.from(doc.body?.querySelectorAll(INLINE_TEXT_TAGS.join(',')) ?? [])) {
+    if (GLYPH_ONLY_TEXT.test(el.textContent ?? '')) el.setAttribute(GLYPH_ATTRIBUTE, '');
+  }
+}
+
+/**
  * Prose blocks that should honour the reader's line-height choice even when an
  * EPUB assigns line-height directly. Headings and preformatted/code elements
  * are deliberately omitted so their authored vertical rhythm can remain
@@ -188,7 +238,8 @@ export function typographyCss(t: EpubTypography): string {
   if (t.fontFamily === 'publisher') return lineHeight;
 
   return (
-    `${READING_FONT_SELECTOR}{font-family:${FONT_STACKS[t.fontFamily]} !important;}` +
+    `${READING_FONT_SELECTOR},${INLINE_TEXT_SELECTOR}` +
+    `{font-family:${FONT_STACKS[t.fontFamily]} !important;}` +
     lineHeight
   );
 }
