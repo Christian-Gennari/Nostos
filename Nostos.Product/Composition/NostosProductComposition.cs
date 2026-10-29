@@ -177,6 +177,7 @@ public static class NostosProductComposition
         services.TryAddScoped<IBookTextEmbeddingIndex, NoOpBookTextEmbeddingIndex>();
         services.AddScoped<BookTextEmbeddingEngine>();
         services.AddScoped<IBookTextSearchService, BookTextSearchService>();
+        services.AddScoped<IBookTextQuoteFinder, BookTextQuoteFinder>();
         services.AddScoped<BookTextBackfillService>();
 
         var alignment = configuration.GetSection(AlignmentOptions.SectionName)
@@ -310,7 +311,8 @@ public static class NostosProductComposition
             sp.GetRequiredService<ILibraryService>(),
             sp.GetRequiredService<ITopicRepository>(),
             sp.GetRequiredService<IKnowledgeRetrievalService>(),
-            sp.GetRequiredService<IBookTextSearchService>())));
+            sp.GetRequiredService<IBookTextSearchService>(),
+            sp.GetRequiredService<IBookTextQuoteFinder>())));
 
         services.Configure<AcquisitionOptions>(
             configuration.GetSection(AcquisitionOptions.SectionName));

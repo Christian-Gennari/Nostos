@@ -3818,6 +3818,263 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     // ------------------------------------------------------------------
+    // Paper-book quotes found by their first and last words (#1291)
+    // ------------------------------------------------------------------
+
+    private const string ValleyPassage =
+        "The time of the snow was long past, and the people of the valley waited for the travellers. They never came back.";
+
+    [Fact]
+    public async Task Paper_book_quote_named_by_first_and_last_words_saves_the_epub_text_at_the_named_page()
+    {
+        var h = CreateHarness();
+        var (paper, epub) = await SeedPaperWithEpubAsync(h, "The Valley");
+        await SeedBookTextChunksAsync(h, epub.Id,
+            "Chapter one begins with the mountains and nothing else of note happens here.",
+            ValleyPassage + " Then the winter came again.",
+            "The last chapter is about the river.");
+
+        var quoteRef = await FindQuoteRefAsync(h, paper.Id, "the time of the", "never came back");
+
+        h.Llm
+            .CallsTool("book_text_find_quote", """{"startsWith":"the time of the","endsWith":"never came back","page":143}""")
+            .CallsTool("notes_capture", $$"""{"quoteRef":"{{quoteRef}}"}""")
+            .Returns("Saved the quote.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Page 143, it starts with the time of the and ends with never came back. Save it.",
+            Context(
+                surface: "book-detail",
+                route: $"/library/{paper.Id}",
+                bookId: paper.Id.ToString(),
+                bookTitle: paper.Title,
+                bookFormat: "physical")));
+
+        response.AnchorPrompt.Should().BeNull("the user already named the page");
+        response.Acknowledgement.Should().NotContain(AssistantOrchestrator.QuoteFidelityNote);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.BookId.Should().Be(paper.Id, "the quote belongs to the paper book being read");
+        note.SelectedText.Should().Be(ValleyPassage);
+        note.SourceAnchorKind.Should().Be("physical_page");
+        note.SourceAnchorValue.Should().Be("143");
+        note.Content.Should().NotContain(AssistantOrchestrator.QuoteFidelityNote);
+    }
+
+    [Fact]
+    public async Task Quote_ref_wins_over_a_selected_text_the_model_retyped()
+    {
+        var h = CreateHarness();
+        var (paper, epub) = await SeedPaperWithEpubAsync(h, "The Valley");
+        await SeedBookTextChunksAsync(h, epub.Id, ValleyPassage);
+        var quoteRef = await FindQuoteRefAsync(h, paper.Id, "the time of the", "never came back");
+
+        h.Llm
+            .CallsTool("notes_capture", $$"""{"quoteRef":"{{quoteRef}}","selectedText":"the time of the ... never came back","content":"Lovely"}""")
+            .Returns("Saved.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "On page 12: starts with the time of the, ends with never came back. My note: Lovely",
+            Context(bookId: paper.Id.ToString(), bookTitle: paper.Title, bookFormat: "physical")));
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SelectedText.Should().Be(ValleyPassage);
+        note.Content.Should().Be("Lovely");
+        note.SourceAnchorValue.Should().Be("12");
+    }
+
+    [Fact]
+    public async Task Paper_book_without_a_digital_edition_saves_nothing_from_the_dictated_words()
+    {
+        var h = CreateHarness();
+        var paper = await SeedBookAsync(h, "Only On Paper");
+
+        h.Llm
+            .CallsTool("book_text_find_quote", """{"startsWith":"the time of the","endsWith":"never came back"}""")
+            .CallsTool("notes_capture", """{"selectedText":"the time of the … never came back"}""")
+            .Returns("There's no digital edition to look it up in.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Page 4, starts with the time of the and ends with never came back, save it",
+            Context(bookId: paper.Id.ToString(), bookTitle: paper.Title, bookFormat: "physical")));
+
+        response.Acknowledgement.Should().BeNull();
+        var findResult = ToolResultFor(h, "book_text_find_quote");
+        findResult.GetProperty("status").GetString().Should().Be("no_digital_edition");
+        findResult.GetProperty("message").GetString().Should().Contain("photograph the page");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Two_matching_passages_ask_for_a_choice_and_the_answer_saves_the_chosen_one_at_the_earlier_page()
+    {
+        var h = CreateHarness();
+        var (paper, epub) = await SeedPaperWithEpubAsync(h, "The Valley");
+        const string second =
+            "The time of the harvest was near, and nobody in the village said they never came back.";
+        await SeedBookTextChunksAsync(h, epub.Id, ValleyPassage, "A quiet interlude about bread.", second);
+
+        h.Llm
+            .CallsTool("book_text_find_quote", """{"startsWith":"the time of the","endsWith":"never came back"}""")
+            .CallsTool("notes_capture", """{"selectedText":"the time of the never came back"}""")
+            .Returns("Two passages match: 1. The time of the snow … 2. The time of the harvest … Which one?");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "page 88 — it starts with the time of the and ends with never came back, save that",
+            Context(bookId: paper.Id.ToString(), bookTitle: paper.Title, bookFormat: "physical"),
+            conversationId: "conversation-quote",
+            turnId: "turn-1"));
+
+        var choose = ToolResultFor(h, "book_text_find_quote");
+        choose.GetProperty("status").GetString().Should().Be("choose");
+        choose.GetProperty("candidates").GetArrayLength().Should().Be(2);
+        first.Acknowledgement.Should().BeNull();
+        await using (var db = await h.Factory.CreateDbContextAsync())
+            (await db.Notes.CountAsync()).Should().Be(0, "nothing is saved until the user picks");
+
+        var quoteRef = await FindQuoteRefAsync(h, paper.Id, "the time of the", "never came back", choice: 2);
+        h.Llm
+            .CallsTool("book_text_find_quote", """{"startsWith":"the time of the","endsWith":"never came back","choice":2}""")
+            .CallsTool("notes_capture", $$"""{"quoteRef":"{{quoteRef}}"}""")
+            .Returns("Saved the second one.");
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new("user", "page 88 — it starts with the time of the and ends with never came back, save that"),
+            new("assistant", first.Reply),
+        };
+        var answer = await h.Orchestrator.HandleTurnAsync(Turn(
+            "2",
+            Context(bookId: paper.Id.ToString(), bookTitle: paper.Title, bookFormat: "physical"),
+            history: history,
+            conversationId: "conversation-quote",
+            turnId: "turn-2"));
+
+        answer.AnchorPrompt.Should().BeNull();
+        await using var after = await h.Factory.CreateDbContextAsync();
+        var note = await after.Notes.AsNoTracking().SingleAsync();
+        note.SelectedText.Should().Be(second);
+        note.SourceAnchorValue.Should().Be("88");
+    }
+
+    [Fact]
+    public async Task A_fresh_paper_book_thought_still_asks_for_the_page_even_when_an_earlier_message_named_one()
+    {
+        var h = CreateHarness();
+        var paper = await SeedBookAsync(h, "Only On Paper");
+
+        h.Llm
+            .CallsTool("notes_capture", """{"content":"The ending is sad"}""")
+            .Returns("What page are you on?");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "The ending is sad",
+            Context(bookId: paper.Id.ToString(), bookTitle: paper.Title, bookFormat: "physical"),
+            history: [new("user", "I was on page 40 yesterday")]));
+
+        response.AnchorPrompt.Should().NotBeNull();
+        response.AnchorPrompt!.Kind.Should().Be("physical_page");
+    }
+
+    [Fact]
+    public async Task Find_quote_always_searches_the_open_book_not_one_the_model_names()
+    {
+        var h = CreateHarness();
+        var (paper, epub) = await SeedPaperWithEpubAsync(h, "The Valley");
+        await SeedBookTextChunksAsync(h, epub.Id, ValleyPassage);
+        var other = await SeedBookAsync(h, "Another Book");
+
+        h.Llm
+            .CallsTool("book_text_find_quote", $$"""{"bookId":"{{other.Id}}","startsWith":"the time of the","endsWith":"never came back"}""")
+            .Returns("Found it.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "find the passage that starts with the time of the and ends with never came back",
+            Context(bookId: paper.Id.ToString(), bookTitle: paper.Title, bookFormat: "physical")));
+
+        ToolResultFor(h, "book_text_find_quote").GetProperty("status").GetString().Should().Be("found");
+    }
+
+    private static async Task<(PhysicalBookModel Paper, EBookModel Epub)> SeedPaperWithEpubAsync(Harness h, string title)
+    {
+        var work = new WorkModel { Title = title, NormalizedTitle = title.ToLowerInvariant() };
+        h.Db.Works.Add(work);
+        var paper = new PhysicalBookModel { Id = Guid.NewGuid(), Title = title, Author = "Author", WorkId = work.Id, PageCount = 300 };
+        var epub = new EBookModel { Id = Guid.NewGuid(), Title = title, Author = "Author", WorkId = work.Id, FileDetails = new FileInfoDetails { HasFile = true, FileName = "valley.epub" } };
+        h.Db.Books.AddRange(paper, epub);
+        await h.Db.SaveChangesAsync();
+        return (paper, epub);
+    }
+
+    private static async Task SeedBookTextChunksAsync(Harness h, Guid bookId, params string[] texts)
+    {
+        var index = new SqliteBookTextIndex(h.Factory);
+        await index.EnsureSchemaAsync();
+        await index.ScheduleAsync(bookId, "valley.epub", BookTextSourceFormat.Epub);
+        var work = await index.TryClaimNextAsync(TimeSpan.FromHours(1));
+        work.Should().NotBeNull();
+
+        var revision = new BookTextSourceRevision(
+            bookId,
+            new string('d', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            BookTextSourceFormat.Epub);
+        var chunks = texts.Select((text, ordinal) => new BookTextIndexedChunk(
+            BookTextIdentity.ChunkId(revision, ordinal),
+            bookId,
+            revision.SourceSha256,
+            revision.ExtractorVersion,
+            revision.Format,
+            ordinal,
+            text,
+            [$"Chapter {ordinal + 1}"],
+            [new BookTextSourceSegment(0, text.Length, new EpubBookTextSourceLocator(ordinal, $"ch{ordinal}.xhtml"))]))
+            .ToList();
+
+        (await index.ReplaceReadyAsync(revision, chunks, texts.Sum(text => text.Length), work!.Attempt))
+            .Should().BeTrue();
+    }
+
+    private static async Task<string> FindQuoteRefAsync(
+        Harness h, Guid bookId, string startsWith, string endsWith, int? choice = null)
+    {
+        var library = new LibraryService(
+            h.Factory,
+            new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
+        var finder = new BookTextQuoteFinder(new SqliteBookTextIndex(h.Factory), library);
+        var result = await finder.FindAsync(new BookTextQuoteFindRequest(bookId, startsWith, endsWith, Choice: choice));
+        result.Status.Should().Be(BookTextQuoteFindStatus.Found);
+        return result.Candidates.Single().QuoteRef;
+    }
+
+    /// <summary>The last result the model was shown for <paramref name="tool"/>.</summary>
+    private static JsonElement ToolResultFor(Harness h, string tool)
+    {
+        foreach (var request in Enumerable.Reverse(h.Llm.Requests))
+        {
+            var messages = request.Messages.ToList();
+            for (var i = messages.Count - 1; i >= 0; i--)
+            {
+                if (messages[i].Role != "tool" || messages[i].ToolCallId is not { } id)
+                    continue;
+                var call = messages.SelectMany(message => message.ToolCalls ?? []).FirstOrDefault(c => c.Id == id);
+                if (call?.Name == tool)
+                {
+                    using var doc = JsonDocument.Parse(messages[i].Content!);
+                    var root = doc.RootElement;
+                    return (root.TryGetProperty("data", out var data) ? data : root).Clone();
+                }
+            }
+        }
+
+        throw new InvalidOperationException($"No result for {tool}.");
+    }
+
+    // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
 
@@ -3865,7 +4122,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
                 libraryService,
                 topics,
                 knowledge ?? NoOpKnowledgeRetrievalService.Instance,
-                bookTextService));
+                bookTextService,
+                new BookTextQuoteFinder(new SqliteBookTextIndex(factory), libraryService)));
 
         var llm = new FakeLlmProvider();
         var assistantOptions = new AssistantOptions

@@ -112,13 +112,13 @@ baseline time, before candidate runs.
 
 ### Deterministic bed
 
-All 21 scenarios (C1–C20 plus the C21 Swedish probe, see below) run deterministically through the
+All 22 scenarios (C1–C20 plus the C21 Swedish probe and the C22 paper-book quote, see below) run deterministically through the
 real orchestrator with a scripted provider — real SQLite stores, real retrieval services, real
 HTTP/streaming surface, real approval/continuation machinery; no paid model calls.
 
 - `Nostos.Backend.Tests/Assistant/QualityBed/` — 28 tests pass (`Quality_bed_deterministic_scenarios_pass`,
   fixture-shape/vocabulary guards, live wiring proof, scoring unit tests).
-- Scenarios and modes: C1–C12, C16–C21 run in **both** deterministic and live modes; C13/C14/C15
+- Scenarios and modes: C1–C12, C16–C22 run in **both** deterministic and live modes; C13/C14/C15
   (cancel semantics and typed operational failures) are **deterministic-only** — they inject
   cancellation/timeouts/failures, which cannot be produced deterministically against a paid provider.
 - Deterministic-mode assertions are path-exact (exact tools, exact evidence, exact note/collection
@@ -134,6 +134,15 @@ kvällspromenaden?`). Deterministic mode proves the Swedish words survive verbat
 retrieval by a Swedish query, and the exact handle re-read; live mode scores Swedish instruction
 following, retrieval and evidence-grounded answering. This is an addition beyond the issue's
 C1–C20 list, made only to satisfy the issue's own multilingual evaluation criterion.
+
+**Addition — C22 (paper-book quote by first and last words, #1291).** Reading a paper book, the
+user names a passage by how it starts and ends ("page 143, it starts with … and ends with …").
+`book_text_find_quote` finds it in the EPUB edition of the same work and `notes_capture` saves it
+through the returned `quoteRef`. Four turns: exact words, misheard words at both ends, two matching
+passages (asks, saves nothing) and a paper book with no digital edition (one line pointing to
+photographing the page, saves nothing). Deterministic mode proves the exact EPUB text lands on the
+paper book at the named page without the "Quoted by hand" note; live mode scores tool choice and
+the replies.
 
 ### H1–H16 preservation map
 

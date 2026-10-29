@@ -56,7 +56,30 @@ internal static class QualityLibrarySeeder
         var b5 = new AudioBookModel { Id = QualityFixtureIds.BookSleeperCar, Title = QualityFixtureIds.TitleSleeperCar, Author = "K. Vinter", Narrator = "S. Dahl" };
         var b6 = new PhysicalBookModel { Id = QualityFixtureIds.BookMarginalia, Title = QualityFixtureIds.TitleMarginalia, Author = "Various hands" };
         var b7 = new EBookModel { Id = QualityFixtureIds.BookGranaryLedger, Title = QualityFixtureIds.TitleGranaryLedger, Author = "E. Fors" };
-        db.Books.AddRange(b1, b2, b3, b4, b5, b6, b7);
+        // B8/B9: the paper and EPUB editions of one work (C22).
+        db.Works.Add(new WorkModel
+        {
+            Id = QualityFixtureIds.WorkValleyRoad,
+            Title = QualityFixtureIds.TitleValleyRoad,
+            NormalizedTitle = QualityFixtureIds.TitleValleyRoad.ToLowerInvariant(),
+        });
+        var b8 = new PhysicalBookModel
+        {
+            Id = QualityFixtureIds.BookValleyRoadPaper,
+            Title = QualityFixtureIds.TitleValleyRoad,
+            Author = "L. Berg",
+            WorkId = QualityFixtureIds.WorkValleyRoad,
+            PageCount = 320,
+        };
+        var b9 = new EBookModel
+        {
+            Id = QualityFixtureIds.BookValleyRoadEpub,
+            Title = QualityFixtureIds.TitleValleyRoad,
+            Author = "L. Berg",
+            WorkId = QualityFixtureIds.WorkValleyRoad,
+            FileDetails = new FileInfoDetails { HasFile = true, FileName = "valley-road.epub" },
+        };
+        db.Books.AddRange(b1, b2, b3, b4, b5, b6, b7, b8, b9);
 
         db.Topics.AddRange(
             new TopicModel { Id = QualityFixtureIds.TopicAttention, Topic = "Attention" },
@@ -204,6 +227,15 @@ internal static class QualityLibrarySeeder
             CartographerChunks(),
             ct);
 
+        chunks += await CommitBookAsync(
+            index,
+            QualityFixtureIds.BookValleyRoadEpub,
+            "valley-road.epub",
+            BookTextSourceFormat.Epub,
+            QualityFixtureIds.ShaValleyRoad,
+            ValleyRoadChunks(),
+            ct);
+
         // B7: scheduled, never claimed -> genuine Pending state for C15.
         await index.ScheduleAsync(
             QualityFixtureIds.BookGranaryLedger, "granary-ledger.pdf", BookTextSourceFormat.Pdf, ct);
@@ -330,6 +362,28 @@ internal static class QualityLibrarySeeder
     }
 
     // -- Synthetic book-text chunks (real index path, invented words) --
+
+    public const string ValleyRoadQuote =
+        "The time of the thaw was long past, and the herders of the upper valley waited at the ford for the drovers. They never came back.";
+
+    public const string ValleyRoadTurnFirst =
+        "The road turns east at the old mill, past the alders, toward home.";
+
+    public const string ValleyRoadTurnSecond =
+        "The road turns again below the chapel and runs on, slow and muddy, toward home.";
+
+    private static IReadOnlyList<(string Text, IReadOnlyList<string> Headings, BookTextSourceLocator Locator)> ValleyRoadChunks() =>
+    [
+        ("The herders counted the flock twice at dawn. " + ValleyRoadTurnFirst,
+         ["Chapter One"],
+         new EpubBookTextSourceLocator(SpineIndex: 1, ResourceHref: "ch01.xhtml")),
+        (ValleyRoadQuote + " The ford stayed empty all winter.",
+         ["Chapter Six"],
+         new EpubBookTextSourceLocator(SpineIndex: 6, ResourceHref: "ch06.xhtml")),
+        ("Spring came late. " + ValleyRoadTurnSecond,
+         ["Chapter Nine"],
+         new EpubBookTextSourceLocator(SpineIndex: 9, ResourceHref: "ch09.xhtml")),
+    ];
 
     private static IReadOnlyList<(string Text, IReadOnlyList<string> Headings, BookTextSourceLocator Locator)> SaltMeridianChunks() =>
     [

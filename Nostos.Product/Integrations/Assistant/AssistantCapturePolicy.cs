@@ -13,7 +13,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// source anchor, while the model only supplies the user's words. Missing book
 /// or location data becomes an explicit follow-up rather than a guess.
 /// </summary>
-internal sealed class AssistantCapturePolicy(ILibraryService library)
+internal sealed partial class AssistantCapturePolicy(ILibraryService library)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int MaxBookCandidateChoices = 5;
@@ -23,12 +23,17 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
     /// turn on a rewrite or topics; the tool call's flags alone never do.
     /// </param>
     /// <param name="fallbackContent">The capture text when the tool call carried none (a continuation).</param>
+    /// <param name="earlierUserMessages">
+    /// The user's earlier messages in this conversation, newest first. A page
+    /// they named there ("page 143, it starts with …") still places the capture.
+    /// </param>
     public async Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
         AssistantContextDto? context,
         string? userMessage,
         string? fallbackContent,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyList<string>? earlierUserMessages = null)
     {
         var book = await DecideBookAsync(context, ct);
         if (book.Prompt is { } bookPrompt)
@@ -41,7 +46,12 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
 
         var anchor = AboutWholeBook(argumentsJson, context)
             ? AnchorDecision.Skip()
-            : DecideAnchor(context);
+            : DecideAnchor(
+                context,
+                userMessage,
+                // Only a quote looked up over several turns ("2", "yes") reaches
+                // back for its page; a fresh thought never inherits an old one.
+                HasQuoteRef(argumentsJson) ? earlierUserMessages : null);
         if (anchor.Prompt is { } anchorPrompt)
         {
             return AssistantCapturePreparation.Ask(
@@ -67,11 +77,15 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
     /// position in it, so it is saved without one and nobody is asked for a page
     /// or timestamp. A quote always keeps its place.
     /// </summary>
+    private static bool HasQuoteRef(string argumentsJson) =>
+        !string.IsNullOrWhiteSpace(ReadString(AssistantToolArguments.ParseObject(argumentsJson), "quoteRef"));
+
     private static bool AboutWholeBook(string argumentsJson, AssistantContextDto? context)
     {
         var obj = AssistantToolArguments.ParseObject(argumentsJson);
         return ReadBool(obj, "wholeBook") == true
             && string.IsNullOrWhiteSpace(ReadString(obj, "selectedText"))
+            && string.IsNullOrWhiteSpace(ReadString(obj, "quoteRef"))
             && string.IsNullOrWhiteSpace(context?.SelectedText);
     }
 
@@ -276,8 +290,18 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         // An open book is a fact; a book the model went and found is a guess.
         obj["bookId"] = bookId.ToString();
 
-        var selectedText = ReadString(obj, "selectedText") ?? context?.SelectedText;
-        if (!string.IsNullOrWhiteSpace(selectedText))
+        // A passage found by its first and last words is the book's own text,
+        // which the capture reads from the ref. Neither the model's copy of it
+        // nor a reader selection replaces it.
+        var fromBookText = !string.IsNullOrWhiteSpace(ReadString(obj, "quoteRef"));
+        var selectedText = fromBookText
+            ? null
+            : ReadString(obj, "selectedText") ?? context?.SelectedText;
+        if (fromBookText)
+        {
+            obj.Remove("selectedText");
+        }
+        else if (!string.IsNullOrWhiteSpace(selectedText))
         {
             obj["selectedText"] = selectedText;
         }
@@ -285,6 +309,7 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         var content = ReadString(obj, "content");
         if (string.IsNullOrWhiteSpace(content)
             && string.IsNullOrWhiteSpace(selectedText)
+            && !fromBookText
             && !string.IsNullOrWhiteSpace(fallbackContent))
         {
             // A continuation answer supplies only the missing book/anchor. The
@@ -351,7 +376,10 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         return JsonSerializer.SerializeToElement(obj, JsonOptions);
     }
 
-    private static AnchorDecision DecideAnchor(AssistantContextDto? context)
+    private static AnchorDecision DecideAnchor(
+        AssistantContextDto? context,
+        string? userMessage = null,
+        IReadOnlyList<string>? earlierUserMessages = null)
     {
         // An anchor the client supplied is an answer (or an explicit skip).
         if (context?.Anchor is { } anchor)
@@ -389,6 +417,14 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
                     context.AudioTimestamp.Value.ToString(CultureInfo.InvariantCulture),
                     verified: true);
             }
+        }
+
+        // A paper book has no reader to ask, but the user may already have
+        // said where they are. Their words, never the model's, are the page.
+        if (string.Equals(context?.BookFormat, "physical", StringComparison.OrdinalIgnoreCase)
+            && PageNamedBy(userMessage, earlierUserMessages) is { } namedPage)
+        {
+            return AnchorDecision.At("physical_page", namedPage, verified: false);
         }
 
         // The format cannot supply a location: ask.
@@ -444,6 +480,37 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         return text;
     }
 
+
+    [GeneratedRegex(
+        @"(?<![\p{L}\d])(?:page|pg\.?|p\.|sida|sidan|s\.)\s*(\d{1,5})(?!\d)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NamedPageRegex();
+
+    /// <summary>
+    /// The one page the user named ("on page 143", "sidan 12"), in this message
+    /// or, failing that, the latest earlier one that named one. Two different
+    /// pages in one message are no answer.
+    /// </summary>
+    internal static string? PageNamedBy(string? userMessage, IReadOnlyList<string>? earlierUserMessages)
+    {
+        foreach (var message in new[] { userMessage }.Concat(earlierUserMessages ?? []).Take(4))
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                continue;
+
+            var pages = NamedPageRegex().Matches(message)
+                .Select(match => match.Groups[1].Value.TrimStart('0'))
+                .Where(page => page.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (pages.Count == 1)
+                return pages[0];
+            if (pages.Count > 1)
+                return null;
+        }
+
+        return null;
+    }
 
     private static string NormalizePageAnswer(string answer)
     {
