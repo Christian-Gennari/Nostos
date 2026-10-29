@@ -48,6 +48,8 @@
     "@angular/router": "^22.2.3",
     "@angular/service-worker": "^22.2.3",
     "@phosphor-icons/core": "^2.1.1",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/swe": "^1.0.0",
     "@tiptap/core": "3.32.0",
     "@tiptap/extension-bubble-menu": "3.32.0",
     "@tiptap/extension-image": "3.32.0",
@@ -67,6 +69,7 @@
     "ngx-extended-pdf-viewer": "^31.0.1",
     "rxjs": "~7.8.0",
     "sigma": "^4.0.3",
+    "tesseract.js": "^7.0.0",
     "tslib": "^2.3.0",
     "turndown": "^7.2.2",
     "turndown-plugin-gfm": "1.0.2"

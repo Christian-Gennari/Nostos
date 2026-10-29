@@ -1,0 +1,92 @@
+.photo-quote-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--color-text-main);
+}
+
+.photo-quote-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0 1.25rem 1rem;
+}
+
+.photo-quote-hint,
+.photo-quote-reading p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.photo-quote-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.5rem 0;
+}
+
+/* The page reads like a page: book type, loose leading, no box around it. */
+.photo-quote-page {
+  max-height: min(42dvh, 360px);
+  overflow-y: auto;
+  font-family: 'Newsreader', serif;
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--color-text-main);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-y;
+}
+
+.photo-quote-page p {
+  margin: 0 0 0.8em;
+}
+
+.photo-quote-word {
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.photo-quote-word:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* A word Tesseract was unsure of: easy to spot, easy to fix below. */
+.photo-quote-word.is-unsure {
+  text-decoration: underline dotted var(--color-text-light);
+  text-underline-offset: 3px;
+}
+
+.photo-quote-word.is-selected {
+  background: var(--color-highlight);
+  color: var(--color-text-main);
+}
+
+/* One run of highlight, as in the reader: the space to the next selected
+   word is filled, and only the run's own ends are rounded. */
+.photo-quote-word.is-selected:has(+ .is-selected) {
+  box-shadow: 0.3em 0 0 var(--color-highlight);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.photo-quote-word.is-selected + .is-selected {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.photo-quote-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.photo-quote-page-input {
+  width: 6.5rem;
+}
+
+.photo-quote-comment {
+  flex: 1;
+  min-width: 0;
+}

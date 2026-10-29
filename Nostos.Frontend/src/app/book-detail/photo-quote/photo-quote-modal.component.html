@@ -1,0 +1,122 @@
+<app-modal-shell
+  closeLabel="Close photo quote"
+  [isOpen]="true"
+  variant="sheet"
+  cardClass="photo-quote-card"
+  [maxWidth]="'600px'"
+  [maxHeight]="'min(820px, calc(100dvh - 2.5rem))'"
+  [layer]="110"
+  [busy]="busy()"
+  [dismissOnBackdrop]="stage() !== 'select'"
+  ariaLabelledBy="photo-quote-title"
+  [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
+  (closed)="closed.emit()"
+>
+  <header shellHeader>
+    <h2 id="photo-quote-title" class="photo-quote-title">Photo quote</h2>
+  </header>
+
+  <div class="photo-quote-body">
+    @switch (stage()) {
+      @case ('reading') {
+        <div class="photo-quote-reading" role="status">
+          <p>Reading the page…</p>
+          <nostos-progress [value]="progress()" label="Reading the page" />
+        </div>
+      }
+
+      @case ('failed') {
+        <p class="photo-quote-hint" role="alert">
+          No text could be read from that photo. Lay the page flat in good light and try again.
+        </p>
+      }
+
+      @case ('select') {
+        <p class="photo-quote-hint">Tap the first and last word of the quote, or drag across it.</p>
+
+        <div
+          class="photo-quote-page"
+          data-testid="photo-quote-page"
+          (pointermove)="pointerMove($event)"
+          (pointerleave)="pointerCancel()"
+          (pointercancel)="pointerCancel()"
+        >
+          @for (paragraph of paragraphs(); track $index) {
+            <p>
+              @for (item of paragraph; track item.index) {
+                <span
+                  class="photo-quote-word"
+                  role="button"
+                  tabindex="0"
+                  [attr.data-word]="item.index"
+                  [class.is-selected]="selected(item.index)"
+                  [class.is-unsure]="item.word.confidence < lowConfidence"
+                  [attr.aria-pressed]="selected(item.index)"
+                  (pointerdown)="pointerDown($event, item.index)"
+                  (pointerup)="pointerUp(item.index)"
+                  (keydown.enter)="pick(item.index)"
+                  (keydown.space)="$event.preventDefault(); pick(item.index)"
+                >{{ item.word.text }}</span>{{ ' ' }}
+              }
+            </p>
+          }
+        </div>
+
+        @if (quote()) {
+          <app-form-field label="Quote" forId="photo-quote-text" hint="Fix any word the photo misread.">
+            <textarea
+              appTextarea
+              id="photo-quote-text"
+              rows="4"
+              data-testid="photo-quote-text"
+              [ngModel]="quote()"
+              (ngModelChange)="quote.set($event)"
+            ></textarea>
+          </app-form-field>
+
+          <div class="photo-quote-row">
+            <app-form-field label="Page" forId="photo-quote-page-number">
+              <input
+                appInput
+                id="photo-quote-page-number"
+                type="number"
+                inputmode="numeric"
+                min="1"
+                [attr.max]="pageCount()"
+                class="photo-quote-page-input"
+                data-testid="photo-quote-page-number"
+                [value]="pageValue() ?? ''"
+                (input)="setPage($any($event.target).value)"
+              />
+            </app-form-field>
+
+            <app-form-field label="Your note" labelNote="Optional" forId="photo-quote-comment" class="photo-quote-comment">
+              <input
+                appInput
+                id="photo-quote-comment"
+                type="text"
+                data-testid="photo-quote-comment"
+                [ngModel]="comment()"
+                (ngModelChange)="comment.set($event)"
+              />
+            </app-form-field>
+          </div>
+        }
+      }
+    }
+  </div>
+
+  <app-dialog-actions shellActions>
+    <button appButton type="button" variant="secondary" dialogActionsStart [disabled]="busy()" (click)="retake.emit()">
+      {{ stage() === 'failed' ? 'Try another photo' : 'Retake' }}
+    </button>
+    <button
+      appButton
+      type="button"
+      variant="primary"
+      data-testid="photo-quote-save"
+      [disabled]="!canSave()"
+      (click)="submit()"
+    >Save quote</button>
+  </app-dialog-actions>
+</app-modal-shell>

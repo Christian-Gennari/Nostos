@@ -290,6 +290,33 @@
                 <span>Import failed{{ store.book()?.statusMessage ? ': ' + store.book()?.statusMessage : '.' }}</span>
               </div>
             }
+            @if (isPaperBook()) {
+            <!-- A quote from a photo of the page (issue #1292): the camera on a
+                 phone, the file picker elsewhere. The photo is read on the
+                 device and never uploaded. -->
+            <button
+              appButton
+              variant="secondary"
+              size="lg"
+              class="secondary-action"
+              data-testid="photo-quote-button"
+              aria-label="Photo quote"
+              title="Photograph a page and save a quote from it"
+              (click)="takePhotoQuote()"
+            >
+              <nostos-icon name="camera" [size]="18"></nostos-icon>
+              <span class="action-label">Photo quote</span>
+            </button>
+            <input
+              #photoQuoteInput
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              data-testid="photo-quote-input"
+              (change)="onPhotoQuoteChosen($event)"
+            />
+            }
             <div class="edit-menu-container">
               <button
                 appButton
@@ -689,4 +716,17 @@
     (linkRequest)="askLink($event)"
     (unlinkRequest)="askUnlink($event)"
   ></app-editions-modal>
+
+  @if (photoQuotePhoto(); as photo) {
+  <app-photo-quote-modal
+    [photo]="photo"
+    [language]="photoQuoteLanguage()"
+    [page]="paperPage()"
+    [pageCount]="paperPageCount()"
+    [busy]="store.noteSaving()"
+    (closed)="closePhotoQuote()"
+    (retake)="takePhotoQuote()"
+    (save)="savePhotoQuote($event)"
+  ></app-photo-quote-modal>
+  }
 </main>
