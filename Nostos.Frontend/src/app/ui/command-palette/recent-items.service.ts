@@ -14,6 +14,8 @@ export interface RecentItem {
   id: string;
   label: string;
   sub: string;
+  /** A book's work: two editions of one book are one recent item (the last one opened). */
+  workId?: string;
 }
 
 const STORAGE_KEY = 'nostos.palette.recent';
@@ -49,7 +51,9 @@ export class RecentItemsService {
 
   /** Records an item whose label is already known (the palette's own results). */
   record(item: RecentItem): void {
-    const rest = this._items().filter((i) => !(i.kind === item.kind && i.id === item.id));
+    const rest = this._items().filter(
+      (i) => !(i.kind === item.kind && (i.id === item.id || (!!item.workId && i.workId === item.workId))),
+    );
     this.persist([item, ...rest].slice(0, MAX_ITEMS));
   }
 
@@ -93,7 +97,7 @@ export class RecentItemsService {
       case 'book':
         return this.books
           .get(id)
-          .pipe(map((b) => ({ kind, id, label: b.title, sub: b.author || UNKNOWN_AUTHOR })));
+          .pipe(map((b) => ({ kind, id, label: b.title, sub: b.author || UNKNOWN_AUTHOR, ...(b.workId ? { workId: b.workId } : {}) })));
       case 'topic':
         return this.topics
           .get(id)

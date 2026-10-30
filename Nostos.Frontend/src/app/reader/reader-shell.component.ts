@@ -66,6 +66,7 @@ import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigat
 import { ThemePickerComponent } from '../ui/theme-picker/theme-picker.component';
 import { ToastService } from '../core/services/toast.service';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
+import { formatOf, formatOfConcept } from '../core/book-format';
 import { NoteSearchHit, Passage, passageReadingMinutes, passageSizeLabel } from '../core/dtos/note.dtos';
 import { PassageViewerRequest } from '../ui/passage-viewer/passage-viewer.service';
 import {
@@ -911,6 +912,25 @@ export class ReaderShell implements OnInit, OnDestroy {
     const topics = this.noteTopicNames();
     return this.dbNotes().map((note) => ({ note, item: noteAsItem(note, topics.get(note.id)) }));
   });
+  /**
+   * The notes made in the book's other editions. Listed below this edition's
+   * own, never painted on the page or in the audio timeline: their places
+   * belong to another copy.
+   */
+  readonly otherEditionNotes = signal<NoteSearchHit[]>([]);
+  readonly otherNotesOpen = signal(false);
+  /** "4 from the audiobook", or "6 from other editions"; null when there are none. */
+  readonly otherNotesLabel = computed(() => {
+    const notes = this.otherEditionNotes();
+    if (!notes.length) return null;
+    const editions = new Set(notes.map((note) => note.bookId.toLowerCase()));
+    const format = formatOfConcept(notes[0].bookFormat);
+    const own = this.book() ? formatOf(this.book()!).format : null;
+    const kind = editions.size === 1 && format && format.format !== own
+      ? ` the ${format.concept === 'physical' ? 'physical copy' : format.format === 'PDF' ? 'PDF' : format.format.toLowerCase()}`
+      : null;
+    return `${notes.length} from${kind ?? (editions.size === 1 ? ' another edition' : ' other editions')}`;
+  });
   quickNoteContent = signal('');
   quickNoteSaving = signal(false);
   /**
@@ -1560,19 +1580,34 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private noteTopicsSeq = 0;
 
-  /** Every note's topics in this book, read 200 at a time until all are in. */
+  /**
+   * Every note's topics in this book, read 200 at a time until all are in. A
+   * book with several editions is read as the whole work in the same pass: the
+   * other editions' notes are kept apart, for the collapsed group below the list.
+   */
   private loadNoteTopics(bookId: string): void {
     const seq = ++this.noteTopicsSeq;
+    const workId = this.book()?.workId;
+    const manyEditions = !!workId && (this.book()?.otherEditions?.length ?? 0) > 0;
+    const filter = manyEditions ? { workId } : { bookId };
+    const others: NoteSearchHit[] = [];
     const page = (held: Map<string, readonly string[]>, offset: number) =>
-      this.notesService.browse({ bookId, limit: 200, offset }).subscribe({
+      this.notesService.browse({ ...filter, limit: 200, offset }).subscribe({
         next: (result) => {
           if (seq !== this.noteTopicsSeq) return;
-          result.items.forEach((hit) => held.set(hit.id, hit.topicNames ?? []));
+          for (const hit of result.items) {
+            if (!manyEditions || hit.bookId?.toLowerCase() === bookId.toLowerCase()) held.set(hit.id, hit.topicNames ?? []);
+            else others.push(hit);
+          }
           const read = offset + result.items.length;
           if (result.items.length && read < result.totalCount) page(held, read);
-          else this.noteTopicNames.set(held);
+          else {
+            this.noteTopicNames.set(held);
+            this.otherEditionNotes.set(others);
+          }
         },
       });
+    if (!manyEditions) this.otherEditionNotes.set([]);
     page(new Map(), 0);
   }
 

@@ -425,6 +425,59 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
     }
 
     // ------------------------------------------------------------------
+    // The assistant can rate one named edition
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task An_edition_rating_change_touches_only_the_named_edition_and_previews_as_its_own_field()
+    {
+        var h = Harness();
+        var epub = await CreateAsync(h, "ebook", "Fictions", "Borges", rating: 3);
+        var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
+        ((await GetAsync(h, audio)).Rating).Should().Be(3, "the two editions are one book");
+
+        var ops = new LibraryChangeOp[] { new UpdateBookOp(audio, EditionRating: 5) };
+        var preview = await h.Service.PreviewAsync(ops);
+
+        preview.Success.Should().BeTrue(preview.ErrorMessage);
+        var fields = preview.Diff!.BookEdits.Single().Fields;
+        fields.Should().ContainSingle(f => f.Field == "Edition rating" && f.Before == "0" && f.After == "5");
+        fields.Should().NotContain(f => f.Field == "Rating", "the book's own rating is not what changed");
+        (await GetAsync(h, audio)).EditionRating.Should().Be(0, "a preview changes nothing");
+
+        var applied = await h.Service.ApplyAsync(ops, preview.DiffHash);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        var audioAfter = await GetAsync(h, audio);
+        var epubAfter = await GetAsync(h, epub);
+        (audioAfter.EditionRating, audioAfter.Rating).Should().Be((5, 3));
+        (epubAfter.EditionRating, epubAfter.Rating).Should().Be((0, 3));
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().BeEmpty();
+        (await GetAsync(h, audio)).EditionRating.Should().Be(0);
+        (await GetAsync(h, audio)).Rating.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task Undo_keeps_an_edition_rating_that_was_changed_after_the_changeset()
+    {
+        var h = Harness();
+        var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
+        var applied = await h.Service.ApplyAsync([new UpdateBookOp(audio, EditionRating: 4)], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        (await h.Service.ApplyAsync([new UpdateBookOp(audio, EditionRating: 2)], expectedDiffHash: null))
+            .Success.Should().BeTrue();
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Conflicts.Should().ContainSingle();
+        (await GetAsync(h, audio)).EditionRating.Should().Be(2);
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 

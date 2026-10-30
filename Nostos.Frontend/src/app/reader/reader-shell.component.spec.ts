@@ -206,6 +206,8 @@ class NoteItemStub {
   topics = input<unknown>(null);
   topicMap = input<unknown>(null);
   showBook = input(true);
+  showFormat = input(false);
+  readOnly = input(false);
   showMoreFromBook = input(true);
   canSelect = input(true);
   inBook = input(false);
@@ -3193,6 +3195,45 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     item.edited.emit({ id: 'n-1', content: 'Rage, first of all.' });
     expect(service['update']).toHaveBeenCalledWith('n-1', expect.objectContaining({ content: 'Rage, first of all.' }));
     expect(service['get']).toHaveBeenCalledWith('n-1');
+  });
+
+  it('lists the notes of the other editions in a collapsed group, never on the page (#1302)', async () => {
+    const component = await openBook('iliad.epub', []);
+    const service = TestBed.inject(NotesService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    service['list'].mockReturnValue(of([note({ content: 'Mine.' })]));
+    service['browse'].mockReturnValue(of({
+      items: [
+        { id: 'n-1', bookId: 'book-hl', topicNames: [], bookFormat: 'audiobook' },
+        { id: 'n-2', bookId: 'book-other', topicNames: [], bookFormat: 'physical', content: 'On paper', createdAt: '2026-01-02T00:00:00Z' },
+        { id: 'n-3', bookId: 'book-other', topicNames: [], bookFormat: 'physical', content: 'Again', createdAt: '2026-01-03T00:00:00Z' },
+      ],
+      totalCount: 3,
+    }));
+    component.book.set({ ...component.book()!, id: 'book-hl', workId: 'work-1', otherEditions: [{ id: 'book-other', type: 'physical' }] } as never);
+    component.loadNotes('book-hl');
+    render();
+
+    expect(service['browse']).toHaveBeenCalledWith({ workId: 'work-1', limit: 200, offset: 0 });
+    expect(component.dbNotes().map((n) => n.id)).toEqual(['n-1']);
+    const toggle = fixture.nativeElement.querySelector('.notes-other-toggle') as HTMLButtonElement;
+    expect(toggle.textContent).toContain('2 from the physical copy');
+    expect(fixture.nativeElement.querySelectorAll('.notes-panel app-note-item')).toHaveLength(1);
+
+    toggle.click();
+    render();
+
+    const others = fixture.debugElement.queryAll(By.css('#notes-other-list app-note-item'));
+    expect(others.map((o) => o.nativeElement.getAttribute('data-note-id'))).toEqual(['n-2', 'n-3']);
+    expect(others.map((o) => o.componentInstance.showFormat())).toEqual([true, true]);
+    expect(others.map((o) => o.componentInstance.inBook())).toEqual([false, false]);
+  });
+
+  it('shows no group for a book with one edition (#1302)', async () => {
+    const component = await openBook('iliad.epub', []);
+    component.loadNotes('book-hl');
+    render();
+
+    expect(fixture.nativeElement.querySelector('.notes-other')).toBeNull();
   });
 
   it('gives Ask Nostos the opened passage as its context', async () => {

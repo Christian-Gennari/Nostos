@@ -30,6 +30,7 @@ import { WritingsService } from '../../core/services/writings.service';
 import { ToastService } from '../../core/services/toast.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 import { Book } from '../../core/dtos/book.dtos';
+import { editionChoices, type EditionChoice } from '../../book-detail/edition-switch-options';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { NoteSearchHit } from '../../core/dtos/note.dtos';
 import { WritingDto } from '../../core/dtos/writing.dtos';
@@ -103,6 +104,10 @@ export interface PaletteEntry {
   coverFormat?: BookCoverFormat | null;
   /** Extra words an action answers to, beyond its label. */
   keywords?: string;
+  /** A book with several editions: each one, to open it directly. Absent for one edition. */
+  editions?: EditionChoice[];
+  /** A book's work, so a recent item stands for the book, not one edition. */
+  workId?: string;
 }
 
 export interface PaletteSection {
@@ -274,7 +279,8 @@ export class CommandPalette {
           return forkJoin({
             books: wantsBooks
               ? this.booksService
-                  .list({ search: q, page: 1, pageSize: LIMITS.books })
+                  // One row per book; its editions come with it.
+                  .list({ search: q, page: 1, pageSize: LIMITS.books, groupByWork: true })
                   .pipe(map((res) => res.items ?? []), failedTo([] as Book[]))
               : of([] as Book[]),
             notes: wantsNotes
@@ -408,6 +414,14 @@ export class CommandPalette {
     return `palette-option-${index}`;
   }
 
+  /** A specific edition of a book, from its row. */
+  openEdition(entry: PaletteEntry, edition: EditionChoice, event: Event): void {
+    event.stopPropagation();
+    this.close();
+    this.remember(entry);
+    this.router.navigate(['/library', edition.id]);
+  }
+
   run(entry: PaletteEntry): void {
     this.close();
     switch (entry.kind) {
@@ -477,7 +491,7 @@ export class CommandPalette {
 
   private remember(entry: PaletteEntry): void {
     if (entry.kind === 'book' || entry.kind === 'topic' || entry.kind === 'document') {
-      this.recent.record({ kind: entry.kind, id: entry.id, label: entry.label, sub: entry.sub });
+      this.recent.record({ kind: entry.kind, id: entry.id, label: entry.label, sub: entry.sub, ...(entry.workId ? { workId: entry.workId } : {}) });
     }
   }
 
@@ -637,7 +651,13 @@ export class CommandPalette {
 
 function bookEntry(b: Book): PaletteEntry {
   // A 22px-wide chip: the smallest thumbnail, not the full-size cover.
-  return { kind: 'book', id: b.id, label: b.title, sub: b.author || UNKNOWN_AUTHOR, icon: 'book', coverUrl: coverImageUrl(b, 120), coverFormat: bookCoverFormat(b) };
+  const editions = editionChoices(b);
+  return {
+    kind: 'book', id: b.id, label: b.title, sub: b.author || UNKNOWN_AUTHOR, icon: 'book',
+    coverUrl: coverImageUrl(b, 120), coverFormat: bookCoverFormat(b),
+    ...(editions.length ? { editions } : {}),
+    ...(b.workId ? { workId: b.workId } : {}),
+  };
 }
 
 function topicEntry(t: TopicDto): PaletteEntry {
@@ -646,7 +666,7 @@ function topicEntry(t: TopicDto): PaletteEntry {
 
 function recentEntry(item: RecentItem): PaletteEntry {
   const icon: NostosIconName = item.kind === 'book' ? 'book' : item.kind === 'topic' ? 'hash' : 'file-text';
-  return { kind: item.kind, id: item.id, label: item.label, sub: item.sub, icon };
+  return { kind: item.kind, id: item.id, label: item.label, sub: item.sub, icon, ...(item.workId ? { workId: item.workId } : {}) };
 }
 
 const EXCERPT_MAX = 120;

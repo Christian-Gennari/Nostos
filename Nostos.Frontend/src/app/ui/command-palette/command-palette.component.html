@@ -70,6 +70,18 @@
           @if (entry.kind !== 'ask') {
           <span class="palette-item-sub">{{ entry.sub }}</span>
           }
+          @if (entry.editions; as editions) {
+          <!-- A book with several editions is one row; its editions open
+               directly. Enter opens the book, whose page has the switcher. -->
+          <span class="palette-item-editions">
+            @for (edition of editions; track edition.id) {
+            <button appButton variant="ghost" size="sm" type="button" class="palette-edition" tabindex="-1" (click)="openEdition(entry, edition, $event)"
+              [attr.aria-label]="'Open the ' + edition.label" data-testid="palette-edition">
+              <nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true" />{{ edition.label }}
+            </button>
+            }
+          </span>
+          }
         </span>
         <span class="palette-item-enter" aria-hidden="true">
           <nostos-icon name="arrow-elbow-down-left" [size]="14"></nostos-icon>

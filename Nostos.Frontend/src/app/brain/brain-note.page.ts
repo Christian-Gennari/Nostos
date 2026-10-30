@@ -83,7 +83,7 @@ export class BrainNotePage {
   }
 
   moreFromBook(note: NoteSearchHit): void {
-    void this.router.navigate(['/brain'], { queryParams: { book: note.bookId } });
+    void this.router.navigate(['/brain'], { queryParams: { book: note.workId ?? note.bookId } });
   }
 
   openDrawer(): void {

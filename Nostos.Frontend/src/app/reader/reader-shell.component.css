@@ -234,6 +234,16 @@
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
 }
+.notes-other {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.5rem;
+}
+.notes-other-toggle {
+  gap: 0.375rem;
+  padding-inline: 0;
+  color: var(--color-text-muted);
+}
 .notes-list {
   flex: 1;
   overflow-y: auto;

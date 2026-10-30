@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import { formatOf } from '../core/book-format';
+import { formatOf, type BookFormatConcept } from '../core/book-format';
 import type { Book, EditionSummaryDto } from '../core/dtos/book.dtos';
 import type { EditionSwitcherOption } from '../ui/edition-switcher/edition-switcher.component';
 import { READING_STATUS_LABEL } from '../core/reading-status';
@@ -188,4 +188,29 @@ function isAudio(type: string): boolean {
 
 function clamp(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+/** One edition of a book as a picker offers it: glyph, and the shared label. */
+export interface EditionChoice {
+  id: string;
+  concept: BookFormatConcept;
+  /** "Audiobook", or "Ebook · 2nd edition" when another edition shares the format. */
+  label: string;
+  /** What tells it from another edition of the same format; null when the format does. */
+  detail: string | null;
+  current: boolean;
+}
+
+/**
+ * The editions a book picker offers, labelled as the book page's switcher
+ * labels them. Empty for a single edition: such a book is picked at once.
+ */
+export function editionChoices(book: Book | null): EditionChoice[] {
+  return buildEditionSwitchOptions(book).map((option) => ({
+    id: option.id,
+    concept: option.concept as BookFormatConcept,
+    label: option.detail ? `${option.format} · ${option.detail}` : option.format,
+    detail: option.detail,
+    current: option.current,
+  }));
 }

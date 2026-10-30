@@ -861,6 +861,43 @@
         />
         }
         }
+
+        @if (otherNotesLabel(); as otherLabel) {
+        <!-- The same book's notes from its other editions: collapsed, listed
+             after this edition's own, and never drawn on the page. Opening one
+             goes to its edition at its place. -->
+        <section class="notes-other" data-testid="notes-other-editions">
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="notes-other-toggle"
+            [attr.aria-expanded]="otherNotesOpen()"
+            aria-controls="notes-other-list"
+            (click)="otherNotesOpen.set(!otherNotesOpen())"
+          >
+            <nostos-icon [name]="otherNotesOpen() ? 'caret-down' : 'caret-right'" [size]="14" aria-hidden="true" />
+            {{ otherLabel }}
+          </button>
+          @if (otherNotesOpen()) {
+          <div id="notes-other-list">
+            @for (hit of otherEditionNotes(); track hit.id) {
+            <app-note-item
+              [note]="hit"
+              [topics]="brain.topics()"
+              [topicMap]="brain.lookup()"
+              [showBook]="false"
+              [showFormat]="true"
+              [showMoreFromBook]="false"
+              [canSelect]="false"
+              [readOnly]="true"
+            />
+            }
+          </div>
+          }
+        </section>
+        }
       </div>
     </aside>
   </div>

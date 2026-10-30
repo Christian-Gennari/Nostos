@@ -90,6 +90,38 @@ public sealed class BrainEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     [Fact]
+    public async Task Books_lists_a_book_once_across_its_editions_and_notes_say_how_many_editions_there_are()
+    {
+        var topic = $"Editions Topic {Guid.NewGuid():N}";
+        var (epub, _) = await CreateBookWithNotesAsync($"[[{topic}]] a", $"[[{topic}]] b");
+        var (audio, _) = await CreateBookWithNotesAsync($"[[{topic}]] c");
+        var (alone, _) = await CreateBookWithNotesAsync($"[[{topic}]] d");
+        Guid workId;
+        await using (var db = await OpenDbAsync())
+        {
+            var first = await db.Books.SingleAsync(b => b.Id == epub.Id);
+            workId = first.WorkId;
+            var second = await db.Books.SingleAsync(b => b.Id == audio.Id);
+            second.WorkId = workId;
+            await db.SaveChangesAsync();
+        }
+        var topicId = (await GetTopicsAsync()).Single(t => t.Name == topic).Id;
+
+        var facets = (await Client.GetFromJsonAsync<NoteBookFacetDto[]>($"/api/notes/books?topicId={topicId}"))!;
+
+        facets.Should().HaveCount(2, "two editions of one book are one entry");
+        var book = facets.Single(f => f.WorkId == workId);
+        book.NoteCount.Should().Be(3);
+        new[] { epub.Id, audio.Id }.Should().Contain(book.BookId);
+        facets.Single(f => f.BookId == alone.Id).NoteCount.Should().Be(1);
+
+        var browse = await BrowseAsync($"topicId={topicId}&workId={workId}");
+        browse.TotalCount.Should().Be(3);
+        browse.Items.Should().OnlyContain(n => n.EditionCount == 2 && n.WorkId == workId);
+        (await BrowseAsync($"topicId={topicId}&bookId={alone.Id}")).Items.Single().EditionCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Summary_counts_all_notes_passages_and_unsorted()
     {
         var before = (await Client.GetFromJsonAsync<NoteSummaryDto>("/api/notes/summary"))!;
