@@ -234,18 +234,19 @@ public static partial class AssistantCapabilities
 
         Stage(
             "library_update_book",
-            "Edits a book's own details. Only the fields given change.",
+            "Edits a book's own details. Only the fields given change. Rating, favourite and review belong to the book: they are the same for every edition of it, so one change covers them all. A single edition can carry its own rating on top (the narration of an audiobook, say): set 'editionRating' only when the user names the edition, with that edition's id as bookId.",
             """
             {
               "type": "object",
               "properties": {
-                "bookId": { "type": "string", "format": "uuid", "description": "The book. Required." },
+                "bookId": { "type": "string", "format": "uuid", "description": "The book. Required. With 'editionRating', the id of the edition the user named." },
                 "title": { "type": "string", "description": "New title." },
                 "author": { "type": "string", "description": "New author." },
                 "description": { "type": "string", "description": "New description; an empty string clears it." },
-                "rating": { "type": "integer", "description": "Rating from 0 to 5." },
-                "isFavorite": { "type": "boolean", "description": "Whether the book is a favourite." },
-                "personalReview": { "type": "string", "description": "The user's own review; an empty string clears it. Only ever the user's words." },
+                "rating": { "type": "integer", "description": "The book's rating from 0 to 5, shared by all its editions." },
+                "editionRating": { "type": "integer", "description": "Only for the edition named in bookId: its own rating from 0 to 5, 0 to clear. Leave out unless the user names the edition." },
+                "isFavorite": { "type": "boolean", "description": "Whether the book is a favourite, for all its editions." },
+                "personalReview": { "type": "string", "description": "The user's own review of the book, for all its editions; an empty string clears it. Only ever the user's words." },
                 "isFinished": { "type": "boolean", "description": "True marks it finished; false marks it not finished." }
               },
               "required": ["bookId"],
@@ -265,8 +266,9 @@ public static partial class AssistantCapabilities
                     Rating: Num(args, "rating"),
                     IsFavorite: Bool(args, "isFavorite"),
                     PersonalReview: Str(args, "personalReview"),
-                    IsFinished: Bool(args, "isFinished"));
-                if (op is { Title: null, Author: null, Description: null, Rating: null, IsFavorite: null, PersonalReview: null, IsFinished: null })
+                    IsFinished: Bool(args, "isFinished"),
+                    EditionRating: Num(args, "editionRating"));
+                if (op is { Title: null, Author: null, Description: null, Rating: null, IsFavorite: null, PersonalReview: null, IsFinished: null, EditionRating: null })
                     return Invalid("Give at least one field to change.");
 
                 return await draft.StageAsync(op, [], ct);

@@ -187,6 +187,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["author"] = "string",
                 ["description"] = "string",
                 ["rating"] = "integer",
+                ["editionRating"] = "integer",
                 ["isFavorite"] = "boolean",
                 ["personalReview"] = "string",
                 ["isFinished"] = "boolean",

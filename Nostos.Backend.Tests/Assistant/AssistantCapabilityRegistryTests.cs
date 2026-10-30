@@ -327,6 +327,25 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     [Fact]
+    public async Task Update_book_sets_the_edition_rating_without_touching_the_books_rating()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Essays and Aphorisms", "Schopenhauer");
+
+        var result = await StageAndApplyAsync(h, "library_update_book",
+            JsonSerializer.Serialize(new { bookId = book.Id, editionRating = 4 }));
+
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var stored = await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id);
+        stored.Progress.Rating.Should().Be(4);
+        stored.Work!.Rating.Should().Be(0, "the edition's rating is its own, not the book's");
+
+        h.Registry.All.Single(c => c.Name == "library_update_book").Summary
+            .Should().Contain("belong to the book").And.Contain("editionRating");
+    }
+
+    [Fact]
     public async Task Update_book_description_preserves_other_metadata_and_memberships()
     {
         var h = CreateHarness();

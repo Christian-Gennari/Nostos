@@ -165,6 +165,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 if (update.Author is not null) fields.Add("author");
                 if (update.Description is not null) fields.Add("description");
                 if (update.Rating is not null) fields.Add("rating");
+                if (update.EditionRating is not null) fields.Add("edition rating");
                 if (update.IsFavorite is not null) fields.Add(update.IsFavorite.Value ? "mark favourite" : "unmark favourite");
                 if (update.PersonalReview is not null) fields.Add("review");
                 if (update.IsFinished is not null) fields.Add(update.IsFinished.Value ? "mark finished" : "mark not finished");

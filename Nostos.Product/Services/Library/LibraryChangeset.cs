@@ -58,7 +58,11 @@ public sealed record UpdateBookOp(
     int? Rating = null,
     bool? IsFavorite = null,
     string? PersonalReview = null,
-    bool? IsFinished = null) : LibraryChangeOp;
+    bool? IsFinished = null,
+    // APPENDED. This one edition's own rating, an exception to the book's: 0..5,
+    // 0 clears it. BookId names the edition. Rating, IsFavorite and PersonalReview
+    // above are the book's and the same on every edition.
+    int? EditionRating = null) : LibraryChangeOp;
 
 /// <summary>
 /// What running a changeset did, or why it could not run. A failed changeset
@@ -111,7 +115,9 @@ public sealed record BookFieldsState(
     bool IsFavorite,
     string? PersonalReview,
     DateTime? FinishedAt,
-    int ProgressPercent);
+    int ProgressPercent,
+    // APPENDED. The edition's own rating; null when the snapshot did not capture it.
+    int? EditionRating = null);
 
 /// <summary>What an undo restored, and what it left alone because it changed since.</summary>
 public sealed record LibraryRevertResult(

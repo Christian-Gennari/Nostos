@@ -263,7 +263,8 @@ public sealed partial class LibraryService : ILibraryChangesetService
                         Rating: update.Rating,
                         IsFavorite: update.IsFavorite,
                         PersonalReview: update.PersonalReview,
-                        IsFinished: update.IsFinished), ct)).Result);
+                        IsFinished: update.IsFinished,
+                        EditionRating: update.EditionRating), ct)).Result);
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(op), op.GetType().Name, "Unknown changeset operation.");
@@ -348,11 +349,12 @@ public sealed partial class LibraryService : ILibraryChangesetService
                         b.Work.PersonalReview,
                         b.Progress.FinishedAt,
                         b.Progress.ProgressPercent,
+                        EditionRating = b.Progress.Rating,
                     })
                     .ToListAsync(ct))
                 .ToDictionary(b => b.Id, b => new BookFieldsState(
                     b.Title, b.Author, b.Description, b.Rating, b.IsFavorite,
-                    b.PersonalReview, b.FinishedAt, b.ProgressPercent));
+                    b.PersonalReview, b.FinishedAt, b.ProgressPercent, b.EditionRating));
 
         return new LibrarySnapshot(
             await CurrentVersionAsync(db, ct),
@@ -486,6 +488,8 @@ public sealed partial class LibraryService : ILibraryChangesetService
         Add("Author", was.Author, now.Author);
         Add("Description", was.Description, now.Description);
         Add("Rating", was.Rating.ToString(CultureInfo.InvariantCulture), now.Rating.ToString(CultureInfo.InvariantCulture));
+        if (was.EditionRating is { } wasEdition && now.EditionRating is { } nowEdition)
+            Add("Edition rating", wasEdition.ToString(CultureInfo.InvariantCulture), nowEdition.ToString(CultureInfo.InvariantCulture));
         Add("Favorite", was.IsFavorite ? "Yes" : "No", now.IsFavorite ? "Yes" : "No");
         Add("Review", was.PersonalReview, now.PersonalReview);
         Add("Finished", was.FinishedAt is null ? "No" : "Yes", now.FinishedAt is null ? "No" : "Yes");
@@ -659,7 +663,8 @@ public sealed partial class LibraryService : ILibraryChangesetService
 
                 var now = new BookFieldsState(book.Title, book.Author, book.Metadata.Description,
                     book.Work!.Rating, book.Work.IsFavorite, book.Work.PersonalReview,
-                    book.Progress.FinishedAt, book.Progress.ProgressPercent);
+                    book.Progress.FinishedAt, book.Progress.ProgressPercent,
+                    snapshot.After.EditionRating is null ? null : book.Progress.Rating);
                 // Rating, favourite and review are the book's, so two editions of one
                 // work share them: when an earlier snapshot of this same undo already
                 // put them back, that is not an edit made after the changeset.
@@ -681,6 +686,7 @@ public sealed partial class LibraryService : ILibraryChangesetService
                 book.Work.PersonalReview = was.PersonalReview;
                 book.Progress.FinishedAt = was.FinishedAt;
                 book.Progress.ProgressPercent = was.ProgressPercent;
+                if (was.EditionRating is { } editionRating) book.Progress.Rating = editionRating;
                 restored++;
             }
 
