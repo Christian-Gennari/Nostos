@@ -101,8 +101,8 @@ export class BooksService {
     return this.http.put(`/api/books/${id}/progress`, dto);
   }
 
-  resetProgress(id: string): Observable<any> {
-    return this.http.post(`/api/books/${id}/progress/reset`, null);
+  resetProgress(id: string, allEditions = false): Observable<any> {
+    return this.http.post(`/api/books/${id}/progress/reset`, null, allEditions ? { params: { allEditions: true } } : {});
   }
 
   /**
