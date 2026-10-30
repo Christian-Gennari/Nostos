@@ -22,6 +22,7 @@ import {
 } from '../core/dtos/note.dtos';
 import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
+import { overlayKeyboardWhileReading } from './reader-keyboard-viewport';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,
@@ -391,6 +392,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   @ViewChild(AudioReader) audioReader?: IReader;
 
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private stopKeyboardOverlay: (() => void) | null = null;
   private readonly injector = inject(Injector);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -1137,6 +1139,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     );
     this.watchBookNavigation();
     this.watchGroundedSourceNavigation();
+    // The keyboard covers the page instead of shrinking the reader, which
+    // re-paginated the book under the passage being marked (#1270).
+    if (typeof window !== 'undefined') {
+      this.stopKeyboardOverlay = overlayKeyboardWhileReading(this.host.nativeElement);
+    }
   }
 
   ngOnDestroy(): void {
@@ -1154,6 +1161,8 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
     if (this.flashTimer) clearTimeout(this.flashTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
+    this.stopKeyboardOverlay?.();
+    this.stopKeyboardOverlay = null;
   }
 
   private watchBookNavigation(): void {

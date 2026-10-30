@@ -1965,6 +1965,105 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     expect(progressWritesWith(STALE_CFI)).toEqual([]);
   });
 
+  describe('keeping the page while a passage is marked (#1270)', () => {
+    /** The pending selection starts exactly where TARGET_CFI points. */
+    const SELECTION_RANGE = 'epubcfi(/6/46!/4/36[the0002422]/2[p326],/1:0,/1:24)';
+
+    /** What the annotation manager does when a phone selection settles. */
+    function captureSelection() {
+      const manager = (fixture.componentInstance as any).annotationManager;
+      manager.pendingHighlight = {
+        cfiRange: SELECTION_RANGE,
+        selectedText: 'The cited passage begins',
+        contents: { ...contents, window: { ...contents.window, getSelection: () => null } },
+        touch: true,
+      };
+      manager.onSelectionCaptured('The cited passage begins', null);
+    }
+
+    /** The reader box changes size (the keyboard, the browser toolbar). */
+    async function resizeReader() {
+      resizeObservers.forEach((callback) => callback());
+      await vi.advanceTimersByTimeAsync(350); // the resize debounce
+    }
+
+    it('saves no relocation while the passage is offered', async () => {
+      await openReader();
+      captureSelection();
+
+      emitRelocated(STALE_CFI);
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+    });
+
+    it('brings the passage back after a re-layout and writes nothing', async () => {
+      await openReader();
+      captureSelection();
+
+      rangeRect = offPage();
+      await resizeReader();
+      expect(rendition.resize).toHaveBeenCalled();
+      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+      emitRelocated(STALE_CFI); // epub.js re-displays its stale location
+
+      rangeRect = onPage();
+      await vi.advanceTimersByTimeAsync(400); // settle → confirmed
+      fixture.componentInstance.discardHighlight();
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+    });
+
+    it('covers the keyboard closing just after Save, then lets moves be saved again', async () => {
+      await openReader();
+      captureSelection();
+      fixture.componentInstance.discardHighlight();
+
+      // The keyboard closes after the bar is gone: still inside the grace window.
+      rangeRect = onPage();
+      await resizeReader();
+      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+      emitRelocated(STALE_CFI);
+      await vi.advanceTimersByTimeAsync(400); // confirmed
+      await vi.advanceTimersByTimeAsync(1100); // grace window over
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+
+      // A later resize is the reader's own business again.
+      await resizeReader();
+      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+      fixture.componentInstance.next();
+      emitRelocated(USER_CFI);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
+    });
+
+    it('lets a page turn end the anchor at once', async () => {
+      await openReader();
+      captureSelection();
+
+      fixture.componentInstance.next();
+      emitRelocated(USER_CFI);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
+
+      await resizeReader();
+      expect(displayCallsFor(TARGET_CFI)).toBe(0);
+    });
+
+    it('leaves the page alone when nothing is resized', async () => {
+      await openReader();
+      captureSelection();
+      fixture.componentInstance.discardHighlight();
+      await vi.advanceTimersByTimeAsync(3000);
+
+      expect(rendition.display).not.toHaveBeenCalledWith(TARGET_CFI);
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+    });
+  });
+
   describe('restoring the saved position on open (#1271)', () => {
     /** Open a book whose saved position is TARGET_CFI, with page geometry from the start. */
     async function openAtSavedPosition() {
