@@ -71,9 +71,8 @@ Table-per-hierarchy (TPH) with discriminator column `BookType`.
 | ----------------- | ----------- | ------------------------------ |
 | `LastLocation`    | `string?`   | Epub CFI or page reference     |
 | `ProgressPercent` | `int`       | 0–100                          |
-| `Rating`          | `int`       | 0–5 star rating                |
-| `IsFavorite`      | `bool`      | Favorited flag                 |
-| `PersonalReview`  | `string?`   | User review text               |
+| `Rating`          | `int`       | This edition's own rating, an exception to the book's (`WorkModel.Rating`); 0 = none |
+| `PersonalReview`  | `string?`   | This edition's own review, an exception to the book's; null = none |
 | `LastReadAt`      | `DateTime?` | Last reading session timestamp |
 | `FinishedAt`      | `DateTime?` | Completion timestamp           |
 

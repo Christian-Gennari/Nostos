@@ -42,9 +42,10 @@ Full book representation returned from API.
 | `CollectionIds`                                               | `IEnumerable<Guid>?`           | Every collection the book is in (appended field) |
 | `LastLocation`                                                | `string?`                      | Reading position                       |
 | `ProgressPercent`                                             | `int`                          | 0–100                                  |
-| `Rating`                                                      | `int`                          | 0–5                                    |
-| `IsFavorite`                                                  | `bool`                         |                                        |
-| `PersonalReview`                                              | `string?`                      |                                        |
+| `Rating`                                                      | `int`                          | 0–5, the BOOK's (shared by every edition) |
+| `IsFavorite`                                                  | `bool`                         | the book's                             |
+| `PersonalReview`                                              | `string?`                      | the book's                             |
+| `EditionRating`, `EditionReview`                              | `int`, `string?`               | this edition's own exception (0 / null = none; appended) |
 | `LastReadAt`, `FinishedAt`                                    | `DateTime?`                    |                                        |
 | `Chapters`                                                    | `IEnumerable<BookChapterDto>?` | Audio chapters                         |
 
