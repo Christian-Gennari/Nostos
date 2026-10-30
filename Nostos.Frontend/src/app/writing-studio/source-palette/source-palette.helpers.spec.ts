@@ -93,4 +93,13 @@ describe('the @ palette helpers (issue #1039)', () => {
     expect(isPaletteQuery('two  spaces')).toBe(false);
     expect(isPaletteQuery('one two three four five six seven eight nine')).toBe(false);
   });
+
+  it('names the edition a note was made in only when its book has several (#1302)', () => {
+    const hit = (editionCount: number) => fromSearchHit({
+      id: 'n', bookId: 'b', bookTitle: 'The Magic Mountain', bookAuthor: 'Thomas Mann', content: 'x',
+      selectedText: null, snippet: null, topicNames: [], createdAt: '', bookFormat: 'audiobook', editionCount,
+    }, new Set());
+    expect(sourceByline(hit(2))).toBe('Thomas Mann · The Magic Mountain · Audiobook');
+    expect(sourceByline(hit(1))).toBe('Thomas Mann · The Magic Mountain');
+  });
 });

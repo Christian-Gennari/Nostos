@@ -1,5 +1,5 @@
 import type { Book, EditionSummaryDto } from '../core/dtos/book.dtos';
-import { buildEditionSwitchOptions } from './edition-switch-options';
+import { buildEditionSwitchOptions, editionChoices } from './edition-switch-options';
 
 function book(overrides: Partial<Book> = {}): Book {
   return {
@@ -171,5 +171,22 @@ describe('buildEditionSwitchOptions', () => {
       'Ebook, 42% read, this edition rated 3 out of 5',
       'PDF, not started',
     ]);
+  });
+});
+
+describe('editionChoices', () => {
+  it('is empty for one edition, so a picker picks the book at once', () => {
+    expect(editionChoices(book())).toEqual([]);
+  });
+
+  it('labels editions as the switcher does, with the detail for a shared format', () => {
+    const choices = editionChoices(book({
+      edition: '1st', otherEditions: [
+        edition({ id: 'b2', edition: '2nd' }),
+        edition({ id: 'b3', type: 'audiobook' }),
+      ],
+    }));
+    expect(choices.map((c) => c.label)).toEqual(['Audiobook', 'Ebook · 1st edition', 'Ebook · 2nd edition']);
+    expect(choices.map((c) => c.concept)).toEqual(['audiobook', 'ebook', 'ebook']);
   });
 });

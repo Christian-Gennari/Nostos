@@ -214,13 +214,35 @@ describe('CommandPalette', () => {
       type('attention');
 
       expect(titles()).toEqual(['Books', 'Topics', 'Notes', 'Documents', 'Ask Nostos']);
-      expect(booksList).toHaveBeenCalledWith({ search: 'attention', page: 1, pageSize: 5 });
+      expect(booksList).toHaveBeenCalledWith({ search: 'attention', page: 1, pageSize: 5, groupByWork: true });
       expect(notesSearch).toHaveBeenCalledWith('attention', 4);
       // Topics and documents are matched here, by name; folders are not documents.
       expect(entry('topic')).toMatchObject({ id: 't2', sub: '1 note' });
       expect(component.entries().filter((e) => e.kind === 'document').map((e) => e.id)).toEqual(['w1']);
       expect(entry('note').label).toBe('Fear is the mind-killer.');
       expect(entry('book').coverUrl).toBe('/api/books/b1/cover/thumbnail?width=120&v=v1');
+    });
+
+    it('shows a book with several editions once, with each edition opening directly (#1257)', () => {
+      booksList.mockReturnValue(
+        of({
+          items: [{
+            id: 'b1', type: 'ebook', fileName: 'm.epub', title: 'The Magic Mountain', author: 'Thomas Mann', workId: 'w1',
+            otherEditions: [{ id: 'b2', type: 'audiobook', progressPercent: 0, hasFile: true }],
+          }],
+          totalCount: 1,
+        }),
+      );
+      openPalette();
+      type('magic');
+
+      expect(component.entries().filter((e) => e.kind === 'book')).toHaveLength(1);
+      const buttons = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="palette-edition"]')) as HTMLButtonElement[];
+      expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Audiobook', 'Ebook']);
+
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      buttons[0].click();
+      expect(navigate).toHaveBeenCalledWith(['/library', 'b2']);
     });
 
     it('shows a book cover in place of the glyph', () => {
@@ -311,7 +333,7 @@ describe('CommandPalette', () => {
 
       booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'Dune Messiah', author: 'Frank Herbert' }], totalCount: 1 }));
       type('@dune');
-      expect(booksList).toHaveBeenCalledWith({ search: 'dune', page: 1, pageSize: 5 });
+      expect(booksList).toHaveBeenCalledWith({ search: 'dune', page: 1, pageSize: 5, groupByWork: true });
       expect(notesSearch).not.toHaveBeenCalled();
       expect(titles()).toEqual(['Books']);
     });

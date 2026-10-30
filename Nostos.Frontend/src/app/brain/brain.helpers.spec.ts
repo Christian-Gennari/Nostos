@@ -1,8 +1,10 @@
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import type { TopicDto } from '../core/services/topics.service';
 import {
+  bookKey,
   countLabel,
   defaultOrder,
+  facetKey,
   isListedTopic,
   isOrder,
   placeTitle,
@@ -61,5 +63,12 @@ describe('brain helpers', () => {
     expect(stillBelongs(hit(['Virtue']), 'topic', virtue, null)).toBe(true);
     expect(stillBelongs(hit(['virtue']), 'topic', virtue, wisdom)).toBe(false);
     expect(stillBelongs(hit([]), 'all', null, null)).toBe(true);
+  });
+
+  it('keys a book by its work, so its editions are one book (#1302)', () => {
+    expect(bookKey({ bookId: 'epub', workId: 'w' })).toBe('w');
+    expect(bookKey({ bookId: 'audio', workId: 'w' })).toBe(bookKey({ bookId: 'epub', workId: 'w' }));
+    expect(bookKey({ bookId: 'orphan', workId: null })).toBe('orphan');
+    expect(facetKey({ bookId: 'epub', workId: 'w' })).toBe('w');
   });
 });

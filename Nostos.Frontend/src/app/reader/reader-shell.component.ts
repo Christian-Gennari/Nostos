@@ -926,7 +926,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     const editions = new Set(notes.map((note) => note.bookId.toLowerCase()));
     const format = formatOfConcept(notes[0].bookFormat);
     const own = this.book() ? formatOf(this.book()!).format : null;
-    const kind = editions.size === 1 && format && format.format !== own ? ` the ${format.format.toLowerCase()}` : null;
+    const kind = editions.size === 1 && format && format.format !== own
+      ? ` the ${format.concept === 'physical' ? 'physical copy' : format.format === 'PDF' ? 'PDF' : format.format.toLowerCase()}`
+      : null;
     return `${notes.length} from${kind ?? (editions.size === 1 ? ' another edition' : ' other editions')}`;
   });
   quickNoteContent = signal('');
@@ -1594,7 +1596,7 @@ export class ReaderShell implements OnInit, OnDestroy {
         next: (result) => {
           if (seq !== this.noteTopicsSeq) return;
           for (const hit of result.items) {
-            if (hit.bookId.toLowerCase() === bookId.toLowerCase()) held.set(hit.id, hit.topicNames ?? []);
+            if (!manyEditions || hit.bookId?.toLowerCase() === bookId.toLowerCase()) held.set(hit.id, hit.topicNames ?? []);
             else others.push(hit);
           }
           const read = offset + result.items.length;

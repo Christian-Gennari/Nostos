@@ -187,22 +187,13 @@
 }
 
 .palette-edition {
-  display: inline-flex;
-  align-items: center;
   gap: 0.25rem;
   padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
+  min-height: 0;
+  height: auto;
   font-size: var(--text-xs);
-  line-height: 1.3;
+  font-weight: normal;
   color: var(--color-text-light);
-  cursor: pointer;
-}
-
-.palette-edition:hover {
-  color: var(--color-text);
-  text-decoration: underline;
 }
 
 .palette-item-enter {

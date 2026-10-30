@@ -75,7 +75,7 @@
                directly. Enter opens the book, whose page has the switcher. -->
           <span class="palette-item-editions">
             @for (edition of editions; track edition.id) {
-            <button type="button" class="palette-edition" tabindex="-1" (click)="openEdition(entry, edition, $event)"
+            <button appButton variant="ghost" size="sm" type="button" class="palette-edition" tabindex="-1" (click)="openEdition(entry, edition, $event)"
               [attr.aria-label]="'Open the ' + edition.label" data-testid="palette-edition">
               <nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true" />{{ edition.label }}
             </button>
