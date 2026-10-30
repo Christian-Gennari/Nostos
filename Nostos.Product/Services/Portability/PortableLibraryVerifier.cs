@@ -715,11 +715,16 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
     {
         try
         {
-            return PortableArchiveValidation.Deserialize<PortableLibraryData>(
+            var data = PortableArchiveValidation.Deserialize<PortableLibraryData>(
                 bytes,
                 "malformed_data",
                 "Portable archive relational payload is malformed.",
                 JsonOptions);
+            // The restore reads the same bytes through the same roll-up, so an
+            // older archive is compared against what it was restored as.
+            return data is null || data.Works is null || data.Books is null
+                ? data
+                : PortableLegacyBookValues.ToCurrent(data);
         }
         catch (PortableArchiveException exception)
         {
@@ -1901,6 +1906,18 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             nameof(PortableWork.CreatedAt),
             Ef(("WorkModel", nameof(WorkModel.CreatedAt))),
             (context, failures) => CompareField(failures, "work", context.Row.Id, nameof(PortableWork.CreatedAt), context.Row.CreatedAt, context.Expected.CreatedAt)),
+        Entry<WorkContext>(
+            nameof(PortableWork.Rating),
+            Ef(("WorkModel", nameof(WorkModel.Rating))),
+            (context, failures) => CompareField(failures, "work", context.Row.Id, nameof(PortableWork.Rating), context.Row.Rating, context.Expected.Rating)),
+        Entry<WorkContext>(
+            nameof(PortableWork.IsFavorite),
+            Ef(("WorkModel", nameof(WorkModel.IsFavorite))),
+            (context, failures) => CompareField(failures, "work", context.Row.Id, nameof(PortableWork.IsFavorite), context.Row.IsFavorite, context.Expected.IsFavorite)),
+        Entry<WorkContext>(
+            nameof(PortableWork.PersonalReview),
+            Ef(("WorkModel", nameof(WorkModel.PersonalReview))),
+            (context, failures) => CompareField(failures, "work", context.Row.Id, nameof(PortableWork.PersonalReview), context.Row.PersonalReview, context.Expected.PersonalReview)),
     ];
 
     private static readonly IReadOnlyList<ComparisonEntry<BookContext>> BookComparisons =
@@ -1958,7 +1975,6 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                 ("ReadingProgress", nameof(ReadingProgress.LastLocation)),
                 ("ReadingProgress", nameof(ReadingProgress.ProgressPercent)),
                 ("ReadingProgress", nameof(ReadingProgress.Rating)),
-                ("ReadingProgress", nameof(ReadingProgress.IsFavorite)),
                 ("ReadingProgress", nameof(ReadingProgress.PersonalReview)),
                 ("ReadingProgress", nameof(ReadingProgress.LastReadAt)),
                 ("ReadingProgress", nameof(ReadingProgress.FinishedAt))),
@@ -2134,9 +2150,11 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             Ef(("ReadingProgress", nameof(ReadingProgress.Rating))),
             (context, failures) => CompareField(failures, "book", context.BookId, nameof(ReadingProgress.Rating), context.Row.Rating, context.Expected.Rating)),
         Entry<BookProgressContext>(
+            // Legacy: the favourite is the book's and is compared on the work. An
+            // edition no longer has one, and a payload (rolled up on read) carries none.
             nameof(PortableReadingProgress.IsFavorite),
-            Ef(("ReadingProgress", nameof(ReadingProgress.IsFavorite))),
-            (context, failures) => CompareField(failures, "book", context.BookId, nameof(ReadingProgress.IsFavorite), context.Row.IsFavorite, context.Expected.IsFavorite)),
+            NoFields,
+            (context, failures) => CompareField(failures, "book", context.BookId, nameof(PortableReadingProgress.IsFavorite), false, context.Expected.IsFavorite)),
         Entry<BookProgressContext>(
             nameof(PortableReadingProgress.PersonalReview),
             Ef(("ReadingProgress", nameof(ReadingProgress.PersonalReview))),

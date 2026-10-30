@@ -106,6 +106,9 @@ Reset reading progress to the canonical "not started" state (`lastLocation`,
 `progressPercent`, `finishedAt` and `lastReadAt` all cleared). Idempotent: an
 already-reset book returns `200` as a no-op.
 
+**Query:** `allEditions=true` resets every edition of the book (the work), not
+only this one. Resetting editions that are all reset is a no-op.
+
 ### `POST /api/books/{id}/work/link`
 
 **Manual multi-edition override.** Merge this book's work with another book's
@@ -121,8 +124,11 @@ only the named book out of an already-valid group would be a side effect the
 user did not ask for. A work left empty by the merge is deleted.
 
 Only `WorkId` changes on the affected books. Files, reading progress, notes,
-ratings/reviews, metadata and collection memberships all belong to the book and
-are untouched.
+metadata and collection memberships are untouched. Rating, favourite and review
+belong to the book (the work), so the two works' values are combined without
+losing any: values that agree, or that only one side has, become the book's;
+where they differ, the side read most recently wins and the other side's
+editions keep their value as an edition rating / review.
 
 | Response | Meaning |
 | --- | --- |

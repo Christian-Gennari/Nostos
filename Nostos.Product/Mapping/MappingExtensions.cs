@@ -19,6 +19,13 @@ public static class MappingExtensions
     // ------------------------------
     public static BookDto ToDto(this BookModel model)
     {
+        // The book's rating, favourite and review live on its work. A book mapped
+        // without it would silently report rating 0, so fail loudly instead:
+        // the context auto-includes Work, and anything that builds a model by hand
+        // must set it.
+        var work = model.Work ?? throw new InvalidOperationException(
+            $"Book {model.Id} was mapped without its Work loaded. The book's rating, favourite and review live on the work.");
+
         // 1. Access FileDetails for file-related info
         string? coverUrl = model.FileDetails.CoverFileName is null
             ? null
@@ -126,9 +133,9 @@ public static class MappingExtensions
             LastLocation: model.Progress.LastLocation,
             ProgressPercent: model.Progress.ProgressPercent,
             LastReadAt: model.Progress.LastReadAt,
-            Rating: model.Progress.Rating,
-            IsFavorite: model.Progress.IsFavorite,
-            PersonalReview: model.Progress.PersonalReview,
+            Rating: work.Rating,
+            IsFavorite: work.IsFavorite,
+            PersonalReview: work.PersonalReview,
             FinishedAt: model.Progress.FinishedAt,
             WorkId: model.WorkId,
             EditionCount: workBooks?.Count ?? 1,
@@ -148,7 +155,9 @@ public static class MappingExtensions
             Status: model.Status,
             StatusMessage: model.StatusMessage,
             Tracks: ToTrackDtos(model.FileDetails.TracksJson),
-            CoverVersion: coverUrl is null ? null : model.FileDetails.CoverVersion
+            CoverVersion: coverUrl is null ? null : model.FileDetails.CoverVersion,
+            EditionRating: model.Progress.Rating,
+            EditionReview: model.Progress.PersonalReview
         );
     }
 
@@ -196,7 +205,9 @@ public static class MappingExtensions
             Title: model.Title,
             Author: model.Author,
             Publisher: model.Metadata.Publisher,
-            PublishedDate: model.Metadata.PublishedDate);
+            PublishedDate: model.Metadata.PublishedDate,
+            Rating: model.Progress.Rating,
+            PersonalReview: model.Progress.PersonalReview);
     }
 
     public static NoteDto ToDto(this NoteModel model) =>
@@ -315,9 +326,8 @@ public static class MappingExtensions
         model.Metadata.VolumeNumber = dto.VolumeNumber;
 
         // 3. Map Progress (Owned Type)
-        model.Progress.Rating = dto.Rating;
-        model.Progress.IsFavorite = dto.IsFavorite;
-        model.Progress.PersonalReview = dto.PersonalReview;
+        // Rating, favourite and review are the book's: the library service puts
+        // them on the work this edition belongs to, not on the edition.
         model.Progress.FinishedAt = dto.FinishedAt;
 
         // 4. FileDetails
@@ -402,14 +412,8 @@ public static class MappingExtensions
             model.Metadata.VolumeNumber = NullIfEmpty(dto.VolumeNumber);
 
         // 3. Apply Progress (Owned Type)
-        if (dto.Rating.HasValue)
-            model.Progress.Rating = dto.Rating.Value;
-
-        if (dto.IsFavorite.HasValue)
-            model.Progress.IsFavorite = dto.IsFavorite.Value;
-
-        if (dto.PersonalReview != null)
-            model.Progress.PersonalReview = NullIfEmpty(dto.PersonalReview);
+        // Rating, favourite and review are the book's and live on its work; the
+        // library service writes them there (this maps the edition only).
 
         // LOGIC FIX: Handle Finished Status
         if (dto.FinishedAt != null)

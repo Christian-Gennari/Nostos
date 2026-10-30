@@ -345,7 +345,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         stored.Metadata.Description.Should().Be("Short essays.");
         stored.Title.Should().Be("Essays and Aphorisms");
         stored.Author.Should().Be("Schopenhauer");
-        stored.Progress.Rating.Should().Be(5);
+        stored.Work!.Rating.Should().Be(5);
         (await db.BookCollections.AsNoTracking().Where(link => link.BookId == book.Id)
             .Select(link => link.CollectionId).ToListAsync())
             .Should().Equal(collection.Id);

@@ -73,6 +73,17 @@ public static class PortableLibraryRecoveryBaseline
     private static readonly IReadOnlyDictionary<(string Table, string OldColumn), string> OldColumnAliases =
         BuildOldColumnAliases();
 
+    /// <summary>
+    /// The synthetic logical table that stands for what the library says about
+    /// each book (rating, favourite, review). The columns that used to hold it
+    /// per edition are rewritten by the migration that moved it onto the work,
+    /// so row-by-row equality cannot hold; this evidence is what must survive.
+    /// </summary>
+    private const string BookValuesTable = "BookValues";
+
+    private const string KeyedByWork = "keyed-by-work";
+    private const string KeyedByBook = "keyed-by-book";
+
     public static async Task<PortableRecoveryBaseline> CaptureAsync(
         string databasePath,
         CancellationToken ct = default)
@@ -101,6 +112,18 @@ public static class PortableLibraryRecoveryBaseline
         foreach (var table in before.Tables)
         {
             ct.ThrowIfCancellationRequested();
+            if (table.LogicalTable == BookValuesTable)
+            {
+                var keyedByBook = table.Columns.Contains(KeyedByBook);
+                var (valueCount, valueDigest) = ComputeBookValues(connection, tables, keyedByBook);
+                if (valueCount != table.RowCount || !string.Equals(valueDigest, table.Digest, StringComparison.Ordinal))
+                {
+                    throw Mismatch();
+                }
+
+                continue;
+            }
+
             var actual = ResolveActualTable(tables, table.LogicalTable);
             if (!table.Present)
             {
@@ -193,13 +216,113 @@ public static class PortableLibraryRecoveryBaseline
                 throw Mismatch();
             }
 
+            if (logicalTable == "Books" && !HasBookValuesOnWork(connection, tables))
+            {
+                // The retained schema still keeps rating and review per edition and
+                // the migration moves them onto the work. Those two columns are
+                // checked as book-level evidence below instead of row by row.
+                resolved = resolved
+                    .Where(item => item.Logical is not ("Progress_Rating" or "Progress_PersonalReview"))
+                    .ToArray();
+            }
+
             var (count, digest) = Compute(connection, actual, resolved);
             result.Add(new PortableTableBaseline(
                 logicalTable, Present: true, count, digest,
                 resolved.Select(item => item.Logical).ToArray()));
         }
 
+        if (tables.Contains("Books") && !HasBookValuesOnWork(connection, tables))
+        {
+            var keyedByBook = !ReadColumns(connection, "Books").Contains("WorkId");
+            var (valueCount, valueDigest) = ComputeBookValues(connection, tables, keyedByBook);
+            result.Add(new PortableTableBaseline(
+                BookValuesTable, Present: true, valueCount, valueDigest,
+                [keyedByBook ? KeyedByBook : KeyedByWork]));
+        }
+
         return new PortableRecoveryBaseline(result);
+    }
+
+    private static bool HasBookValuesOnWork(SqliteConnection connection, IReadOnlySet<string> tables) =>
+        tables.Contains("Works") && ReadColumns(connection, "Works").Contains("Rating");
+
+    /// <summary>
+    /// What the library says about each book, as an order-independent set of
+    /// facts: "this book has rating N", "this book has review X", "this book is
+    /// a favourite". Read from either schema. Before the values moved onto the
+    /// work every edition carried them, so a book's facts are the union of its
+    /// editions'; after, they are the work's plus any edition's own exception.
+    /// The migration only moves facts (agreeing ones merge into one), so the set
+    /// is identical before and after unless something was lost.
+    /// </summary>
+    private static (int Count, string Digest) ComputeBookValues(
+        SqliteConnection connection,
+        IReadOnlySet<string> tables,
+        bool keyedByBook)
+    {
+        var bookColumns = ReadColumns(connection, "Books");
+        string? Pick(params string[] names) => names.FirstOrDefault(bookColumns.Contains);
+        var rating = Pick("Progress_Rating", "Rating");
+        var review = Pick("Progress_PersonalReview", "PersonalReview");
+        var favourite = Pick("Progress_IsFavorite", "IsFavorite");
+        var facts = new HashSet<string>(StringComparer.Ordinal);
+
+        void Add(string key, string kind, string? value) => facts.Add($"{key}|{kind}|{value}");
+
+        var key = keyedByBook ? "\"Id\"" : "\"WorkId\"";
+        var onWork = HasBookValuesOnWork(connection, tables);
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = keyedByBook && onWork
+                // One work per book before work grouping existed: a book's facts
+                // are its edition's own value, else its work's.
+                ? "SELECT b.\"Id\", COALESCE(NULLIF(b.\"Progress_Rating\", 0), w.\"Rating\"), "
+                  + "COALESCE(NULLIF(b.\"Progress_PersonalReview\", ''), w.\"PersonalReview\"), w.\"IsFavorite\" "
+                  + "FROM \"Books\" b LEFT JOIN \"Works\" w ON w.\"Id\" = b.\"WorkId\""
+                : $"SELECT {key}, {(rating is null ? "0" : Quote(rating))}, {(review is null ? "NULL" : Quote(review))}, "
+                  + $"{(favourite is null ? "0" : Quote(favourite))} FROM \"Books\"";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var id = Canonical(reader.GetValue(0));
+                if (!reader.IsDBNull(1) && Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture) > 0)
+                    Add(id, "R", Canonical(reader.GetValue(1)));
+                if (!reader.IsDBNull(2) && reader.GetString(2).Length > 0)
+                    Add(id, "V", reader.GetString(2));
+                if (!reader.IsDBNull(3) && Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture) > 0)
+                    Add(id, "F", null);
+            }
+        }
+
+        if (onWork && !keyedByBook)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT \"Id\", \"Rating\", \"PersonalReview\", \"IsFavorite\" FROM \"Works\";";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var id = Canonical(reader.GetValue(0));
+                if (!reader.IsDBNull(1) && Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture) > 0)
+                    Add(id, "R", Canonical(reader.GetValue(1)));
+                if (!reader.IsDBNull(2) && reader.GetString(2).Length > 0)
+                    Add(id, "V", reader.GetString(2));
+                if (!reader.IsDBNull(3) && Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture) > 0)
+                    Add(id, "F", null);
+            }
+        }
+
+        var accumulator = new byte[32];
+        foreach (var fact in facts)
+        {
+            var digest = SHA256.HashData(Encoding.UTF8.GetBytes(fact));
+            for (var index = 0; index < accumulator.Length; index++)
+            {
+                accumulator[index] ^= digest[index];
+            }
+        }
+
+        return (facts.Count, Convert.ToHexString(accumulator).ToLowerInvariant());
     }
 
     private static SqliteConnection Open(string databasePath)

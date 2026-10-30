@@ -2062,7 +2062,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Changeset.Steps.Single().Summary.Should().Be("Edit “Essays and Aphorisms”: mark favourite");
 
         await using var db = await h.Factory.CreateDbContextAsync();
-        (await db.Books.AsNoTracking().CountAsync(b => b.Progress.IsFavorite)).Should().Be(0);
+        (await db.Books.AsNoTracking().CountAsync(b => b.Work!.IsFavorite)).Should().Be(0);
     }
 
     [Fact]
@@ -2086,8 +2086,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Changeset.ReviewReasons.Should().Contain(r => r.Contains("may be incomplete"));
 
         await using var db = await h.Factory.CreateDbContextAsync();
-        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == first.Id)).Progress.IsFavorite.Should().BeFalse();
-        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == second.Id)).Progress.IsFavorite.Should().BeFalse();
+        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == first.Id)).Work!.IsFavorite.Should().BeFalse();
+        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == second.Id)).Work!.IsFavorite.Should().BeFalse();
     }
 
     [Fact]
@@ -2105,7 +2105,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Changeset!.Status.Should().Be("review");
         response.Changeset.Steps.Should().ContainSingle();
         await using var db = await h.Factory.CreateDbContextAsync();
-        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id)).Progress.IsFavorite.Should().BeFalse();
+        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id)).Work!.IsFavorite.Should().BeFalse();
     }
 
     [Fact]

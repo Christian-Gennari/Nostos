@@ -97,6 +97,39 @@ internal sealed class LocalPortableTestLibrary : IAsyncDisposable
 
 internal static class PortableArchiveTestSupport
 {
+    /// <summary>
+    /// Rewrites a current relational payload into the shape archives had before
+    /// rating, favourite and review moved onto the work (data version 5 and
+    /// older): each edition carries the book's values as its own. An edition's
+    /// own rating or review stays; one without takes the work's. Call it after
+    /// setting the older <c>version</c>; it does nothing for a current payload.
+    /// </summary>
+    internal static void AsPerEditionBookValues(JsonObject data)
+    {
+        if (data["version"]!.GetValue<int>() >= 6) return;
+
+        var works = data["works"]!.AsArray().ToDictionary(
+            w => w!["id"]!.GetValue<Guid>(),
+            w => w!.AsObject());
+        foreach (var book in data["books"]!.AsArray())
+        {
+            var progress = book!["progress"]!.AsObject();
+            var work = works[book["workId"]!.GetValue<Guid>()];
+            if ((progress["rating"]?.GetValue<int>() ?? 0) == 0)
+                progress["rating"] = work["rating"]?.GetValue<int>() ?? 0;
+            if (string.IsNullOrEmpty(progress["personalReview"]?.GetValue<string>()))
+                progress["personalReview"] = work["personalReview"]?.GetValue<string>();
+            progress["isFavorite"] = work["isFavorite"]?.GetValue<bool>() ?? false;
+        }
+
+        foreach (var work in works.Values)
+        {
+            work.Remove("rating");
+            work.Remove("isFavorite");
+            work.Remove("personalReview");
+        }
+    }
+
     public const string SecretMarker = "THIS-SECRET-MUST-NEVER-BE-EXPORTED";
 
     public static async Task<PortableFixtureIds> PopulateRepresentativeAsync(
@@ -113,6 +146,9 @@ internal static class PortableArchiveTestSupport
             NormalizedTitle = "PORTABLE WORK A",
             NormalizedAuthor = "EXAMPLE AUTHOR",
             CreatedAt = now,
+            Rating = 5,
+            IsFavorite = true,
+            PersonalReview = "Important review",
         };
         var workB = new WorkModel
         {
@@ -154,9 +190,6 @@ internal static class PortableArchiveTestSupport
             {
                 LastLocation = "epubcfi(/6/4)",
                 ProgressPercent = 42,
-                Rating = 5,
-                IsFavorite = true,
-                PersonalReview = "Important review",
                 LastReadAt = now.AddDays(3),
             },
             FileDetails = new FileInfoDetails

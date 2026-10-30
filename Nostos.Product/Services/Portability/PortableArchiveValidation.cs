@@ -343,18 +343,33 @@ internal static class PortableArchiveValidation
         string? lastLocation,
         int progressPercent,
         int rating,
-        bool isFavorite,
         string? personalReview)
     {
         if (lastLocation != expected.Progress.LastLocation
             || progressPercent != expected.Progress.ProgressPercent
             || rating != expected.Progress.Rating
-            || isFavorite != expected.Progress.IsFavorite
             || personalReview != expected.Progress.PersonalReview)
         {
             throw new PortableArchiveException(
                 "integrity_failed",
                 $"Imported book {expected.Id} format or reading state does not match the archive.");
+        }
+    }
+
+    /// <summary>The imported book's rating, favourite and review must be the archive's.</summary>
+    internal static void ValidateImportedWorkValues(
+        PortableWork expected,
+        int rating,
+        bool isFavorite,
+        string? personalReview)
+    {
+        if (rating != expected.Rating
+            || isFavorite != expected.IsFavorite
+            || personalReview != expected.PersonalReview)
+        {
+            throw new PortableArchiveException(
+                "integrity_failed",
+                $"Imported work {expected.Id} rating, favourite or review does not match the archive.");
         }
     }
 
@@ -398,7 +413,7 @@ internal static class PortableArchiveValidation
                 + $"This build supports version {PortableArchiveFormat.Version}.");
         }
 
-        if (manifest.DataVersion is not (1 or 2 or 3 or 4 or 5))
+        if (manifest.DataVersion is not (1 or 2 or 3 or 4 or 5 or 6))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -606,7 +621,7 @@ internal static class PortableArchiveValidation
 
     internal static void ValidatePortableData(PortableLibraryData data)
     {
-        if (data.Version is not (1 or 2 or 3 or 4 or 5))
+        if (data.Version is not (1 or 2 or 3 or 4 or 5 or 6))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -650,6 +665,36 @@ internal static class PortableArchiveValidation
             throw new PortableArchiveException(
                 "unexpected_version_data",
                 $"Portable relational data version {data.Version} must not carry reading list entries.");
+        }
+
+        // The book's rating, favourite and review live on the work from version 6.
+        // An older archive keeps them per edition, so a work carrying them there
+        // is not a shape any build wrote; a current one must not also carry the
+        // edition favourite that moved onto the work.
+        foreach (var work in data.Works)
+        {
+            var hasWorkValues = work.Rating != 0 || work.IsFavorite || work.PersonalReview is not null;
+            if (data.Version < PortableLegacyBookValues.FirstVersionWithWorkValues && hasWorkValues)
+            {
+                throw new PortableArchiveException(
+                    "unexpected_version_data",
+                    $"Portable relational data version {data.Version} must not carry rating, favourite or review on works.");
+            }
+
+            if (work.Rating is < 0 or > 5)
+            {
+                throw new PortableArchiveException(
+                    "malformed_data",
+                    $"Work {work.Id} has an invalid rating.");
+            }
+        }
+
+        if (data.Version >= PortableLegacyBookValues.FirstVersionWithWorkValues
+            && data.Books.Any(b => b.Progress.IsFavorite))
+        {
+            throw new PortableArchiveException(
+                "unexpected_version_data",
+                $"Portable relational data version {data.Version} must not carry a favourite on an edition.");
         }
 
         RequireUniqueGuids(data.Works.Select(x => x.Id), "work");

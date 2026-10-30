@@ -129,7 +129,10 @@ public sealed partial class LibraryService : ILibraryService
         return Result(LibraryReplyFormatter.ProgressUpdated(book.Title), new { updated = true }, version);
     }
 
-    public async Task<LibraryCommandResultDto> ResetProgressAsync(Guid bookId, CancellationToken ct = default)
+    public async Task<LibraryCommandResultDto> ResetProgressAsync(
+        Guid bookId,
+        bool allEditions = false,
+        CancellationToken ct = default)
     {
         await using var db = await _contexts.CreateDbContextAsync(ct);
         var state = await EnsureStateAsync(db, ct);
@@ -138,21 +141,31 @@ public sealed partial class LibraryService : ILibraryService
         if (book is null)
             return Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion);
 
+        // One edition, or every edition of the book (the work) so that "start over"
+        // on a book read in several formats leaves nothing half-read behind.
+        var targets = allEditions
+            ? await db.Books.Where(b => b.WorkId == book.WorkId).ToListAsync(ct)
+            : [book];
+
         // Canonical reset state; an already-reset book is a successful no-op
         // (no state-version bump).
-        var progress = book.Progress;
-        var alreadyReset = progress.LastLocation is null
+        static bool AlreadyReset(ReadingProgress progress) =>
+            progress.LastLocation is null
             && progress.ProgressPercent == 0
             && progress.FinishedAt is null
             && progress.LastReadAt is null;
 
-        if (alreadyReset)
+        var toReset = targets.Where(b => !AlreadyReset(b.Progress)).ToList();
+        if (toReset.Count == 0)
             return Result(LibraryReplyFormatter.ProgressReset(book.Title), new { updated = false }, state.StateVersion);
 
-        progress.LastLocation = null;
-        progress.ProgressPercent = 0;
-        progress.FinishedAt = null;
-        progress.LastReadAt = null;
+        foreach (var target in toReset)
+        {
+            target.Progress.LastLocation = null;
+            target.Progress.ProgressPercent = 0;
+            target.Progress.FinishedAt = null;
+            target.Progress.LastReadAt = null;
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
@@ -494,7 +507,24 @@ public sealed partial class LibraryService : ILibraryService
 
         if (targetWorkId.HasValue && targetWorkId.Value != Guid.Empty)
         {
-            model.WorkId = targetWorkId.Value;
+            // Joining an existing work: what the new edition says about the book
+            // is combined with what the work already says by the shared rule.
+            var joined = await db.Works.SingleAsync(w => w.Id == targetWorkId.Value, ct);
+            var siblings = await db.Books.Where(b => b.WorkId == joined.Id).ToListAsync(ct);
+            model.WorkId = joined.Id;
+            model.Work = joined;
+            if (request.Rating > 0 || request.IsFavorite || !string.IsNullOrEmpty(request.PersonalReview))
+            {
+                model.Progress.Rating = Math.Clamp(request.Rating, 0, 5);
+                model.Progress.PersonalReview = NullIfEmpty(request.PersonalReview);
+                BookValueRollUp.Merge(
+                    joined,
+                    [
+                        new BookValueParty(BookValueRollUp.WorkSide(joined, siblings), siblings),
+                        new BookValueParty(BookValueRollUp.EditionSide(model, request.IsFavorite), [model]),
+                    ],
+                    [.. siblings, model]);
+            }
         }
         else
         {
@@ -512,8 +542,26 @@ public sealed partial class LibraryService : ILibraryService
                     NormalizedTitle = nTitle,
                     NormalizedAuthor = string.IsNullOrEmpty(nAuthor) ? null : nAuthor,
                     CreatedAt = DateTime.UtcNow,
+                    // A new book: what was said about it is the book's.
+                    Rating = Math.Clamp(request.Rating, 0, 5),
+                    IsFavorite = request.IsFavorite,
+                    PersonalReview = NullIfEmpty(request.PersonalReview),
                 };
                 db.Works.Add(work);
+            }
+            else if (request.Rating > 0 || request.IsFavorite || !string.IsNullOrEmpty(request.PersonalReview))
+            {
+                // Joined an existing work found by title and author: shared rule.
+                var siblings = await db.Books.Where(b => b.WorkId == work.Id).ToListAsync(ct);
+                model.Progress.Rating = Math.Clamp(request.Rating, 0, 5);
+                model.Progress.PersonalReview = NullIfEmpty(request.PersonalReview);
+                BookValueRollUp.Merge(
+                    work,
+                    [
+                        new BookValueParty(BookValueRollUp.WorkSide(work, siblings), siblings),
+                        new BookValueParty(BookValueRollUp.EditionSide(model, request.IsFavorite), [model]),
+                    ],
+                    [.. siblings, model]);
             }
 
             model.WorkId = work.Id;
@@ -771,12 +819,18 @@ public sealed partial class LibraryService : ILibraryService
         if (request.VolumeNumber is not null)
             book.Metadata.VolumeNumber = NullIfEmpty(request.VolumeNumber);
 
+        // Rating, favourite and review are the book's, shared by every edition,
+        // so they are written to the work. EditionRating is this edition's own
+        // exception (0 clears it).
+        var work = book.Work!;
         if (request.Rating.HasValue)
-            book.Progress.Rating = Math.Clamp(request.Rating.Value, 0, 5);
+            work.Rating = Math.Clamp(request.Rating.Value, 0, 5);
         if (request.IsFavorite.HasValue)
-            book.Progress.IsFavorite = request.IsFavorite.Value;
+            work.IsFavorite = request.IsFavorite.Value;
         if (request.PersonalReview is not null)
-            book.Progress.PersonalReview = NullIfEmpty(request.PersonalReview);
+            work.PersonalReview = NullIfEmpty(request.PersonalReview);
+        if (request.EditionRating.HasValue)
+            book.Progress.Rating = Math.Clamp(request.EditionRating.Value, 0, 5);
 
         // Finished semantics mirror UpdateBookDto.Apply.
         if (request.FinishedAt is not null)
@@ -945,9 +999,11 @@ public sealed partial class LibraryService : ILibraryService
     /// silently strip one edition out of an already-valid group — a side effect
     /// the user did not ask for.
     ///
-    /// Two book-level rows are never touched except for <c>WorkId</c>: files,
-    /// progress, notes, ratings/reviews, metadata and collection membership all
-    /// belong to the book and stay exactly as they were.
+    /// Two edition rows are never touched except for <c>WorkId</c> (and an edition
+    /// rating / review exception, when the two works disagree about the book):
+    /// files, progress, notes, metadata and collection membership all belong to
+    /// the edition and stay exactly as they were. The book's rating, favourite
+    /// and review are combined by <see cref="BookValueRollUp"/>.
     /// </summary>
     private async Task<(bool DidChange, LibraryCommandResultDto Result)> LinkWorkCoreAsync(
         NostosDbContext db,
@@ -985,12 +1041,33 @@ public sealed partial class LibraryService : ILibraryService
         var sourceMembers = await db.Books
             .Where(b => b.WorkId == sourceWorkId)
             .ToListAsync(ct);
-        foreach (var member in sourceMembers)
-            member.WorkId = survivorWorkId;
+        var survivorMembers = await db.Books
+            .Where(b => b.WorkId == survivorWorkId)
+            .ToListAsync(ct);
 
-        // Remove the source work once nothing references it. Its row carries no
-        // book-level data, so nothing is lost: the group's remaining identity is
-        // the survivor's own title/author. The books are updated first so the
+        // What each side says about the book is combined by the shared rule, so
+        // linking never drops a rating, favourite or review: agreeing or one-sided
+        // values become the book's, and where they differ the side read most
+        // recently wins and the other keeps its value on its own editions.
+        var sourceWorkRow = book.Work!;
+        var survivorWorkRow = target.Work!;
+        BookValueRollUp.Merge(
+            survivorWorkRow,
+            [
+                new BookValueParty(BookValueRollUp.WorkSide(survivorWorkRow, survivorMembers), survivorMembers),
+                new BookValueParty(BookValueRollUp.WorkSide(sourceWorkRow, sourceMembers), sourceMembers),
+            ],
+            [.. survivorMembers, .. sourceMembers]);
+
+        foreach (var member in sourceMembers)
+        {
+            member.WorkId = survivorWorkId;
+            member.Work = survivorWorkRow;
+        }
+
+        // Remove the source work once nothing references it. Its rating, favourite
+        // and review were rolled into the survivor above, so nothing is lost; the
+        // group's identity is the survivor's own title/author. The books are updated first so the
         // FK is already re-pointed when the delete runs.
         var sourceWork = await db.Works.SingleOrDefaultAsync(w => w.Id == sourceWorkId, ct);
         Guid? removedWorkId = null;
@@ -1052,8 +1129,18 @@ public sealed partial class LibraryService : ILibraryService
             NormalizedTitle = BookIdentityNormalizer.NormalizeTitle(book.Title),
             NormalizedAuthor = BookIdentityNormalizer.NormalizeAuthor(book.Author),
             CreatedAt = Now,
+            // The split-off edition takes its own rating / review when it has one,
+            // else the book's it was part of; the favourite is copied. Its own
+            // values then stop being exceptions. The old work is left as it was.
+            Rating = book.Progress.Rating > 0 ? book.Progress.Rating : book.Work!.Rating,
+            PersonalReview = string.IsNullOrEmpty(book.Progress.PersonalReview)
+                ? book.Work!.PersonalReview
+                : book.Progress.PersonalReview,
+            IsFavorite = book.Work!.IsFavorite,
         };
         db.Works.Add(newWork);
+        book.Progress.Rating = 0;
+        book.Progress.PersonalReview = null;
 
         book.WorkId = newWork.Id;
         book.Work = newWork;

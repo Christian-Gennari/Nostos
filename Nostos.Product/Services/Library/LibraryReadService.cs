@@ -63,12 +63,24 @@ internal sealed class LibraryReadService(
             }
         }
 
+        // The favourite is the book's, so it filters the same way grouped or not.
+        // Reading status is calculated per book (work) when the list is grouped:
+        // a finished EPUB with an untouched audiobook is Finished, not Not started.
+        // The flat list is a list of editions, so there each edition keeps its own
+        // progress filters.
+        var byWork = groupByWork == true;
         query = filter switch
         {
-            BookFilter.Favorites => query.Where(b => b.Progress.IsFavorite),
-            BookFilter.Finished => query.Where(b => b.Progress.FinishedAt != null),
-            BookFilter.Reading => query.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0),
-            BookFilter.NotStarted => query.Where(b => b.Progress.ProgressPercent == 0),
+            BookFilter.Favorites => query.Where(b => b.Work!.IsFavorite),
+            BookFilter.Finished => byWork
+                ? WorkReadingStatus.WhereFinished(query, db)
+                : query.Where(b => b.Progress.FinishedAt != null),
+            BookFilter.Reading => byWork
+                ? WorkReadingStatus.WhereReading(query, db)
+                : query.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0),
+            BookFilter.NotStarted => byWork
+                ? WorkReadingStatus.WhereNotStarted(query, db)
+                : query.Where(b => b.Progress.ProgressPercent == 0),
             BookFilter.Unsorted => query.Where(b =>
                 !db.BookCollections.Any(bc => bc.BookId == b.Id)),
             _ => query,
@@ -141,7 +153,7 @@ internal sealed class LibraryReadService(
                     b.CreatedAt,
                     b.Progress.LastReadAt,
                     b.Progress.ProgressPercent,
-                    b.Progress.Rating))
+                    b.Work!.Rating))
                 .ToListAsync(ct);
 
             var primaries = SortGroupedBooks(
@@ -207,7 +219,7 @@ internal sealed class LibraryReadService(
             query = sort switch
             {
                 BookSort.Title => ImportingFirst(query).ThenBy(b => b.Title),
-                BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Progress.Rating),
+                BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Work!.Rating),
                 BookSort.LastRead => ImportingFirst(query)
                     .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
                     .ThenByDescending(b => b.Progress.LastReadAt),
@@ -264,8 +276,9 @@ internal sealed class LibraryReadService(
         var version = state?.StateVersion ?? "0";
 
         // Sidebar numbers describe the same unit as the default grouped Library:
-        // one count per WorkId after applying the book-level predicate. A work
-        // with two qualifying editions still occupies one visible card. This is
+        // one count per WorkId. Favourite and reading status are the book's
+        // (calculated from all of its editions), so a work with two qualifying
+        // editions still occupies one visible card. This is
         // deliberately NOT title/author deduplication; WorkId is the grouping
         // contract and separate works remain separate.
         var books = CountableBooks(db);
@@ -273,10 +286,10 @@ internal sealed class LibraryReadService(
             source.Select(b => b.WorkId).Distinct().CountAsync(ct);
 
         var all = await CountWorksAsync(books);
-        var notStarted = await CountWorksAsync(books.Where(b => b.Progress.ProgressPercent == 0));
-        var reading = await CountWorksAsync(books.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0));
-        var favorites = await CountWorksAsync(books.Where(b => b.Progress.IsFavorite));
-        var finished = await CountWorksAsync(books.Where(b => b.Progress.FinishedAt != null));
+        var notStarted = await CountWorksAsync(WorkReadingStatus.WhereNotStarted(books, db));
+        var reading = await CountWorksAsync(WorkReadingStatus.WhereReading(books, db));
+        var favorites = await CountWorksAsync(books.Where(b => b.Work!.IsFavorite));
+        var finished = await CountWorksAsync(WorkReadingStatus.WhereFinished(books, db));
         var unsorted = await CountWorksAsync(books.Where(b =>
             !db.BookCollections.Any(bc => bc.BookId == b.Id)));
         var audiobooks = await CountWorksAsync(books.OfType<AudioBookModel>());

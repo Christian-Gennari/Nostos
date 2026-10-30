@@ -507,8 +507,9 @@ public sealed class PortableArchiveValidationTests
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 3));
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 4));
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 5));
+        PortableArchiveValidation.ValidatePortableData(EmptyData(version: 6));
 
-        RejectData(EmptyData(version: 6), "unsupported_data_version");
+        RejectData(EmptyData(version: 7), "unsupported_data_version");
         RejectData(
             EmptyData(version: 4) with { ReadingListEntries = [] },
             "unexpected_version_data");
@@ -831,7 +832,6 @@ public sealed class PortableArchiveValidationTests
             expectedBook.Progress.LastLocation,
             expectedBook.Progress.ProgressPercent,
             expectedBook.Progress.Rating,
-            expectedBook.Progress.IsFavorite,
             expectedBook.Progress.PersonalReview);
         ThrowPortableError(
             () => PortableArchiveValidation.ValidateImportedBookType(
@@ -845,7 +845,6 @@ public sealed class PortableArchiveValidationTests
                 expectedBook.Progress.LastLocation,
                 expectedBook.Progress.ProgressPercent,
                 expectedBook.Progress.Rating + 1,
-                expectedBook.Progress.IsFavorite,
                 expectedBook.Progress.PersonalReview),
             "integrity_failed");
 

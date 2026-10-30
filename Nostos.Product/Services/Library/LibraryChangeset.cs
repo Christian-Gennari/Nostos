@@ -98,7 +98,11 @@ public sealed record MembershipSnapshot(Guid BookId, IReadOnlyList<Guid> Before,
 
 public sealed record BookFieldsSnapshot(Guid BookId, BookFieldsState Before, BookFieldsState After);
 
-/// <summary>The book columns a changeset can change, stored so undo can restore them exactly.</summary>
+/// <summary>
+/// The book columns a changeset can change, stored so undo can restore them exactly.
+/// <see cref="Rating"/>, <see cref="IsFavorite"/> and <see cref="PersonalReview"/> are the
+/// book's values and live on its work, so undo restores them there.
+/// </summary>
 public sealed record BookFieldsState(
     string Title,
     string? Author,

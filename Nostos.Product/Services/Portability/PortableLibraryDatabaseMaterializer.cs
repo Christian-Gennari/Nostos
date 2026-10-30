@@ -52,11 +52,16 @@ internal static class PortableLibraryDatabaseMaterializer
     {
         try
         {
-            return await JsonSerializer
+            var data = await JsonSerializer
                 .DeserializeAsync<PortableLibraryData>(source, JsonOptions, cancellationToken)
                 ?? throw new PortableArchiveException(
                     "malformed_data",
                     "Portable archive relational payload is malformed.");
+
+            // An archive from before rating, favourite and review moved onto the
+            // work is rolled up here, once, so every later step (restore,
+            // verification) sees the same book-level values.
+            return PortableLegacyBookValues.ToCurrent(data);
         }
         catch (JsonException exception)
         {
@@ -98,6 +103,9 @@ internal static class PortableLibraryDatabaseMaterializer
                 NormalizedTitle = BookIdentityNormalizer.NormalizeTitle(x.Title),
                 NormalizedAuthor = BookIdentityNormalizer.NormalizeAuthor(x.Author),
                 CreatedAt = x.CreatedAt,
+                Rating = x.Rating,
+                IsFavorite = x.IsFavorite,
+                PersonalReview = x.PersonalReview,
             });
         db.Works.AddRange(works.Values);
 
@@ -196,7 +204,6 @@ internal static class PortableLibraryDatabaseMaterializer
                 LastLocation = source.Progress.LastLocation,
                 ProgressPercent = source.Progress.ProgressPercent,
                 Rating = source.Progress.Rating,
-                IsFavorite = source.Progress.IsFavorite,
                 PersonalReview = source.Progress.PersonalReview,
                 LastReadAt = source.Progress.LastReadAt,
                 FinishedAt = source.Progress.FinishedAt,

@@ -222,9 +222,11 @@ public static class BooksEndpoints
         // finished and recency; deliberately NOT a 0% progress update)
         group.MapPost(
             "/{id}/progress/reset",
-            async (Guid id, ILibraryService library, CancellationToken ct) =>
+            async (Guid id, bool? allEditions, ILibraryService library, CancellationToken ct) =>
             {
-                var result = await library.ResetProgressAsync(id, ct);
+                // allEditions=true resets every edition of the book (the work),
+                // the book page's "start over" for a book read in several formats.
+                var result = await library.ResetProgressAsync(id, allEditions == true, ct);
                 return LibraryHttpMapper.MapError(result) ?? Results.Ok(result.Data);
             }
         );

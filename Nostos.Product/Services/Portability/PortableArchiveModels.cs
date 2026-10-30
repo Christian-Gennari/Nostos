@@ -18,8 +18,12 @@ internal static class PortableArchiveFormat
     // Bumped from 4 to 5 with the reading list: books the user wants to read
     // and does not have yet. An older build must refuse such an archive rather
     // than import the library without the list.
-    // Archives with DataVersion 1, 2, 3 and 4 remain supported.
-    public const int DataVersion = 5;
+    // Bumped from 5 to 6 when rating, favourite and review moved from each
+    // edition onto its work (the book). An older build must refuse such an
+    // archive rather than import the book without them.
+    // Archives with DataVersion 1 to 5 remain supported: their per-edition values
+    // are rolled up onto the work on import (PortableLegacyBookValues).
+    public const int DataVersion = 6;
     public const string ManifestPath = "manifest.json";
     public const string DataPath = "data/library.json";
     public const string BookMediaKind = "book";
@@ -100,7 +104,13 @@ internal sealed record PortableWork(
     Guid Id,
     string Title,
     string? Author,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    // What the reader says about the book (data version 6+). Appended and
+    // optional: an archive written before it carried these per edition, and is
+    // rolled up on import instead (PortableLegacyBookValues).
+    int Rating = 0,
+    bool IsFavorite = false,
+    string? PersonalReview = null);
 
 internal sealed record PortableBook(
     Guid Id,
@@ -144,7 +154,11 @@ internal sealed record PortableBookMetadata(
 internal sealed record PortableReadingProgress(
     string? LastLocation,
     int ProgressPercent,
+    // From data version 6 these are this edition's own rating and review, an
+    // exception to the book's (PortableWork). Before that they were the book's.
     int Rating,
+    // Data version 5 and older only: the favourite is the book's now and lives on
+    // PortableWork. Always false in a current archive.
     bool IsFavorite,
     string? PersonalReview,
     DateTime? LastReadAt,

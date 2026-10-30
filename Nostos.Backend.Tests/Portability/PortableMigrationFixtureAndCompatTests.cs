@@ -136,9 +136,9 @@ public sealed class PortableMigrationFixtureAndCompatTests
 
         epub.Progress.LastLocation.Should().Be("epubcfi(/6/4)");
         epub.Progress.ProgressPercent.Should().Be(42);
-        epub.Progress.Rating.Should().Be(5);
-        epub.Progress.IsFavorite.Should().BeTrue();
-        epub.Progress.PersonalReview.Should().Be("Important review");
+        epub.Work!.Rating.Should().Be(5);
+        epub.Work.IsFavorite.Should().BeTrue();
+        epub.Work.PersonalReview.Should().Be("Important review");
     }
 
     [Fact]
@@ -351,6 +351,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
         MutateJsonEntry(entries, DataPath, root =>
         {
             root["version"] = dataVersion;
+            PortableArchiveTestSupport.AsPerEditionBookValues(root);
             if (dataVersion < 5) root.Remove("readingListEntries");
         });
 
@@ -1105,6 +1106,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             MutateJsonEntry(entries, DataPath, root =>
             {
                 root["version"] = LegacyDataVersion;
+                PortableArchiveTestSupport.AsPerEditionBookValues(root);
                 if (LegacyDataVersion < 5) root.Remove("readingListEntries");
                 root.Remove("writingNotes");
                 root.Remove("noteImportBookLinks");
@@ -1123,6 +1125,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             MutateJsonEntry(entries, DataPath, root =>
             {
                 root["version"] = IntermediateDataVersion;
+                PortableArchiveTestSupport.AsPerEditionBookValues(root);
                 if (IntermediateDataVersion < 5) root.Remove("readingListEntries");
                 root.Remove("noteImportBookLinks");
             });
@@ -1140,6 +1143,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             MutateJsonEntry(entries, DataPath, root =>
             {
                 root["version"] = CurrentDataVersion;
+                PortableArchiveTestSupport.AsPerEditionBookValues(root);
                 if (CurrentDataVersion < 5) root.Remove("readingListEntries");
             });
 

@@ -36,9 +36,10 @@ Manages `BookModel` entities (all subtypes via TPH).
 
 | Filter      | Condition                                   |
 | ----------- | ------------------------------------------- |
-| `Favorites` | `Progress.IsFavorite == true`               |
-| `Finished`  | `Progress.FinishedAt != null`               |
-| `Reading`   | `FinishedAt == null && ProgressPercent > 0` |
+| `Favorites` | `Work.IsFavorite == true` (the book's)      |
+| `Finished`  | grouped: any edition of the work has `FinishedAt`; flat: this edition's |
+| `Reading`   | grouped: an unfinished edition has `ProgressPercent > 0` and was read after the work's latest finish (or none is finished); flat: `FinishedAt == null && ProgressPercent > 0` |
+| `NotStarted`| grouped: no edition has progress or `FinishedAt`; flat: `ProgressPercent == 0` |
 | `Unsorted`  | no `BookCollections` row for the book       |
 
 ### Sort Options (`BookSort` enum)
@@ -47,7 +48,7 @@ Manages `BookModel` entities (all subtypes via TPH).
 | ---------- | ------------------------------ |
 | `Recent`   | `CreatedAt DESC` (default)     |
 | `Title`    | `Title ASC`                    |
-| `Rating`   | `Progress.Rating DESC`         |
+| `Rating`   | `Work.Rating DESC` (the book's) |
 | `LastRead` | `LastReadAt DESC` (nulls last) |
 
 ---

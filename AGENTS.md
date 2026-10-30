@@ -288,6 +288,30 @@ preferences.
   table's collection FK is `Restrict`, so membership rows must go first.
 - Membership is **per book (per edition)** by decision, not per work.
 
+### Book values (rating, favourite, review) live on the work
+
+- **What you say about a book belongs to the book (`WorkModel`); where you are
+  and the copy itself belong to the edition.** `WorkModel.Rating`, `IsFavorite`
+  and `PersonalReview` are the book's. `Progress.Rating` / `PersonalReview` on an
+  edition are only that edition's own exception (0 / null = none), and the
+  favourite has no exception (`Progress.IsFavorite` is gone). Reading status is
+  never stored: `WorkReadingStatus` calculates it from the editions.
+- **Anything that serialises a book needs its `Work` loaded.** A `BookModel`
+  read without it would silently report rating 0 and an empty review.
+  `NostosDbContext` auto-includes `Work` and `ToDto()` throws when it is missing,
+  but a hand-built model, or a projection that bypasses `ToDto` (grep
+  `Progress.Rating` / `Work!.Rating`), must read the work itself. Portable
+  export, backup and the changeset snapshot all do.
+- **One rule combines these values when books become one:** `BookValueRollUp`
+  (agree or one side: it becomes the book's; differ: the side read most recently
+  wins and the other keeps its value as an edition exception; favourite is OR).
+  The `MoveBookValuesToWork` migration runs it in SQL, "link as one book" and
+  old-archive import (`PortableLegacyBookValues`) run it in C#, and
+  `MoveBookValuesToWorkMigrationTests` replays both over the same rows. Change
+  one and you change all three.
+- Membership in collections stays **per edition** (see above); only the values
+  above moved.
+
 ### Migrations
 
 - **Tests use `EnsureCreated`, which never executes migrations.** A hand-written

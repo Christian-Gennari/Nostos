@@ -98,7 +98,10 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
             book.Progress.LastLocation.Should().Be(expectedBook.Progress.LastLocation);
             book.Progress.ProgressPercent.Should().Be(expectedBook.Progress.ProgressPercent);
             book.Progress.Rating.Should().Be(expectedBook.Progress.Rating);
-            book.Progress.IsFavorite.Should().Be(expectedBook.Progress.IsFavorite);
+            var expectedWork = fixture.Data.Works.Single(x => x.Id == expectedBook.WorkId);
+            book.Work!.Rating.Should().Be(expectedWork.Rating);
+            book.Work.IsFavorite.Should().Be(expectedWork.IsFavorite);
+            book.Work.PersonalReview.Should().Be(expectedWork.PersonalReview);
             book.Progress.PersonalReview.Should().Be(expectedBook.Progress.PersonalReview);
             book.Progress.LastReadAt.Should().Be(expectedBook.Progress.LastReadAt);
 

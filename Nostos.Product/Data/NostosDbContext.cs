@@ -563,6 +563,10 @@ public class NostosDbContext : DbContext
                 .HasForeignKey(bm => bm.WorkId)
                 .OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(bm => bm.WorkId);
+
+            // The book's rating, favourite and review live on the work, so an
+            // edition read without it would silently report rating 0.
+            b.Navigation(bm => bm.Work).AutoInclude();
         });
 
         // --- DERIVED AUDIOBOOK / EPUB ALIGNMENT ANCHORS ---

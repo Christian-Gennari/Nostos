@@ -43,7 +43,11 @@ public record EditionSummaryDto(
     // one format are told apart by their edition, year or publisher, and a
     // summary without the last two left them numbered "Physical 1"/"Physical 2".
     string? Publisher = null,
-    string? PublishedDate = null
+    string? PublishedDate = null,
+    // APPENDED. This edition's OWN rating and review, an exception to the
+    // book's (BookDto.Rating / PersonalReview). 0 / null means none.
+    int Rating = 0,
+    string? PersonalReview = null
 );
 
 public record BookDto(
@@ -102,7 +106,12 @@ public record BookDto(
     // Changes whenever the cover's bytes change; null without a cover. A client
     // adds it to the cover URL as ?v= so the image can be cached for good.
     // APPENDED to preserve positional record stability.
-    string? CoverVersion = null
+    string? CoverVersion = null,
+    // APPENDED. Rating, IsFavorite and PersonalReview above are the BOOK's
+    // (shared by every edition). These are this edition's own exceptions:
+    // 0 / null means none. The favourite has no exception.
+    int EditionRating = 0,
+    string? EditionReview = null
 );
 
 /// <summary>
@@ -199,7 +208,11 @@ public record UpdateBookDto(
     // Inbound compatibility (see CreateBookDto.CollectionId).
     Guid? CollectionId = null,
     bool ClearCollection = false,
-    IReadOnlyList<Guid>? CollectionIds = null
+    IReadOnlyList<Guid>? CollectionIds = null,
+    // APPENDED. This edition's own rating, an exception to the book's: 0..5,
+    // 0 clears it, null leaves it. Rating / IsFavorite / PersonalReview above
+    // write the book's values.
+    int? EditionRating = null
 );
 
 public record UpdateProgressDto(string Location, int Percentage);

@@ -111,7 +111,7 @@ public static class PortableLibraryRecoverySource
             .ToHashSet();
 
         var works = (await db.Works.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
-            .Select(x => new PortableWork(x.Id, x.Title, x.Author, x.CreatedAt))
+            .Select(x => new PortableWork(x.Id, x.Title, x.Author, x.CreatedAt, x.Rating, x.IsFavorite, x.PersonalReview))
             .ToList();
 
         var retainedTracks = retainedMedia
@@ -295,7 +295,8 @@ public static class PortableLibraryRecoverySource
                 book.Progress.LastLocation,
                 book.Progress.ProgressPercent,
                 book.Progress.Rating,
-                book.Progress.IsFavorite,
+                // The favourite is the book's and travels on its work.
+                false,
                 book.Progress.PersonalReview,
                 book.Progress.LastReadAt,
                 book.Progress.FinishedAt),
