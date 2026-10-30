@@ -152,7 +152,8 @@ public static class BooksEndpoints
                     ClearCollection: dto.ClearCollection,
                     Rating: dto.Rating, IsFavorite: dto.IsFavorite,
                     PersonalReview: dto.PersonalReview, FinishedAt: dto.FinishedAt,
-                    IsFinished: dto.IsFinished);
+                    IsFinished: dto.IsFinished,
+                    EditionRating: dto.EditionRating, EditionReview: dto.EditionReview);
 
                 var result = await library.UpdateBookAsync(request, ct);
                 return LibraryHttpMapper.MapError(result) ?? Results.Ok(result.Data);

@@ -820,8 +820,8 @@ public sealed partial class LibraryService : ILibraryService
             book.Metadata.VolumeNumber = NullIfEmpty(request.VolumeNumber);
 
         // Rating, favourite and review are the book's, shared by every edition,
-        // so they are written to the work. EditionRating is this edition's own
-        // exception (0 clears it).
+        // so they are written to the work. EditionRating and EditionReview are this
+        // edition's own exceptions (0 / empty clears).
         var work = book.Work!;
         if (request.Rating.HasValue)
             work.Rating = Math.Clamp(request.Rating.Value, 0, 5);
@@ -831,6 +831,8 @@ public sealed partial class LibraryService : ILibraryService
             work.PersonalReview = NullIfEmpty(request.PersonalReview);
         if (request.EditionRating.HasValue)
             book.Progress.Rating = Math.Clamp(request.EditionRating.Value, 0, 5);
+        if (request.EditionReview is not null)
+            book.Progress.PersonalReview = NullIfEmpty(request.EditionReview);
 
         // Finished semantics mirror UpdateBookDto.Apply.
         if (request.FinishedAt is not null)

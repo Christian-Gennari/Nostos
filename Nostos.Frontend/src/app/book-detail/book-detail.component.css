@@ -310,6 +310,18 @@
   padding-bottom: 0.5rem;
   min-width: 0;
 }
+/* This edition's own rating (the narration, for an audiobook): a line of quiet
+   text and the same stars at a smaller size, tucked under the verdict it is an
+   exception to. */
+.strip-edition-rating {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: -0.5rem;
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+}
+
 /* Three rows, one job each: verdict (stars, heart), state (edition and
    reading-status pills), actions. The verdict and state rows sit close
    together; the action row takes a little more air above it. */
@@ -728,6 +740,36 @@
 .personal-review {
   margin-bottom: 2.5rem;
 }
+/* Reviews that editions keep of their own sit close under the book's review. */
+.personal-review:has(+ .edition-review) {
+  margin-bottom: 1.25rem;
+}
+.edition-review {
+  margin-bottom: 1.5rem;
+}
+.edition-review:last-of-type {
+  margin-bottom: 2.5rem;
+}
+.edition-review-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+.edition-review-remove {
+  margin-left: 0.25rem;
+  font-size: var(--text-xs);
+}
+.edition-review-text {
+  max-width: var(--detail-measure);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
 .review-label {
   display: flex;
   align-items: center;
@@ -934,6 +976,9 @@
 .notes-header h3 {
   margin: 0;
 }
+.notes-edition-filter {
+  margin-left: auto;
+}
 .new-note-box {
   position: relative;
   background: var(--bg-surface);
@@ -1021,7 +1066,8 @@
     text-align: center;
   }
   .strip-verdict,
-  .strip-state {
+  .strip-state,
+  .strip-edition-rating {
     justify-content: center;
   }
   .stage-strip .primary-actions {

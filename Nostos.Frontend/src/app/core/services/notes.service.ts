@@ -10,6 +10,8 @@ import {
 export interface NoteBrowseFilter {
   query?: string;
   bookId?: string;
+  /** Every note of every edition of this book (the work). */
+  workId?: string;
   withoutTopics?: boolean;
   /** Only notes of this kind (issue #1014: Brain's Passages filter). */
   kind?: 'note' | 'passage';
@@ -138,6 +140,7 @@ function browseParams(filter: NoteBrowseFilter): Record<string, string | number 
   const params: Record<string, string | number | boolean> = {};
   if (filter.query?.trim()) params['query'] = filter.query.trim();
   if (filter.bookId) params['bookId'] = filter.bookId;
+  if (filter.workId) params['workId'] = filter.workId;
   if (filter.withoutTopics) params['withoutTopics'] = true;
   if (filter.kind) params['kind'] = filter.kind;
   if (filter.topicId) params['topicId'] = filter.topicId;

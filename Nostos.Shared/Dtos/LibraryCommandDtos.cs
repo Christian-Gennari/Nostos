@@ -106,7 +106,10 @@ public sealed record LibraryUpdateBookRequest(
     // APPENDED. This edition's own rating, an exception to the book's: 0..5,
     // 0 clears it, null leaves it. Rating / IsFavorite / PersonalReview above
     // write the BOOK's values (the work every edition shares).
-    int? EditionRating = null
+    int? EditionRating = null,
+    // APPENDED. This edition's own review, an exception to the book's: an
+    // empty string clears it, null leaves it.
+    string? EditionReview = null
 );
 
 // --- WORK MEMBERSHIP (multi-edition grouping) ---

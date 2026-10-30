@@ -80,6 +80,34 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
     }
 
     [Fact]
+    public async Task An_edition_review_is_an_exception_that_clears_with_an_empty_string()
+    {
+        var h = Harness();
+        var epub = await CreateAsync(h, "ebook", "Fictions", "Borges");
+        var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
+        await h.Service.UpdateBookAsync(new LibraryUpdateBookRequest(
+            Client, Key(), epub, PersonalReview: "A labyrinth."));
+
+        await h.Service.UpdateBookAsync(new LibraryUpdateBookRequest(
+            Client, Key(), audio, EditionReview: "The narrator hurries."));
+
+        var narrated = await GetAsync(h, audio);
+        narrated.PersonalReview.Should().Be("A labyrinth.", "the book's review is unchanged");
+        narrated.EditionReview.Should().Be("The narrator hurries.");
+        (await GetAsync(h, epub)).EditionReview.Should().BeNull();
+        (await GetAsync(h, epub)).OtherEditions!.Single(e => e.Id == audio).PersonalReview
+            .Should().Be("The narrator hurries.");
+
+        await h.Service.UpdateBookAsync(new LibraryUpdateBookRequest(Client, Key(), audio, Rating: 3));
+        (await GetAsync(h, audio)).EditionReview.Should().Be("The narrator hurries.", "null leaves it");
+
+        await h.Service.UpdateBookAsync(new LibraryUpdateBookRequest(Client, Key(), audio, EditionReview: ""));
+        var cleared = await GetAsync(h, audio);
+        cleared.EditionReview.Should().BeNull();
+        cleared.PersonalReview.Should().Be("A labyrinth.");
+    }
+
+    [Fact]
     public async Task A_card_keeps_the_books_values_when_another_edition_is_read()
     {
         var h = Harness();

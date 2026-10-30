@@ -42,6 +42,16 @@ export function formatOf(book: { type: string; format?: string | null; fileName?
 }
 
 /**
+ * The format a note's `bookFormat` names ("audiobook", "pdf", "ebook",
+ * "physical"), as the UI names it; null for an absent or unknown value.
+ */
+export function formatOfConcept(value: string | null | undefined): BookFormat | null {
+  const concept = value?.trim().toLowerCase();
+  if (concept !== 'audiobook' && concept !== 'ebook' && concept !== 'pdf' && concept !== 'physical') return null;
+  return { format: BOOK_FORMAT_LABEL[concept], concept };
+}
+
+/**
  * The format concept for a library book. A PDF is an ebook with a `.pdf` file;
  * the server's library filters draw the same line.
  */

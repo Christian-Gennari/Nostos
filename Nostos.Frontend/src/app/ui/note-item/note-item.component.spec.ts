@@ -129,6 +129,33 @@ describe('NoteItemComponent', () => {
     expect(link.searchParams.get('sourcePage')).toBe('30');
   });
 
+  it('names the edition beside the location only when asked, from the note\'s own format', () => {
+    render({ bookFormat: 'pdf' });
+    expect(element.querySelector('[data-testid="note-edition-format"]')).toBeNull();
+
+    fixture.componentRef.setInput('showFormat', true);
+    fixture.detectChanges();
+    const format = element.querySelector('[data-testid="note-edition-format"]');
+    expect(format?.textContent?.trim()).toBe('PDF');
+    expect(format?.querySelector('nostos-icon')).not.toBeNull();
+    const meta = element.querySelector('.note-item-meta')?.textContent ?? '';
+    expect(meta.indexOf('PDF')).toBeLessThan(meta.indexOf('p. 30'));
+
+    render({ bookFormat: 'audiobook', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '3600' });
+    expect(element.querySelector('[data-testid="note-edition-format"]')?.textContent?.trim()).toBe('Audiobook');
+
+    render({ bookFormat: null });
+    expect(element.querySelector('[data-testid="note-edition-format"]')).toBeNull();
+  });
+
+  it('opens a note from another edition in that edition', () => {
+    render({ bookId: 'audio-edition', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '42', bookFormat: 'audiobook' });
+
+    const link = new URL((element.querySelector('.note-item-source') as HTMLAnchorElement).href);
+    expect(link.pathname).toBe('/read/audio-edition');
+    expect(link.searchParams.get('sourceTime')).toBe('42');
+  });
+
   it('leaves the book out where a heading already names it', () => {
     fixture.componentRef.setInput('showBook', false);
     render();

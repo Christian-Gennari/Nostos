@@ -53,6 +53,10 @@ export interface EditionSummaryDto {
   /** Lets the book page's edition switcher tell two editions of one format apart. */
   publisher?: string | null;
   publishedDate?: string | null;
+  /** This edition's own rating, an exception to the book's. 0 means none. */
+  rating?: number;
+  /** This edition's own review, an exception to the book's. Null means none. */
+  personalReview?: string | null;
 }
 
 export interface Book {
@@ -101,10 +105,15 @@ export interface Book {
   progressPercent: number;
   lastReadAt: string | null;
 
-  // Metadata Fields
+  // Metadata Fields. `rating`, `isFavorite` and `personalReview` are the BOOK's,
+  // the same on every edition; the two below are this edition's own exceptions.
   rating: number;
   isFavorite: boolean;
   personalReview: string | null;
+  /** This edition's own rating (the narration, for an audiobook). 0 means none. */
+  editionRating?: number;
+  /** This edition's own review, kept after grouping books that disagreed. Null means none. */
+  editionReview?: string | null;
   finishedAt: string | null;
 
   workId?: string;
@@ -151,7 +160,9 @@ export interface BookSource {
 // --- MANUAL WORK MEMBERSHIP (issue #143) ---
 // The override for automatic multi-edition grouping. Only WorkId moves; every
 // book-level value (file, progress, notes, rating, review, collections,
-// metadata) belongs to the book and is untouched.
+// metadata) belongs to the book and is untouched. Grouping combines the
+// rating, favourite and review; a rating or review that differs stays on its
+// edition.
 
 /** Result of a link/unlink: where the book ended up, and the group's new size. */
 export interface WorkMembershipDto {
@@ -252,6 +263,10 @@ export interface UpdateBookDto {
   rating?: number;
   isFavorite?: boolean;
   personalReview?: string | null;
+  /** This edition's own rating: 0 to 5, 0 clears it. */
+  editionRating?: number;
+  /** This edition's own review; an empty string clears it. */
+  editionReview?: string | null;
   finishedAt?: string | null;
   isFinished?: boolean;
 }
