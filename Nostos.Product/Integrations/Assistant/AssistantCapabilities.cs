@@ -60,16 +60,20 @@ public static partial class AssistantCapabilities
         ILibraryService library,
         ITopicRepository topics,
         IKnowledgeRetrievalService knowledge,
-        IBookTextSearchService? bookText = null)
+        IBookTextSearchService? bookText = null,
+        IBookTextQuoteFinder? quotes = null)
     {
         var capabilities = BuildLibraryBookCapabilities(library)
             .Concat(BuildKnowledgeCapabilities(notes, topics, knowledge))
-            .Concat(BuildCollectionAndCaptureCapabilities(notes, library))
+            .Concat(BuildCollectionAndCaptureCapabilities(notes, library, quotes))
             .Concat(BuildChangeCapabilities())
             .ToList();
 
         if (bookText is not null)
             capabilities.AddRange(BuildBookTextCapabilities(bookText));
+
+        if (quotes is not null)
+            capabilities.Add(BuildFindQuoteCapability(quotes));
 
         return capabilities;
     }

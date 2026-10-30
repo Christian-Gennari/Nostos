@@ -9,12 +9,14 @@ using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
+using Nostos.Backend.Services.BookText;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Tests.Services.Ai;
 using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
+using Nostos.Product.BookText;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Assistant;
@@ -137,8 +139,19 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["rewrite"] = "boolean",
                 ["topics"] = "array",
                 ["wholeBook"] = "boolean",
+                ["quoteRef"] = "string",
             },
             Required: []),
+        ["book_text_find_quote"] = new(
+            Properties: new()
+            {
+                ["startsWith"] = "string",
+                ["endsWith"] = "string",
+                ["page"] = "integer",
+                ["chapter"] = "string",
+                ["choice"] = "integer",
+            },
+            Required: ["startsWith", "endsWith"]),
         ["notes_rewrite_capture"] = new(
             Properties: new() { ["noteId"] = "string", ["topics"] = "array" },
             Required: ["noteId"]),
@@ -319,7 +332,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             .Should().BeEquivalentTo(new Dictionary<AssistantCapabilityCategory, int>
             {
                 [AssistantCapabilityCategory.KnowledgeRetrieval] = 8,
-                [AssistantCapabilityCategory.SourceNavigation] = 1,
+                [AssistantCapabilityCategory.SourceNavigation] = 2,
                 [AssistantCapabilityCategory.LibraryRead] = 4,
                 [AssistantCapabilityCategory.Capture] = 2,
                 [AssistantCapabilityCategory.Organization] = 12,
@@ -343,7 +356,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(28);
+        measurement.CapabilityCount.Should().Be(29);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(
@@ -459,7 +472,13 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, libraryService, topics));
+            AssistantCapabilities.Build(
+                noteService,
+                libraryService,
+                topics,
+                Nostos.Backend.Services.Knowledge.NoOpKnowledgeRetrievalService.Instance,
+                bookText: null,
+                quotes: new BookTextQuoteFinder(new SqliteBookTextIndex(factory), libraryService)));
 
         var llm = new FakeLlmProvider();
         var orchestrator = new AssistantOrchestrator(

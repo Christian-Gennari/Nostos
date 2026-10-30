@@ -127,6 +127,7 @@ public sealed class AssistantOrchestrator(
     private const string CaptureCapability = "notes_capture";
     private const string RewriteCaptureCapability = "notes_rewrite_capture";
     private const string BookTextCapability = "book_text_search";
+    private const string FindQuoteCapability = "book_text_find_quote";
     private const string KnowledgeSearchCapability = "knowledge_search";
     private const string KnowledgeReadCapability = "knowledge_read_evidence";
     private const string NotesListForBookCapability = "notes_list_for_book";
@@ -144,6 +145,7 @@ public sealed class AssistantOrchestrator(
     private static readonly HashSet<string> UntrustedContentCapabilities = new(StringComparer.Ordinal)
     {
         BookTextCapability,
+        FindQuoteCapability,
         KnowledgeSearchCapability,
         KnowledgeReadCapability,
         "knowledge_overview",
@@ -263,6 +265,15 @@ public sealed class AssistantOrchestrator(
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
         var retrieval = new AssistantRetrievalTurnState(turnContext);
+        // A quote looked up by its first and last words that did not resolve
+        // to one passage leaves nothing to save this turn: the dictated words
+        // are not the quote, and saving them would pass them off as one.
+        var quoteLookupUnresolved = false;
+        var earlierUserMessages = (request.History ?? [])
+            .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+            .Select(message => message.Text)
+            .Reverse()
+            .ToList();
         if (captureIntent.ResolvedBook is { } clarifiedScope)
             retrieval.RecordResolvedBook(clarifiedScope);
         var mutationCompleted = false;
@@ -434,12 +445,26 @@ public sealed class AssistantOrchestrator(
                         continue;
                     }
 
+                    if (quoteLookupUnresolved
+                        && string.IsNullOrWhiteSpace(ReadString(
+                            AssistantToolArguments.ParseElement(call.ArgumentsJson), "quoteRef")))
+                    {
+                        lastAssistantContent = null;
+                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
+                        {
+                            status = "capture_rejected",
+                            message = "book_text_find_quote did not find one passage, so there is nothing to save. Nothing was saved. Tell the user what book_text_find_quote said.",
+                        })));
+                        continue;
+                    }
+
                     capture = await _capturePolicy.PrepareAsync(
                         call.ArgumentsJson,
                         turnContext,
                         request.Message,
                         fallbackContent: null,
-                        ct);
+                        ct,
+                        earlierUserMessages);
 
                     if (capture.Prompt is { } prompt)
                     {
@@ -484,6 +509,17 @@ public sealed class AssistantOrchestrator(
                             message = "The user did not ask for a rewrite in this message. Nothing was changed.",
                         })));
                         continue;
+                    }
+
+                    // Like a capture, the open book is the app's: the quote is
+                    // looked up in the book the user is reading, never one the
+                    // model went and found.
+                    if (string.Equals(capability.Name, FindQuoteCapability, StringComparison.Ordinal)
+                        && Guid.TryParse(turnContext.BookId, out var openBookId))
+                    {
+                        var findArgs = AssistantToolArguments.ParseObject(call.ArgumentsJson);
+                        findArgs["bookId"] = openBookId.ToString();
+                        args = JsonSerializer.SerializeToElement(findArgs);
                     }
 
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
@@ -695,6 +731,13 @@ public sealed class AssistantOrchestrator(
                         if (evidenceReferences.Count > evidenceBeforeCall)
                             retrieval.MarkExactEvidenceAvailable();
                     }
+                }
+
+                if (string.Equals(capability.Name, FindQuoteCapability, StringComparison.Ordinal))
+                {
+                    quoteLookupUnresolved = !(result.Success
+                        && result.Data is { ValueKind: JsonValueKind.Object } found
+                        && string.Equals(ReadString(found, "status"), "found", StringComparison.Ordinal));
                 }
 
                 if (result.Success

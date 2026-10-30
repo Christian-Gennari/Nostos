@@ -218,6 +218,8 @@ export interface CreateNoteDto {
   sourceAnchorKind?: string;
   sourceAnchorValue?: string;
   anchorVerified?: boolean;
+  /** Where the words came from ("photo" for a photographed page); the server default is `text`. */
+  captureSource?: string;
   /** A passage (issue #1014): start in the anchor, end here, text in selectedText. */
   kind?: NoteKind;
   passageTitle?: string;

@@ -1,3 +1,4 @@
+using Nostos.Product.BookText;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
@@ -7,7 +8,10 @@ namespace Nostos.Backend.Integrations.Assistant;
 
 public static partial class AssistantCapabilities
 {
-    private static IReadOnlyList<AssistantCapability> BuildCollectionAndCaptureCapabilities(INoteService notes, ILibraryService library) =>
+    private static IReadOnlyList<AssistantCapability> BuildCollectionAndCaptureCapabilities(
+        INoteService notes,
+        ILibraryService library,
+        IBookTextQuoteFinder? quotes = null) =>
     [
         new AssistantCapability(
             "library_list_collections",
@@ -73,6 +77,7 @@ public static partial class AssistantCapabilities
                 "topics": { "type": "array", "items": { "type": "string" }, "description": "With rewrite, or when the user asks for topics: up to five topic names the thought is plainly about (a character, a theme, an idea it names). Prefer the exact names of topics that already exist. Ignored otherwise." },
                 "wholeBook": { "type": "boolean", "description": "True when the thought is about the book as a whole (a character across the book, a theme, an overall reaction) rather than the moment the user is at. The note is then saved without a page or timestamp, and the user is not asked for one." },
                 "selectedText": { "type": "string", "description": "A passage quoted from the book itself. When the reader has a passage selected it is already in the current context — capture it here rather than asking for it. It is stored as the quotation exactly as given." },
+                "quoteRef": { "type": "string", "description": "The quoteRef book_text_find_quote returned for the passage the user named by its first and last words. Nostos stores that passage exactly as the book has it; do not pass selectedText with it." },
                 "captureSource": { "type": "string", "description": "Where the words came from. Defaults to 'text'." }
               },
               "required": [],
@@ -88,6 +93,15 @@ public static partial class AssistantCapabilities
 
                 var content = Str(args, "content");
                 var selectedText = Str(args, "selectedText");
+                if (Str(args, "quoteRef") is { Length: > 0 } quoteRef)
+                {
+                    // The words are the book's, never the model's copy of them.
+                    var quote = quotes is null ? null : await quotes.ResolveAsync(quoteRef, ct);
+                    if (quote is null)
+                        return Invalid("That quoteRef no longer resolves. Look the passage up again with book_text_find_quote.");
+                    selectedText = quote.Text;
+                }
+
                 if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(selectedText))
                 {
                     return Invalid("'content' or 'selectedText' is required.");
