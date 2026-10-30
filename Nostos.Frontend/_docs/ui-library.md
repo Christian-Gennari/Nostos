@@ -46,7 +46,9 @@ ARIA contract, geometry, or state model is part of the product surface.
   keep their capitals: Nostos, Brain, Studio, Ask Nostos, and Library or Settings
   when they name the page.
 - **Reading status** wording comes from `src/app/core/reading-status.ts`: Not started,
-  Reading, Finished, and To read for the reading list.
+  Reading, Finished, and To read for the reading list. A book's status is worked out
+  from all its editions by `bookReadingStatusOf` there (never stored); `readingStatusOf`
+  is for one edition's own state.
 - A book without an author shows **Unknown author** (`UNKNOWN_AUTHOR` in `book-format.ts`).
 - A book without a title shows **Unknown book** (`UNKNOWN_BOOK`). Formats are named once, by
   `formatOf()` and `BOOK_FORMAT_LABEL` in `book-format.ts`: Audiobook, **Ebook** (always, in filters, lists, badges, detail,
@@ -844,6 +846,7 @@ narrow layout.
 | `citedWritings`        | `CitingWriting[]`                     | `[]`    | "Cited in N writings" in the meta line |
 | `showBook`             | `boolean`                             | `true`  | False where a heading already names the book |
 | `showMoreFromBook`     | `boolean`                             | `true`  | Offer "More from this book" |
+| `showFormat`           | `boolean`                             | `false` | Name the edition the note was made in (format glyph and label from `note.bookFormat`) in the meta line, before the location. For a list that mixes the notes of several editions of one book |
 | `canSelect` / `selectable` / `selected` | `boolean`            | `true` / `false` / `false` | Multi-select in lists |
 | `busy`                 | `boolean`                             | `false` | A topic change is in flight |
 | `suggestions` / `suggestionState` | `string[]` / state         | `[]` / `'off'` | AI topic suggestions for the picker |
@@ -1343,9 +1346,15 @@ a switch.
 
 | Input / output | Type | Description |
 | --- | --- | --- |
-| `options` | `EditionSwitcherOption[]` (required) | `{ id, format, concept, detail, current, progress, finished }` |
+| `options` | `EditionSwitcherOption[]` (required) | `{ id, format, concept, detail, current, progress, finished, description, rating?, ratingNoun? }` |
 | `label` | `string` (default `'Switch edition'`) | The nav landmark's name |
+| `action` | `{ label: string } \| null` (default `null`) | The menu's last row, after a separator: rate this edition, or clear its rating. The caller words it |
 | `switched` | `string` | The id of the edition to open; never the current one |
+| `actionTriggered` | `void` | The `action` row was chosen |
+
+An edition with a `rating` of its own (the narration of an audiobook) shows it in
+the hint ("34% read · narration ★★"); its item then carries an `aria-label` that
+says the rating as a number, so no screen reader meets the star characters.
 
 ---
 

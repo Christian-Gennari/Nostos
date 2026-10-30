@@ -144,6 +144,20 @@
             ></button>
           </div>
 
+          <!-- This edition's own rating, an exception to the book's: asked for
+               from the edition menu, then kept on this edition's page once set.
+               Plain text and the same stars, not another control block. -->
+          @if (editionRatingShown()) {
+          <div class="strip-edition-rating" role="group" [attr.aria-label]="editionRatingLabel() + ' rating'">
+            <span class="strip-edition-rating-label">{{ editionRatingLabel() }}</span>
+            <app-star-rating
+              [rating]="store.book()?.editionRating || 0"
+              [size]="13"
+              (ratingChange)="onRateEdition($event)"
+            ></app-star-rating>
+          </div>
+          }
+
           <div class="strip-state">
             <!-- Edition switcher (issues #1062, #1086): the ONLY place to switch
                  edition and the only list of the work's editions. A pill that
@@ -154,7 +168,9 @@
             <nostos-edition-switcher
               class="edition-switcher"
               [options]="editionSwitchOptions()"
+              [action]="editionRatingAction()"
               (switched)="switchEdition($event)"
+              (actionTriggered)="editionRatingActionChosen()"
             ></nostos-edition-switcher>
             }
 
@@ -408,6 +424,26 @@
             </div>
             }
 
+            <!-- A review an edition keeps of its own (only after grouping books
+                 whose reviews differed): under the book's, with its format. -->
+            @for (review of editionReviews(); track review.id) {
+            <div class="edition-review" data-testid="edition-review">
+              <div class="edition-review-head">
+                <nostos-icon [concept]="review.concept" [size]="13" aria-hidden="true"></nostos-icon>
+                <span>{{ review.format }}</span>
+                <button
+                  type="button"
+                  appButton
+                  variant="link"
+                  class="edition-review-remove"
+                  [attr.aria-label]="'Remove the ' + review.format + ' review'"
+                  (click)="removeEditionReview(review.id)"
+                >Remove</button>
+              </div>
+              <p class="edition-review-text">{{ review.text }}</p>
+            </div>
+            }
+
             <div class="synopsis-content">
               <h4>Synopsis</h4>
               @if (store.book()?.description) {
@@ -445,7 +481,18 @@
           <div class="notes-container">
             <div class="notes-header">
               <h3>Personal notes</h3>
-              <span appBadge>{{ store.notes().length }}</span>
+              <span appBadge>{{ filteredNotes().length }}</span>
+              <!-- Only when the notes come from two or more editions. -->
+              @if (noteEditions().length > 1) {
+              <app-dropdown
+                class="notes-edition-filter"
+                appearance="pill"
+                ariaLabel="Show notes from"
+                [options]="noteEditionOptions()"
+                [value]="notesEditionValue()"
+                (valueChange)="notesEdition.set($event)"
+              ></app-dropdown>
+              }
             </div>
 
             <div class="new-note-box">
@@ -476,6 +523,7 @@
                 [topicMap]="brain.lookup()"
                 [showBook]="false"
                 [showMoreFromBook]="false"
+                [showFormat]="showNoteFormat()"
                 [canSelect]="false"
                 [busy]="noteActions.busy().has(note.id)"
                 [suggestions]="suggestions.namesFor(note.id)"

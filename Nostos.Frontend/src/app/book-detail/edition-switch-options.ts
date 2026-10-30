@@ -22,6 +22,8 @@ interface EditionFacts {
   duration?: string | null;
   progressPercent?: number | null;
   finishedAt?: string | null;
+  /** This edition's own rating, 0 when none. */
+  rating?: number;
 }
 
 /**
@@ -71,6 +73,7 @@ export function buildEditionSwitchOptions(book: Book | null): EditionSwitcherOpt
     const detail = details.get(facts.id) ?? null;
     const finished = !!facts.finishedAt;
     const progress = clamp(facts.progressPercent ?? 0);
+    const rating = Math.max(0, Math.min(5, Math.round(facts.rating ?? 0)));
     return {
       id: facts.id,
       format,
@@ -79,7 +82,9 @@ export function buildEditionSwitchOptions(book: Book | null): EditionSwitcherOpt
       current: facts.current,
       progress,
       finished,
-      description: describe(facts, format, detail, progress, finished),
+      rating,
+      ratingNoun: editionRatingNoun(facts.type),
+      description: describe(facts, format, detail, progress, finished, rating),
     };
   });
 }
@@ -122,11 +127,25 @@ function toFacts(source: Book | EditionSummaryDto, current: boolean): EditionFac
     duration: source.duration,
     progressPercent: source.progressPercent,
     finishedAt: source.finishedAt,
+    // The page's own book reports the book's rating as `rating`; its edition's is `editionRating`.
+    rating: current ? (source as Book).editionRating : (source as EditionSummaryDto).rating,
   };
 }
 
+/** What an edition's own rating is about: the narration of an audiobook, else the copy. */
+export function editionRatingNoun(type: string): 'narration' | 'this edition' {
+  return isAudio(type) ? 'narration' : 'this edition';
+}
+
 /** Tooltip and menu hint: every detail the edition has, not only the one shown. */
-function describe(facts: EditionFacts, format: string, detail: string | null, progress: number, finished: boolean): string {
+function describe(
+  facts: EditionFacts,
+  format: string,
+  detail: string | null,
+  progress: number,
+  finished: boolean,
+  rating: number,
+): string {
   const extras = [
     editionText(facts.edition),
     yearOf(facts.publishedDate),
@@ -141,7 +160,9 @@ function describe(facts: EditionFacts, format: string, detail: string | null, pr
   const status = finished
     ? READING_STATUS_LABEL.finished.toLowerCase()
     : progress > 0 ? `${progress}% read` : READING_STATUS_LABEL.notstarted.toLowerCase();
-  return `${format}${extras.length ? ` (${extras.join(', ')})` : ''}, ${status}`;
+  // In words, so the tooltip needs no star characters.
+  const rated = rating > 0 ? `, ${editionRatingNoun(facts.type)} rated ${rating} out of 5` : '';
+  return `${format}${extras.length ? ` (${extras.join(', ')})` : ''}, ${status}${rated}`;
 }
 
 /** "2nd" reads as a label only with its noun; "Revised edition" already has it. */

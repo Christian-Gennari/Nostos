@@ -513,7 +513,10 @@ describe('BookDetail reset progress', () => {
   function editionMenu(): { items: HTMLButtonElement[]; text: string[] } {
     editionTrigger()!.click();
     fixture.detectChanges();
-    const items = Array.from(document.querySelectorAll('.nostos-menu-item')) as HTMLButtonElement[];
+    // The edition items; the rating row after the separator is covered in book-detail-editions.spec.ts.
+    const items = (Array.from(document.querySelectorAll('.nostos-menu-item')) as HTMLButtonElement[]).filter(
+      (item) => !/^(Rate|Clear) /.test(item.textContent?.trim() ?? ''),
+    );
     const text = items.map((item) => {
       const part = (selector: string) => item.querySelector(selector)?.textContent?.trim();
       return `${part('.nostos-menu-item__label')} · ${part('.nostos-menu-item__hint')}`;

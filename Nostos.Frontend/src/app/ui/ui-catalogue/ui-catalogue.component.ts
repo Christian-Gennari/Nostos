@@ -142,7 +142,7 @@ export class UiCatalogueComponent {
   ];
   readonly catalogueEditions: EditionSwitcherOption[] = [
     { id: 'catalogue-epub', format: 'Ebook', concept: 'ebook', detail: null, current: true, progress: 37, finished: false, description: 'Ebook, 37% read' },
-    { id: 'catalogue-audio', format: 'Audiobook', concept: 'audiobook', detail: 'Read by a guest narrator', current: false, progress: 0, finished: false, description: 'Audiobook, read by a guest narrator, not started' },
+    { id: 'catalogue-audio', format: 'Audiobook', concept: 'audiobook', detail: 'Read by a guest narrator', current: false, progress: 34, finished: false, rating: 2, ratingNoun: 'narration', description: 'Audiobook, read by a guest narrator, 34% read, narration rated 2 out of 5' },
   ];
   readonly catalogueEditionId = signal<string | null>(null);
   readonly catalogueCollections: Collection[] = [

@@ -1,7 +1,7 @@
 import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { READING_STATUS_LABEL, readingStatusOf } from '../core/reading-status';
+import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -78,11 +78,16 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
-import { EditionSwitcherComponent } from '../ui/edition-switcher/edition-switcher.component';
-import { buildEditionSwitchOptions } from './edition-switch-options';
+import { EditionSwitcherComponent, type EditionRatingAction } from '../ui/edition-switcher/edition-switcher.component';
+import { buildEditionSwitchOptions, editionRatingNoun } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
 import { readPaperPage } from './paper-page-progress';
-import { UNKNOWN_AUTHOR, UNKNOWN_BOOK, formatOf } from '../core/book-format';
+import { UNKNOWN_AUTHOR, UNKNOWN_BOOK, formatOf, formatOfConcept, type BookFormat } from '../core/book-format';
+
+/** An edition as the notes filter and the switcher name it: "Ebook · 2nd edition". */
+function editionOptionName(option: { format: string; detail: string | null }): string {
+  return option.detail ? `${option.format} · ${option.detail}` : option.format;
+}
 
 interface StatusConfirmCopy {
   heading: string;
@@ -172,13 +177,61 @@ export class BookDetail implements OnInit, OnDestroy {
    * and the reveal sits above the feed. Resets per book.
    */
   readonly notesExpanded = signal(false);
-  readonly visibleNotes = computed(() => {
+
+  /**
+   * The edition whose notes the feed shows, or 'all'. The feed holds every
+   * edition's notes (see the store); this narrows it. It holds across a switch
+   * to another edition of the same book, since the feed does too.
+   */
+  readonly notesEdition = signal<string>('all');
+
+  /**
+   * The editions that have notes, named as the edition switcher names them,
+   * with how many. A single edition (or notes from one only) gives nothing to
+   * filter by.
+   */
+  readonly noteEditions = computed(() => {
+    const counts = new Map<string, number>();
+    for (const note of this.store.notes()) counts.set(note.bookId, (counts.get(note.bookId) ?? 0) + 1);
+    if (counts.size < 2) return [];
+    const names = new Map(this.editionSwitchOptions().map((option) => [option.id, editionOptionName(option)]));
+    const formats = new Map(this.store.notes().map((note) => [note.bookId, formatOfConcept(note.bookFormat)]));
+    return [...counts].map(([id, count]) => ({
+      id,
+      count,
+      name: names.get(id) ?? formats.get(id)?.format ?? 'Edition',
+    }));
+  });
+
+  /** "All editions", then "Ebook · 12", "Audiobook · 4"; shown only when notes span editions. */
+  readonly noteEditionOptions = computed<DropdownOption[]>(() => [
+    { value: 'all', label: 'All editions' },
+    ...this.noteEditions().map((edition) => ({ value: edition.id, label: `${edition.name} · ${edition.count}` })),
+  ]);
+
+  /** The filter in effect: a chosen edition that has no notes left falls back to all. */
+  readonly notesEditionValue = computed(() => {
+    const chosen = this.notesEdition();
+    return this.noteEditions().some((edition) => edition.id === chosen) ? chosen : 'all';
+  });
+
+  /** The notes the feed shows, and the badge counts. */
+  readonly filteredNotes = computed(() => {
+    const edition = this.notesEditionValue();
     const notes = this.store.notes();
+    return edition === 'all' ? notes : notes.filter((note) => note.bookId === edition);
+  });
+
+  /** Each note names its edition when the book has several. */
+  readonly showNoteFormat = computed(() => this.editionSwitchOptions().length > 0);
+
+  readonly visibleNotes = computed(() => {
+    const notes = this.filteredNotes();
     return this.notesExpanded() || notes.length <= NOTES_COLLAPSED_COUNT
       ? notes
       : notes.slice(-NOTES_COLLAPSED_COUNT);
   });
-  readonly hiddenNoteCount = computed(() => this.store.notes().length - this.visibleNotes().length);
+  readonly hiddenNoteCount = computed(() => this.filteredNotes().length - this.visibleNotes().length);
   showMetadataModal = signal(false);
   showDeleteConfirm = signal(false);
   pendingStatus = signal<'notstarted' | 'reading' | 'finished' | null>(null);
@@ -309,12 +362,16 @@ export class BookDetail implements OnInit, OnDestroy {
   newNote = model<string>('');
 
   /**
-   * Human-readable reading status used by the header status chip.
-   * Finished wins over in-progress; any saved progress or location counts as
-   * "Reading", otherwise the book has not been started.
+   * The book's reading status, worked out from all its editions (the Library's
+   * filters work it out the same way). Reading wins over Finished, so a reread
+   * shows as Reading; see `bookReadingStatusOf`.
    */
+  private readonly bookStatus = computed(() =>
+    bookReadingStatusOf(this.store.book(), this.store.book()?.otherEditions));
+
+  /** The status chip's label and colour. */
   readonly readingStatus = computed<{ label: string; modifier: string }>(() => {
-    const status = readingStatusOf(this.store.book());
+    const status = this.bookStatus().status;
     return { label: READING_STATUS_LABEL[status], modifier: status === 'notstarted' ? 'not-started' : status };
   });
 
@@ -416,6 +473,8 @@ export class BookDetail implements OnInit, OnDestroy {
       if (id) {
         this.routeBookId = id;
         this.notesExpanded.set(false);
+        // A rating row asked for but never used goes with the page it was asked on.
+        this.ratingRowFor.set(null);
         this.store.loadAllData(id);
       }
     });
@@ -449,14 +508,17 @@ export class BookDetail implements OnInit, OnDestroy {
   ];
 
   /** How far in, shown inside the Reading pill ("70%"). Only while reading:
-   *  "Finished · 100%" would say the same thing twice. */
+   *  "Finished · 100%" would say the same thing twice. It is the edition on
+   *  screen's when that one is being read, else the one read most recently. */
   readonly statusDetail = computed(() => {
     const book = this.store.book();
-    const percent = book?.progressPercent ?? 0;
+    const { status, percent, percentEditionId } = this.bookStatus();
     // A paper book without a page count has a page, not a percentage: its 1%
     // only exists so the Library counts it as Reading (issue #1091).
-    if (book?.type === 'physical' && !book.pageCount && this.paperPage() !== null) return null;
-    return this.readingStatus().modifier === 'reading' && percent > 0 ? `${percent}%` : null;
+    if (book?.type === 'physical' && !book.pageCount && this.paperPage() !== null && percentEditionId === book.id) {
+      return null;
+    }
+    return status === 'reading' && percent ? `${percent}%` : null;
   });
 
   // --- PAPER BOOK PAGE (issue #1091) ---
@@ -538,19 +600,26 @@ export class BookDetail implements OnInit, OnDestroy {
     else this.store.setFinished(target === 'finished');
   }
 
-  /** The reset question, for the shared confirm modal. */
-  readonly statusConfirm = computed<StatusConfirmCopy | null>(() =>
-    this.pendingStatus() === 'notstarted'
-      ? {
-          heading: 'Reset to not started?',
-          description:
-            'This will override your current progress and clear your saved page position. ' +
-            'The next time you open this book, it will start from the beginning.',
-          confirmLabel: 'Reset progress',
-          tone: 'danger',
-        }
-      : null,
-  );
+  /**
+   * The reset question, for the shared confirm modal. A book with several
+   * editions starts over in all of them, and the question says how many.
+   */
+  readonly statusConfirm = computed<StatusConfirmCopy | null>(() => {
+    if (this.pendingStatus() !== 'notstarted') return null;
+    const others = this.store.book()?.otherEditions?.length ?? 0;
+    const place =
+      others === 0
+        ? 'clear your saved page position'
+        : `clear your place in ${others === 1 ? 'both editions' : `all ${others + 1} editions`} of this book`;
+    return {
+      heading: 'Reset to not started?',
+      description:
+        `This will override your current progress and ${place}. ` +
+        'The next time you open this book, it will start from the beginning.',
+      confirmLabel: 'Reset progress',
+      tone: 'danger',
+    };
+  });
 
   cancelStatusChange(): void {
     if (this.store.resettingProgress()) return;
@@ -633,6 +702,83 @@ export class BookDetail implements OnInit, OnDestroy {
    */
   readonly editionSwitchOptions = computed(() => buildEditionSwitchOptions(this.store.book()));
 
+  // --- EDITION RATING AND REVIEW ---
+  // The rating, favourite and review are the book's, so they do not move when
+  // another edition is opened. An edition may hold a rating of its own (the
+  // narration, for an audiobook): a quiet exception that appears on the page
+  // only once it is set, or asked for from the edition menu.
+
+  /** The edition whose rating row was asked for and has no rating yet. */
+  private readonly ratingRowFor = signal<string | null>(null);
+
+  /** The row's label: "Narration" or "This edition". */
+  readonly editionRatingLabel = computed(() => {
+    const noun = editionRatingNoun(this.store.book()?.type ?? '');
+    return noun === 'narration' ? 'Narration' : 'This edition';
+  });
+
+  /** The row under the verdict: once rated, it stays; asked for, it stays until the page is left. */
+  readonly editionRatingShown = computed(() => {
+    const book = this.store.book();
+    return (
+      this.editionSwitchOptions().length > 0 &&
+      !!book &&
+      ((book.editionRating ?? 0) > 0 || this.ratingRowFor() === book.id)
+    );
+  });
+
+  /** The menu's last row, or none for a single-edition book. */
+  readonly editionRatingAction = computed<EditionRatingAction | null>(() => {
+    const book = this.store.book();
+    if (!book || this.editionSwitchOptions().length === 0) return null;
+    const audio = this.isAudioBook(book);
+    if ((book.editionRating ?? 0) > 0) {
+      return { label: audio ? 'Clear narration rating' : 'Clear edition rating' };
+    }
+    return { label: audio ? 'Rate the narration' : 'Rate this edition' };
+  });
+
+  /** The menu's rating row: reveals the stars, or clears the rating and hides them. */
+  editionRatingActionChosen(): void {
+    const book = this.store.book();
+    if (!book) return;
+    if ((book.editionRating ?? 0) > 0) {
+      this.store.rateEdition(0);
+      this.ratingRowFor.set(null);
+    } else {
+      this.ratingRowFor.set(book.id);
+    }
+  }
+
+  onRateEdition(rating: number): void {
+    this.store.rateEdition(rating);
+  }
+
+  /**
+   * Reviews that editions keep of their own, which happens when books that
+   * disagreed were grouped. Every edition's, the one on screen included.
+   */
+  readonly editionReviews = computed(() => {
+    const book = this.store.book();
+    if (!book) return [];
+    const others = book.otherEditions ?? [];
+    const formats = new Map<string, BookFormat>([
+      [book.id, formatOf(book)],
+      ...others.map((edition): [string, BookFormat] => [edition.id, formatOf(edition)]),
+    ]);
+    const reviews = [
+      { id: book.id, text: book.editionReview ?? '' },
+      ...others.map((edition) => ({ id: edition.id, text: edition.personalReview ?? '' })),
+    ];
+    return reviews
+      .filter((review) => review.text.trim() !== '')
+      .map((review) => ({ ...review, ...formats.get(review.id)! }));
+  });
+
+  removeEditionReview(editionId: string): void {
+    this.store.removeEditionReview(editionId);
+  }
+
   /**
    * Candidates with their format named. A work of several editions has no one
    * format, so it keeps its "N editions" count instead.
@@ -710,11 +856,17 @@ export class BookDetail implements OnInit, OnDestroy {
     const action = this.pendingWorkAction();
     if (!action) return '';
     if (action.kind === 'unlink') {
-      return 'This book leaves this edition set. Its file, reading progress, notes, rating, review and collections are all kept.';
+      return (
+        'This edition becomes a book of its own. It keeps its file, reading progress, notes and collections, ' +
+        "and gets a copy of this book's rating, favourite and review, unless it has a rating or review of its own."
+      );
     }
+    const combined =
+      "Their rating, favourite and review are combined into the book's; a rating or review that differs stays with its edition.";
     return action.merge
-      ? 'Both edition sets and everything already grouped with them become one set. Only the grouping changes; every book keeps its file, progress, notes, rating, review and collections.'
-      : 'Both books become editions of one set. Only the grouping changes; nothing else about either book is touched.';
+      ? 'Both edition sets and everything already grouped with them become one book. ' +
+          `Every edition keeps its file, progress, notes and collections. ${combined}`
+      : `Both books become editions of one book. Each keeps its file, progress, notes and collections. ${combined}`;
   });
 
   // --- File Actions ---

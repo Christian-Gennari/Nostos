@@ -25,6 +25,16 @@ export interface EditionSwitcherOption {
   readonly finished: boolean;
   /** Every detail in words, for the tooltip. */
   readonly description: string;
+  /** This edition's own rating, 0 when none. */
+  readonly rating?: number;
+  /** What that rating is about: "narration" or "this edition". */
+  readonly ratingNoun?: string;
+}
+
+/** The menu's last row: rate this edition, or clear its rating. */
+export interface EditionRatingAction {
+  /** "Rate the narration", "Clear edition rating". */
+  readonly label: string;
 }
 
 /**
@@ -46,6 +56,11 @@ export interface EditionSwitcherOption {
  *
  * Items are drawn in the order given; the caller keeps that order stable
  * across a switch so the list holds still.
+ *
+ * An edition can carry a rating of its own (the narration of an audiobook), an
+ * exception to the book's. It shows in the hint ("34% read · narration ★★"),
+ * and `action` adds the menu's last row, after a separator, to rate or clear it.
+ * The row's words come from the caller; this only draws it and says it was chosen.
  */
 @Component({
   selector: 'nostos-edition-switcher',
@@ -75,11 +90,16 @@ export interface EditionSwitcherOption {
           <button
             nostosMenuItem
             [icon]="glyph(option)"
-            [hint]="status(option)"
+            [hint]="hint(option)"
+            [attr.aria-label]="spoken(option)"
             [attr.aria-current]="option.current ? 'page' : null"
             [title]="option.description"
             (triggered)="open(option)"
           >{{ name(option) }}</button>
+        }
+        @if (action(); as act) {
+          <hr nostosMenuSeparator />
+          <button nostosMenuItem icon="star" (triggered)="actionTriggered.emit()">{{ act.label }}</button>
         }
       </nostos-menu>
     </ng-template>
@@ -146,9 +166,13 @@ export interface EditionSwitcherOption {
 export class EditionSwitcherComponent {
   readonly options = input.required<readonly EditionSwitcherOption[]>();
   readonly label = input('Switch edition');
+  /** The rating row after the editions, or none (the default). */
+  readonly action = input<EditionRatingAction | null>(null);
 
   /** The id of the edition to open. Never the current one. */
   readonly switched = output<string>();
+  /** The rating row was chosen. */
+  readonly actionTriggered = output<void>();
 
   readonly current = computed(() => this.options().find((option) => option.current) ?? null);
 
@@ -166,6 +190,24 @@ export class EditionSwitcherComponent {
       : option.progress > 0
         ? `${option.progress}% read`
         : READING_STATUS_LABEL.notstarted;
+  }
+
+  /** The menu hint: where the reader stands, then the edition's own rating in stars. */
+  hint(option: EditionSwitcherOption): string {
+    const rating = option.rating ?? 0;
+    return rating > 0
+      ? `${this.status(option)} · ${option.ratingNoun ?? 'rating'} ${'★'.repeat(rating)}`
+      : this.status(option);
+  }
+
+  /**
+   * The item's name for a screen reader when it has a rating: the same words
+   * with the stars said as a number. Null otherwise, so the text names it.
+   */
+  spoken(option: EditionSwitcherOption): string | null {
+    const rating = option.rating ?? 0;
+    if (rating <= 0) return null;
+    return `${this.name(option)}, ${this.status(option).toLowerCase()}, ${option.ratingNoun ?? 'rating'} rated ${rating} out of 5`;
   }
 
   open(option: EditionSwitcherOption): void {

@@ -985,7 +985,11 @@
 
       <div class="catalogue-example">
         <span class="catalogue-label">Edition switcher</span>
-        <nostos-edition-switcher [options]="catalogueEditions" (switched)="catalogueEditionId.set($event)" />
+        <nostos-edition-switcher
+          [options]="catalogueEditions"
+          [action]="{ label: 'Rate this edition' }"
+          (switched)="catalogueEditionId.set($event)"
+        />
         <span class="catalogue-label">{{ catalogueEditionId() ? 'Switch to ' + catalogueEditionId() : 'No switch yet' }}</span>
       </div>
 

@@ -150,4 +150,26 @@ describe('buildEditionSwitchOptions', () => {
 
     expect(audio.description).toBe('Audiobook (2007, read by Scott Brick, 21h 2m), 37% read');
   });
+
+  it('carries each edition\'s own rating, never the book\'s, and says it in the tooltip in words', () => {
+    const options = buildEditionSwitchOptions(
+      book({
+        rating: 5,
+        editionRating: 3,
+        progressPercent: 42,
+        otherEditions: [edition({ id: 'b2', type: 'audiobook', rating: 2, progressPercent: 34 }), edition({ id: 'b3', fileName: 'dune.pdf' })],
+      }),
+    );
+
+    expect(options.map((o) => [o.format, o.rating, o.ratingNoun])).toEqual([
+      ['Audiobook', 2, 'narration'],
+      ['Ebook', 3, 'this edition'],
+      ['PDF', 0, 'this edition'],
+    ]);
+    expect(options.map((o) => o.description)).toEqual([
+      'Audiobook, 34% read, narration rated 2 out of 5',
+      'Ebook, 42% read, this edition rated 3 out of 5',
+      'PDF, not started',
+    ]);
+  });
 });

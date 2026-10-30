@@ -18,7 +18,12 @@ function option(overrides: Partial<EditionSwitcherOption> & { id: string }): Edi
 @Component({
   standalone: true,
   imports: [EditionSwitcherComponent],
-  template: `<nostos-edition-switcher [options]="options()" (switched)="opened.push($event)" />`,
+  template: `<nostos-edition-switcher
+    [options]="options()"
+    [action]="action()"
+    (switched)="opened.push($event)"
+    (actionTriggered)="rateChosen = rateChosen + 1"
+  />`,
 })
 class HostComponent {
   readonly options = signal<EditionSwitcherOption[]>([
@@ -26,7 +31,9 @@ class HostComponent {
     option({ id: 'e', current: true, progress: 12, detail: '2nd edition', description: 'EPUB (2nd edition), 12% read' }),
     option({ id: 'p', format: 'PDF', concept: 'pdf', finished: true, progress: 100 }),
   ]);
+  readonly action = signal<{ label: string } | null>(null);
   readonly opened: string[] = [];
+  rateChosen = 0;
 }
 
 describe('EditionSwitcherComponent', () => {
@@ -100,5 +107,41 @@ describe('EditionSwitcherComponent', () => {
     f.detectChanges();
 
     expect(host.querySelector('nav')).toBeNull();
+  });
+
+  it('has no rating row unless the caller asks for one', async () => {
+    const { openMenu } = await setup();
+
+    expect(openMenu().length).toBe(3);
+    expect(document.querySelector('.nostos-menu hr, .nostos-menu [role="separator"]')).toBeNull();
+  });
+
+  it('adds the rating row after a separator and says when it is chosen', async () => {
+    const { f, openMenu, label } = await setup();
+    f.componentInstance.action.set({ label: 'Rate this edition' });
+    f.detectChanges();
+
+    const items = openMenu();
+    expect(items.map(label)).toEqual(['Audiobook', 'EPUB · 2nd edition', 'PDF', 'Rate this edition']);
+    expect(document.querySelector('.nostos-menu [role="separator"], .nostos-menu hr')).not.toBeNull();
+
+    items[3].click();
+    expect(f.componentInstance.rateChosen).toBe(1);
+    expect(f.componentInstance.opened).toEqual([]);
+  });
+
+  it('shows an edition rating in the hint and says it in words to a screen reader', async () => {
+    const { f, openMenu } = await setup();
+    f.componentInstance.options.set([
+      option({ id: 'a', format: 'Audiobook', concept: 'audiobook', progress: 34, rating: 2, ratingNoun: 'narration' }),
+      option({ id: 'e', current: true, progress: 37 }),
+    ]);
+    f.detectChanges();
+
+    const [audio, epub] = openMenu();
+    expect(audio.querySelector('.nostos-menu-item__hint')?.textContent?.trim()).toBe('34% read · narration ★★');
+    expect(audio.getAttribute('aria-label')).toBe('Audiobook, 34% read, narration rated 2 out of 5');
+    expect(audio.getAttribute('aria-label')).not.toContain('★');
+    expect(epub.getAttribute('aria-label')).toBeNull();
   });
 });

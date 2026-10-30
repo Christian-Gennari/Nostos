@@ -20,6 +20,16 @@ import { isImportInFlight, importStageLabel } from '../core/dtos/import.dtos';
 import { clampPaperPage, paperPagePercent, writePaperPage } from './paper-page-progress';
 import { planLimitMessage } from '../core/plan-limit-message';
 
+/** True when the book has other editions, so its notes are read by its work. */
+function hasEditions(book: Book): boolean {
+  return !!book.workId && (book.otherEditions?.length ?? 0) > 0;
+}
+
+/** What the notes feed is the notes of: the work for a multi-edition book, else the book. */
+function notesScopeOf(book: Book): string {
+  return hasEditions(book) ? `work:${book.workId}` : `book:${book.id}`;
+}
+
 @Injectable()
 export class BookDetailStore {
   // Dependencies
@@ -92,16 +102,23 @@ export class BookDetailStore {
   // --- ACTIONS ---
 
   loadAllData(id: string) {
-    // Reset state for new book
-    if (this.book()?.id !== id) {
+    // Reset state for new book. Another edition of the same book keeps the feed:
+    // it is the book's notes, whichever edition is on screen.
+    const current = this.book();
+    if (current?.id !== id) {
+      const sameWork = !!current?.otherEditions?.some((edition) => edition.id === id);
       this.book.set(null);
-      this.notes.set([]);
+      if (!sameWork) {
+        this.notes.set([]);
+        this.notesScope = null;
+      }
       this.error.set(null);
       this.loading.set(true);
     }
 
+    // The notes follow the book: which of them to ask for depends on whether it
+    // has other editions (see `loadBook`).
     this.loadBook(id);
-    this.loadNotes(id);
     this.loadCollections();
   }
 
@@ -109,7 +126,6 @@ export class BookDetailStore {
   retry(id: string) {
     this.error.set(null);
     this.loadBook(id);
-    this.loadNotes(id);
   }
 
   loadBook(id: string, options: { background?: boolean } = {}) {
@@ -121,6 +137,9 @@ export class BookDetailStore {
       .subscribe({
         next: (data) => {
           this.book.set(data);
+          // Read the notes once the book says which to ask for, and again if
+          // linking or splitting editions changed that.
+          if (this.notesScope !== notesScopeOf(data)) this.loadNotes(id);
           // Direct navigation and refresh must discover the import even when
           // the Library has never mounted in this browser session.
           if (data.status === 1 || data.status === 2) this.imports.ensureConnected();
@@ -140,7 +159,10 @@ export class BookDetailStore {
   refreshInBackground(id: string) {
     this.booksService.get(id).subscribe({
       next: (data) => {
-        if (this.book()?.id === id) this.book.set(data);
+        if (this.book()?.id !== id) return;
+        this.book.set(data);
+        // Linking or splitting editions elsewhere changes which notes belong here.
+        if (this.notesScope !== notesScopeOf(data)) this.loadNotes(id);
       },
       error: () => undefined,
     });
@@ -149,26 +171,39 @@ export class BookDetailStore {
   }
 
   private notesSeq = 0;
+  /** Which notes the feed holds (see `notesScopeOf`); null before the first read. */
+  private notesScope: string | null = null;
 
   /**
    * Every note of the book, oldest first, as the Brain's cards show them (with
-   * their topics); read 200 at a time until all are in.
+   * their topics); read 200 at a time until all are in. A book with several
+   * editions is read by its work, so the feed holds the notes of every edition
+   * and does not change when another edition is opened; a single edition keeps
+   * asking by its own id.
    */
   loadNotes(id: string) {
     const seq = ++this.notesSeq;
+    const book = this.book();
+    const current = book?.id === id ? book : null;
+    const workId = current && hasEditions(current) ? current.workId : undefined;
+    this.notesScope = current ? notesScopeOf(current) : null;
     this.notesFailed.set(false);
     const page = (held: NoteSearchHit[]) =>
-      this.notesService.browse({ bookId: id, order: 'oldest', limit: 200, offset: held.length }).subscribe({
-        next: (result) => {
-          if (seq !== this.notesSeq) return;
-          const all = [...held, ...result.items];
-          if (result.items.length && all.length < result.totalCount) page(all);
-          else this.notes.set(all);
-        },
-        error: () => {
-          if (seq === this.notesSeq) this.notesFailed.set(true);
-        },
-      });
+      this.notesService
+        .browse({ ...(workId ? { workId } : { bookId: id }), order: 'oldest', limit: 200, offset: held.length })
+        .subscribe({
+          next: (result) => {
+            if (seq !== this.notesSeq) return;
+            const all = [...held, ...result.items];
+            if (result.items.length && all.length < result.totalCount) page(all);
+            else this.notes.set(all);
+          },
+          error: () => {
+            if (seq !== this.notesSeq) return;
+            this.notesFailed.set(true);
+            this.notesScope = null;
+          },
+        });
     page([]);
   }
 
@@ -306,6 +341,48 @@ export class BookDetailStore {
     });
   }
 
+  /** This edition's own rating (the narration, for an audiobook); 0 clears it. */
+  rateEdition(editionRating: number) {
+    const b = this.book();
+    if (!b) return;
+
+    const before = b.editionRating ?? 0;
+    this.book.update((curr) => (curr ? { ...curr, editionRating } : null));
+
+    this.booksService.update(b.id, { editionRating }).subscribe({
+      error: () => {
+        this.book.update((curr) => (curr?.id === b.id ? { ...curr, editionRating: before } : curr));
+        this.toast.error('Could not update the rating');
+      },
+    });
+  }
+
+  /** Removes the review an edition keeps of its own; the book's review stays. */
+  removeEditionReview(editionId: string) {
+    const b = this.book();
+    if (!b) return;
+
+    const without = (curr: Book | null): Book | null => {
+      if (!curr) return null;
+      return curr.id === editionId
+        ? { ...curr, editionReview: null }
+        : {
+            ...curr,
+            otherEditions: curr.otherEditions?.map((edition) =>
+              edition.id === editionId ? { ...edition, personalReview: null } : edition),
+          };
+    };
+    const before = this.book();
+    this.book.update(without);
+
+    this.booksService.update(editionId, { editionReview: '' }).subscribe({
+      error: () => {
+        this.book.update((curr) => (curr?.id === b.id && before ? before : curr));
+        this.toast.error('Could not remove the review');
+      },
+    });
+  }
+
   /**
    * Resets the book's reading progress to the canonical "not started" state.
    * Local pending signal prevents duplicate submissions; on success the book
@@ -316,9 +393,11 @@ export class BookDetailStore {
     const b = this.book();
     if (!b || this.resettingProgress()) return;
 
+    // A book with several editions has one status, so it starts over in all of them.
+    const allEditions = (b.otherEditions?.length ?? 0) > 0;
     this.resettingProgress.set(true);
     this.booksService
-      .resetProgress(b.id)
+      .resetProgress(b.id, allEditions)
       .pipe(finalize(() => this.resettingProgress.set(false)))
       .subscribe({
         next: () => {
