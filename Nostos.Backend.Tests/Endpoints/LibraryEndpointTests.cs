@@ -605,6 +605,33 @@ public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     [Fact]
+    public async Task Put_book_writes_an_edition_rating_and_review_beside_the_books_own()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var first = await CreateBookAsync("ebook", $"Exception A {suffix}", "Author One");
+        var second = await CreateBookAsync("audiobook", $"Exception B {suffix}", "Author Two");
+        await Client.PostAsJsonAsync($"/api/books/{second.Id}/work/link", new { targetBookId = first.Id });
+
+        var put = await Client.PutAsJsonAsync($"/api/books/{second.Id}", new
+        {
+            rating = 4, personalReview = "Fine book.", editionRating = 2, editionReview = "Hurried narration.",
+        });
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var narrated = (await Client.GetFromJsonAsync<BookDto>($"/api/books/{second.Id}"))!;
+        (narrated.Rating, narrated.PersonalReview).Should().Be((4, "Fine book."));
+        (narrated.EditionRating, narrated.EditionReview).Should().Be((2, "Hurried narration."));
+        var other = (await Client.GetFromJsonAsync<BookDto>($"/api/books/{first.Id}"))!;
+        (other.Rating, other.EditionRating, other.EditionReview).Should().Be((4, 0, null));
+        other.OtherEditions!.Single().Rating.Should().Be(2);
+
+        await Client.PutAsJsonAsync($"/api/books/{second.Id}", new { editionRating = 0, editionReview = "" });
+        var cleared = (await Client.GetFromJsonAsync<BookDto>($"/api/books/{second.Id}"))!;
+        (cleared.EditionRating, cleared.EditionReview).Should().Be((0, null));
+        cleared.Rating.Should().Be(4);
+    }
+
+    [Fact]
     public async Task Work_unlink_splits_a_book_into_its_own_new_work()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

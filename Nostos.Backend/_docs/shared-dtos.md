@@ -55,7 +55,7 @@ All fields for creating a new book. `Type` determines the subclass (`physical`, 
 
 ### UpdateBookDto (Request)
 
-All fields optional (`?`). Only non-null fields are applied. Includes `IsFinished` boolean for toggling finished state.
+All fields optional (`?`). Only non-null fields are applied. Includes `IsFinished` boolean for toggling finished state. `Rating`, `IsFavorite` and `PersonalReview` write the book's values; `EditionRating` (0 clears) and `EditionReview` (empty string clears) write this edition's own exceptions.
 
 ### UpdateProgressDto (Request)
 
