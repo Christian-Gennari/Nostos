@@ -53,8 +53,10 @@ import {
   ORDERS,
   ORDER_LABELS,
   TOPIC_ORDER_KEY,
+  bookKey,
   countLabel,
   defaultOrder,
+  facetKey,
   isOrder,
   placeTitle,
   plural,
@@ -182,13 +184,13 @@ export class BrainListPage {
   readonly orderOptions: DropdownOption[] = ORDERS.map((value) => ({ value, label: ORDER_LABELS[value] }));
   readonly bookOptions = computed<DropdownOption[]>(() => [
     { value: '', label: 'All books' },
-    ...this.books().map((book) => ({ value: book.bookId, label: `${book.bookTitle || UNKNOWN_BOOK} (${book.noteCount})` })),
+    ...this.books().map((book) => ({ value: facetKey(book), label: `${book.bookTitle || UNKNOWN_BOOK} (${book.noteCount})` })),
   ]);
   readonly bookTitle = computed(() => {
     const id = this.bookId();
     if (!id) return null;
-    return this.books().find((book) => book.bookId === id)?.bookTitle
-      ?? this.notes().find((note) => note.bookId === id)?.bookTitle
+    return this.books().find((book) => facetKey(book) === id)?.bookTitle
+      ?? this.notes().find((note) => bookKey(note) === id)?.bookTitle
       ?? 'This book';
   });
   readonly matchingTopics = computed(() => topicsMatching(this.state.topics(), this.q()));
@@ -211,8 +213,9 @@ export class BrainListPage {
     const books = this.books().length;
     return books ? `${plural(topic.usageCount, 'note')} from ${plural(books, 'book')}` : plural(topic.usageCount, 'note');
   });
-  readonly bookCounts = computed(() => new Map(this.books().map((book) => [book.bookId, book.noteCount])));
+  readonly bookCounts = computed(() => new Map(this.books().map((book) => [facetKey(book), book.noteCount])));
   readonly plural = plural;
+  readonly bookKey = bookKey;
   /** The topic whose title is being renamed in place, if it is this page's. */
   readonly renamingTitle = computed(() => {
     const topic = this.topic();
@@ -304,7 +307,8 @@ export class BrainListPage {
     const place = this.place();
     return {
       query: this.q() || undefined,
-      bookId: this.bookId() ?? undefined,
+      // One book, every edition of it.
+      workId: this.bookId() ?? undefined,
       withoutTopics: place === 'unsorted',
       kind: place === 'passages' ? 'passage' : undefined,
       topicId: this.topicId() ?? undefined,
@@ -503,6 +507,11 @@ export class BrainListPage {
     this.setQuery({ book: bookId || null });
   }
 
+  /** "More from this book": the book as a whole, not the one edition the note is from. */
+  moreFromBook(note: NoteSearchHit): void {
+    this.setBook(bookKey(note));
+  }
+
   setOrder(value: string): void {
     if (!isOrder(value)) return;
     const topic = this.place() === 'topic';
@@ -558,7 +567,7 @@ export class BrainListPage {
   /** Where a book's group starts in the "by book" order. */
   startsBook(index: number): boolean {
     const notes = this.notes();
-    return index === 0 || notes[index - 1].bookId !== notes[index].bookId;
+    return index === 0 || bookKey(notes[index - 1]) !== bookKey(notes[index]);
   }
 
   // --- Selection ----------------------------------------------------------

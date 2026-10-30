@@ -23,6 +23,7 @@
       [topicMap]="state.lookup()"
       [busy]="noteActions.busy().has(current.id)"
       [canSelect]="false"
+      [showFormat]="(current.editionCount ?? 1) > 1"
       [suggestions]="suggestions.namesFor(current.id)"
       [suggestionState]="suggestions.stateFor(current.id)"
       (topicAdded)="noteActions.addTopic(current, $event)"

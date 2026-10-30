@@ -267,6 +267,10 @@ export interface NoteSearchHit {
   highlightColour?: string | null;
   /** The format of the edition the note was made in; null when its book is gone. */
   bookFormat?: 'audiobook' | 'pdf' | 'ebook' | 'physical' | string | null;
+  /** How many editions the note's book has; the card names the format only above one. */
+  editionCount?: number;
+  /** The note's book (work), which the Brain's Book filter keys on. */
+  workId?: string | null;
 }
 
 export interface NoteRawTranscript {
@@ -302,6 +306,8 @@ export interface NoteBookFacet {
   bookTitle: string;
   bookAuthor: string | null;
   noteCount: number;
+  /** What the Book filter keys on: one entry per book, however many editions. */
+  workId?: string | null;
 }
 
 /** The order a list of notes is shown in. */

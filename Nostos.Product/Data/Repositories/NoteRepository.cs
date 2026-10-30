@@ -175,6 +175,8 @@ public class NoteRepository : INoteRepository
             NoteBrowseOrder.Book => notes
                 .OrderBy(n => n.Book == null)
                 .ThenBy(n => n.Book!.Title.ToLower())
+                // Editions of one book sit together under it.
+                .ThenBy(n => n.Book!.WorkId)
                 .ThenBy(n => n.BookId)
                 .ThenBy(n => n.CreatedAt)
                 .ThenBy(n => n.Id),
@@ -189,23 +191,33 @@ public class NoteRepository : INoteRepository
 
     public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(NoteBrowseQuery query)
     {
-        var rows = await Filter(query with { BookId = null })
+        var rows = await Filter(query with { BookId = null, WorkId = null })
             .GroupBy(note => new
             {
                 note.BookId,
+                WorkId = note.Book != null ? (Guid?)note.Book.WorkId : null,
                 Title = note.Book != null ? note.Book.Title : string.Empty,
                 Author = note.Book != null ? note.Book.Author : null,
             })
-            .Select(group => new { group.Key.BookId, group.Key.Title, group.Key.Author, Count = group.Count() })
+            .Select(group => new { group.Key.BookId, group.Key.WorkId, group.Key.Title, group.Key.Author, Count = group.Count() })
             .ToListAsync();
 
-        // The same order as the list's "by book": title ignoring case, a note
-        // whose book row is gone last.
+        // A book is listed once however many editions it has: its editions'
+        // notes are counted together, under the title and author of the edition
+        // whose id sorts first so the entry does not change between requests.
         return rows
-            .OrderBy(row => row.Title.Length == 0)
-            .ThenBy(row => row.Title.ToLowerInvariant(), StringComparer.Ordinal)
+            .GroupBy(row => row.WorkId ?? row.BookId)
+            .Select(group =>
+            {
+                var first = group.OrderBy(row => row.BookId).First();
+                return new NoteBookFacetDto(
+                    first.BookId, first.Title, first.Author, group.Sum(row => row.Count), first.WorkId);
+            })
+            // The same order as the list's "by book": title ignoring case, a note
+            // whose book row is gone last.
+            .OrderBy(row => row.BookTitle.Length == 0)
+            .ThenBy(row => row.BookTitle.ToLowerInvariant(), StringComparer.Ordinal)
             .ThenBy(row => row.BookId)
-            .Select(row => new NoteBookFacetDto(row.BookId, row.Title, row.Author, row.Count))
             .ToList();
     }
 

@@ -207,7 +207,7 @@
         <h2 class="book-group-title">{{ note.bookTitle || unknownBook }}</h2>
         <span class="book-group-meta">
           @if (note.bookAuthor) { {{ note.bookAuthor }} · }
-          @if (bookCounts().get(note.bookId); as count) { {{ plural(count, 'note') }} }
+          @if (bookCounts().get(bookKey(note)); as count) { {{ plural(count, 'note') }} }
         </span>
       </header>
       }
@@ -216,6 +216,7 @@
         [topics]="state.topics()"
         [topicMap]="state.lookup()"
         [showBook]="order() !== 'book'"
+        [showFormat]="(note.editionCount ?? 1) > 1"
         [showMoreFromBook]="!bookId()"
         [citedWritings]="place() === 'topic' ? citedWritings(note.id) : noWritings"
         [busy]="noteActions.busy().has(note.id)"
@@ -229,7 +230,7 @@
         (pickerClosed)="suggestions.closeFor(note.id)"
         (edited)="noteActions.edit($event)"
         (keepWithWriting)="noteActions.keepWithWriting([note.id])"
-        (moreFromBook)="setBook(note.bookId)"
+        (moreFromBook)="moreFromBook(note)"
         (selectRequested)="startSelecting(note.id)"
         (selectedChange)="setSelected(note.id, $event)"
         (deleteRequested)="noteActions.askDelete([note.id])"

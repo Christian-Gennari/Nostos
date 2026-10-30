@@ -109,7 +109,13 @@ public record NoteSearchHitDto(
     string? HighlightColour = null,
     // APPENDED: the format of the edition the note was made in, to draw its glyph:
     // "audiobook", "pdf", "ebook" or "physical". Null when the book row is gone.
-    string? BookFormat = null
+    string? BookFormat = null,
+    // APPENDED (#1302): how many editions the note's book has, so a card names
+    // the edition's format only where there is more than one. 1 when the book
+    // is alone or its row is gone.
+    int EditionCount = 1,
+    // APPENDED (#1302): the note's book (work), what the Brain's Book filter keys on.
+    Guid? WorkId = null
 );
 
 /// <summary>
@@ -152,8 +158,19 @@ public record NoteSearchPageDto(
 /// <summary>How many notes each of the Brain's fixed places holds.</summary>
 public record NoteSummaryDto(int Total, int Passages, int Unsorted);
 
-/// <summary>A book that has notes in one place of the Brain, with how many.</summary>
-public record NoteBookFacetDto(Guid BookId, string BookTitle, string? BookAuthor, int NoteCount);
+/// <summary>
+/// A book that has notes in one place of the Brain, with how many. A book with
+/// several editions is one entry, its notes counted across all of them:
+/// <c>BookId</c> is then one of its editions and <c>WorkId</c> is what the
+/// Brain filters by. <c>WorkId</c> is null for a note whose book row is gone.
+/// </summary>
+public record NoteBookFacetDto(
+    Guid BookId,
+    string BookTitle,
+    string? BookAuthor,
+    int NoteCount,
+    // APPENDED (#1302)
+    Guid? WorkId = null);
 
 /// <summary>
 /// Body of <c>POST /api/notes/{id}/reprocess</c> (issue #262 §7, §8): re-derive

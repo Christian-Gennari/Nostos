@@ -84,7 +84,7 @@ public sealed class NoteService : INoteService
             .ThenInclude(nc => nc.Topic)
             .FirstOrDefaultAsync(n => n.Id == noteId, ct);
 
-        return note is null ? null : ByText(note, null);
+        return note is null ? null : ByText(note, null, await EditionCountsAsync([note], ct));
     }
 
     public async Task<IReadOnlyList<NoteSearchHitDto>> GetManyAsync(
@@ -103,7 +103,8 @@ public sealed class NoteService : INoteService
             .ToListAsync(ct);
 
         var order = ids.Select((id, index) => (id, index)).ToDictionary(x => x.id, x => x.index);
-        return notes.OrderBy(n => order[n.Id]).Select(n => ByText(n, null)).ToList();
+        var editions = await EditionCountsAsync(notes, ct);
+        return notes.OrderBy(n => order[n.Id]).Select(n => ByText(n, null, editions)).ToList();
     }
 
     /// <summary>The most notes one <see cref="GetManyAsync"/> call answers for.</summary>
@@ -115,7 +116,8 @@ public sealed class NoteService : INoteService
         var skip = Math.Max(offset, 0);
         var total = await _notes.CountWithoutTopicsAsync();
         var notes = await _notes.GetWithoutTopicsAsync(take, skip);
-        return new NoteSearchPageDto(notes.Select(n => ByText(n, null)).ToList(), total, skip, take);
+        var editions = await EditionCountsAsync(notes, ct);
+        return new NoteSearchPageDto(notes.Select(n => ByText(n, null, editions)).ToList(), total, skip, take);
     }
 
     public async Task<NoteSearchPageDto> BrowseAsync(
@@ -124,7 +126,8 @@ public sealed class NoteService : INoteService
         var take = Clamp(limit);
         var skip = Math.Max(offset, 0);
         var (items, total) = await _notes.BrowseAsync(Normalized(query), take, skip);
-        return new NoteSearchPageDto(items.Select(n => ByText(n, query.Text?.Trim())).ToList(), total, skip, take);
+        var editions = await EditionCountsAsync(items, ct);
+        return new NoteSearchPageDto(items.Select(n => ByText(n, query.Text?.Trim(), editions)).ToList(), total, skip, take);
     }
 
     public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(
@@ -211,8 +214,9 @@ public sealed class NoteService : INoteService
         if (changed.Count > 0)
             await _db.SaveChangesAsync(ct);
 
+        var editions = await EditionCountsAsync(ordered, ct);
         return NoteCommandResult<TopicLinkResultDto>.Ok(
-            new TopicLinkResultDto(changed, ordered.Select(n => ByText(n, null)).ToList()));
+            new TopicLinkResultDto(changed, ordered.Select(n => ByText(n, null, editions)).ToList()));
     }
 
     private static NoteCommandResult<TopicLinkResultDto> InvalidTopicLink(string message) =>
@@ -296,7 +300,7 @@ public sealed class NoteService : INoteService
         // every note from "The World as Will and Representation".
         // Single-word queries keep their existing order exactly.
         var multiWord = tokens.Count >= 2;
-        return fused.Values
+        var ranked = fused.Values
             .OrderByDescending(candidate => multiWord && matchedAllTerms.Contains(candidate.Note.Id))
             .ThenByDescending(candidate => multiWord ? OwnTextMatches(candidate.Note, tokens) : 0)
             .ThenByDescending(candidate => candidate.MatchedVariants)
@@ -304,7 +308,10 @@ public sealed class NoteService : INoteService
             .ThenByDescending(candidate => candidate.Note.CreatedAt)
             .ThenBy(candidate => candidate.Note.Id)
             .Take(take)
-            .Select(candidate => ByText(candidate.Note, SnippetTermFor(candidate, tokens)))
+            .ToList();
+        var editions = await EditionCountsAsync(ranked.Select(candidate => candidate.Note), ct);
+        return ranked
+            .Select(candidate => ByText(candidate.Note, SnippetTermFor(candidate, tokens), editions))
             .ToList();
     }
 
@@ -934,7 +941,25 @@ public sealed class NoteService : INoteService
         string SnippetTerm,
         int MatchedVariants);
 
-    private static NoteSearchHitDto ByText(NoteModel n, string? term) => new(
+    /// <summary>
+    /// How many editions each listed note's book has, in one query for the whole
+    /// page (never one per note), keyed by work.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<Guid, int>> EditionCountsAsync(
+        IEnumerable<NoteModel> notes, CancellationToken ct)
+    {
+        var workIds = notes.Where(n => n.Book is not null).Select(n => n.Book!.WorkId).Distinct().ToList();
+        if (workIds.Count == 0) return new Dictionary<Guid, int>();
+        return await _db.Books
+            .AsNoTracking()
+            .Where(b => workIds.Contains(b.WorkId))
+            .GroupBy(b => b.WorkId)
+            .Select(g => new { WorkId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(row => row.WorkId, row => row.Count, ct);
+    }
+
+    private static NoteSearchHitDto ByText(
+        NoteModel n, string? term, IReadOnlyDictionary<Guid, int>? editions = null) => new(
         n.Id,
         n.BookId,
         n.Book?.Title,
@@ -962,7 +987,9 @@ public sealed class NoteService : INoteService
         n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null,
         n.Book?.Author,
         n.HighlightColour,
-        FormatOf(n.Book));
+        FormatOf(n.Book),
+        n.Book is not null && editions is not null && editions.TryGetValue(n.Book.WorkId, out var count) ? count : 1,
+        n.Book?.WorkId);
 
     /// <summary>The format glyph's name for an edition: audiobook, pdf, ebook or physical.</summary>
     private static string? FormatOf(BookModel? book) => book switch

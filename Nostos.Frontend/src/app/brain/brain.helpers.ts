@@ -1,8 +1,22 @@
 import { plural } from '../core/format';
-import type { NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
+import type { NoteBookFacet, NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
 import type { TopicDto } from '../core/services/topics.service';
 import { normalizeSearchText } from '../core/search-text';
 import { hasTopic } from '../ui/note-item/note-item.helpers';
+
+/**
+ * What the Book filter and the "by book" groups key on: the book (work), so the
+ * notes of its editions are one book. A note whose book row is gone has no work
+ * and stands for itself.
+ */
+export function bookKey(note: Pick<NoteSearchHit, 'bookId' | 'workId'>): string {
+  return note.workId ?? note.bookId;
+}
+
+/** The same key for a Book filter entry. */
+export function facetKey(facet: Pick<NoteBookFacet, 'bookId' | 'workId'>): string {
+  return facet.workId ?? facet.bookId;
+}
 
 /** A place in the Brain that lists notes. The map and a single note are routes of their own. */
 export type BrainPlace = 'all' | 'passages' | 'unsorted' | 'topic';

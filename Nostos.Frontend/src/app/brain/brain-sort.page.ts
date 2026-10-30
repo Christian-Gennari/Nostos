@@ -223,7 +223,7 @@ export class BrainSortPage {
     this.notes.browse({
       withoutTopics: true,
       query: this.query ?? undefined,
-      bookId: this.bookId ?? undefined,
+      workId: this.bookId ?? undefined,
       order: this.order,
       limit: PAGE_SIZE,
       offset: this.queue().length,
