@@ -1,3 +1,4 @@
+import { editionChoices } from '../../book-detail/edition-switch-options';
 import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { NgTemplateOutlet } from '@angular/common';
@@ -207,7 +208,8 @@ export class HighlightImportModal {
           if (!q) return of(null);
           this.searching.set(true);
           this.searchError.set(false);
-          return this.booksService.list({ search: q, page: 1, pageSize: 6 }).pipe(
+          // A book once, then its editions below: highlights are placed in one copy.
+          return this.booksService.list({ search: q, page: 1, pageSize: 6, groupByWork: true }).pipe(
             catchError(() => {
               this.searchError.set(true);
               return of(null);
@@ -219,13 +221,27 @@ export class HighlightImportModal {
       .subscribe({
         next: (page) => {
           this.searchResults.set(
-            (page?.items ?? []).map((book) => ({
-              bookId: book.id,
-              title: book.title,
-              author: book.author ?? null,
-              reason: '',
-              format: bookFormatConcept(book.type, book.fileName),
-            })),
+            (page?.items ?? []).flatMap((book) => {
+              // Highlights are placed in one copy, so a book with several
+              // editions offers each, labelled as the book page labels them.
+              const editions = editionChoices(book);
+              if (!editions.length) {
+                return [{
+                  bookId: book.id,
+                  title: book.title,
+                  author: book.author ?? null,
+                  reason: '',
+                  format: bookFormatConcept(book.type, book.fileName),
+                }];
+              }
+              return editions.map((edition) => ({
+                bookId: edition.id,
+                title: book.title,
+                author: book.author ?? null,
+                reason: edition.detail ?? '',
+                format: edition.concept,
+              }));
+            }),
           );
           this.searching.set(false);
         },
