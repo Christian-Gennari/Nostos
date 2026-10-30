@@ -173,6 +173,12 @@
     <span class="note-item-dot" aria-hidden="true">·</span>
     }
     <time [attr.datetime]="note().createdAt">{{ note().createdAt | nostosDate }}</time>
+    @if (editionFormat(); as edition) {
+    <span class="note-item-dot" aria-hidden="true">·</span>
+    <span class="note-item-format" data-testid="note-edition-format">
+      <nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true" />{{ edition.format }}
+    </span>
+    }
     @if (audioTimeLabel() === null && location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
     @if (citedWritings(); as writings) {
     @if (writings.length) {

@@ -265,6 +265,8 @@ export interface NoteSearchHit {
   bookAuthor?: string | null;
   /** The highlighter pen, by name; absent on older payloads. */
   highlightColour?: string | null;
+  /** The format of the edition the note was made in; null when its book is gone. */
+  bookFormat?: 'audiobook' | 'pdf' | 'ebook' | 'physical' | string | null;
 }
 
 export interface NoteRawTranscript {

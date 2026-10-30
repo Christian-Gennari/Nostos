@@ -191,6 +191,12 @@
   font-size: var(--text-xs);
 }
 
+.note-item-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .note-item-book {
   color: var(--color-text-muted);
   font-weight: var(--fw-medium);

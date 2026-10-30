@@ -42,7 +42,7 @@ import {
 } from '../topic-picker-popover/topic-picker-popover.component';
 import { inlineTopicHref, noteLocationLabel, thoughtForDisplay, topicLookup } from './note-item.helpers';
 import type { Note } from '../../core/dtos/note.dtos';
-import { UNKNOWN_BOOK } from '../../core/book-format';
+import { UNKNOWN_BOOK, formatOfConcept } from '../../core/book-format';
 
 /** What an edit changed. Fields that did not change are absent. */
 export interface NoteItemEdit {
@@ -160,6 +160,12 @@ export class NoteItemComponent {
   readonly readOnly = input(false);
   /** False where the surface names the note's source itself: no meta line. */
   readonly showMeta = input(true);
+  /**
+   * Names the edition the note was made in (its format glyph and label) beside
+   * the note's location. For a list that mixes the notes of several editions of
+   * one book; off by default, so a single-edition list stays as it was.
+   */
+  readonly showFormat = input(false);
   /** Offer "More from this book" (not when the list is already that book). */
   readonly showMoreFromBook = input(true);
   /** A topic change for this note is in flight: its topic controls wait. */
@@ -239,6 +245,8 @@ export class NoteItemComponent {
     this.readOnly() ? (this.note().content ?? '').trim() : thoughtForDisplay(this.note().content));
   readonly topicNames = computed(() => this.note().topicNames ?? []);
   readonly location = computed(() => noteLocationLabel(this.note()));
+  /** The edition's format, when `showFormat` is on and the note says it. */
+  readonly editionFormat = computed(() => (this.showFormat() ? formatOfConcept(this.note().bookFormat) : null));
 
   readonly lookup = computed(() => this.topicMap() ?? topicLookup(this.topics()));
 
