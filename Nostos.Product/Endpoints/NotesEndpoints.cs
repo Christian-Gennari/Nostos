@@ -77,13 +77,14 @@ public static class NotesEndpoints
             "/notes",
             async (INoteService notes, string? query, Guid? bookId, bool? withoutTopics,
                 bool? oldestFirst, int? limit, int? offset, string? kind, Guid? topicId,
-                Guid? withTopicId, string? order) =>
+                Guid? withTopicId, string? order, Guid? workId) =>
             {
                 if (!TryParseOrder(order, oldestFirst ?? false, out var parsed))
                     return Results.BadRequest(new { error = "order is newest, oldest or book." });
 
+                // workId: the notes of every edition of one book; bookId: one edition.
                 var browse = new NoteBrowseQuery(query, bookId, withoutTopics ?? false, kind,
-                    topicId, withTopicId, parsed);
+                    topicId, withTopicId, parsed, workId);
                 return Results.Ok(await notes.BrowseAsync(browse, limit ?? 25, offset ?? 0));
             }
         );

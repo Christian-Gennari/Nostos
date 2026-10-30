@@ -106,7 +106,10 @@ public record NoteSearchHitDto(
     string? BookAuthor = null,
     // APPENDED (Brain rebuild): the highlighter pen, by name, so a listed note
     // draws its quote in the colour it was highlighted with.
-    string? HighlightColour = null
+    string? HighlightColour = null,
+    // APPENDED: the format of the edition the note was made in, to draw its glyph:
+    // "audiobook", "pdf", "ebook" or "physical". Null when the book row is gone.
+    string? BookFormat = null
 );
 
 /// <summary>

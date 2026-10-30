@@ -961,7 +961,18 @@ public sealed class NoteService : INoteService
         n.PassageEnd,
         n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null,
         n.Book?.Author,
-        n.HighlightColour);
+        n.HighlightColour,
+        FormatOf(n.Book));
+
+    /// <summary>The format glyph's name for an edition: audiobook, pdf, ebook or physical.</summary>
+    private static string? FormatOf(BookModel? book) => book switch
+    {
+        null => null,
+        AudioBookModel => "audiobook",
+        PhysicalBookModel => "physical",
+        _ when book.FileDetails.FileName?.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) == true => "pdf",
+        _ => "ebook",
+    };
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here

@@ -113,7 +113,9 @@ public sealed record NoteBrowseQuery(
     string? Kind = null,
     Guid? TopicId = null,
     Guid? WithTopicId = null,
-    NoteBrowseOrder Order = NoteBrowseOrder.Newest);
+    NoteBrowseOrder Order = NoteBrowseOrder.Newest,
+    // Every edition of one book (work), where BookId is a single edition. APPENDED.
+    Guid? WorkId = null);
 
 public enum NoteBrowseOrder
 {

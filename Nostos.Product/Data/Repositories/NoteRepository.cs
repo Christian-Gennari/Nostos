@@ -228,6 +228,7 @@ public class NoteRepository : INoteRepository
     {
         var notes = _db.Notes.AsNoTracking().AsQueryable();
         if (query.BookId is { } bookId) notes = notes.Where(n => n.BookId == bookId);
+        if (query.WorkId is { } workId) notes = notes.Where(n => n.Book!.WorkId == workId);
         if (!string.IsNullOrEmpty(query.Kind)) notes = notes.Where(n => n.Kind == query.Kind);
         if (query.WithoutTopics) notes = notes.Where(n => !n.NoteTopics.Any());
         if (query.TopicId is { } topicId)
