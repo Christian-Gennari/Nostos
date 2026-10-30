@@ -24,7 +24,7 @@ const SUPPORTED_FORMAT_VERSIONS = new Set([1]);
  * (multi-track audiobooks) was written by the server while the browser still
  * refused it, so no fresh export could be imported.
  */
-export const SUPPORTED_PORTABLE_DATA_VERSIONS: ReadonlySet<number> = new Set([1, 2, 3, 4, 5]);
+export const SUPPORTED_PORTABLE_DATA_VERSIONS: ReadonlySet<number> = new Set([1, 2, 3, 4, 5, 6]);
 
 const OPERATIONAL_BACKUP_NAMES = new Set(['nostos-operational-backup', 'operational-backup']);
 

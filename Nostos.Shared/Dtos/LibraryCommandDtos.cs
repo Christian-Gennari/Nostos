@@ -102,7 +102,11 @@ public sealed record LibraryUpdateBookRequest(
     // keep compiling. null = leave membership unchanged; an empty list clears
     // every membership. Set semantics rather than add/remove verbs: one contract
     // expresses add, remove and clear-all, and it is naturally idempotent.
-    IReadOnlyList<Guid>? CollectionIds = null
+    IReadOnlyList<Guid>? CollectionIds = null,
+    // APPENDED. This edition's own rating, an exception to the book's: 0..5,
+    // 0 clears it, null leaves it. Rating / IsFavorite / PersonalReview above
+    // write the BOOK's values (the work every edition shares).
+    int? EditionRating = null
 );
 
 // --- WORK MEMBERSHIP (multi-edition grouping) ---

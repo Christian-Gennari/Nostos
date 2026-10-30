@@ -108,7 +108,7 @@ public interface ILibraryService
     /// (last-write-wins, idempotent by nature). An already-reset book
     /// succeeds as a no-op with no state-version change.
     /// </summary>
-    Task<LibraryCommandResultDto> ResetProgressAsync(Guid bookId, CancellationToken ct = default);
+    Task<LibraryCommandResultDto> ResetProgressAsync(Guid bookId, bool allEditions = false, CancellationToken ct = default);
 
     /// <summary>
     /// Deletes the library row first (reading/notes FKs reject in-use books

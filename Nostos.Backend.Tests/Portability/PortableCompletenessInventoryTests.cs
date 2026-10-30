@@ -108,7 +108,6 @@ public sealed class PortableCompletenessInventoryTests
                     "LastLocation",
                     "ProgressPercent",
                     "Rating",
-                    "IsFavorite",
                     "PersonalReview",
                     "LastReadAt",
                     "FinishedAt",
@@ -149,6 +148,9 @@ public sealed class PortableCompletenessInventoryTests
                     "Title",
                     "Author",
                     "CreatedAt",
+                    "Rating",
+                    "IsFavorite",
+                    "PersonalReview",
                 ],
                 excluded:
                 [
@@ -590,7 +592,9 @@ public sealed class PortableCompletenessInventoryTests
                 [typeof(PortableReadingProgress)] = EntityRecord(
                     ["ReadingProgress"],
                     incomingCountKind: "Books",
-                    destinationCountKind: "Books"),
+                    destinationCountKind: "Books",
+                    structuralProperties: StructuralFields(
+                        ("IsFavorite", "Legacy (data version 5 and older): the favourite is the book's and lives on PortableWork. Always false in a current archive; an older archive's value is rolled up onto the work on import."))),
 
                 [typeof(PortableCollection)] = EntityRecord(
                     ["CollectionModel"],

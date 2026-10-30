@@ -211,7 +211,6 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         {
             var book = await candidate.Db.Books.SingleAsync(item => item.Id == _fixture.EpubBookId);
             book.Progress.Rating = 1;
-            book.Progress.IsFavorite = false;
             book.Progress.PersonalReview = "Changed review";
             await candidate.Db.SaveChangesAsync();
         });

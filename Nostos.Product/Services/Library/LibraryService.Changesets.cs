@@ -342,9 +342,10 @@ public sealed partial class LibraryService : ILibraryChangesetService
                         b.Title,
                         b.Author,
                         b.Metadata.Description,
-                        b.Progress.Rating,
-                        b.Progress.IsFavorite,
-                        b.Progress.PersonalReview,
+                        // The book's values: they live on the work.
+                        b.Work!.Rating,
+                        b.Work.IsFavorite,
+                        b.Work.PersonalReview,
                         b.Progress.FinishedAt,
                         b.Progress.ProgressPercent,
                     })
@@ -657,9 +658,15 @@ public sealed partial class LibraryService : ILibraryChangesetService
                     continue;
 
                 var now = new BookFieldsState(book.Title, book.Author, book.Metadata.Description,
-                    book.Progress.Rating, book.Progress.IsFavorite, book.Progress.PersonalReview,
+                    book.Work!.Rating, book.Work.IsFavorite, book.Work.PersonalReview,
                     book.Progress.FinishedAt, book.Progress.ProgressPercent);
-                if (now != snapshot.After)
+                // Rating, favourite and review are the book's, so two editions of one
+                // work share them: when an earlier snapshot of this same undo already
+                // put them back, that is not an edit made after the changeset.
+                var bookValuesNow = (now.Rating, now.IsFavorite, now.PersonalReview);
+                var bookValuesOk = bookValuesNow == (snapshot.After.Rating, snapshot.After.IsFavorite, snapshot.After.PersonalReview)
+                    || bookValuesNow == (snapshot.Before.Rating, snapshot.Before.IsFavorite, snapshot.Before.PersonalReview);
+                if (!bookValuesOk || now with { Rating = snapshot.After.Rating, IsFavorite = snapshot.After.IsFavorite, PersonalReview = snapshot.After.PersonalReview } != snapshot.After)
                 {
                     conflicts.Add($"Kept \"{book.Title}\" as it is: it was edited after this was applied.");
                     continue;
@@ -669,9 +676,9 @@ public sealed partial class LibraryService : ILibraryChangesetService
                 book.Title = was.Title;
                 book.Author = was.Author;
                 book.Metadata.Description = was.Description;
-                book.Progress.Rating = was.Rating;
-                book.Progress.IsFavorite = was.IsFavorite;
-                book.Progress.PersonalReview = was.PersonalReview;
+                book.Work.Rating = was.Rating;
+                book.Work.IsFavorite = was.IsFavorite;
+                book.Work.PersonalReview = was.PersonalReview;
                 book.Progress.FinishedAt = was.FinishedAt;
                 book.Progress.ProgressPercent = was.ProgressPercent;
                 restored++;

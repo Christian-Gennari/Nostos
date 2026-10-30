@@ -21,7 +21,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
     private const int CurrentDataVersion = 3;
     // What this build writes. Version 4 added multi-track audiobooks (#835);
     // the downgrade fixtures above still describe the shape changes up to 3.
-    private const int ExportDataVersion = 5;
+    private const int ExportDataVersion = 6;
 
     private static readonly DateTime FixedUtc =
         new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
@@ -686,6 +686,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         MutateJsonEntry(entries, DataPath, root =>
         {
             root["version"] = dataVersion;
+            PortableArchiveTestSupport.AsPerEditionBookValues(root);
             if (dataVersion < 5) root.Remove("readingListEntries");
             if (dataVersion < IntermediateDataVersion)
             {

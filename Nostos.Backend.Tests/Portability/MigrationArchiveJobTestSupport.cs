@@ -45,6 +45,7 @@ internal static class MigrationArchiveJobTestSupport
         MutateJsonEntry(entries, DataPath, root =>
         {
             root["version"] = dataVersion;
+            PortableArchiveTestSupport.AsPerEditionBookValues(root);
             if (dataVersion < 5) root.Remove("readingListEntries");
             if (dataVersion <= 2)
             {

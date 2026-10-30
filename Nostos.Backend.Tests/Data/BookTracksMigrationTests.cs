@@ -109,6 +109,7 @@ public sealed class BookTracksMigrationTests : IDisposable
         {
             // The current model also reads the later cover column.
             await LaterBookColumns.RestoreCoverVersionAsync(db);
+            await LaterBookColumns.RestoreBookValuesAsync(db);
             var books = await db.Books.AsNoTracking().OrderBy(b => b.Title).ToListAsync();
             books.Should().OnlyContain(b => b.FileDetails.TracksJson == null);
             books.Select(b => b.FileDetails.FileName).Should().Equal("book.epub", "book.m4b");

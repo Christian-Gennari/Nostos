@@ -99,9 +99,13 @@ public sealed class PortableArchiveServiceTests
             .SingleAsync(x => x.Id == ids.EpubBookId);
         epub.Progress.LastLocation.Should().Be("epubcfi(/6/4)");
         epub.Progress.ProgressPercent.Should().Be(42);
-        epub.Progress.Rating.Should().Be(5);
-        epub.Progress.IsFavorite.Should().BeTrue();
-        epub.Progress.PersonalReview.Should().Be("Important review");
+        // The book's values travel on its work; the PDF edition's own rating is an exception.
+        epub.Work!.Rating.Should().Be(5);
+        epub.Work.IsFavorite.Should().BeTrue();
+        epub.Work.PersonalReview.Should().Be("Important review");
+        epub.Progress.Rating.Should().Be(0);
+        (await destination.Db.Books.AsNoTracking().OfType<EBookModel>()
+            .SingleAsync(x => x.Title == "Portable PDF Edition")).Progress.Rating.Should().Be(4);
         epub.FileDetails.FileName.Should().Be("book.epub");
         epub.FileDetails.CoverFileName.Should().Be("cover.jpg");
         epub.FileDetails.ChaptersJson.Should().Be("[{\"generated\":true}]",
@@ -473,6 +477,7 @@ public sealed class PortableArchiveServiceTests
         MutateJsonEntry(entries, "data/library.json", root =>
         {
             root["version"] = dataVersion;
+            PortableArchiveTestSupport.AsPerEditionBookValues(root);
             if (dataVersion < 5) root.Remove("readingListEntries");
             if (dataVersion < 2)
             {

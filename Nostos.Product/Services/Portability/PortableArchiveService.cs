@@ -623,7 +623,10 @@ public sealed class PortableArchiveService(
                 x.Id,
                 x.Title,
                 x.Author,
-                x.CreatedAt))
+                x.CreatedAt,
+                x.Rating,
+                x.IsFavorite,
+                x.PersonalReview))
             .ToList();
 
         var books = (await _db.Books
@@ -880,7 +883,8 @@ public sealed class PortableArchiveService(
                 book.Progress.LastLocation,
                 book.Progress.ProgressPercent,
                 book.Progress.Rating,
-                book.Progress.IsFavorite,
+                // The favourite is the book's and travels on its work.
+                false,
                 book.Progress.PersonalReview,
                 book.Progress.LastReadAt,
                 book.Progress.FinishedAt),
@@ -1234,6 +1238,16 @@ public sealed class PortableArchiveService(
             actualReadingList,
             "Imported reading list entries do not match the archive.");
 
+        var sourceWorks = source.Works.ToDictionary(x => x.Id);
+        foreach (var work in await _db.Works.AsNoTracking().ToListAsync(ct))
+        {
+            PortableArchiveValidation.ValidateImportedWorkValues(
+                sourceWorks[work.Id],
+                work.Rating,
+                work.IsFavorite,
+                work.PersonalReview);
+        }
+
         var sourceBooks = source.Books.ToDictionary(x => x.Id);
         foreach (var book in bookRows)
         {
@@ -1254,7 +1268,6 @@ public sealed class PortableArchiveService(
                 book.Progress.LastLocation,
                 book.Progress.ProgressPercent,
                 book.Progress.Rating,
-                book.Progress.IsFavorite,
                 book.Progress.PersonalReview);
         }
 

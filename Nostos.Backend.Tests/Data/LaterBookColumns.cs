@@ -29,6 +29,40 @@ internal static class LaterBookColumns
         await RestoreCoverVersionAsync(db);
         await RestoreTopicNormalizedNameAsync(db);
         await RestoreWritingPageSetupAsync(db);
+        await RestoreBookValuesAsync(db);
+        await DropLegacyFavouriteAsync(db);
+    }
+
+    /// <summary>
+    /// Rolled back past the migration, the favourite column the current model
+    /// no longer writes can exist without a default; drop it so seeding works.
+    /// Only where the test does not roll back again afterwards: a table rebuild
+    /// in an older Down copies this column.
+    /// </summary>
+    public static async Task DropLegacyFavouriteAsync(NostosDbContext db)
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(db.Database.GetConnectionString()!);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Books') WHERE name = 'Progress_IsFavorite'";
+        if (Convert.ToInt32(await command.ExecuteScalarAsync()) > 0)
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Books\" DROP COLUMN \"Progress_IsFavorite\"");
+    }
+
+    /// <summary>
+    /// MoveBookValuesToWork: the book's rating, favourite and review live on the
+    /// work, and every book read joins its work, so the current model needs the
+    /// columns before it can read or write a book. (The favourite column this
+    /// migration drops comes back with its Down.)
+    /// </summary>
+    public static async Task RestoreBookValuesAsync(NostosDbContext db)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Works\" ADD COLUMN \"Rating\" INTEGER NOT NULL DEFAULT 0");
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Works\" ADD COLUMN \"IsFavorite\" INTEGER NOT NULL DEFAULT 0");
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Works\" ADD COLUMN \"PersonalReview\" TEXT NULL");
     }
 
     /// <summary>

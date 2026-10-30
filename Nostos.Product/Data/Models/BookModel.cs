@@ -53,6 +53,12 @@ public abstract class BookModel
 
     // --- RELATIONSHIPS ---
     public Guid WorkId { get; set; }
+
+    /// <summary>
+    /// The book this is an edition of. It carries the book's rating, favourite
+    /// and review, so it is always loaded with the edition (AutoInclude in
+    /// <c>NostosDbContext</c>) and the DTO mapper throws when it is missing.
+    /// </summary>
     public WorkModel? Work { get; set; }
 
     /// <summary>
@@ -97,9 +103,14 @@ public class ReadingProgress
     public string? LastLocation { get; set; } // CFI, Page, or Timestamp
     public int ProgressPercent { get; set; } = 0;
 
+    /// <summary>
+    /// This edition's own rating, an exception to the book's (<see cref="WorkModel.Rating"/>).
+    /// 0 means none. The favourite has no exception, so it lives on the work only.
+    /// </summary>
     [Range(0, 5)]
     public int Rating { get; set; } = 0;
-    public bool IsFavorite { get; set; } = false;
+
+    /// <summary>This edition's own review, an exception to the book's. Null means none.</summary>
     public string? PersonalReview { get; set; }
 
     public DateTime? LastReadAt { get; set; }

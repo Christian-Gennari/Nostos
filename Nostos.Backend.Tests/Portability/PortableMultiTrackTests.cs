@@ -44,7 +44,7 @@ public sealed class PortableMultiTrackTests
         entries.Select(e => e.Name).Should().NotContain(name => name.Contains("/book."));
 
         using var manifest = JsonDocument.Parse(entries.Single(e => e.Name == "manifest.json").Bytes);
-        manifest.RootElement.GetProperty("dataVersion").GetInt32().Should().Be(5);
+        manifest.RootElement.GetProperty("dataVersion").GetInt32().Should().Be(6);
         manifest.RootElement.GetProperty("media").EnumerateArray()
             .Count(media => media.GetProperty("kind").GetString() == "track")
             .Should().Be(3);

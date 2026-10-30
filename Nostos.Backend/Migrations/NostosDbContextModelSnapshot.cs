@@ -15,7 +15,7 @@ namespace Nostos.Backend.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.AiProviderSettingsModel", b =>
                 {
@@ -1259,12 +1259,21 @@ namespace Nostos.Backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsFavorite")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("NormalizedAuthor")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("NormalizedTitle")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("PersonalReview")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -1546,9 +1555,6 @@ namespace Nostos.Backend.Migrations
 
                             b1.Property<DateTime?>("FinishedAt")
                                 .HasColumnType("TEXT");
-
-                            b1.Property<bool>("IsFavorite")
-                                .HasColumnType("INTEGER");
 
                             b1.Property<string>("LastLocation")
                                 .HasColumnType("TEXT");

@@ -64,6 +64,8 @@ public sealed class NoteHighlightColourMigrationTests : IDisposable
         {
             // The current model writes the later cover column on every book.
             await LaterBookColumns.RestoreCoverVersionAsync(db);
+            await LaterBookColumns.RestoreBookValuesAsync(db);
+            await LaterBookColumns.DropLegacyFavouriteAsync(db);
             var work = new WorkModel
             {
                 Id = Guid.NewGuid(),

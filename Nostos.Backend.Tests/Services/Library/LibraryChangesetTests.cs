@@ -333,7 +333,7 @@ public sealed class LibraryChangesetTests : IClassFixture<SqliteTestFixture>
                 .Select(bc => new { bc.BookId, bc.CollectionId }).ToListAsync())
             .Select(m => (m.BookId, m.CollectionId)).OrderBy(m => m.BookId).ThenBy(m => m.CollectionId).ToList();
         var books = await db.Books.AsNoTracking().OrderBy(b => b.Id)
-            .Select(b => new BookRow(b.Id, b.Title, b.Progress.Rating, b.Progress.IsFavorite,
+            .Select(b => new BookRow(b.Id, b.Title, b.Work!.Rating, b.Work.IsFavorite,
                 b.Progress.FinishedAt, b.Progress.ProgressPercent))
             .ToListAsync();
         return new LibraryState(collections, memberships, books);
