@@ -82,6 +82,8 @@ import {
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { editionChoices } from '../book-detail/edition-switch-options';
+import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../core/book-format';
 import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
 import { StarterDraftService } from './starter-draft/starter-draft.service';
@@ -180,6 +182,7 @@ function writeCarets(carets: RememberedCaret[]): void {
   standalone: true,
   imports: [
     ChoiceRowComponent,
+    DropdownComponent,
     SearchFieldComponent,
     CommonModule,
     FormsModule,
@@ -672,6 +675,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
   books = signal<BookDto[]>([]);
   protected readonly formatLabel = BOOK_FORMAT_LABEL;
   protected readonly unknownAuthor = UNKNOWN_AUTHOR;
+  /** The listed book the open edition belongs to. */
+  readonly selectedWork = computed(() => {
+    const id = this.selectedBookId();
+    return this.books().find((book) => book.id === id || book.otherEditions?.some((e) => e.id === id)) ?? null;
+  });
+  /** Its editions, labelled as the book page labels them; empty for a single edition. */
+  readonly selectedEditionOptions = computed<DropdownOption[]>(() =>
+    editionChoices(this.selectedWork()).map((edition) => ({ value: edition.id, label: edition.label })));
+  protected bookEditions(book: BookDto) {
+    return editionChoices(book);
+  }
+
   protected bookFormat(book: BookDto): BookFormatConcept {
     return bookFormatConcept(book.type, book.fileName);
   }
@@ -706,8 +721,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       );
     }
 
-    const bookId = this.selectedBookId();
-    return this.books().find((book) => book.id === bookId)?.title ?? 'Book notes';
+    return this.selectedWork()?.title ?? 'Book notes';
   });
 
   // Computed Map for highlighting topics in notes
@@ -1769,6 +1783,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       .list({
         page: 1,
         pageSize: 50,
+        // A book once; its editions come with it.
+        groupByWork: true,
       })
       .subscribe({
         next: (data) => {

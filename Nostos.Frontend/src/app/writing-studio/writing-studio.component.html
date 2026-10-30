@@ -647,8 +647,13 @@
                       <span class="nostos-choice-row__title">{{ book.title }}</span>
                       <span class="nostos-choice-row__sub">{{ book.author || unknownAuthor }}</span>
                       <span class="book-choice-format nostos-choice-row__meta">
-                        <nostos-icon [concept]="bookFormat(book)" [size]="12" aria-hidden="true"></nostos-icon>
-                        {{ formatLabel[bookFormat(book)] }}
+                        @for (edition of bookEditions(book); track edition.id; let last = $last) {
+                          <nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true"></nostos-icon>
+                          {{ edition.label }}{{ last ? '' : ',' }}
+                        } @empty {
+                          <nostos-icon [concept]="bookFormat(book)" [size]="12" aria-hidden="true"></nostos-icon>
+                          {{ formatLabel[bookFormat(book)] }}
+                        }
                       </span>
                     </span>
                   </button>
@@ -660,6 +665,18 @@
             }
           } @else {
             <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Books', back: backToBooksAction }"></ng-container>
+            @if (selectedEditionOptions().length > 1) {
+              <!-- Sources stay per edition: page numbers and translator match the copy. -->
+              <app-dropdown
+                class="book-edition-select"
+                appearance="subtle"
+                controlSize="compact"
+                ariaLabel="Edition"
+                [options]="selectedEditionOptions()"
+                [value]="selectedBookId() ?? ''"
+                (valueChange)="selectBook($event)"
+              />
+            }
 
             @if (bookNotesState() === 'loading') {
               <nostos-loading-indicator class="reference-loading" label="Loading book notes" />

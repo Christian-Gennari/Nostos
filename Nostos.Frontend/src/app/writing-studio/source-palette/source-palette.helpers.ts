@@ -1,3 +1,4 @@
+import { formatOfConcept } from '../../core/book-format';
 import { NoteSearchHit } from '../../core/dtos/note.dtos';
 import { WritingSourceDto } from '../../core/dtos/writing.dtos';
 import { HighlightColour, quotePen } from '../../reader/highlight-colours';
@@ -21,6 +22,11 @@ export interface PaletteSource extends SourceInsertionSource {
   kept: boolean;
   /** The pen its quotation was marked with; null (or absent) when not known. */
   pen?: HighlightColour | null;
+  /**
+   * The format of the edition it was made in, named only when its book has
+   * several editions: two notes from one title are then told apart.
+   */
+  editionFormat?: string | null;
 }
 
 export type PaletteInsertMode = 'quote' | 'note' | 'reference';
@@ -35,7 +41,10 @@ function clean(value: string | null | undefined): string {
 }
 
 export function fromSearchHit(hit: NoteSearchHit, keptIds: ReadonlySet<string>): PaletteSource {
-  return toSource({ ...hit, selectedText: hit.selectedText ?? null }, keptIds.has(hit.id));
+  return {
+    ...toSource({ ...hit, selectedText: hit.selectedText ?? null }, keptIds.has(hit.id)),
+    editionFormat: (hit.editionCount ?? 1) > 1 ? (formatOfConcept(hit.bookFormat)?.format ?? null) : null,
+  };
 }
 
 export function fromKeptSource(source: WritingSourceDto): PaletteSource {
@@ -83,7 +92,7 @@ function toSource(
 
 /** "Author · Book", from whatever is known. */
 export function sourceByline(source: PaletteSource): string {
-  return [clean(source.bookAuthor), clean(source.bookTitle)].filter(Boolean).join(' · ');
+  return [clean(source.bookAuthor), clean(source.bookTitle), clean(source.editionFormat)].filter(Boolean).join(' · ');
 }
 
 /** The words of a query, lower-cased, at least two letters each. */
