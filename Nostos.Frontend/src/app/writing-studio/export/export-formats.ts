@@ -50,7 +50,7 @@ export const EXPORT_FORMATS: readonly ExportFormat[] = [
   {
     id: 'pdf',
     label: 'PDF',
-    hint: 'Your browser’s print dialog opens: choose “Save as PDF” there.',
+    hint: 'Your browser’s print dialog opens: choose “Save as PDF” there. Notes come at the end of each chapter.',
     paged: true,
     extension: 'pdf',
     action: 'print',

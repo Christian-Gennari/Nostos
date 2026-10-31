@@ -78,7 +78,7 @@ describe('export resolve (issue #1164)', () => {
     it('keeps the words of a citation whose book was deleted, and lists it', async () => {
       const doc = await resolve('As shown [(Gone, 1990, p. 3)](nostos:cite/gone?p=3&as=reference) and [(Kant, 1992)](nostos:cite/b2).');
 
-      expect(text(doc)).toBe('As shown (Gone, 1990, p. 3) and (Kant, 1992).');
+      expect(text(doc)).toBe('As shown (Gone, 1990, p. 3) and (Kant, 1992).\n\n## References\n\nKant. *Book*. 1992.');
       expect(doc.warnings).toEqual([
         expect.objectContaining({ kind: 'citation', message: '(Gone, 1990, p. 3): book no longer in your library, kept as written' }),
       ]);
@@ -153,12 +153,12 @@ describe('export resolve (issue #1164)', () => {
 
     it('gives the house format its own line for a note', async () => {
       const doc = await resolve('Thought.[^1]\n\n[^1]: [Kant, *Full* (Knopf, 1992).](nostos:cite/b2?as=note)', 'house');
-      expect(text(doc)).toBe('Thought.\n\n*See: Kant*');
+      expect(text(doc)).toBe('Thought.\n\n*See: Kant*\n\n## References\n\nKant. *Book*. 1992.');
     });
 
     it('keeps a note the writer wrote, with its citation written in the new style', async () => {
       const doc = await resolve('A claim.[^1]\n\n[^1]: Compare [Kant, *Full* (Knopf, 1992).](nostos:cite/b2?as=reference) with Hume.', 'in-text');
-      expect(text(doc)).toBe('A claim.[^1]\n\n[^1]: Compare (Kant, 1992) with Hume.');
+      expect(text(doc)).toBe('A claim.[^1]\n\n[^1]: Compare (Kant, 1992) with Hume.\n\n## References\n\nKant. *Book*. 1992.');
     });
   });
 
@@ -179,6 +179,9 @@ describe('export resolve (issue #1164)', () => {
           '[^1]: Voltaire, *Full* (Knopf, 1992).',
           '[^2]: Voltaire, *Short*, 9.',
           '[^3]: Kant, *Full* (Knopf, 1992).',
+          '## Bibliography',
+          'Kant. *Book*. 1992.',
+          'Voltaire. *Book*. 1992.',
         ].join('\n\n'),
       );
     });
@@ -216,9 +219,45 @@ describe('export resolve (issue #1164)', () => {
       expect(doc.bibliography!.entries.map((e) => e.book)).toEqual(['b2', 'b3']);
     });
 
-    it('writes none when the writing has none', async () => {
-      const doc = await resolve('Kant [(Kant, 1992)](nostos:cite/b2).');
+    it('writes one from the citations when the writing has none (#1252)', async () => {
+      const doc = await resolve('Voltaire [(V)](nostos:cite/b1) and Kant [(Kant, 1992)](nostos:cite/b2).');
+      expect(doc.bibliography!.heading).toBe('References');
+      expect(doc.bibliography!.entries.map((e) => e.book)).toEqual(['b2', 'b1']);
+      expect(text(doc).endsWith('## References\n\nKant. *Book*. 1992.\n\nVoltaire. *Book*. 1992.')).toBe(true);
+    });
+
+    it('pairs a note style’s footnotes with a bibliography when the writing has none (#1252)', async () => {
+      const doc = await resolve('As argued [(Kant, 1992)](nostos:cite/b2?as=reference) here.', 'note');
+      expect(doc.footnotes).toHaveLength(1);
+      expect(doc.bibliography!.heading).toBe('Bibliography');
+      expect(doc.bibliography!.entries.map((e) => e.book)).toEqual(['b2']);
+    });
+
+    it('lists a cited book a hand-trimmed list left out (#1252)', async () => {
+      const doc = await resolve('Kant [(Kant, 1992)](nostos:cite/b2) and Weil [(Weil, 1992)](nostos:cite/b3).\n\n## References\n\n[Kant. Old.](nostos:cite/b2?as=bib)');
+      expect(doc.bibliography!.entries.map((e) => e.book)).toEqual(['b2', 'b3']);
+      expect(doc.warnings).toEqual([]);
+    });
+
+    it('writes no list when nothing is cited, even with books kept with the writing', async () => {
+      const doc = await resolve('Just my own words.', 'in-text', { renderer: renderer('in-text', { kept: ['b3'] }) });
       expect(doc.bibliography).toBeNull();
+    });
+
+    it('leaves kept books out of a list the writer never made', async () => {
+      const doc = await resolve('Kant [(Kant, 1992)](nostos:cite/b2).', 'in-text', { renderer: renderer('in-text', { kept: ['b3'] }) });
+      expect(doc.bibliography!.entries.map((e) => e.book)).toEqual(['b2']);
+    });
+
+    it('writes no empty list when the only cited book was deleted', async () => {
+      const doc = await resolve('Gone [(Gone, 1990)](nostos:cite/gone).');
+      expect(doc.bibliography).toBeNull();
+      expect(doc.warnings.map((w) => w.message)).toEqual(['(Gone, 1990): book no longer in your library, kept as written']);
+    });
+
+    it('still lists the readable books when a cited book was deleted', async () => {
+      const doc = await resolve('Gone [(Gone, 1990)](nostos:cite/gone) and Kant [(Kant, 1992)](nostos:cite/b2).');
+      expect(doc.bibliography!.entries.map((e) => e.book)).toEqual(['b2']);
     });
   });
 
@@ -322,7 +361,7 @@ describe('export resolve (issue #1164)', () => {
 
     it('comes through unchanged, in the model and in the web page', async () => {
       const doc = await resolve(`# ${words}\n\n${words} [(Kant, 1992)](nostos:cite/b2).\n\n> ${words}`);
-      expect(text(doc)).toBe(`# ${words}\n\n${words} (Kant, 1992).\n\n> ${words}`);
+      expect(text(doc)).toBe(`# ${words}\n\n${words} (Kant, 1992).\n\n> ${words}\n\n## References\n\nKant. *Book*. 1992.`);
       expect(renderExportHtml(doc)).toContain(`<p dir="auto">${words} (Kant, 1992).</p>`);
       expect(exportFilename(words, 'html')).toBe(`${words}.html`);
     });

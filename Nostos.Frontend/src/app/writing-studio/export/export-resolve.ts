@@ -39,9 +39,9 @@ import { Slicer, type SlicerOptions } from './export-slicer';
  * 5. Numbers footnotes once through the whole document, and writes every
  *    citation again, notes in that order, so a book's first note is the full
  *    one and later notes (in any later chapter) the short form.
- * 6. Writes one bibliography, each book once: everything cited, the books
- *    kept with the writings, and books the writer's lists named without a
- *    live citation.
+ * 6. Writes one bibliography, each book once, whenever anything is cited: no
+ *    list in the writing is needed. A writing with a list also keeps the books
+ *    kept with the writings and books that list named without a live citation.
  * 7. Checks each image; one that does not load becomes "[image: alt]".
  *
  * A citation whose book cannot be read keeps the words it was last written
@@ -160,7 +160,7 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
   const written = new Map<RawInline, string>();
   const cited = new Set<string>();
   const citedBooks: string[] = [];
-  const noteCite = (cite: Extract<RawInline, { type: 'cite' }>, chapter: number) => {
+  const noteCite =(cite: Extract<RawInline, { type: 'cite' }>, chapter: number) => {
     const subsequent = cited.has(cite.ref.book);
     const text = renderer.placement === 'note' ? renderer.note(cite.ref, subsequent) : renderer.inText(cite.ref);
     cited.add(cite.ref.book);
@@ -197,12 +197,14 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
 
   // 6. One bibliography.
   let bibliography: ExportDocument['bibliography'] = null;
-  if (hadBibliography) {
+  if (hadBibliography || citedBooks.length) {
     const books: string[] = [];
     const add = (book: string) => book && !books.includes(book) && books.push(book);
     citedBooks.forEach(add);
-    renderer.bibliographyBooks.forEach(add);
-    [...listed.keys()].forEach(add);
+    if (hadBibliography) {
+      renderer.bibliographyBooks.forEach(add);
+      [...listed.keys()].forEach(add);
+    }
     let entries = renderer.bibliography(books);
     if (entries === null) {
       // A book that cannot be read stops the whole list in the Studio; here
@@ -223,10 +225,12 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
       );
     }
     const parseContext: ParseContext = { baseUrl: input.baseUrl ?? null, malformedCitation: () => undefined };
-    bibliography = {
-      heading: renderer.bibliographyHeading,
-      entries: all.map((entry) => ({ book: entry.book, children: toExportInlines(parseInlineMarkdown(entry.text, parseContext), numbers, written, new Set()) })),
-    };
+    if (all.length) {
+      bibliography = {
+        heading: renderer.bibliographyHeading,
+        entries: all.map((entry) => ({ book: entry.book, children: toExportInlines(parseInlineMarkdown(entry.text, parseContext), numbers, written, new Set()) })),
+      };
+    }
   }
 
   // 7. Images.
