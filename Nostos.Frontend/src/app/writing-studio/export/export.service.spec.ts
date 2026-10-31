@@ -115,6 +115,25 @@ describe('ExportService (issue #1164): real writings, books and citation styles'
     expect(doc.warnings).toEqual([expect.objectContaining({ kind: 'citation', chapter: 'One', message: '(Lost, 1900): book no longer in your library, kept as written' })]);
   });
 
+  it('gives a writing with citations and no list its bibliography, in each kind of style (#1252)', async () => {
+    const source = await service.load(items, 'one');
+
+    const notes = await service.resolve(source, SETUP);
+    expect(notes.footnotes).toHaveLength(2);
+    expect(notes.bibliography?.heading).toBe('Bibliography');
+    expect(notes.bibliography?.entries.map((entry) => words(entry.children))).toEqual([
+      'Schopenhauer, Arthur. *The World as Will and Representation*. Translated by E. F. J. Payne. Dover, 1851.',
+    ]);
+
+    const apa = await service.resolve(source, { ...SETUP, citationStyle: 'apa' });
+    expect(apa.bibliography?.heading).toBe('References');
+    expect(apa.bibliography?.entries.map((entry) => entry.book)).toEqual(['b1']);
+
+    const house = await service.resolve(source, { ...SETUP, citationStyle: 'nostos' });
+    expect(house.bibliography?.heading).toBe('Bibliography');
+    expect(house.bibliography?.entries.map((entry) => entry.book)).toEqual(['b1']);
+  });
+
   it('writes the same folder again in APA: citations back in the sentence, “References”', async () => {
     const source = await service.load(items, 'thesis');
     const doc = await service.resolve(source, { ...SETUP, citationStyle: 'apa' });
