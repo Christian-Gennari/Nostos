@@ -42,10 +42,10 @@ python3 deploy/app-stores/make-assets.py              # rebuild icons and screen
 
 ## Before the first submission
 
-The pinned release, `v2026.10.18`, was published before arm64 support (#1222, #1224). Its image is amd64 only, so the CasaOS build and the Umbrel linter reject it. `latest` is already multi-arch. The next release tag copies that index:
+The packages pin `v2026.10.25`, the first release published for both amd64 and arm64 (#1222, #1224). Re-run the update for a newer release before submitting if one exists:
 
 ```bash
-gh release list -R Christian-Gennari/Nostos -L 1         # the first release after 2026-10-24
+gh release list -R Christian-Gennari/Nostos -L 1
 python3 deploy/app-stores/update-image.py <that tag>     # fails if it is not amd64 + arm64
 python3 deploy/app-stores/check.py
 ```
@@ -99,14 +99,13 @@ Submit:
 
 **Package:** `umbrel/nostos/` with `umbrel-app.yml`, `docker-compose.yml` (an `app_proxy` service and one `web` service) and `data/library/.gitkeep`. There is no `exports.sh`: the app needs no secrets or computed values. Umbrel hosts the icon and gallery itself, so the package has none, and `gallery` is empty as their rules ask. Port `5099` is not used by any other Umbrel app.
 
-Umbrel requires every image to be multi-arch and pinned as `tag@sha256:<index digest>`, published without credentials, with no Docker socket, privileged mode or host networking. The package meets these, except that the pinned `v2026.10.18` index is amd64 only. Their linter (`node .tools/lint-apps.mjs nostos --check-images`, Node 22+) reports exactly that one error. With a multi-arch digest it passes.
+Umbrel requires every image to be multi-arch and pinned as `tag@sha256:<index digest>`, published without credentials, with no Docker socket, privileged mode or host networking. The package meets these. Their linter (`node .tools/lint-apps.mjs nostos --check-images`, Node 22+) rejected the amd64-only `v2026.10.18` index with exactly that one error; with a multi-arch digest it passes.
 
 Submit:
 
-1. Run `update-image.py` with the first multi-arch release (above).
-2. Fork <https://github.com/getumbrel/umbrel-apps>, copy `umbrel/nostos/` to `nostos/`, and run `npm ci && npm run lint:apps -- nostos --check-images`.
-3. Install it on an Umbrel device or umbrelOS test VM, as their `umbrel-test-app` skill describes: install, open, add a book, restart, check the book is still there. Tick what was tested in the PR template.
-4. Open the PR titled "Add Nostos", then set `submission:` in `umbrel-app.yml` to the PR URL (it is a placeholder now) and push.
+1. Fork <https://github.com/getumbrel/umbrel-apps>, copy `umbrel/nostos/` to `nostos/`, and run `npm ci && npm run lint:apps -- nostos --check-images`.
+2. Install it on an Umbrel device or umbrelOS test VM, as their `umbrel-test-app` skill describes: install, open, add a book, restart, check the book is still there. Tick what was tested in the PR template.
+3. Open the PR titled "Add Nostos", then set `submission:` in `umbrel-app.yml` to the PR URL (it is a placeholder now) and push.
 
 PR body notes for Umbrel's review:
 

@@ -4,14 +4,14 @@ services:
   # as the image's non-root user (UID 1654). This hands the folder to that user
   # and exits; it does not touch files inside the folder.
   nostos-init:
-    image: ghcr.io/christian-gennari/nostos:v2026.10.18
+    image: ghcr.io/christian-gennari/nostos:v2026.10.25
     user: "0:0"
     entrypoint: ["chown", "1654:1654", "/data"]
     restart: "no"
     volumes:
       - /DATA/AppData/$AppID/data:/data
   nostos:
-    image: ghcr.io/christian-gennari/nostos:v2026.10.18
+    image: ghcr.io/christian-gennari/nostos:v2026.10.25
     container_name: nostos
     depends_on:
       nostos-init:
@@ -97,8 +97,8 @@ x-casaos:
   architectures:
     - amd64
     - arm64
-  version: "2026.10.18"
-  update_at: "2026-10-18"
+  version: "2026.10.25"
+  update_at: "2026-10-31"
   release_notes:
     en_US: First version in the CasaOS app store. Release notes for every version are at https://github.com/Christian-Gennari/Nostos/releases
   website: https://nostos.page

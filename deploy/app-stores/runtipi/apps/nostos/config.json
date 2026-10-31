@@ -6,8 +6,8 @@
   "dynamic_config": true,
   "port": 5099,
   "id": "nostos",
-  "tipi_version": 1,
-  "version": "2026.10.18",
+  "tipi_version": 2,
+  "version": "2026.10.25",
   "categories": [
     "books",
     "media"
@@ -23,6 +23,6 @@
     "amd64"
   ],
   "created_at": 1792831922919,
-  "updated_at": 1792831922919,
+  "updated_at": 1793445663718,
   "min_tipi_version": "4.5.0"
 }
