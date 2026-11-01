@@ -69,10 +69,10 @@ describe('CloudAuthService', () => {
     expect((await refreshPromise).authenticated).toBe(true);
   });
 
-  it('submits logout as a top-level POST to the BFF', () => {
+  it('submits logout as a top-level POST to the BFF', async () => {
     const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
 
-    service.logout();
+    await service.logout();
 
     expect(submit).toHaveBeenCalledTimes(1);
     const form = submit.mock.instances[0] as HTMLFormElement;
@@ -81,6 +81,77 @@ describe('CloudAuthService', () => {
     expect(document.body.contains(form)).toBe(false);
 
     submit.mockRestore();
+  });
+
+  describe('the EPUB files this browser kept (#1316)', () => {
+    const KEPT = 'nostos-epub-files-v1:account-a';
+    let names: string[];
+
+    beforeEach(() => {
+      names = [KEPT, 'nostos-epub-files-v1:account-b', 'ngsw:db:control'];
+      vi.stubGlobal('caches', {
+        keys: async () => names,
+        delete: async (name: string) => {
+          names = names.filter((kept) => kept !== name);
+          return true;
+        },
+      });
+    });
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    it('are gone before logout leaves the page', async () => {
+      const left: string[][] = [];
+      const submit = vi
+        .spyOn(HTMLFormElement.prototype, 'submit')
+        .mockImplementation(() => void left.push([...names]));
+
+      await service.logout();
+
+      expect(left).toEqual([['ngsw:db:control']]);
+      submit.mockRestore();
+    });
+
+    it('do not hold up logout when clearing them stalls', async () => {
+      vi.stubGlobal('caches', { keys: () => new Promise(() => {}) });
+      const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+      vi.useFakeTimers();
+
+      const leaving = service.logout();
+      await vi.advanceTimersByTimeAsync(1000);
+      await leaving;
+
+      expect(submit).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+      submit.mockRestore();
+    });
+
+    it('go when the session expires', async () => {
+      service.invalidateSession();
+      await settle();
+
+      expect(names).toEqual(['ngsw:db:control']);
+    });
+
+    it('go when a session read finds nobody signed in', async () => {
+      const result = firstValueFrom(service.getSession());
+      http.expectOne('/api/auth/session').flush({ authenticated: false });
+      await result;
+      await settle();
+
+      expect(names).toEqual(['ngsw:db:control']);
+    });
+
+    it('stay for the account that is signed in, and only for it', async () => {
+      const result = firstValueFrom(service.getSession());
+      http.expectOne('/api/auth/session').flush({ authenticated: true, account: { id: 'account-a' } });
+      await result;
+      await settle();
+
+      expect(names).toEqual([KEPT, 'ngsw:db:control']);
+    });
   });
 
   it('publishes only minimum session identity for host lifecycle callbacks', async () => {
@@ -103,8 +174,9 @@ describe('CloudAuthService', () => {
     const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {
       expect(changes).toEqual([{ authenticated: false, accountId: null }]);
     });
-    service.logout();
+    const leaving = service.logout();
     request.flush({ authenticated: true, account: { id: 'account-a' } });
+    await leaving;
     await result;
     expect(changes).toEqual([{ authenticated: false, accountId: null }]);
     submit.mockRestore();

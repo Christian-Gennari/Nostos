@@ -22,6 +22,8 @@ import { Subject, Subscription, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { EpubAnnotationManager } from './epub-annotation-manager';
+import { EpubFileCacheService } from './epub-file-cache.service';
+import { EpubLazyResources } from './epub-lazy-resources';
 import type { SelectionAnchor } from '../selection-anchor';
 import { DEFAULT_HIGHLIGHT_COLOUR, HighlightColour } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
@@ -363,6 +365,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   private notesService = inject(NotesService);
   private booksService = inject(BooksService);
+  private epubFiles = inject(EpubFileCacheService);
   private themeService = inject(ThemeService);
   private injector = inject(Injector);
   private elementRef = inject(ElementRef);
@@ -378,6 +381,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private unregisterAssistantContext: (() => void) | null = null;
 
   private epubBook: Book | null = null;
+  private lazyResources: EpubLazyResources | null = null;
   private rendition: Rendition | null = null;
   private annotationManager: EpubAnnotationManager | null = null;
   private currentCfi: string | null = null;
@@ -541,6 +545,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
   private resizeSubject$ = new Subject<void>();
   private resizeObserver: ResizeObserver | null = null;
+  private resizeAfterFirstPage = false;
 
   loading = signal(true);
   errorMessage = signal<string | null>(null);
@@ -597,6 +602,13 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   ngOnInit() {
     // Handle Window Resizing
     this.resizeSubject$.pipe(debounceTime(350)).subscribe(() => {
+      // A re-layout clears the views, and clearing one that is still loading
+      // leaves its display pending for ever: a book stuck on "Opening book...".
+      // The size at this point is only ever the opening layout settling.
+      if (this.rendition && !this.pageShown()) {
+        this.resizeAfterFirstPage = true;
+        return;
+      }
       if (this.rendition) {
         const page = this.elementRef.nativeElement.querySelector('#epub-page');
         if (page) {
@@ -1919,7 +1931,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   // --- Book Loading & Setup ---
 
-  loadBook(id: string) {
+  loadBook(id: string, retryDownload = true) {
     this.beginNavigation();
     this.searchAvailable.set(false);
     this.clearSearch();
@@ -1931,6 +1943,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.pageScroller = null;
       this.annotationManager?.destroy();
       this.annotationManager = null;
+      this.lazyResources?.destroy();
+      this.lazyResources = null;
       this.epubBook.destroy();
       this.epubBook = null;
       this.rendition = null;
@@ -1939,6 +1953,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.assistantLocation.set(null);
     this.assistantSelection.set(null);
     this.pageShown.set(false);
+    this.resizeAfterFirstPage = false;
     this.highlightsRestored = false;
     this.progressUnlocked = false;
     this.chapterRanges = [];
@@ -1956,23 +1971,12 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.appliedFontSize = null;
     this.appliedTypographyKey = null;
 
-    // FIX 1: Append a dummy parameter ending in .epub
-    // This tricks epub.js into treating the URL as a file, not a directory.
-    const url = `/api/books/${id}/file?t=${Date.now()}.epub`;
-
-    // FIX 2: Explicitly pass 'openAs: epub'
-    const epubBook = ePub(url, { openAs: 'epub' });
+    // No URL here: the file comes through the cache and is handed over in step 6.
+    // The rendition below can wait for it, as everything in epub.js waits on
+    // `book.opened`.
+    const epubBook = ePub({});
     this.epubBook = epubBook;
-
-    // A failed open is announced ONLY through this event. epub.js swallows the
-    // rejection into `openFailed` and never settles `book.ready`/`opened`, and
-    // `rendition.display()` stays pending with it — so without this listener the
-    // catch handlers below never run and a corrupt/unavailable EPUB sits on
-    // "Opening book..." forever instead of reaching the failure state.
-    epubBook.on('openFailed', () => {
-      if (this.epubBook !== epubBook) return; // a newer attempt owns the reader
-      this.failOpen();
-    });
+    this.lazyResources = new EpubLazyResources(epubBook);
 
     // 2. Setup Rendition Immediately
     // Render into the padded page box: the margin preset is padding on
@@ -2050,6 +2054,15 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.updateProgressState(location.start.cfi);
     });
 
+    // Open on the saved page, not on the cover and then a jump to it. A position
+    // that no longer resolves (a replaced file) still has to open the book.
+    // restoreSavedPosition below stays the one that confirms the page.
+    const restoreLocation = this.book()?.lastLocation ?? null;
+    const opening = this.pendingGroundedSource ? undefined : (restoreLocation ?? undefined);
+    const firstPage = rendition
+      .display(opening)
+      .catch((err) => (opening ? rendition.display() : Promise.reject(err)));
+
     // 4. Process Book Metadata (Async)
     epubBook.ready
       .then(() => {
@@ -2082,17 +2095,21 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
             // Cache MISS: Generate locations (Expensive). The progress pill
             // shows a spine-based percentage while this runs, so a large book
             // is never left on "Calculating…" with no position at all
-            // (issue #225 §1.4).
-            epubBook.locations.generate(1000).then(() => {
-              this.chapterBounds = null;
-              this.locationsReady.set(true);
-              if (this.currentCfi) this.updateProgressState(this.currentCfi);
+            // (issue #225 §1.4). It waits for the first page: it parses every
+            // chapter on this thread, and the page is what the reader came for.
+            void firstPage.then(() => {
+              if (this.epubBook !== epubBook) return;
+              void epubBook.locations.generate(1000).then(() => {
+                this.chapterBounds = null;
+                this.locationsReady.set(true);
+                if (this.currentCfi) this.updateProgressState(this.currentCfi);
 
-              // Save them for next time
-              const json = epubBook.locations.save();
-              if (json) {
-                this.booksService.saveLocations(id, json).subscribe();
-              }
+                // Save them for next time
+                const json = epubBook.locations.save();
+                if (json) {
+                  this.booksService.saveLocations(id, json).subscribe();
+                }
+              });
             });
           },
         });
@@ -2103,14 +2120,12 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         this.failOpen();
       });
 
-    // 5. Display Book (Starts the stream/rendering). The saved position comes
-    // from the Book the shell already holds — no second GET, whose late answer
-    // used to lose the race against the first progress write.
-    const restoreLocation = this.book()?.lastLocation ?? null;
+    // 5. Display Book. The saved position comes from the Book the shell already
+    // holds — no second GET, whose late answer used to lose the race against the
+    // first progress write.
     let reportOnUnlock = true;
 
-    rendition
-      .display()
+    firstPage
       .then(async () => {
         this.loading.set(false);
         this.applyFontSize();
@@ -2118,6 +2133,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         // The saved highlights are drawn from the shell's list as soon as it
         // is in (see the effect in the constructor); no fetch of our own.
         this.pageShown.set(true);
+        if (this.resizeAfterFirstPage) {
+          this.resizeAfterFirstPage = false;
+          this.resizeSubject$.next();
+        }
 
         // A grounded source is stronger than the user's ordinary saved reading
         // position for this navigation: the citation click explicitly asked to
@@ -2156,6 +2175,48 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
           void this.applyGroundedSource(late);
         }
       });
+
+    // 6. Hand the file over.
+    void this.openFile(id, epubBook, retryDownload);
+  }
+
+  /**
+   * A failed open has to be caught here. epub.js never settles `book.ready` or
+   * `opened` after one, and `rendition.display()` stays pending with them, so the
+   * catch handlers in `loadBook` never run and a corrupt or unavailable EPUB would
+   * sit on "Opening book..." for ever.
+   */
+  private async openFile(id: string, epubBook: Book, retryDownload: boolean): Promise<void> {
+    let fromCache = false;
+    try {
+      const file = await this.epubFiles.load(id);
+      fromCache = file.fromCache;
+      if (this.epubBook !== epubBook) return; // a newer attempt owns the reader
+      this.fitRenditionToPage();
+      await epubBook.open(file.bytes, 'binary');
+    } catch {
+      if (this.epubBook !== epubBook) return;
+      if (fromCache && retryDownload) {
+        // A bad copy must not take the book away: drop it and fetch the real one.
+        await this.epubFiles.forget(id);
+        if (this.epubBook === epubBook) this.loadBook(id, false);
+        return;
+      }
+      this.failOpen();
+    }
+  }
+
+  /**
+   * The rendition was sized before the margin preset's padding reached the page,
+   * and nothing has been laid out yet, so correcting it now is free. Left alone,
+   * the first page is laid out at the wrong width and again at the right one.
+   */
+  private fitRenditionToPage(): void {
+    const page = this.elementRef.nativeElement.querySelector('#epub-page');
+    const settings = this.rendition?.settings;
+    if (!page?.clientWidth || !settings) return;
+    settings.width = page.clientWidth;
+    settings.height = page.clientHeight;
   }
 
   // --- Helpers ---
@@ -2865,8 +2926,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.searchCorpusPromise = null;
     this.annotationManager?.destroy();
     this.annotationManager = null;
+    this.lazyResources?.destroy();
+    this.lazyResources = null;
     if (this.epubBook) {
       this.epubBook.destroy();
+      this.epubBook = null;
     }
   }
 }

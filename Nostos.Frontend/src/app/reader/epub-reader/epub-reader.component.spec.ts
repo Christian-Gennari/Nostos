@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import ePub from 'epubjs';
 
 import { NotesService } from '../../core/services/notes.service';
@@ -20,9 +20,17 @@ import {
   typographyCss,
 } from './epub-reader.component';
 import { EpubAnnotationManager } from './epub-annotation-manager';
+import { EpubFileCacheService } from './epub-file-cache.service';
+import { EpubLazyResources } from './epub-lazy-resources';
 import type { ReaderSourceTarget } from '../reader.interface';
 
 vi.mock('epubjs', () => ({ default: vi.fn() }));
+/** The file cache has its own spec; here every open is a download of no bytes. */
+const SERIALIZE_HOOKS = { hooks: { serialize: { register: vi.fn() } } };
+const epubFiles = {
+  load: vi.fn(() => Promise.resolve({ bytes: new ArrayBuffer(0), fromCache: false })),
+  forget: vi.fn(() => Promise.resolve()),
+};
 
 /**
  * Highlight-mode wiring of the EPUB reader (issue #16), "Minimal Section A
@@ -33,7 +41,9 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
   let fixture: ComponentFixture<EpubReader>;
   let log: string[];
   let lastRendition: any;
-  let lastEmit: (type: string) => void;
+  /** Each book's `open` call, and what the next ones answer. */
+  let opens: unknown[][];
+  let openResults: (() => Promise<void>)[];
   let lastSearchSectionUnload: ReturnType<typeof vi.fn>;
 
   const notesService = {
@@ -98,6 +108,7 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
       },
       navigation: { toc: [] },
       spine: {
+        ...SERIALIZE_HOOKS,
         spineItems: [
           {
             href: 'chapter-2.xhtml',
@@ -109,6 +120,10 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
         ],
       },
       load: vi.fn(() => Promise.resolve(searchDocument.documentElement)),
+      open: vi.fn((...args: unknown[]) => {
+        opens.push(args);
+        return openResults.shift()?.() ?? Promise.resolve();
+      }),
       destroy: vi.fn(() => log.push('book-destroy')),
     };
     return { book, rendition, emit: book.emit };
@@ -116,10 +131,11 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
 
   beforeEach(async () => {
     log = [];
+    opens = [];
+    openResults = [];
     vi.mocked(ePub).mockImplementation(() => {
       const fake = createFakeBook();
       lastRendition = fake.rendition;
-      lastEmit = fake.emit;
       return fake.book as never;
     });
     vi.stubGlobal(
@@ -136,6 +152,7 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
       providers: [
         { provide: NotesService, useValue: notesService },
         { provide: BooksService, useValue: booksService },
+        { provide: EpubFileCacheService, useValue: epubFiles },
       ],
     }).compileComponents();
   });
@@ -420,13 +437,10 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     expect(log.indexOf('manager-destroy')).toBeLessThan(log.indexOf('book-destroy'));
   });
 
-  it('surfaces the EPUB failure state when the book reports a failed open', async () => {
+  it('surfaces the EPUB failure state when the file cannot be read', async () => {
+    epubFiles.load.mockRejectedValueOnce(new Error('The book file answered 500.'));
     await setupComponent();
     const updatesBefore = booksService.updateProgress.mock.calls.length;
-
-    // epub.js announces a failed open ONLY through this event: `book.ready` and
-    // `opened` never settle and `rendition.display()` stays pending.
-    lastEmit('openFailed');
     fixture.detectChanges();
 
     const overlay = fixture.nativeElement.querySelector('.error-overlay') as HTMLElement | null;
@@ -445,6 +459,149 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     fixture.detectChanges();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(vi.mocked(ePub).mock.calls.length).toBe(ePubCallsBefore + 1);
+  });
+
+  it('generates missing locations only once the first page is up (#1316)', async () => {
+    booksService.getLocations.mockReturnValueOnce(throwError(() => new Error('404')));
+    let showPage!: () => void;
+    let book!: {
+      locations: { generate: ReturnType<typeof vi.fn> };
+      renderTo: () => { display: ReturnType<typeof vi.fn> };
+    };
+    const make = vi.mocked(ePub).getMockImplementation()!;
+    vi.mocked(ePub).mockImplementationOnce(() => {
+      book = make() as unknown as typeof book;
+      book
+        .renderTo()
+        .display.mockReturnValue(new Promise<void>((resolve) => (showPage = resolve)));
+      return book as never;
+    });
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(book.locations.generate).not.toHaveBeenCalled();
+
+    showPage();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(book.locations.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a resize until the first page is up, then applies it (#1316)', async () => {
+    let showPage!: () => void;
+    let display!: ReturnType<typeof vi.fn>;
+    const make = vi.mocked(ePub).getMockImplementation()!;
+    vi.mocked(ePub).mockImplementationOnce(() => {
+      const book = make() as unknown as { renderTo: () => { display: typeof display } };
+      display = book.renderTo().display;
+      display.mockReturnValue(new Promise<void>((resolve) => (showPage = resolve)));
+      return book as never;
+    });
+    vi.useFakeTimers();
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.detectChanges();
+    const resizes = () => lastRendition.resize.mock.calls.length;
+    const reader = fixture.componentInstance as unknown as { resizeSubject$: { next(): void } };
+
+    reader.resizeSubject$.next();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(resizes()).toBe(0);
+
+    showPage();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(resizes()).toBe(1);
+    vi.useRealTimers();
+  });
+
+  describe('opening the file (#1316)', () => {
+    const notAnEpub = () => Promise.reject(new Error('End of data reached'));
+
+    it('hands the bytes from the cache to epub.js, with no URL for it to fetch', async () => {
+      const bytes = new ArrayBuffer(8);
+      epubFiles.load.mockResolvedValueOnce({ bytes, fromCache: false });
+      vi.mocked(ePub).mockClear();
+
+      await setupComponent();
+
+      expect(vi.mocked(ePub).mock.calls).toEqual([[{}]]);
+      expect(opens).toEqual([[bytes, 'binary']]);
+    });
+
+    it('lays the first page out at the size the page has once the file is here', async () => {
+      let arrive!: (file: { bytes: ArrayBuffer; fromCache: boolean }) => void;
+      epubFiles.load.mockReturnValueOnce(new Promise((resolve) => (arrive = resolve)));
+      await setupComponent();
+      const page = fixture.nativeElement.querySelector('#epub-page') as HTMLElement;
+      Object.defineProperty(page, 'clientWidth', { value: 1178 });
+      Object.defineProperty(page, 'clientHeight', { value: 744 });
+      lastRendition.settings = { width: 1280, height: 744 };
+
+      arrive({ bytes: new ArrayBuffer(8), fromCache: false });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(lastRendition.settings).toEqual({ width: 1178, height: 744 });
+    });
+
+    it('shows the failure state for a downloaded file that does not open', async () => {
+      openResults = [notAnEpub];
+
+      await setupComponent();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.error-overlay')).not.toBeNull();
+      expect(epubFiles.forget).not.toHaveBeenCalled();
+    });
+
+    it('drops a kept copy that does not open and downloads the book instead', async () => {
+      epubFiles.load.mockResolvedValueOnce({ bytes: new ArrayBuffer(8), fromCache: true });
+      openResults = [notAnEpub];
+      vi.mocked(ePub).mockClear();
+
+      await setupComponent();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      expect(epubFiles.forget).toHaveBeenCalledExactlyOnceWith('book-1');
+      expect(vi.mocked(ePub)).toHaveBeenCalledTimes(2);
+      expect(fixture.nativeElement.querySelector('.error-overlay')).toBeNull();
+    });
+
+    it('gives up after one retry when the fresh file does not open either', async () => {
+      const keptCopy = { bytes: new ArrayBuffer(8), fromCache: true };
+      epubFiles.load.mockResolvedValueOnce(keptCopy).mockResolvedValueOnce(keptCopy);
+      openResults = [notAnEpub, notAnEpub];
+      vi.mocked(ePub).mockClear();
+
+      await setupComponent();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+
+      expect(vi.mocked(ePub)).toHaveBeenCalledTimes(2);
+      expect(fixture.nativeElement.querySelector('.error-overlay')).not.toBeNull();
+    });
+
+    it('does not open a file that arrives after the reader has gone', async () => {
+      let arrive!: (file: { bytes: ArrayBuffer; fromCache: boolean }) => void;
+      epubFiles.load.mockReturnValueOnce(new Promise((resolve) => (arrive = resolve)));
+
+      await setupComponent();
+      fixture.destroy();
+      arrive({ bytes: new ArrayBuffer(8), fromCache: false });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(opens).toEqual([]);
+    });
+
+    it('releases the unpacked assets with the book', async () => {
+      const destroy = vi.spyOn(EpubLazyResources.prototype, 'destroy');
+      await setupComponent();
+
+      fixture.destroy();
+
+      expect(destroy).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -562,6 +719,8 @@ describe('EpubReader theme-following normalization', () => {
         locationFromCfi: () => 0,
       },
       navigation: { toc: [] },
+      spine: SERIALIZE_HOOKS,
+      open: vi.fn(() => Promise.resolve()),
       destroy: vi.fn(() => log.push('book-destroy')),
     };
     books.push(book);
@@ -589,6 +748,7 @@ describe('EpubReader theme-following normalization', () => {
       providers: [
         { provide: NotesService, useValue: notesService },
         { provide: BooksService, useValue: booksService },
+        { provide: EpubFileCacheService, useValue: epubFiles },
       ],
     }).compileComponents();
   });
@@ -1141,6 +1301,8 @@ describe('EpubReader typography persistence', () => {
             locationFromCfi: () => 0,
           },
           navigation: { toc: [] },
+          spine: SERIALIZE_HOOKS,
+          open: vi.fn(() => Promise.resolve()),
           destroy: vi.fn(),
         }) as never,
     );
@@ -1158,6 +1320,7 @@ describe('EpubReader typography persistence', () => {
       providers: [
         { provide: NotesService, useValue: notesService },
         { provide: BooksService, useValue: booksService },
+        { provide: EpubFileCacheService, useValue: epubFiles },
       ],
     }).compileComponents();
 
@@ -1630,7 +1793,8 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
         locationFromCfi: () => 0,
       },
       navigation: { toc: [] },
-      spine: { spineItems: [{ href: HREF, index: 22 }] },
+      spine: { ...SERIALIZE_HOOKS, spineItems: [{ href: HREF, index: 22 }] },
+      open: vi.fn(() => Promise.resolve()),
       destroy: vi.fn(),
     };
 
@@ -1652,6 +1816,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       providers: [
         { provide: NotesService, useValue: notesService },
         { provide: BooksService, useValue: booksService },
+        { provide: EpubFileCacheService, useValue: epubFiles },
       ],
     }).compileComponents();
 
@@ -2136,17 +2301,33 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       await vi.advanceTimersByTimeAsync(0);
     }
 
+    it('opens on the saved page, not on the first section (#1316)', async () => {
+      rangeRect = onPage();
+      await openAtSavedPosition();
+
+      expect(rendition.display.mock.calls[0]).toEqual([TARGET_CFI]);
+    });
+
+    it('still opens the book when the saved position no longer resolves', async () => {
+      rendition.display.mockImplementationOnce(() => Promise.reject(new Error('No Section Found')));
+      rangeRect = onPage();
+      await openAtSavedPosition();
+
+      expect(rendition.display.mock.calls[1]).toEqual([]);
+      expect(fixture.componentInstance.errorMessage()).toBeNull();
+    });
+
     it('keeps the restored page through the opening re-layout and writes nothing', async () => {
       rangeRect = onPage();
       await openAtSavedPosition();
-      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+      expect(displayCallsFor(TARGET_CFI)).toBe(2); // the opening display, and the restore
 
       // The opening re-layout re-displays the long section's start.
       rangeRect = offPage();
       emitRelocated(STALE_CFI);
       emitResized();
       await vi.advanceTimersByTimeAsync(400); // quiet → verify → displaced → reassert
-      expect(displayCallsFor(TARGET_CFI)).toBe(2);
+      expect(displayCallsFor(TARGET_CFI)).toBe(3);
 
       rangeRect = onPage();
       await vi.advanceTimersByTimeAsync(400); // confirmed
@@ -2178,7 +2359,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     it('lets a page turn during the settle win over the re-assert', async () => {
       rangeRect = offPage();
       await openAtSavedPosition();
-      expect(displayCallsFor(TARGET_CFI)).toBe(1);
+      expect(displayCallsFor(TARGET_CFI)).toBe(2); // the opening display, and the restore
 
       emitResized(); // settle in flight
       fixture.componentInstance.next();
@@ -2186,7 +2367,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(rendition.next).toHaveBeenCalledTimes(1);
-      expect(displayCallsFor(TARGET_CFI)).toBe(1); // not snapped back
+      expect(displayCallsFor(TARGET_CFI)).toBe(2); // the opening display, and the restore // not snapped back
       expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
       expect(progressWritesWith(TARGET_CFI)).toEqual([]);
     });
@@ -2200,7 +2381,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       await vi.advanceTimersByTimeAsync(400); // fail
       await vi.advanceTimersByTimeAsync(5000);
 
-      expect(displayCallsFor(TARGET_CFI)).toBe(2);
+      expect(displayCallsFor(TARGET_CFI)).toBe(3);
       expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
       expect(booksService.updateProgress).not.toHaveBeenCalled();
 

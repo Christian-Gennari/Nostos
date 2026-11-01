@@ -423,6 +423,27 @@ public static class BooksEndpoints
                     ct)
         );
 
+        // Which bytes the file holds now, read from storage rather than from the
+        // row: the stored object is the one thing every way of replacing a file
+        // has to change. A client keeps a copy under this, so the answer must
+        // never come from a cache. Not under the Cloud /file redirect.
+        group.MapGet(
+            "/{id}/file/version",
+            async (
+                Guid id,
+                IBookAssetStorage storage,
+                HttpContext http,
+                CancellationToken ct
+            ) =>
+            {
+                http.Response.Headers.CacheControl = "no-store";
+                var info = await storage.GetBookFileInfoAsync(id, ct);
+                return info is null
+                    ? Results.NotFound()
+                    : Results.Ok(new BookFileVersionDto(BookFileVersion.From(info), info.Length));
+            }
+        );
+
         // Download file (attachment) — used by the book detail "Download File" button.
         // A multi-track audiobook has no single file to hand over, so it is
         // delivered as one archive computed over its stored tracks.
