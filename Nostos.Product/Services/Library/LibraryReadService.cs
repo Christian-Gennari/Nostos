@@ -276,25 +276,31 @@ internal sealed class LibraryReadService(
         // editions still occupies one visible card. This is
         // deliberately NOT title/author deduplication; WorkId is the grouping
         // contract and separate works remain separate.
+        // One statement instead of nine round trips. EF cannot read the owned
+        // FileDetails of a GROUP BY row, so rather than a single-pass
+        // COUNT(DISTINCT CASE ...) the nine unchanged per-predicate counts are
+        // scalar subqueries of a one-row source. A library with no countable
+        // book yields no row, which is all zeros.
         var books = CountableBooks(db);
-        Task<int> CountWorksAsync(IQueryable<BookModel> source) =>
-            source.Select(b => b.WorkId).Distinct().CountAsync(ct);
 
-        var all = await CountWorksAsync(books);
-        var notStarted = await CountWorksAsync(WorkReadingStatus.WhereNotStarted(books, db));
-        var reading = await CountWorksAsync(WorkReadingStatus.WhereReading(books, db));
-        var favorites = await CountWorksAsync(books.Where(b => b.Work!.IsFavorite));
-        var finished = await CountWorksAsync(WorkReadingStatus.WhereFinished(books, db));
-        var unsorted = await CountWorksAsync(books.Where(b =>
-            !db.BookCollections.Any(bc => bc.BookId == b.Id)));
-        var audiobooks = await CountWorksAsync(books.OfType<AudioBookModel>());
-        var pdfs = await CountWorksAsync(books.Where(
-            b => b.FileDetails.FileName != null && EF.Functions.Like(b.FileDetails.FileName, "%.pdf")));
-        var ebooks = await CountWorksAsync(books.OfType<EBookModel>().Where(
-            b => b.FileDetails.FileName == null || !EF.Functions.Like(b.FileDetails.FileName, "%.pdf")));
-
-        var counts = new LibraryStatusCountsDto(
-            all, notStarted, reading, favorites, finished, unsorted, audiobooks, ebooks, pdfs);
+        var counts = await db.Books.AsNoTracking()
+            .Take(1)
+            .Select(_ => new LibraryStatusCountsDto(
+                books.Select(b => b.WorkId).Distinct().Count(),
+                books.Where(WorkReadingStatus.IsNotStarted(db)).Select(b => b.WorkId).Distinct().Count(),
+                books.Where(WorkReadingStatus.IsReading(db)).Select(b => b.WorkId).Distinct().Count(),
+                books.Where(b => b.Work!.IsFavorite).Select(b => b.WorkId).Distinct().Count(),
+                books.Where(WorkReadingStatus.IsFinished(db)).Select(b => b.WorkId).Distinct().Count(),
+                books.Where(b => !db.BookCollections.Any(bc => bc.BookId == b.Id))
+                    .Select(b => b.WorkId).Distinct().Count(),
+                books.OfType<AudioBookModel>().Select(b => b.WorkId).Distinct().Count(),
+                books.OfType<EBookModel>()
+                    .Where(b => b.FileDetails.FileName == null || !EF.Functions.Like(b.FileDetails.FileName, "%.pdf"))
+                    .Select(b => b.WorkId).Distinct().Count(),
+                books.Where(b => b.FileDetails.FileName != null && EF.Functions.Like(b.FileDetails.FileName, "%.pdf"))
+                    .Select(b => b.WorkId).Distinct().Count()))
+            .FirstOrDefaultAsync(ct)
+            ?? new LibraryStatusCountsDto(0, 0, 0, 0, 0, 0, 0, 0, 0);
 
         return Result(LibraryReplyFormatter.Success("Status counts retrieved."), counts, version);
     }
