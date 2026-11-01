@@ -245,13 +245,13 @@ public static class NotesEndpoints
             }
         );
 
-        // LOCATE an imported highlight: the reader reports where it found the
-        // highlighted text in the book. Set once; see SetImportedLocationAsync.
+        // LOCATE a note's text: the reader reports where it found an imported
+        // highlight or a quote Ask Nostos saved. See SetFoundLocationAsync.
         group.MapPut(
             "/notes/{id}/location",
             async (Guid id, NoteLocationDto dto, INoteService notes, CancellationToken ct) =>
             {
-                var result = await notes.SetImportedLocationAsync(id, dto.CfiRange, ct);
+                var result = await notes.SetFoundLocationAsync(id, dto.CfiRange, ct);
                 if (result.Success)
                     return Results.Ok(result.Value);
                 return result.ErrorCode == NoteErrorCodes.NoteNotFound

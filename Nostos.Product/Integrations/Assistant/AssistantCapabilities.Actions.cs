@@ -1,3 +1,4 @@
+using System.Globalization;
 using Nostos.Product.BookText;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
@@ -93,6 +94,10 @@ public static partial class AssistantCapabilities
 
                 var content = Str(args, "content");
                 var selectedText = Str(args, "selectedText");
+                var cfiRange = Str(args, "cfiRange");
+                var anchorKind = Str(args, "sourceAnchorKind") ?? "unknown";
+                var anchorValue = Str(args, "sourceAnchorValue");
+                var anchorVerified = Bool(args, "anchorVerified") ?? false;
                 if (Str(args, "quoteRef") is { Length: > 0 } quoteRef)
                 {
                     // The words are the book's, never the model's copy of them.
@@ -100,6 +105,16 @@ public static partial class AssistantCapabilities
                     if (quote is null)
                         return Invalid("That quoteRef no longer resolves. Look the passage up again with book_text_find_quote.");
                     selectedText = quote.Text;
+
+                    // The passage's own page, in this very PDF, beats the page
+                    // the reader happens to be on, and is known with no reader open.
+                    if (quote.PdfPage is { } page && quote.SourceBookId == bookId)
+                    {
+                        anchorKind = "pdf_page";
+                        anchorValue = page.ToString(CultureInfo.InvariantCulture);
+                        anchorVerified = true;
+                        cfiRange = AssistantCapturePolicy.PdfPageLocation(page);
+                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(selectedText))
@@ -110,14 +125,14 @@ public static partial class AssistantCapabilities
                 var request = new CaptureNoteRequest(
                     BookId: bookId,
                     Content: content ?? string.Empty,
-                    CfiRange: Str(args, "cfiRange"),
+                    CfiRange: cfiRange,
                     SelectedText: selectedText,
                     RawContent: Str(args, "rawContent"),
                     CaptureSource: Str(args, "captureSource") ?? "text",
                     ProcessingMode: Str(args, "processingMode") ?? "verbatim",
-                    SourceAnchorKind: Str(args, "sourceAnchorKind") ?? "unknown",
-                    SourceAnchorValue: Str(args, "sourceAnchorValue"),
-                    AnchorVerified: Bool(args, "anchorVerified") ?? false,
+                    SourceAnchorKind: anchorKind,
+                    SourceAnchorValue: anchorValue,
+                    AnchorVerified: anchorVerified,
                     ClientId: context.ClientId,
                     IdempotencyKey: context.IdempotencyKey);
 

@@ -73,7 +73,7 @@ export class NotesService {
     return this.http.put<Note>(`/api/notes/${id}`, dto);
   }
 
-  /** Records where the reader found an imported highlight; the first location is kept. */
+  /** Records where a reader found a note's text; the first location is kept. */
   setLocation(id: string, cfiRange: string): Observable<Note> {
     return this.http.put<Note>(`/api/notes/${id}/location`, { cfiRange });
   }

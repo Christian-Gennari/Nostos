@@ -30,13 +30,15 @@ import {
   ScrollModeType,
 } from 'ngx-extended-pdf-viewer';
 import './pdf-defaults';
-import { Subject } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Subject, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
 import { PdfReadAloud } from './pdf-read-aloud';
 import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
 import { buildPdfPageText, type PageRect } from './pdf-read-aloud-text';
+import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
 import { PassageDraft, PassageMark, closingOf, countWords, excerptOf } from '../passage/passage-mark';
 import { isDesktopMouseSelection, type SelectionAnchor } from '../selection-anchor';
 import {
@@ -45,7 +47,7 @@ import {
   noteHighlightColour,
 } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
-import { Note, noteHasText } from '../../core/dtos/note.dtos';
+import { Note, noteHasText, pdfQuotePageToLocate } from '../../core/dtos/note.dtos';
 import type { HighlightHit } from '../highlight-hit';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService, themeOption } from '../../core/services/theme.service';
@@ -265,15 +267,23 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * from them rather than fetched again; null while the shell is reading them.
    */
   notes = input<Note[] | null>(null);
-  private notesApplied = false;
+  /** An Ask Nostos quote was found on its page and now has rectangles. */
+  noteLocated = output<Note>();
+  /** The notes dealt with so far; a later arrival is drawn on its own. */
+  private readonly notesSeen = new Set<string>();
+  /** Ask Nostos quotes to look for when their page's text layer is drawn, by page. */
+  private readonly quotesByPage = new Map<number, Note[]>();
 
   constructor() {
     effect(() => {
       const notes = this.notes();
-      if (!notes || this.notesApplied) return;
+      if (!notes) return;
       untracked(() => {
-        this.notesApplied = true;
-        this.applyNotes(notes);
+        const arrived = notes.filter((note) => !this.notesSeen.has(note.id));
+        if (arrived.length === 0) return;
+        arrived.forEach((note) => this.notesSeen.add(note.id));
+        this.applyNotes(arrived);
+        this.waitForQuotes(arrived);
       });
     });
   }
@@ -1111,6 +1121,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       this.highlightService.paintReadAloudMark(textLayerDiv, this.readAloudMark.rects);
       this.keepReadAloudMarkInView(textLayerDiv);
     }
+
+    void this.locateQuotes(event.pageNumber, textLayerDiv);
   }
 
   /**
@@ -1397,26 +1409,94 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   // --- Helpers ---
 
-  private applyNotes(notes: Note[]) {
-    this.savedHighlights = notes
-      .filter((n) => n.cfiRange)
-      .map((n) => {
-        try {
-          const range = JSON.parse(n.cfiRange!);
-          return {
-            id: n.id,
-            pageNumber: range.pageNumber,
-            rects: range.rects || [],
-            colour: noteHighlightColour(n),
-            noted: noteHasText(n),
-          } as PageHighlight;
-        } catch {
-          return null;
-        }
-      })
-      .filter((h) => h !== null) as PageHighlight[];
+  private savedHighlightOf(note: Note): PageHighlight | null {
+    try {
+      const range = JSON.parse(note.cfiRange!);
+      return {
+        id: note.id,
+        pageNumber: range.pageNumber,
+        rects: range.rects || [],
+        colour: noteHighlightColour(note),
+        noted: noteHasText(note),
+      };
+    } catch {
+      return null;
+    }
+  }
 
+  /** Adds notes' highlights. One already held, such as a mark made here, stays. */
+  private applyNotes(notes: Note[]) {
+    const held = new Set(this.savedHighlights.map((highlight) => highlight.id));
+    const added = notes
+      .filter((note) => note.cfiRange && !held.has(note.id))
+      .map((note) => this.savedHighlightOf(note))
+      .filter((highlight) => highlight !== null);
+    this.savedHighlights.push(...added);
     this.repaintSavedHighlightPages();
+  }
+
+  /**
+   * Ask Nostos quotes whose page is known but holds no rectangles yet are drawn
+   * from that page's text layer, the same text a hand-made highlight is
+   * selected from. So a quote costs nothing until its page is drawn: one on
+   * screen is looked for now, any other when the reader comes to it. A quote
+   * with no page is not looked for.
+   */
+  private waitForQuotes(notes: Note[]): void {
+    const notFound = readUnlocatedNoteIds();
+    const pages = new Set<number>();
+    for (const note of notes) {
+      const pageNumber = pdfQuotePageToLocate(note);
+      if (pageNumber === null || notFound.has(note.id)) continue;
+      this.quotesByPage.set(pageNumber, [...(this.quotesByPage.get(pageNumber) ?? []), note]);
+      pages.add(pageNumber);
+    }
+
+    for (const pageNumber of pages) {
+      const layer = document.querySelector<HTMLElement>(
+        `.page[data-page-number="${pageNumber}"] .textLayer`,
+      );
+      if (layer?.textContent?.trim()) void this.locateQuotes(pageNumber, layer);
+    }
+  }
+
+  /**
+   * Save and draw the quotes waiting on a drawn page. Nothing is drawn unless
+   * the words stand on the page exactly once; a scanned page has no text, so
+   * its quote simply stays a note.
+   */
+  private async locateQuotes(pageNumber: number, layer: HTMLElement): Promise<void> {
+    const quotes = this.quotesByPage.get(pageNumber);
+    if (!quotes) return;
+    this.quotesByPage.delete(pageNumber);
+
+    // Read together: a zoom can replace the layer during the saves below.
+    const found = quotes.map((note) => ({
+      note,
+      rects: this.highlightService.quoteRects(layer, note.selectedText ?? ''),
+    }));
+    for (const { note, rects } of found) {
+      if (!rects) {
+        rememberUnlocatedNoteId(note.id);
+        continue;
+      }
+
+      try {
+        const location = JSON.stringify({ pageNumber, rects });
+        const saved = await firstValueFrom(this.notesService.setLocation(note.id, location));
+        // Deleted while it was being saved: nothing to draw.
+        if (!saved.cfiRange || !this.notes()?.some((held) => held.id === note.id)) continue;
+        this.savedHighlights = this.savedHighlights.filter((held) => held.id !== note.id);
+        this.applyNotes([saved]);
+        this.noteLocated.emit(saved);
+      } catch (error) {
+        // The server refused this note for good: do not ask at every opening.
+        if (error instanceof HttpErrorResponse && error.status === 400) {
+          rememberUnlocatedNoteId(note.id);
+        }
+        console.warn('Could not save where a quote stands on its page:', error);
+      }
+    }
   }
 
   private repaintSavedHighlightPages() {

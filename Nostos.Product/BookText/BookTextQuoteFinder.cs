@@ -59,7 +59,11 @@ public sealed record BookTextQuoteFindResult(
     IReadOnlyList<BookTextQuoteCandidate> Candidates,
     int TotalMatches);
 
-public sealed record BookTextResolvedQuote(Guid SourceBookId, string Text);
+/// <param name="PdfPage">
+/// The 1-based physical page of a PDF passage that stays on one page; null for
+/// any other passage.
+/// </param>
+public sealed record BookTextResolvedQuote(Guid SourceBookId, string Text, int? PdfPage = null);
 
 public sealed class BookTextQuoteFinder(
     IBookTextIndex index,
@@ -153,7 +157,10 @@ public sealed class BookTextQuoteFinder(
         if (parsed.Start < 0 || parsed.End > window.Text.Length || parsed.End <= parsed.Start)
             return null;
 
-        return new BookTextResolvedQuote(parsed.BookId, QuoteMatcher.Clean(window.Text[parsed.Start..parsed.End]));
+        return new BookTextResolvedQuote(
+            parsed.BookId,
+            QuoteMatcher.Clean(window.Text[parsed.Start..parsed.End]),
+            window.PdfPageOf(chunks, parsed.Start, parsed.End));
     }
 
     /// <summary>
@@ -462,6 +469,25 @@ internal sealed record QuoteWindow(string Text, IReadOnlyList<int> Starts, IRead
         }
 
         return new QuoteWindow(text.ToString(), starts, ends);
+    }
+
+    /// <summary>
+    /// The 1-based PDF page all of <paramref name="start"/>..<paramref name="end"/>
+    /// stands on, or null when it crosses pages or is not PDF text.
+    /// </summary>
+    public int? PdfPageOf(IReadOnlyList<BookTextIndexedChunk> chunks, int start, int end)
+    {
+        var first = PdfPageIndexAt(chunks, start);
+        return first is { } page && page == PdfPageIndexAt(chunks, end - 1) ? page + 1 : null;
+    }
+
+    private int? PdfPageIndexAt(IReadOnlyList<BookTextIndexedChunk> chunks, int offset)
+    {
+        var index = ChunkAt(offset);
+        var within = offset - Starts[index];
+        var segment = chunks[index].SourceSegments.FirstOrDefault(
+            candidate => within >= candidate.TextStart && within < candidate.TextStart + candidate.TextLength);
+        return (segment?.Locator as PdfBookTextSourceLocator)?.PageIndex;
     }
 
     private static int Overlap(StringBuilder previous, string next)

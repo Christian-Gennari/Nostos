@@ -710,9 +710,10 @@ export class EpubAnnotationManager {
     annotation.mark = undefined;
   }
 
+  /** Draws saved highlights. One already on the page stays as it is. */
   public restoreHighlights(notes: Note[]) {
     notes.forEach((note) => {
-      if (note.cfiRange) {
+      if (note.cfiRange && !this.highlights().includes(note.cfiRange)) {
         this.addPersistedHighlight(note.cfiRange, noteHighlightColour(note), noteHasText(note));
         this.highlights.update((current) => [...current, note.cfiRange!]);
       }

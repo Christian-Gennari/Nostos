@@ -73,7 +73,7 @@ public interface INoteService
     /// e-reader's position, which this reader cannot open; the first location
     /// found is kept and a later call returns the note unchanged.
     /// </summary>
-    Task<NoteCommandResult<NoteDto>> SetImportedLocationAsync(Guid noteId, string? cfiRange, CancellationToken ct = default);
+    Task<NoteCommandResult<NoteDto>> SetFoundLocationAsync(Guid noteId, string? location, CancellationToken ct = default);
 
     Task<NoteCommandResult<NoteDto>> LinkToExistingTopicAsync(Guid noteId, Guid topicId, CancellationToken ct = default);
     Task<NoteReviewDto?> GetForReviewAsync(Guid noteId, CancellationToken ct = default);
