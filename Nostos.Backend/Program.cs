@@ -364,6 +364,8 @@ builder.Services.AddHostedService<BackupWorker>();
 builder.Services.AddHostedService<LibraryReceiptRetentionWorker>();
 builder.Services.AddHostedService<BookTextIngestionWorker>();
 
+builder.Services.AddApiResponseCompression();
+
 var app = builder.Build();
 
 // A mistyped ExternalMedia:Root must stop the server with its own message,
@@ -402,6 +404,10 @@ using (var scope = app.Services.CreateScope())
 // forwarded to. The trust list is left at its default (loopback only); see the
 // registration above for why.
 app.UseForwardedHeaders();
+
+// Forwarded headers first: behind a TLS proxy it needs the real scheme. Ahead of
+// the exception handler so an error's problem+json is compressed like the rest.
+app.UseResponseCompression();
 
 // --- OPDS EXPORT (access model) ---
 // Stated in the operator's own logs, once, so that exposing the catalogue is a
@@ -481,6 +487,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 // --- SERVE ANGULAR FRONTEND ---
 app.UseDefaultFiles();
+app.UseMiddleware<PrecompressedFrontendFilesMiddleware>();
 app.UseStaticFiles(Nostos.Product.Http.NostosFrontendStaticFiles.CreateOptions());
 
 // ------------------------------
@@ -525,6 +532,13 @@ RequestDelegate serveClientRoute = async context =>
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return;
+    }
+
+    if (PrecompressedFrontendFiles.TrySelect(
+            context, app.Environment.WebRootFileProvider, "/index.html", out var sibling, out var encoding))
+    {
+        indexHtml = sibling.PhysicalPath!;
+        context.Response.Headers.ContentEncoding = encoding;
     }
 
     context.Response.ContentType = "text/html";
