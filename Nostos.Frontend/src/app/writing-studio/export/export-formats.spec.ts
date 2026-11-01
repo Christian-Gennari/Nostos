@@ -8,7 +8,7 @@ import { embedImages, type EmbeddedImage } from './export-images';
 import { chapterTitle, footnotesIn, imagesIn, isRightToLeft } from './export-layout';
 import { escapeText, renderExportMarkdown } from './export-markdown';
 import type { ExportDocument, ExportInline, ExportSection } from './export-model';
-import { renderPrintLayout } from './export-pdf';
+import { paginatesPageNotes, renderPrintLayout } from './export-pdf';
 import { copyRichText, renderExportPlainText, renderExportRichText } from './export-rich-text';
 import { IN_TEXT, NOTES, SETUP, chapter, renderer, resolve } from './export.testing';
 
@@ -477,6 +477,64 @@ describe('PDF print layout (issue #1167)', () => {
     expect(letter).toContain('size: letter;');
     expect(letter).toContain('margin: 38.1mm;');
     expect(letter).toContain('line-height: 2;');
+  });
+
+  describe('notes at the foot of the page (#1306)', () => {
+    const bodyOf = (html: string) => {
+      const view = document.createElement('div');
+      view.innerHTML = html.replace(/[\s\S]*<body>|<\/body>[\s\S]*/g, '');
+      return view;
+    };
+
+    it('writes each note in the sentence that calls it, and no notes section', () => {
+      const html = renderPrintLayout(essay(), { notes: 'page' });
+      const view = bodyOf(html);
+      const notes = Array.from(view.querySelectorAll('.page-note'));
+      expect(notes.map((note) => note.textContent)).toEqual([expect.stringContaining('Voltaire, Candide (Paris, 1759)'), 'Ibid., 3.']);
+      expect(notes[0].querySelector('em')?.textContent).toBe('Candide');
+      expect(notes[0].closest('p')?.textContent).toContain('Voltaire mocks optimism.');
+      expect(notes[1].closest('blockquote')).toBeTruthy();
+      expect(view.querySelector('.footnotes')).toBeNull();
+      expect(view.querySelector('sup')).toBeNull();
+      expect(html).toContain('.page-note { float: footnote;');
+      expect(html).toMatch(/@footnote \{/);
+    });
+
+    it('floats a note called twice once, and the second call keeps its number', () => {
+      const twice = essay({
+        sections: [{ type: 'chapter', writingId: 'x', title: 'X', depth: 0, blocks: [{ type: 'paragraph', children: [t('One.'), { type: 'footnoteRef', number: 1 }, t(' Two.'), { type: 'footnoteRef', number: 1 }] }] }],
+        footnotes: [{ number: 1, children: [t('The note.')] }],
+      });
+      const view = bodyOf(renderPrintLayout(twice, { notes: 'page' }));
+      expect(view.querySelectorAll('.page-note')).toHaveLength(1);
+      expect(view.querySelector('p > sup')?.textContent).toBe('1');
+    });
+
+    it('never treats a writer’s own text as a note call', () => {
+      const literal = '<sup id="fnref1"><a href="#fn1">1</a></sup>';
+      const doc = essay({
+        sections: [{ type: 'chapter', writingId: 'x', title: 'X', depth: 0, blocks: [{ type: 'paragraph', children: [t(literal)] }] }],
+      });
+      const view = bodyOf(renderPrintLayout(doc, { notes: 'page' }));
+      expect(view.querySelector('.page-note')).toBeNull();
+      expect(view.querySelector('p')?.textContent).toBe(literal);
+    });
+
+    it('stays out of the plain layout, which keeps notes at the end of each chapter', () => {
+      const html = renderPrintLayout(essay());
+      expect(html).not.toContain('float: footnote');
+      expect(html).not.toContain('@footnote');
+      expect(bodyOf(html).querySelector('.footnotes li')).toBeTruthy();
+    });
+
+    it('paginates only in Chromium-based browsers', () => {
+      const chrome = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+      expect(paginatesPageNotes(chrome)).toBe(true);
+      expect(paginatesPageNotes(`${chrome} Edg/131.0.0.0`)).toBe(true);
+      expect(paginatesPageNotes('Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0')).toBe(false);
+      expect(paginatesPageNotes('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15')).toBe(false);
+      expect(paginatesPageNotes('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.0.0 Mobile/15E148 Safari/604.1')).toBe(false);
+    });
   });
 
   it('puts each chapter’s notes at its end, numbered through the whole document', () => {

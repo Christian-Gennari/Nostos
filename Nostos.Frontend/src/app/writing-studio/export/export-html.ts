@@ -10,10 +10,11 @@ import type { ExportBlock, ExportDocument, ExportFootnote, ExportInline } from '
 export interface ExportHtmlOptions {
   /**
    * Where the notes go: all at the end of the document (a web page, pasted
-   * rich text), or at the end of the chapter that calls them (the print
-   * layout), still numbered once through the whole document.
+   * rich text), at the end of the chapter that calls them (the print layout),
+   * or in the sentence that calls them, for a paginator to float to the foot
+   * of that page. Numbered once through the whole document in every case.
    */
-  notes: 'document' | 'chapter';
+  notes: 'document' | 'chapter' | 'page';
   /** Wraps each heading with the block after it, so print never leaves a heading alone at the foot of a page. */
   keepHeadings?: boolean;
 }
@@ -54,7 +55,25 @@ export function renderExportBody(doc: ExportDocument, options: ExportHtmlOptions
         .join('')}</section>`,
     );
   }
-  return body.join('\n');
+  const html = body.join('\n');
+  return options.notes === 'page' ? notesInPlace(html, notesByNumber) : html;
+}
+
+/**
+ * Swaps each footnote call for the note itself. Text is escaped, so only
+ * `inlines` can have written this markup. The paginator numbers what it
+ * floats, and a note floats once: a second call of the same note stays a plain
+ * number pointing at the first.
+ */
+function notesInPlace(html: string, notes: ReadonlyMap<number, ExportFootnote>): string {
+  const placed = new Set<number>();
+  return html.replace(/<sup id="fnref(\d+)"><a href="#fn\d+">\d+<\/a><\/sup>/g, (_call, digits: string) => {
+    const number = Number(digits);
+    const note = notes.get(number);
+    if (!note || placed.has(number)) return `<sup>${number}</sup>`;
+    placed.add(number);
+    return `<span class="page-note" dir="auto">${inlines(note.children)}</span>`;
+  });
 }
 
 /**
