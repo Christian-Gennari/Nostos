@@ -12,6 +12,7 @@ import {
   sourcePassagePhrase,
   sourcePassagePhrases,
 } from './pdf-reader.component';
+import { readUnlocatedNoteIds } from '../passage/note-locating';
 import {
   NgxExtendedPdfViewerModule,
   NgxExtendedPdfViewerService,
@@ -247,6 +248,90 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
 
       expect(activated).not.toHaveBeenCalled();
       expect(surface).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Ask Nostos quotes (#1338)', () => {
+    const quote = (overrides: object = {}) => ({
+      id: 'q-1',
+      bookId: 'book-1',
+      content: '',
+      createdAt: '2026-01-01T00:00:00Z',
+      selectedText: 'the anger',
+      captureSource: 'text',
+      sourceAnchorKind: 'pdf_page',
+      sourceAnchorValue: '4',
+      cfiRange: JSON.stringify({ pageNumber: 4, yPercent: 0, rects: [] }),
+      ...overrides,
+    });
+    const rects = [{ left: 0.1, top: 0.1, width: 0.5, height: 0.02 }];
+
+    function reader() {
+      setupComponent();
+      const component = fixture.componentInstance as any;
+      vi.spyOn(component, 'repaintPage').mockImplementation(() => {});
+      return component;
+    }
+
+    const layer = () => document.createElement('div');
+
+    beforeEach(() => localStorage.clear());
+
+    it('waits for the page, saves rects in the stored shape, and tells the shell', async () => {
+      const saved = quote({ cfiRange: JSON.stringify({ pageNumber: 4, rects }) });
+      (notesService as any).setLocation = vi.fn(() => of(saved));
+      const component = reader();
+      component.highlightService.quoteRects = vi.fn(() => rects);
+      const located = vi.fn();
+      component.noteLocated.subscribe(located);
+
+      fixture.componentRef.setInput('notes', [quote()]);
+      fixture.detectChanges();
+      expect((notesService as any).setLocation).not.toHaveBeenCalled();
+
+      await component.locateQuotes(4, layer());
+
+      expect((notesService as any).setLocation).toHaveBeenCalledWith(
+        'q-1',
+        JSON.stringify({ pageNumber: 4, rects }),
+      );
+      expect(located).toHaveBeenCalledWith(saved);
+      expect(component.savedHighlights).toEqual([
+        expect.objectContaining({ id: 'q-1', pageNumber: 4, rects }),
+      ]);
+    });
+
+    it('remembers a quote that is not on its page and asks for it no more', async () => {
+      (notesService as any).setLocation = vi.fn();
+      const component = reader();
+      component.highlightService.quoteRects = vi.fn(() => null);
+
+      fixture.componentRef.setInput('notes', [quote()]);
+      fixture.detectChanges();
+      await component.locateQuotes(4, layer());
+
+      expect((notesService as any).setLocation).not.toHaveBeenCalled();
+      expect(readUnlocatedNoteIds().has('q-1')).toBe(true);
+
+      const next = reader();
+      fixture.componentRef.setInput('notes', [quote()]);
+      fixture.detectChanges();
+      expect(next.quotesByPage.size).toBe(0);
+    });
+
+    it('does not look for a quote with no page, or draw a note twice as the list grows', () => {
+      const component = reader();
+      const typed = { id: 'n-9', bookId: 'book-1', content: 'x', createdAt: '2026-01-01T00:00:00Z', cfiRange: JSON.stringify({ pageNumber: 2, rects }) };
+
+      fixture.componentRef.setInput('notes', [quote({ sourceAnchorKind: 'unknown', sourceAnchorValue: null, cfiRange: undefined })]);
+      fixture.detectChanges();
+      expect(component.quotesByPage.size).toBe(0);
+
+      fixture.componentRef.setInput('notes', [typed, quote({ sourceAnchorKind: 'unknown', sourceAnchorValue: null, cfiRange: undefined })]);
+      fixture.detectChanges();
+      fixture.componentRef.setInput('notes', [{ ...typed }, typed]);
+      fixture.detectChanges();
+      expect(component.savedHighlights.filter((held: { id: string }) => held.id === 'n-9')).toHaveLength(1);
     });
   });
 

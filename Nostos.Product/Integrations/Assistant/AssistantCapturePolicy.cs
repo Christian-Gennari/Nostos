@@ -346,7 +346,12 @@ internal sealed partial class AssistantCapturePolicy(ILibraryService library)
         if (string.Equals(decision.Kind, "epub_cfi", StringComparison.Ordinal)
             && !string.IsNullOrWhiteSpace(decision.Value))
         {
-            obj["cfiRange"] = decision.Value;
+            // The app's CFI is the top of the page the reader was on, not where a
+            // quote sits. Stored as the quote's location it could be neither
+            // drawn nor corrected, so a quote keeps it as the typed anchor only
+            // and the reader finds the words themselves.
+            if (!fromBookText && string.IsNullOrWhiteSpace(selectedText))
+                obj["cfiRange"] = decision.Value;
         }
         else if (decision.Verified
             && string.Equals(decision.Kind, "pdf_page", StringComparison.Ordinal)
@@ -358,9 +363,7 @@ internal sealed partial class AssistantCapturePolicy(ILibraryService library)
             // a verified PDF page into the same JSON location shape PdfReader
             // already emits from getCurrentLocation(). This makes new assistant
             // captures navigable without inventing a second PDF location format.
-            obj["cfiRange"] = JsonSerializer.Serialize(
-                new { pageNumber = pdfPage, yPercent = 0, rects = Array.Empty<object>() },
-                JsonOptions);
+            obj["cfiRange"] = PdfPageLocation(pdfPage);
         }
 
         if (!string.IsNullOrWhiteSpace(selectedText) && !decision.Verified)
@@ -375,6 +378,12 @@ internal sealed partial class AssistantCapturePolicy(ILibraryService library)
 
         return JsonSerializer.SerializeToElement(obj, JsonOptions);
     }
+
+    /// <summary>A PDF page as a note's location, with nothing yet to draw on it.</summary>
+    internal static string PdfPageLocation(int page) =>
+        JsonSerializer.Serialize(
+            new { pageNumber = page, yPercent = 0, rects = Array.Empty<object>() },
+            JsonOptions);
 
     private static AnchorDecision DecideAnchor(
         AssistantContextDto? context,

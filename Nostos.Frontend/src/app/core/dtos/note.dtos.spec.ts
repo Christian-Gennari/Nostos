@@ -4,9 +4,11 @@ import {
   isPassage,
   passageSizeLabel,
   importedNoteLocation,
+  isAskNostosQuote,
   isImportedAnchor,
   noteAudioSeconds,
   noteNavigationTarget,
+  pdfQuotePageToLocate,
 } from './note.dtos';
 
 const note = (overrides: Partial<Note> = {}): Note => ({
@@ -216,5 +218,60 @@ describe('passageSizeLabel (issue #1014)', () => {
     expect(isPassage({ kind: 'passage' })).toBe(true);
     expect(isPassage({ kind: 'note' })).toBe(false);
     expect(isPassage({})).toBe(false);
+  });
+});
+
+describe('isAskNostosQuote (#1338)', () => {
+  const quote = note({ selectedText: 'The words', captureSource: 'text', sourceAnchorKind: 'unknown' });
+
+  it('is a quote with no other origin', () => {
+    expect(isAskNostosQuote(quote)).toBe(true);
+    expect(isAskNostosQuote({ ...quote, sourceAnchorKind: 'pdf_page' })).toBe(true);
+    expect(isAskNostosQuote({ ...quote, sourceAnchorKind: 'epub_cfi' })).toBe(true);
+  });
+
+  it('is not a typed note, however it is punctuated', () => {
+    expect(isAskNostosQuote(note({ content: '"The words"' }))).toBe(false);
+    expect(isAskNostosQuote({ ...quote, selectedText: '   ' })).toBe(false);
+  });
+
+  it('is not a photo, an import, a passage, or a paper or audio anchor', () => {
+    expect(isAskNostosQuote({ ...quote, captureSource: 'photo' })).toBe(false);
+    expect(isAskNostosQuote({ ...quote, captureSource: 'import' })).toBe(false);
+    expect(isAskNostosQuote({ ...quote, kind: 'passage' })).toBe(false);
+    expect(isAskNostosQuote({ ...quote, sourceAnchorKind: 'physical_page' })).toBe(false);
+    expect(isAskNostosQuote({ ...quote, sourceAnchorKind: 'audio_timestamp' })).toBe(false);
+  });
+});
+
+describe('pdfQuotePageToLocate (#1338)', () => {
+  const quote = note({
+    selectedText: 'The words',
+    captureSource: 'text',
+    sourceAnchorKind: 'pdf_page',
+    sourceAnchorValue: '5',
+  });
+
+  it('names the page of a quote that has nothing to draw there', () => {
+    expect(pdfQuotePageToLocate(quote)).toBe(5);
+    expect(
+      pdfQuotePageToLocate({ ...quote, cfiRange: '{"pageNumber":5,"yPercent":0,"rects":[]}' }),
+    ).toBe(5);
+  });
+
+  it('leaves a quote that already has rects, or names another page', () => {
+    expect(
+      pdfQuotePageToLocate({ ...quote, cfiRange: '{"pageNumber":5,"rects":[{"left":0}]}' }),
+    ).toBeNull();
+    expect(pdfQuotePageToLocate({ ...quote, cfiRange: '{"pageNumber":6,"rects":[]}' })).toBeNull();
+    expect(pdfQuotePageToLocate({ ...quote, cfiRange: 'not json' })).toBeNull();
+  });
+
+  it('has no page to offer for an unknown anchor or a hand-written PDF note', () => {
+    expect(pdfQuotePageToLocate({ ...quote, sourceAnchorKind: 'unknown' })).toBeNull();
+    expect(pdfQuotePageToLocate({ ...quote, sourceAnchorValue: 'iv' })).toBeNull();
+    expect(
+      pdfQuotePageToLocate(note({ content: 'mine', cfiRange: '{"pageNumber":5,"rects":[]}' })),
+    ).toBeNull();
   });
 });

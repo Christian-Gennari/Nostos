@@ -254,6 +254,15 @@ export class ReaderShell implements OnInit, OnDestroy {
       });
     });
 
+    // A quote Ask Nostos saves to this book joins the list like a note made
+    // here, so the open reader draws it. The turn names the note, so only that
+    // note is read.
+    effect(() => {
+      const noteId = this.assistant.capturedNoteId();
+      if (!noteId || !this.notesLoaded()) return;
+      untracked(() => this.addCapturedNote(noteId));
+    });
+
     // Read aloud follows whichever text reader is mounted.
     effect(() => {
       const source = this.activeReader()?.readAloud ?? null;
@@ -1634,6 +1643,25 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (created.content?.trim()) this.refreshNoteTopics(created.id);
   }
 
+  private addCapturedNote(noteId: string): void {
+    const bookId = this.book()?.id;
+    const same = (a: string | null | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
+    if (!bookId || this.dbNotes().some((note) => same(note.id, noteId))) return;
+    this.notesService.get(noteId).subscribe({
+      next: (hit) => {
+        if (!same(hit.bookId, bookId)) return;
+        this.addCreatedNote(bookId, {
+          ...hit,
+          bookTitle: hit.bookTitle ?? undefined,
+          selectedText: hit.selectedText ?? undefined,
+          cfiRange: hit.cfiRange ?? undefined,
+        });
+      },
+      // The note was saved; it is in the list at the next opening.
+      error: () => undefined,
+    });
+  }
+
   private noteTopicsSeq = 0;
 
   /**
@@ -1683,7 +1711,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     });
   }
 
-  /** The reader found an imported highlight in the book; keep the list in step. */
+  /** The reader found a note's text in the book; keep the list in step. */
   handleNoteLocated(located: Note) {
     this.dbNotes.update((notes) =>
       notes.map((note) => (note.id === located.id ? { ...note, cfiRange: located.cfiRange } : note)),

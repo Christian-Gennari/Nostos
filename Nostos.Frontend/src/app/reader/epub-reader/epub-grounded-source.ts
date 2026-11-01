@@ -1,3 +1,5 @@
+import { passageOccurrences } from '../passage/note-locating';
+
 export interface EpubSpineSource {
   href: string;
   index: number;
@@ -231,36 +233,13 @@ export interface EpubPassageMatch {
 // Enough words to be a sentence opening rather than a common phrase.
 const PASSAGE_LEAD_WORDS = 8;
 
-function passageMatcher(normalizedPassage: string): RegExp {
-  const pattern = normalizedPassage
-    .split('\n')
-    .map((line) =>
-      line
-        .split(' ')
-        .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-        .join('\\s+'),
-    )
-    // Another reading app marks every line break in what it copies, including
-    // a <br> that contributes no character at all to this text.
-    .join('\\s*');
-  return new RegExp(pattern, 'gu');
-}
-
 function passageMatches(
   sections: readonly { text: string }[],
   normalizedPassage: string,
 ): EpubPassageMatch[] {
-  const matcher = passageMatcher(normalizedPassage);
-  const matches: EpubPassageMatch[] = [];
-  sections.forEach((section, index) => {
-    matcher.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = matcher.exec(section.text)) !== null) {
-      matches.push({ section: index, offset: match.index, length: match[0].length });
-      if (match[0].length === 0) matcher.lastIndex += 1;
-    }
-  });
-  return matches;
+  return sections.flatMap((section, index) =>
+    passageOccurrences(section.text, normalizedPassage).map((match) => ({ section: index, ...match })),
+  );
 }
 
 export interface EpubPassageCandidates {

@@ -612,33 +612,38 @@ public sealed class NoteService : INoteService
             NoteErrorCodes.InvalidHighlightColour,
             $"Highlight colour must be one of: {string.Join(", ", NoteHighlightColours.All)}.");
 
-    public async Task<NoteCommandResult<NoteDto>> SetImportedLocationAsync(
+    /// <summary>
+    /// Saves where a reader found a note's text in the book. An imported
+    /// highlight may be given a place, and so may a quote Ask Nostos saved
+    /// (<see cref="FoundNoteLocation"/>). A place is set once: the first one
+    /// is kept, and a note that already has one is answered as it stands.
+    /// </summary>
+    public async Task<NoteCommandResult<NoteDto>> SetFoundLocationAsync(
         Guid noteId,
-        string? cfiRange,
+        string? location,
         CancellationToken ct = default)
     {
-        var location = cfiRange?.Trim() ?? string.Empty;
-        if (!location.StartsWith("epubcfi(", StringComparison.Ordinal)
-            || !location.EndsWith(')')
-            || location.Length > 1024)
+        var found = location?.Trim() ?? string.Empty;
+        if (!FoundNoteLocation.IsWellFormed(found))
         {
             return NoteCommandResult<NoteDto>.Fail(
-                NoteErrorCodes.LocationNotAllowed, "An EPUB CFI range is required.");
+                NoteErrorCodes.LocationNotAllowed, "An EPUB CFI range or the rectangles of a PDF highlight are required.");
         }
 
         var existing = await _notes.GetByIdWithTopicsAsync(noteId);
         if (existing is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
-        if (existing.CaptureSource != "import")
+        if (!FoundNoteLocation.Allows(existing, found))
         {
             return NoteCommandResult<NoteDto>.Fail(
-                NoteErrorCodes.LocationNotAllowed, "Only an imported highlight can be located.");
+                NoteErrorCodes.LocationNotAllowed,
+                "Only an imported highlight or a quote saved by Ask Nostos can be located.");
         }
 
-        if (string.IsNullOrWhiteSpace(existing.CfiRange))
+        if (FoundNoteLocation.Fills(existing, found))
         {
-            existing.CfiRange = location;
+            existing.CfiRange = found;
             await _notes.SaveChangesAsync();
         }
 

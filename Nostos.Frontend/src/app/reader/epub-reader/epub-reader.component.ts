@@ -14,6 +14,7 @@ import {
   ChangeDetectionStrategy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
@@ -30,10 +31,12 @@ import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeName, ThemeService, themeOption } from '../../core/services/theme.service';
 import { Book as BookDto } from '../../core/dtos/book.dtos';
+import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
 import {
   ImportedNoteLocation,
   Note,
   importedNoteLocation,
+  isAskNostosQuote,
   isImportedAnchor,
   noteHasText,
 } from '../../core/dtos/note.dtos';
@@ -288,25 +291,18 @@ interface LocatedPassage {
   certain: boolean;
 }
 
-const UNLOCATED_NOTES_KEY = 'nostos.reader.unlocatedImportedNotes';
+/** How long a busy page may hold off looking a note's words up. */
+const LOCATE_IDLE_TIMEOUT_MS = 2000;
 
-function readUnlocatedNoteIds(): Set<string> {
-  try {
-    const stored: unknown = JSON.parse(localStorage.getItem(UNLOCATED_NOTES_KEY) ?? '[]');
-    return new Set(Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function rememberUnlocatedNoteId(noteId: string): void {
-  try {
-    const ids = readUnlocatedNoteIds().add(noteId);
-    // Bounded: this is a cache of misses, and forgetting one only costs a retry.
-    localStorage.setItem(UNLOCATED_NOTES_KEY, JSON.stringify([...ids].slice(-500)));
-  } catch {
-    // Storage can be unavailable; the lookup is then simply repeated.
-  }
+/** Resolves when the browser has a moment: the first page keeps the main thread. */
+function browserIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => resolve(), { timeout: LOCATE_IDLE_TIMEOUT_MS });
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
 }
 
 // Longer than any paragraph, in normalized characters.
@@ -339,8 +335,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   notes = input<Note[] | null>(null);
   /** The book is on screen, so highlights can be drawn on it. */
   private readonly pageShown = signal(false);
-  /** This opening's saved highlights have been drawn. */
-  private highlightsRestored = false;
+  /** The notes this opening has dealt with; a later arrival is drawn on its own. */
+  private readonly notesSeen = new Set<string>();
+  /** Lookups run one at a time, each from the same copy of the book's text. */
+  private locating: Promise<void> = Promise.resolve();
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
@@ -353,7 +351,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   /** A tap on the page asked to drop the passage a touch selection offered. */
   selectionDismissed = output<void>();
   commitFailed = output<void>();
-  /** An imported highlight was found in the book and now has a location. */
+  /** An imported highlight or Ask Nostos quote was found and now has a location. */
   noteLocated = output<Note>();
   exitRequested = output<void>();
   /** Ctrl/Cmd+F pressed inside the epub.js iframe, whose events do not bubble to the shell. */
@@ -570,14 +568,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     });
 
     // Draw the saved highlights once, when the book is showing and the
-    // shell's notes are in, whichever comes second.
+    // shell's notes are in, whichever comes second. A note that joins the list
+    // later, such as a quote Ask Nostos just saved, is drawn on its own.
     effect(() => {
       const notes = this.notes();
-      if (!notes || !this.pageShown() || this.highlightsRestored) return;
+      if (!notes || !this.pageShown()) return;
       untracked(() => {
-        this.highlightsRestored = true;
-        this.annotationManager?.restoreHighlights(notes);
-        void this.locateImportedNotes(notes);
+        const arrived = notes.filter((note) => !this.notesSeen.has(note.id));
+        if (arrived.length === 0) return;
+        arrived.forEach((note) => this.notesSeen.add(note.id));
+        this.annotationManager?.restoreHighlights(arrived);
+        this.locating = this.locating.then(() => this.locateNotes(arrived));
       });
     });
 
@@ -942,21 +943,28 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   /**
-   * Give imported highlights a location of their own. Each one found with
-   * certainty is saved once, after which it is drawn and opened like a
-   * highlight made here. Runs after the book is showing and never blocks it.
+   * Give imported highlights and Ask Nostos quotes a location of their own.
+   * Each one found with certainty is saved once, after which it is drawn and
+   * opened like a highlight made here. Runs after the book is showing, waits
+   * for an idle moment, and never blocks it.
    */
-  private async locateImportedNotes(notes: Note[]): Promise<void> {
+  private async locateNotes(notes: Note[]): Promise<void> {
     const book = this.epubBook;
     const notFound = readUnlocatedNoteIds();
-    for (const note of notes) {
-      if (note.cfiRange?.trim() || !isImportedAnchor(note.sourceAnchorKind)) continue;
+    const lookups = notes.flatMap((note) => {
+      if (note.cfiRange?.trim()) return [];
+      if (!isImportedAnchor(note.sourceAnchorKind) && !isAskNostosQuote(note)) return [];
       const location = importedNoteLocation(note);
       // Looking a passage up reads the whole book. A note that was not found
       // once (a page bookmark, a highlight from another edition) is not
       // searched for on every opening; its own jump still looks.
-      if (!location?.text || notFound.has(note.id)) continue;
+      return location?.text && !notFound.has(note.id) ? [{ note, location }] : [];
+    });
+    if (lookups.length === 0) return;
 
+    await browserIdle();
+    for (const { note, location } of lookups) {
+      if (this.epubBook !== book) return;
       try {
         const located = await this.locatePassage(location);
         if (this.epubBook !== book) return;
@@ -967,11 +975,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
         const saved = await firstValueFrom(this.notesService.setLocation(note.id, located.cfi));
         if (this.epubBook !== book) return;
-        if (!saved.cfiRange) continue;
+        // Deleted while it was being looked up: nothing to draw.
+        if (!saved.cfiRange || !this.notes()?.some((held) => held.id === note.id)) continue;
         this.annotationManager?.restoreHighlights([saved]);
         this.noteLocated.emit(saved);
       } catch (error) {
-        console.warn('Could not locate an imported highlight:', error);
+        // The server refused this note for good; asking again would repeat the
+        // whole-book read at every opening.
+        if (error instanceof HttpErrorResponse && error.status === 400) {
+          rememberUnlocatedNoteId(note.id);
+        }
+        console.warn('Could not locate a note in the book:', error);
       }
     }
   }
@@ -1954,7 +1968,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.assistantSelection.set(null);
     this.pageShown.set(false);
     this.resizeAfterFirstPage = false;
-    this.highlightsRestored = false;
+    this.notesSeen.clear();
+    this.locating = Promise.resolve();
     this.progressUnlocked = false;
     this.chapterRanges = [];
     this.chapterBounds = null;

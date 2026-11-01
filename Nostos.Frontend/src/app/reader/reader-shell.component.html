@@ -266,6 +266,7 @@
         [language]="book()?.language ?? null"
         (sidebarVisibleChange)="tocOpen.set($event)"
         (noteCreated)="handleNoteCreated($event)"
+        (noteLocated)="handleNoteLocated($event)"
         (selectionCaptured)="handleSelectionCaptured($event)"
         (selectionAnchored)="handleSelectionAnchored($event)"
         (selectionDismissed)="handleSelectionDismissed()"

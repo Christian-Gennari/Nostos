@@ -7,6 +7,7 @@ import {
   highlightFillVar,
 } from '../highlight-colours';
 import { HighlightHit, RectLike, anchorAroundHit, rectContains } from '../highlight-hit';
+import { passageOccurrences } from '../passage/note-locating';
 
 export interface HighlightRect {
   left: number;
@@ -35,6 +36,81 @@ export type PdfHighlightCapture =
       status: 'cross-page';
       selectedText: string;
     };
+
+interface TextLayerRun {
+  node: Text;
+  /** Offsets into the text `textLayerRuns` returns. */
+  start: number;
+  end: number;
+}
+
+/**
+ * A text layer's text, read the way its words run. A line break is a space
+ * unless a hyphen only marked it ("philo-" + "sophy"), so a passage can cross
+ * lines. Each run remembers its node, so an offset leads back to the page.
+ */
+export function textLayerRuns(layer: HTMLElement): { text: string; runs: TextLayerRun[] } {
+  const walker = document.createTreeWalker(layer, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const runs: TextLayerRun[] = [];
+  let text = '';
+  let lineBreak = false;
+  let lineTop: number | null = null;
+
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if ((node as Element).localName === 'br') lineBreak = true;
+      continue;
+    }
+
+    const content = node as Text;
+    if (!content.data) continue;
+    const box = content.parentElement?.getBoundingClientRect();
+    if (box && lineTop !== null && Math.abs(box.top - lineTop) > box.height / 2) lineBreak = true;
+    if (box) lineTop = box.top;
+
+    if (lineBreak && text) {
+      if (/\p{L}[-‐\u00AD]$/u.test(text) && /^\p{Ll}/u.test(content.data)) {
+        text = text.slice(0, -1);
+        runs[runs.length - 1].end = text.length;
+      } else if (!/\s$/.test(text)) {
+        text += ' ';
+      }
+    }
+    lineBreak = false;
+
+    runs.push({ node: content, start: text.length, end: text.length + content.data.length });
+    text += content.data;
+  }
+
+  return { text, runs };
+}
+
+/** Rectangles on one line become one, so the mark reads as a line of text. */
+function mergeLineRects(rects: HighlightRect[]): HighlightRect[] {
+  const merged: HighlightRect[] = [];
+  for (const rect of rects) {
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    const line = merged[merged.length - 1];
+    if (line && Math.abs(line.top - rect.top) < rect.height / 2 && rect.left >= line.left) {
+      const right = Math.max(line.left + line.width, rect.left + rect.width);
+      const bottom = Math.max(line.top + line.height, rect.top + rect.height);
+      line.top = Math.min(line.top, rect.top);
+      line.width = right - line.left;
+      line.height = bottom - line.top;
+    } else {
+      merged.push({ ...rect });
+    }
+  }
+  return merged;
+}
+
+/** A stored highlight needs no more precision than this; it keeps the note small. */
+const roundRect = (rect: HighlightRect): HighlightRect => ({
+  left: Number(rect.left.toFixed(5)),
+  top: Number(rect.top.toFixed(5)),
+  width: Number(rect.width.toFixed(5)),
+  height: Number(rect.height.toFixed(5)),
+});
 
 @Injectable({
   providedIn: 'root',
@@ -194,13 +270,7 @@ export class PdfAnnotationManager {
       return { status: 'cross-page', selectedText };
     }
 
-    const pageRect = startTextLayer.getBoundingClientRect();
-    const rects = Array.from(range.getClientRects()).map((r) => ({
-      left: (r.left - pageRect.left) / pageRect.width,
-      top: (r.top - pageRect.top) / pageRect.height,
-      width: r.width / pageRect.width,
-      height: r.height / pageRect.height,
-    }));
+    const rects = this.rangeRects(range, startTextLayer);
 
     if (!keepSelection) {
       selection.removeAllRanges();
@@ -252,6 +322,41 @@ export class PdfAnnotationManager {
     const yPercent = (rect.top - pageRect.top) / pageRect.height;
 
     return { pageNumber, yPercent };
+  }
+
+  /**
+   * Where a passage stands in a drawn text layer, as a saved highlight stores
+   * it, or null unless it stands there exactly once. The rectangles come from
+   * the page's own text, as a selection's do, so the mark sits on the words.
+   */
+  quoteRects(textLayer: HTMLElement, quote: string): HighlightRect[] | null {
+    const passage = quote.replace(/\s+/g, ' ').trim();
+    if (!passage) return null;
+
+    const { text, runs } = textLayerRuns(textLayer);
+    const found = passageOccurrences(text, passage);
+    if (found.length !== 1) return null;
+
+    const { offset, length } = found[0];
+    const first = runs.find((run) => run.end > offset);
+    const last = runs.find((run) => run.end >= offset + length);
+    if (!first || !last) return null;
+
+    const range = document.createRange();
+    range.setStart(first.node, Math.max(0, offset - first.start));
+    range.setEnd(last.node, offset + length - last.start);
+    const rects = mergeLineRects(this.rangeRects(range, textLayer)).map(roundRect);
+    return rects.length > 0 ? rects : null;
+  }
+
+  private rangeRects(range: Range, textLayer: HTMLElement): HighlightRect[] {
+    const pageRect = textLayer.getBoundingClientRect();
+    return Array.from(range.getClientRects()).map((r) => ({
+      left: (r.left - pageRect.left) / pageRect.width,
+      top: (r.top - pageRect.top) / pageRect.height,
+      width: r.width / pageRect.width,
+      height: r.height / pageRect.height,
+    }));
   }
 
   private getClosestTextLayer(node: Node): HTMLElement | null {

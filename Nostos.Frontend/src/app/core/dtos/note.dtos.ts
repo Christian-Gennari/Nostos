@@ -208,6 +208,41 @@ export function isImportedAnchor(kind: string | undefined): boolean {
   return /^(koreader|kobo|kindle|readwise)_/i.test(kind ?? '');
 }
 
+/**
+ * True for a quote Ask Nostos saved: words from the book, which a reader may
+ * look up and draw (issue #1338). Nothing else has this shape. A highlight made
+ * in a reader has a location, a typed note has no quote, a photographed page is
+ * `photo`. `FoundNoteLocation` on the server holds the same rule.
+ */
+export function isAskNostosQuote(note: Note): boolean {
+  return (
+    (note.kind ?? 'note') === 'note' &&
+    (note.captureSource ?? 'text') === 'text' &&
+    !!note.selectedText?.trim() &&
+    ['unknown', 'epub_cfi', 'pdf_page'].includes(note.sourceAnchorKind ?? 'unknown')
+  );
+}
+
+/**
+ * The page an Ask Nostos quote in a PDF belongs on, when it still has nothing
+ * to draw there: a known page, and either no location or one with no rects.
+ */
+export function pdfQuotePageToLocate(note: Note): number | null {
+  if (!isAskNostosQuote(note) || note.sourceAnchorKind !== 'pdf_page') return null;
+  const page = Number(note.sourceAnchorValue);
+  if (!Number.isInteger(page) || page < 1) return null;
+
+  const stored = note.cfiRange?.trim();
+  if (!stored) return page;
+  try {
+    const location = JSON.parse(stored) as { pageNumber?: unknown; rects?: unknown };
+    const blank = location.pageNumber === page && Array.isArray(location.rects) && location.rects.length === 0;
+    return blank ? page : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface CreateNoteDto {
   content: string;
   cfiRange?: string;

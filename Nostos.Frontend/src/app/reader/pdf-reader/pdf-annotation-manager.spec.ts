@@ -95,3 +95,85 @@ describe('PdfAnnotationManager saved highlights on the page', () => {
     expect(layer.querySelectorAll('.highlight-note-rule').length).toBe(0);
   });
 });
+
+describe('PdfAnnotationManager.quoteRects (#1338)', () => {
+  function layerWith(lines: string[][]): HTMLElement {
+    const layer = document.createElement('div');
+    layer.className = 'textLayer';
+    for (const line of lines) {
+      for (const run of line) {
+        const span = document.createElement('span');
+        span.textContent = run;
+        layer.appendChild(span);
+      }
+      layer.appendChild(document.createElement('br'));
+    }
+    document.body.appendChild(layer);
+    layer.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 200 }) as DOMRect;
+    return layer;
+  }
+
+  function withRangeRects(rects: Partial<DOMRect>[]): { range: () => Range } {
+    const made = { range: null as unknown as Range };
+    const create = document.createRange.bind(document);
+    vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = create();
+      range.getClientRects = () => rects as unknown as DOMRectList;
+      made.range = range;
+      return range;
+    });
+    return { range: () => made.range };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.replaceChildren();
+  });
+
+  const service = () => TestBed.inject(PdfAnnotationManager);
+
+  it('stores fractions of the page, as a hand-made highlight does', () => {
+    const layer = layerWith([['Sing, goddess, the anger of Achilles']]);
+    const made = withRangeRects([{ left: 10, top: 20, width: 50, height: 4 }]);
+
+    expect(service().quoteRects(layer, 'the anger')).toEqual([
+      { left: 0.1, top: 0.1, width: 0.5, height: 0.02 },
+    ]);
+    expect(made.range().toString()).toBe('the anger');
+  });
+
+  it('follows a passage across lines and through a word split at a line end', () => {
+    const layer = layerWith([['the anger of philo-'], ['sophy and'], ['of nothing else']]);
+    const made = withRangeRects([{ left: 10, top: 20, width: 50, height: 4 }]);
+
+    expect(service().quoteRects(layer, 'of philosophy and of nothing')).not.toBeNull();
+    expect(made.range().toString()).toBe('of philo-sophy andof nothing');
+  });
+
+  it('draws one rectangle per line, however many runs the line is made of', () => {
+    const layer = layerWith([['the anger '], ['of Achilles']]);
+    withRangeRects([
+      { left: 10, top: 20, width: 20, height: 4 },
+      { left: 30, top: 20, width: 20, height: 4 },
+      { left: 10, top: 30, width: 20, height: 4 },
+    ]);
+
+    expect(service().quoteRects(layer, 'the anger of Achilles')).toEqual([
+      { left: 0.1, top: 0.1, width: 0.4, height: 0.02 },
+      { left: 0.1, top: 0.15, width: 0.2, height: 0.02 },
+    ]);
+  });
+
+  it('gives nothing unless the words stand on the page exactly once', () => {
+    const layer = layerWith([['the anger and'], ['the anger']]);
+    withRangeRects([{ left: 10, top: 20, width: 50, height: 4 }]);
+
+    expect(service().quoteRects(layer, 'the anger')).toBeNull();
+    expect(service().quoteRects(layer, 'the sorrow')).toBeNull();
+    expect(service().quoteRects(layer, '   ')).toBeNull();
+  });
+
+  it('gives nothing, and no error, for a scanned page with no text', () => {
+    expect(service().quoteRects(layerWith([]), 'the anger')).toBeNull();
+  });
+});
