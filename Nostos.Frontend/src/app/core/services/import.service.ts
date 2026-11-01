@@ -112,6 +112,9 @@ export class ImportService {
   private source: EventSource | null = null;
   private hasOpened = false;
 
+  /** The server's last word was that nothing is in flight, and nothing here has queued since. */
+  private knownIdle = false;
+
   /**
    * Start watching, if there is anything to watch.
    *
@@ -122,6 +125,8 @@ export class ImportService {
     if (this.source) return;
 
     this.connection.set('connecting');
+    // Whoever asks may just have queued something: nothing is known until the answer.
+    this.knownIdle = false;
 
     // Re-read first: the stream only reports CHANGE, so deciding whether it is
     // worth opening at all (and what the current state is) has to come from the
@@ -129,6 +134,7 @@ export class ImportService {
     this.http.get<ImportActivity[]>('/api/imports/active').subscribe({
       next: (entries) => {
         this.absorb(entries);
+        this.knownIdle = !this.hasActiveImports();
         this.openIfWorthwhile();
       },
       error: () => {
@@ -138,6 +144,15 @@ export class ImportService {
         this.connection.set('reconnecting');
       },
     });
+  }
+
+  /**
+   * `ensureConnected`, spared when the last answer was idle. Only for a screen that
+   * is about to re-read the list anyway, where an import started out of sight shows
+   * up as a row; the screen then calls `ensureConnected` for it.
+   */
+  ensureConnectedUnlessIdle(): void {
+    if (!this.knownIdle) this.ensureConnected();
   }
 
   /** Stop watching and drop the connection (used on sign-out / teardown paths). */
@@ -361,6 +376,7 @@ export class ImportService {
    */
   private closeIfSettled(): void {
     if (this.hasActiveImports()) return;
+    this.knownIdle = true;
     if (!this.source) return;
 
     this.closeSource();

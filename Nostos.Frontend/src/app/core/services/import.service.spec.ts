@@ -343,4 +343,63 @@ describe('ImportService', () => {
 
     http.expectNone('/api/providers/gutenberg/acquire');
   });
+
+  describe('ensureConnectedUnlessIdle', () => {
+    const answer = (entries: ImportActivity[]) => activeRequest().flush(entries);
+
+    it('asks when it has never heard from the server', () => {
+      service.ensureConnectedUnlessIdle();
+
+      answer([]);
+    });
+
+    it('spares the read when the last answer was idle', () => {
+      service.ensureConnected();
+      answer([]);
+
+      service.ensureConnectedUnlessIdle();
+
+      http.expectNone('/api/imports/active');
+    });
+
+    it('asks again when the last answer had work in flight', () => {
+      service.ensureConnected();
+      answer([activity()]);
+      service.disconnect();
+
+      service.ensureConnectedUnlessIdle();
+
+      answer([activity()]);
+    });
+
+    it('asks again when the last read failed', () => {
+      service.ensureConnected();
+      activeRequest().flush('down', { status: 503, statusText: 'Unavailable' });
+
+      service.ensureConnectedUnlessIdle();
+
+      answer([]);
+    });
+
+    it('asks again once an import has been queued, whatever the last answer was', () => {
+      service.ensureConnected();
+      answer([]);
+
+      // The add-book dialog and the book page call this right after queueing.
+      service.ensureConnected();
+      service.ensureConnectedUnlessIdle();
+
+      expect(http.match('/api/imports/active')).toHaveLength(2);
+    });
+
+    it('is spared again once the feed has settled by itself', () => {
+      service.ensureConnected();
+      answer([activity()]);
+      stream().emit('progress', [activity({ state: 'succeeded' })]);
+
+      service.ensureConnectedUnlessIdle();
+
+      http.expectNone('/api/imports/active');
+    });
+  });
 });

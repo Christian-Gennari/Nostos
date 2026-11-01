@@ -6,6 +6,8 @@ import {
   signal,
   computed,
   ChangeDetectionStrategy,
+  ElementRef,
+  afterNextRender,
   effect,
   untracked,
   ViewChild,
@@ -14,7 +16,7 @@ import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indic
 import { PHONE_QUERY, isPhoneViewport } from '../ui/breakpoints';
 import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationStart, Router, RouterLink } from '@angular/router';
 import { BooksService, type BookListOptions } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { Collection } from '../core/dtos/collection.dtos';
@@ -39,6 +41,7 @@ import { PagingStatusComponent } from '../ui/paging-status/paging-status.compone
 import { BookSort } from '../core/dtos/book.enums';
 import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
+import { LibraryListCacheService } from './library-list-cache.service';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
@@ -169,6 +172,7 @@ export class Library implements OnInit, OnDestroy {
   private readonly libraryChanges = inject(LibraryChangesService);
   private readonly cloudEntry = inject(CloudEntryService);
   private readonly externalMedia = inject(ExternalMediaService);
+  private readonly listCache = inject(LibraryListCacheService);
 
   // Enums for Template Access
   BookSort = BookSort;
@@ -207,6 +211,19 @@ export class Library implements OnInit, OnDestroy {
   collections = signal<Collection[]>([]);
 
   @ViewChild(SidebarCollections) private sidebar?: SidebarCollections;
+  @ViewChild('resultsScroller') private resultsScroller?: ElementRef<HTMLElement>;
+
+  /**
+   * Where the reader was when a navigation away began. Read then, not on the way
+   * out: by the time this page is destroyed its element is detached and reports 0.
+   */
+  private scrollTopOnLeaving = 0;
+
+  /** This mount put a kept list back, so the import feed need not be re-read. */
+  private restored = false;
+
+  /** A kept list has not been re-read yet. See `refreshInPlace`. */
+  private revalidationOwed = false;
 
   viewMode = this.preferences.viewMode;
   /**
@@ -359,6 +376,16 @@ export class Library implements OnInit, OnDestroy {
     // so cross-fade the results in instead of flashing a placeholder again.
     if (this.preferences.hasLoadedBooks()) this.loading.set(false);
 
+    // Coming Back: the list as it was left, on the same card, at once.
+    this.restored = this.restoreList();
+    let firstLoad = true;
+
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event instanceof NavigationStart) {
+        this.scrollTopOnLeaving = this.scrollSurface()?.scrollTop ?? 0;
+      }
+    });
+
     // Search Subscription
     this.searchSubject
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed())
@@ -372,7 +399,12 @@ export class Library implements OnInit, OnDestroy {
       this.filters.status();
       this.filters.format();
       this.filters.collectionId();
-      untracked(() => this.refreshBooks());
+      untracked(() => {
+        // A kept list is already on screen: it is checked quietly, not replaced.
+        if (firstLoad && this.restored) this.refreshInPlace();
+        else this.refreshBooks();
+        firstLoad = false;
+      });
     });
 
     // An import changes what the library should contain, and the page in hand was
@@ -416,13 +448,71 @@ export class Library implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadCollections();
     // Only opens a stream if something is actually in flight; the service re-reads
-    // /api/imports/active to decide.
-    this.imports.ensureConnected();
+    // /api/imports/active to decide. A kept list spares that read when the last
+    // answer was idle: its own re-read shows any import that began since.
+    if (this.restored) this.imports.ensureConnectedUnlessIdle();
+    else this.imports.ensureConnected();
   }
 
   ngOnDestroy(): void {
     this.deleteLookup?.unsubscribe();
     this.document.body?.classList.remove('nostos-library');
+    this.keepList();
+  }
+
+  /** Puts the list left earlier back on screen, if it answers the same query. */
+  private restoreList(): boolean {
+    const kept = this.listCache.restore();
+    if (!kept || kept.key !== this.listKey(kept.search)) return false;
+
+    this.searchQuery.set(kept.search);
+    this.rawBooks.set(kept.books);
+    this.totalItems.set(kept.total);
+    this.currentPage.set(kept.page);
+    this.collections.set(kept.collections);
+    this.loading.set(false);
+    this.revalidationOwed = true;
+    afterNextRender(() => {
+      const surface = this.scrollSurface();
+      if (surface) surface.scrollTop = kept.scrollTop;
+    });
+    return true;
+  }
+
+  /** Hands the list to the cache, for a Back that may come later. */
+  private keepList(): void {
+    // Mid-swap or mid-failure the list on screen is not the answer to the query.
+    const settled = !this.loading() && !this.swapping() && !this.loadFailed();
+    this.listCache.save(
+      settled
+        ? {
+            key: this.listKey(this.searchQuery()),
+            search: this.searchQuery(),
+            books: this.rawBooks(),
+            total: this.totalItems(),
+            // A page still on its way counts as not loaded: the page counter has
+            // moved on already, and keeping it would skip that page for good.
+            page: this.currentPage() - (this.loadingMore() ? 1 : 0),
+            collections: this.collections(),
+            scrollTop: this.scrollTopOnLeaving,
+          }
+        : null,
+    );
+  }
+
+  /** What a list answers: filters, sort, page size, grouping and the given search. */
+  private listKey(search: string): string {
+    return JSON.stringify({ ...this.listQuery(1), search });
+  }
+
+  /**
+   * What scrolls the results. `withInMemoryScrolling` cannot put this back: it only
+   * knows the window, and neither surface here is the window. Phones scroll `body`
+   * (its `overflow-x` makes it a scroller of its own, so `window.scrollY` stays 0),
+   * everything wider the results column.
+   */
+  private scrollSurface(): Element | null | undefined {
+    return isPhoneViewport() ? this.document.body : this.resultsScroller?.nativeElement;
   }
 
   refreshBooks(reset = true, showWaiting = true): void {
@@ -484,7 +574,9 @@ export class Library implements OnInit, OnDestroy {
    * re-renders nothing and a changed one updates where the reader is looking.
    *
    * A read the user started is newer than this one and is left alone; the
-   * change it may have missed arrives with the next announcement.
+   * change it may have missed arrives with the next announcement. The exception
+   * is a list restored on Back: nothing will announce what changed while it was
+   * away, so `revalidationOwed` asks again once a page the user asked for lands.
    */
   private refreshInPlace(): void {
     if (this.loading() || this.loadingMore() || this.swapping() || this.loadFailed()) return;
@@ -511,11 +603,23 @@ export class Library implements OnInit, OnDestroy {
             .filter((book) => !seen.has(book.id) && !!seen.add(book.id)),
         );
         this.totalItems.set(results[results.length - 1].totalCount);
+        this.revalidationOwed = false;
+        this.watchUnseenImports();
       },
       // A background re-read that fails leaves the list as it was; the next
       // change or a user action reads again.
       error: () => undefined,
     });
+  }
+
+  /**
+   * An importing book is always in the first page, so this is how an import that
+   * began out of this tab's sight is found: its row turns up in a quiet re-read
+   * while the feed is asleep.
+   */
+  private watchUnseenImports(): void {
+    const importing = this.rawBooks().filter((book) => book.status === 1 || book.status === 2);
+    if (importing.some((book) => !this.bookProgress(book))) this.imports.ensureConnected();
   }
 
   /** The list query for one page under the current filters, sort and search. */
@@ -565,6 +669,10 @@ export class Library implements OnInit, OnDestroy {
       // (the server sorts an import first), and the question the user cares about is
       // whether it is still in front of them once it stopped being an import.
       this.flushReadyNotice();
+
+      // A full first page settles what a restored list owed; another page does not.
+      if (reset) this.revalidationOwed = false;
+      else if (this.revalidationOwed) this.refreshInPlace();
     };
 
     if (!reset || prefersReducedMotion()) {

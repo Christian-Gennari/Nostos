@@ -64,6 +64,7 @@ import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-a
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
+import { LIBRARY_BACK_STATE } from '../library/library-list-cache.service';
 import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
@@ -136,6 +137,9 @@ export class BookDetail implements OnInit, OnDestroy {
   private injector = inject(Injector);
 
   // Inject the Store
+  /** The header's Library link is Back: it returns to the list as it was left. */
+  protected readonly libraryBackState = LIBRARY_BACK_STATE;
+
   readonly store = inject(BookDetailStore);
   /** The book's notes are the Brain's cards, with the Brain's actions. */
   readonly brain = inject(BrainStateService);
