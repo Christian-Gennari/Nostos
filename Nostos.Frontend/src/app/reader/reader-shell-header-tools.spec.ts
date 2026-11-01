@@ -183,6 +183,7 @@ describe('ReaderShell header tools', () => {
             requestSurfaceOpen: vi.fn(),
             isOpen: vi.fn(() => false),
             surfaceAvailable: vi.fn(() => true),
+            capturedNoteId: vi.fn(() => null),
           },
         },
         {

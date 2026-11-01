@@ -100,6 +100,7 @@ internal static class FoundNoteLocation
                 using var document = JsonDocument.Parse(location);
                 var root = document.RootElement;
                 if (!root.TryGetProperty("pageNumber", out var number)
+                    || number.ValueKind != JsonValueKind.Number
                     || !number.TryGetInt32(out var page)
                     || page < 1
                     || !root.TryGetProperty("rects", out var rects)

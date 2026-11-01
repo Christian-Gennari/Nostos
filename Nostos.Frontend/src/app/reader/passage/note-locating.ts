@@ -34,9 +34,26 @@ function characterPattern(character: string): string {
   return character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const LIGATURES: Record<string, string> = {
+  ffi: '\uFB03',
+  ffl: '\uFB04',
+  ff: '\uFB00',
+  fi: '\uFB01',
+  fl: '\uFB02',
+};
+const LIGATURE_LETTERS = /ffi|ffl|ff|fi|fl|[^]/gu;
+
 function wordPattern(word: string): string {
-  // A soft hyphen is invisible in the book and absent from a copy of its words.
-  return Array.from(word).map(characterPattern).join(`${SOFT_HYPHEN}*`);
+  // A book's type may join letters a copy of its words keeps apart.
+  const pieces = word.replace(/[\uFB00-\uFB04]/g, (ligature) => ligature.normalize('NFKC'));
+  return (pieces.match(LIGATURE_LETTERS) ?? [])
+    .map((piece) =>
+      LIGATURES[piece]
+        ? `(?:${Array.from(piece).join(`${SOFT_HYPHEN}*`)}|${LIGATURES[piece]})`
+        : characterPattern(piece),
+    )
+    // A soft hyphen is invisible in the book and absent from a copy of its words.
+    .join(`${SOFT_HYPHEN}*`);
 }
 
 /**

@@ -3863,6 +3863,78 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task A_quote_is_not_given_the_top_of_the_open_page_as_its_location()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "The Magic Mountain");
+
+        h.Llm
+            .CallsTool("notes_capture", """{"selectedText":"The words of the book"}""")
+            .Returns("Saved.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save that line.",
+            Context(
+                bookId: book.Id.ToString(),
+                bookTitle: "The Magic Mountain",
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)")));
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.CfiRange.Should().BeNull("the reader finds the words and saves where they are");
+        note.SourceAnchorKind.Should().Be("epub_cfi");
+        note.SourceAnchorValue.Should().Be("epubcfi(/6/4[chap01]!/4/2/2)");
+    }
+
+    [Fact]
+    public async Task A_quote_found_in_a_pdf_is_saved_on_its_own_page_not_the_open_one()
+    {
+        var h = CreateHarness();
+        var work = new WorkModel { Id = Guid.NewGuid(), Title = "The Valley" };
+        h.Db.Works.Add(work);
+        var pdf = new EBookModel
+        {
+            Id = Guid.NewGuid(),
+            Title = "The Valley",
+            Author = "Author",
+            WorkId = work.Id,
+            FileDetails = new FileInfoDetails { HasFile = true, FileName = "valley.pdf" },
+        };
+        h.Db.Books.Add(pdf);
+        await h.Db.SaveChangesAsync();
+        await SeedBookTextChunksAsync(h, pdf.Id, BookTextSourceFormat.Pdf,
+            "Chapter one begins with the mountains and nothing else of note happens here.",
+            ValleyPassage + " Then the winter came again.");
+
+        var quoteRef = await FindQuoteRefAsync(h, pdf.Id, "the time of the", "never came back");
+        h.Llm
+            .CallsTool("book_text_find_quote", """{"startsWith":"the time of the","endsWith":"never came back"}""")
+            .CallsTool("notes_capture", $$"""{"quoteRef":"{{quoteRef}}"}""")
+            .Returns("Saved the quote.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "It starts with the time of the and ends with never came back. Save it.",
+            Context(
+                bookId: pdf.Id.ToString(),
+                bookTitle: pdf.Title,
+                bookFormat: "pdf",
+                readerType: "pdf",
+                pdfPage: 1)));
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SelectedText.Should().Be(ValleyPassage);
+        note.SourceAnchorKind.Should().Be("pdf_page");
+        note.SourceAnchorValue.Should().Be("2", "the chunk stands on the second physical page");
+        note.AnchorVerified.Should().BeTrue();
+        using var location = JsonDocument.Parse(note.CfiRange!);
+        location.RootElement.GetProperty("pageNumber").GetInt32().Should().Be(2);
+        location.RootElement.GetProperty("rects").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
     public async Task Quote_ref_wins_over_a_selected_text_the_model_retyped()
     {
         var h = CreateHarness();
@@ -4010,11 +4082,15 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         return (paper, epub);
     }
 
-    private static async Task SeedBookTextChunksAsync(Harness h, Guid bookId, params string[] texts)
+    private static Task SeedBookTextChunksAsync(Harness h, Guid bookId, params string[] texts) =>
+        SeedBookTextChunksAsync(h, bookId, BookTextSourceFormat.Epub, texts);
+
+    private static async Task SeedBookTextChunksAsync(
+        Harness h, Guid bookId, BookTextSourceFormat format, params string[] texts)
     {
         var index = new SqliteBookTextIndex(h.Factory);
         await index.EnsureSchemaAsync();
-        await index.ScheduleAsync(bookId, "valley.epub", BookTextSourceFormat.Epub);
+        await index.ScheduleAsync(bookId, format == BookTextSourceFormat.Pdf ? "valley.pdf" : "valley.epub", format);
         var work = await index.TryClaimNextAsync(TimeSpan.FromHours(1));
         work.Should().NotBeNull();
 
@@ -4022,7 +4098,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             bookId,
             new string('d', 64),
             BookTextArtifactSchema.CurrentExtractorVersion,
-            BookTextSourceFormat.Epub);
+            format);
         var chunks = texts.Select((text, ordinal) => new BookTextIndexedChunk(
             BookTextIdentity.ChunkId(revision, ordinal),
             bookId,
@@ -4032,7 +4108,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             ordinal,
             text,
             [$"Chapter {ordinal + 1}"],
-            [new BookTextSourceSegment(0, text.Length, new EpubBookTextSourceLocator(ordinal, $"ch{ordinal}.xhtml"))]))
+            [new BookTextSourceSegment(
+                0,
+                text.Length,
+                format == BookTextSourceFormat.Pdf
+                    ? new PdfBookTextSourceLocator(ordinal)
+                    : new EpubBookTextSourceLocator(ordinal, $"ch{ordinal}.xhtml"))]))
             .ToList();
 
         (await index.ReplaceReadyAsync(revision, chunks, texts.Sum(text => text.Length), work!.Attempt))

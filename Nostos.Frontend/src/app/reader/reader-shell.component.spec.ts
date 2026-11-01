@@ -378,6 +378,7 @@ async function configureReaderShell(
           requestSurfaceOpen: vi.fn(),
           isOpen: vi.fn(() => false),
           surfaceAvailable: vi.fn(() => true),
+          capturedNoteId: signal<string | null>(null),
         },
       },
     ],
@@ -1200,6 +1201,69 @@ describe('ReaderShell shared save and load ownership (#479)', () => {
     expect(component.loadError()).toBeNull();
     expect(component.ready()).toBe(true);
     fixture.destroy();
+  });
+});
+
+describe('ReaderShell a quote Ask Nostos saves while the book is open (#1338)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+  let shell: ReaderShell;
+  let notes: { get: ReturnType<typeof vi.fn>; list: ReturnType<typeof vi.fn> };
+  let captured: ReturnType<typeof signal<string | null>>;
+
+  const hit = (overrides: object = {}) => ({
+    id: 'q-1',
+    bookId: 'book-1',
+    bookTitle: 'A Book',
+    content: '',
+    selectedText: 'The words',
+    snippet: null,
+    topicNames: [],
+    createdAt: '2026-09-21T10:00:00Z',
+    cfiRange: null,
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    booksGetSpy.mockReset();
+    booksGetSpy.mockReturnValue(of(audiobook));
+    localStorage.clear();
+    mockMatchMedia();
+    fixture = await configureReaderShell();
+    shell = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    notes = TestBed.inject(NotesService) as never;
+    notes.get = vi.fn(() => of(hit()));
+    notes.list.mockClear();
+    captured = TestBed.inject(AssistantService).capturedNoteId as never;
+    shell.book.set({ ...audiobook, id: 'book-1' } as never);
+    shell.notesLoaded.set(true);
+  });
+
+  it('adds the one note the turn names, without reading the list again', () => {
+    captured.set('q-1');
+    TestBed.tick();
+
+    expect(notes.get).toHaveBeenCalledWith('q-1');
+    expect(notes.list).not.toHaveBeenCalled();
+    expect(shell.readerNotes()?.map((note) => note.id)).toEqual(['q-1']);
+  });
+
+  it('leaves a note saved to another book out of this one', () => {
+    notes.get.mockReturnValue(of(hit({ bookId: 'book-2' })));
+    captured.set('q-1');
+    TestBed.tick();
+
+    expect(shell.dbNotes()).toEqual([]);
+  });
+
+  it('asks for nothing when the note is already held', () => {
+    shell.dbNotes.set([{ id: 'q-1', bookId: 'book-1', content: '', createdAt: '' }]);
+    captured.set('Q-1');
+    TestBed.tick();
+
+    expect(notes.get).not.toHaveBeenCalled();
+    expect(shell.dbNotes()).toHaveLength(1);
   });
 });
 

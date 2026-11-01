@@ -16,6 +16,10 @@ export type NoteSourceParams =
 export function noteSourceParams(note: NoteSearchHit | NoteContextDto): NoteSourceParams | null {
   const anchor = note.anchorVerified ? note.sourceAnchorValue?.trim() : null;
   const kind = note.sourceAnchorKind?.toLowerCase();
+  // A quote's anchor may be only the page the reader was on; its own location
+  // is the passage.
+  const cfi = note.cfiRange?.trim();
+  if (cfi?.startsWith('epubcfi(')) return { sourceCfi: cfi };
   if (kind === 'pdf_page' && anchor) {
     const page = Number(anchor);
     if (Number.isInteger(page) && page > 0) return { sourcePage: page };
@@ -25,8 +29,6 @@ export function noteSourceParams(note: NoteSearchHit | NoteContextDto): NoteSour
     const sourceTime = Number(anchor);
     if (Number.isFinite(sourceTime) && sourceTime >= 0) return { sourceTime };
   }
-  const cfi = note.cfiRange?.trim();
-  if (cfi?.startsWith('epubcfi(')) return { sourceCfi: cfi };
 
   // An imported highlight has no location until the reader has found it in
   // the book, so the link names the note and the reader looks it up.

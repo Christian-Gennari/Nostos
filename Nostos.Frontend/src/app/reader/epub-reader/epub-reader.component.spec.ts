@@ -401,10 +401,16 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
       fixture.detectChanges();
       expect(restore).toHaveBeenCalledTimes(1);
 
-      // A note added or removed later is the shell's to draw, not a second restore.
-      fixture.componentRef.setInput('notes', [...saved, { ...saved[0], id: 'c' }]);
+      // A note that joins the list later is drawn on its own; a removal draws nothing.
+      const arrived = { ...saved[0], id: 'c' };
+      fixture.componentRef.setInput('notes', [...saved, arrived]);
       fixture.detectChanges();
-      expect(restore).toHaveBeenCalledTimes(1);
+      expect(restore).toHaveBeenCalledTimes(2);
+      expect(restore).toHaveBeenLastCalledWith([arrived]);
+
+      fixture.componentRef.setInput('notes', saved);
+      fixture.detectChanges();
+      expect(restore).toHaveBeenCalledTimes(2);
       expect(notesService.list).not.toHaveBeenCalled();
     });
 

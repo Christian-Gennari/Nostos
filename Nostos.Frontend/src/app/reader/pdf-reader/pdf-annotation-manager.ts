@@ -330,10 +330,7 @@ export class PdfAnnotationManager {
    * the page's own text, as a selection's do, so the mark sits on the words.
    */
   quoteRects(textLayer: HTMLElement, quote: string): HighlightRect[] | null {
-    const passage = quote
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/[\uFB00-\uFB06]/g, (ligature) => ligature.normalize('NFKC'));
+    const passage = quote.replace(/\s+/g, ' ').trim();
     if (!passage) return null;
 
     const { text, runs } = textLayerRuns(textLayer);
