@@ -250,6 +250,35 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     });
   });
 
+  it('draws its saved highlights from the notes it is given, without fetching them (#1319)', () => {
+    notesService.list.mockClear();
+    setupComponent();
+    const reader = fixture.componentInstance as any;
+    const repaint = vi.spyOn(reader, 'repaintPage').mockImplementation(() => {});
+
+    fixture.componentRef.setInput('notes', [
+      {
+        id: 'n-1',
+        bookId: 'book-1',
+        content: 'margin',
+        createdAt: '2026-01-01T00:00:00Z',
+        cfiRange: JSON.stringify({ pageNumber: 4, rects: [] }),
+        highlightColour: 'rose',
+      },
+      { id: 'n-2', bookId: 'book-1', content: 'bookmark', createdAt: '2026-01-02T00:00:00Z' },
+    ]);
+    fixture.detectChanges();
+
+    expect(reader.savedHighlights).toEqual([
+      expect.objectContaining({ id: 'n-1', pageNumber: 4, colour: 'rose', noted: true }),
+    ]);
+    expect(repaint).toHaveBeenCalledWith(4);
+
+    reader.onPagesLoaded({ pagesCount: 10 } as never);
+    expect(repaint).toHaveBeenCalledTimes(2);
+    expect(notesService.list).not.toHaveBeenCalled();
+  });
+
   it('reports chapter progress next to the book progress it saves (#1269)', () => {
     setupComponent();
     const reader = fixture.componentInstance as any;

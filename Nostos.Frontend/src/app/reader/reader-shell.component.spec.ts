@@ -74,8 +74,9 @@ class PdfReaderStub {
   language = input<string | null>(null);
   sidebarVisible = input(false);
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
+  notes = input<Note[] | null>(null);
   sidebarVisibleChange = output<boolean>();
-  noteCreated = output<void>();
+  noteCreated = output<Note>();
   selectionCaptured = output<unknown>();
   selectionAnchored = output<unknown>();
   selectionDismissed = output<void>();
@@ -121,7 +122,8 @@ class EpubReaderStub {
   // position without a second GET (issue #225 §1.2).
   book = input<unknown>(null);
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
-  noteCreated = output<void>();
+  notes = input<Note[] | null>(null);
+  noteCreated = output<Note>();
   selectionCaptured = output<unknown>();
   selectionAnchored = output<unknown>();
   selectionDismissed = output<void>();
@@ -2327,7 +2329,13 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
 
     expect(stub().commitHighlight).toHaveBeenCalledWith('The rage that starts it all.', expect.any(String));
 
-    component.handleNoteCreated();
+    component.handleNoteCreated({
+      id: 'n-new',
+      bookId: 'book-sel',
+      content: 'The rage that starts it all.',
+      cfiRange: 'epubcfi(/6/4!/4/2/1:0)',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
     render();
     expect(el('selection-menu')).toBeNull();
     expect(component.noteDraft()).toBe('');
@@ -3244,6 +3252,189 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
 
     component.askNostosAboutHighlight();
     expect(TestBed.inject(AssistantService).requestSurfaceOpen).toHaveBeenCalled();
+  });
+});
+
+describe('ReaderShell reads the notes of a book once (#1319)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+  const CFI = 'epubcfi(/6/4!/4/2/1:0)';
+
+  const note = (overrides: Partial<Note>): Note => ({
+    id: 'n-1',
+    bookId: 'book-1319',
+    content: '',
+    cfiRange: CFI,
+    selectedText: 'Sing, goddess',
+    createdAt: '2026-01-01T00:00:00Z',
+    highlightColour: 'sage',
+    ...overrides,
+  });
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  function service() {
+    return TestBed.inject(NotesService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+  }
+
+  function epub(): EpubReaderStub {
+    return fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance;
+  }
+
+  async function openBook(existing: Note[] = []) {
+    booksGetSpy.mockReset();
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-1319', fileName: 'iliad.epub' } as Book));
+    fixture = await configureReaderShell();
+    service()['list'].mockReturnValue(of([...existing]));
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    render();
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia();
+  });
+
+  it('opening a book reads its notes and their topics once, and hands the list to the page reader', async () => {
+    const component = await openBook([note({ id: 'a' }), note({ id: 'b', cfiRange: 'epubcfi(/6/8)' })]);
+
+    expect(service()['list']).toHaveBeenCalledTimes(1);
+    expect(service()['browse']).toHaveBeenCalledTimes(1);
+    expect(epub().notes()?.map((n) => n.id)).toEqual(['b', 'a']);
+    expect(component.notesLoaded()).toBe(true);
+  });
+
+  it('the page reader gets no list until the notes are in', async () => {
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-1319', fileName: 'iliad.epub' } as Book));
+    fixture = await configureReaderShell();
+    const pending = new Subject<Note[]>();
+    service()['list'].mockReturnValue(pending);
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    render();
+    expect(epub().notes()).toBeNull();
+
+    pending.next([note({})]);
+    render();
+    expect(epub().notes()?.map((n) => n.id)).toEqual(['n-1']);
+  });
+
+  it('a highlight joins the list from the save, with no reload of the notes', async () => {
+    const component = await openBook([note({ id: 'old' })]);
+    service()['list'].mockClear();
+    service()['browse'].mockClear();
+
+    component.handleNoteCreated(note({ id: 'fresh', cfiRange: 'epubcfi(/6/10)' }));
+    render();
+
+    expect(component.dbNotes().map((n) => n.id)).toEqual(['fresh', 'old']);
+    expect(service()['list']).not.toHaveBeenCalled();
+    expect(service()['browse']).not.toHaveBeenCalled();
+    // A plain highlight has no text to link topics from: nothing to ask for.
+    expect(service()['get']).not.toHaveBeenCalled();
+  });
+
+  it('a note with text shows its topics, read for that one note', async () => {
+    const component = await openBook([]);
+    service()['list'].mockClear();
+    service()['browse'].mockClear();
+    service()['get'].mockReturnValue(of({ id: 'fresh', topicNames: ['wrath'] }));
+
+    component.handleNoteCreated(note({ id: 'fresh', content: 'About [[wrath]]' }));
+    render();
+
+    expect(service()['get']).toHaveBeenCalledTimes(1);
+    expect(service()['get']).toHaveBeenCalledWith('fresh');
+    expect(component.noteRows()[0].item.topicNames).toEqual(['wrath']);
+    expect(service()['list']).not.toHaveBeenCalled();
+    expect(service()['browse']).not.toHaveBeenCalled();
+  });
+
+  it('a note already in the list is not added twice', async () => {
+    const component = await openBook([note({ id: 'a' })]);
+    component.handleNoteCreated(note({ id: 'a' }));
+    expect(component.dbNotes().map((n) => n.id)).toEqual(['a']);
+  });
+
+  it('a quick note joins the list from the save, with no reload', async () => {
+    const component = await openBook([note({ id: 'old' })]);
+    service()['list'].mockClear();
+    service()['browse'].mockClear();
+    service()['create'].mockReturnValue(of(note({ id: 'quick', cfiRange: undefined, content: 'A thought' })));
+
+    (epub() as unknown as { getCurrentLocation: () => string }).getCurrentLocation = () => CFI;
+    component.quickNoteContent.set('A thought');
+    component.saveQuickNote();
+
+    expect(service()['create']).toHaveBeenCalledTimes(1);
+    expect(component.dbNotes().map((n) => n.id)).toEqual(['quick', 'old']);
+    expect(service()['list']).not.toHaveBeenCalled();
+    expect(service()['browse']).not.toHaveBeenCalled();
+  });
+
+  it('a saved passage joins the list from the save, with no reload', async () => {
+    const component = await openBook([note({ id: 'old' })]);
+    service()['list'].mockClear();
+    service()['browse'].mockClear();
+    service()['create'].mockReturnValue(
+      of(note({ id: 'passage', kind: 'passage', passageTitle: 'Book I', content: '' })),
+    );
+    component.passageDraft.set({
+      anchorKind: 'epub_cfi',
+      start: 'epubcfi(/6/2)',
+      end: 'epubcfi(/6/4)',
+      title: 'Book I',
+      html: null,
+      text: 'Sing',
+      words: 1,
+      opening: 'Sing',
+    } as never);
+    component.passageTitle.set('Book I');
+
+    component.savePassage();
+
+    expect(service()['create']).toHaveBeenCalledTimes(1);
+    expect(component.dbNotes().map((n) => n.id)).toEqual(['passage', 'old']);
+    expect(service()['list']).not.toHaveBeenCalled();
+    expect(service()['browse']).not.toHaveBeenCalled();
+  });
+
+  it('a note just created can be edited and deleted like any other', async () => {
+    const component = await openBook([]);
+    const created = note({ id: 'fresh', content: '' });
+    component.handleNoteCreated(created);
+    service()['update'].mockReturnValue(of({ ...created, content: 'Why rage?' }));
+    service()['delete'].mockReturnValue(of(undefined));
+
+    component.onUpdateNote({ id: 'fresh', content: 'Why rage?' });
+    expect(component.dbNotes()[0].content).toBe('Why rage?');
+
+    component.onDeleteNote('fresh');
+    component.noteActions.confirmDelete();
+    expect(service()['delete']).toHaveBeenCalledWith('fresh');
+    expect(epub().removeHighlight).toHaveBeenCalledWith(CFI);
+    expect(component.dbNotes()).toEqual([]);
+  });
+
+  it('Try again after a failed read loads the list and hands it to the page reader', async () => {
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-1319', fileName: 'iliad.epub' } as Book));
+    fixture = await configureReaderShell();
+    service()['list'].mockReturnValue(throwError(() => new Error('offline')));
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    render();
+    expect(epub().notes()).toBeNull();
+    expect(fixture.componentInstance.notesFailed()).toBe(true);
+
+    service()['list'].mockReturnValue(of([note({})]));
+    fixture.componentInstance.retryNotes();
+    render();
+
+    expect(epub().notes()?.map((n) => n.id)).toEqual(['n-1']);
   });
 });
 

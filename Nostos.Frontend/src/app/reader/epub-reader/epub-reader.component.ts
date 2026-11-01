@@ -326,7 +326,18 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    * laid out and persisted (issue #225 §1.2). Same contract as AudioReader.
    */
   book = input<BookDto | null>(null);
-  noteCreated = output<void>();
+  /** A highlight or note was saved here; the shell adds it to its list. */
+  noteCreated = output<Note>();
+  /**
+   * The book's notes, read once by the shell. The reader draws its saved
+   * highlights from them rather than fetching the list again; null while the
+   * shell is still reading them.
+   */
+  notes = input<Note[] | null>(null);
+  /** The book is on screen, so highlights can be drawn on it. */
+  private readonly pageShown = signal(false);
+  /** This opening's saved highlights have been drawn. */
+  private highlightsRestored = false;
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
@@ -550,6 +561,18 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         // dependencies, so only a new book id triggers a full reload.
         untracked(() => this.loadBook(this.bookId()));
       }
+    });
+
+    // Draw the saved highlights once, when the book is showing and the
+    // shell's notes are in, whichever comes second.
+    effect(() => {
+      const notes = this.notes();
+      if (!notes || !this.pageShown() || this.highlightsRestored) return;
+      untracked(() => {
+        this.highlightsRestored = true;
+        this.annotationManager?.restoreHighlights(notes);
+        void this.locateImportedNotes(notes);
+      });
     });
 
     effect(() => {
@@ -1914,6 +1937,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
     this.assistantLocation.set(null);
     this.assistantSelection.set(null);
+    this.pageShown.set(false);
+    this.highlightsRestored = false;
     this.progressUnlocked = false;
     this.chapterRanges = [];
     this.chapterBounds = null;
@@ -1988,7 +2013,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       rendition,
       id,
       this.injector,
-      () => this.noteCreated.emit(),
+      (note) => this.noteCreated.emit(note),
       () => this.commitFailed.emit(),
     );
     this.annotationManager.setHighlightColour(this.highlightColour());
@@ -2089,13 +2114,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         this.loading.set(false);
         this.applyFontSize();
 
-        this.notesService.list(id).subscribe({
-          next: (notes) => {
-            this.annotationManager?.restoreHighlights(notes);
-            void this.locateImportedNotes(notes);
-          },
-          error: (err) => console.error('Failed to load notes:', err),
-        });
+        // The saved highlights are drawn from the shell's list as soon as it
+        // is in (see the effect in the constructor); no fetch of our own.
+        this.pageShown.set(true);
 
         // A grounded source is stronger than the user's ordinary saved reading
         // position for this navigation: the citation click explicitly asked to
