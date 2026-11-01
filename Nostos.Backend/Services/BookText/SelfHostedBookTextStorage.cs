@@ -543,6 +543,102 @@ public sealed partial class SqliteBookTextIndex(
         }
     }
 
+    public async Task<IReadOnlyList<BookTextIngestionState>> GetStatesAsync(
+        IReadOnlyList<Guid> bookIds,
+        CancellationToken ct = default)
+    {
+        var distinct = bookIds.Distinct().ToList();
+        if (distinct.Count == 0) return [];
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            var found = new Dictionary<Guid, BookTextIngestionState>();
+            // Chunked so the parameter count stays far below SQLite's limit.
+            foreach (var group in distinct.Chunk(500))
+            {
+                var parameters = new List<(string, object?)>();
+                var names = new List<string>();
+                for (var i = 0; i < group.Length; i++)
+                {
+                    names.Add($"@b{i}");
+                    parameters.Add(($"@b{i}", group[i].ToString("D")));
+                }
+
+                await using var command = Command(
+                    db,
+                    $"SELECT BookId, Status, SourceFileName, Format, SourceSha256, ExtractorVersion, ErrorCode, ErrorMessage, Attempts, ChunkCount, CharacterCount, UpdatedAtUtc FROM BookTextIngestionStates WHERE BookId IN ({string.Join(",", names)});",
+                    parameters.ToArray());
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var state = State(reader);
+                    found[state.BookId] = state;
+                }
+            }
+
+            return bookIds
+                .Distinct()
+                .Where(found.ContainsKey)
+                .Select(id => found[id])
+                .ToList();
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    public async Task<IReadOnlyList<BookTextIndexedChunk>> GetNeighborsManyAsync(
+        IReadOnlyList<BookTextNeighborQuery> queries,
+        int radius,
+        CancellationToken ct = default)
+    {
+        if (radius <= 0 || queries.Count == 0) return [];
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            var chunks = new Dictionary<Guid, BookTextIndexedChunk>();
+            // One query per 50 hits; a normal search (24 candidates) is one.
+            foreach (var group in queries.Distinct().Chunk(50))
+            {
+                var parameters = new List<(string, object?)>();
+                var clauses = new List<string>();
+                for (var i = 0; i < group.Length; i++)
+                {
+                    clauses.Add(
+                        $"(BookId=@b{i} AND SourceSha256=@h{i} AND ExtractorVersion=@v{i} AND Ordinal BETWEEN @s{i} AND @e{i})");
+                    parameters.Add(($"@b{i}", group[i].BookId.ToString("D")));
+                    parameters.Add(($"@h{i}", group[i].SourceSha256));
+                    parameters.Add(($"@v{i}", group[i].ExtractorVersion));
+                    parameters.Add(($"@s{i}", group[i].Ordinal - radius));
+                    parameters.Add(($"@e{i}", group[i].Ordinal + radius));
+                }
+
+                await using var command = Command(db, $"""
+                    SELECT Id, BookId, SourceSha256, ExtractorVersion, Format,
+                           Ordinal, Text, HeadingPathJson, SourceSegmentsJson
+                    FROM BookTextChunks
+                    WHERE {string.Join(" OR ", clauses)};
+                    """, parameters.ToArray());
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var chunk = ReadChunk(reader);
+                    chunks.TryAdd(chunk.Id, chunk);
+                }
+            }
+            return chunks.Values.ToList();
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
     private static async Task DeleteChunksAsync(NostosDbContext db, Guid bookId, CancellationToken ct)
     {
         // Vectors are derived from chunks: they never outlive the chunk they embed.

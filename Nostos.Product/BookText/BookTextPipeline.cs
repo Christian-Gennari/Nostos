@@ -110,6 +110,13 @@ public sealed record BookTextSearchResponse(
     IReadOnlyList<BookTextIngestionState> States,
     bool EvidenceAvailable);
 
+/// <summary>One search hit whose neighbouring chunks are wanted.</summary>
+public sealed record BookTextNeighborQuery(
+    Guid BookId,
+    string SourceSha256,
+    string ExtractorVersion,
+    int Ordinal);
+
 public interface IBookTextIndex
 {
     Task EnsureSchemaAsync(CancellationToken ct = default);
@@ -156,6 +163,52 @@ public interface IBookTextIndex
         int ordinal,
         int radius,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// The state of every listed book that has one, in one read. The default
+    /// asks <see cref="GetStateAsync"/> per book, so an index that does not
+    /// override it behaves as before; absent books are simply not returned.
+    /// Result order follows <paramref name="bookIds"/>.
+    /// </summary>
+    async Task<IReadOnlyList<BookTextIngestionState>> GetStatesAsync(
+        IReadOnlyList<Guid> bookIds,
+        CancellationToken ct = default)
+    {
+        var states = new List<BookTextIngestionState>(bookIds.Count);
+        foreach (var id in bookIds)
+        {
+            var state = await GetStateAsync(id, ct);
+            if (state is not null) states.Add(state);
+        }
+        return states;
+    }
+
+    /// <summary>
+    /// Every chunk within <paramref name="radius"/> ordinals of any listed
+    /// chunk (the listed chunks included when they exist), same revision only,
+    /// as a flat list in no particular order. The default asks
+    /// <see cref="GetNeighborsAsync"/> per item and removes duplicates.
+    /// </summary>
+    async Task<IReadOnlyList<BookTextIndexedChunk>> GetNeighborsManyAsync(
+        IReadOnlyList<BookTextNeighborQuery> queries,
+        int radius,
+        CancellationToken ct = default)
+    {
+        var chunks = new Dictionary<Guid, BookTextIndexedChunk>();
+        foreach (var query in queries)
+        {
+            var neighbors = await GetNeighborsAsync(
+                query.BookId,
+                query.SourceSha256,
+                query.ExtractorVersion,
+                query.Ordinal,
+                radius,
+                ct);
+            foreach (var neighbor in neighbors)
+                chunks.TryAdd(neighbor.Id, neighbor);
+        }
+        return chunks.Values.ToList();
+    }
 }
 
 public interface IBookDerivedArtifactStorage
@@ -196,49 +249,39 @@ public sealed class BookTextBackfillService(
 {
     public async Task<int> ScheduleMissingAsync(CancellationToken ct = default)
     {
-        const int pageSize = 100;
-        var page = 1;
         var scheduled = 0;
 
-        while (true)
+        // One narrow read of the whole library, then one state read per 100
+        // candidates, instead of a full book DTO page plus a state query per book.
+        var books = await library.ListBookScopeAsync(
+            bookIds: null,
+            collectionId: null,
+            limit: int.MaxValue,
+            ct);
+
+        var candidates = books
+            .Where(book => book.HasFile
+                && !string.IsNullOrWhiteSpace(book.FileName)
+                && BookTextFormatResolver.TryResolve(book.FileName, out _))
+            .ToList();
+
+        foreach (var group in candidates.Chunk(100))
         {
-            var result = await library.ListBooksAsync(
-                BookFilter.All,
-                BookSort.Title,
-                search: null,
-                page,
-                pageSize,
-                collectionId: null,
-                groupByWork: false,
-                format: null,
-                ct);
+            var states = (await index.GetStatesAsync(group.Select(book => book.Id).ToList(), ct))
+                .ToDictionary(state => state.BookId);
 
-            if (result.Data is not PaginatedResponse<BookDto> batch)
-                break;
-
-            var items = batch.Items.ToList();
-            foreach (var book in items)
+            foreach (var book in group)
             {
-                if (!book.HasFile || string.IsNullOrWhiteSpace(book.FileName)
-                    || !BookTextFormatResolver.TryResolve(book.FileName, out _))
-                    continue;
-
-                var state = await index.GetStateAsync(book.Id, ct);
-                if (state is not null
+                if (states.TryGetValue(book.Id, out var state)
                     && string.Equals(
                         state.ExtractorVersion,
                         BookTextArtifactSchema.CurrentExtractorVersion,
                         StringComparison.Ordinal))
                     continue;
 
-                await scheduler.ScheduleAsync(book.Id, book.FileName, ct);
+                await scheduler.ScheduleAsync(book.Id, book.FileName!, ct);
                 scheduled++;
             }
-
-            if (items.Count == 0 || page * pageSize >= batch.TotalCount)
-                break;
-
-            page++;
         }
 
         if (scheduled > 0)
@@ -264,6 +307,10 @@ public sealed class NoOpBookTextIndex : IBookTextIndex
     public Task<IReadOnlyList<BookTextSearchHit>> SearchAsync(string query, IReadOnlyList<Guid> bookIds, int maxCandidates, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<BookTextSearchHit>>([]);
     public Task<IReadOnlyList<BookTextIndexedChunk>> GetNeighborsAsync(Guid bookId, string sourceSha256, string extractorVersion, int ordinal, int radius, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<BookTextIndexedChunk>>([]);
+    public Task<IReadOnlyList<BookTextIngestionState>> GetStatesAsync(IReadOnlyList<Guid> bookIds, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<BookTextIngestionState>>([]);
+    public Task<IReadOnlyList<BookTextIndexedChunk>> GetNeighborsManyAsync(IReadOnlyList<BookTextNeighborQuery> queries, int radius, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<BookTextIndexedChunk>>([]);
 }
 
@@ -564,12 +611,7 @@ public sealed class BookTextSearchService(
             return new BookTextSearchResponse([], [], false);
 
         var ids = books.Select(book => book.Id).Distinct().ToList();
-        var states = new List<BookTextIngestionState>(ids.Count);
-        foreach (var id in ids)
-        {
-            var state = await index.GetStateAsync(id, ct);
-            if (state is not null) states.Add(state);
-        }
+        var states = (await index.GetStatesAsync(ids, ct)).ToList();
 
         var ready = states
             .Where(state => state.Status == BookTextIngestionStatus.Ready)
@@ -617,22 +659,41 @@ public sealed class BookTextSearchService(
                 selected.Add(chunk);
         }
 
+        // Neighbours of every hit in one ranged read. The selection below is the
+        // same walk as before (hit, then its neighbours nearest first, until the
+        // cap), so only the reads are batched, never the ranking or the content.
+        var neighborsByRevision = new Dictionary<(Guid, string, string), List<BookTextIndexedChunk>>();
+        if (radius > 0 && hits.Count > 0)
+        {
+            var wanted = hits
+                .Select(hit => new BookTextNeighborQuery(
+                    hit.Chunk.BookId,
+                    hit.Chunk.SourceSha256,
+                    hit.Chunk.ExtractorVersion,
+                    hit.Chunk.Ordinal))
+                .Distinct()
+                .ToList();
+            foreach (var neighbor in await index.GetNeighborsManyAsync(wanted, radius, ct))
+            {
+                var revision = (neighbor.BookId, neighbor.SourceSha256, neighbor.ExtractorVersion);
+                if (!neighborsByRevision.TryGetValue(revision, out var list))
+                    neighborsByRevision[revision] = list = [];
+                list.Add(neighbor);
+            }
+        }
+
         foreach (var hit in hits)
         {
             var chunk = hit.Chunk;
             AddSelected(chunk);
 
-            if (radius > 0 && selected.Count < maxPassages * 3)
+            if (radius > 0 && selected.Count < maxPassages * 3
+                && neighborsByRevision.TryGetValue(
+                    (chunk.BookId, chunk.SourceSha256, chunk.ExtractorVersion),
+                    out var revisionChunks))
             {
-                var neighbors = await index.GetNeighborsAsync(
-                    chunk.BookId,
-                    chunk.SourceSha256,
-                    chunk.ExtractorVersion,
-                    chunk.Ordinal,
-                    radius,
-                    ct);
-
-                foreach (var neighbor in neighbors
+                foreach (var neighbor in revisionChunks
+                    .Where(neighbor => Math.Abs(neighbor.Ordinal - chunk.Ordinal) <= radius)
                     .OrderBy(neighbor => Math.Abs(neighbor.Ordinal - chunk.Ordinal))
                     .ThenBy(neighbor => neighbor.Ordinal))
                 {
@@ -743,50 +804,10 @@ public sealed class BookTextSearchService(
             ' ',
             value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
-    private async Task<List<BookDto>> ResolveScopeAsync(
+    private async Task<IReadOnlyList<LibraryBookScopeEntry>> ResolveScopeAsync(
         BookTextSearchRequest request,
-        CancellationToken ct)
-    {
-        if (request.BookIds is { Count: > 0 })
-        {
-            var books = new List<BookDto>();
-            foreach (var id in request.BookIds.Distinct().Take(32))
-            {
-                var result = await library.GetBookAsync(id, ct);
-                if (result.Data is BookDto book)
-                    books.Add(book);
-            }
-            return books;
-        }
-
-        var page = 1;
-        const int pageSize = 100;
-        var resultBooks = new List<BookDto>();
-        while (resultBooks.Count < 500)
-        {
-            var result = await library.ListBooksAsync(
-                BookFilter.All,
-                BookSort.Title,
-                search: null,
-                page,
-                pageSize,
-                request.CollectionId,
-                groupByWork: false,
-                format: null,
-                ct);
-
-            if (result.Data is not PaginatedResponse<BookDto> batch)
-                break;
-
-            var items = batch.Items.ToList();
-            resultBooks.AddRange(items);
-            if (items.Count == 0 || resultBooks.Count >= batch.TotalCount)
-                break;
-            page++;
-        }
-
-        return resultBooks;
-    }
+        CancellationToken ct) =>
+        await library.ListBookScopeAsync(request.BookIds, request.CollectionId, 500, ct);
 }
 
 public static class BookTextChunker
