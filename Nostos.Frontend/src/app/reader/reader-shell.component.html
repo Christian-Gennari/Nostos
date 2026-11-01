@@ -255,7 +255,9 @@
       } @else if (loading()) {
       <nostos-loading-indicator class="reader-loading" label="Opening book" />
       } @else { @switch (fileType()) { @case ('pdf') {
+      @defer (on immediate) {
       <app-pdf-reader
+        #pdfReader
         [bookId]="book()!.id"
         [initialLocation]="$safeNavigationMigration(book()?.lastLocation)"
         [sidebarVisible]="tocOpen()"
@@ -271,10 +273,27 @@
         (surfaceInteracted)="handleSurfaceInteraction()"
         (highlightActivated)="handleHighlightActivated($event)"
       />
+      } @placeholder {
+      <nostos-loading-indicator class="reader-loading" label="Opening book" />
+      } @error {
+      <ng-container [ngTemplateOutlet]="formatLoadFailed" />
+      }
       } @case ('epub') {
+      @defer (on immediate) {
       <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" [notes]="readerNotes()" (noteCreated)="handleNoteCreated($event)" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" (highlightActivated)="handleHighlightActivated($event)" />
+      } @placeholder {
+      <nostos-loading-indicator class="reader-loading" label="Opening book" />
+      } @error {
+      <ng-container [ngTemplateOutlet]="formatLoadFailed" />
+      }
       } @case ('audio') {
-      <app-audio-reader [bookId]="book()!.id" [book]="book()" (contentsRequested)="openContents()" />
+      @defer (on immediate) {
+      <app-audio-reader #audioReader [bookId]="book()!.id" [book]="book()" (contentsRequested)="openContents()" />
+      } @placeholder {
+      <nostos-loading-indicator class="reader-loading" label="Opening book" />
+      } @error {
+      <ng-container [ngTemplateOutlet]="formatLoadFailed" />
+      }
       } @default {
       <nostos-empty-state
         class="reader-load-error"
@@ -287,6 +306,20 @@
         <button appButton type="button" variant="secondary" size="sm" (click)="goBack()">Book details</button>
       </nostos-empty-state>
       } } }
+
+      <ng-template #formatLoadFailed>
+        <nostos-empty-state
+          class="reader-load-error"
+          data-testid="reader-load-error"
+          error
+          icon="warning"
+          message="Could not open this book"
+          detail="The reader did not load. Check your connection and try again."
+          (retry)="reloadPage()"
+        >
+          <button appButton type="button" variant="secondary" size="sm" (click)="goBack()">Book details</button>
+        </nostos-empty-state>
+      </ng-template>
 
       @if (saveFeedback()) {
       <div class="reader-save-feedback" role="status" aria-live="polite">{{ saveFeedback() }}</div>
@@ -1024,7 +1057,7 @@
       <nostos-theme-picker class="typo-opts" label="Theme" note="applies throughout Nostos" />
     </div>
     <!-- The PDF's page pixels, so it lives with the app theme it follows. -->
-    @if (fileType() === 'pdf' && pdfReader?.isDark()) {
+    @if (fileType() === 'pdf' && pdfReader()?.isDark()) {
     <div class="typo-row">
       <span class="typo-label" id="pdf-colours">Page colours</span>
       <nostos-segmented
@@ -1032,8 +1065,8 @@
         fill
         aria-labelledby="pdf-colours"
         [options]="pageColourOptions"
-        [value]="pdfReader.pageInverted() ? 'inverted' : 'printed'"
-        (valueChange)="pdfReader.setPageInverted($event === 'inverted')"
+        [value]="pdfReader()?.pageInverted() ? 'inverted' : 'printed'"
+        (valueChange)="pdfReader()?.setPageInverted($event === 'inverted')"
       />
     </div>
     }
@@ -1088,7 +1121,7 @@
           size="sm"
           type="button"
           class="typo-step"
-          (click)="pdfReader?.rotateCounterclockwise()"
+          (click)="pdfReader()?.rotateCounterclockwise()"
           aria-label="Rotate left"
           title="Rotate left"
         >Left</button>
@@ -1097,7 +1130,7 @@
           size="sm"
           type="button"
           class="typo-step"
-          (click)="pdfReader?.resetRotation()"
+          (click)="pdfReader()?.resetRotation()"
           aria-label="Reset rotation"
           title="Reset rotation"
         >Reset</button>
@@ -1106,7 +1139,7 @@
           size="sm"
           type="button"
           class="typo-step"
-          (click)="pdfReader?.rotateClockwise()"
+          (click)="pdfReader()?.rotateClockwise()"
           aria-label="Rotate right"
           title="Rotate right"
         >Right</button>
@@ -1124,7 +1157,7 @@
       />
     </div>
     </section>
-    } @if (epubReader) {
+    } @if (epubReader(); as epub) {
     <section class="typo-group" aria-labelledby="typo-group-text">
     <div class="typo-group-head">
       <h3 class="typo-group-title" id="typo-group-text">Text</h3>
@@ -1137,7 +1170,7 @@
         class="typo-reset"
         aria-label="Reset text settings"
         title="Reset text settings"
-        (click)="epubReader.resetTypography()"
+        (click)="epub.resetTypography()"
       >Reset</button>
     </div>
     <div class="typo-row typo-row-stacked">
@@ -1146,9 +1179,9 @@
         class="typo-opts"
         fill
         aria-labelledby="typo-typeface"
-        [options]="epubReader.fontOptions"
-        [value]="epubReader.typography().fontFamily"
-        (valueChange)="epubReader.setTypography({ fontFamily: $event })"
+        [options]="epub.fontOptions"
+        [value]="epub.typography().fontFamily"
+        (valueChange)="epub.setTypography({ fontFamily: $event })"
       />
     </div>
     <div class="typo-row">
@@ -1159,17 +1192,17 @@
           size="sm"
           type="button"
           class="typo-step"
-          (click)="epubReader.zoomOut()"
+          (click)="epub.zoomOut()"
           aria-label="Smaller text"
           title="Smaller text"
         >A−</button>
-        <span class="typo-step-value">{{ epubReader.fontSizePercent() }}%</span>
+        <span class="typo-step-value">{{ epub.fontSizePercent() }}%</span>
         <button
           appButton
           size="sm"
           type="button"
           class="typo-step"
-          (click)="epubReader.zoomIn()"
+          (click)="epub.zoomIn()"
           aria-label="Larger text"
           title="Larger text"
         >A+</button>
@@ -1182,8 +1215,8 @@
         fill
         aria-labelledby="typo-line"
         [options]="lineHeightOptions"
-        [value]="epubReader.typography().lineHeight"
-        (valueChange)="epubReader.setTypography({ lineHeight: $event })"
+        [value]="epub.typography().lineHeight"
+        (valueChange)="epub.setTypography({ lineHeight: $event })"
       />
     </div>
     <div class="typo-row">
@@ -1192,9 +1225,9 @@
         class="typo-opts"
         fill
         aria-labelledby="typo-margins"
-        [options]="epubReader.marginOptions"
-        [value]="epubReader.typography().margin"
-        (valueChange)="epubReader.setTypography({ margin: $event })"
+        [options]="epub.marginOptions"
+        [value]="epub.typography().margin"
+        (valueChange)="epub.setTypography({ margin: $event })"
       />
     </div>
     </section>

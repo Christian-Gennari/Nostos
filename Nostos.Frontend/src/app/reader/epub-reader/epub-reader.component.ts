@@ -21,7 +21,8 @@ import ePub, { Book, Rendition, Contents } from 'epubjs';
 import { Subject, Subscription, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
-import { EpubAnnotationManager, SelectionAnchor } from './epub-annotation-manager';
+import { EpubAnnotationManager } from './epub-annotation-manager';
+import type { SelectionAnchor } from '../selection-anchor';
 import { DEFAULT_HIGHLIGHT_COLOUR, HighlightColour } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';

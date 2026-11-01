@@ -1,5 +1,3 @@
-import { pdfDefaultOptions, pdfjsVersion } from 'ngx-extended-pdf-viewer';
-
 /** The slice of pdf.js the passage viewer uses. */
 export interface PdfJsLib {
   getDocument(source: { url: string; withCredentials?: boolean; worker?: unknown }): PdfLoadingTask;
@@ -12,8 +10,8 @@ export interface PdfJsLib {
  * script, and routed through its CSP service), so the viewer never relies on
  * them, nor changes them.
  */
-export function createPdfWorker(lib: PdfJsLib): { worker: unknown; terminate(): void } {
-  const port = new Worker(assetUrls().worker, { type: 'module' });
+export async function createPdfWorker(lib: PdfJsLib): Promise<{ worker: unknown; terminate(): void }> {
+  const port = new Worker((await assetUrls()).worker, { type: 'module' });
   const worker = new lib.PDFWorker({ port });
   return {
     worker,
@@ -68,7 +66,13 @@ export function loadPdfJs(): Promise<PdfJsLib> {
   return isolated;
 }
 
-function assetUrls(): { viewer: string; worker: string } {
+/**
+ * The viewer package is imported here, on the first PDF passage, and never at
+ * the top of this file: the app root prefetches the passage viewer on idle, so
+ * a static import would load the PDF chunk on every page (#1320).
+ */
+async function assetUrls(): Promise<{ viewer: string; worker: string }> {
+  const { pdfDefaultOptions, pdfjsVersion } = await import('ngx-extended-pdf-viewer');
   const assets = new URL(`${pdfDefaultOptions.assetsFolder}/`, document.baseURI);
   const suffix = pdfDefaultOptions._internalFilenameSuffix ?? '.min';
   return {
@@ -78,7 +82,7 @@ function assetUrls(): { viewer: string; worker: string } {
 }
 
 async function importIsolated(): Promise<PdfJsLib> {
-  const { viewer: viewerUrl } = assetUrls();
+  const { viewer: viewerUrl } = await assetUrls();
 
   const scope = globalThis as { pdfjsLib?: PdfJsLib };
   const before = scope.pdfjsLib;

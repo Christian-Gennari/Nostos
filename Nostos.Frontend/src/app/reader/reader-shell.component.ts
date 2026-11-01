@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { afterRenderEffect, ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, viewChild, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { PHONE_OR_TOUCH_QUERY } from '../ui/breakpoints';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
@@ -43,10 +43,10 @@ import {
   MenuTriggerDirective,
 } from '../ui/menu/menu.component';
 import { CdkMenuTrigger } from '@angular/cdk/menu';
-import { ScrollModeType } from 'ngx-extended-pdf-viewer';
+import type { ScrollModeType } from 'ngx-extended-pdf-viewer';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
-import type { SelectionAnchor } from './epub-reader/epub-annotation-manager';
+import type { SelectionAnchor } from './selection-anchor';
 import { AudioReader } from './audio-reader/audio-reader.component';
 import { EditionSummaryDto } from '../core/dtos/book.dtos';
 import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.component';
@@ -234,6 +234,26 @@ export class ReaderShell implements OnInit, OnDestroy {
       edited: (saved, edit) => this.noteEdited(saved, edit),
     });
 
+    afterRenderEffect(() => {
+      this.mountedReaders.set({
+        epub: this.epubQuery(),
+        pdf: this.pdfQuery(),
+        audio: this.audioQuery(),
+      });
+    });
+
+    // A source link can arrive before its reader's chunk has: it waits here
+    // for the reader, however long the chunk takes, and for the notes if it
+    // names one.
+    effect(() => {
+      if (!this.activeReader()) return;
+      this.dbNotes();
+      untracked(() => {
+        this.navigateGroundedSource(this.sourceNavigationGeneration);
+        this.jumpToSourceNote(this.sourceNavigationGeneration);
+      });
+    });
+
     // Read aloud follows whichever text reader is mounted.
     effect(() => {
       const source = this.activeReader()?.readAloud ?? null;
@@ -384,14 +404,24 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly flashedNoteId = signal<string | null>(null);
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Template-ref query (not type query): the epub child is stubbed in specs,
-  // and a type query would resolve to null against the stub.
-  @ViewChild('epubReader') epubReader?: EpubReader;
-  // Concrete type query: the shell drives fixed-layout PDF controls through the
-  // real reader instance. Specs that need this delegation attach their stub
-  // explicitly rather than turning every lightweight PDF stub into the full API.
-  @ViewChild(PdfReader) pdfReader?: PdfReader;
-  @ViewChild(AudioReader) audioReader?: IReader;
+  // Each format is a @defer block of its own (#1320), so its class may appear
+  // here only as a type: a query by class would pull the chunk back into this
+  // file. These are signals because the block arrives on its own time, after
+  // `ready` may already have flipped.
+  private readonly epubQuery = viewChild<EpubReader>('epubReader');
+  private readonly pdfQuery = viewChild<PdfReader>('pdfReader');
+  private readonly audioQuery = viewChild<AudioReader>('audioReader');
+
+  /**
+   * The readers as the shell may call them. A deferred view is created outside
+   * change detection and its query resolves at once, before its inputs are
+   * bound and before ngOnInit; publishing it after the render means no caller
+   * can reach a reader that is still half made.
+   */
+  private readonly mountedReaders = signal<{ epub?: EpubReader; pdf?: PdfReader; audio?: AudioReader }>({});
+  readonly epubReader = computed(() => this.mountedReaders().epub);
+  readonly pdfReader = computed(() => this.mountedReaders().pdf);
+  readonly audioReader = computed(() => this.mountedReaders().audio);
 
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
   private stopKeyboardOverlay: (() => void) | null = null;
@@ -511,7 +541,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       !this.loadError() &&
       this.readAloud.available() &&
       this.browserVoice !== null &&
-      !(this.fileType() === 'pdf' && this.pdfReader?.textCapability() === 'unavailable'),
+      !(this.fileType() === 'pdf' && this.pdfReader()?.textCapability() === 'unavailable'),
   );
 
   // The server voice, when this host has one. It is asked for per book
@@ -664,8 +694,8 @@ export class ReaderShell implements OnInit, OnDestroy {
 
     const excerpt =
       type === 'epub'
-        ? (this.epubReader?.visibleExcerpt?.() ?? null)
-        : await (this.pdfReader?.visibleExcerpt?.() ?? Promise.resolve(null));
+        ? (this.epubReader()?.visibleExcerpt?.() ?? null)
+        : await (this.pdfReader()?.visibleExcerpt?.() ?? Promise.resolve(null));
 
     return excerpt && this.book()?.id === book.id
       ? { bookId: book.id, audioEditionId: audio.id, excerpt }
@@ -693,12 +723,11 @@ export class ReaderShell implements OnInit, OnDestroy {
   openSwitchEdition(): void {
     if (!this.canSwitchEdition()) return;
 
-    const audio = this.audioReader as unknown as { handoffPosition?: () => number | null } | undefined;
     this.switchAudioPosition.set(
-      this.fileType() === 'audio' ? (audio?.handoffPosition?.() ?? null) : null,
+      this.fileType() === 'audio' ? (this.audioReader()?.handoffPosition?.() ?? null) : null,
     );
     this.switchVisibleExcerpt.set(
-      this.fileType() === 'epub' ? (this.epubReader?.visibleExcerpt?.() ?? null) : null,
+      this.fileType() === 'epub' ? (this.epubReader()?.visibleExcerpt?.() ?? null) : null,
     );
 
     this.typoOpen.set(false);
@@ -711,7 +740,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     // A PDF page's text is read from the document, which is asynchronous. Open
     // the dialog once it is known, so every row states the right promise.
     const bookId = this.book()?.id;
-    void (this.pdfReader?.visibleExcerpt?.() ?? Promise.resolve(null))
+    void (this.pdfReader()?.visibleExcerpt?.() ?? Promise.resolve(null))
       .catch(() => null)
       .then((excerpt) => {
         if (this.book()?.id !== bookId) return;
@@ -838,11 +867,11 @@ export class ReaderShell implements OnInit, OnDestroy {
    * so the panel can show which fit is in effect.
    */
   pdfZoomPresets(): { value: string | number; label: string }[] {
-    return this.pdfReader?.zoomPresets ?? [];
+    return this.pdfReader()?.zoomPresets ?? [];
   }
 
   pdfZoomLabel(): string {
-    return this.pdfReader?.zoomLabel() ?? '';
+    return this.pdfReader()?.zoomLabel() ?? '';
   }
 
   /** The preset currently in effect, or null when the zoom is a free value. */
@@ -851,28 +880,28 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   pdfScrollMode(): ScrollModeType | null {
-    return this.pdfReader?.scrollMode() ?? null;
+    return this.pdfReader()?.scrollMode() ?? null;
   }
 
   isZoomPreset(value: string | number): boolean {
-    return this.pdfReader?.isZoomPreset(value) ?? false;
+    return this.pdfReader()?.isZoomPreset(value) ?? false;
   }
 
   setZoomPreset(value: string | number): void {
-    this.pdfReader?.setZoom(value);
+    this.pdfReader()?.setZoom(value);
   }
 
   /** Reading mode (continuous vs page-by-page), driven by the same view panel. */
   pdfReadingModes(): { value: ScrollModeType; label: string }[] {
-    return this.pdfReader?.readingModes ?? [];
+    return this.pdfReader()?.readingModes ?? [];
   }
 
   isScrollMode(mode: ScrollModeType): boolean {
-    return this.pdfReader?.isScrollMode(mode) ?? false;
+    return this.pdfReader()?.isScrollMode(mode) ?? false;
   }
 
   setScrollMode(mode: ScrollModeType): void {
-    this.pdfReader?.setScrollMode(mode);
+    this.pdfReader()?.setScrollMode(mode);
   }
 
   book = signal<any>(null);
@@ -1057,11 +1086,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!this.ready()) return null;
     switch (this.fileType()) {
       case 'epub':
-        return this.epubReader ?? null;
+        return this.epubReader() ?? null;
       case 'pdf':
-        return this.pdfReader ?? null;
+        return this.pdfReader() ?? null;
       case 'audio':
-        return this.audioReader ?? null;
+        return this.audioReader() ?? null;
       default:
         return null;
     }
@@ -1267,6 +1296,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     });
   }
 
+  /** A format's chunk failed to load; only a fresh page asks for it again. */
+  reloadPage(): void {
+    window.location.reload();
+  }
+
   retryBookLoad(): void {
     const id = this.currentRouteBookId ?? this.route.snapshot.paramMap.get('id');
     if (id) this.loadBook(id);
@@ -1378,7 +1412,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     return routeBookId.toLowerCase() === loadedBookId.toLowerCase();
   }
 
-  private navigateGroundedSource(generation: number, attempt = 0): void {
+  private navigateGroundedSource(generation: number): void {
     // A newer query-param target supersedes any delayed retry from an older one.
     if (generation !== this.sourceNavigationGeneration) return;
 
@@ -1389,13 +1423,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     // must still belong to the book currently represented by the route.
     if (!this.isLoadedBookForCurrentRoute()) return;
 
+    // No reader yet: the target stays pending for the effect that watches it.
     const reader = this.activeReader();
-    if (!reader?.goToSource) {
-      if (attempt < 12) {
-        setTimeout(() => this.navigateGroundedSource(generation, attempt + 1), 50);
-      }
-      return;
-    }
+    if (!reader?.goToSource) return;
 
     this.pendingGroundedSourceTarget = null;
     void reader.goToSource(target);
@@ -1663,19 +1693,16 @@ export class ReaderShell implements OnInit, OnDestroy {
   /**
    * A link from outside the reader can name a note instead of a location: an
    * imported highlight has none until this reader has found it, and only the
-   * open reader can. Waits for both the notes and the reader, then jumps.
+   * open reader can. Runs again as the notes and the reader arrive, then jumps.
    */
-  private jumpToSourceNote(generation: number, attempt = 0): void {
+  private jumpToSourceNote(generation: number): void {
     if (generation !== this.sourceNavigationGeneration) return;
     const noteId = this.pendingSourceNoteId;
     if (!noteId) return;
 
     const reader = this.isLoadedBookForCurrentRoute() ? this.activeReader() : null;
     const note = this.dbNotes().find((candidate) => candidate.id.toLowerCase() === noteId);
-    if (!reader || !note) {
-      if (attempt < 60) setTimeout(() => this.jumpToSourceNote(generation, attempt + 1), 100);
-      return;
-    }
+    if (!reader || !note) return;
 
     this.pendingSourceNoteId = null;
     this.jumpToNote(reader, note);

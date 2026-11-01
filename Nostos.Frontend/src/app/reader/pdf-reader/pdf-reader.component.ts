@@ -38,10 +38,7 @@ import { PdfReadAloud } from './pdf-read-aloud';
 import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
 import { buildPdfPageText, type PageRect } from './pdf-read-aloud-text';
 import { PassageDraft, PassageMark, closingOf, countWords, excerptOf } from '../passage/passage-mark';
-import {
-  isDesktopMouseSelection,
-  type SelectionAnchor,
-} from '../epub-reader/epub-annotation-manager';
+import { isDesktopMouseSelection, type SelectionAnchor } from '../selection-anchor';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,

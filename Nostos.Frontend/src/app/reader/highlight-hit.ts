@@ -1,5 +1,5 @@
 // Nostos.Frontend/src/app/reader/highlight-hit.ts
-import type { SelectionAnchor } from './epub-reader/epub-annotation-manager';
+import type { SelectionAnchor } from './selection-anchor';
 
 /**
  * A saved highlight under a click or tap. `identifier` is the same one the
