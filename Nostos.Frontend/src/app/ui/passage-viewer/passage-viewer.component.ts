@@ -404,7 +404,11 @@ export class PassageViewerComponent {
       try {
         const pdfjs = await loadPdfJs();
         if (this.passage()?.id !== passage.id) return;
-        const worker = createPdfWorker(pdfjs);
+        const worker = await createPdfWorker(pdfjs);
+        if (this.passage()?.id !== passage.id) {
+          worker.terminate();
+          return;
+        }
         this.pdfWorker = worker;
         const task = pdfjs.getDocument({
           url: `/api/books/${passage.bookId}/file`,

@@ -986,9 +986,9 @@ describe('PdfReader reading mode', () => {
     const shell = readSource('../reader-shell.component.html');
 
     expect(shell).toContain('id="pdf-rotation"');
-    expect(shell).toContain('(click)="pdfReader?.rotateCounterclockwise()"');
-    expect(shell).toContain('(click)="pdfReader?.resetRotation()"');
-    expect(shell).toContain('(click)="pdfReader?.rotateClockwise()"');
+    expect(shell).toContain('(click)="pdfReader()?.rotateCounterclockwise()"');
+    expect(shell).toContain('(click)="pdfReader()?.resetRotation()"');
+    expect(shell).toContain('(click)="pdfReader()?.rotateClockwise()"');
   });
 
   it('offers the three fits the acceptance criteria ask for', () => {

@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Component, forwardRef, Injector, input, output, signal } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
@@ -108,7 +108,11 @@ class PdfReaderStub {
   }>({ label: '', percentage: 0 });
   currentLocationTarget = signal<unknown>(null);
   goTo = vi.fn();
-  goToSource = vi.fn(() => Promise.resolve());
+  /** Reads a required input, which throws if the shell calls before binding. */
+  goToSource = vi.fn((_target?: unknown) => {
+    this.bookId();
+    return Promise.resolve();
+  });
   next = vi.fn();
   previous = vi.fn();
   commitHighlight = vi.fn();
@@ -303,11 +307,19 @@ function mockMatchMedia() {
   });
 }
 
+// Each format is a @defer block, so a reader mounts a turn after its book loads.
+async function mountReader(fixture: ComponentFixture<ReaderShell>): Promise<void> {
+  fixture.detectChanges();
+  for (let turn = 0; turn < 5; turn++) await Promise.resolve();
+  fixture.detectChanges();
+}
+
 // Builds a fresh TestBed module with the heavy reader children stubbed out.
 // Called per-test so each spec starts from a clean state.
 async function configureReaderShell(
   queryParams: Record<string, string | number> = {},
   routeBookId = 'book-1',
+  deferBlockBehavior = DeferBlockBehavior.Playthrough,
 ): Promise<ComponentFixture<ReaderShell>> {
   const initialQueryParamMap = convertToParamMap(queryParams);
   const initialParamMap = convertToParamMap({ id: routeBookId });
@@ -327,6 +339,7 @@ async function configureReaderShell(
 
   await TestBed.configureTestingModule({
     imports: [ReaderShell],
+    deferBlockBehavior,
     providers: [
       FAKE_PLAYER,
       provideRouter([]),
@@ -372,6 +385,149 @@ async function configureReaderShell(
 
   return TestBed.createComponent(ReaderShell);
 }
+
+// The chunk of a format can land long after `ready` (#1320): a phone on a poor
+// connection takes seconds over the PDF viewer. Manual defer blocks hold the
+// reader back so each spec calls the shell first and lets the reader in after.
+describe('ReaderShell before the format chunk arrives (#1320)', () => {
+  const pdfBook = { ...audiobook, id: 'book-1', fileName: 'book.pdf' } as Book;
+  const epubBook = { ...audiobook, id: 'book-1', fileName: 'book.epub' } as Book;
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+    mockMatchMedia();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  async function openHeldBack(book: Book, params: Record<string, string | number> = {}) {
+    booksGetSpy.mockReturnValue(of(book));
+    vi.useRealTimers();
+    const fixture = await configureReaderShell(params, 'book-1', DeferBlockBehavior.Manual);
+    vi.useFakeTimers();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(5000);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.ready()).toBe(true);
+    expect(fixture.componentInstance.activeReader()).toBeNull();
+    return fixture;
+  }
+
+  async function letReaderIn(fixture: ComponentFixture<ReaderShell>, state = DeferBlockState.Complete) {
+    const [block] = await fixture.getDeferBlocks();
+    await block.render(state);
+    fixture.detectChanges();
+    TestBed.tick();
+    fixture.detectChanges();
+  }
+
+  it('holds the opening spinner in the reader\'s place', async () => {
+    const fixture = await openHeldBack(pdfBook);
+    expect(fixture.nativeElement.querySelector('nostos-loading-indicator.reader-loading')).not.toBeNull();
+    expect(fixture.debugElement.query(By.directive(PdfReaderStub))).toBeNull();
+  });
+
+  it('keeps a PDF source link for a reader that mounts seconds later, once its inputs are bound', async () => {
+    const fixture = await openHeldBack(pdfBook, { sourcePage: 9 });
+
+    await letReaderIn(fixture);
+
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
+    expect(stub.goToSource).toHaveBeenCalledTimes(1);
+    expect(stub.goToSource).toHaveBeenCalledWith(expect.objectContaining({ type: 'pdf', pdfPage: 9 }));
+    expect(fixture.componentInstance.activeReader()).toBe(stub as unknown);
+  });
+
+  it('keeps an EPUB source link for a reader that mounts seconds later', async () => {
+    const fixture = await openHeldBack(epubBook, { sourceCfi: 'epubcfi(/6/8!/4/2)' });
+
+    await letReaderIn(fixture);
+
+    const stub = fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance as EpubReaderStub;
+    expect(stub.goToSource).toHaveBeenCalledTimes(1);
+    expect(stub.goToSource).toHaveBeenCalledWith(expect.objectContaining({ epubCfi: 'epubcfi(/6/8!/4/2)' }));
+  });
+
+  it('keeps an audio timestamp for a player that mounts seconds later', async () => {
+    const fixture = await openHeldBack(audiobook, { sourceTime: 53 });
+    const goToSource = vi.spyOn(AudioReader.prototype, 'goToSource');
+
+    await letReaderIn(fixture);
+
+    expect(goToSource).toHaveBeenCalledWith({ type: 'audio', audioTime: 53 });
+    goToSource.mockRestore();
+  });
+
+  it('jumps to a note named by a link once both the notes and the late reader are in', async () => {
+    const note = { id: 'note-1', cfiRange: 'epubcfi(/6/8!/4/2)', createdAt: '2026-01-01T00:00:00Z' } as Note;
+    const fixture = await openHeldBack(epubBook, { sourceNote: 'NOTE-1' });
+
+    fixture.componentInstance.dbNotes.set([note]);
+    await letReaderIn(fixture);
+
+    const stub = fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance as EpubReaderStub;
+    expect(stub.goToSource).toHaveBeenCalledWith({ type: 'epub', epubCfi: note.cfiRange });
+  });
+
+  it('fills an open view panel when the EPUB reader arrives', async () => {
+    const fixture = await openHeldBack(epubBook);
+    fixture.componentInstance.toggleTypo();
+    fixture.detectChanges();
+    const typefaces = () =>
+      document.querySelectorAll('[data-testid="typo-panel"] [aria-labelledby="typo-typeface"] .seg-opt').length;
+    expect(typefaces()).toBe(0);
+
+    await letReaderIn(fixture);
+
+    expect(typefaces()).toBe(4);
+    fixture.componentInstance.closeTypo();
+  });
+
+  it('offers search and the page tools from the reader once it arrives, not before', async () => {
+    const fixture = await openHeldBack(pdfBook);
+    expect(fixture.componentInstance.canSearch()).toBe(false);
+    fixture.componentInstance.nextPage();
+    fixture.componentInstance.onSearchInput({ target: { value: 'x' } } as unknown as Event);
+    vi.advanceTimersByTime(200);
+
+    await letReaderIn(fixture);
+
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
+    expect(fixture.componentInstance.canSearch()).toBe(true);
+    expect(stub.next).not.toHaveBeenCalled();
+    fixture.componentInstance.nextPage();
+    expect(stub.next).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches read aloud to the reader that arrives late', async () => {
+    const fixture = await openHeldBack(pdfBook);
+    const attach = vi.spyOn(fixture.componentInstance.readAloud, 'attach').mockImplementation(() => undefined);
+    const source = { language: () => 'en' };
+    const stubbed = PdfReaderStub.prototype as unknown as { readAloud?: unknown };
+    stubbed.readAloud = source;
+
+    try {
+      await letReaderIn(fixture);
+      expect(attach).toHaveBeenLastCalledWith(source);
+    } finally {
+      delete stubbed.readAloud;
+    }
+  });
+
+  it('says so when the chunk cannot be loaded, instead of a spinner for ever', async () => {
+    const fixture = await openHeldBack(epubBook);
+
+    await letReaderIn(fixture, DeferBlockState.Error);
+
+    expect(fixture.nativeElement.querySelector('nostos-loading-indicator.reader-loading')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-load-error"]').textContent).toContain(
+      'The reader did not load',
+    );
+  });
+});
 
 describe('ReaderShell Studio return origin (#510/#511)', () => {
   beforeEach(() => {
@@ -474,6 +630,7 @@ describe('ReaderShell grounded book-text source navigation', () => {
     const fixture = await configureReaderShell({ sourceTime: 53 });
     fixture.detectChanges();
     fixture.detectChanges();
+    await mountReader(fixture);
     const reader = fixture.debugElement.query(By.directive(AudioReader)).componentInstance as AudioReader;
 
     await new Promise((resolve) => setTimeout(resolve, 130));
@@ -496,13 +653,9 @@ describe('ReaderShell grounded book-text source navigation', () => {
     fixture.detectChanges();
     fixture.detectChanges();
 
-    // ReaderShell intentionally queries the concrete PdfReader type, so the
-    // lightweight stub is not populated through @ViewChild in this spec. Attach
-    // the already-rendered stub before the shell's 100 ms grounded-navigation
-    // settle runs, exactly as the other PDF shell tests do.
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
 
     await new Promise((resolve) => setTimeout(resolve, 130));
     fixture.detectChanges();
@@ -528,9 +681,9 @@ describe('ReaderShell grounded book-text source navigation', () => {
     fixture.detectChanges();
     fixture.detectChanges();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
 
     await new Promise((resolve) => setTimeout(resolve, 130));
     fixture.detectChanges();
@@ -577,9 +730,9 @@ describe('ReaderShell grounded book-text source navigation', () => {
     fixture.detectChanges();
     fixture.detectChanges();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
 
     await new Promise((resolve) => setTimeout(resolve, 130));
     fixture.detectChanges();
@@ -616,9 +769,9 @@ describe('ReaderShell grounded book-text source navigation', () => {
     fixture.detectChanges();
     fixture.detectChanges();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
 
     await new Promise((resolve) => setTimeout(resolve, 130));
     fixture.detectChanges();
@@ -755,6 +908,7 @@ describe('ReaderShell grounded book-text source navigation', () => {
     vi.spyOn(injector, 'get').mockImplementation(((token: unknown, ...rest: unknown[]) =>
       token === AlignmentService ? { locateAudio } : (get as (...a: unknown[]) => unknown)(token, ...rest)) as never);
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
       .componentInstance as EpubReaderStub & { visibleExcerpt?: () => string };
     stub.visibleExcerpt = () => 'Marley was dead: to begin with.';
@@ -1253,9 +1407,10 @@ describe('ReaderShell audiobook load (issue #7)', () => {
     expect(booksGetSpy).toHaveBeenCalledWith('book-1');
   });
 
-  it('passes the loaded book into the audio reader as an input', () => {
+  it('passes the loaded book into the audio reader as an input', async () => {
     render();
 
+    await mountReader(fixture);
     const audioReaderEl = fixture.debugElement.query(By.directive(AudioReader));
     expect(audioReaderEl).not.toBeNull();
     expect(audioReaderEl.componentInstance.bookId()).toBe('book-1');
@@ -1534,9 +1689,9 @@ describe('ReaderShell toolbar contract', () => {
     fixture = await configureReaderShell();
     render();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
     fixture.componentInstance.ready.set(true);
     render();
     stub.clearSearch.mockClear();
@@ -1555,9 +1710,9 @@ describe('ReaderShell toolbar contract', () => {
     fixture = await configureReaderShell();
     render();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
     fixture.componentInstance.ready.set(true);
     stub.searchAvailable.set(false);
     render();
@@ -1576,9 +1731,9 @@ describe('ReaderShell toolbar contract', () => {
     fixture = await configureReaderShell();
     render();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
     fixture.componentInstance.ready.set(true);
     render();
 
@@ -1607,9 +1762,7 @@ describe('ReaderShell toolbar contract', () => {
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
     render();
-    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
-      .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    await mountReader(fixture);
     fixture.componentInstance.ready.set(true);
     render();
 
@@ -1650,9 +1803,9 @@ describe('ReaderShell toolbar contract', () => {
     fixture = await configureReaderShell();
     render();
 
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
     // `ready` gates `activeReader()`, and it is set by a 100ms timer after the
     // book loads — the binding under test is the pager's, not the load timing.
     fixture.componentInstance.ready.set(true);
@@ -1905,6 +2058,7 @@ describe('ReaderShell typography panel (EPUB)', () => {
 
     fixture = await configureReaderShell();
     render();
+    await mountReader(fixture);
 
     fixture.componentInstance.toggleTypo();
     render();
@@ -1962,6 +2116,7 @@ describe('ReaderShell typography panel (EPUB)', () => {
     render();
 
     expect(localStorage.getItem('nostos.highlight.book-pens')).toBe('amber');
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
       .componentInstance as EpubReaderStub;
     expect(stub.highlightColour()).toBe('amber');
@@ -2162,6 +2317,7 @@ describe('ReaderShell UI kit migration (#362)', () => {
 
     const component = fixture.componentInstance;
     component.notesOpen.set(true);
+    await mountReader(fixture);
     component.typoOpen.set(true);
     component.pendingSelectionText.set('Sing, goddess, the anger of Peleus son Achilles.');
     render();
@@ -2250,11 +2406,6 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
 
   function attachPdfStub(component: ReaderShell): PdfReaderStub {
     const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
-    // ReaderShell intentionally queries the real PdfReader type. These focused
-    // integration tests attach the lightweight stand-in explicitly, then toggle
-    // the readiness dependency so activeReader() recomputes against it.
-    component.ready.set(false);
-    component.pdfReader = pdf as unknown as PdfReader;
     component.ready.set(true);
     render();
     return pdf;
@@ -3463,9 +3614,9 @@ describe('ReaderShell book/chapter progress toggle (#1269)', () => {
     booksGetSpy.mockReturnValue(of(epubBook));
     fixture = await configureReaderShell();
     render();
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
       .componentInstance as EpubReaderStub;
-    (fixture.componentInstance as unknown as { epubReader: EpubReaderStub }).epubReader = stub;
     fixture.componentInstance.ready.set(true);
     return stub;
   }
@@ -3534,9 +3685,9 @@ describe('ReaderShell book/chapter progress toggle (#1269)', () => {
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
     render();
+    await mountReader(fixture);
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
-    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
     fixture.componentInstance.ready.set(true);
     stub.progress.set({
       label: '',

@@ -2,11 +2,8 @@ import { Injector } from '@angular/core';
 import { Rendition, Contents } from 'epubjs';
 import { of, throwError } from 'rxjs';
 import type { Mock } from 'vitest';
-import {
-  EpubAnnotationManager,
-  isDesktopMouseSelection,
-  isMouseContextMenu,
-} from './epub-annotation-manager';
+import { EpubAnnotationManager, isMouseContextMenu } from './epub-annotation-manager';
+import { isDesktopMouseSelection } from '../selection-anchor';
 
 /**
  * Completed selection capture (issues #16, #304): a mouse selection is taken
