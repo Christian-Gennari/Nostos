@@ -889,49 +889,57 @@ describe('ReaderShell grounded book-text source navigation', () => {
     (EditionPlaceKeeper as { SettleMs: number }).SettleMs = 20;
     localStorage.removeItem('nostos.switch-edition.used');
 
-    const epubBook = {
-      ...audiobook,
-      id: 'book-1',
-      type: 'ebook',
-      fileName: 'source.epub',
-      otherEditions: [{ id: 'audio-9', type: 'audiobook', hasFile: true, progressPercent: 0 }],
-    } as Book;
-    booksGetSpy.mockReturnValue(of(epubBook));
+    let fixture: ComponentFixture<ReaderShell> | undefined;
+    try {
+      const epubBook = {
+        ...audiobook,
+        id: 'book-1',
+        type: 'ebook',
+        fileName: 'source.epub',
+        otherEditions: [{ id: 'audio-9', type: 'audiobook', hasFile: true, progressPercent: 0 }],
+      } as Book;
+      booksGetSpy.mockReturnValue(of(epubBook));
 
-    const fixture = await configureReaderShell();
-    fixture.detectChanges();
-    fixture.detectChanges();
+      fixture = await configureReaderShell();
+      fixture.detectChanges();
+      fixture.detectChanges();
 
-    const locateAudio = vi.fn(() => new Subject());
-    const injector = (fixture.componentInstance as unknown as { injector: Injector }).injector;
-    const get = injector.get.bind(injector);
-    vi.spyOn(injector, 'get').mockImplementation(((token: unknown, ...rest: unknown[]) =>
-      token === AlignmentService ? { locateAudio } : (get as (...a: unknown[]) => unknown)(token, ...rest)) as never);
+      const locateAudio = vi.fn(() => new Subject());
+      const injector = (fixture.componentInstance as unknown as { injector: Injector }).injector;
+      const get = injector.get.bind(injector);
+      vi.spyOn(injector, 'get').mockImplementation(((token: unknown, ...rest: unknown[]) =>
+        token === AlignmentService ? { locateAudio } : (get as (...a: unknown[]) => unknown)(token, ...rest)) as never);
 
-    await mountReader(fixture);
-    const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
-      .componentInstance as EpubReaderStub & { visibleExcerpt?: () => string };
-    stub.visibleExcerpt = () => 'Marley was dead: to begin with.';
+      // The settle timer runs on a fake clock, so the negative check below can
+      // advance exactly past SettleMs instead of guessing a wall-clock wait.
+      vi.useFakeTimers();
+      await mountReader(fixture);
+      const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
+        .componentInstance as EpubReaderStub & { visibleExcerpt?: () => string };
+      stub.visibleExcerpt = () => 'Marley was dead: to begin with.';
 
-    // Never switched on this book: a settled page is left alone.
-    stub.progress.set({ label: 'Page 2', percentage: 1 });
-    fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(locateAudio).not.toHaveBeenCalled();
+      // Never switched on this book: a settled page is left alone.
+      stub.progress.set({ label: 'Page 2', percentage: 1 });
+      fixture.detectChanges();
+      await vi.advanceTimersByTimeAsync(EditionPlaceKeeper.SettleMs + 1);
+      expect(locateAudio).not.toHaveBeenCalled();
 
-    rememberSwitched('book-1', 'audio-9');
-    stub.progress.set({ label: 'Page 3', percentage: 2 });
-    fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, 60));
+      rememberSwitched('book-1', 'audio-9');
+      stub.progress.set({ label: 'Page 3', percentage: 2 });
+      fixture.detectChanges();
 
-    expect(locateAudio).toHaveBeenCalledExactlyOnceWith('book-1', {
-      targetBookId: 'audio-9',
-      excerpt: 'Marley was dead: to begin with.',
-    });
-
-    fixture.destroy();
-    (EditionPlaceKeeper as { SettleMs: number }).SettleMs = settleMs;
-    localStorage.removeItem('nostos.switch-edition.used');
+      await vi.waitFor(() =>
+        expect(locateAudio).toHaveBeenCalledExactlyOnceWith('book-1', {
+          targetBookId: 'audio-9',
+          excerpt: 'Marley was dead: to begin with.',
+        }),
+      );
+    } finally {
+      fixture?.destroy();
+      vi.useRealTimers();
+      (EditionPlaceKeeper as { SettleMs: number }).SettleMs = settleMs;
+      localStorage.removeItem('nostos.switch-edition.used');
+    }
   });
 
   it('asks the EPUB reader to mark the sentence of a landing from another edition (#844)', async () => {
