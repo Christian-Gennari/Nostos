@@ -406,7 +406,8 @@ public class NostosDbContext : DbContext
         }
 
         change = new LibraryChange(
-            ProgressOnly: _libraryChangeTransactionId == transactionId && !_libraryChangeHasMoreThanPosition);
+            ProgressOnly: _libraryChangeTransactionId == transactionId && !_libraryChangeHasMoreThanPosition,
+            Revision: _libraryRevisionValue);
         _libraryChangeAnnouncedTransactionId = transactionId;
         _libraryChangeTransactionId = null;
         _libraryChangeHasMoreThanPosition = false;

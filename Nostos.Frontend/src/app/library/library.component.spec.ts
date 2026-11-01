@@ -385,7 +385,7 @@ describe('Library', () => {
     expect(collections.list).toHaveBeenCalledTimes(1);
   });
 
-  it('re-reads page by page when more is loaded than one request may carry', () => {
+  it('re-reads ceil(loaded/100) pages of 100 when more is loaded than one request may carry', () => {
     component.rawBooks.set(
       Array.from({ length: 120 }, (_, k) => ({ id: `b${k}`, title: `Book ${k}` }) as Book),
     );
@@ -396,10 +396,29 @@ describe('Library', () => {
 
     libraryChanged.next();
 
-    expect(listSpy.mock.calls.map((args: unknown[]) => (args[0] as { page: number }).page)).toEqual([
-      1, 2, 3, 4, 5, 6,
+    expect(listSpy.mock.calls.map((args: unknown[]) => args[0])).toEqual([
+      expect.objectContaining({ page: 1, pageSize: 100 }),
+      expect.objectContaining({ page: 2, pageSize: 100 }),
     ]);
+    // Only what the reader had loaded is kept, so the next page continues without a gap or repeat.
     expect(component.rawBooks()).toHaveLength(120);
+  });
+
+  it('marks a card\'s favourite, finished and rating taps as handled here', () => {
+    const books = TestBed.inject(BooksService) as unknown as { update: ReturnType<typeof vi.fn> };
+    const card = { id: 'b1', title: 'One', isFavorite: false, progressPercent: 0 } as Book;
+    component.rawBooks.set([card]);
+    books.update.mockClear();
+
+    component.toggleFavorite(card, new Event('click'));
+    component.toggleFinished(card, new Event('click'));
+    component.updateRating(card, 4);
+
+    expect(books.update.mock.calls.map((args: unknown[]) => args[2])).toEqual([
+      { handledLocally: true },
+      { handledLocally: true },
+      { handledLocally: true },
+    ]);
   });
 
   /** Books as the server would page them (20 to a reader's page), every title renamed. */
@@ -737,7 +756,7 @@ describe('Library', () => {
     fav.click();
     fixture.detectChanges();
 
-    expect(updateSpy).toHaveBeenCalledWith('book-1', { isFavorite: true });
+    expect(updateSpy).toHaveBeenCalledWith('book-1', { isFavorite: true }, { handledLocally: true });
     expect(navigateSpy).not.toHaveBeenCalled();
     expect(router.url).toBe(urlBefore);
   });

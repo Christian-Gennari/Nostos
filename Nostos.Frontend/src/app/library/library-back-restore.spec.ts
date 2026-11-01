@@ -28,7 +28,7 @@ class Shell {
 }
 
 const PAGE_SIZE = 20;
-const TOTAL = 90;
+const TOTAL = 150;
 /** Long enough for a swap's out-phase to finish and commit. */
 const SWAP_BUDGET = 300;
 
@@ -202,6 +202,28 @@ describe('Library Back restore', () => {
 
     expect(list).toHaveBeenCalledTimes(1);
     expect(list.mock.calls[0][0]).toMatchObject({ page: 1, pageSize: 60 });
+  });
+
+  it('re-reads a long list as ceil(loaded/100) pages of 100, not one request per loaded page', async () => {
+    await router.navigateByUrl('/library');
+    await settle();
+    for (let page = 2; page <= 6; page++) {
+      lib().loadMore();
+      await settle();
+    }
+    expect(cards()).toBe(120);
+    await openBook();
+    list.mockClear();
+
+    await goBack();
+
+    expect(list.mock.calls.map(([options]) => [options.page, options.pageSize])).toEqual([
+      [1, 100],
+      [2, 100],
+    ]);
+    // The second page held 50 books; only the 120 the reader had are kept.
+    expect(lib().books()).toHaveLength(120);
+    expect(lib().currentPage()).toBe(6);
   });
 
   it('goes on paging from where the restored list stopped', async () => {

@@ -30,6 +30,12 @@ function notesScopeOf(book: Book): string {
   return hasEditions(book) ? `work:${book.workId}` : `book:${book.id}`;
 }
 
+/**
+ * The page applies these taps to the book on screen itself (and the response, for
+ * Finished), so their change announcement is not a reason to read the book again.
+ */
+const HANDLED = { handledLocally: true } as const;
+
 @Injectable()
 export class BookDetailStore {
   // Dependencies
@@ -225,7 +231,7 @@ export class BookDetailStore {
     this.book.update((curr) => (curr ? { ...curr, isFavorite: newStatus } : null));
 
     // 2. API Call
-    this.booksService.update(b.id, { isFavorite: newStatus } as any).subscribe({
+    this.booksService.update(b.id, { isFavorite: newStatus } as any, HANDLED).subscribe({
       error: () => {
         // Revert on error
         this.book.update((curr) => (curr ? { ...curr, isFavorite: !newStatus } : null));
@@ -259,7 +265,7 @@ export class BookDetailStore {
     );
 
     // 2. API
-    this.booksService.update(b.id, { isFinished }).subscribe({
+    this.booksService.update(b.id, { isFinished }, HANDLED).subscribe({
       next: (updated) => {
         this.book.set(updated);
         this.toast.success(isFinished ? 'Marked as finished' : 'Marked as reading');
@@ -336,7 +342,7 @@ export class BookDetailStore {
 
     this.book.update((curr) => (curr ? { ...curr, rating } : null));
 
-    this.booksService.update(b.id, { rating } as any).subscribe({
+    this.booksService.update(b.id, { rating } as any, HANDLED).subscribe({
       error: () => this.toast.error('Could not update the rating'),
     });
   }
@@ -349,7 +355,7 @@ export class BookDetailStore {
     const before = b.editionRating ?? 0;
     this.book.update((curr) => (curr ? { ...curr, editionRating } : null));
 
-    this.booksService.update(b.id, { editionRating }).subscribe({
+    this.booksService.update(b.id, { editionRating }, HANDLED).subscribe({
       error: () => {
         this.book.update((curr) => (curr?.id === b.id ? { ...curr, editionRating: before } : curr));
         this.toast.error('Could not update the rating');

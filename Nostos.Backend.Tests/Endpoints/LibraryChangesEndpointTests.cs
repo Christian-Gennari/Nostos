@@ -118,6 +118,26 @@ public sealed partial class LibraryChangesEndpointTests : IClassFixture<LibraryE
     }
 
     [Fact]
+    public async Task A_write_names_the_revision_the_feed_announces_for_it_and_a_read_names_none()
+    {
+        using var factory = FastFeed(pollMilliseconds: 600_000);
+        using var watcher = factory.CreateClient();
+        using var writer = factory.CreateClient();
+        using var response = await OpenAsync(watcher);
+        await using var feed = await Feed.OpenAsync(response);
+        await feed.ReadRevisionsAsync(count: 1, Budget);
+
+        using var created = await writer.PostAsJsonAsync("/api/collections", new CreateCollectionDto($"Receipt {Guid.NewGuid():N}", null));
+        created.EnsureSuccessStatusCode();
+
+        var announced = (await feed.ReadRevisionsAsync(count: 1, Budget)).Single();
+        created.Headers.GetValues(LibraryWriteReceipt.HeaderName).Single().Should().Be(announced);
+
+        using var read = await writer.GetAsync("/api/collections");
+        read.Headers.Contains(LibraryWriteReceipt.HeaderName).Should().BeFalse("a read commits nothing");
+    }
+
+    [Fact]
     public async Task A_reading_position_save_is_announced_as_progress_only()
     {
         using var factory = FastFeed(pollMilliseconds: 600_000);

@@ -5,6 +5,7 @@ import { provideServiceWorker } from '@angular/service-worker';
 import { routes } from './app.routes';
 import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/http';
 import { hostedSessionExpiryInterceptor } from './core/services/hosted-session-expiry.interceptor';
+import { libraryWriteInterceptor } from './core/services/library-write.interceptor';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -13,7 +14,7 @@ export const appConfig: ApplicationConfig = {
       routes,
       withInMemoryScrolling({ scrollPositionRestoration: 'enabled' }),
     ),
-    provideHttpClient(withXhr(), withInterceptors([hostedSessionExpiryInterceptor])),
+    provideHttpClient(withXhr(), withInterceptors([hostedSessionExpiryInterceptor, libraryWriteInterceptor])),
     provideServiceWorker('ngsw-worker.js', {
       enabled: !isDevMode(),
       registrationStrategy: 'registerWhenStable:30000',

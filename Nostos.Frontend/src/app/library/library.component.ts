@@ -106,6 +106,12 @@ const SWAP_OUT_MS = 200;
 /** The largest page GET /api/books serves (LibraryReadService clamps to it). */
 const MAX_SERVER_PAGE_SIZE = 100;
 
+/**
+ * A card's own favourite, finished and rating taps patch the list and ask for the
+ * sidebar counts themselves, so their change announcement is not a reason to re-read.
+ */
+const HANDLED = { handledLocally: true } as const;
+
 /** True when the OS asks for reduced motion; the swap then commits instantly. */
 function prefersReducedMotion(): boolean {
   return (
@@ -582,16 +588,21 @@ export class Library implements OnInit, OnDestroy {
     if (this.loading() || this.loadingMore() || this.swapping() || this.loadFailed()) return;
 
     const seq = ++this.requestSeq;
-    // Everything already loaded, in one request when the server's page limit
-    // allows: the grouped list costs a full library read per request, so one
-    // request per loaded page multiplied that by how far the user scrolled.
+    // Everything already loaded, in as few requests as the server's page limit
+    // allows: the grouped list costs a full library read per request, so asking
+    // per loaded page multiplied that by how far the user scrolled. Pages of the
+    // maximum size start at the same offset (the first book), so they hold
+    // exactly the books the user has, plus at most a partial page of extras.
     const loadedPages = Math.max(1, this.currentPage());
     const firstPage = this.listQuery(1);
     const loaded = loadedPages * firstPage.pageSize!;
+    const requests = Math.ceil(loaded / MAX_SERVER_PAGE_SIZE);
     const pages =
-      loaded <= MAX_SERVER_PAGE_SIZE
+      requests === 1
         ? [this.booksService.list({ ...firstPage, pageSize: loaded })]
-        : Array.from({ length: loadedPages }, (_, i) => this.booksService.list(this.listQuery(i + 1)));
+        : Array.from({ length: requests }, (_, i) =>
+            this.booksService.list({ ...firstPage, page: i + 1, pageSize: MAX_SERVER_PAGE_SIZE }),
+          );
 
     forkJoin(pages).subscribe({
       next: (results) => {
@@ -600,6 +611,7 @@ export class Library implements OnInit, OnDestroy {
         this.rawBooks.set(
           results
             .flatMap((page) => page.items)
+            .slice(0, loaded)
             .filter((book) => !seen.has(book.id) && !!seen.add(book.id)),
         );
         this.totalItems.set(results[results.length - 1].totalCount);
@@ -1065,7 +1077,7 @@ export class Library implements OnInit, OnDestroy {
       books.map((b) => (b.id === book.id ? { ...b, isFavorite: newStatus } : b)),
     );
 
-    this.booksService.update(book.id, { isFavorite: newStatus }).subscribe({
+    this.booksService.update(book.id, { isFavorite: newStatus }, HANDLED).subscribe({
       next: (updated) => this.syncToggledBook(updated),
       error: () => {
         this.rawBooks.update((books) =>
@@ -1093,7 +1105,7 @@ export class Library implements OnInit, OnDestroy {
       ),
     );
 
-    this.booksService.update(book.id, { isFinished: newIsFinished }).subscribe({
+    this.booksService.update(book.id, { isFinished: newIsFinished }, HANDLED).subscribe({
       next: (updated) => this.syncToggledBook(updated),
       error: () => {
         this.rawBooks.update((books) =>
@@ -1116,7 +1128,7 @@ export class Library implements OnInit, OnDestroy {
       books.map((b) => (b.id === book.id ? { ...b, rating: newRating } : b)),
     );
 
-    this.booksService.update(book.id, { rating: newRating }).subscribe({
+    this.booksService.update(book.id, { rating: newRating }, HANDLED).subscribe({
       error: () => {
         this.rawBooks.update((books) =>
           books.map((b) => (b.id === book.id ? { ...b, rating: oldRating } : b)),
