@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { signal } from '@angular/core';
 
-import { TopicsService } from '../../core/services/topics.service';
+import { BrainStateService } from '../../brain/brain-state.service';
 import { TopicInputComponent } from './topic-input.component';
 
 describe('TopicInputComponent topic linking', () => {
@@ -9,19 +9,21 @@ describe('TopicInputComponent topic linking', () => {
   let component: TopicInputComponent;
   let textarea: HTMLTextAreaElement;
   let changed: ReturnType<typeof vi.fn>;
+  const ensureTopicsLoaded = vi.fn();
 
   beforeEach(async () => {
+    ensureTopicsLoaded.mockClear();
     await TestBed.configureTestingModule({
       imports: [TopicInputComponent],
       providers: [
         {
-          provide: TopicsService,
+          provide: BrainStateService,
           useValue: {
-            list: () =>
-              of([
-                { id: 'freedom', name: 'Freedom', usageCount: 4 },
-                { id: 'power', name: 'Power', usageCount: 2 },
-              ]),
+            topics: signal([
+              { id: 'freedom', name: 'Freedom', usageCount: 4 },
+              { id: 'power', name: 'Power', usageCount: 2 },
+            ]),
+            ensureTopicsLoaded: ensureTopicsLoaded,
           },
         },
       ],
@@ -51,6 +53,12 @@ describe('TopicInputComponent topic linking', () => {
     textarea.setSelectionRange(start, end);
     fixture.detectChanges();
   }
+
+  it('takes its topics from the Brain\'s state and makes no request of its own', () => {
+    fixture.detectChanges();
+
+    expect(ensureTopicsLoaded).toHaveBeenCalledTimes(1);
+  });
 
   it('opens a labelled modal dialog from Link a topic, prefilled from the selected text', () => {
     setValue('Power matters', 0, 5);

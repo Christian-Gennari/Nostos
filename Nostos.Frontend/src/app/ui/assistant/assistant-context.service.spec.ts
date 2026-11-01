@@ -162,4 +162,29 @@ describe('resolveAnchor', () => {
   it('returns null rather than guessing when no location is known', () => {
     expect(resolveAnchor(context())).toBeNull();
   });
+
+  it('takes the title and format from Book Details instead of reading the book again', () => {
+    const get = vi.fn(() => of({ id: 'b1', title: 'Fetched', type: 'ebook' } as unknown as Book));
+    const service = configure('/library/b1', { get });
+    TestBed.flushEffects();
+    expect(get).not.toHaveBeenCalled();
+    expect(service.context().bookTitle).toBeNull();
+
+    service.provideBook({ id: 'b1', title: 'Dune', type: 'audiobook' });
+    expect(service.context().bookTitle).toBe('Dune');
+    expect(service.context().bookFormat).toBe('audiobook');
+  });
+
+  it('ignores a provided book that is not the one on the route', () => {
+    const service = configure('/library/b2', { get: vi.fn() });
+    service.provideBook({ id: 'b1', title: 'Dune', type: 'ebook' });
+    expect(service.context().bookTitle).toBeNull();
+  });
+
+  it('still reads the book for the reader route', () => {
+    const get = vi.fn(() => of({ id: 'b1', title: 'Fetched', type: 'ebook' } as unknown as Book));
+    configure('/read/b1', { get });
+    TestBed.flushEffects();
+    expect(get).toHaveBeenCalledTimes(1);
+  });
 });

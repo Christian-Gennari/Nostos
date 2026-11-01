@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { Observable, map } from 'rxjs';
 
-import { BooksService } from '../../core/services/books.service';
+import type { Book } from '../../core/dtos/book.dtos';
 import { TopicsService } from '../../core/services/topics.service';
 import { WritingsService } from '../../core/services/writings.service';
 import { UNKNOWN_AUTHOR } from '../../core/book-format';
@@ -31,7 +31,6 @@ const MAX_ITEMS = 8;
  */
 @Injectable({ providedIn: 'root' })
 export class RecentItemsService {
-  private readonly books = inject(BooksService);
   private readonly topics = inject(TopicsService);
   private readonly writings = inject(WritingsService);
 
@@ -55,6 +54,18 @@ export class RecentItemsService {
       (i) => !(i.kind === item.kind && (i.id === item.id || (!!item.workId && i.workId === item.workId))),
     );
     this.persist([item, ...rest].slice(0, MAX_ITEMS));
+  }
+
+  /**
+   * Records a book from the page that has just read it, so the router does not
+   * read it a second time. Unchanged, it stays where it is without a write.
+   */
+  recordBook(book: Pick<Book, 'id' | 'title' | 'author' | 'workId'>): void {
+    const item = bookItem(book);
+    const [top] = this._items();
+    if (top && top.kind === 'book' && top.id === item.id && top.label === item.label
+      && top.sub === item.sub && top.workId === item.workId) return;
+    this.record(item);
   }
 
   /** Follows a rename without moving the item up the list. */
@@ -85,6 +96,9 @@ export class RecentItemsService {
       this.record(known);
       return;
     }
+    // A book's page and the reader read the book anyway and hand it to
+    // `recordBook`; reading it here as well would be a second request.
+    if (target.kind === 'book') return;
     this.lookup(target.kind, target.id).subscribe({
       next: (item) => this.record(item),
       // An id that does not resolve is not worth remembering.
@@ -92,12 +106,8 @@ export class RecentItemsService {
     });
   }
 
-  private lookup(kind: RecentKind, id: string): Observable<RecentItem> {
+  private lookup(kind: Exclude<RecentKind, 'book'>, id: string): Observable<RecentItem> {
     switch (kind) {
-      case 'book':
-        return this.books
-          .get(id)
-          .pipe(map((b) => ({ kind, id, label: b.title, sub: b.author || UNKNOWN_AUTHOR, ...(b.workId ? { workId: b.workId } : {}) })));
       case 'topic':
         return this.topics
           .get(id)
@@ -106,6 +116,10 @@ export class RecentItemsService {
         return this.writings.get(id).pipe(map((w) => ({ kind, id, label: w.name, sub: 'Document' })));
     }
   }
+}
+
+function bookItem(b: Pick<Book, 'id' | 'title' | 'author' | 'workId'>): RecentItem {
+  return { kind: 'book', id: b.id, label: b.title, sub: b.author || UNKNOWN_AUTHOR, ...(b.workId ? { workId: b.workId } : {}) };
 }
 
 /** Which recent-worthy place a URL opens, if any. */

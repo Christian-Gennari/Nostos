@@ -30,6 +30,15 @@ function notesScopeOf(book: Book): string {
   return hasEditions(book) ? `work:${book.workId}` : `book:${book.id}`;
 }
 
+/** Notes read by a book's id before the book said whether that is the right way to ask. */
+interface PrefetchedNotes {
+  seq: number;
+  bookId: string;
+  state: 'loading' | 'done' | 'failed';
+  items: NoteSearchHit[];
+  claimed: boolean;
+}
+
 @Injectable()
 export class BookDetailStore {
   // Dependencies
@@ -116,8 +125,10 @@ export class BookDetailStore {
       this.loading.set(true);
     }
 
-    // The notes follow the book: which of them to ask for depends on whether it
-    // has other editions (see `loadBook`).
+    // The notes start with the book rather than after it. They are first asked
+    // for by the book's own id; whether those are the right ones depends on
+    // whether it has other editions, which only the book says (see `loadBook`).
+    if (this.notesScope === null) this.prefetchNotes(id);
     this.loadBook(id);
     this.loadCollections();
   }
@@ -137,14 +148,16 @@ export class BookDetailStore {
       .subscribe({
         next: (data) => {
           this.book.set(data);
-          // Read the notes once the book says which to ask for, and again if
-          // linking or splitting editions changed that.
-          if (this.notesScope !== notesScopeOf(data)) this.loadNotes(id);
+          // The book says which notes are its own: keep the ones already on the
+          // way, or ask again if it has editions (or linking or splitting
+          // editions changed that).
+          if (this.notesScope !== notesScopeOf(data)) this.claimOrLoadNotes(data);
           // Direct navigation and refresh must discover the import even when
           // the Library has never mounted in this browser session.
           if (data.status === 1 || data.status === 2) this.imports.ensureConnected();
         },
         error: () => {
+          this.dropPrefetchedNotes(id);
           this.error.set('Book not found');
           this.toast.error('Book not found');
         },
@@ -173,6 +186,12 @@ export class BookDetailStore {
   private notesSeq = 0;
   /** Which notes the feed holds (see `notesScopeOf`); null before the first read. */
   private notesScope: string | null = null;
+  /**
+   * Notes asked for by a book's own id while the book itself was still on the
+   * way. They are shown only if the book turns out to have no other editions;
+   * for one that has, they are the wrong notes and are dropped unseen.
+   */
+  private prefetched: PrefetchedNotes | null = null;
 
   /**
    * Every note of the book, oldest first, as the Brain's cards show them (with
@@ -183,27 +202,100 @@ export class BookDetailStore {
    */
   loadNotes(id: string) {
     const seq = ++this.notesSeq;
+    this.prefetched = null;
     const book = this.book();
     const current = book?.id === id ? book : null;
     const workId = current && hasEditions(current) ? current.workId : undefined;
     this.notesScope = current ? notesScopeOf(current) : null;
     this.notesFailed.set(false);
+    this.readNotes(
+      seq,
+      workId ? { workId } : { bookId: id },
+      (all) => this.notes.set(all),
+      () => {
+        this.notesFailed.set(true);
+        this.notesScope = null;
+      },
+    );
+  }
+
+  /** Reads the notes by the book's own id, to be claimed when the book arrives. */
+  private prefetchNotes(id: string) {
+    const seq = ++this.notesSeq;
+    const run: PrefetchedNotes = {
+      seq, bookId: id, state: 'loading', items: [], claimed: false,
+    };
+    this.prefetched = run;
+    this.notesFailed.set(false);
+    this.readNotes(
+      seq,
+      { bookId: id },
+      (all) => {
+        run.state = 'done';
+        run.items = all;
+        if (run.claimed) this.showPrefetchedNotes(run);
+      },
+      () => {
+        run.state = 'failed';
+        if (run.claimed) this.showPrefetchedNotes(run);
+      },
+    );
+  }
+
+  /**
+   * The book has arrived. A book without other editions owns the notes read by
+   * its id: show them (when they are still on the way, as they land). Any other
+   * book reads by its work, so what was prefetched is discarded.
+   */
+  private claimOrLoadNotes(book: Book) {
+    const run = this.prefetched;
+    if (run && run.seq === this.notesSeq && run.bookId.toLowerCase() === book.id.toLowerCase() && !hasEditions(book)) {
+      run.claimed = true;
+      this.notesScope = notesScopeOf(book);
+      if (run.state !== 'loading') this.showPrefetchedNotes(run);
+      return;
+    }
+    this.loadNotes(book.id);
+  }
+
+  private showPrefetchedNotes(run: PrefetchedNotes) {
+    if (run.seq !== this.notesSeq) return;
+    this.prefetched = null;
+    if (run.state === 'done') {
+      this.notes.set(run.items);
+    } else {
+      this.notesFailed.set(true);
+      this.notesScope = null;
+    }
+  }
+
+  /** The book could not be read; notes asked for beside it are not shown. */
+  private dropPrefetchedNotes(id: string) {
+    if (this.prefetched?.bookId !== id) return;
+    this.prefetched = null;
+    this.notesSeq++;
+  }
+
+  /** Reads the notes 200 at a time; only the latest read (`seq`) is delivered. */
+  private readNotes(
+    seq: number,
+    scope: { bookId: string } | { workId: string },
+    done: (all: NoteSearchHit[]) => void,
+    failed: () => void,
+  ) {
     const page = (held: NoteSearchHit[]) =>
-      this.notesService
-        .browse({ ...(workId ? { workId } : { bookId: id }), order: 'oldest', limit: 200, offset: held.length })
-        .subscribe({
-          next: (result) => {
-            if (seq !== this.notesSeq) return;
-            const all = [...held, ...result.items];
-            if (result.items.length && all.length < result.totalCount) page(all);
-            else this.notes.set(all);
-          },
-          error: () => {
-            if (seq !== this.notesSeq) return;
-            this.notesFailed.set(true);
-            this.notesScope = null;
-          },
-        });
+      this.notesService.browse({ ...scope, order: 'oldest', limit: 200, offset: held.length }).subscribe({
+        next: (result) => {
+          if (seq !== this.notesSeq) return;
+          const all = [...held, ...result.items];
+          if (result.items.length && all.length < result.totalCount) page(all);
+          else done(all);
+        },
+        error: () => {
+          if (seq !== this.notesSeq) return;
+          failed();
+        },
+      });
     page([]);
   }
 
