@@ -30,6 +30,11 @@
                 "output": "/assets/"
               },
               {
+                "glob": "paged.polyfill.min.js",
+                "input": "node_modules/pagedjs/dist/",
+                "output": "/assets/pagedjs/"
+              },
+              {
                 "glob": "worker.min.js",
                 "input": "node_modules/tesseract.js/dist/",
                 "output": "/assets/tesseract/"
