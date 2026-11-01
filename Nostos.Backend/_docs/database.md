@@ -13,6 +13,10 @@ var dbPath = Path.Combine(builder.Environment.ContentRootPath, "nostos.db");
 options.UseSqlite($"Data Source={dbPath}");
 ```
 
+### Journal Mode
+
+The database stays in SQLite's default `journal_mode=delete`. WAL was measured and left out (#1323): it would keep reads moving during a book-text write, but a copy of `nostos.db` alone then loses committed rows, and it cannot be shown safe on the network and FUSE paths that self-hosters use. `SqliteBookTextIndex.ReplaceReadyAsync` keeps its dirty pages in memory instead, so only the commit blocks readers.
+
 ## Auto-Migration
 
 Migrations are applied automatically on startup:

@@ -1,3 +1,5 @@
+using System.Collections;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Services.BookText;
@@ -178,6 +180,106 @@ public sealed class BookTextSqliteIndexTests : IDisposable
         {
             try { File.Delete(_path + suffix); } catch { }
         }
+    }
+
+    /// <summary>
+    /// A book's text is written in one transaction. Past SQLite's 2 MB page
+    /// cache the pager spills and takes the exclusive lock, so every library
+    /// read waits for the rest of the write. The probe runs inside the write,
+    /// after several megabytes of dirty pages, and gives up after a second.
+    /// </summary>
+    [Fact]
+    public async Task A_large_book_can_be_written_while_the_library_is_read()
+    {
+        var index = new SqliteBookTextIndex(new Factory(_path));
+        await index.EnsureSchemaAsync();
+        var bookId = Guid.NewGuid();
+        await index.ScheduleAsync(bookId, "book.pdf", BookTextSourceFormat.Pdf);
+        var work = await index.TryClaimNextAsync(TimeSpan.FromMinutes(15));
+        var revision = new BookTextSourceRevision(
+            bookId,
+            new string('a', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            BookTextSourceFormat.Pdf);
+
+        const int chunkCount = 3000;
+        var readDuringWrite = (long?)null;
+        var random = new Random(1);
+        var chunks = Enumerable.Range(0, chunkCount)
+            .Select(ordinal => new BookTextIndexedChunk(
+                BookTextIdentity.ChunkId(revision, ordinal),
+                bookId,
+                revision.SourceSha256,
+                revision.ExtractorVersion,
+                revision.Format,
+                ordinal,
+                string.Concat(Enumerable.Range(0, 200).Select(_ => $"w{random.Next(50_000)} ")),
+                ordinal == chunkCount - 1
+                    ? new OnEnumerate(() => readDuringWrite = ReadChunkCount())
+                    : ["Chapter"],
+                []))
+            .ToList();
+
+        Assert.True(await index.ReplaceReadyAsync(revision, chunks, 1, work!.Attempt));
+
+        Assert.Equal(0, readDuringWrite);
+        Assert.Equal(chunkCount, ReadChunkCount());
+    }
+
+    [Fact]
+    public async Task A_pooled_connection_returns_with_the_default_spill_limit()
+    {
+        var index = new SqliteBookTextIndex(new Factory(_path));
+        await index.EnsureSchemaAsync();
+        var before = ReadSpillLimit();
+        var bookId = Guid.NewGuid();
+        await index.ScheduleAsync(bookId, "book.pdf", BookTextSourceFormat.Pdf);
+        var work = await index.TryClaimNextAsync(TimeSpan.FromMinutes(15));
+        var revision = new BookTextSourceRevision(
+            bookId,
+            new string('a', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            BookTextSourceFormat.Pdf);
+
+        Assert.True(await index.ReplaceReadyAsync(revision, [], 0, work!.Attempt));
+        Assert.False(await index.ReplaceReadyAsync(revision, [], 0, work.Attempt));
+
+        Assert.Equal(before, ReadSpillLimit());
+    }
+
+    private long ReadChunkCount()
+    {
+        using var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = _path, Pooling = false, DefaultTimeout = 1 }.ToString());
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM BookTextChunks;";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    private long ReadSpillLimit()
+    {
+        using var connection = new SqliteConnection($"Data Source={_path}");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA cache_spill;";
+        return (long)command.ExecuteScalar()!;
+    }
+
+    /// <summary>A heading list that runs a callback when the write serializes it.</summary>
+    private sealed class OnEnumerate(Action callback) : IReadOnlyList<string>
+    {
+        public int Count => 0;
+
+        public string this[int index] => throw new ArgumentOutOfRangeException(nameof(index));
+
+        public IEnumerator<string> GetEnumerator()
+        {
+            callback();
+            return Enumerable.Empty<string>().GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     private sealed class Factory(string path) : IDbContextFactory<NostosDbContext>
