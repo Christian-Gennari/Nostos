@@ -45,6 +45,13 @@ public sealed partial class LibraryService : ILibraryService
         CancellationToken ct = default) =>
         _reads.ListBooksAsync(filter, sort, search, page, pageSize, collectionId, groupByWork, format, ct);
 
+    public Task<IReadOnlyList<LibraryBookScopeEntry>> ListBookScopeAsync(
+        IReadOnlyList<Guid>? bookIds,
+        Guid? collectionId,
+        int limit,
+        CancellationToken ct = default) =>
+        _reads.ListBookScopeAsync(bookIds, collectionId, limit, ct);
+
     public Task<LibraryCommandResultDto> GetStatusCountsAsync(CancellationToken ct = default) =>
         _reads.GetStatusCountsAsync(ct);
 

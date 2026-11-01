@@ -264,6 +264,69 @@ internal sealed class LibraryReadService(
         return Result(LibraryReplyFormatter.BookList(totalCount), pageResult, version);
     }
 
+    /// <summary>
+    /// One narrow query for the books a text search covers. Rows and order match
+    /// paging <see cref="ListBooksAsync"/> with <c>BookFilter.All</c>, flat, by
+    /// title (active imports first, and kept through the collection filter), so
+    /// a search sees the same books as before without loading a single full
+    /// book DTO, its siblings or its collections.
+    /// </summary>
+    public async Task<IReadOnlyList<LibraryBookScopeEntry>> ListBookScopeAsync(
+        IReadOnlyList<Guid>? bookIds,
+        Guid? collectionId,
+        int limit,
+        CancellationToken ct = default)
+    {
+        await using var db = await _contexts.CreateDbContextAsync(ct);
+
+        if (bookIds is { Count: > 0 })
+        {
+            var wanted = bookIds.Distinct().Take(32).ToList();
+            var found = (await db.Books.AsNoTracking()
+                    .Where(b => wanted.Contains(b.Id))
+                    .Select(b => new LibraryBookScopeEntry(
+                        b.Id,
+                        b.Title,
+                        b.Author,
+                        b.FileDetails.FileName,
+                        b.FileDetails.HasFile))
+                    .ToListAsync(ct))
+                .ToDictionary(entry => entry.Id);
+            return wanted.Where(found.ContainsKey).Select(id => found[id]).ToList();
+        }
+
+        var query = CountableBooks(db);
+        if (collectionId.HasValue)
+        {
+            var collections = await db.Collections.AsNoTracking()
+                .Select(c => new CollectionModel { Id = c.Id, ParentId = c.ParentId })
+                .ToListAsync(ct);
+            var subtreeIds = GetSubtreeIds(collectionId.Value, collections);
+            var inCollection = query
+                .Where(b => db.BookCollections.Any(bc =>
+                    bc.BookId == b.Id && subtreeIds.Contains(bc.CollectionId)))
+                .Select(b => b.Id);
+            query = CountableBooks(db).Where(b =>
+                b.Status == BookStatus.Downloading
+                || b.Status == BookStatus.Transcoding
+                || inCollection.Contains(b.Id));
+        }
+
+        return await query
+            .OrderByDescending(b =>
+                b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding)
+            .ThenBy(b => b.Title)
+            .ThenBy(b => b.Id)
+            .Take(Math.Max(0, limit))
+            .Select(b => new LibraryBookScopeEntry(
+                b.Id,
+                b.Title,
+                b.Author,
+                b.FileDetails.FileName,
+                b.FileDetails.HasFile))
+            .ToListAsync(ct);
+    }
+
     public async Task<LibraryCommandResultDto> GetStatusCountsAsync(CancellationToken ct = default)
     {
         await using var db = await _contexts.CreateDbContextAsync(ct);

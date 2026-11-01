@@ -370,48 +370,16 @@ public sealed class KnowledgeRetrievalService(
         KnowledgeSearchRequest request,
         CancellationToken ct)
     {
-        if (request.BookIds is { Count: > 0 })
-        {
-            var valid = new List<Guid>();
-            foreach (var bookId in request.BookIds.Distinct().Take(32))
-            {
-                var result = await library.GetBookAsync(bookId, ct);
-                if (result.Data is BookDto)
-                    valid.Add(bookId);
-            }
-            return valid;
-        }
-
-        if (request.CollectionId is not { } collectionId)
+        if (request.BookIds is not { Count: > 0 } && request.CollectionId is null)
             return null;
 
-        const int pageSize = 100;
-        var page = 1;
-        var ids = new List<Guid>();
-        while (ids.Count < 500)
-        {
-            var result = await library.ListBooksAsync(
-                BookFilter.All,
-                BookSort.Title,
-                search: null,
-                page,
-                pageSize,
-                collectionId,
-                groupByWork: false,
-                format: null,
-                ct);
-
-            if (result.Data is not PaginatedResponse<BookDto> batch)
-                break;
-
-            var items = batch.Items.ToList();
-            ids.AddRange(items.Select(item => item.Id));
-            if (items.Count == 0 || ids.Count >= batch.TotalCount)
-                break;
-            page++;
-        }
-
-        return ids;
+        // One narrow query for either scope; same books and order as before.
+        var scope = await library.ListBookScopeAsync(
+            request.BookIds,
+            request.CollectionId,
+            limit: 500,
+            ct);
+        return scope.Select(book => book.Id).ToList();
     }
 
     private async Task<KnowledgeTopicEvidence> ToTopicEvidenceAsync(
@@ -620,7 +588,14 @@ public sealed class KnowledgeRetrievalService(
         var lexicalByHandle = lexical
             .GroupBy(item => item.Handle)
             .ToDictionary(group => group.Key, group => group.First());
-        var books = new Dictionary<Guid, BookDto?>();
+        // Titles and authors of every candidate book in one or two reads,
+        // not one full book read per distinct book.
+        var books = new Dictionary<Guid, LibraryBookScopeEntry?>();
+        foreach (var group in chunks.Values.Select(c => c.BookId).Distinct().Chunk(32))
+        {
+            foreach (var entry in await library.ListBookScopeAsync(group, null, 32, ct))
+                books[entry.Id] = entry;
+        }
         var evidence = new List<KnowledgeBookEvidence>(max);
         var totalChars = 0;
 
@@ -629,13 +604,7 @@ public sealed class KnowledgeRetrievalService(
             KnowledgeBookEvidence? item;
             if (chunks.TryGetValue(candidate.Key, out var chunk))
             {
-                if (!books.TryGetValue(chunk.BookId, out var book))
-                {
-                    book = (await library.GetBookAsync(chunk.BookId, ct)).Data as BookDto;
-                    books[chunk.BookId] = book;
-                }
-
-                if (book is null)
+                if (!books.TryGetValue(chunk.BookId, out var book) || book is null)
                     continue;
 
                 item = new KnowledgeBookEvidence(

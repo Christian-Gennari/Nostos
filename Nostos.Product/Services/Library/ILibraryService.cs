@@ -6,6 +6,18 @@ using Nostos.Shared.Enums;
 
 namespace Nostos.Backend.Services.Library;
 
+/// <summary>A book as a text search needs it: no covers, editions or collections.</summary>
+public sealed record LibraryBookScopeEntry(
+    Guid Id,
+    string Title,
+    string? Author,
+    string? FileName,
+    bool HasFile)
+{
+    public static LibraryBookScopeEntry From(BookDto book) =>
+        new(book.Id, book.Title, book.Author, book.FileName, book.HasFile);
+}
+
 /// <summary>
 /// Canonical library domain service. REST endpoints, Ask Nostos and the UI
 /// all call this one service; no surface computes or caches authoritative library
@@ -28,6 +40,64 @@ public interface ILibraryService
     Task<LibraryCommandResultDto> GetStatusCountsAsync(CancellationToken ct = default);
 
     Task<LibraryCommandResultDto> GetBookAsync(Guid bookId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The books a text search may look in, as id/title/author/file only, in one
+    /// query. With <paramref name="bookIds"/> (at most 32 distinct, request
+    /// order, unknown ids dropped) it is those books; otherwise every book in
+    /// <paramref name="collectionId"/> (descendants included) or in the whole
+    /// library, in the same order and with the same rows as paging
+    /// <see cref="ListBooksAsync"/> with <c>BookFilter.All</c>, capped at
+    /// <paramref name="limit"/>.
+    ///
+    /// The default implementation pages the full-book reads, so a host that
+    /// implements this interface without overriding it keeps working.
+    /// </summary>
+    async Task<IReadOnlyList<LibraryBookScopeEntry>> ListBookScopeAsync(
+        IReadOnlyList<Guid>? bookIds,
+        Guid? collectionId,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var entries = new List<LibraryBookScopeEntry>();
+        if (bookIds is { Count: > 0 })
+        {
+            foreach (var id in bookIds.Distinct().Take(32))
+            {
+                var result = await GetBookAsync(id, ct);
+                if (result.Data is BookDto book)
+                    entries.Add(LibraryBookScopeEntry.From(book));
+            }
+            return entries;
+        }
+
+        const int pageSize = 100;
+        var page = 1;
+        while (entries.Count < limit)
+        {
+            var result = await ListBooksAsync(
+                BookFilter.All,
+                BookSort.Title,
+                search: null,
+                page,
+                pageSize,
+                collectionId,
+                groupByWork: false,
+                format: null,
+                ct);
+
+            if (result.Data is not PaginatedResponse<BookDto> batch)
+                break;
+
+            var items = batch.Items.ToList();
+            entries.AddRange(items.Select(LibraryBookScopeEntry.From));
+            if (items.Count == 0 || entries.Count >= batch.TotalCount)
+                break;
+            page++;
+        }
+
+        return entries;
+    }
 
     Task<LibraryResolveResult> ResolveBookAsync(LibraryResolveBookRequest request, CancellationToken ct = default);
 
