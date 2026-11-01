@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 
@@ -19,11 +20,13 @@ namespace Nostos.Backend.Services.Library;
 /// </summary>
 internal static class WorkReadingStatus
 {
-    public static IQueryable<BookModel> WhereFinished(IQueryable<BookModel> books, NostosDbContext db) =>
-        books.Where(b => db.Books.Any(e => e.WorkId == b.WorkId && e.Progress.FinishedAt != null));
+    // The rules as expressions, so the filters and the one-query sidebar counts
+    // are built from the same text.
+    public static Expression<Func<BookModel, bool>> IsFinished(NostosDbContext db) =>
+        b => db.Books.Any(e => e.WorkId == b.WorkId && e.Progress.FinishedAt != null);
 
-    public static IQueryable<BookModel> WhereReading(IQueryable<BookModel> books, NostosDbContext db) =>
-        books.Where(b => db.Books.Any(e =>
+    public static Expression<Func<BookModel, bool>> IsReading(NostosDbContext db) =>
+        b => db.Books.Any(e =>
             e.WorkId == b.WorkId
             && e.Progress.FinishedAt == null
             && e.Progress.ProgressPercent > 0
@@ -31,12 +34,21 @@ internal static class WorkReadingStatus
             && !db.Books.Any(f =>
                 f.WorkId == b.WorkId
                 && f.Progress.FinishedAt != null
-                && (e.Progress.LastReadAt == null || f.Progress.FinishedAt >= e.Progress.LastReadAt))));
+                && (e.Progress.LastReadAt == null || f.Progress.FinishedAt >= e.Progress.LastReadAt)));
+
+    public static Expression<Func<BookModel, bool>> IsNotStarted(NostosDbContext db) =>
+        b => !db.Books.Any(e =>
+            e.WorkId == b.WorkId
+            && (e.Progress.ProgressPercent > 0 || e.Progress.FinishedAt != null));
+
+    public static IQueryable<BookModel> WhereFinished(IQueryable<BookModel> books, NostosDbContext db) =>
+        books.Where(IsFinished(db));
+
+    public static IQueryable<BookModel> WhereReading(IQueryable<BookModel> books, NostosDbContext db) =>
+        books.Where(IsReading(db));
 
     public static IQueryable<BookModel> WhereNotStarted(IQueryable<BookModel> books, NostosDbContext db) =>
-        books.Where(b => !db.Books.Any(e =>
-            e.WorkId == b.WorkId
-            && (e.Progress.ProgressPercent > 0 || e.Progress.FinishedAt != null)));
+        books.Where(IsNotStarted(db));
 
     /// <summary>The same rule in memory, for the editions of one work.</summary>
     public static (bool Finished, bool Reading, bool NotStarted) Of(IReadOnlyCollection<BookModel> editions)
