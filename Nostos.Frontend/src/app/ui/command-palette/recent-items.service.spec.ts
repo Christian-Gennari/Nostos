@@ -87,18 +87,37 @@ describe('RecentItemsService', () => {
     expect(create().items()).toEqual([]);
   });
 
-  it('records a visited book under its title, looked up once', () => {
-    bookGet.mockReturnValue(of({ id: 'b1', title: 'Dune', author: 'Frank Herbert' }));
+  it('records a visited book from the page that read it, without a request of its own', () => {
     const recent = create();
     const events = new Subject<unknown>();
     recent.watch({ events } as unknown as Router);
 
     events.next(new NavigationEnd(1, '/library/b1', '/library/b1'));
-    events.next(new NavigationEnd(2, '/library', '/library'));
-    events.next(new NavigationEnd(3, '/read/b1', '/read/b1'));
+    events.next(new NavigationEnd(2, '/read/b2', '/read/b2'));
+    expect(recent.items()).toEqual([]);
 
-    expect(recent.items()).toEqual([{ kind: 'book', id: 'b1', label: 'Dune', sub: 'Frank Herbert' }]);
-    expect(bookGet).toHaveBeenCalledTimes(1);
+    recent.recordBook({ id: 'b1', title: 'Dune', author: 'Frank Herbert', workId: 'w1' });
+    expect(recent.items()).toEqual([
+      { kind: 'book', id: 'b1', label: 'Dune', sub: 'Frank Herbert', workId: 'w1' },
+    ]);
+    expect(bookGet).not.toHaveBeenCalled();
+  });
+
+  it('moves a known book up on navigation and leaves an unchanged top item alone', () => {
+    const recent = create();
+    const events = new Subject<unknown>();
+    recent.watch({ events } as unknown as Router);
+    recent.recordBook({ id: 'b1', title: 'Dune', author: 'Frank Herbert' });
+    recent.recordBook({ id: 'b2', title: 'Emma', author: '' });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+    recent.recordBook({ id: 'b2', title: 'Emma', author: '' });
+    expect(setItem).not.toHaveBeenCalled();
+
+    events.next(new NavigationEnd(1, '/library/b1', '/library/b1'));
+    expect(recent.items().map((i) => i.id)).toEqual(['b1', 'b2']);
+    expect(bookGet).not.toHaveBeenCalled();
+    setItem.mockRestore();
   });
 
   it('does not remember an id that no longer resolves', () => {

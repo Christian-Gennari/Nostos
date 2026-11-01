@@ -3,7 +3,6 @@ import {
   ElementRef,
   EventEmitter,
   Input,
-  OnDestroy,
   OnInit,
   Output,
   ViewChild,
@@ -11,16 +10,16 @@ import {
   forwardRef,
   inject,
   ChangeDetectionStrategy,
+  effect,
 } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { Subscription } from 'rxjs';
 
 import { ButtonComponent } from '../button/button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { TopicAutocompleteDirective } from '../../core/directives/topic-autocomplete.directive';
 import { TopicAutocompletePanel } from '../topic-autocomplete-panel/topic-autocomplete-panel.component';
-import { TopicsService } from '../../core/services/topics.service';
+import { BrainStateService } from '../../brain/brain-state.service';
 import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-autocomplete.service';
 
 @Component({
@@ -46,16 +45,15 @@ import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-auto
     TopicAutocompleteService,
   ],
 })
-export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDestroy {
+export class TopicInputComponent implements ControlValueAccessor, OnInit {
   @Input() placeholder = '';
   @Input() rows = 3;
   @Output() submitTrigger = new EventEmitter<void>();
 
   @ViewChild('textarea') textarea!: ElementRef<HTMLTextAreaElement>;
   protected readonly autocompleteService = inject(TopicAutocompleteService);
-  private readonly topicsService = inject(TopicsService);
+  private readonly brain = inject(BrainStateService);
   private readonly cdr = inject(ChangeDetectorRef);
-  private sub?: Subscription;
   private pickerSelection: { start: number; end: number } | null = null;
 
   value = '';
@@ -69,14 +67,14 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDest
     return this.autocompleteService.pickerOpen() && this.autocompleteService.mode() === 'inline';
   }
 
-  ngOnInit(): void {
-    this.sub = this.topicsService.list().subscribe((list) => {
-      this.autocompleteService.setTopics(list);
-    });
+  constructor() {
+    // The suggestions are the Brain's topics, which the page already holds or
+    // is loading: asking the server again for each field would repeat that call.
+    effect(() => this.autocompleteService.setTopics(this.brain.topics()));
   }
 
-  ngOnDestroy(): void {
-    this.sub?.unsubscribe();
+  ngOnInit(): void {
+    this.brain.ensureTopicsLoaded();
   }
 
   rememberSelection(): void {
