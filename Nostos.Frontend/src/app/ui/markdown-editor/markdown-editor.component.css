@@ -77,6 +77,17 @@ app-markdown-editor .editor-mark-quote {
   line-height: 1;
 }
 
+/* "a¹": a word with its footnote, as in a word processor (issue #1342). */
+app-markdown-editor .editor-add-footnote {
+  font-family: Newsreader, Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+app-markdown-editor .editor-add-footnote sup {
+  font-size: 0.65em;
+}
+
 app-markdown-editor .editor-bubble-btn:hover {
   color: var(--manuscript-ink);
   background: var(--manuscript-selection);
@@ -746,6 +757,46 @@ app-markdown-editor .ProseMirror sup.footnote-ref {
   font-variant-numeric: tabular-nums;
   line-height: 1;
   vertical-align: super;
+}
+
+/* A click moves between a marker and its note (issue #1342). */
+app-markdown-editor .ProseMirror sup.footnote-ref {
+  cursor: pointer;
+}
+
+app-markdown-editor .ProseMirror sup.footnote-ref:hover {
+  color: var(--manuscript-link, inherit);
+}
+
+/*
+ * The notes at the end read as notes (issue #1342): a short rule opens them,
+ * as on a printed page, and they sit smaller and softer than the text. Each
+ * starts with its number on the line, not raised.
+ */
+app-markdown-editor .nostos-manuscript-body p.footnote-note {
+  margin-block: 0.3em;
+  color: var(--manuscript-ink-soft, inherit);
+  font-size: 0.86em;
+  line-height: 1.5;
+}
+
+app-markdown-editor .nostos-manuscript-body p.footnote-notes-start {
+  margin-top: 2.4em;
+}
+
+app-markdown-editor .nostos-manuscript-body p.footnote-notes-start::before {
+  content: '';
+  display: block;
+  width: 6em;
+  margin-bottom: 0.9em;
+  border-top: 1px solid var(--manuscript-rule-strong, currentColor);
+}
+
+app-markdown-editor .ProseMirror p.footnote-note sup.footnote-backref {
+  padding: 0;
+  color: var(--manuscript-ink, inherit);
+  font-size: 1em;
+  vertical-align: baseline;
 }
 
 app-markdown-editor .ProseMirror sup.footnote-ref.ProseMirror-selectednode {

@@ -20,6 +20,7 @@ export type BlockMenuAction =
   | 'codeBlock'
   | 'image'
   | 'table'
+  | 'footnote'
   | 'source'
   | 'bibliography';
 
@@ -42,6 +43,7 @@ export const BLOCK_MENU_ITEMS: readonly BlockMenuItem[] = [
   { action: 'codeBlock', label: 'Code block', hint: '```', keywords: 'code pre fenced' },
   { action: 'image', label: 'Image', hint: '![](url)', keywords: 'image picture photo img' },
   { action: 'table', label: 'Table', hint: '| a | b |', keywords: 'table grid columns' },
+  { action: 'footnote', label: 'Footnote', hint: '[^]', keywords: 'footnote note endnote fn' },
   { action: 'source', label: 'Insert source…', hint: '@', keywords: 'source quote note passage reference cite' },
   { action: 'bibliography', label: 'Bibliography', hint: 'sources', keywords: 'bibliography references works cited sources list' },
 ];

@@ -76,12 +76,24 @@ export interface FootnoteDefinition {
   number: number;
   /** Nothing in it but one live citation (issue #1157): the Studio's own note. */
   citationOnly: boolean;
+  /** Nothing in it after its number (issue #1342): a note not yet written. */
+  empty: boolean;
 }
 
 export function isFootnoteDefinition(node: PMNode): boolean {
   if (node.type.name !== 'paragraph' || node.firstChild?.type.name !== 'footnoteRef' || node.childCount < 2) return false;
   const second = node.child(1);
   return second.isText && (second.text ?? '').startsWith(':');
+}
+
+function isEmptyNote(node: PMNode): boolean {
+  let empty = true;
+  node.forEach((child, _offset, index) => {
+    if (index === 0) return;
+    if (!child.isText) empty = false;
+    else if ((index === 1 ? (child.text ?? '').replace(/^:/, '') : (child.text ?? '')).trim()) empty = false;
+  });
+  return empty;
 }
 
 function isCitationOnly(node: PMNode): boolean {
@@ -100,7 +112,7 @@ export function footnoteDefinitions(doc: PMNode): FootnoteDefinition[] {
   const definitions: FootnoteDefinition[] = [];
   doc.forEach((node, pos, index) => {
     if (!isFootnoteDefinition(node)) return;
-    definitions.push({ node, pos, index, number: Number(node.firstChild!.attrs['number']) || 0, citationOnly: isCitationOnly(node) });
+    definitions.push({ node, pos, index, number: Number(node.firstChild!.attrs['number']) || 0, citationOnly: isCitationOnly(node), empty: isEmptyNote(node) });
   });
   return definitions;
 }
@@ -120,7 +132,8 @@ export function footnoteMarkers(doc: PMNode): { pos: number; number: number }[] 
 /**
  * Footnotes kept in order (issue #1157): numbered as they are read, their
  * notes together in that order, and the Studio's own note gone with its
- * marker. A note someone wrote themselves is never deleted, only renumbered.
+ * marker. So is a note left empty (issue #1342). A note someone wrote
+ * themselves is never deleted, only renumbered.
  */
 export function tidyFootnotes(state: EditorState): Transaction | null {
   const tr = state.tr;
@@ -136,7 +149,7 @@ export function tidyFootnotesIn(tr: Transaction): boolean {
   if (!definitions.length && !markers.length) return false;
 
   const marked = new Set(markers.map((m) => m.number));
-  const dropped = definitions.filter((d) => d.citationOnly && !marked.has(d.number));
+  const dropped = definitions.filter((d) => (d.citationOnly || d.empty) && !marked.has(d.number));
   const kept = definitions.filter((d) => !dropped.includes(d));
 
   const renumber = new Map<number, number>();
