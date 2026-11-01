@@ -5,9 +5,21 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Data.Models;
+using Nostos.Backend.Data.Repositories;
+using Nostos.Backend.Providers.Acquisition;
+using Nostos.Backend.Services;
+using Nostos.Backend.Services.BookUpload;
+using Nostos.Backend.Services.ExternalMedia;
+using Nostos.Backend.Tests.Portability;
 using Nostos.Backend.Tests.Support;
+using Nostos.Product.BookText;
 using Nostos.Shared.Dtos;
 using Xunit;
 
@@ -252,11 +264,262 @@ public sealed class BookUploadEndpointTests
         Directory.Exists(staging).Should().BeFalse();
     }
 
-    private static async Task<BookDto> CreateBookAsync(HttpClient client)
+    // #1310. A to E are the cases measured in the issue. A and B write the state
+    // a crash between adoption and the row commit leaves; the others inject the
+    // failure through the real publish.
+
+    [Fact]
+    public async Task Crash_after_adoption_of_a_first_upload_completes_on_retry()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client);
+        var bytes = Encoding.ASCII.GetBytes("first upload, crash before the row");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
+        await CrashAfterAdoptionAsync(scene.Factory, book.Id, session.SessionId, bytes);
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadStatusAsync(completed)).State.Should().Be("Complete");
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        var row = await db.Books.SingleAsync(b => b.Id == book.Id);
+        row.FileDetails.HasFile.Should().BeTrue();
+        row.FileDetails.FileName.Should().Be("book.txt");
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+    }
+
+    [Fact]
+    public async Task Crash_after_adoption_of_a_replacement_runs_the_row_commit()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookWithFileAsync(scene, Encoding.ASCII.GetBytes("the old file"));
+        await SetStaleFileStateAsync(scene.Factory, book.Id);
+        var bytes = Encoding.ASCII.GetBytes("the replacement, a crash before its row");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "new.txt");
+        await CrashAfterAdoptionAsync(scene.Factory, book.Id, session.SessionId, bytes);
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        var row = await db.Books.SingleAsync(b => b.Id == book.Id);
+        row.FileDetails.LocationsJson.Should().BeNull();
+        row.FileDetails.TracksJson.Should().BeNull();
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+    }
+
+    [Fact]
+    public async Task Failed_row_update_is_finished_by_recovery()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookWithFileAsync(scene, Encoding.ASCII.GetBytes("the old file"));
+        await SetStaleFileStateAsync(scene.Factory, book.Id);
+        var bytes = Encoding.ASCII.GetBytes("the replacement, row update fails once");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "new.txt");
+        scene.Faults.FailRowUpdates = 1;
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        var row = await db.Books.SingleAsync(b => b.Id == book.Id);
+        row.FileDetails.LocationsJson.Should().BeNull();
+        row.FileDetails.TracksJson.Should().BeNull();
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+        StoredSha(scene.Factory, book.Id).Should().Be(Sha256Hex(bytes));
+    }
+
+    [Fact]
+    public async Task Failed_adoption_of_a_same_length_replacement_is_not_reported_complete()
+    {
+        using var scene = new RecoveryScene();
+        var oldBytes = Encoding.ASCII.GetBytes("old file, same length");
+        var book = await CreateBookWithFileAsync(scene, oldBytes);
+        await SetStaleFileStateAsync(scene.Factory, book.Id);
+        var bytes = Encoding.ASCII.GetBytes("new file, same length");
+        bytes.Should().HaveCount(oldBytes.Length);
+        var session = await StageAsync(scene.Client, book.Id, bytes, "new.txt");
+        scene.Faults.FailAdoptions = 1;
+
+        using (var failed = await CompleteAsync(scene.Client, book.Id, session.SessionId))
+            failed.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        (await SessionAsync(scene.Factory, session.SessionId)).State
+            .Should().Be((int)BookUploadState.Completing);
+        Directory.Exists(StagingPath(scene.Factory, session.SessionId)).Should().BeTrue();
+        StoredSha(scene.Factory, book.Id).Should().Be(Sha256Hex(oldBytes));
+        scene.Faults.Scheduled.Should().BeEmpty();
+
+        using var retried = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        retried.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadStatusAsync(retried)).State.Should().Be("Complete");
+        StoredSha(scene.Factory, book.Id).Should().Be(Sha256Hex(bytes));
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+    }
+
+    [Fact]
+    public async Task Failed_adoption_of_a_different_length_replacement_stays_retryable()
+    {
+        using var scene = new RecoveryScene();
+        var oldBytes = Encoding.ASCII.GetBytes("old file");
+        var book = await CreateBookWithFileAsync(scene, oldBytes);
+        var bytes = Encoding.ASCII.GetBytes("a new file of another length");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "new.txt");
+        scene.Faults.FailAdoptions = 1;
+
+        using var failed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        failed.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        (await SessionAsync(scene.Factory, session.SessionId)).State
+            .Should().Be((int)BookUploadState.Completing);
+        Directory.Exists(StagingPath(scene.Factory, session.SessionId)).Should().BeTrue();
+        StoredSha(scene.Factory, book.Id).Should().Be(Sha256Hex(oldBytes));
+    }
+
+    [Fact]
+    public async Task Stored_file_with_other_bytes_is_never_reported_complete()
+    {
+        using var scene = new RecoveryScene();
+        var oldBytes = Encoding.ASCII.GetBytes("old file, same length");
+        var book = await CreateBookWithFileAsync(scene, oldBytes);
+        await SetStaleFileStateAsync(scene.Factory, book.Id);
+        var bytes = Encoding.ASCII.GetBytes("new file, same length");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "new.txt");
+
+        // The staging is gone but the library still holds the old bytes.
+        await CrashAfterAdoptionAsync(scene.Factory, book.Id, session.SessionId, oldBytes);
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await completed.Content.ReadAsStringAsync()).Should().Contain("book_upload_invalid_state");
+        (await SessionAsync(scene.Factory, session.SessionId)).State
+            .Should().Be((int)BookUploadState.Completing);
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        (await db.Books.SingleAsync(b => b.Id == book.Id)).FileDetails.LocationsJson
+            .Should().NotBeNull();
+        scene.Faults.Scheduled.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Stored_file_with_the_same_bytes_and_another_format_is_not_this_upload()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client);
+        var bytes = Encoding.ASCII.GetBytes("same bytes, another extension");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
+        await CrashAfterAdoptionAsync(
+            scene.Factory, book.Id, session.SessionId, bytes, storedName: "book.pdf");
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        (await db.Books.SingleAsync(b => b.Id == book.Id)).FileDetails.HasFile.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Recovery_that_fails_can_be_retried()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client);
+        var bytes = Encoding.ASCII.GetBytes("the row cannot be written yet");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
+
+        // Fails the publish and the recovery inside the same request.
+        scene.Faults.FailRowUpdates = 2;
+        using (var failed = await CompleteAsync(scene.Client, book.Id, session.SessionId))
+            failed.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        (await SessionAsync(scene.Factory, session.SessionId)).State
+            .Should().Be((int)BookUploadState.Completing);
+        Directory.Exists(StagingPath(scene.Factory, session.SessionId)).Should().BeFalse();
+
+        using var retried = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        retried.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        (await db.Books.SingleAsync(b => b.Id == book.Id)).FileDetails.HasFile.Should().BeTrue();
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+    }
+
+    [Fact]
+    public async Task Commit_that_failed_after_the_row_update_is_repeated_safely()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client);
+        var bytes = Encoding.ASCII.GetBytes("the index could not be told");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
+        scene.Faults.FailSchedules = 1;
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadStatusAsync(completed)).State.Should().Be("Complete");
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+    }
+
+    [Fact]
+    public async Task Recovery_without_staging_takes_the_file_mutation_gate()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client);
+        var bytes = Encoding.ASCII.GetBytes("an acquisition owns this book");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
+        await CrashAfterAdoptionAsync(scene.Factory, book.Id, session.SessionId, bytes);
+        var gate = scene.Host.Services.GetRequiredService<BookFileMutationGate>();
+
+        using (gate.TryEnter(book.Id))
+        {
+            using var blocked = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+            blocked.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await blocked.Content.ReadAsStringAsync()).Should().Contain("book_upload_in_progress");
+        }
+
+        scene.Faults.Scheduled.Should().BeEmpty();
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Recovery_reads_metadata_from_the_stored_file()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client, "audiobook");
+        var bytes = SilentMp3(frames: 400);
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.mp3", "audio/mpeg");
+        await CrashAfterAdoptionAsync(
+            scene.Factory, book.Id, session.SessionId, bytes, storedName: "book.mp3");
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        await using var db = OpenDb(scene.Factory.DatabasePath);
+        var row = await db.Books.OfType<AudioBookModel>().SingleAsync(b => b.Id == book.Id);
+        row.Duration.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Uninterrupted_publish_commits_once()
+    {
+        using var scene = new RecoveryScene();
+        var book = await CreateBookAsync(scene.Client);
+        var bytes = Encoding.ASCII.GetBytes("nothing goes wrong");
+        var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
+
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        scene.Faults.Scheduled.Should().Equal(book.Id);
+        scene.Faults.RowUpdates.Should().Be(1);
+    }
+
+    private static async Task<BookDto> CreateBookAsync(HttpClient client, string type = "ebook")
     {
         using var response = await client.PostAsJsonAsync("/api/books", new
         {
-            type = "ebook",
+            type,
             title = $"Resumable {Guid.NewGuid():N}",
             author = "Test Author",
         });
@@ -264,17 +527,116 @@ public sealed class BookUploadEndpointTests
         return (await response.Content.ReadFromJsonAsync<BookDto>())!;
     }
 
+    private static async Task<BookDto> CreateBookWithFileAsync(RecoveryScene scene, byte[] bytes)
+    {
+        var book = await CreateBookAsync(scene.Client);
+        var session = await StageAsync(scene.Client, book.Id, bytes, "old.txt");
+        using var completed = await CompleteAsync(scene.Client, book.Id, session.SessionId);
+        completed.StatusCode.Should().Be(HttpStatusCode.OK);
+        scene.Faults.Reset();
+        return book;
+    }
+
+    /// <summary>Sends every part of a one-part file and stops before publishing.</summary>
+    private static async Task<UploadStatusDto> StageAsync(
+        HttpClient client,
+        Guid bookId,
+        byte[] bytes,
+        string fileName,
+        string contentType = "text/plain")
+    {
+        using var created = await CreateSessionAsync(
+            client, bookId, bytes.Length, fileName, Sha256Hex(bytes), contentType);
+        var session = await ReadStatusAsync(created);
+        using var part = await PutPartAsync(client, bookId, session.SessionId, 0, bytes);
+        part.StatusCode.Should().Be(HttpStatusCode.OK);
+        return session;
+    }
+
+    /// <summary>
+    /// What a crash between adoption and the row commit leaves: the session
+    /// says Completing, the staging is gone and the book folder holds the file.
+    /// </summary>
+    private static async Task CrashAfterAdoptionAsync(
+        LibraryEndpointFactory factory,
+        Guid bookId,
+        Guid sessionId,
+        byte[] stored,
+        string storedName = "book.txt")
+    {
+        var staging = StagingPath(factory, sessionId);
+        Directory.Exists(staging).Should().BeTrue();
+        Directory.Delete(staging, recursive: true);
+
+        var folder = Path.Combine(factory.BooksRootPath, bookId.ToString());
+        Directory.CreateDirectory(folder);
+        foreach (var file in Directory.EnumerateFiles(folder, "book.*"))
+            File.Delete(file);
+        await File.WriteAllBytesAsync(Path.Combine(folder, storedName), stored);
+
+        await using var db = OpenDb(factory.DatabasePath);
+        var session = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == sessionId);
+        session.State = (int)BookUploadState.Completing;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SetStaleFileStateAsync(LibraryEndpointFactory factory, Guid bookId)
+    {
+        await using var db = OpenDb(factory.DatabasePath);
+        var book = await db.Books.SingleAsync(b => b.Id == bookId);
+        book.FileDetails.LocationsJson = "stale-locations";
+        book.FileDetails.TracksJson = "[]";
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<BookUploadSessionRecord> SessionAsync(
+        LibraryEndpointFactory factory,
+        Guid sessionId)
+    {
+        await using var db = OpenDb(factory.DatabasePath);
+        return await db.BookUploadSessionRecords.AsNoTracking().SingleAsync(s => s.Id == sessionId);
+    }
+
+    private static string StagingPath(LibraryEndpointFactory factory, Guid sessionId) =>
+        Path.Combine(factory.StorageTempRoot, "transfers", "book-uploads", sessionId.ToString("N"));
+
+    private static string StoredSha(LibraryEndpointFactory factory, Guid bookId) =>
+        Sha256Hex(File.ReadAllBytes(
+            Path.Combine(factory.BooksRootPath, bookId.ToString(), "book.txt")));
+
+    private static Task<HttpResponseMessage> CompleteAsync(
+        HttpClient client,
+        Guid bookId,
+        Guid sessionId) =>
+        client.PostAsync($"/api/books/{bookId}/file/uploads/{sessionId}/complete", null);
+
+    /// <summary>MPEG-1 Layer III frames (128 kbps, 44.1 kHz) with empty side data.</summary>
+    private static byte[] SilentMp3(int frames)
+    {
+        const int frameBytes = 417;
+        var bytes = new byte[frames * frameBytes];
+        for (var offset = 0; offset < bytes.Length; offset += frameBytes)
+        {
+            bytes[offset] = 0xFF;
+            bytes[offset + 1] = 0xFB;
+            bytes[offset + 2] = 0x90;
+            bytes[offset + 3] = 0x00;
+        }
+        return bytes;
+    }
+
     private static Task<HttpResponseMessage> CreateSessionAsync(
         HttpClient client,
         Guid bookId,
         long totalBytes,
         string fileName,
-        string sha) =>
+        string sha,
+        string contentType = "text/plain") =>
         client.PostAsJsonAsync($"/api/books/{bookId}/file/uploads", new
         {
             totalBytes,
             fileName,
-            contentType = "text/plain",
+            contentType,
             sha256 = sha,
         });
 
@@ -323,4 +685,116 @@ public sealed class BookUploadEndpointTests
         int[] ReceivedParts);
 
     private sealed record PartResultDto(Guid SessionId, int PartIndex, bool AlreadyPresent);
+
+    /// <summary>One host whose storage, row writes and scheduler can be made to fail.</summary>
+    private sealed class RecoveryScene : IDisposable
+    {
+        private readonly LibraryEndpointFactory _factory = new();
+
+        public RecoveryScene()
+        {
+            Host = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            {
+                services.AddSingleton<IBookAssetStorage>(sp => new FaultingAssetStorage(
+                    sp.GetRequiredService<ExternalMediaBookStorage>(),
+                    Faults));
+                services.AddScoped<IBookRepository>(sp => new FaultingBookRepository(
+                    new BookRepository(sp.GetRequiredService<NostosDbContext>()),
+                    Faults));
+                services.AddSingleton<IBookTextIngestionScheduler>(Faults);
+            }));
+            Client = Host.CreateClient();
+        }
+
+        public UploadFaults Faults { get; } = new();
+
+        public LibraryEndpointFactory Factory => _factory;
+
+        public WebApplicationFactory<Program> Host { get; }
+
+        public HttpClient Client { get; }
+
+        public void Dispose()
+        {
+            Client.Dispose();
+            _factory.Dispose();
+        }
+    }
+
+    private sealed class UploadFaults : IBookTextIngestionScheduler
+    {
+        public int FailAdoptions { get; set; }
+
+        public int FailRowUpdates { get; set; }
+
+        public int FailSchedules { get; set; }
+
+        public int RowUpdates { get; set; }
+
+        public List<Guid> Scheduled { get; } = [];
+
+        public void Reset()
+        {
+            RowUpdates = 0;
+            Scheduled.Clear();
+        }
+
+        public Task ScheduleAsync(Guid bookId, string sourceFileName, CancellationToken ct = default)
+        {
+            if (FailSchedules > 0)
+            {
+                FailSchedules -= 1;
+                throw new IOException("Injected scheduling failure.");
+            }
+
+            Scheduled.Add(bookId);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FaultingAssetStorage : DelegatingBookAssetStorage
+    {
+        private readonly UploadFaults _faults;
+
+        public FaultingAssetStorage(IBookAssetStorage inner, UploadFaults faults)
+            : base(inner) => _faults = faults;
+
+        public override Task<string> AdoptBookFileAsync(
+            Guid bookId,
+            string sourcePath,
+            string fileName,
+            CancellationToken ct = default)
+        {
+            if (_faults.FailAdoptions > 0)
+            {
+                _faults.FailAdoptions -= 1;
+                throw new IOException("Injected adoption failure.");
+            }
+
+            return base.AdoptBookFileAsync(bookId, sourcePath, fileName, ct);
+        }
+    }
+
+    private sealed class FaultingBookRepository(IBookRepository inner, UploadFaults faults)
+        : IBookRepository
+    {
+        public Task<BookModel?> GetByIdAsync(Guid id) => inner.GetByIdAsync(id);
+
+        public Task<int> CountBooksWithFilesAsync() => inner.CountBooksWithFilesAsync();
+
+        public Task<List<BookModel>> GetBooksWithFilesPageAsync(int skip, int take) =>
+            inner.GetBooksWithFilesPageAsync(skip, take);
+
+        public Task UpdateAsync(BookModel book)
+        {
+            faults.RowUpdates += 1;
+            if (faults.FailRowUpdates > 0)
+            {
+                faults.FailRowUpdates -= 1;
+                throw new IOException("Injected row update failure.");
+            }
+
+            return inner.UpdateAsync(book);
+        }
+    }
 }
