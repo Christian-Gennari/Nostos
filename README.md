@@ -5,7 +5,7 @@
     <img alt="Nostos" src="docs/brand/logo-light.svg" width="276" />
   </picture>
 
-  <p><strong>Open-source, self-hosted commonplace book for readers and writers.</strong></p>
+  <p><strong>Open-source and self-hosted: everything you read and write, in one place.</strong></p>
   <p>Bring your books together, keep thoughts with their sources, and turn what you read into your own writing.</p>
 
   <p>
@@ -33,7 +33,7 @@
 
 ## What is Nostos?
  
- Nostos is an open-source, self-hosted commonplace book for people who read and write. It brings physical books, EPUBs, PDFs and audiobooks into one quiet library, keeps saved passages and notes attached to the exact page they came from, and lets you bring quotations into your drafts with verified citations.
+ Nostos is an open-source, self-hosted home for people who read and write. It brings physical books, EPUBs, PDFs and audiobooks into one quiet library, keeps saved passages and notes attached to the exact page they came from, and lets you bring quotations into your drafts with verified citations.
  
  It connects the whole journey in one place: **Read → Notice → Capture → Return → Write.**
  
