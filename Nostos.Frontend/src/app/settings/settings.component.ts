@@ -1055,7 +1055,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   signOut(): void {
-    this.cloudAuth.logout();
+    void this.cloudAuth.logout();
   }
 
   showAccountDeletionPending(status: CloudAccountDeletionStatus): void {

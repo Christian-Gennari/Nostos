@@ -184,6 +184,14 @@ Download/stream the book file. Supports HTTP range requests for streaming.
 `404` for a multi-track audiobook, which has no single file; play it through
 the track route below.
 
+### `GET /api/books/{id}/file/version`
+
+Which bytes the book's file holds right now, for a client that keeps a copy.
+`version` is opaque and moves whenever the stored file does.
+
+**Response:** `{ version: "string", bytes: 123 }`, never cached, or `404` when
+there is no single file.
+
 ### `GET /api/books/{id}/file/download`
 
 Download the book as an attachment. For a multi-track audiobook this is one

@@ -4,6 +4,10 @@ import { Observable, ReplaySubject, shareReplay, tap } from 'rxjs';
 import { HostedBrowserSession } from '../dtos/hosted-browser-integration.dtos';
 
 import { CloudSession } from '../dtos/cloud-auth.dtos';
+import { retainEpubFileCaches } from './epub-file-cache-scope';
+
+/** Longest a sign-out waits for the kept books to go before leaving the page. */
+const CACHE_CLEAR_WAIT_MS = 1000;
 
 /**
  * Safe browser-facing Cloud session state.
@@ -33,6 +37,9 @@ export class CloudAuthService {
             if (revision !== this.sessionRevision) return;
             const accountId = session.authenticated ? session.account?.id ?? null : null;
             this.sessionChanges.next({ authenticated: accountId !== null, accountId });
+            // Catches every way out that never reached this page: another tab's
+            // sign-out, a session that expired while the browser was closed.
+            void retainEpubFileCaches(accountId);
           }),
           shareReplay({ bufferSize: 1, refCount: false }),
         );
@@ -59,13 +66,15 @@ export class CloudAuthService {
   }
 
   invalidateSession(): void {
-    ++this.sessionRevision;
-    this.session$ = undefined;
-    this.sessionChanges.next({ authenticated: false, accountId: null });
+    void this.endSession();
   }
 
-  logout(): void {
-    this.invalidateSession();
+  /** Leaves through the BFF, once the books this browser kept for the account are gone. */
+  async logout(): Promise<void> {
+    await Promise.race([
+      this.endSession(),
+      new Promise((resolve) => setTimeout(resolve, CACHE_CLEAR_WAIT_MS)),
+    ]);
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/api/auth/logout';
@@ -73,6 +82,13 @@ export class CloudAuthService {
     document.body.appendChild(form);
     form.submit();
     form.remove();
+  }
+
+  private endSession(): Promise<void> {
+    ++this.sessionRevision;
+    this.session$ = undefined;
+    this.sessionChanges.next({ authenticated: false, accountId: null });
+    return retainEpubFileCaches(null);
   }
 
   private withOffer(returnUrl: string, offerId: string): string {

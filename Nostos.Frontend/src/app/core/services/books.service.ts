@@ -24,6 +24,11 @@ export interface BookListOptions {
   format?: string | null;
 }
 
+export interface BookFileVersionDto {
+  version: string;
+  bytes: number;
+}
+
 export interface BookLocationsDto {
   locations: string;
 }
@@ -133,6 +138,11 @@ export class BooksService {
 
   saveLocations(id: string, locations: string): Observable<void> {
     return this.http.post<void>(`/api/books/${id}/locations`, { locations });
+  }
+
+  /** Which bytes the book's file holds right now. */
+  getFileVersion(id: string): Observable<BookFileVersionDto> {
+    return this.http.get<BookFileVersionDto>(`/api/books/${id}/file/version`);
   }
 
   uploadFile(bookId: string, file: File): Observable<any> {

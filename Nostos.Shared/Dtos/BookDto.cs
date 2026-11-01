@@ -21,6 +21,13 @@ public record BookChapterDto(string Title, double StartTime);
 // Separate DTO for the heavy locations JSON to avoid bloating the main list
 public record BookLocationsDto(string Locations);
 
+/// <summary>
+/// Which bytes the book's file holds right now. <paramref name="Version"/> is
+/// opaque and moves whenever the stored file does; a client keeps the bytes
+/// under it. <paramref name="Bytes"/> is the file's length.
+/// </summary>
+public record BookFileVersionDto(string Version, long Bytes);
+
 public record EditionSummaryDto(
     Guid Id,
     string Type,
