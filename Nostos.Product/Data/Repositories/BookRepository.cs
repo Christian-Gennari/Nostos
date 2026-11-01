@@ -44,6 +44,7 @@ public class BookRepository : IBookRepository
             .ThenBy(b => b.Id)
             .Skip(skip)
             .Take(take)
+            .Select(BookReadShapes.WithoutLocations)
             .ToListAsync();
     }
 
