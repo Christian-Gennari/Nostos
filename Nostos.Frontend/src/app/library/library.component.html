@@ -8,7 +8,7 @@
     [class.no-transition]="!sidebar.isLoaded()"
   ></app-sidebar-collections>
 
-  <div class="library-right-side">
+  <div class="library-right-side" #resultsScroller>
     <header class="toolbar toolbar-edge">
       <!-- Static heading: the active-filter chips directly below (and the
            sidebar highlight) already name the current scope, so the heading
