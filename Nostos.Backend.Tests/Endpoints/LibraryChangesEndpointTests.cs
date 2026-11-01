@@ -138,6 +138,26 @@ public sealed partial class LibraryChangesEndpointTests : IClassFixture<LibraryE
     }
 
     [Fact]
+    public async Task A_bulk_progress_write_names_the_revision_the_feed_announces_for_it()
+    {
+        // Progress is saved with ExecuteUpdate, which bypasses the change tracker.
+        using var factory = FastFeed(pollMilliseconds: 600_000);
+        using var watcher = factory.CreateClient();
+        using var writer = factory.CreateClient();
+        var created = await writer.PostAsJsonAsync("/api/books", new { type = "ebook", title = $"Bulk Book {Guid.NewGuid():N}" });
+        var book = (await created.Content.ReadFromJsonAsync<BookDto>())!;
+        using var response = await OpenAsync(watcher);
+        await using var feed = await Feed.OpenAsync(response);
+        await feed.ReadRevisionsAsync(count: 1, Budget);
+
+        using var saved = await writer.PutAsJsonAsync($"/api/books/{book.Id}/progress", new { location = "epubcfi(/6/4)", percentage = 12 });
+        saved.EnsureSuccessStatusCode();
+
+        var announced = (await feed.ReadRevisionsAsync(count: 1, Budget)).Single();
+        saved.Headers.GetValues(LibraryWriteReceipt.HeaderName).Single().Should().Be(announced);
+    }
+
+    [Fact]
     public async Task A_reading_position_save_is_announced_as_progress_only()
     {
         using var factory = FastFeed(pollMilliseconds: 600_000);

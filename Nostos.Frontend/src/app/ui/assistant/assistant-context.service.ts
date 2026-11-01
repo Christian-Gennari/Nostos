@@ -19,7 +19,7 @@
  * values simply stay null — a guessed anchor is worse than none, because the
  * capture would be filed against the wrong place.
  */
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
 
@@ -145,6 +145,8 @@ export class AssistantContextService {
         this.bookMeta.set(null);
         return;
       }
+      // Book Details has the book already and hands it over (`provideBook`).
+      if (untracked(() => this.routeInfo(this.url()).surface) === 'book-detail') return;
       let cancelled = false;
       books.get(id).subscribe({
         next: (book) => {
@@ -159,6 +161,15 @@ export class AssistantContextService {
         cancelled = true;
       };
     });
+  }
+
+  /**
+   * The page that has the open book read tells the assistant which it is, so
+   * the title and format do not cost a second request. Ignored unless the route
+   * is that book's.
+   */
+  provideBook(book: { id: string; title: string; type: AssistantBookFormat }): void {
+    this.bookMeta.set({ id: book.id, title: book.title, format: book.type });
   }
 
   /**

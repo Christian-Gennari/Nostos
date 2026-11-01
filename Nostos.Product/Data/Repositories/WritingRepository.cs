@@ -76,16 +76,23 @@ public class WritingRepository : IWritingRepository
         if (!writingExists)
             return null;
 
-        var items = await _db.WritingNotes
-            .AsNoTracking()
+        return await WithNotesAsync(_db.WritingNotes
             .Where(wn => wn.WritingId == writingId)
-            .Include(wn => wn.Note)
-                .ThenInclude(n => n.Book)
             .OrderBy(wn => wn.AddedAt)
-            .ThenBy(wn => wn.NoteId)
-            .ToListAsync();
+            .ThenBy(wn => wn.NoteId));
+    }
+
+    /// <summary>Kept-note rows with their notes, each note with its book's headline.</summary>
+    private async Task<List<WritingNoteModel>> WithNotesAsync(IQueryable<WritingNoteModel> links)
+    {
+        var items = await links.AsNoTracking().ToListAsync();
+        var noteIds = items.Select(wn => wn.NoteId).ToList();
+        var notes = (await _db.Notes.Where(n => noteIds.Contains(n.Id)).ToListWithBookHeadlineAsync())
+            .ToDictionary(n => n.Id);
 
         // Defensive read filter: a membership row whose note is missing must never 500
+        foreach (var item in items)
+            item.Note = notes.GetValueOrDefault(item.NoteId)!;
         return items.Where(wn => wn.Note is not null).ToList();
     }
 
@@ -98,37 +105,28 @@ public class WritingRepository : IWritingRepository
         if (writing.Type == WritingType.Folder)
             return new AddKeptNoteResult(AddKeptNoteStatus.WritingIsFolder, null);
 
-        var note = await _db.Notes
-            .Include(n => n.Book)
-            .FirstOrDefaultAsync(n => n.Id == noteId);
-        if (note is null)
+        if (!await _db.Notes.AnyAsync(n => n.Id == noteId))
             return new AddKeptNoteResult(AddKeptNoteStatus.NoteNotFound, null);
 
         // Idempotent. The join is keyed (WritingId, NoteId); inserting a second
         // row would be a duplicate key. The check runs against the database, not
         // the tracked navigation, so a repeated call sees the committed link.
-        var existing = await _db.WritingNotes
-            .AsNoTracking()
-            .Include(wn => wn.Note)
-                .ThenInclude(n => n.Book)
-            .FirstOrDefaultAsync(wn => wn.WritingId == writingId && wn.NoteId == noteId);
+        var link = _db.WritingNotes.Where(wn => wn.WritingId == writingId && wn.NoteId == noteId);
+        var existing = (await WithNotesAsync(link)).FirstOrDefault();
 
         if (existing is not null)
             return new AddKeptNoteResult(AddKeptNoteStatus.AlreadyExists, existing);
 
-        var writingNote = new WritingNoteModel
+        _db.WritingNotes.Add(new WritingNoteModel
         {
             WritingId = writingId,
             Writing = writing,
             NoteId = noteId,
-            Note = note,
             AddedAt = DateTime.UtcNow,
-        };
-
-        _db.WritingNotes.Add(writingNote);
+        });
         await _db.SaveChangesAsync();
 
-        return new AddKeptNoteResult(AddKeptNoteStatus.Success, writingNote);
+        return new AddKeptNoteResult(AddKeptNoteStatus.Success, (await WithNotesAsync(link)).First());
     }
 
     public async Task<bool> RemoveKeptNoteAsync(Guid writingId, Guid noteId)

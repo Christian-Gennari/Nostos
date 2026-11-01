@@ -60,6 +60,8 @@ import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
 import { BrainStateService } from '../brain/brain-state.service';
+import { AssistantContextService } from '../ui/assistant/assistant-context.service';
+import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
@@ -133,6 +135,8 @@ interface StatusConfirmCopy {
 export class BookDetail implements OnInit, OnDestroy {
   protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   private route = inject(ActivatedRoute);
+  private readonly assistantContext = inject(AssistantContextService);
+  private readonly recentItems = inject(RecentItemsService);
   private router = inject(Router);
   private injector = inject(Injector);
 
@@ -266,7 +270,8 @@ export class BookDetail implements OnInit, OnDestroy {
    * still collapses when the window narrows — and expands again when it grows.
    */
   constructor() {
-    this.brain.ensureLoaded();
+    // Only the topics: the page shows no Brain sidebar, so no counts.
+    this.brain.ensureTopicsLoaded();
     // The add-note field's [[ autocomplete offers the Brain's topics, kept
     // current by every change the cards make.
     effect(() => this.topicAutocomplete.setTopics(this.brain.topics()));
@@ -290,6 +295,15 @@ export class BookDetail implements OnInit, OnDestroy {
     effect(() => {
     const book = this.store.book();
     if (book) this.preferences.setActiveEditionId(book.workId, book.id);
+    });
+
+    // Ask Nostos and the recent list name the open book from the one this page
+    // already read, instead of each reading it again.
+    effect(() => {
+      const book = this.store.book();
+      if (!book) return;
+      this.assistantContext.provideBook(book);
+      this.recentItems.recordBook(book);
     });
 
     effect(() => {

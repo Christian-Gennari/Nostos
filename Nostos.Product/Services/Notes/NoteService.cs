@@ -77,12 +77,7 @@ public sealed class NoteService : INoteService
 
     public async Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default)
     {
-        var note = await _db.Notes
-            .AsNoTracking()
-            .Include(n => n.Book)
-            .Include(n => n.NoteTopics)
-            .ThenInclude(nc => nc.Topic)
-            .FirstOrDefaultAsync(n => n.Id == noteId, ct);
+        var note = await _notes.GetForReadingAsync(noteId);
 
         return note is null ? null : ByText(note, null, await EditionCountsAsync([note], ct));
     }
@@ -95,12 +90,10 @@ public sealed class NoteService : INoteService
             return [];
 
         var notes = await _db.Notes
-            .AsNoTracking()
-            .Include(n => n.Book)
             .Include(n => n.NoteTopics)
             .ThenInclude(nc => nc.Topic)
             .Where(n => ids.Contains(n.Id))
-            .ToListAsync(ct);
+            .ToListWithBookHeadlineAsync(ct);
 
         var order = ids.Select((id, index) => (id, index)).ToDictionary(x => x.id, x => x.index);
         var editions = await EditionCountsAsync(notes, ct);
@@ -184,7 +177,6 @@ public sealed class NoteService : INoteService
             return InvalidTopicLink(TopicReferences.InvalidNameMessage);
 
         var notes = await _db.Notes
-            .Include(n => n.Book)
             .Include(n => n.NoteTopics).ThenInclude(link => link.Topic)
             .Where(n => ids.Contains(n.Id))
             .ToListAsync(ct);
@@ -214,9 +206,9 @@ public sealed class NoteService : INoteService
         if (changed.Count > 0)
             await _db.SaveChangesAsync(ct);
 
-        var editions = await EditionCountsAsync(ordered, ct);
+        // Read back rather than mapped from the tracked notes, which hold no book.
         return NoteCommandResult<TopicLinkResultDto>.Ok(
-            new TopicLinkResultDto(changed, ordered.Select(n => ByText(n, null, editions)).ToList()));
+            new TopicLinkResultDto(changed, await GetManyAsync(ids, ct)));
     }
 
     private static NoteCommandResult<TopicLinkResultDto> InvalidTopicLink(string message) =>
@@ -437,11 +429,15 @@ public sealed class NoteService : INoteService
 
         await _notes.SaveChangesAsync();
 
-        // Reload to get the Book Title for the response.
-        var createdNote = await _notes.GetByIdWithBookAsync(model.Id);
-
-        return NoteCommandResult<NoteDto>.Ok(createdNote!.ToDto());
+        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(model.Id));
     }
+
+    /// <summary>
+    /// A saved note as its reply, read back to get its book's title and author:
+    /// a note tracked for an edit does not carry its book.
+    /// </summary>
+    private async Task<NoteDto> SavedNoteAsync(Guid noteId) =>
+        (await _notes.GetByIdWithBookAsync(noteId))!.ToDto();
 
     /// <summary>
     /// The exactly-once path: hold the in-process gate, replay a prior receipt
@@ -536,7 +532,7 @@ public sealed class NoteService : INoteService
 
         await _notes.SaveChangesAsync();
 
-        return NoteCommandResult<NoteDto>.Ok(existing.ToDto());
+        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
     }
 
     /// <summary>
@@ -606,10 +602,7 @@ public sealed class NoteService : INoteService
 
     public async Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default)
     {
-        var note = await _db.Notes
-            .AsNoTracking()
-            .Include(n => n.Book)
-            .FirstOrDefaultAsync(n => n.Id == noteId, ct);
+        var note = await _notes.GetByIdWithBookAsync(noteId);
 
         return note is null || !note.IsPassage() ? null : note.ToPassageDto();
     }
@@ -649,7 +642,7 @@ public sealed class NoteService : INoteService
             await _notes.SaveChangesAsync();
         }
 
-        return NoteCommandResult<NoteDto>.Ok(existing.ToDto());
+        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
     }
 
     public async Task<NoteCommandResult<bool>> DeleteAsync(Guid noteId, CancellationToken ct = default)
@@ -710,17 +703,12 @@ public sealed class NoteService : INoteService
         if (!alreadyLinked || contentChanged)
             await _notes.SaveChangesAsync();
 
-        return NoteCommandResult<NoteDto>.Ok(note.ToDto());
+        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
     }
 
     public async Task<NoteReviewDto?> GetForReviewAsync(Guid noteId, CancellationToken ct = default)
     {
-        var note = await _db.Notes
-            .AsNoTracking()
-            .Include(n => n.Book)
-            .Include(n => n.NoteTopics)
-            .ThenInclude(nc => nc.Topic)
-            .FirstOrDefaultAsync(n => n.Id == noteId, ct);
+        var note = await _notes.GetForReadingAsync(noteId);
 
         if (note is null)
             return null;
@@ -790,7 +778,7 @@ public sealed class NoteService : INoteService
         await _processor.ProcessNoteAsync(note);
         await _notes.SaveChangesAsync();
 
-        return NoteCommandResult<NoteDto>.Ok(note.ToDto());
+        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
     }
 
     public async Task<NoteCommandResult<NoteDto>> RewriteCaptureAsync(
@@ -843,7 +831,7 @@ public sealed class NoteService : INoteService
         await _processor.ProcessNoteAsync(note);
         await _notes.SaveChangesAsync();
 
-        return NoteCommandResult<NoteDto>.Ok(note.ToDto());
+        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
     }
 
     /// <summary>

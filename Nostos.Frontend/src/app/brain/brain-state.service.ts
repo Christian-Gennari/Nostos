@@ -68,11 +68,23 @@ export class BrainStateService {
 
   private loading = false;
   private refreshSeq = 0;
+  /** The counts were asked for and have not failed; they are not asked for twice. */
+  private summaryRequested = false;
 
   /** Loads the topics and counts the first time anything asks. */
   ensureLoaded(): void {
+    this.ensureTopicsLoaded();
+    if (!this.summaryRequested) this.loadSummary(this.refreshSeq);
+  }
+
+  /**
+   * Loads the topics the first time anything asks, without the counts: for a
+   * page that offers topics but shows no sidebar. `ensureLoaded` called later
+   * still fetches the counts.
+   */
+  ensureTopicsLoaded(): void {
     if (this.topicsLoaded() || this.loading) return;
-    this.load();
+    this.load({ summary: false });
   }
 
   /** Reloads the topics and counts after notes or topics changed. */
@@ -87,7 +99,7 @@ export class BrainStateService {
     this.refresh();
   }
 
-  private load(): void {
+  private load(options: { summary: boolean } = { summary: true }): void {
     // Only the latest request's answers are kept: an older response that
     // arrives last must not undo a newer one.
     const seq = ++this.refreshSeq;
@@ -106,12 +118,20 @@ export class BrainStateService {
         this.loading = false;
       },
     });
+    if (options.summary) this.loadSummary(seq);
+  }
+
+  private loadSummary(seq: number): void {
+    this.summaryRequested = true;
     this.notesService.summary().subscribe({
       next: (summary) => {
         if (seq === this.refreshSeq) this.summary.set(summary);
       },
       // Counts decorate the sidebar; a failure must not make the Brain unusable.
-      error: () => undefined,
+      // The next `ensureLoaded` asks again.
+      error: () => {
+        if (seq === this.refreshSeq) this.summaryRequested = false;
+      },
     });
   }
 

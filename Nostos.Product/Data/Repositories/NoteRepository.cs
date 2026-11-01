@@ -20,8 +20,9 @@ public class NoteRepository : INoteRepository
     {
         // Oldest first, with Id as a tiebreak: the book page shows the latest notes
         // at the end of a collapsed feed, which needs a defined order (#1062).
-        return await _db.Notes.Include(n => n.Book).Where(n => n.BookId == bookId)
-            .OrderBy(n => n.CreatedAt).ThenBy(n => n.Id).ToListAsync();
+        return await _db.Notes.Where(n => n.BookId == bookId)
+            .OrderBy(n => n.CreatedAt).ThenBy(n => n.Id)
+            .ToListWithBookHeadlineAsync();
     }
 
     public async Task<NoteModel?> GetByIdAsync(Guid id)
@@ -31,18 +32,27 @@ public class NoteRepository : INoteRepository
 
     public async Task<NoteModel?> GetByIdWithTopicsAsync(Guid id)
     {
+        // Tracked for the edit that follows, so without the book: a tracked note
+        // would drag the whole book row along. The caller reloads the saved note
+        // with GetByIdWithBookAsync for its reply.
         return await _db
             .Notes.Include(n => n.NoteTopics)
-            .Include(n => n.Book)
             .FirstOrDefaultAsync(n => n.Id == id);
+    }
+
+    public async Task<NoteModel?> GetForReadingAsync(Guid id)
+    {
+        var notes = await _db.Notes
+            .Include(n => n.NoteTopics).ThenInclude(nc => nc.Topic)
+            .Where(n => n.Id == id)
+            .ToListWithBookHeadlineAsync();
+        return notes.FirstOrDefault();
     }
 
     public async Task<NoteModel?> GetByIdWithBookAsync(Guid id)
     {
-        return await _db
-            .Notes.AsNoTracking()
-            .Include(n => n.Book)
-            .FirstOrDefaultAsync(n => n.Id == id);
+        var notes = await _db.Notes.Where(n => n.Id == id).ToListWithBookHeadlineAsync();
+        return notes.FirstOrDefault();
     }
 
     public Task AddAsync(NoteModel note)
@@ -132,8 +142,7 @@ public class NoteRepository : INoteRepository
         if (cleaned.Count == 0 || bookIds is { Count: 0 }) return [];
 
         var notes = _db
-            .Notes.Include(n => n.Book)
-            .Include(n => n.NoteTopics)
+            .Notes.Include(n => n.NoteTopics)
             .ThenInclude(nc => nc.Topic)
             .AsQueryable();
 
@@ -146,13 +155,12 @@ public class NoteRepository : INoteRepository
         return await notes
             .OrderByDescending(n => n.CreatedAt)
             .Take(limit)
-            .ToListAsync();
+            .ToListWithBookHeadlineAsync();
     }
 
     public async Task<List<NoteModel>> GetWithoutTopicsAsync(int limit, int offset)
     {
-        return await _db
-            .Notes.Include(n => n.Book)
+        return await _db.Notes
             .Where(n => !n.NoteTopics.Any())
             // `Id` breaks CreatedAt ties. Without it two notes saved in the same
             // tick can swap places between two page requests, which makes an
@@ -161,7 +169,7 @@ public class NoteRepository : INoteRepository
             .ThenBy(n => n.Id)
             .Skip(offset)
             .Take(limit)
-            .ToListAsync();
+            .ToListWithBookHeadlineAsync();
     }
 
     public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(NoteBrowseQuery query, int limit, int offset)
@@ -183,9 +191,8 @@ public class NoteRepository : INoteRepository
             _ => notes.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id),
         };
         var items = await ordered.Skip(offset).Take(limit)
-            .Include(n => n.Book)
             .Include(n => n.NoteTopics).ThenInclude(nc => nc.Topic)
-            .ToListAsync();
+            .ToListWithBookHeadlineAsync();
         return (items, total);
     }
 

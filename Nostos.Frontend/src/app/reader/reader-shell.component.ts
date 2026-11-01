@@ -58,6 +58,7 @@ import { noteAsItem } from '../ui/note-item/note-item.helpers';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
 import { BrainStateService } from '../brain/brain-state.service';
+import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { ModalStack } from '../ui/modal-shell/modal-stack.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -399,6 +400,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   private router = inject(Router);
   private location = inject(Location);
   private booksService = inject(BooksService);
+  private readonly recentItems = inject(RecentItemsService);
   private notesService = inject(NotesService);
   readonly brain = inject(BrainStateService);
   readonly noteActions = inject(BrainNoteActionsService);
@@ -1247,6 +1249,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       next: (b) => {
         if (generation !== this.bookLoadGeneration) return;
         this.book.set(b);
+        this.recentItems.recordBook(b);
         this.loading.set(false);
         this.loadNotes(b.id);
         setTimeout(() => {

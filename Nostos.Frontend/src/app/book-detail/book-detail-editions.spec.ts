@@ -76,10 +76,17 @@ describe('BookDetail across editions', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
+    // The notes are first asked for by the book's own id, beside the book.
+    const byBook = httpMock.expectOne((request) => request.url === '/api/notes' && request.params.has('bookId'));
     httpMock.expectOne(`/api/books/${initial.id}`).flush(initial);
-    httpMock
-      .expectOne((request) => request.url === '/api/notes' && request.params.has(initial.workId && initial.otherEditions?.length ? 'workId' : 'bookId'))
-      .flush(notesPage(notes));
+    if (initial.workId && initial.otherEditions?.length) {
+      // A book with editions reads by its work; the first read was the wrong
+      // one and is never shown.
+      byBook.flush(notesPage([{ id: 'wrong-edition-only' }]));
+      httpMock.expectOne((request) => request.url === '/api/notes' && request.params.has('workId')).flush(notesPage(notes));
+    } else {
+      byBook.flush(notesPage(notes));
+    }
     httpMock.expectOne('/api/collections').flush([]);
     httpMock.match(brainReads).forEach((request) => request.flush([]));
     fixture.detectChanges();

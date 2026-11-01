@@ -335,7 +335,7 @@ public sealed class KnowledgeRetrievalService(
             if (handle.NoteId is not { } noteId)
                 return null;
 
-            var note = await noteRepository.GetByIdWithTopicsAsync(noteId);
+            var note = await noteRepository.GetForReadingAsync(noteId);
             return note is null
                 ? null
                 : new KnowledgeReadResponse(handle, Note: ToNoteRead(note));

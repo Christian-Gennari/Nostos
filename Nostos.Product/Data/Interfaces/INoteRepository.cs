@@ -8,10 +8,11 @@ public interface INoteRepository
     Task<List<NoteModel>> GetByBookIdAsync(Guid bookId);
     Task<NoteModel?> GetByIdAsync(Guid id);
 
-    /// <summary>
-    /// Gets a note with its NoteTopics and Book eagerly loaded (for update/re-processing).
-    /// </summary>
+    /// <summary>A note and its topic links, tracked for an edit. Its book is not loaded.</summary>
     Task<NoteModel?> GetByIdWithTopicsAsync(Guid id);
+
+    /// <summary>A note with its topics and its book's headline, for reading only.</summary>
+    Task<NoteModel?> GetForReadingAsync(Guid id);
 
     /// <summary>
     /// Gets a note with its Book eagerly loaded (for building the response DTO after create).

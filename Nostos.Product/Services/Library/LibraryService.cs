@@ -105,25 +105,52 @@ public sealed partial class LibraryService : ILibraryService
         await using var db = await _contexts.CreateDbContextAsync(ct);
         var state = await EnsureStateAsync(db, ct);
 
-        var book = await db.Books.SingleOrDefaultAsync(b => b.Id == bookId, ct);
+        // Only what the update decides on, not the row: a position save runs every
+        // few seconds of reading and a book row can carry a large locations cache.
+        var book = await db.Books.AsNoTracking()
+            .Where(b => b.Id == bookId)
+            .Select(b => new { b.Title, b.Progress.FinishedAt })
+            .SingleOrDefaultAsync(ct);
         if (book is null)
             return Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion);
 
         var clamped = Math.Clamp(percentage, 0, 100);
-        book.Progress.LastLocation = string.IsNullOrWhiteSpace(location) ? null : location;
-        book.Progress.ProgressPercent = clamped;
-        book.Progress.LastReadAt = Now;
+        var lastLocation = string.IsNullOrWhiteSpace(location) ? null : location;
+        var now = Now;
 
         // Keep FinishedAt aligned with the percentage (regression fix: a
         // finished book that is read again becomes unfinished).
-        if (clamped >= 100)
-            book.Progress.FinishedAt ??= Now;
-        else if (book.Progress.FinishedAt is not null)
-            book.Progress.FinishedAt = null;
+        DateTime? finishedAt = clamped >= 100 ? book.FinishedAt ?? now : null;
+        var finishedChanged = finishedAt != book.FinishedAt;
 
+        // The bulk write bypasses the tracker, so what SaveChanges works out for
+        // itself is said here: the revision goes first, and the change feed is told
+        // whether this moved the reading position alone. Crossing into or out of
+        // finished changes the book's status, so open screens need that at once.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
-        await db.SaveChangesAsync(ct);
+        db.NoteLibraryChangeKind(positionOnly: !finishedChanged);
+
+        var updated = await db.Books
+            .Where(b => b.Id == bookId)
+            .ExecuteUpdateAsync(
+                setters =>
+                {
+                    setters.SetProperty(b => b.Progress.LastLocation, lastLocation);
+                    setters.SetProperty(b => b.Progress.ProgressPercent, clamped);
+                    setters.SetProperty(b => b.Progress.LastReadAt, now);
+                    if (finishedChanged)
+                        setters.SetProperty(b => b.Progress.FinishedAt, finishedAt);
+                },
+                ct);
+
+        // Deleted since the read above: nothing was written, so the revision stays.
+        if (updated == 0)
+        {
+            await transaction.RollbackAsync(ct);
+            return Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion);
+        }
+
         await transaction.CommitAsync(ct);
 
         return Result(LibraryReplyFormatter.ProgressUpdated(book.Title), new { updated = true }, version);
@@ -297,9 +324,9 @@ public sealed partial class LibraryService : ILibraryService
         if (request.ConfirmedBookId.HasValue)
         {
             var confirmed = await db.Books.AsNoTracking()
-                .Include(b => b.Acquisition)
-                .Include(b => b.BookCollections)
-                .SingleOrDefaultAsync(b => b.Id == request.ConfirmedBookId.Value, ct);
+                .Where(b => b.Id == request.ConfirmedBookId.Value)
+                .Select(BookReadShapes.WithoutLocations)
+                .SingleOrDefaultAsync(ct);
             if (confirmed is null)
                 return NoChange(Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion));
 
@@ -314,14 +341,14 @@ public sealed partial class LibraryService : ILibraryService
         BookModel? asinMatch = null;
         if (nIsbn is not null)
             isbnMatch = await db.Books.AsNoTracking()
-                .Include(b => b.Acquisition)
-                .Include(b => b.BookCollections)
-                .SingleOrDefaultAsync(b => b.NormalizedIsbn == nIsbn, ct);
+                .Where(b => b.NormalizedIsbn == nIsbn)
+                .Select(BookReadShapes.WithoutLocations)
+                .SingleOrDefaultAsync(ct);
         if (nAsin is not null)
             asinMatch = await db.Books.AsNoTracking()
-                .Include(b => b.Acquisition)
-                .Include(b => b.BookCollections)
-                .SingleOrDefaultAsync(b => b.NormalizedAsin == nAsin, ct);
+                .Where(b => b.NormalizedAsin == nAsin)
+                .Select(BookReadShapes.WithoutLocations)
+                .SingleOrDefaultAsync(ct);
 
         if (isbnMatch is not null && asinMatch is not null && isbnMatch.Id != asinMatch.Id)
             return NoChange(Failure("identity_conflict",
@@ -356,8 +383,7 @@ public sealed partial class LibraryService : ILibraryService
         if (!request.ForceCreate && !string.IsNullOrEmpty(nTitle))
         {
             var all = await db.Books.AsNoTracking()
-                .Include(b => b.Acquisition)
-                .Include(b => b.BookCollections)
+                .Select(BookReadShapes.WithoutLocations)
                 .ToListAsync(ct);
             var hasAuthor = !string.IsNullOrEmpty(nAuthor);
             var exact = hasAuthor

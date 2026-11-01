@@ -168,17 +168,15 @@ internal sealed class LibraryReadService(
                 .ToList();
 
             var pageBooks = (await CountableBooks(db)
-                    .Include(b => b.Work)
-                    .Include(b => b.BookCollections)
-                    .Include(b => b.Acquisition)
                     .Where(b => pageIds.Contains(b.Id))
+                    .Select(BookReadShapes.WithoutLocations)
                     .ToListAsync(ct))
                 .ToDictionary(b => b.Id);
 
             var pageWorkIds = pageBooks.Values.Select(b => b.WorkId).Distinct().ToList();
             var siblingsByWork = (await CountableBooks(db)
-                    .Include(b => b.Acquisition)
                     .Where(b => pageWorkIds.Contains(b.WorkId))
+                    .Select(BookReadShapes.WithoutLocations)
                     .ToListAsync(ct))
                 .GroupBy(b => b.WorkId)
                 .ToDictionary(g => g.Key, g => g.ToList());
@@ -228,18 +226,15 @@ internal sealed class LibraryReadService(
 
             totalCount = await query.CountAsync(ct);
             var items = await query
-                .Include(b => b.Work)
-                .Include(b => b.BookCollections)
-                .Include(b => b.Acquisition)
                 .Skip((safePage - 1) * safePageSize)
                 .Take(safePageSize)
+                .Select(BookReadShapes.WithoutLocations)
                 .ToListAsync(ct);
 
             var pageWorkIds = items.Select(b => b.WorkId).Distinct().ToList();
             var pageSiblings = await CountableBooks(db)
-                .Include(b => b.BookCollections)
-                .Include(b => b.Acquisition)
                 .Where(b => pageWorkIds.Contains(b.WorkId))
+                .Select(BookReadShapes.WithoutLocations)
                 .ToListAsync(ct);
             var pageSiblingsByWork = pageSiblings
                 .GroupBy(b => b.WorkId)
@@ -311,17 +306,15 @@ internal sealed class LibraryReadService(
         var version = state?.StateVersion ?? "0";
 
         var book = await db.Books.AsNoTracking()
-            .Include(b => b.BookCollections)
-            // Without this the DTO's Source is always null, so an imported book
-            // would never show where it came from.
-            .Include(b => b.Acquisition)
-            .SingleOrDefaultAsync(b => b.Id == bookId, ct);
+            .Where(b => b.Id == bookId)
+            .Select(BookReadShapes.WithoutLocations)
+            .SingleOrDefaultAsync(ct);
         if (book is null)
             return Failure("book_not_found", LibraryReplyFormatter.BookNotFound, version);
 
         var siblings = await db.Books.AsNoTracking()
-            .Include(b => b.BookCollections)
             .Where(b => b.WorkId == book.WorkId)
+            .Select(BookReadShapes.WithoutLocations)
             .ToListAsync(ct);
 
         var dto = book.ToDto() with
@@ -352,12 +345,14 @@ internal sealed class LibraryReadService(
         BookModel? asinMatch = null;
         if (nIsbn is not null)
             isbnMatch = await db.Books.AsNoTracking()
-                .Include(b => b.BookCollections)
-                .SingleOrDefaultAsync(b => b.NormalizedIsbn == nIsbn, ct);
+                .Where(b => b.NormalizedIsbn == nIsbn)
+                .Select(BookReadShapes.WithoutLocations)
+                .SingleOrDefaultAsync(ct);
         if (nAsin is not null)
             asinMatch = await db.Books.AsNoTracking()
-                .Include(b => b.BookCollections)
-                .SingleOrDefaultAsync(b => b.NormalizedAsin == nAsin, ct);
+                .Where(b => b.NormalizedAsin == nAsin)
+                .Select(BookReadShapes.WithoutLocations)
+                .SingleOrDefaultAsync(ct);
 
         if (isbnMatch is not null && asinMatch is not null && isbnMatch.Id != asinMatch.Id)
             return new LibraryResolveResult(LibraryResolution.IdentityConflict);
@@ -373,8 +368,7 @@ internal sealed class LibraryReadService(
         if (!string.IsNullOrEmpty(nTitle))
         {
             var all = await db.Books.AsNoTracking()
-                .Include(b => b.Acquisition)
-                .Include(b => b.BookCollections)
+                .Select(BookReadShapes.WithoutLocations)
                 .ToListAsync(ct);
             var hasAuthor = !string.IsNullOrEmpty(nAuthor);
             var exact = hasAuthor

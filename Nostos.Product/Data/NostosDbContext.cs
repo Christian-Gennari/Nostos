@@ -367,7 +367,19 @@ public class NostosDbContext : DbContext
     /// moves the reading position only. Called inside the transaction that
     /// advanced the revision.
     /// </summary>
-    private void NoteLibraryChangeKind()
+    private void NoteLibraryChangeKind() => NoteLibraryChangeKind(
+        ChangeTracker.Entries()
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+                && PortableEntitySet.IsPortableType(entry.Metadata.ClrType))
+            .All(entry => entry.State == EntityState.Modified
+                && entry.Metadata.ClrType == typeof(ReadingProgress)
+                && entry.Properties.Where(p => p.IsModified).All(p => ReadingPositionProperties.Contains(p.Metadata.Name))));
+
+    /// <summary>
+    /// The same record, for a write that bypasses the tracker and so has to say
+    /// what it changed. Without it the feed reports a full library change.
+    /// </summary>
+    internal void NoteLibraryChangeKind(bool positionOnly)
     {
         if (Database.CurrentTransaction?.TransactionId is not { } transactionId)
             return;
@@ -377,13 +389,6 @@ public class NostosDbContext : DbContext
             _libraryChangeTransactionId = transactionId;
             _libraryChangeHasMoreThanPosition = false;
         }
-
-        var positionOnly = ChangeTracker.Entries()
-            .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
-                && PortableEntitySet.IsPortableType(entry.Metadata.ClrType))
-            .All(entry => entry.State == EntityState.Modified
-                && entry.Metadata.ClrType == typeof(ReadingProgress)
-                && entry.Properties.Where(p => p.IsModified).All(p => ReadingPositionProperties.Contains(p.Metadata.Name)));
 
         if (!positionOnly)
             _libraryChangeHasMoreThanPosition = true;
