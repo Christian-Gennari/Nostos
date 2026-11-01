@@ -1,4 +1,5 @@
 using Nostos.Backend.Data.Models;
+using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Interfaces;
 
@@ -15,7 +16,8 @@ public sealed record AddKeptNoteResult(AddKeptNoteStatus Status, WritingNoteMode
 
 public interface IWritingRepository
 {
-    Task<List<WritingModel>> GetAllAsync();
+    /// <summary>The flat file list for the tree, without any document's Content.</summary>
+    Task<List<WritingDto>> GetListAsync();
     Task<WritingModel?> GetByIdAsync(Guid id);
     Task AddAsync(WritingModel writing);
     Task UpdateAsync(WritingModel writing);

@@ -18,15 +18,7 @@ public static class WritingsEndpoints
             "/",
             async (IWritingRepository repo) =>
             {
-                var items = await repo.GetAllAsync();
-                var dtos = items.Select(w => new WritingDto(
-                    w.Id,
-                    w.Name,
-                    w.Type.ToString(),
-                    w.ParentId,
-                    w.UpdatedAt
-                ));
-                return Results.Ok(dtos);
+                return Results.Ok(await repo.GetListAsync());
             }
         );
 

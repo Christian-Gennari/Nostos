@@ -183,7 +183,7 @@
         </div>
 
         @for (book of books(); track book.id) {
-        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)">
+        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
           <div class="col title">
             <nostos-book-cover
               class="list-cover-frame"
@@ -351,7 +351,7 @@
       <div class="book-grid">
         @for (book of books(); track book.id) {
 
-        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)">
+        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
           <div class="cover-wrapper">
             @if (book.status === 1 || book.status === 2) {
               <!-- In flight: the progress lives ON the card, at the top of the cover

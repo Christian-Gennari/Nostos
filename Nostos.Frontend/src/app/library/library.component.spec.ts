@@ -1466,4 +1466,54 @@ describe('Library', () => {
 
     second.destroy();
   });
+
+  describe('hero cover prefetch', () => {
+    const covered = { id: 'b1', title: 'T', type: 'ebook', coverUrl: '/api/books/b1/cover' } as unknown as Book;
+    let requested: string[];
+    let hover: boolean;
+    const RealImage = globalThis.Image;
+
+    beforeEach(() => {
+      requested = [];
+      hover = true;
+      vi.useFakeTimers();
+      vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('hover: hover') ? hover : false }));
+      class FakeImage {
+        decoding = '';
+        addEventListener(): void {}
+        set src(v: string) {
+          requested.push(v);
+        }
+      }
+      vi.stubGlobal('Image', FakeImage);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      globalThis.Image = RealImage;
+    });
+
+    it('waits for hover intent before downloading', () => {
+      component.prefetchHeroCover(covered);
+      vi.advanceTimersByTime(119);
+      expect(requested).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(requested.length).toBe(1);
+    });
+
+    it('downloads nothing for a card the pointer only swept across', () => {
+      component.prefetchHeroCover(covered);
+      vi.advanceTimersByTime(60);
+      component.cancelHeroCoverPrefetch();
+      vi.advanceTimersByTime(500);
+      expect(requested).toEqual([]);
+    });
+
+    it('fetches at once where there is no hover (a tap)', () => {
+      hover = false;
+      component.prefetchHeroCover(covered);
+      expect(requested.length).toBe(1);
+    });
+  });
 });

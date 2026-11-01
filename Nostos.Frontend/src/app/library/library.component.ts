@@ -103,6 +103,14 @@ function formatFilterLabel(value: string | null | undefined): string | null {
  */
 const SWAP_OUT_MS = 200;
 
+/** How long the pointer rests on a card before its hero art is prefetched. */
+const HERO_PREFETCH_INTENT_MS = 120;
+
+/** True when the primary input can hover; a touch screen's mouseenter is only a tap. */
+function canHover(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(hover: hover)').matches;
+}
+
 /** The largest page GET /api/books serves (LibraryReadService clamps to it). */
 const MAX_SERVER_PAGE_SIZE = 100;
 
@@ -189,7 +197,7 @@ export class Library implements OnInit, OnDestroy {
   /** The last load-more read failed; the list end offers a retry instead of scrolling on. */
   loadMoreFailed = signal(false);
 
-  /** True while the existing results blur out before the new page is swapped in. */
+  /** True while the existing results dim out before the new page is swapped in. */
   swapping = signal(false);
 
   private requestSeq = 0;
@@ -456,6 +464,7 @@ export class Library implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.deleteLookup?.unsubscribe();
+    this.cancelHeroCoverPrefetch();
     this.document.body?.classList.remove('nostos-library');
     this.keepList();
   }
@@ -532,7 +541,7 @@ export class Library implements OnInit, OnDestroy {
         // Filter/sort/search change, or re-entering the library from another
         // section: fade the results through the swap instead of tearing them
         // down.
-        // (Reduced motion skips the swap state entirely — no dimming, no blur.)
+        // (Reduced motion skips the swap state entirely — no dimming.)
         this.swapping.set(true);
         this.swapStartedAt = performance.now();
       }
@@ -645,7 +654,7 @@ export class Library implements OnInit, OnDestroy {
   }
 
   /**
-   * Replaces the visible page. When the stage is blurred out, the commit is
+   * Replaces the visible page. When the stage is dimmed out, the commit is
    * deferred to the end of the out-phase so the DOM swap is never visible.
    * The swap itself is a pure signal flip, which is legal from any async
    * callback — the timer only co-ordinates the visual clock.
@@ -681,9 +690,9 @@ export class Library implements OnInit, OnDestroy {
     }
 
     // Only fade out something the user can actually see. With real results on
-    // screen the swap is deferred to the bottom of the blur; with an empty stage
+    // screen the swap is deferred to the bottom of the dim; with an empty stage
     // — a cold load's waiting field, or re-entering from another section — there
-    // is nothing to blur out, so the page commits now and the field dissolves
+    // is nothing to dim out, so the page commits now and the field dissolves
     // itself in CSS under the arriving results. Holding an empty stage for the
     // length of the out-phase would only delay a load the user is watching.
     if (this.rawBooks().length === 0) {
@@ -697,7 +706,7 @@ export class Library implements OnInit, OnDestroy {
     }
 
     // Network time already spent counts toward the out-phase, so a fast local
-    // response still gets the full blur instead of a one-frame blink.
+    // response still gets the full dim instead of a one-frame blink.
     const elapsed = performance.now() - this.swapStartedAt;
     setTimeout(apply, Math.max(0, SWAP_OUT_MS - elapsed));
   }
@@ -925,20 +934,49 @@ export class Library implements OnInit, OnDestroy {
   /** Hero art in flight, keyed by URL, so a hover does not re-request it. */
   private readonly prefetchedCovers = new Map<string, HTMLImageElement>();
 
+  /** The hover-intent timer of the card the pointer is on, if its delay has not run out. */
+  private heroPrefetchTimer: ReturnType<typeof setTimeout> | null = null;
+
   /**
-   * Warm the HTTP cache for a book's hero art as soon as the pointer signals
-   * intent, so opening the detail page does not flash an empty dark band.
+   * Warm the HTTP cache for a book's hero art once the pointer signals intent,
+   * so opening the detail page does not flash an empty dark band.
    *
    * The hero cannot start its own fetch until the book JSON arrives, because
    * `heroArtUrl` is derived from `coverUrl` — the two requests are serialised.
    * Prefetching on hover overlaps them, so by the time the click lands the 640px
    * thumbnail is in flight or already cached and the band paints on its first
-   * frame. Costs nothing unless the user actually hovers.
+   * frame.
+   *
+   * With a mouse the fetch waits for HERO_PREFETCH_INTENT_MS of resting on the
+   * card (`cancelHeroCoverPrefetch` on leave drops it), so sweeping across the
+   * grid does not start one 640px download per card passed. A touch screen has
+   * no hover: its only `mouseenter` is the one emulated by a tap, right before
+   * the click, so it fetches at once.
    */
   prefetchHeroCover(book: Book): void {
     const url = coverImageUrl(book, 640);
     if (!url || this.prefetchedCovers.has(url)) return;
 
+    this.cancelHeroCoverPrefetch();
+    if (!canHover()) {
+      this.startHeroPrefetch(url);
+      return;
+    }
+    this.heroPrefetchTimer = setTimeout(() => {
+      this.heroPrefetchTimer = null;
+      this.startHeroPrefetch(url);
+    }, HERO_PREFETCH_INTENT_MS);
+  }
+
+  /** The pointer left the card before the intent delay: no download. */
+  cancelHeroCoverPrefetch(): void {
+    if (this.heroPrefetchTimer === null) return;
+    clearTimeout(this.heroPrefetchTimer);
+    this.heroPrefetchTimer = null;
+  }
+
+  private startHeroPrefetch(url: string): void {
+    if (this.prefetchedCovers.has(url)) return;
     const img = new Image();
     img.decoding = 'async';
     const release = () => this.prefetchedCovers.delete(url);

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Writings;
+using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Repositories;
 
@@ -14,9 +15,16 @@ public class WritingRepository : IWritingRepository
         _db = db;
     }
 
-    public async Task<List<WritingModel>> GetAllAsync()
+    public async Task<List<WritingDto>> GetListAsync()
     {
-        return await _db.Writings.ToListAsync();
+        // Projected so each document's full text (Content) never leaves the database.
+        var rows = await _db.Writings
+            .AsNoTracking()
+            .Select(w => new { w.Id, w.Name, w.Type, w.ParentId, w.UpdatedAt })
+            .ToListAsync();
+        return rows
+            .Select(w => new WritingDto(w.Id, w.Name, w.Type.ToString(), w.ParentId, w.UpdatedAt))
+            .ToList();
     }
 
     public async Task<WritingModel?> GetByIdAsync(Guid id)
