@@ -50,8 +50,9 @@ class PdfReaderStub {
   language = input<string | null>(null);
   sidebarVisible = input(false);
   highlightColour = input<unknown>(null);
+  notes = input<unknown>(null);
   sidebarVisibleChange = output<boolean>();
-  noteCreated = output<void>();
+  noteCreated = output<unknown>();
   selectionCaptured = output<unknown>();
   selectionAnchored = output<unknown>();
   selectionDismissed = output<void>();

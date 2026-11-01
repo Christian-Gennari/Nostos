@@ -260,9 +260,10 @@
         [initialLocation]="$safeNavigationMigration(book()?.lastLocation)"
         [sidebarVisible]="tocOpen()"
         [highlightColour]="highlightColour()"
+        [notes]="readerNotes()"
         [language]="book()?.language ?? null"
         (sidebarVisibleChange)="tocOpen.set($event)"
-        (noteCreated)="handleNoteCreated()"
+        (noteCreated)="handleNoteCreated($event)"
         (selectionCaptured)="handleSelectionCaptured($event)"
         (selectionAnchored)="handleSelectionAnchored($event)"
         (selectionDismissed)="handleSelectionDismissed()"
@@ -271,7 +272,7 @@
         (highlightActivated)="handleHighlightActivated($event)"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" (highlightActivated)="handleHighlightActivated($event)" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" [notes]="readerNotes()" (noteCreated)="handleNoteCreated($event)" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" (highlightActivated)="handleHighlightActivated($event)" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" (contentsRequested)="openContents()" />
       } @default {

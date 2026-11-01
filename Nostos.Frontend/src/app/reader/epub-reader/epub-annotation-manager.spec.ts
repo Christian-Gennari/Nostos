@@ -331,6 +331,8 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
       highlightColour: 'sage',
     });
     expect(onNoteCreated).toHaveBeenCalledTimes(1);
+    // The saved note travels with the event, so the shell never has to re-read the list.
+    expect(onNoteCreated).toHaveBeenCalledWith({ id: 'n1' });
     expect(manager.highlights()).toEqual([CFI]);
   });
 

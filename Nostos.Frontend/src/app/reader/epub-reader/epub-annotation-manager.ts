@@ -176,7 +176,7 @@ export class EpubAnnotationManager {
     private rendition: Rendition,
     private bookId: string,
     private injector: Injector,
-    private onNoteCreated?: () => void,
+    private onNoteCreated?: (note: Note) => void,
     private onCommitFailed?: () => void,
   ) {
     this.notesService = this.injector.get(NotesService);
@@ -655,7 +655,7 @@ export class EpubAnnotationManager {
           highlightColour: colour,
         })
         .subscribe({
-          next: () => {
+          next: (created) => {
             // Persisted: swap the temporary annotation for the permanent one,
             // then report success so the shell closes the bar.
             this.committing = false;
@@ -668,7 +668,7 @@ export class EpubAnnotationManager {
             this.pendingHighlight = null;
             this.lastCapturedKey = null;
             this.highlights.update((current) => [...current, snapshot.cfiRange]);
-            this.onNoteCreated?.();
+            this.onNoteCreated?.(created);
             resolve(true);
           },
           error: () => {

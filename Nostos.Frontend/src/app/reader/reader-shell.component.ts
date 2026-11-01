@@ -900,6 +900,13 @@ export class ReaderShell implements OnInit, OnDestroy {
   highlightSaving = signal(false);
 
   dbNotes = signal<Note[]>([]);
+  /**
+   * The book's notes have been read once. The page readers draw their saved
+   * highlights from `dbNotes` instead of fetching the list again.
+   */
+  readonly notesLoaded = signal(false);
+  /** What the page readers draw from: null until the book's notes are in. */
+  readonly readerNotes = computed(() => (this.notesLoaded() ? this.dbNotes() : null));
   /** The book's notes could not be read; the panel offers Try again. */
   notesFailed = signal(false);
   /**
@@ -1215,6 +1222,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.loadError.set(null);
     this.book.set(null);
     this.dbNotes.set([]);
+    this.notesLoaded.set(false);
     this.notesFailed.set(false);
     this.pendingSelectionText.set(null);
     this.closeHighlightCard();
@@ -1555,11 +1563,11 @@ export class ReaderShell implements OnInit, OnDestroy {
         highlightColour: this.highlightColour(),
       })
       .subscribe({
-        next: () => {
+        next: (created) => {
           this.passageSaving.set(false);
           this.cancelPassageMark();
           this.closePassageSheet();
-          this.loadNotes(bookId);
+          this.addCreatedNote(bookId, created);
           this.showSaveFeedback('Passage saved');
         },
         error: () => {
@@ -1572,10 +1580,25 @@ export class ReaderShell implements OnInit, OnDestroy {
   loadNotes(bookId: string) {
     this.notesFailed.set(false);
     this.notesService.list(bookId).subscribe({
-      next: (notes) => this.dbNotes.set(notes.reverse()),
+      next: (notes) => {
+        this.dbNotes.set(notes.reverse());
+        this.notesLoaded.set(true);
+      },
       error: () => this.notesFailed.set(true),
     });
     this.loadNoteTopics(bookId);
+  }
+
+  /**
+   * A note this reader just wrote joins the list where it was made, with no
+   * second read of the book's notes. The save already answered with the note;
+   * only its topics (a [[link]] in its text) are asked for, and only when it
+   * has text to link from.
+   */
+  private addCreatedNote(bookId: string, created: Note): void {
+    if (this.book()?.id !== bookId) return;
+    this.dbNotes.update((notes) => (notes.some((n) => n.id === created.id) ? notes : [created, ...notes]));
+    if (created.content?.trim()) this.refreshNoteTopics(created.id);
   }
 
   private noteTopicsSeq = 0;
@@ -1655,9 +1678,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.jumpToNote(reader, note);
   }
 
-  handleNoteCreated() {
+  handleNoteCreated(created: Note) {
     const id = this.book()?.id;
-    if (id) this.loadNotes(id);
+    if (id) this.addCreatedNote(id, created);
     // Saving a mark must leave the passage visible. Notes only opens when the
     // reader explicitly asks for it.
     this.pendingSelectionText.set(null);
@@ -2070,14 +2093,14 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.quickNoteSaving.set(true);
 
     this.notesService.create(bookId, dto).subscribe({
-      next: () => {
+      next: (created) => {
         // Do not erase text typed while the request was in flight.
         if (this.quickNoteContent().trim() === content) {
           this.quickNoteContent.set('');
           this.quickNotePinnedLocation.set(null);
         }
         this.quickNoteSaving.set(false);
-        this.loadNotes(bookId);
+        this.addCreatedNote(bookId, created);
         this.loadTopics();
         this.showSaveFeedback('Note saved');
       },

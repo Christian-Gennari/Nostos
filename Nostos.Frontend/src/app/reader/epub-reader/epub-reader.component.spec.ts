@@ -349,6 +349,62 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     expect(log.indexOf('content-hook')).toBeLessThan(log.indexOf('display'));
   });
 
+  describe('saved highlights come from the notes the shell read (#1319)', () => {
+    const saved = [
+      { id: 'a', bookId: 'book-1', content: '', cfiRange: 'epubcfi(/6/4!/4/2/1:0)', createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'b', bookId: 'book-1', content: 'x', cfiRange: undefined, createdAt: '2026-01-02T00:00:00Z' },
+    ];
+
+    async function open(notes: typeof saved | null) {
+      const restore = vi.spyOn(EpubAnnotationManager.prototype, 'restoreHighlights').mockImplementation(() => {});
+      notesService.list.mockClear();
+      fixture = TestBed.createComponent(EpubReader);
+      fixture.componentRef.setInput('bookId', 'book-1');
+      if (notes) fixture.componentRef.setInput('notes', notes);
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+      return restore;
+    }
+
+    it('draws the notes it is given and does not fetch the list itself', async () => {
+      const restore = await open(saved);
+
+      expect(notesService.list).not.toHaveBeenCalled();
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(restore).toHaveBeenCalledWith(saved);
+    });
+
+    it('waits for the notes when they arrive after the book is showing, then draws them once', async () => {
+      const restore = await open(null);
+      expect(restore).not.toHaveBeenCalled();
+
+      fixture.componentRef.setInput('notes', saved);
+      fixture.detectChanges();
+      expect(restore).toHaveBeenCalledTimes(1);
+
+      // A note added or removed later is the shell's to draw, not a second restore.
+      fixture.componentRef.setInput('notes', [...saved, { ...saved[0], id: 'c' }]);
+      fixture.detectChanges();
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(notesService.list).not.toHaveBeenCalled();
+    });
+
+    it('announces a saved highlight with the note the save returned', async () => {
+      await open(saved);
+      const emitted = vi.fn();
+      fixture.componentInstance.noteCreated.subscribe(emitted);
+      const manager = (fixture.componentInstance as unknown as {
+        annotationManager: { onNoteCreated: (note: unknown) => void };
+      }).annotationManager;
+
+      manager.onNoteCreated({ id: 'fresh' });
+
+      expect(emitted).toHaveBeenCalledWith({ id: 'fresh' });
+    });
+  });
+
   it('destroys the annotation manager before the book/rendition', async () => {
     const destroySpy = vi
       .spyOn(EpubAnnotationManager.prototype, 'destroy')

@@ -5,6 +5,8 @@ import {
   ElementRef,
   input,
   computed,
+  effect,
+  untracked,
   inject,
   OnInit,
   OnChanges,
@@ -259,7 +261,26 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   bookId = input.required<string>();
   initialLocation = input<string | undefined>();
-  noteCreated = output<void>();
+  /** A highlight or note was saved here; the shell adds it to its list. */
+  noteCreated = output<Note>();
+  /**
+   * The book's notes, read once by the shell. The saved highlights are drawn
+   * from them rather than fetched again; null while the shell is reading them.
+   */
+  notes = input<Note[] | null>(null);
+  private notesApplied = false;
+
+  constructor() {
+    effect(() => {
+      const notes = this.notes();
+      if (!notes || this.notesApplied) return;
+      untracked(() => {
+        this.notesApplied = true;
+        this.applyNotes(notes);
+      });
+    });
+  }
+
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
@@ -666,7 +687,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.restoreSavedZoom();
     this.restoreSavedScrollMode();
     this.restoreSavedInversion();
-    this.loadNotes();
 
     this.progressUpdater$
       .pipe(
@@ -929,7 +949,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // service is expected to be usable. search() still handles a defensive
     // undefined return if the library reports readiness too early.
     this.pdfSearchReady.set(true);
-    this.loadNotes();
+    // The pages exist now: paint the highlights the shell's notes already gave us.
+    this.repaintSavedHighlightPages();
 
     // The outline needs the PDFDocumentProxy, and `pdfLoaded` cannot provide it:
     // the library's PdfLoadedEvent is `{ pagesCount }` and nothing else, so the
@@ -1379,31 +1400,31 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   // --- Helpers ---
 
-  loadNotes() {
-    this.notesService.list(this.bookId()).subscribe({
-      next: (notes) => {
-        this.savedHighlights = notes
-          .filter((n) => n.cfiRange)
-          .map((n) => {
-            try {
-              const range = JSON.parse(n.cfiRange!);
-              return {
-                id: n.id,
-                pageNumber: range.pageNumber,
-                rects: range.rects || [],
-                colour: noteHighlightColour(n),
-                noted: noteHasText(n),
-              } as PageHighlight;
-            } catch {
-              return null;
-            }
-          })
-          .filter((h) => h !== null) as PageHighlight[];
+  private applyNotes(notes: Note[]) {
+    this.savedHighlights = notes
+      .filter((n) => n.cfiRange)
+      .map((n) => {
+        try {
+          const range = JSON.parse(n.cfiRange!);
+          return {
+            id: n.id,
+            pageNumber: range.pageNumber,
+            rects: range.rects || [],
+            colour: noteHighlightColour(n),
+            noted: noteHasText(n),
+          } as PageHighlight;
+        } catch {
+          return null;
+        }
+      })
+      .filter((h) => h !== null) as PageHighlight[];
 
-        const pagesToRepaint = [...new Set(this.savedHighlights.map((h) => h.pageNumber))];
-        pagesToRepaint.forEach((pageNum) => this.repaintPage(pageNum));
-      },
-    });
+    this.repaintSavedHighlightPages();
+  }
+
+  private repaintSavedHighlightPages() {
+    const pagesToRepaint = [...new Set(this.savedHighlights.map((h) => h.pageNumber))];
+    pagesToRepaint.forEach((pageNum) => this.repaintPage(pageNum));
   }
 
   /** Repaint one saved highlight in another pen. */
@@ -1471,7 +1492,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
           }
           this.commitInFlight = false;
           this.pendingHighlight = null;
-          this.noteCreated.emit();
+          this.noteCreated.emit(createdNote);
         },
         error: () => {
           this.savedHighlights = this.savedHighlights.filter((h) => h.id !== p.tempId);
