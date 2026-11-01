@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
@@ -312,9 +313,11 @@ public sealed class BookUploadService(
         var hasStaging = await store.HasStagingAsync(sessionId, ct);
         if (!hasStaging)
         {
-            if (await AdoptedFileMatchesAsync(bookId, session, ct))
-                return await MarkCompleteAsync(session, ct);
-            throw BookUploadException.Error(BookUploadException.InvalidState);
+            using var recoveryLease = fileMutationGate.TryEnter(bookId)
+                ?? throw BookUploadException.Error(BookUploadException.InProgress);
+
+            return await RecoverAdoptedFileAsync(bookId, sessionId, ct)
+                ?? throw BookUploadException.Error(BookUploadException.InvalidState);
         }
 
         if (session.StateValue != BookUploadState.Completing)
@@ -360,13 +363,14 @@ public sealed class BookUploadService(
         {
             // The crash window this state exists for: adoption may have made
             // the bytes the book's file before the row update was recorded.
-            if (await AdoptedFileMatchesAsync(bookId, session, ct))
-                return await MarkCompleteAsync(session, ct);
+            if (await RecoverAdoptedFileAsync(bookId, sessionId, ct) is { } recovered)
+                return recovered;
 
             // No staged bytes and no adopted file means this attempt cannot be
             // resumed; surface a terminal failure instead of a stuck session.
             if (!await store.HasStagingAsync(sessionId, ct))
             {
+                session = await FindAsync(bookId, sessionId, ct);
                 await DiscardSessionAsync(
                     session,
                     BookUploadState.Failed,
@@ -508,20 +512,72 @@ public sealed class BookUploadService(
         return await ToStatusAsync(session, ct);
     }
 
+    /// <summary>
+    /// Finishes a publish whose bytes reached the library without their row
+    /// commit, so recovery leaves the same row as a normal publish. Returns null
+    /// when the stored file is not this upload. Nothing here is transactional
+    /// with storage, but repeating the commit is safe, so a recovery that fails
+    /// partway can be retried. The caller holds the file mutation lease.
+    /// </summary>
+    private async Task<BookUploadStatus?> RecoverAdoptedFileAsync(
+        Guid bookId,
+        Guid sessionId,
+        CancellationToken ct)
+    {
+        // A failed save stays in the change tracker, and a commit that stopped
+        // partway has edits the row never received. Work from the stored rows.
+        db.ChangeTracker.Clear();
+        var session = await FindAsync(bookId, sessionId, ct);
+        if (session.StateValue == BookUploadState.Complete)
+            return await ToStatusAsync(session, ct);
+
+        var book = await repo.GetByIdAsync(bookId);
+        if (book is null) return null;
+        EnsureBookAcceptsUpload(book);
+
+        if (!await AdoptedFileMatchesAsync(bookId, session, ct)) return null;
+
+        await using (var stored = await storage.OpenBookFileAsync(bookId, ct: ct))
+        {
+            if (stored is not null) commit.Enrich(book, stored.Content);
+        }
+
+        await commit.FinishAsync(book, session.FileName, ct);
+        var status = await MarkCompleteAsync(session, ct);
+        writeGate.Forget(sessionId);
+        return status;
+    }
+
+    /// <summary>
+    /// Whether the book's stored file holds exactly this upload. The rows cannot
+    /// say: the book row is what recovery is about to write, and it describes
+    /// the previous file on a replacement. Runs only on the recovery path, since
+    /// object storage has to read the whole file to hash it.
+    /// </summary>
     private async Task<bool> AdoptedFileMatchesAsync(
         Guid bookId,
         BookUploadSessionRecord session,
         CancellationToken ct)
     {
         var info = await storage.GetBookFileInfoAsync(bookId, ct);
-        if (info is null || info.Length != session.TotalBytes) return false;
-        var book = await repo.GetByIdAsync(bookId);
-        return book is not null
-            && book.FileDetails.HasFile
-            && string.Equals(
-                book.FileDetails.FileName,
-                $"book{Path.GetExtension(session.FileName)}",
-                StringComparison.OrdinalIgnoreCase);
+        if (info is null
+            || info.Length != session.TotalBytes
+            || !string.Equals(
+                Path.GetExtension(info.FileName),
+                Path.GetExtension(session.FileName),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        await using var stored = await storage.OpenBookFileAsync(bookId, ct: ct);
+        if (stored is null) return false;
+
+        var sha256 = await SHA256.HashDataAsync(stored.Content, ct);
+        return string.Equals(
+            Convert.ToHexStringLower(sha256),
+            session.FileSha256,
+            StringComparison.Ordinal);
     }
 
     private void ValidateReceipts(
