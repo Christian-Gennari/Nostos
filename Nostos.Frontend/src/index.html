@@ -26,6 +26,10 @@
     <link rel="icon" type="image/svg+xml" href="favicon-light.svg" />
     <link rel="alternate icon" type="image/x-icon" href="favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+    <!-- The app's two typefaces (latin), fetched with the HTML instead of after the CSS
+         is parsed. Same-origin, but font preloads need `crossorigin` to be reused. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/app/hanken-grotesk/hanken-grotesk-latin-wght-normal.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/app/newsreader/newsreader-latin-opsz-normal.woff2" />
   </head>
 
   <body>

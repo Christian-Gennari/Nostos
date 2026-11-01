@@ -913,7 +913,7 @@ app-sidebar-collections.no-transition {
 /* --- RESULTS STAGE: the cinematic filter/sort cross-fade ----------------
    One animated surface. The out-phase duration is kept equal to SWAP_OUT_MS
    in library.component.ts (that constant gates when the new page may be
-   committed), so the DOM swap always lands at the bottom of the blur.
+   committed), so the DOM swap always lands at the bottom of the dim.
 
    No transform here, deliberately. Measured with the shipped scale(0.995):
    while the release runs the stage is one re-rasterized layer, and when it
@@ -928,15 +928,14 @@ app-sidebar-collections.no-transition {
   position: relative;
   --library-swap-out: 200ms;
   --library-swap-in: 300ms;
-  transition:
-    opacity var(--library-swap-in) var(--ease-out),
-    filter var(--library-swap-in) var(--ease-out);
+  transition: opacity var(--library-swap-in) var(--ease-out);
 }
 
 .results-stage.is-swapping {
   opacity: 0.35;
-  filter: blur(5px) saturate(0.92);
-  /* A blurred list must not accept clicks on the books it is discarding. */
+  /* No blur: filtering a full stage of cover art re-rasterizes every cover on each
+     frame of the swap (issue #1322). The dim alone carries it, and stays composited. */
+  /* A dimmed list must not accept clicks on the books it is discarding. */
   pointer-events: none;
   transition-duration: var(--library-swap-out);
 }
@@ -1386,19 +1385,16 @@ app-sidebar-collections.no-transition {
 
 }
 
-/* --- MOBILE SWAP: fade only -------------------------------------------
-   Blurring a full grid of cover images is the expensive part of the swap on a
-   phone, and the covers are the content, so mobile gets the fade (composited,
-   cheap) without the filter. The transition is still one continuous motion. */
+/* --- MOBILE SWAP -------------------------------------------------------
+   Phones dim slightly less than desktop; the resolve-in is quicker on touch. */
 @media (max-width: 768px) {
   .results-stage.is-swapping {
     opacity: 0.4;
-    filter: none;
   }
 
   /* Same out-phase as desktop (it is gated by SWAP_OUT_MS in the component —
      never make this longer than that constant, or the DOM would swap
-     mid-blur); only the resolve-in is quicker on touch. */
+     mid-dim); only the resolve-in is quicker on touch. */
   .results-stage {
     --library-swap-out: 200ms;
     --library-swap-in: 260ms;
@@ -1412,7 +1408,6 @@ app-sidebar-collections.no-transition {
   .results-stage,
   .results-stage.is-swapping {
     transition-duration: 1ms;
-    filter: none;
   }
 
   .results-stage > .table-view,
