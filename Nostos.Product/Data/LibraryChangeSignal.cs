@@ -9,9 +9,10 @@ namespace Nostos.Backend.Data;
 /// What a committed change to the library revision was.
 /// <paramref name="ProgressOnly"/> is true when every portable change in the
 /// transaction was reading position alone (location, percentage, last read),
-/// which open screens may pick up lazily.
+/// which open screens may pick up lazily. <paramref name="Revision"/> is the
+/// revision the transaction advanced the library to.
 /// </summary>
-public readonly record struct LibraryChange(bool ProgressOnly);
+public readonly record struct LibraryChange(bool ProgressOnly, string? Revision = null);
 
 /// <summary>
 /// Process-local wake-up for the library change feed (<c>GET /api/library/changes</c>).
@@ -120,6 +121,7 @@ public sealed class LibraryChangeCommitInterceptor : DbTransactionInterceptor
         if (eventData.Context is NostosDbContext db
             && db.TryTakeCommittedLibraryChange(eventData.TransactionId, out var change))
         {
+            LibraryWriteReceipt.Record(change.Revision);
             LibraryChangeSignal.Publish(LibraryChangeSignal.KeyFor(db), change);
         }
     }

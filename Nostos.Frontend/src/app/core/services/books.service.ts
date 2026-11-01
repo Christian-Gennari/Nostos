@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { LIBRARY_WRITE_HANDLED } from './library-changes.service';
 import { catchError, map, Observable, throwError } from 'rxjs';
 import {
   Book,
@@ -88,8 +89,14 @@ export class BooksService {
       .pipe(map((response) => ({ book: response.body as Book, created: response.status === 201 })));
   }
 
-  update(id: string, dto: UpdateBookDto): Observable<Book> {
-    return this.http.put<Book>(`/api/books/${id}`, dto);
+  /**
+   * `handledLocally`: the caller applies the result itself, so this tab's own
+   * change announcement need not make screens re-read (see `LIBRARY_WRITE_HANDLED`).
+   */
+  update(id: string, dto: UpdateBookDto, options?: { handledLocally?: boolean }): Observable<Book> {
+    return this.http.put<Book>(`/api/books/${id}`, dto, {
+      context: new HttpContext().set(LIBRARY_WRITE_HANDLED, options?.handledLocally === true),
+    });
   }
 
   delete(id: string): Observable<void> {

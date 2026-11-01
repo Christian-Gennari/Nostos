@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Endpoints;
@@ -464,35 +465,63 @@ public static class NostosProductComposition
     {
         policies ??= NostosProductEndpointPolicies.None;
 
-        routes.MapBooksEndpoints(policies);
+        // Every write names the library revisions it committed in a response
+        // header, so the tab that made it can recognise its own announcements.
+        var api = routes.MapGroup(string.Empty);
+        api.AddEndpointFilter(NameCommittedRevisionsAsync);
+
+        api.MapBooksEndpoints(policies);
         if (policies.MapResumableBookUploadEndpoints)
-            routes.MapBookUploadEndpoints(policies);
-        routes.MapAlignmentEndpoints(policies);
-        routes.MapProviderEndpoints(policies);
-        routes.MapProviderSettingsEndpoints();
-        routes.MapImportEndpoints();
-        routes.MapLibraryChangesEndpoints();
-        routes.MapNotesEndpoints();
-        routes.MapNoteProcessingEndpoints();
-        routes.MapCollectionsEndpoints();
-        routes.MapReadingListEndpoints();
-        routes.MapTopicsEndpoints();
-        routes.MapWritingsEndpoints();
-        routes.MapTranscriptionEndpoints();
-        routes.MapReadAloudEndpoints();
-        routes.MapAssistantEndpoints();
-        routes.MapAiProviderSettingsEndpoints();
-        routes.MapDeploymentCapabilitiesEndpoints();
-        routes.MapManagedBackupEndpoints(
+            api.MapBookUploadEndpoints(policies);
+        api.MapAlignmentEndpoints(policies);
+        api.MapProviderEndpoints(policies);
+        api.MapProviderSettingsEndpoints();
+        api.MapImportEndpoints();
+        api.MapLibraryChangesEndpoints();
+        api.MapNotesEndpoints();
+        api.MapNoteProcessingEndpoints();
+        api.MapCollectionsEndpoints();
+        api.MapReadingListEndpoints();
+        api.MapTopicsEndpoints();
+        api.MapWritingsEndpoints();
+        api.MapTranscriptionEndpoints();
+        api.MapReadAloudEndpoints();
+        api.MapAssistantEndpoints();
+        api.MapAiProviderSettingsEndpoints();
+        api.MapDeploymentCapabilitiesEndpoints();
+        api.MapManagedBackupEndpoints(
             policies.ManagedBackupsAuthorizationPolicy,
             policies.LargeTransferRateLimitPolicy);
-        routes.MapPortabilityEndpoints(policies);
-        routes.MapMigrationEndpoints(policies);
-        routes.MapOpdsEndpoints(
+        api.MapPortabilityEndpoints(policies);
+        api.MapMigrationEndpoints(policies);
+        api.MapOpdsEndpoints(
             opds,
             policies.OpdsAuthorizationPolicy,
             policies.LargeTransferRateLimitPolicy);
 
         return routes;
+    }
+
+    private static async ValueTask<object?> NameCommittedRevisionsAsync(
+        EndpointFilterInvocationContext invocation,
+        EndpointFilterDelegate next)
+    {
+        var http = invocation.HttpContext;
+        if (HttpMethods.IsGet(http.Request.Method)
+            || HttpMethods.IsHead(http.Request.Method)
+            || HttpMethods.IsOptions(http.Request.Method))
+        {
+            return await next(invocation);
+        }
+
+        var receipt = LibraryWriteReceipt.Begin();
+        http.Response.OnStarting(() =>
+        {
+            if (receipt.HeaderValue is { } revisions)
+                http.Response.Headers[LibraryWriteReceipt.HeaderName] = revisions;
+            return Task.CompletedTask;
+        });
+
+        return await next(invocation);
     }
 }

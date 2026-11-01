@@ -109,6 +109,103 @@ describe('LibraryChangesService', () => {
     watcher.subscription.unsubscribe();
   });
 
+  describe('this tab\'s own handled writes', () => {
+    it('does not ask for a re-read when the announced revision is the write\'s own', () => {
+      const watcher = watch();
+      latest().announce('7');
+
+      service.noteOwnWrite('8');
+      latest().announce('8');
+      vi.advanceTimersByTime(300);
+
+      expect(watcher.count()).toBe(0);
+      watcher.subscription.unsubscribe();
+    });
+
+    it('still matches when the announcement arrives before the write\'s response', () => {
+      const watcher = watch();
+      latest().announce('7');
+
+      latest().announce('8');
+      vi.advanceTimersByTime(100);
+      service.noteOwnWrite('8');
+      vi.advanceTimersByTime(200);
+
+      expect(watcher.count()).toBe(0);
+      watcher.subscription.unsubscribe();
+    });
+
+    it('matches a write that committed several revisions', () => {
+      const watcher = watch();
+      latest().announce('7');
+
+      service.noteOwnWrite('8,9');
+      latest().announce('9');
+      vi.advanceTimersByTime(300);
+
+      expect(watcher.count()).toBe(0);
+      watcher.subscription.unsubscribe();
+    });
+
+    it('still re-reads for a change from elsewhere, also when it lands between two of our own', () => {
+      const watcher = watch();
+      latest().announce('7');
+
+      // 8 is ours, 9 is another device's, 10 is ours; the feed announced only 10.
+      service.noteOwnWrite('8');
+      service.noteOwnWrite('10');
+      latest().announce('10');
+      vi.advanceTimersByTime(300);
+
+      expect(watcher.count()).toBe(1);
+      watcher.subscription.unsubscribe();
+    });
+
+    it('re-reads for another device\'s change right after our own was matched', () => {
+      const watcher = watch();
+      latest().announce('7');
+      service.noteOwnWrite('8');
+      latest().announce('8');
+      vi.advanceTimersByTime(300);
+
+      latest().announce('9');
+      vi.advanceTimersByTime(300);
+
+      expect(watcher.count()).toBe(1);
+      watcher.subscription.unsubscribe();
+    });
+
+    it('re-reads when the write named nothing (an old server) or something unreadable', () => {
+      const watcher = watch();
+      latest().announce('7');
+
+      service.noteOwnWrite(null);
+      service.noteOwnWrite('garbage, ');
+      latest().announce('8');
+      vi.advanceTimersByTime(300);
+
+      expect(watcher.count()).toBe(1);
+      watcher.subscription.unsubscribe();
+    });
+
+    it('tells every screen or none, not only the first to ask', () => {
+      const first = watch();
+      const second = watch();
+      latest().announce('7');
+
+      service.noteOwnWrite('8');
+      latest().announce('8');
+      vi.advanceTimersByTime(300);
+      expect([first.count(), second.count()]).toEqual([0, 0]);
+
+      latest().announce('9');
+      vi.advanceTimersByTime(300);
+      expect([first.count(), second.count()]).toEqual([1, 1]);
+      first.subscription.unsubscribe();
+      second.subscription.unsubscribe();
+    });
+  });
+
   it('gathers reading-position changes for half a minute before one re-read', () => {
     const watcher = watch();
     latest().announce('1');
