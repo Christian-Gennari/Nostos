@@ -127,6 +127,15 @@ public sealed partial class SqliteBookTextIndex(
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Up to this size a book's replacement keeps its dirty pages in memory
+    /// until commit. Once the pager spills, SQLite holds the exclusive lock
+    /// until commit and every reader waits out the rest of the write; without
+    /// spilling only the commit blocks them. A larger book spills as before, so
+    /// the extra memory stays bounded.
+    /// </summary>
+    private const int MaxChunksWithoutSpilling = 10_000;
+
     public async Task EnsureSchemaAsync(CancellationToken ct = default)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
@@ -299,6 +308,10 @@ public sealed partial class SqliteBookTextIndex(
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         await db.Database.OpenConnectionAsync(ct);
+        var holdInMemory = chunks.Count <= MaxChunksWithoutSpilling;
+        if (holdInMemory)
+            await ExecuteAsync(db, "PRAGMA cache_spill=0;", ct);
+
         try
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -369,6 +382,10 @@ public sealed partial class SqliteBookTextIndex(
         }
         finally
         {
+            // The pragma lives on the connection, and the connection is pooled.
+            if (holdInMemory)
+                await ExecuteAsync(db, "PRAGMA cache_spill=1;", CancellationToken.None);
+
             await db.Database.CloseConnectionAsync();
         }
     }
