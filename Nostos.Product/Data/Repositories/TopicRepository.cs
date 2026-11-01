@@ -388,11 +388,31 @@ public class TopicRepository : ITopicRepository
 
     public async Task<TopicModel?> GetByIdWithNotesAsync(Guid id)
     {
-        return await _db
-            .Topics.Include(c => c.NoteTopics)
-            .ThenInclude(nc => nc.Note)
-            .ThenInclude(n => n.Book)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var row = await _db.Topics.AsNoTracking()
+            .Where(c => c.Id == id)
+            .Select(c => new
+            {
+                Topic = c,
+                Notes = c.NoteTopics.AsQueryable()
+                    .OrderBy(nc => nc.NoteId)
+                    .Select(nc => nc.Note)
+                    .Select(BookReadShapes.NoteWithBookHeadline)
+                    .ToList(),
+            })
+            .FirstOrDefaultAsync();
+        if (row is null)
+            return null;
+
+        row.Topic.NoteTopics = row.Notes
+            .Select(note => new NoteTopicModel
+            {
+                NoteId = note.Note.Id,
+                Note = note.ToNote(),
+                TopicId = row.Topic.Id,
+                Topic = row.Topic,
+            })
+            .ToList();
+        return row.Topic;
     }
 
     public async Task<TopicModel?> RenameAsync(Guid id, string name)
