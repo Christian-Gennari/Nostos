@@ -47,6 +47,7 @@ import { Note } from '../core/dtos/note.dtos';
 import { ThemeService, THEME_STORAGE_KEY } from '../core/services/theme.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
+import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
 
 // The AudioReader is kept real so this spec guards the reader page's total
 // GET /api/books/{id} count; its player is faked to avoid real media loading.
@@ -2282,6 +2283,29 @@ describe('ReaderShell immersive chrome (#759)', () => {
     expect(component.immersiveReader()).toBe(true);
     expect(component.chromeVisible()).toBe(false);
     expect(component.chromeShown()).toBe(false);
+  });
+
+  it('holds the Ask Nostos capsule hidden while the reader rests (#1345)', async () => {
+    const component = await openBook('book.epub');
+    const launcher = TestBed.inject(AssistantLauncherService);
+    expect(launcher.floatingHidden()).toBe(true);
+
+    component.tocOpen.set(true);
+    render();
+    expect(component.chromeShown()).toBe(true);
+    expect(launcher.floatingHidden()).toBe(false);
+
+    component.tocOpen.set(false);
+    render();
+    expect(launcher.floatingHidden()).toBe(true);
+
+    fixture.destroy();
+    expect(launcher.floatingHidden()).toBe(false);
+  });
+
+  it('leaves the capsule alone for the audio reader (#1345)', async () => {
+    await openBook('book.m4b');
+    expect(TestBed.inject(AssistantLauncherService).floatingHidden()).toBe(false);
   });
 
   it('keeps the audio edge header persistent and shows title and author once', async () => {

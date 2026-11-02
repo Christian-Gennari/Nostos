@@ -1,4 +1,4 @@
-import { afterRenderEffect, ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, viewChild, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { afterRenderEffect, DestroyRef, ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, viewChild, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { PHONE_OR_TOUCH_QUERY } from '../ui/breakpoints';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
@@ -79,6 +79,7 @@ import {
 import { FeedbackLinkService } from '../core/services/feedback-link.service';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
+import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
 
 /** Longest quote a selection surface renders (#657); the full text is still saved. */
 export const SELECTION_PREVIEW_MAX = 320;
@@ -241,6 +242,23 @@ export class ReaderShell implements OnInit, OnDestroy {
         audio: this.audioQuery(),
       });
     });
+
+    // The Ask Nostos capsule rests with the reader chrome (#1345). The hold is
+    // released when chrome shows and when the reader goes, so other routes
+    // never inherit it. Audio keeps its persistent chrome and the capsule.
+    let releaseCapsule: (() => void) | null = null;
+    const releaseCapsuleHold = () => {
+      releaseCapsule?.();
+      releaseCapsule = null;
+    };
+    effect(() => {
+      const resting = this.immersiveReader() && !this.chromeShown();
+      untracked(() => {
+        if (resting && !releaseCapsule) releaseCapsule = this.assistantLauncher.hideFloating();
+        else if (!resting) releaseCapsuleHold();
+      });
+    });
+    inject(DestroyRef).onDestroy(releaseCapsuleHold);
 
     // A source link can arrive before its reader's chunk has: it waits here
     // for the reader, however long the chunk takes, and for the notes if it
@@ -448,6 +466,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private toast = inject(ToastService);
   private readonly assistant = inject(AssistantService);
+  private readonly assistantLauncher = inject(AssistantLauncherService);
   private readonly modalStack = inject(ModalStack);
   readonly askNostosAvailable = this.assistant.surfaceAvailable;
   private readonly assistantContext = inject(AssistantContextService);

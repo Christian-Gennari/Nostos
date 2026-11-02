@@ -360,6 +360,13 @@ export class AssistantComponent {
    */
   readonly docked = this.launcher.dockHosted;
 
+  /**
+   * The reader rests its chrome on a tap and the capsule rests with it (#1345).
+   * The capsule stays in the DOM so it can fade; the resting style makes it
+   * invisible, unfocusable and unclickable.
+   */
+  readonly floatingHidden = this.launcher.floatingHidden;
+
   /** Product-level voice preference; provider configuration stays server-side. */
   readonly voiceTranscriptionEnabled = this.preferences.assistantVoiceEnabled;
 

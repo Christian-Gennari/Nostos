@@ -40,6 +40,15 @@ export class AssistantLauncherService {
   /** True while a dock carries the launcher, so the floating capsule stands down. */
   readonly dockHosted = computed(() => this.dockHosts() > 0);
 
+  private readonly floatingHolds = signal(0);
+
+  /**
+   * True while a surface asks the floating capsule to rest (the reader with its
+   * chrome hidden, #1345). Only the capsule yields: the shortcut, the selection
+   * bar and an open panel keep working.
+   */
+  readonly floatingHidden = computed(() => this.floatingHolds() > 0);
+
   /** Toggle requests from a launcher the component does not render itself. */
   readonly toggleRequested = new Subject<void>();
 
@@ -51,6 +60,17 @@ export class AssistantLauncherService {
       if (!attached) return;
       attached = false;
       this.dockHosts.update((count) => Math.max(0, count - 1));
+    };
+  }
+
+  /** Holds the floating capsule hidden; call the returned (idempotent) function to release. */
+  hideFloating(): () => void {
+    this.floatingHolds.update((count) => count + 1);
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      this.floatingHolds.update((count) => Math.max(0, count - 1));
     };
   }
 
