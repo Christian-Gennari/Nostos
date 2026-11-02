@@ -223,7 +223,7 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
     await flush();
 
     expect(annotations.highlight).toHaveBeenCalledTimes(1);
-    expect(onSelectionCaptured).toHaveBeenCalledWith('Fallback text', null);
+    expect(onSelectionCaptured).toHaveBeenCalledWith('Fallback text', null, null);
   });
 
   it('deduplicates fallback capture against a later epub.js selected event', async () => {
@@ -692,7 +692,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     document.dispatchEvent(new Event('touchend'));
 
     expect(annotations.highlight).toHaveBeenCalledTimes(1);
-    expect(onSelectionCaptured).toHaveBeenCalledWith('Selected with a long-press', null);
+    expect(onSelectionCaptured).toHaveBeenCalledWith('Selected with a long-press', null, null);
     expect(window.getSelection()?.toString()).toBe('Selected with a long-press');
   });
 
@@ -709,7 +709,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     document.dispatchEvent(new Event('touchend'));
 
     expect(annotations.highlight).toHaveBeenCalledTimes(2);
-    expect(onSelectionCaptured).toHaveBeenLastCalledWith('First more', null);
+    expect(onSelectionCaptured).toHaveBeenLastCalledWith('First more', null, null);
     // The first temporary mark went with the passage it marked.
     expect(views[0].pane.removeMark).toHaveBeenCalledTimes(1);
   });

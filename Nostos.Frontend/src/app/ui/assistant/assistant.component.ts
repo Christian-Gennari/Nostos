@@ -397,7 +397,11 @@ export class AssistantComponent {
 
   readonly isOpen = computed(() => this.assistant.isOpen());
   readonly isReader = computed(() => this.assistant.context().surface === 'reader');
-  /** Selection actions already include Ask Nostos and own the phone's bottom edge. */
+  /**
+   * Selection actions already include Ask Nostos, so the launcher steps aside
+   * rather than offer it twice. (The bar is docked at the top now, #1344, so
+   * this is no longer about sharing the bottom edge.)
+   */
   readonly readerSelectionActive = computed(
     () => this.isReader() && !!this.assistant.context().selectedText?.trim(),
   );

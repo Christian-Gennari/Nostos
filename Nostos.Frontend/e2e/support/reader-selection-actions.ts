@@ -391,23 +391,28 @@ export function mobileSelectionSpecs() {
     expect(await iframeSelection(page)).toBe('');
   });
 
-  test('phone: with the reader chrome showing, the pager steps aside for the docked bar', async ({ page }) => {
+  test('phone: the bar docks at the top, and with the chrome showing the header steps aside for it (#1344)', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection C ${run}`);
     await openReader(page, baseUrl, bookId);
     await revealEpubChrome(page);
-    const pager = page.getByTestId('reader-chrome-bottom');
-    await expect(pager).toBeVisible();
+    const header = page.getByTestId('reader-chrome-top');
+    await expect(header).toBeVisible();
 
     await selectWords(page);
-    await expect(page.locator('[data-testid="selection-bar"]')).toBeVisible();
-    await expect(pager).toBeHidden();
-    await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
+    const bar = page.locator('[data-testid="selection-bar"]');
+    await expect(bar).toBeVisible();
+    // Chrome's Touch to Search sheet owns the bottom edge: the bar is at the top.
+    const box = (await bar.boundingBox())!;
+    expect(box.y).toBeLessThanOrEqual(1);
+    expect(box.y + box.height).toBeLessThan(page.viewportSize()!.height / 2);
+    await expect(header).toBeHidden();
+    await expect(page.getByTestId('reader-chrome-bottom')).toBeVisible();
     await expectBarUncovered(page);
     await snap(page, 'mobile-bar-with-chrome');
 
     await page.locator('[data-testid="selection-cancel"]').tap();
-    await expect(pager).toBeVisible();
+    await expect(header).toBeVisible();
   });
 
   test('phone: a pen dot picks the colour and Highlight saves in it; a tap on the page drops an offer without turning the page', async ({ page }) => {

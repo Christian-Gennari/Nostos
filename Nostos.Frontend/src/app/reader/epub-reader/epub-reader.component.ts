@@ -348,6 +348,12 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    * (#650). Null when it could not be measured.
    */
   selectionAnchored = output<SelectionAnchor | null>();
+  /**
+   * The box of a touch selection in the page's viewport (#1344). The top-docked
+   * bar can sit over the first lines of a page; the shell uses this to slide
+   * the page clear of it. Null when it could not be measured.
+   */
+  selectionTouchRect = output<SelectionAnchor | null>();
   /** A tap on the page asked to drop the passage a touch selection offered. */
   selectionDismissed = output<void>();
   commitFailed = output<void>();
@@ -2038,7 +2044,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     );
     this.annotationManager.setHighlightColour(this.highlightColour());
     this.annotationManager.setTheme(this.themeService.mode());
-    this.annotationManager.setOnSelectionCaptured((text, anchor) => {
+    this.annotationManager.setOnSelectionCaptured((text, anchor, touchRect) => {
       // A touch capture (no anchored menu) is a live native selection whose
       // handles are about to move; hold the page under it (#1254). A mouse
       // capture has already finished its drag and opens an anchored menu.
@@ -2047,6 +2053,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
       this.selectionAnchored.emit(anchor);
+      if (anchor === null) this.selectionTouchRect.emit(touchRect ?? null);
     });
     this.annotationManager.setOnSelectionAbandoned(() => {
       this.releasePageHold();
