@@ -6,8 +6,9 @@
  * EPUB re-paginates into the shorter box and re-displays its last seen
  * location, which in a long section is pages away; closing the keyboard does
  * it again. While the reader is mounted the keyboard overlays the page instead
- * (`resizes-visual`, what iOS Safari always does), and the docked selection
- * bar is lifted above it from `visualViewport`. Other screens keep the
+ * (`resizes-visual`, what iOS Safari always does). The docked selection bar is
+ * at the top (#1344) and needs no lift; the inset is still published for
+ * anything at the bottom that must clear the keyboard. Other screens keep the
  * document's own setting: it is put back when the reader goes.
  */
 

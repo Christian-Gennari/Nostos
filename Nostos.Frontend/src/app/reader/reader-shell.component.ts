@@ -343,9 +343,10 @@ export class ReaderShell implements OnInit, OnDestroy {
   // ------------------------------------------------------------------
 
   /**
-   * Phones and touch-first devices keep the bottom-docked bar: the selection
-   * handles occupy the space around the text there, and the bar is the
-   * thumb-safe place. Fine-pointer desktops anchor the menu at the text.
+   * Phones and touch-first devices dock the bar at the TOP of the reader, in the
+   * hidden header's place (#1344). Chrome's Touch to Search sheet claims the
+   * bottom edge on Android and covered a bottom bar; one top placement serves
+   * every touch device. Fine-pointer desktops anchor the menu at the text.
    */
   private readonly dockQuery: MediaQueryList | null =
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -1048,16 +1049,53 @@ export class ReaderShell implements OnInit, OnDestroy {
   );
 
   /**
-   * The docked selection bar sits where the pager does, so the pager steps
-   * aside while a passage is offered there. The bar lives inside the page's
-   * own stacking context and cannot simply be raised above the chrome.
+   * The docked selection bar (and highlight card) sits at the top, in the
+   * header's place, so the header steps aside while a passage is offered with
+   * the chrome showing (#1344). The bar lives inside the page's own stacking
+   * context and cannot simply be raised above the header. The pager stays: the
+   * bar no longer shares its edge.
    */
-  readonly pagerShown = computed(
+  readonly headerShown = computed(
     () =>
       this.chromeShown()
       && !(this.pendingSelectionText() !== null && !this.selectionMenuPlacement())
       && !(this.activeHighlight() !== null && !this.highlightCardPlacement()),
   );
+
+  /**
+   * How far the EPUB page slides down so a touch selection that starts under
+   * the top-docked bar stays visible (#1344). A transform, so the book is not
+   * re-paginated. Zero when nothing is covered.
+   */
+  readonly selectionShift = signal(0);
+  readonly selectionShiftTransform = computed(() =>
+    this.selectionShift() > 0 ? `translateY(${this.selectionShift()}px)` : null,
+  );
+  private touchSelectionTop: number | null = null;
+
+  handleSelectionTouchRect(rect: SelectionAnchor | null): void {
+    // The rect was measured with the current shift applied; keep the raw top.
+    this.touchSelectionTop = rect ? rect.top - this.selectionShift() : null;
+    this.updateSelectionShift();
+  }
+
+  /** Re-measured when the bar changes height (writing a note grows it). */
+  private updateSelectionShift(): void {
+    if (this.touchSelectionTop === null || !this.dockedLayout()) {
+      this.selectionShift.set(0);
+      return;
+    }
+    setTimeout(() => {
+      const bar = this.host.nativeElement.querySelector<HTMLElement>('[data-testid="selection-bar"]');
+      if (!bar || this.touchSelectionTop === null) {
+        this.selectionShift.set(0);
+        return;
+      }
+      const gap = 12;
+      const needed = bar.getBoundingClientRect().bottom + gap - this.touchSelectionTop;
+      this.selectionShift.set(needed > 0 ? Math.ceil(needed) : 0);
+    }, 0);
+  }
 
   handleSurfaceInteraction(): void {
     if (!this.immersiveReader()) return;
@@ -1804,6 +1842,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   /** "Add note": reveal the note field in the same menu, at the text. */
   openNoteDraft(): void {
     this.noteDraftOpen.set(true);
+    this.updateSelectionShift();
     setTimeout(() => {
       this.host.nativeElement
         .querySelector<HTMLTextAreaElement>('.selection-note-input')
@@ -1910,6 +1949,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   private resetSelectionMenu(): void {
+    this.touchSelectionTop = null;
+    this.selectionShift.set(0);
     this.selectionAnchor.set(null);
     this.noteDraftOpen.set(false);
     this.noteDraft.set('');

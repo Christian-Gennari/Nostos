@@ -134,7 +134,11 @@ export class EpubAnnotationManager {
    */
   private readonly mouseDragDocuments = new Set<Document>();
   private selectedHandler: ((cfiRange: string, contents: Contents) => void) | null = null;
-  private onSelectionCaptured?: (text: string, anchor: SelectionAnchor | null) => void;
+  private onSelectionCaptured?: (
+    text: string,
+    anchor: SelectionAnchor | null,
+    touchRect?: SelectionAnchor | null,
+  ) => void;
   private onSelectionAbandoned?: () => void;
   /**
    * Whether the reader's last pointer was a finger or pen. A touch selection
@@ -211,7 +215,9 @@ export class EpubAnnotationManager {
     ) as unknown as PendingHighlightAnnotation;
   }
 
-  setOnSelectionCaptured(callback: (text: string, anchor: SelectionAnchor | null) => void) {
+  setOnSelectionCaptured(
+    callback: (text: string, anchor: SelectionAnchor | null, touchRect?: SelectionAnchor | null) => void,
+  ) {
     this.onSelectionCaptured = callback;
   }
 
@@ -558,8 +564,9 @@ export class EpubAnnotationManager {
 
     if (input === 'touch') {
       // The phone's handles and OS menu belong to the native selection (#16);
-      // the docked bar sits clear of both.
-      this.onSelectionCaptured?.(selectedText, null);
+      // the docked bar sits clear of both. Its box rides along so the shell can
+      // keep a selection that starts under the top-docked bar in view (#1344).
+      this.onSelectionCaptured?.(selectedText, null, this.anchorForSelection(contents));
       return;
     }
 
