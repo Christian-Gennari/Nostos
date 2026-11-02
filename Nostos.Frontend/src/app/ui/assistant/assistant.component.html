@@ -557,6 +557,7 @@
   type="button"
   class="assistant-trigger"
   [class.reader-surface]="isReader()"
+  [class.is-resting]="floatingHidden()"
   (click)="toggle()"
   aria-label="Ask Nostos"
   data-testid="assistant-trigger"
