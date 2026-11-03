@@ -13,6 +13,14 @@
   container-type: inline-size;
 }
 
+/* The hairline parts one note from the next, so the last note in a list has
+   none. Whatever follows a list (the book page's Details, the reader's other
+   editions) draws its own rule, and two would stack. `last-of-type` so a
+   section or a paging status after the notes does not keep the line. */
+:host(:last-of-type) {
+  border-bottom: 0;
+}
+
 :host(.is-busy) .note-item-topics {
   opacity: 0.6;
 }
