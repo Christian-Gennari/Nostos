@@ -689,6 +689,10 @@ export class AddBookModal {
         // keeps the book visible while its parts arrive: the upload session,
         // not the row's status, says a transfer is in progress.
         fileUploadExpected: wantsUpload && !resumable,
+        // Said on both paths: without it the resumable path looked like a
+        // metadata-only add, matched an edition with its own file, and the
+        // new file (another translation, say) could not be added at all.
+        fileAttached: wantsUpload,
       }).subscribe({
         next: ({ book, created }) => {
           this.bookCreated.emit(book.id);

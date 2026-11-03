@@ -1040,6 +1040,35 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task A_resumable_upload_for_the_same_title_becomes_another_edition_and_stays_visible()
+    {
+        var h = Harness();
+        var first = ((LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "The Republic", Author: "Plato", FileUploadExpected: true),
+            strictConfirmation: false)).Data!).Book!;
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var stored = await db.Books.SingleAsync(b => b.Id == first.Id);
+            stored.FileDetails.HasFile = true;
+            stored.FileDetails.FileName = "jowett.epub";
+            stored.Status = BookStatus.Ready;
+            await db.SaveChangesAsync();
+        }
+
+        // The resumable path keeps the row visible, so it sends FileAttached
+        // without FileUploadExpected.
+        var second = (LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "The Republic", Author: "Plato", FileAttached: true),
+            strictConfirmation: false)).Data!;
+
+        second.Outcome.Should().Be("created", "a file on any upload path must never be matched to another edition's file");
+        second.BookId.Should().NotBe(first.Id);
+        second.Book!.WorkId.Should().Be(first.WorkId);
+        second.Book.Status.Should().NotBe(BookStatus.UploadPending, "only the legacy path hides the row");
+        second.Book.EditionCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task A_local_file_resumes_the_matching_edition_that_is_still_waiting_for_one()
     {
         var h = Harness();
@@ -2475,7 +2504,8 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         bool ForceCreate = false,
         string? Key = null,
         IReadOnlyList<Guid>? CollectionIds = null,
-        bool FileUploadExpected = false) =>
+        bool FileUploadExpected = false,
+        bool FileAttached = false) =>
         new(Client, Key ?? $"k-{Guid.NewGuid():N}", type, title,
             Subtitle: Subtitle,
             Author: Author,
@@ -2485,7 +2515,8 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
             ConfirmedBookId: ConfirmedBookId,
             ForceCreate: ForceCreate,
             CollectionIds: CollectionIds,
-            FileUploadExpected: FileUploadExpected);
+            FileUploadExpected: FileUploadExpected,
+            FileAttached: FileAttached);
 
     private async Task<int> CountBooksAsync(TestHarness h)
     {

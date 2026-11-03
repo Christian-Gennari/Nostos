@@ -184,7 +184,12 @@ public record CreateBookDto(
     // Explicit create intent for the local-file flow. A digital record without
     // a file is otherwise legitimate, so incomplete upload state must never be
     // inferred from HasFile/FileName.
-    bool FileUploadExpected = false
+    bool FileUploadExpected = false,
+    // A local file accompanies this create, whichever upload path carries it.
+    // Unlike FileUploadExpected it does not hide the row: the resumable path
+    // keeps the book visible while parts arrive. Either flag stops the create
+    // from matching an edition that already has its own file.
+    bool FileAttached = false
 );
 
 public record UpdateBookDto(

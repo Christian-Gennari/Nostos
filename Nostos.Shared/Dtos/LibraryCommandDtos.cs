@@ -62,7 +62,10 @@ public sealed record LibraryCreateBookRequest(
     // Local upload intent is explicit so a newly-created digital row can be
     // distinguished from an intentional metadata-only book before /file
     // succeeds. Appended to preserve positional callers.
-    bool FileUploadExpected = false
+    bool FileUploadExpected = false,
+    // A local file accompanies this create on any upload path (see
+    // CreateBookDto.FileAttached). It only changes matching, never status.
+    bool FileAttached = false
 );
 
 // --- BOOK UPDATE ---
