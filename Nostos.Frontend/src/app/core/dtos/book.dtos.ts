@@ -219,6 +219,13 @@ export interface CreateBookDto {
   /** Explicitly marks create as the first half of a local-file upload. */
   fileUploadExpected?: boolean;
 
+  /**
+   * A local file comes with this create, on either upload path. The server
+   * then never matches an edition that already has its own file: the new
+   * file becomes another edition of the same work.
+   */
+  fileAttached?: boolean;
+
   // Initial Metadata
   rating?: number;
   isFavorite?: boolean;

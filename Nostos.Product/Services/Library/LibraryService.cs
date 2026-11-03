@@ -413,7 +413,7 @@ public sealed partial class LibraryService : ILibraryService
                 if (sameTypeEdition != null)
                 {
                     var sameTypeCandidates = exact.Where(b => b.GetType() == sameTypeEdition.GetType()).ToList();
-                    if (request.FileUploadExpected)
+                    if (request.FileUploadExpected || request.FileAttached)
                     {
                         // A local file is on its way. It may only land on an
                         // edition that is still waiting for one (an interrupted

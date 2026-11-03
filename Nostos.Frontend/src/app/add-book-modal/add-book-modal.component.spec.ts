@@ -606,7 +606,7 @@ describe('AddBookModal', () => {
     // The row stays visible while parts arrive; only the legacy whole-request
     // path needs UploadPending to hide an incomplete book.
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ fileUploadExpected: false }),
+      expect.objectContaining({ fileUploadExpected: false, fileAttached: true }),
     );
   });
 

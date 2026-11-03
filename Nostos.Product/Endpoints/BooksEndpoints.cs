@@ -117,7 +117,8 @@ public static class BooksEndpoints
                         ?? (dto.CollectionId.HasValue ? [dto.CollectionId.Value] : null),
                     Rating: dto.Rating, IsFavorite: dto.IsFavorite,
                     PersonalReview: dto.PersonalReview, FinishedAt: dto.FinishedAt,
-                    FileUploadExpected: dto.FileUploadExpected);
+                    FileUploadExpected: dto.FileUploadExpected,
+                    FileAttached: dto.FileAttached);
 
                 var result = await library.CreateOrMatchBookAsync(request, strictConfirmation: false, ct);
                 if (LibraryHttpMapper.MapError(result) is { } error)
