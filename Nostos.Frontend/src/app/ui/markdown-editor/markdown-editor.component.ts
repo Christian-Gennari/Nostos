@@ -25,6 +25,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
 import { FootnoteRef, tidyFootnotes } from './footnote.extension';
+import { FootnoteAuthoring, insertFootnoteAtSelection, insertFootnoteIn } from './footnote-authoring';
 import { Citation } from './citation.extension';
 import { CitationRenderer, bodyEndPosition, citationBooks, citationSignature, footnoteInsertPosition, refreshCitations } from './live-citations';
 import { SoundPack, TypewriterSounds, soundForInput } from './typewriter-sounds';
@@ -307,6 +308,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),
         FootnoteRef.configure({ paused: () => this.footnotesPaused }),
+        FootnoteAuthoring,
         Citation,
         BubbleMenu.configure({
           element: this.bubble.nativeElement,
@@ -521,6 +523,15 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const tidy = editor && !editor.isDestroyed ? tidyFootnotes(editor.state) : null;
     if (tidy) editor!.view.dispatch(joinPreviousUndo(tidy));
     return inserted;
+  }
+
+  /**
+   * A footnote of the writer's own (issue #1342): a marker after the
+   * selection and an empty note at the end, with the caret in the note.
+   */
+  addFootnote(): boolean {
+    const editor = this.editor;
+    return !!editor && insertFootnoteAtSelection(editor);
   }
 
   /** The number for a new footnote: one past the highest marker in the writing. */
@@ -774,6 +785,14 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       this.blockMenuImage.set(true);
       this.blockMenuImageUrl.set('');
       setTimeout(() => this.blockImageInput?.nativeElement.focus());
+      return;
+    }
+    if (action === 'footnote') {
+      // The "/query" makes way for the marker; the caret goes on into the note.
+      const tr = editor.state.tr;
+      if (insertFootnoteIn(tr, range.from, range.to)) editor.view.dispatch(tr.scrollIntoView());
+      editor.commands.focus();
+      this.closeBlockMenu();
       return;
     }
     const chain = editor.chain().focus().deleteRange(range);

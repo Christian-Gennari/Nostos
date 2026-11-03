@@ -25,6 +25,7 @@
     <button type="button" class="editor-bubble-btn" title="Subheading (Ctrl+Alt+3)" aria-label="Heading 3" [class.active]="activeBlock() === 'h3'" [attr.aria-pressed]="activeBlock() === 'h3'" (mousedown)="$event.preventDefault()" (click)="toggleBlock('h3')">H3</button>
     <button type="button" class="editor-bubble-btn editor-mark-quote" title="Quote (Ctrl+Shift+B)" aria-label="Quote" [class.active]="activeBlock() === 'blockquote'" [attr.aria-pressed]="activeBlock() === 'blockquote'" (mousedown)="$event.preventDefault()" (click)="toggleBlock('blockquote')">“</button>
     <span class="editor-bubble-sep" aria-hidden="true"></span>
+    <button type="button" class="editor-bubble-btn editor-add-footnote" title="Footnote (Ctrl+Alt+F)" aria-label="Add footnote" (mousedown)="$event.preventDefault()" (click)="addFootnote()">a<sup>1</sup></button>
     <button appIconButton icon="link-simple" [glyphSize]="16" weight="thin" class="editor-bubble-link" title="Link" aria-label="Link" [pressed]="isLink()" (mousedown)="$event.preventDefault()" (click)="openUrlPrompt('link')"></button>
   }
 </div>

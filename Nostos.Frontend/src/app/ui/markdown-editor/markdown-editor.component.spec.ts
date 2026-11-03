@@ -91,6 +91,92 @@ describe('MarkdownEditorComponent', () => {
     });
   });
 
+  describe('writing your own footnotes (issue #1342)', () => {
+    type TipTap = import('@tiptap/core').Editor;
+    const editorOf = () => (component as any).editor as TipTap;
+
+    /** Types `text` the way a keyboard does, so input rules see it. */
+    function type(text: string): void {
+      const view = editorOf().view;
+      for (const ch of text) {
+        const { from, to } = view.state.selection;
+        const handled = view.someProp('handleTextInput', (f) => f(view, from, to, ch, () => view.state.tr.insertText(ch, from, to)));
+        if (!handled) view.dispatch(view.state.tr.insertText(ch, from, to));
+      }
+    }
+
+    it('adds a marker at the caret and opens an empty note at the end for writing', async () => {
+      await create('A claim.\n\nAnother paragraph.');
+      const editor = editorOf();
+      editor.commands.setTextSelection(9); // after "A claim."
+
+      expect(component.addFootnote()).toBe(true);
+      type('My own note.');
+
+      expect(emitted.at(-1)).toBe('A claim.[^1]\n\nAnother paragraph.\n\n[^1]: My own note.');
+    });
+
+    it('numbers a note added before an existing one first, and its note goes first', async () => {
+      await create('One.[^1]\n\nTwo.\n\n[^1]: First written.');
+      editorOf().commands.setTextSelection(1);
+
+      expect(component.addFootnote()).toBe(true);
+      type('Now first.');
+
+      expect(emitted.at(-1)).toBe('[^1]One.[^2]\n\nTwo.\n\n[^1]: Now first.\n\n[^2]: First written.');
+    });
+
+    it('turns a typed [^] into a new footnote and [^n] into a marker for note n', async () => {
+      await create('Text.[^1]\n\n[^1]: Ibid.');
+      editorOf().commands.setTextSelection(7); // after "Text.[^1]"
+
+      type(' More[^]');
+      type('Second note.');
+      expect(emitted.at(-1)).toBe('Text.[^1] More[^2]\n\n[^1]: Ibid.\n\n[^2]: Second note.');
+
+      editorOf().commands.setTextSelection(1);
+      type('See[^1] ');
+      expect(emitted.at(-1)).toBe('See[^1] Text.[^1] More[^2]\n\n[^1]: Ibid.\n\n[^2]: Second note.');
+    });
+
+    it('does not make a footnote inside a note or in code', async () => {
+      await create('Text.[^1]\n\n[^1]: Ibid.\n\n```\ncode\n```');
+      const editor = editorOf();
+      editor.commands.focus('end');
+      expect(component.addFootnote()).toBe(false);
+
+      editor.commands.setTextSelection(editor.state.doc.child(0).nodeSize + editor.state.doc.child(1).nodeSize - 1);
+      expect(component.addFootnote()).toBe(false);
+    });
+
+    it('drops an empty note when its marker is deleted, but keeps one with words', async () => {
+      await create('Keep.[^1] Drop.[^2]\n\n[^1]: Written.\n\n[^2]: ');
+      const editor = editorOf();
+      const markers: number[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'footnoteRef') markers.push(pos);
+      });
+      // The second marker in the text is "[^2]".
+      editor.commands.deleteRange({ from: markers[1], to: markers[1] + 1 });
+      expect(emitted.at(-1)).toBe('Keep.[^1] Drop.\n\n[^1]: Written.');
+
+      editor.commands.deleteRange({ from: markers[0], to: markers[0] + 1 });
+      expect(emitted.at(-1)).toContain('[^1]: Written.');
+    });
+
+    it('marks the notes as a section and shows a note on its marker', async () => {
+      await create('Text.[^1] More.[^2]\n\n[^1]: Ibid., 42.\n\n[^2]: Second.');
+
+      const notes = page().querySelectorAll('p.footnote-note');
+      expect(notes.length).toBe(2);
+      expect(notes[0].classList.contains('footnote-notes-start')).toBe(true);
+      expect(notes[1].classList.contains('footnote-notes-start')).toBe(false);
+      const marker = page().querySelector('p:first-child sup.footnote-ref');
+      expect(marker?.getAttribute('title')).toBe('Ibid., 42.');
+      expect(notes[0].querySelector('sup')?.classList.contains('footnote-backref')).toBe(true);
+    });
+  });
+
   it('reports the word count on start', async () => {
     await create('One two three. Four.');
     expect(counts.at(-1)).toBe(4);
