@@ -7,6 +7,12 @@
 
 .workspace-content {
   flex: 1;
+  /* A flex item's default min-width is its min-content width. Without this, a
+     long unbreakable line inside a page (the phone toolbar's shelf name, e.g.
+     "Ancient & Medieval Philosophy") widened the whole page past the viewport,
+     and the phone showed it zoomed out and cut off at the right. With 0 the
+     page takes the viewport's width and the name ellipsizes as designed. */
+  min-width: 0;
   /* Page layouts (library, book detail, second brain) own their scroll
      surface. Keeping the shell clipped prevents nested/double scrollbars. */
   overflow: hidden;
