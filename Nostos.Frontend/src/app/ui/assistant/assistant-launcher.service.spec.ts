@@ -32,6 +32,22 @@ describe('AssistantLauncherService', () => {
     expect(launcher.available()).toBe(true);
   });
 
+  it('counts floating holds, so one release never frees another surface\'s hold', () => {
+    expect(launcher.floatingHidden()).toBe(false);
+
+    const releaseFirst = launcher.hideFloating();
+    const releaseSecond = launcher.hideFloating();
+    expect(launcher.floatingHidden()).toBe(true);
+
+    releaseFirst();
+    // Releasing twice must not drop the other hold.
+    releaseFirst();
+    expect(launcher.floatingHidden()).toBe(true);
+
+    releaseSecond();
+    expect(launcher.floatingHidden()).toBe(false);
+  });
+
   it('counts dock hosts, so a dock that leaves hands the launcher back', () => {
     expect(launcher.dockHosted()).toBe(false);
 

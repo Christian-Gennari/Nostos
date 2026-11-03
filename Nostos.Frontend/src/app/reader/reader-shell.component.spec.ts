@@ -47,6 +47,7 @@ import { Note } from '../core/dtos/note.dtos';
 import { ThemeService, THEME_STORAGE_KEY } from '../core/services/theme.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
+import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
 
 // The AudioReader is kept real so this spec guards the reader page's total
 // GET /api/books/{id} count; its player is faked to avoid real media loading.
@@ -2284,6 +2285,29 @@ describe('ReaderShell immersive chrome (#759)', () => {
     expect(component.chromeShown()).toBe(false);
   });
 
+  it('holds the Ask Nostos capsule hidden while the reader rests (#1345)', async () => {
+    const component = await openBook('book.epub');
+    const launcher = TestBed.inject(AssistantLauncherService);
+    expect(launcher.floatingHidden()).toBe(true);
+
+    component.tocOpen.set(true);
+    render();
+    expect(component.chromeShown()).toBe(true);
+    expect(launcher.floatingHidden()).toBe(false);
+
+    component.tocOpen.set(false);
+    render();
+    expect(launcher.floatingHidden()).toBe(true);
+
+    fixture.destroy();
+    expect(launcher.floatingHidden()).toBe(false);
+  });
+
+  it('leaves the capsule alone for the audio reader (#1345)', async () => {
+    await openBook('book.m4b');
+    expect(TestBed.inject(AssistantLauncherService).floatingHidden()).toBe(false);
+  });
+
   it('keeps the audio edge header persistent and shows title and author once', async () => {
     const component = await openBook('book.m4b');
     expect(component.immersiveReader()).toBe(false);
@@ -2811,27 +2835,52 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-pen-sage')).toBeNull();
   });
 
-  it('docked bar: the pager steps aside while a passage is offered with the chrome showing', async () => {
+  it('docked bar: the header steps aside, and the pager stays, while a passage is offered with the chrome showing (#1344)', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
     component.chromeVisible.set(true);
     render();
+    const header = el('reader-chrome-top')!;
     const pager = el('reader-chrome-bottom')!;
-    expect(pager.hasAttribute('inert')).toBe(false);
+    expect(header.hasAttribute('inert')).toBe(false);
 
     await capture(component);
     expect(component.chromeShown()).toBe(true);
-    expect(component.pagerShown()).toBe(false);
-    expect(pager.hasAttribute('inert')).toBe(true);
+    expect(component.headerShown()).toBe(false);
+    expect(header.hasAttribute('inert')).toBe(true);
     expect(el('reader-layout')!.classList.contains('selection-docked')).toBe(true);
-    // The header does not share the bar's edge and stays.
-    expect(el('reader-chrome-top')!.hasAttribute('inert')).toBe(false);
+    // The pager no longer shares the bar's edge and stays.
+    expect(pager.hasAttribute('inert')).toBe(false);
 
     component.discardHighlight();
     render();
-    expect(component.pagerShown()).toBe(true);
-    expect(pager.hasAttribute('inert')).toBe(false);
+    expect(component.headerShown()).toBe(true);
+    expect(header.hasAttribute('inert')).toBe(false);
     expect(el('reader-layout')!.classList.contains('selection-docked')).toBe(false);
+  });
+
+  it('a touch selection under the top bar slides the page clear of it, and drops the shift with the offer (#1344)', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    await capture(component);
+    const bar = el('selection-bar')!;
+    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue({ bottom: 150 } as DOMRect);
+
+    component.handleSelectionTouchRect({ top: 90, bottom: 110, left: 10, right: 100 });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(component.selectionShift()).toBe(72);
+    expect(component.selectionShiftTransform()).toBe('translateY(72px)');
+
+    // A selection already below the bar needs no shift.
+    component.handleSelectionTouchRect({ top: 400, bottom: 420, left: 10, right: 100 });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(component.selectionShift()).toBe(0);
+    expect(component.selectionShiftTransform()).toBeNull();
+
+    component.handleSelectionTouchRect({ top: 90, bottom: 110, left: 10, right: 100 });
+    await new Promise((r) => setTimeout(r, 5));
+    component.discardHighlight();
+    expect(component.selectionShift()).toBe(0);
   });
 
   it('a tap on the page drops the offered passage, but never a note being written', async () => {
@@ -3331,7 +3380,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     expect(component.highlightCard()).toBeNull();
   });
 
-  it('phone: docks at the bottom in place of the pager', async () => {
+  it('phone: docks at the top in place of the header (#1344)', async () => {
     const component = await openBook('iliad.epub', [note({})]);
     component.dockedLayout.set(true);
     component.chromeVisible.set(true);
@@ -3340,7 +3389,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     const card = el('highlight-card')!;
     expect(card.classList).toContain('highlight-card-docked');
     expect(card.classList).not.toContain('selection-menu');
-    expect(component.pagerShown()).toBe(false);
+    expect(component.headerShown()).toBe(false);
   });
 
   it('Delete asks first, and closes the card once the highlight is gone', async () => {

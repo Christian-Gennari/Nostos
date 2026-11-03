@@ -31,6 +31,23 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Rests with the reader chrome (#1345): same fade, and visibility keeps the
+   hidden capsule out of the tab order and away from taps. */
+.assistant-trigger {
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    visibility 0s;
+}
+
+.assistant-trigger.is-resting {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    visibility 0s linear var(--motion-fast);
+}
+
 .assistant-trigger:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 3px;

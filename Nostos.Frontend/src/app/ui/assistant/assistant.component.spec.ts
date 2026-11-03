@@ -794,6 +794,28 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(status.ensureLoaded).toHaveBeenCalled();
   });
 
+  it('rests the capsule while a hold is active and brings it back on release (#1345)', () => {
+    const launcher = TestBed.inject(AssistantLauncherService);
+    const trigger = () => fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]');
+    expect(trigger().classList).not.toContain('is-resting');
+
+    const release = launcher.hideFloating();
+    fixture.detectChanges();
+    expect(trigger().classList).toContain('is-resting');
+
+    // The shortcut path still opens the panel while the capsule rests.
+    fixture.componentInstance.open();
+    fixture.detectChanges();
+    expect(assistant.isOpen()).toBe(true);
+    fixture.componentInstance.close();
+    fixture.detectChanges();
+    expect(trigger().classList).toContain('is-resting');
+
+    release();
+    fixture.detectChanges();
+    expect(trigger().classList).not.toContain('is-resting');
+  });
+
   describe('with the dock carrying the launcher', () => {
     let detach: () => void;
     let launcher: AssistantLauncherService;

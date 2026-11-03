@@ -6,7 +6,8 @@
   overflow: hidden;
   --header-height: 56px;
   /* How much of the reader the on-screen keyboard covers (#1270). The shell
-     sets it inline from visualViewport while a book is open. */
+     sets it inline from visualViewport while a book is open. The selection bar
+     no longer uses it: it is docked at the top (#1344). */
   --reader-keyboard-inset: 0px;
   --toolbar-height: 60px;
   --panel-width: 380px;
@@ -455,18 +456,19 @@
 
 .highlight-confirmation {
   position: absolute;
-  /* Above the on-screen keyboard, which overlays the reader rather than
-     shrinking it (#1270); the shell keeps the variable at its height. */
-  bottom: var(--reader-keyboard-inset);
+  /* Docked at the TOP, in the hidden header's place (#1344). Chrome's Touch to
+     Search sheet claims the bottom edge on Android, and the top is free. The
+     soft keyboard rises from the bottom, so the bar needs no lift above it. */
+  top: 0;
   left: 0;
   right: 0;
   z-index: 50;
   background: var(--bg-surface);
-  border-top: 1px solid var(--border-color);
-  /* The selection surface covers the pager, so it owns the bottom safe area
-     while it is open. Its background must reach behind the home indicator. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--border-color);
+  /* The bar owns the top safe area while it is open (it replaces the header),
+     so its background reaches behind the notch or status bar. */
+  padding-top: env(safe-area-inset-top, 0px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .confirmation-content {
@@ -507,8 +509,8 @@
 }
 
 /* --- Selection actions (#650) ---------------------------------------------------
-   The same actions in two placements. Docked (phones, touch-first devices):
-   the bar above. Anchored (fine-pointer desktop): a small surface next to
+   The same actions in two placements. Docked at the top (phones, touch-first
+   devices, #1344): the bar above. Anchored (fine-pointer desktop): a small surface next to
    the marked text, positioned by the shell in viewport coordinates, with a
    transparent scrim behind it so a click outside dismisses without saving.
    Colours come only from tokens. */
@@ -1172,13 +1174,14 @@ app-note-item.is-flashed {
     visibility 0s;
 }
 
-/* The docked selection bar takes the pager's place while a passage is offered
-   (see pagerShown). Without this the pager, stacked above the page, covers the
-   bar's buttons. */
-.reader-layout.immersive.chrome-visible.selection-docked .reader-toolbar {
+/* The docked selection bar takes the header's place while a passage is offered
+   (see headerShown). Without this the header, stacked above the page, would
+   peek out under a shorter bar. The pager stays: the bar no longer shares its
+   edge (#1344). */
+.reader-layout.immersive.chrome-visible.selection-docked .reader-header {
   opacity: 0;
   visibility: hidden;
-  transform: translateY(8px);
+  transform: translateY(-8px);
   transition:
     opacity var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-out),

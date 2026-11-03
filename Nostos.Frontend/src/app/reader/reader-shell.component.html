@@ -4,7 +4,7 @@
   [class.immersive]="immersiveReader()"
   [class.audio-immersive]="fileType() === 'audio'"
   [class.chrome-visible]="chromeShown()"
-  [class.selection-docked]="immersiveReader() && chromeShown() && !pagerShown()"
+  [class.selection-docked]="immersiveReader() && chromeShown() && !headerShown()"
   data-testid="reader-layout"
 >
   <!-- Surface header, in the app's own rhythm (the Library's and the
@@ -15,8 +15,8 @@
        belongs with the title, not with the pager. -->
   <header
     class="reader-header"
-    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
-    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
+    [attr.aria-hidden]="immersiveReader() && !headerShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !headerShown() ? '' : null"
     data-testid="reader-chrome-top"
   >
     <div class="reader-header-title">
@@ -281,7 +281,7 @@
       }
       } @case ('epub') {
       @defer (on immediate) {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" [notes]="readerNotes()" (noteCreated)="handleNoteCreated($event)" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" (highlightActivated)="handleHighlightActivated($event)" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" [notes]="readerNotes()" (noteCreated)="handleNoteCreated($event)" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionTouchRect)="handleSelectionTouchRect($event)" [style.transform]="selectionShiftTransform()" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" (highlightActivated)="handleHighlightActivated($event)" />
       } @placeholder {
       <nostos-loading-indicator class="reader-loading" label="Opening book" />
       } @error {
@@ -359,8 +359,8 @@
       @if (pendingSelectionText() !== null) {
       <!-- One set of selection decisions (#650), placed two ways. A fine-pointer
            desktop anchors them at the marked text; phones and touch-first
-           devices keep the bottom-docked bar, the
-           thumb-safe place that leaves the selection handles alone. -->
+           devices dock the bar at the top (#1344), clear of
+           Chrome's bottom Touch to Search sheet and of the selection handles. -->
       <ng-template #selectionNoteField>
         <div class="selection-note">
           <label class="visually-hidden" for="selection-note-input">Note for this passage</label>
@@ -508,7 +508,7 @@
         <ng-container [ngTemplateOutlet]="selectionMenuActions"></ng-container>
       </div>
       } @else {
-      <!-- The docked phone bar (#1255): quote and pens on the first line,
+      <!-- The docked phone bar (#1255), at the top (#1344): quote and pens on the first line,
            labelled utilities on the second, the decisions on the third. Every
            row is placed by markup, so an optional action (Ask Nostos, Mark
            passage) can neither land alone nor leave a hole. -->
@@ -603,7 +603,7 @@
       @if (activeHighlight(); as hl) {
       <!-- A saved highlight opened from the page. The same body is placed the
            two ways the selection actions are: anchored at the mark on a
-           fine-pointer desktop, docked at the bottom on phones. -->
+           fine-pointer desktop, docked at the top on phones (#1344). -->
       <ng-template #highlightCardBody>
         @let anchoredCard = !!highlightCardPlacement();
         <blockquote appQuote size="sm" [lines]="3" [pen]="activeHighlightPen()"
@@ -954,8 +954,8 @@
   @if (!loadError() && fileType() && fileType() !== 'audio') {
   <header
     class="reader-toolbar"
-    [attr.aria-hidden]="immersiveReader() && !pagerShown() ? 'true' : null"
-    [attr.inert]="immersiveReader() && !pagerShown() ? '' : null"
+    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
     data-testid="reader-chrome-bottom"
   >
     <div class="toolbar-center">
