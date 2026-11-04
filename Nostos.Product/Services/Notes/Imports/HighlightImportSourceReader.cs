@@ -7,8 +7,9 @@ namespace Nostos.Backend.Services.Notes.Imports;
 /// Turns an uploaded file into the one shape the import works on. The source
 /// is decided by content, not by file name: a SQLite header is a Kobo
 /// database, a Readwise header row is a Readwise CSV export, a Lua table is a
-/// KOReader sidecar, lines of ten <c>=</c> are a Kindle's My Clippings.txt, and
-/// quoted passages with an "Excerpt From" footer are an Apple Books share.
+/// KOReader sidecar, and lines of ten <c>=</c> are a Kindle's My Clippings.txt.
+/// Among SQLite files, an Apple Books annotation table outranks Kobo's, and
+/// Apple Books' library database may come along as a companion file.
 /// </summary>
 internal static class HighlightImportSourceReader
 {
@@ -22,14 +23,24 @@ internal static class HighlightImportSourceReader
     private const long MaxTextBytes = 64 * 1024 * 1024;
 
     internal const string Unrecognised =
-        "This file is not one Nostos can import highlights from. Choose KoboReader.sqlite, a KOReader metadata.lua, a Kindle's My Clippings.txt, a Readwise CSV export or highlights shared from Apple Books.";
+        "This file is not one Nostos can import highlights from. Choose KoboReader.sqlite, a KOReader metadata.lua, a Kindle's My Clippings.txt, a Readwise CSV export or the Apple Books files from a Mac.";
 
     private static readonly Regex LuaTable = new(@"\A\s*(?:--[^\n]*\n\s*)*return\s*\{", RegexOptions.CultureInvariant);
 
-    public static ImportSourceFile Read(string path)
+    public static ImportSourceFile Read(string path) => Read(path, []);
+
+    /// <param name="companions">
+    /// Files chosen together with <paramref name="path"/>: Apple Books keeps
+    /// its highlights and its book titles in two databases.
+    /// </param>
+    public static ImportSourceFile Read(string path, IReadOnlyList<string> companions)
     {
         if (KoboDatabaseReader.HasSqliteHeader(path))
+        {
+            if (ReadAppleBooks(path, companions) is { } apple)
+                return apple;
             return new ImportSourceFile(Kobo, ReadKobo(path), []);
+        }
 
         var length = new FileInfo(path).Length;
         if (length > MaxTextBytes)
@@ -50,12 +61,6 @@ internal static class HighlightImportSourceReader
             return new ImportSourceFile(Kindle, books, skipped);
         }
 
-        if (!LuaTable.IsMatch(text) && AppleBooksShareParser.Looks(text))
-        {
-            var (books, skipped) = AppleBooksShareParser.Parse(text);
-            return new ImportSourceFile(AppleBooks, books, skipped);
-        }
-
         if (length > MaxSidecarBytes)
             throw new FormatException(Unrecognised);
 
@@ -68,6 +73,25 @@ internal static class HighlightImportSourceReader
             // The sidecar parser's own message assumes the file is a sidecar.
             throw new FormatException(Unrecognised);
         }
+    }
+
+    /// <summary>
+    /// Apple Books' two databases, whichever of them came as the main file;
+    /// null when neither is Apple's.
+    /// </summary>
+    private static ImportSourceFile? ReadAppleBooks(string path, IReadOnlyList<string> companions)
+    {
+        var databases = companions.Prepend(path)
+            .Where(candidate => File.Exists(candidate) && KoboDatabaseReader.HasSqliteHeader(candidate))
+            .ToList();
+        var annotations = databases.FirstOrDefault(candidate => AppleBooksDatabaseReader.HasTable(candidate, AppleBooksDatabaseReader.AnnotationTable));
+        var library = databases.FirstOrDefault(candidate => AppleBooksDatabaseReader.HasTable(candidate, AppleBooksDatabaseReader.LibraryTable));
+
+        if (annotations is null)
+            return library == path ? throw new FormatException(AppleBooksDatabaseReader.MissingAnnotationsMessage) : null;
+        if (annotations != path && library != path)
+            return null;
+        return new ImportSourceFile(AppleBooks, AppleBooksDatabaseReader.Read(annotations, library), []);
     }
 
     private static List<ImportSourceBook> ReadKobo(string path) =>

@@ -105,6 +105,36 @@ describe('HighlightImportModal', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-input"]')).not.toBeNull();
   });
 
+  it('sends Apple Books files chosen together as one upload, and commits the same set', async () => {
+    const annotations = file('AEAnnotation_v10312011_1727_local.sqlite');
+    const wal = file('AEAnnotation_v10312011_1727_local.sqlite-wal');
+    const library = file('BKLibrary-1-091020131601.sqlite');
+    const kindle = file('My Clippings.txt');
+    const preview = vi.spyOn(service, 'preview').mockImplementation((main) =>
+      of({ source: main === kindle ? 'kindle' : 'applebooks', books: [previewBook({ sourceKey: main.name })] }),
+    );
+    const commit = vi.spyOn(service, 'commit').mockReturnValue(of({ batchId: 'b', source: 'applebooks', books: [resultBook({})] }));
+    service.open();
+
+    await component.readFiles([library, kindle, wal, annotations]);
+
+    expect(preview.mock.calls.map(([main, companions]) => [main.name, (companions ?? []).map((f) => f.name)])).toEqual([
+      ['AEAnnotation_v10312011_1727_local.sqlite', ['BKLibrary-1-091020131601.sqlite', 'AEAnnotation_v10312011_1727_local.sqlite-wal']],
+      ['My Clippings.txt', []],
+    ]);
+    expect(component.fileCount()).toBe(2);
+
+    await component.importReviewed();
+    const appleCommit = commit.mock.calls.find(([main]) => main === annotations)!;
+    expect(appleCommit[3]).toEqual([library, wal]);
+  });
+
+  it('offers no "Add to library" for a book whose title the file does not give', async () => {
+    await review(previewBook({ sourceKey: 'applebooks:A', title: null, author: null, match: 'none', bookId: null, candidates: [] }));
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-add"]')).toBeNull();
+    expect(text()).toContain('Choose a book');
+  });
+
   it('decides a certain match, asks about a resemblance, and leaves a missing book out', async () => {
     await review(previewBook({}), suggested, missing);
 

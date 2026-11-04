@@ -63,6 +63,17 @@
   color: var(--color-text-muted);
 }
 
+.highlight-source strong {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.highlight-source kbd {
+  font-family: inherit;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
 .highlight-source code {
   padding: 0 0.25em;
   border-radius: var(--radius-sm);

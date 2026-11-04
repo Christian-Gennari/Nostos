@@ -8,6 +8,8 @@ import { Router } from '@angular/router';
 import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  appleBooksFiles,
+  groupHighlightImportFiles,
   HIGHLIGHT_IMPORT_SOURCE_LABEL,
   HighlightImportBatch,
   HighlightImportCandidate,
@@ -62,7 +64,8 @@ export interface UnimportableEntry extends HighlightImportSkipped {
 
 /**
  * Import highlights and notes from an e-reader (issue #656), a Kindle's
- * My Clippings.txt or a Readwise CSV export (issue #1219).
+ * My Clippings.txt or a Readwise CSV export (issue #1219), or Apple Books'
+ * two databases from a Mac, chosen together (issue #1357).
  *
  * Nothing is written until the owner has seen where every book is going.
  * Books whose identity is certain arrive already decided; a book that only
@@ -193,6 +196,8 @@ export class HighlightImportModal {
   });
 
   private nextRowId = 0;
+  /** Files that went up with a main file, so the commit sends the same set. */
+  private readonly companions = new Map<File, File[]>();
 
   constructor() {
     effect(() => {
@@ -266,6 +271,24 @@ export class HighlightImportModal {
     void this.readFiles(Array.from(event.dataTransfer?.files ?? []));
   }
 
+  /**
+   * The Books folder on a Mac holds the two databases in separate folders,
+   * which one file window cannot select together. The whole folder is
+   * chosen instead, and only Apple Books' own files are sent.
+   */
+  onAppleBooksFolderSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = appleBooksFiles(Array.from(input.files ?? []));
+    input.value = '';
+    if (files.length === 0) {
+      this.undoError.set(null);
+      this.failures.set([{ fileName: 'Books folder', message: 'That folder has no Apple Books highlights. Choose the Documents folder inside com.apple.iBooksX.' }]);
+      this.stage.set('result');
+      return;
+    }
+    void this.readFiles(files);
+  }
+
   onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
@@ -286,14 +309,17 @@ export class HighlightImportModal {
     this.undone.set(null);
     this.undoError.set(null);
     this.draftError.set(null);
-    this.fileCount.set(files.length);
+    const uploads = groupHighlightImportFiles(files);
+    this.companions.clear();
+    for (const upload of uploads) this.companions.set(upload.file, upload.companions);
+    this.fileCount.set(uploads.length);
     this.stage.set('reading');
 
-    for (const [index, file] of files.entries()) {
+    for (const [index, { file, companions }] of uploads.entries()) {
       this.currentIndex.set(index + 1);
       this.currentFileName.set(file.name);
       try {
-        const preview = await firstValueFrom(this.service.preview(file));
+        const preview = await firstValueFrom(this.service.preview(file, companions));
         this.rows.update((rows) => [...rows, ...preview.books.map((book) => this.toRow(file, book))]);
         const skipped = (preview.skipped ?? []).map((entry) => ({ ...entry, fileName: file.name }));
         if (skipped.length > 0) this.unimportable.update((all) => [...all, ...skipped]);
@@ -388,7 +414,7 @@ export class HighlightImportModal {
 
       try {
         const result = await firstValueFrom(
-          this.service.commit(file, decisions, this.batchIds()[0] ?? null),
+          this.service.commit(file, decisions, this.batchIds()[0] ?? null, this.companions.get(file) ?? []),
         );
         this.results.update((all) => [...all, ...result.books]);
         if (result.batchId && !this.batchIds().includes(result.batchId)) {
