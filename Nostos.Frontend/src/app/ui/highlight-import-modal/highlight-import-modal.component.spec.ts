@@ -105,6 +105,58 @@ describe('HighlightImportModal', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-input"]')).not.toBeNull();
   });
 
+  it('reads a pasted Apple Books share as a file, and Back returns to the paste box with the text kept', async () => {
+    const preview = vi
+      .spyOn(service, 'preview')
+      .mockReturnValue(of({ source: 'applebooks', books: [previewBook({ sourceKey: 'applebooks:x' })] }));
+    service.open();
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[data-testid="highlight-paste-open"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.stage()).toBe('paste');
+    const read = fixture.nativeElement.querySelector('[data-testid="highlight-paste-read"]') as HTMLButtonElement;
+    expect(read.disabled).toBe(true);
+
+    const box = fixture.nativeElement.querySelector('[data-testid="highlight-paste-input"]') as HTMLTextAreaElement;
+    box.value = '“A passage.”\n\nExcerpt From\nWalden\nHenry David Thoreau';
+    box.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(read.disabled).toBe(false);
+
+    read.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const sent = preview.mock.calls[0][0];
+    expect(sent.name).toBe('apple-books-share.txt');
+    expect(await sent.text()).toContain('Excerpt From');
+    expect(component.stage()).toBe('review');
+
+    component.backToPick();
+    fixture.detectChanges();
+    expect(component.stage()).toBe('paste');
+    expect(component.pasted()).toContain('A passage.');
+  });
+
+  it('opens straight on the paste box when asked to', () => {
+    service.open('paste');
+    fixture.detectChanges();
+    expect(component.stage()).toBe('paste');
+    expect(text()).toContain('Paste from Apple Books');
+
+    component.close();
+    service.open();
+    fixture.detectChanges();
+    expect(component.stage()).toBe('pick');
+  });
+
+  it('offers no "Add to library" for a pasted book without a title', async () => {
+    await review(previewBook({ sourceKey: 'applebooks:untitled', title: null, author: null, match: 'none', bookId: null, candidates: [] }));
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-add"]')).toBeNull();
+    expect(text()).toContain('Choose a book');
+  });
+
   it('decides a certain match, asks about a resemblance, and leaves a missing book out', async () => {
     await review(previewBook({}), suggested, missing);
 

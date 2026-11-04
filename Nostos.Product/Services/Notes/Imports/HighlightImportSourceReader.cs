@@ -7,7 +7,8 @@ namespace Nostos.Backend.Services.Notes.Imports;
 /// Turns an uploaded file into the one shape the import works on. The source
 /// is decided by content, not by file name: a SQLite header is a Kobo
 /// database, a Readwise header row is a Readwise CSV export, a Lua table is a
-/// KOReader sidecar, and lines of ten <c>=</c> are a Kindle's My Clippings.txt.
+/// KOReader sidecar, lines of ten <c>=</c> are a Kindle's My Clippings.txt, and
+/// quoted passages with an "Excerpt From" footer are an Apple Books share.
 /// </summary>
 internal static class HighlightImportSourceReader
 {
@@ -15,12 +16,13 @@ internal static class HighlightImportSourceReader
     public const string Koreader = "koreader";
     public const string Kindle = "kindle";
     public const string Readwise = "readwise";
+    public const string AppleBooks = "applebooks";
     private const long MaxSidecarBytes = 2 * 1024 * 1024;
     // Years of Kindle clippings or a full Readwise export are a few MB.
     private const long MaxTextBytes = 64 * 1024 * 1024;
 
     internal const string Unrecognised =
-        "This file is not one Nostos can import highlights from. Choose KoboReader.sqlite, a KOReader metadata.lua, a Kindle's My Clippings.txt or a Readwise CSV export.";
+        "This file is not one Nostos can import highlights from. Choose KoboReader.sqlite, a KOReader metadata.lua, a Kindle's My Clippings.txt, a Readwise CSV export or highlights shared from Apple Books.";
 
     private static readonly Regex LuaTable = new(@"\A\s*(?:--[^\n]*\n\s*)*return\s*\{", RegexOptions.CultureInvariant);
 
@@ -46,6 +48,12 @@ internal static class HighlightImportSourceReader
         {
             var (books, skipped) = KindleClippingsParser.Parse(text);
             return new ImportSourceFile(Kindle, books, skipped);
+        }
+
+        if (!LuaTable.IsMatch(text) && AppleBooksShareParser.Looks(text))
+        {
+            var (books, skipped) = AppleBooksShareParser.Parse(text);
+            return new ImportSourceFile(AppleBooks, books, skipped);
         }
 
         if (length > MaxSidecarBytes)

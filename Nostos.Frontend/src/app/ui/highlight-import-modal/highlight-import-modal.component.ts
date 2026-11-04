@@ -1,5 +1,5 @@
 import { editionChoices } from '../../book-detail/edition-switch-options';
-import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { NgTemplateOutlet } from '@angular/common';
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
@@ -8,6 +8,7 @@ import { Router } from '@angular/router';
 import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  APPLE_BOOKS_PASTE_FILE_NAME,
   HIGHLIGHT_IMPORT_SOURCE_LABEL,
   HighlightImportBatch,
   HighlightImportCandidate,
@@ -23,7 +24,7 @@ import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../button/button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
-import { InputDirective } from '../form-control/form-control.directive';
+import { InputDirective, TextareaDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
@@ -33,7 +34,7 @@ import { plural } from '../../core/format';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
 import { answerStarterOffer } from '../../writing-studio/starter-draft/starter-draft';
 
-type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
+type Stage = 'pick' | 'paste' | 'reading' | 'review' | 'importing' | 'result';
 
 /** Where one device book's highlights will go. `null` on a row means "leave out". */
 export type ImportTarget =
@@ -62,7 +63,8 @@ export interface UnimportableEntry extends HighlightImportSkipped {
 
 /**
  * Import highlights and notes from an e-reader (issue #656), a Kindle's
- * My Clippings.txt or a Readwise CSV export (issue #1219).
+ * My Clippings.txt or a Readwise CSV export (issue #1219), or highlights
+ * shared from Apple Books on an iPhone or iPad, pasted as text (issue #1357).
  *
  * Nothing is written until the owner has seen where every book is going.
  * Books whose identity is certain arrive already decided; a book that only
@@ -89,6 +91,7 @@ export interface UnimportableEntry extends HighlightImportSkipped {
     ButtonComponent,
     NostosIconComponent,
     InputDirective,
+    TextareaDirective,
   ],
   templateUrl: './highlight-import-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -156,6 +159,11 @@ export class HighlightImportModal {
 
   readonly recent = signal<HighlightImportBatch[]>([]);
 
+  /** Text shared from Apple Books, kept while the owner goes back from the review. */
+  readonly pasted = signal('');
+  readonly canReadPasted = computed(() => this.pasted().trim().length > 0 && !this.busy());
+  readonly fromPaste = signal(false);
+
   /** A starter draft from what was just imported (issue #1220). */
   readonly startingDraft = signal(false);
   readonly draftError = signal<string | null>(null);
@@ -197,6 +205,15 @@ export class HighlightImportModal {
   constructor() {
     effect(() => {
       if (this.isOpen() && this.stage() === 'pick') this.loadRecent();
+    });
+
+    // Settings' Apple Books row opens the dialog on the paste box.
+    effect(() => {
+      if (!this.isOpen() || this.service.startOn() !== 'paste') return;
+      untracked(() => {
+        if (this.stage() === 'pick') this.stage.set('paste');
+        this.service.startOn.set('files');
+      });
     });
 
     this.searchSubject
@@ -274,9 +291,29 @@ export class HighlightImportModal {
     void this.readFiles(files);
   }
 
+  showPaste(): void {
+    this.stage.set('paste');
+  }
+
+  onPasteInput(event: Event): void {
+    this.pasted.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  /**
+   * A share from Apple Books is text, not a file. It is sent as one, so it
+   * goes through the same preview and commit; the server knows it by content.
+   */
+  readPasted(): void {
+    const text = this.pasted().trim();
+    if (!text || this.busy()) return;
+    const file = new File([text], APPLE_BOOKS_PASTE_FILE_NAME, { type: 'text/plain' });
+    void this.readFiles([file], true);
+  }
+
   /** Step one: ask the server what each file holds. Nothing is written. */
-  async readFiles(files: File[]): Promise<void> {
+  async readFiles(files: File[], fromPaste = false): Promise<void> {
     if (files.length === 0 || this.busy()) return;
+    this.fromPaste.set(fromPaste);
 
     this.rows.set([]);
     this.failures.set([]);
@@ -361,7 +398,7 @@ export class HighlightImportModal {
   }
 
   backToPick(): void {
-    this.stage.set('pick');
+    this.stage.set(this.fromPaste() ? 'paste' : 'pick');
     this.closePicker();
   }
 
@@ -466,6 +503,12 @@ export class HighlightImportModal {
   }
 
   importAnother(): void {
+    // After a paste, the next thing is usually another book's share.
+    if (this.fromPaste()) {
+      this.pasted.set('');
+      this.stage.set('paste');
+      return;
+    }
     this.stage.set('pick');
   }
 
@@ -479,6 +522,8 @@ export class HighlightImportModal {
     if (this.busy() || this.undoing() || this.startingDraft()) return;
     this.service.close();
     this.stage.set('pick');
+    this.pasted.set('');
+    this.fromPaste.set(false);
     this.rows.set([]);
     this.results.set([]);
     this.failures.set([]);

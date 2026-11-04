@@ -20,6 +20,7 @@ public sealed class HighlightImportService
     private const string KoboClientId = "kobo-import";
     private const string KindleClientId = "kindle-import";
     private const string ReadwiseClientId = "readwise-import";
+    private const string AppleBooksClientId = "applebooks-import";
     private readonly NostosDbContext _db;
     private readonly INoteService _notes;
     private readonly ILibraryService _library;
@@ -344,6 +345,7 @@ public sealed class HighlightImportService
             HighlightImportSourceReader.Kobo => KoboClientId,
             HighlightImportSourceReader.Kindle => KindleClientId,
             HighlightImportSourceReader.Readwise => ReadwiseClientId,
+            HighlightImportSourceReader.AppleBooks => AppleBooksClientId,
             _ => KoreaderNoteImportService.ClientId,
         };
 

@@ -250,6 +250,7 @@ public static partial class MarkdownNotesRenderer
                 return new(fragment.Success ? $"Section {fragment.Groups[1].Value} of the book (from KOReader)" : "From KOReader", null);
         }
         if (kind.StartsWith("kobo_", StringComparison.Ordinal)) return new("From Kobo", null);
+        if (kind.StartsWith("applebooks_", StringComparison.Ordinal)) return new("From Apple Books", null);
         // Kindle and Readwise positions are theirs, never a verified page (#1219).
         if (kind.StartsWith("kindle_", StringComparison.Ordinal))
             return new(ImportedPosition(kind["kindle_".Length..], value) is { } onKindle ? $"{onKindle} on Kindle" : "From Kindle", null);

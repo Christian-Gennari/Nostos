@@ -11,14 +11,20 @@ import type { NoteSearchHit } from '../dtos/note.dtos';
  */
 export type HighlightImportMatch = 'exact' | 'remembered' | 'suggested' | 'none';
 
+export type HighlightImportStart = 'files' | 'paste';
+
+/** File name a pasted Apple Books share is sent under; the server reads it by content. */
+export const APPLE_BOOKS_PASTE_FILE_NAME = 'apple-books-share.txt';
+
 /** Where a file came from, as the server tells it apart by content. */
-export type HighlightImportSource = 'kobo' | 'koreader' | 'kindle' | 'readwise';
+export type HighlightImportSource = 'kobo' | 'koreader' | 'kindle' | 'readwise' | 'applebooks';
 
 export const HIGHLIGHT_IMPORT_SOURCE_LABEL: Record<HighlightImportSource, string> = {
   kobo: 'Kobo',
   koreader: 'KOReader',
   kindle: 'Kindle',
   readwise: 'Readwise',
+  applebooks: 'Apple Books',
 };
 
 export interface HighlightImportCandidate {
@@ -100,10 +106,13 @@ export interface HighlightImportBatch {
 @Injectable({ providedIn: 'root' })
 export class HighlightImportService {
   readonly isOpen = signal(false);
+  /** Where the dialog opens: on choosing files, or on pasting a share from Apple Books. */
+  readonly startOn = signal<HighlightImportStart>('files');
 
   constructor(private http: HttpClient) {}
 
-  open(): void {
+  open(start: HighlightImportStart = 'files'): void {
+    this.startOn.set(start);
     this.isOpen.set(true);
   }
 
