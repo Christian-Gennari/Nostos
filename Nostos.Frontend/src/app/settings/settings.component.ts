@@ -55,7 +55,7 @@ import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
-import { HighlightImportService } from '../core/services/highlight-import.service';
+import { HighlightImportService, type HighlightImportStart } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -174,10 +174,19 @@ const BOOK_PROVIDER_COPY = {
   saveFailed: 'Could not save this source. Your previous choice is still in effect.',
 } as const;
 
+/** One source in Import › Highlights & notes. `paste` opens the dialog on its paste box. */
+interface ImportSourceRow {
+  id: string;
+  name: string;
+  hint: string;
+  paste?: boolean;
+}
+
 /** How a section's inline status line is coloured. */
 type SettingsSection =
   | 'general'
   | 'library'
+  | 'import'
   | 'assistant'
   | 'connections'
   | 'external'
@@ -188,6 +197,7 @@ type SettingsSection =
 const LINKABLE_SECTIONS: readonly SettingsSection[] = [
   'general',
   'library',
+  'import',
   'assistant',
   'connections',
   'external',
@@ -570,8 +580,26 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { value: '20', label: '20' },
   ] satisfies readonly DropdownOption[];
 
-  openHighlightImport(): void {
-    this.highlightImport.open();
+  /** The rows of Import › Highlights & notes; each opens the one highlight import. */
+  readonly highlightImportSources: readonly ImportSourceRow[] = [
+    { id: 'kobo', name: 'Kobo', hint: 'KoboReader.sqlite from the e-reader, connected by USB.' },
+    { id: 'koreader', name: 'KOReader', hint: "A book's metadata.lua, from its .sdr folder." },
+    { id: 'kindle', name: 'Kindle', hint: 'My Clippings.txt from the Kindle, connected by USB.' },
+    { id: 'applebooks', name: 'Apple Books', hint: 'Highlights shared from Books on an iPhone or iPad, pasted as text.', paste: true },
+    { id: 'readwise', name: 'Readwise', hint: 'A CSV export from Readwise.' },
+  ];
+
+  openHighlightImport(start: HighlightImportStart = 'files'): void {
+    this.highlightImport.open(start);
+  }
+
+  openAddBook(): void {
+    void this.router?.navigate(['/library'], { queryParams: { add: 'book' } });
+  }
+
+  /** The .nostos import lives with the rest of Backups & data. */
+  openLibraryArchiveImport(): void {
+    void this.router?.navigate(['/settings/library'], { queryParams: { action: 'import' } });
   }
 
   setSettingsSection(section: SettingsSection): void {

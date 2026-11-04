@@ -58,7 +58,7 @@ test('imported highlights start a draft with their sources (issue #1220)', async
 
   // Import My Clippings.txt from Settings.
   const importer = await freshPage(browser, baseUrl);
-  await importer.goto('/settings?section=library');
+  await importer.goto('/settings?section=import');
   await importer.getByTestId('highlight-import-action').click();
   await importer.getByTestId('highlight-import-input').setInputFiles({
     name: 'My Clippings.txt',

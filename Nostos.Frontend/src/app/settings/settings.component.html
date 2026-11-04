@@ -56,6 +56,21 @@
             type="button"
             class="nav-item settings-nav-item"
             role="tab"
+            [class.is-active]="activeSettingsSection() === 'import'"
+            [attr.aria-selected]="activeSettingsSection() === 'import'"
+            aria-controls="import"
+            data-testid="settings-nav-import"
+            (click)="setSettingsSection('import')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="download-simple" [size]="16" weight="light"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">Import</span>
+          </button>
+          <button
+            type="button"
+            class="nav-item settings-nav-item"
+            role="tab"
             [class.is-active]="activeSettingsSection() === 'assistant'"
             [attr.aria-selected]="activeSettingsSection() === 'assistant'"
             aria-controls="assistant"
@@ -238,7 +253,7 @@
           >
             <header class="settings-section-header">
               <h2 class="settings-section-title" id="library-heading">Library</h2>
-              <p class="settings-section-desc">Where new books come from, and how your e-reader connects to this library.</p>
+              <p class="settings-section-desc">Where new books come from, and how your e-reader connects to this library. To bring in highlights, books or a whole library, see <button type="button" appButton variant="link" class="settings-desc-link" data-testid="library-import-link" (click)="setSettingsSection('import')">Import</button>.</p>
             </header>
 
             <section class="settings-card" data-testid="book-providers-card">
@@ -496,33 +511,103 @@
       </section>
       }
 
-      <section class="settings-card" data-testid="highlight-import-card">
-        <div class="card-header">
-          <div class="card-header-copy">
-            <h2>Highlight import</h2>
-          </div>
-        </div>
+          </section>
 
-        <div class="card-body">
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Import highlights and notes</span>
-              <span class="label-desc">Bring what you marked on a Kobo, in KOReader, on a Kindle or in Readwise into the matching books in your library. Importing the same file again never creates duplicates.</span>
-            </div>
+          <section
+            class="settings-section"
+            id="import"
+            role="tabpanel"
+            aria-labelledby="import-heading"
+            data-testid="settings-import-section"
+            [hidden]="activeSettingsSection() !== 'import'"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="import-heading">Import</h2>
+              <p class="settings-section-desc">Everything you can bring into Nostos from somewhere else, in one place.</p>
+            </header>
 
-            <button
-              appButton
-              variant="secondary"
-              class="highlight-import-action"
-              data-testid="highlight-import-action"
-              (click)="openHighlightImport()"
-            >
-              <nostos-icon name="highlighter" [size]="16"></nostos-icon>
-              Import…
-            </button>
-          </div>
-        </div>
-      </section>
+            <section class="settings-card" data-testid="import-highlights-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Highlights &amp; notes</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <p class="label-desc card-purpose">
+                  They go into the matching books in your library. You see where each book is going before
+                  anything is added, and importing the same thing again never creates duplicates.
+                </p>
+                @for (source of highlightImportSources; track source.id) {
+                  <div class="setting-row" [attr.data-testid]="'import-source-' + source.id">
+                    <div class="setting-label">
+                      <span class="label-text">{{ source.name }}</span>
+                      <span class="label-desc">{{ source.hint }}</span>
+                    </div>
+                    <button
+                      appButton
+                      variant="secondary"
+                      class="import-action"
+                      [attr.data-testid]="source.id === 'kobo' ? 'highlight-import-action' : 'import-action-' + source.id"
+                      [attr.aria-label]="(source.paste ? 'Paste from ' : 'Import from ') + source.name"
+                      (click)="openHighlightImport(source.paste ? 'paste' : 'files')"
+                    >
+                      {{ source.paste ? 'Paste…' : 'Import…' }}
+                    </button>
+                  </div>
+                }
+              </div>
+            </section>
+
+            <section class="settings-card" data-testid="import-books-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Books</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="setting-row" data-testid="import-source-book-files">
+                  <div class="setting-label">
+                    <span class="label-text">Book files</span>
+                    <span class="label-desc">EPUB, PDF, MOBI, text and audiobooks, one book at a time.</span>
+                  </div>
+                  <button appButton variant="secondary" class="import-action" data-testid="import-action-book-files" (click)="openAddBook()">
+                    Add a book…
+                  </button>
+                </div>
+                @if (supportsExternalMediaLibraries()) {
+                  <div class="setting-row" data-testid="import-source-folders">
+                    <div class="setting-label">
+                      <span class="label-text">Media folders</span>
+                      <span class="label-desc">Link a folder of books or audiobooks on this server, read-only.</span>
+                    </div>
+                    <button appButton variant="secondary" class="import-action" data-testid="import-action-folders" (click)="setSettingsSection('external')">
+                      Open…
+                    </button>
+                  </div>
+                }
+              </div>
+            </section>
+
+            @if (supportsLibraryMigration() || supportsCloudPortableExport()) {
+              <section class="settings-card" data-testid="import-library-card">
+                <div class="card-header">
+                  <div class="card-header-copy">
+                    <h2>Whole library</h2>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="setting-row" data-testid="import-source-archive">
+                    <div class="setting-label">
+                      <span class="label-text">Nostos archive</span>
+                      <span class="label-desc">A <code>.nostos</code> library exported from another Nostos, Cloud or self-hosted.</span>
+                    </div>
+                    <button appButton variant="secondary" class="import-action" data-testid="import-action-archive" (click)="openLibraryArchiveImport()">
+                      Import…
+                    </button>
+                  </div>
+                </div>
+              </section>
+            }
           </section>
 
           <section
