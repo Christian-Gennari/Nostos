@@ -71,31 +71,6 @@
   color: var(--color-text-main);
 }
 
-/* --- Paste (Apple Books) ------------------------------------------------- */
-
-.highlight-paste-steps {
-  margin: 0 0 0.9rem;
-  padding-left: 1.2rem;
-  font-size: 0.8rem;
-  line-height: 1.55;
-  color: var(--color-text-muted);
-}
-
-.highlight-paste-steps strong {
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-main);
-}
-
-.highlight-paste-input {
-  width: 100%;
-  min-height: 11rem;
-  resize: vertical;
-}
-
-.highlight-paste-hint {
-  margin-top: 0.7rem;
-}
-
 /* --- Importing ---------------------------------------------------------- */
 
 .highlight-progress {

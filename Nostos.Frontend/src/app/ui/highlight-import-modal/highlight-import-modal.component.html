@@ -15,7 +15,7 @@
 >
   <header class="highlight-import-head" shellHeader>
     <h2 id="highlight-import-title" class="highlight-import-title">
-      {{ stage() === 'review' ? 'Review before importing' : stage() === 'paste' ? 'Paste from Apple Books' : 'Import highlights' }}
+      {{ stage() === 'review' ? 'Review before importing' : 'Import highlights' }}
     </h2>
   </header>
 
@@ -26,7 +26,7 @@
     @switch (stage()) {
       @case ('pick') {
         <p class="highlight-import-hint">
-          Bring the highlights and notes you made on an e-reader, in Apple Books or in Readwise into Nostos. You see
+          Bring the highlights and notes you made on an e-reader or in Readwise into Nostos. You see
           where every book is going before anything is added, and importing the same file again never
           creates duplicates.
         </p>
@@ -75,21 +75,6 @@
             </dd>
           </div>
           <div class="highlight-source">
-            <dt>Apple Books</dt>
-            <dd>
-              Apple keeps no file to pick on an iPhone or iPad. Share the highlights from Books as text
-              and
-              <button
-                type="button"
-                appButton
-                variant="link"
-                class="highlight-link"
-                data-testid="highlight-paste-open"
-                (click)="showPaste()"
-              >paste them here</button>.
-            </dd>
-          </div>
-          <div class="highlight-source">
             <dt>Readwise</dt>
             <dd>
               Export to CSV from Readwise and pick the file. Only highlights from books are
@@ -122,29 +107,6 @@
             </ul>
           </section>
         }
-      }
-
-      @case ('paste') {
-        <ol class="highlight-paste-steps">
-          <li>In Books, open the book, tap the menu button, then <strong>Bookmarks &amp; Highlights</strong>.</li>
-          <li>On <strong>Highlights</strong>, tap <strong>Select</strong> and choose the ones you want.</li>
-          <li>Tap <strong>Share</strong>, then <strong>Copy</strong>, or mail them to yourself and copy the mail.</li>
-          <li>Paste below. Several books can go in one paste.</li>
-        </ol>
-        <textarea
-          appTextarea
-          class="highlight-paste-input"
-          data-testid="highlight-paste-input"
-          rows="9"
-          aria-label="Highlights shared from Apple Books"
-          placeholder="Paste the text Books shared"
-          [value]="pasted()"
-          (input)="onPasteInput($event)"
-        ></textarea>
-        <p class="highlight-import-hint highlight-paste-hint">
-          A note you wrote stays with the highlight above it. You choose the book before anything is
-          added, and pasting the same highlights again adds nothing new.
-        </p>
       }
 
       @case ('reading') {
@@ -301,22 +263,6 @@
     }
   </div>
 
-  @if (stage() === 'paste') {
-    <app-dialog-actions shellActions>
-      <button appButton type="button" variant="secondary" (click)="backToPick()">Back</button>
-      <button
-        appButton
-        type="button"
-        variant="primary"
-        data-testid="highlight-paste-read"
-        [disabled]="!canReadPasted()"
-        (click)="readPasted()"
-      >
-        Continue
-      </button>
-    </app-dialog-actions>
-  }
-
   @if (stage() === 'review') {
     <app-dialog-actions shellActions>
       <span dialogActionsStart class="highlight-footer-note" aria-live="polite">
@@ -360,7 +306,7 @@
         </button>
       }
       <button appButton type="button" variant="secondary" [disabled]="undoing()" (click)="importAnother()">
-        {{ fromPaste() ? 'Paste more' : 'Import another file' }}
+        Import another file
       </button>
       <button appButton type="button" variant="primary" [disabled]="undoing()" (click)="close()">Done</button>
     </app-dialog-actions>
@@ -494,12 +440,10 @@
     } @else {
       <div class="highlight-review-buttons">
         <span class="highlight-review-left-out">Left out</span>
-        @if (row.book.title) {
-          <button appButton type="button" variant="secondary" size="sm" data-testid="highlight-add" (click)="addToLibrary(row)">
-            <nostos-icon name="plus" [size]="13"></nostos-icon>
-            Add to library
-          </button>
-        }
+        <button appButton type="button" variant="secondary" size="sm" data-testid="highlight-add" (click)="addToLibrary(row)">
+          <nostos-icon name="plus" [size]="13"></nostos-icon>
+          Add to library
+        </button>
         <button appButton type="button" variant="ghost" size="sm" (click)="openPicker(row)">
           Choose a book
         </button>
@@ -553,11 +497,9 @@
           }
         </ul>
         <div class="highlight-picker-footer">
-          @if (row.book.title) {
-            <button type="button" appButton variant="link" class="highlight-link" (click)="addToLibrary(row)">
-              Add as a new book instead
-            </button>
-          }
+          <button type="button" appButton variant="link" class="highlight-link" (click)="addToLibrary(row)">
+            Add as a new book instead
+          </button>
           <button type="button" appButton variant="link" class="highlight-link" (click)="closePicker()">Cancel</button>
         </div>
       </div>
