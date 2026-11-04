@@ -318,18 +318,29 @@ public sealed class NoteService : INoteService
     /// all-or-nothing — supplying only one is an error rather than a silent
     /// downgrade to a non-replayable command.
     /// </summary>
-    public async Task<NoteCommandResult<NoteDto>> CreateAsync(
+    public Task<NoteCommandResult<NoteDto>> CreateAsync(
         Guid bookId,
         CreateNoteDto dto,
         string? clientId = null,
         string? idempotencyKey = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        CreateAsync(bookId, dto, clientId, idempotencyKey, createdAt: null, ct);
+
+    // `createdAt` is only for an import that keeps its source's date (issue
+    // #1367); it is not part of the public note contract.
+    private async Task<NoteCommandResult<NoteDto>> CreateAsync(
+        Guid bookId,
+        CreateNoteDto dto,
+        string? clientId,
+        string? idempotencyKey,
+        DateTime? createdAt,
+        CancellationToken ct)
     {
         var hasClient = !string.IsNullOrWhiteSpace(clientId);
         var hasKey = !string.IsNullOrWhiteSpace(idempotencyKey);
 
         if (!hasClient && !hasKey)
-            return await CreateCoreAsync(bookId, dto, ct);
+            return await CreateCoreAsync(bookId, dto, createdAt, ct);
 
         if (!hasClient || !hasKey)
             return NoteCommandResult<NoteDto>.Fail(
@@ -341,7 +352,7 @@ public sealed class NoteService : INoteService
                 NoteErrorCodes.InvalidIdempotency,
                 "ClientId is limited to 64 characters and IdempotencyKey to 128.");
 
-        return await CreateIdempotentAsync(bookId, dto, clientId, idempotencyKey, ct);
+        return await CreateIdempotentAsync(bookId, dto, clientId, idempotencyKey, createdAt, ct);
     }
 
     public Task<NoteCommandResult<NoteDto>> CaptureAsync(
@@ -362,12 +373,13 @@ public sealed class NoteService : INoteService
             AnchorVerified: request.AnchorVerified,
             HighlightColour: request.HighlightColour);
 
-        return CreateAsync(request.BookId, dto, request.ClientId, request.IdempotencyKey, ct);
+        return CreateAsync(request.BookId, dto, request.ClientId, request.IdempotencyKey, request.CreatedAt, ct);
     }
 
     private async Task<NoteCommandResult<NoteDto>> CreateCoreAsync(
         Guid bookId,
         CreateNoteDto dto,
+        DateTime? createdAt,
         CancellationToken ct)
     {
         var book = await _books.GetByIdAsync(bookId);
@@ -397,6 +409,8 @@ public sealed class NoteService : INoteService
         var model = dto.ToModel(bookId);
         model.HighlightColour = colour;
         model.Kind = kind;
+        if (createdAt is { } sourceDate)
+            model.CreatedAt = sourceDate;
         if (kind == NoteKinds.Passage)
         {
             model.PassageTitle = dto.PassageTitle!.Trim();
@@ -451,6 +465,7 @@ public sealed class NoteService : INoteService
         CreateNoteDto dto,
         string clientId,
         string idempotencyKey,
+        DateTime? createdAt,
         CancellationToken ct)
     {
         await CommandGate.WaitAsync(ct);
@@ -462,7 +477,7 @@ public sealed class NoteService : INoteService
 
             await using var transaction = await _db.Database.BeginTransactionAsync(ct);
 
-            var result = await CreateCoreAsync(bookId, dto, ct);
+            var result = await CreateCoreAsync(bookId, dto, createdAt, ct);
             if (!result.Success)
             {
                 // No receipt for a rejection: the client can correct the reason

@@ -10,4 +10,5 @@ internal sealed record KoboVolume(
 internal sealed record KoboBookmark(
     string BookmarkId,
     string? Text,
-    string? Annotation);
+    string? Annotation,
+    DateTime? CreatedAt = null);

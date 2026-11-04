@@ -45,6 +45,8 @@ internal static class KindleClippingsParser
     private static readonly string[] HighlightWords =
         ["highlight", "markierung", "surlignement", "subrayado", "evidenziazione", "destaque", "markering", "ハイライト", "标注", "標註", "выделен", "하이라이트"];
 
+    private static readonly Regex AddedOnPattern = new(@"^Added on\s+(?<v>.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private const string Number = @"\d[\d.,]*";
     private const string Range = Number + @"(?:\s*[-–]\s*" + Number + ")?";
     private const string Roman = "[ivxlcdm]+";
@@ -249,7 +251,20 @@ internal static class KindleClippingsParser
         }
 
         reason = null;
-        return new Entry(kind.Value, body, page is null ? null : Page(page), location);
+        return new Entry(kind.Value, body, page is null ? null : Page(page), location, AddedOn(segments));
+    }
+
+    // "Added on Monday, January 1, 2024 10:00:00 AM"; null for another language.
+    private static DateTime? AddedOn(string[] segments)
+    {
+        foreach (var segment in segments)
+        {
+            var match = AddedOnPattern.Match(segment);
+            if (match.Success && ImportDates.Kindle(match.Groups["v"].Value) is { } added)
+                return added;
+        }
+
+        return null;
     }
 
     private static string? Match(Regex[] patterns, string segment)
@@ -314,7 +329,7 @@ internal static class KindleClippingsParser
         Bookmark,
     }
 
-    private sealed record Entry(EntryKind Kind, string Text, string? Page, (int Start, int End)? Location)
+    private sealed record Entry(EntryKind Kind, string Text, string? Page, (int Start, int End)? Location, DateTime? Added = null)
     {
         public bool Overlaps(Entry other) =>
             Location is { } a && other.Location is { } b
@@ -353,6 +368,10 @@ internal static class KindleClippingsParser
         /// that contains the other's text (or is contained by it) is the same
         /// highlight extended or trimmed, and the longer text is kept.
         /// </summary>
+        // An edit is a new entry, but the highlight was made at the first one.
+        private static DateTime? Earliest(DateTime? a, DateTime? b) =>
+            a is null ? b : b is null ? a : a < b ? a : b;
+
         public void AddHighlight(Entry entry)
         {
             var text = Comparable(entry.Text);
@@ -365,13 +384,14 @@ internal static class KindleClippingsParser
                 var keptText = Comparable(kept.Text);
                 if (entry.SameRange(kept) && (entry.Location is not null || entry.Page is not null))
                 {
-                    Highlights[i] = entry;
+                    Highlights[i] = entry with { Added = Earliest(kept.Added, entry.Added) };
                     return;
                 }
 
                 if (text.Contains(keptText, StringComparison.Ordinal) || keptText.Contains(text, StringComparison.Ordinal))
                 {
-                    Highlights[i] = text.Length >= keptText.Length ? entry : kept;
+                    var winner = text.Length >= keptText.Length ? entry : kept;
+                    Highlights[i] = winner with { Added = Earliest(kept.Added, entry.Added) };
                     return;
                 }
             }
@@ -409,13 +429,13 @@ internal static class KindleClippingsParser
             for (var i = 0; i < Highlights.Count; i++)
             {
                 var (kind, value) = Highlights[i].Anchor();
-                annotations.Add(new ImportAnnotation(kind, value, Highlights[i].Text, notes.GetValueOrDefault(i, string.Empty)));
+                annotations.Add(new ImportAnnotation(kind, value, Highlights[i].Text, notes.GetValueOrDefault(i, string.Empty), CreatedAt: Highlights[i].Added));
             }
 
             foreach (var note in loose)
             {
                 var (kind, value) = note.Anchor();
-                annotations.Add(new ImportAnnotation(kind, value, null, note.Text));
+                annotations.Add(new ImportAnnotation(kind, value, null, note.Text, CreatedAt: note.Added));
             }
 
             return annotations;

@@ -53,6 +53,7 @@ internal static class ReadwiseCsvParser
         var note = Column("Note");
         var locationType = Column("Location Type");
         var location = Column("Location");
+        var highlightedAt = Column("Highlighted at", "Highlighted At");
         var category = Column("Category", "Source Type");
 
         var books = new Dictionary<string, ReadwiseBook>(StringComparer.Ordinal);
@@ -105,7 +106,7 @@ internal static class ReadwiseCsvParser
                 order.Add(key);
             }
 
-            book.Annotations.Add(new ImportAnnotation(kind, anchor, selected, content));
+            book.Annotations.Add(new ImportAnnotation(kind, anchor, selected, content, CreatedAt: ImportDates.Iso(Cell(highlightedAt))));
             // Positioned by order, with no Amazon id: how Readwise keeps a web
             // article, though some book sources look the same. Flagged for the
             // owner rather than left out on a guess.

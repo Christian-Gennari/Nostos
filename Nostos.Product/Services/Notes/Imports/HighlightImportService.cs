@@ -191,7 +191,8 @@ public sealed class HighlightImportService
                     // import arrives in the default one and is recoloured by hand (#861).
                     HighlightColour: NoteHighlightColours.Default,
                     ClientId: entry.ClientId,
-                    IdempotencyKey: entry.Key),
+                    IdempotencyKey: entry.Key,
+                    CreatedAt: entry.Annotation.CreatedAt),
                     ct);
 
                 if (!result.Success)

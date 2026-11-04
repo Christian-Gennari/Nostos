@@ -156,6 +156,8 @@ public sealed class HighlightImportEndpointTests : IDisposable
             && note.SourceAnchorValue == "bm-1");
         notes.Select(note => note.SourceAnchorValue).Should().NotContain(
             ["bm-hidden", "bm-hidden-int", "bm-dogear", "bm-markup", "bm-markup-old"]);
+        // Kobo's DateCreated is the note's date, not the time of import (#1367).
+        notes.Should().OnlyContain(note => note.CreatedAt == new DateTime(2026, 9, 28, 12, 0, 0, DateTimeKind.Utc));
     }
 
     [Fact]

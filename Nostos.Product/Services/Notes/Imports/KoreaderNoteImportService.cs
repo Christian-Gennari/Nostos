@@ -90,7 +90,8 @@ public sealed class KoreaderNoteImportService
                 // import arrives in the default one and is recoloured by hand (#861).
                 HighlightColour: NoteHighlightColours.Default,
                 ClientId: ClientId,
-                IdempotencyKey: fingerprint),
+                IdempotencyKey: fingerprint,
+                CreatedAt: ImportDates.Iso(annotation.DateTime)),
                 ct);
 
             if (!result.Success)
