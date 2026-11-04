@@ -42,10 +42,18 @@ public sealed class ExternalMediaLinkStore(IDbContextFactory<NostosDbContext> co
         CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        var removed = await db.ExternalMediaLinks
+        var matching = db.ExternalMediaLinks
             .Where(l => l.BookId == bookId)
-            .Where(which)
-            .ExecuteDeleteAsync(ct);
-        return removed > 0;
+            .Where(which);
+
+        // Read first: a delete takes the database write lock even when no row
+        // matches. A portable import saves media while its own write
+        // transaction is open on another connection, so on SQLite that delete
+        // would wait out the busy timeout and fail the whole import. A read
+        // does not wait, and a book the import just created has no references.
+        if (!await matching.AnyAsync(ct))
+            return false;
+
+        return await matching.ExecuteDeleteAsync(ct) > 0;
     }
 }

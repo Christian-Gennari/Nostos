@@ -72,6 +72,33 @@ public sealed class ExternalMediaPortableExportTests : IDisposable
             .Which.Code.Should().Be("source_media_missing");
     }
 
+    [Fact]
+    public async Task An_import_through_the_wrapped_storage_does_not_wait_on_its_own_transaction()
+    {
+        var sourceBytes = SyntheticMedia.Epub("Plain Essay", "Sam Writer");
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var book = new EBookModel { Title = "Plain Essay", Author = "Sam Writer" };
+        book.FileDetails.HasFile = true;
+        book.FileDetails.FileName = "book.epub";
+        source.Db.Books.Add(book);
+        await source.Db.SaveChangesAsync();
+        await using (var seed = new MemoryStream(sourceBytes))
+            await source.Storage.SaveBookFileAsync(book.Id, seed, "book.epub");
+
+        using var archive = new MemoryStream();
+        await source.Portability().ExportAsync(archive);
+
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        archive.Position = 0;
+        var started = DateTime.UtcNow;
+        await Portability(destination).ImportAsync(archive);
+
+        (DateTime.UtcNow - started).Should().BeLessThan(TimeSpan.FromSeconds(10));
+        (await destination.Db.Books.CountAsync()).Should().Be(1);
+        var owned = Path.Combine(destination.Root, "books", book.Id.ToString(), "book.epub");
+        (await File.ReadAllBytesAsync(owned)).Should().Equal(sourceBytes);
+    }
+
     private PortableArchiveService Portability(LocalPortableTestLibrary library)
     {
         var root = new ExternalMediaRoot(Options.Create(new ExternalMediaOptions { Root = _external }));
