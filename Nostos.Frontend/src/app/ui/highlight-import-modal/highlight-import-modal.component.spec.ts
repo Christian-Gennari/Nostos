@@ -11,6 +11,7 @@ import {
   HighlightImportService,
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { Book, PaginatedResponse } from '../../core/dtos/book.dtos';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
 import type { NoteSearchHit } from '../../core/dtos/note.dtos';
@@ -84,6 +85,8 @@ describe('HighlightImportModal', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [], totalCount: 0 })) } },
+        // Self-hosted: the beta feedback link goes to GitHub, and no request is left open.
+        { provide: DeploymentCapabilitiesService, useValue: { get: () => of({ deploymentMode: 'SelfHosted' }) } },
       ],
     }).compileComponents();
 
@@ -139,6 +142,10 @@ describe('HighlightImportModal', () => {
     expect(component.stage()).toBe('applebooks');
     expect(text()).toContain('Import from Apple Books');
     expect(text()).not.toContain('sqlite');
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-beta"]')).not.toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-feedback"] a') as HTMLAnchorElement).href,
+    ).toContain('github.com/Christian-Gennari/Nostos/issues/1357');
 
     (fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-copy"]') as HTMLButtonElement).click();
     await fixture.whenStable();

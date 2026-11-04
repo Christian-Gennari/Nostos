@@ -16,6 +16,9 @@
   <header class="highlight-import-head" shellHeader>
     <h2 id="highlight-import-title" class="highlight-import-title">
       {{ stage() === 'review' ? 'Review before importing' : stage() === 'applebooks' ? 'Import from Apple Books' : 'Import highlights' }}
+      @if (stage() === 'applebooks') {
+        <span appBadge class="highlight-beta" data-testid="highlight-applebooks-beta">Beta</span>
+      }
     </h2>
   </header>
 
@@ -165,6 +168,10 @@
         <p class="highlight-import-hint highlight-steps-note">
           Nostos only reads your Books highlights from that folder. You see where every book is going
           before anything is added, and importing again later only adds what is new.
+        </p>
+        <p class="highlight-import-hint" data-testid="highlight-applebooks-feedback">
+          Apple Books import is new.
+          <a class="highlight-link" [href]="appleBooksFeedbackUrl()" target="_blank" rel="noopener">Tell us whether it worked for you</a>.
         </p>
       }
 

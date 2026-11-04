@@ -123,6 +123,11 @@
   font-weight: var(--fw-semibold);
 }
 
+.highlight-beta {
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
 .highlight-steps-note {
   margin-top: 1.1rem;
 }

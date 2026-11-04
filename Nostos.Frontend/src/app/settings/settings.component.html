@@ -540,7 +540,12 @@
                 @for (source of highlightImportSources; track source.id) {
                   <div class="setting-row" [attr.data-testid]="'import-source-' + source.id">
                     <div class="setting-label">
-                      <span class="label-text">{{ source.name }}</span>
+                      <span class="label-text">
+                        {{ source.name }}
+                        @if (source.beta) {
+                          <span appBadge class="import-beta">Beta</span>
+                        }
+                      </span>
                       <span class="label-desc">{{ source.hint }}</span>
                     </div>
                     <button

@@ -179,6 +179,8 @@ interface ImportSourceRow {
   id: string;
   name: string;
   hint: string;
+  /** New and checked on few real devices yet. */
+  beta?: boolean;
 }
 
 /** How a section's inline status line is coloured. */
@@ -584,7 +586,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'kobo', name: 'Kobo', hint: 'KoboReader.sqlite from the e-reader, connected by USB.' },
     { id: 'koreader', name: 'KOReader', hint: "A book's metadata.lua, from its .sdr folder." },
     { id: 'kindle', name: 'Kindle', hint: 'My Clippings.txt from the Kindle, connected by USB.' },
-    { id: 'applebooks', name: 'Apple Books', hint: 'From Books on your Mac, with what you highlighted on iPhone and iPad.' },
+    { id: 'applebooks', name: 'Apple Books', hint: 'From Books on your Mac, with what you highlighted on iPhone and iPad.', beta: true },
     { id: 'readwise', name: 'Readwise', hint: 'A CSV export from Readwise.' },
   ];
 

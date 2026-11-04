@@ -1015,3 +1015,8 @@
   background: var(--bg-hover);
   font-size: 0.95em;
 }
+
+.import-beta {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}

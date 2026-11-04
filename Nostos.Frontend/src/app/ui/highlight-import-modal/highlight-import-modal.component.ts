@@ -28,6 +28,8 @@ import { ButtonComponent } from '../button/button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
+import { BadgeComponent } from '../badge/badge.component';
+import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
 import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../../core/book-format';
@@ -86,6 +88,7 @@ export interface UnimportableEntry extends HighlightImportSkipped {
     SearchFieldComponent,
     LoadingIndicatorComponent,
     DropZoneComponent,
+    BadgeComponent,
     NostosDatePipe,
     NgTemplateOutlet,
     ModalShell,
@@ -195,6 +198,16 @@ export class HighlightImportModal {
     }
     return '';
   });
+
+  /**
+   * Apple Books is in beta until it has run on more Macs: its database was
+   * checked on a real macOS, the folder window only on a few. A Cloud owner
+   * reaches the feedback page; a self-hosted one the issue on GitHub.
+   */
+  private readonly feedbackLink = inject(FeedbackLinkService);
+  readonly appleBooksFeedbackUrl = computed(
+    () => this.feedbackLink.url() ?? 'https://github.com/Christian-Gennari/Nostos/issues/1357',
+  );
 
   /** Apple Books' own steps (issue #1357): the owner points at one folder, Nostos does the rest. */
   readonly appleBooksFolder = APPLE_BOOKS_FOLDER;
