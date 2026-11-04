@@ -55,7 +55,7 @@ import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
-import { HighlightImportService, type HighlightImportStart } from '../core/services/highlight-import.service';
+import { HighlightImportService } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -174,12 +174,11 @@ const BOOK_PROVIDER_COPY = {
   saveFailed: 'Could not save this source. Your previous choice is still in effect.',
 } as const;
 
-/** One source in Import › Highlights & notes. `paste` opens the dialog on its paste box. */
+/** One source in Import › Highlights & notes. */
 interface ImportSourceRow {
   id: string;
   name: string;
   hint: string;
-  paste?: boolean;
 }
 
 /** How a section's inline status line is coloured. */
@@ -585,16 +584,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'kobo', name: 'Kobo', hint: 'KoboReader.sqlite from the e-reader, connected by USB.' },
     { id: 'koreader', name: 'KOReader', hint: "A book's metadata.lua, from its .sdr folder." },
     { id: 'kindle', name: 'Kindle', hint: 'My Clippings.txt from the Kindle, connected by USB.' },
-    { id: 'applebooks', name: 'Apple Books', hint: 'Highlights shared from Books on an iPhone or iPad, pasted as text.', paste: true },
+    { id: 'applebooks', name: 'Apple Books', hint: 'Two files from Books on a Mac, with what you highlighted on iPhone and iPad too.' },
     { id: 'readwise', name: 'Readwise', hint: 'A CSV export from Readwise.' },
   ];
 
-  openHighlightImport(start: HighlightImportStart = 'files'): void {
-    this.highlightImport.open(start);
+  openHighlightImport(): void {
+    this.highlightImport.open();
   }
 
   openAddBook(): void {
-    void this.router?.navigate(['/library'], { queryParams: { add: 'book' } });
+    void this.router?.navigate(['/library'], { queryParams: { add: 'file' } });
   }
 
   /** The .nostos import lives with the rest of Backups & data. */

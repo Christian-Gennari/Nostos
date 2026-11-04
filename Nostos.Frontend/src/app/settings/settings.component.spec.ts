@@ -1594,13 +1594,12 @@ describe('SettingsComponent backup-only surface', () => {
     const highlightImport = TestBed.inject(HighlightImportService);
     const open = vi.spyOn(highlightImport, 'open');
     (section.querySelector('[data-testid="import-action-applebooks"]') as HTMLButtonElement).click();
-    expect(open).toHaveBeenCalledWith('paste');
     (section.querySelector('[data-testid="highlight-import-action"]') as HTMLButtonElement).click();
-    expect(open).toHaveBeenLastCalledWith('files');
+    expect(open).toHaveBeenCalledTimes(2);
 
     routerMock.navigate.mockClear();
     (section.querySelector('[data-testid="import-action-book-files"]') as HTMLButtonElement).click();
-    expect(routerMock.navigate).toHaveBeenCalledWith(['/library'], { queryParams: { add: 'book' } });
+    expect(routerMock.navigate).toHaveBeenCalledWith(['/library'], { queryParams: { add: 'file' } });
   });
 
   it('describes Backups & data for this deployment and marks it as the open section', () => {
