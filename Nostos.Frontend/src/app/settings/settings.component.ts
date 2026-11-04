@@ -358,6 +358,23 @@ export class SettingsComponent implements OnInit, OnDestroy {
       untracked(() => this.showSection(requested));
     });
 
+    // `?section=import&open=applebooks` opens straight on Apple Books' steps,
+    // so help pages and support replies can link to them (#1357). The
+    // parameter is dropped once used, so a reload does not reopen it.
+    effect(() => {
+      if (this.isManageLibraryPage || this.queryParamMap().get('open') !== 'applebooks') return;
+      untracked(() => {
+        this.showSection('import');
+        this.openHighlightImport('applebooks');
+        void this.router?.navigate([], {
+          relativeTo: this.route,
+          queryParams: { open: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
+    });
+
     effect(() => {
       this.deploymentCapabilities();
       this.activeSettingsSection();

@@ -1573,6 +1573,18 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="import-highlights-card"]')).toBeTruthy();
   });
 
+  it('opens Apple Books steps from a link', () => {
+    const highlightImport = TestBed.inject(HighlightImportService);
+    const open = vi.spyOn(highlightImport, 'open');
+    routerMock.navigate.mockClear();
+    routeParamMap.next(convertToParamMap({ section: 'import', open: 'applebooks' }));
+    fixture.detectChanges();
+
+    expect(open).toHaveBeenCalledWith('applebooks');
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('import');
+    expect(routerMock.navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { open: null } }));
+  });
+
   it('gathers every way into Nostos under Import', () => {
     navItem('Import').click();
     fixture.detectChanges();
