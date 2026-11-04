@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { EBOOK_CATEGORY_LABEL, EBOOK_CATEGORY_LABEL_PLURAL } from '../core/book-format';
 import { formatFileSize } from '../core/format';
 import { CommonModule } from '@angular/common';
@@ -43,6 +43,7 @@ import { SearchFieldComponent } from '../ui/search-field/search-field.component'
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { planLimitMessage } from '../core/plan-limit-message';
+import { isEpubFile, readEpubFileMetadata } from './epub-file-metadata';
 import {
   BookUploadService,
   BookUploadPhase,
@@ -106,6 +107,7 @@ export class AddBookModal {
   private booksService = inject(BooksService);
   private providers = inject(ProvidersService);
   private toast = inject(ToastService);
+  private changes = inject(ChangeDetectorRef);
   /** Resumable uploads outlive this modal, so they are owned by a root service. */
   private bookUploads = inject(BookUploadService);
   /** The import feed: opened on demand once an import has actually been queued. */
@@ -582,15 +584,41 @@ export class AddBookModal {
       ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension));
     this.form.type = audio ? 'audiobook' : 'ebook';
 
+    let titleFromName: string | null = null;
     if (!this.form.title.trim()) {
-      this.form.title = file.name
+      titleFromName = file.name
         .replace(/\.[^.]+$/, '')
         .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+      this.form.title = titleFromName;
     }
 
+    if (!audio && isEpubFile(file)) void this.fillFromEpubMetadata(file, titleFromName);
+
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+  }
+
+  /**
+   * An EPUB names its own title and author (#1358). They arrive a moment after
+   * the file is chosen, so they only fill what the user has not typed: the title
+   * while it is still empty or the file-name guess, the author while it is empty.
+   */
+  private async fillFromEpubMetadata(file: File, titleFromName: string | null): Promise<void> {
+    const metadata = await readEpubFileMetadata(file);
+    if (this.selectedFile() !== file) return;
+
+    let changed = false;
+    const title = this.form.title.trim();
+    if (metadata.title && (!title || (titleFromName !== null && this.form.title === titleFromName))) {
+      this.form.title = metadata.title;
+      changed = true;
+    }
+    if (metadata.author && !(this.form.author ?? '').trim()) {
+      this.form.author = metadata.author;
+      changed = true;
+    }
+    if (changed) this.changes.markForCheck();
   }
 
   onCoverSelected(event: Event) {
