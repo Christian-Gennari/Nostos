@@ -129,6 +129,41 @@ describe('HighlightImportModal', () => {
     expect(appleCommit[3]).toEqual([library, wal]);
   });
 
+  it('opens on Apple Books steps, copies the folder location and sends only Books files from the folder', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const preview = vi.spyOn(service, 'preview').mockReturnValue(of({ source: 'applebooks', books: [previewBook({})] }));
+
+    service.open('applebooks');
+    fixture.detectChanges();
+    expect(component.stage()).toBe('applebooks');
+    expect(text()).toContain('Import from Apple Books');
+    expect(text()).not.toContain('sqlite');
+
+    (fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-copy"]') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(writeText).toHaveBeenCalledWith('~/Library/Containers/com.apple.iBooksX/Data/Documents');
+    expect(text()).toContain('Copied');
+
+    const folder = (names: string[]) => ({ target: { files: names.map((name) => file(name)), value: 'x' } }) as unknown as Event;
+    component.onAppleBooksFolderSelected(folder(['BCCloudAsset-1.sqlite', '.DS_Store']));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-error"]')).not.toBeNull();
+    expect(preview).not.toHaveBeenCalled();
+
+    component.onAppleBooksFolderSelected(
+      folder(['.DS_Store', 'BKLibrary-1-091020131601.sqlite', 'BCCloudAsset-1.sqlite', 'AEAnnotation_v10312011_1727_local.sqlite']),
+    );
+    await vi.waitFor(() => expect(component.stage()).toBe('review'));
+    expect(preview.mock.calls[0][0].name).toBe('AEAnnotation_v10312011_1727_local.sqlite');
+    expect(preview.mock.calls[0][1]!.map((f) => f.name)).toEqual(['BKLibrary-1-091020131601.sqlite']);
+
+    // Back from the review returns to the Apple Books steps.
+    component.backToPick();
+    expect(component.stage()).toBe('applebooks');
+  });
+
   it('offers no "Add to library" for a book whose title the file does not give', async () => {
     await review(previewBook({ sourceKey: 'applebooks:A', title: null, author: null, match: 'none', bookId: null, candidates: [] }));
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-add"]')).toBeNull();

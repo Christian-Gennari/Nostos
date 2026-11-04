@@ -1,5 +1,5 @@
 import { editionChoices } from '../../book-detail/edition-switch-options';
-import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { NgTemplateOutlet } from '@angular/common';
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
@@ -8,6 +8,7 @@ import { Router } from '@angular/router';
 import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  APPLE_BOOKS_FOLDER,
   appleBooksFiles,
   groupHighlightImportFiles,
   HIGHLIGHT_IMPORT_SOURCE_LABEL,
@@ -35,7 +36,7 @@ import { plural } from '../../core/format';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
 import { answerStarterOffer } from '../../writing-studio/starter-draft/starter-draft';
 
-type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
+type Stage = 'pick' | 'applebooks' | 'reading' | 'review' | 'importing' | 'result';
 
 /** Where one device book's highlights will go. `null` on a row means "leave out". */
 export type ImportTarget =
@@ -195,6 +196,12 @@ export class HighlightImportModal {
     return '';
   });
 
+  /** Apple Books' own steps (issue #1357): the owner points at one folder, Nostos does the rest. */
+  readonly appleBooksFolder = APPLE_BOOKS_FOLDER;
+  readonly folderCopied = signal<'idle' | 'copied' | 'failed'>('idle');
+  /** The import started from Apple Books' steps, so Back and "again" return there. */
+  readonly fromAppleBooks = signal(false);
+
   private nextRowId = 0;
   /** Files that went up with a main file, so the commit sends the same set. */
   private readonly companions = new Map<File, File[]>();
@@ -202,6 +209,15 @@ export class HighlightImportModal {
   constructor() {
     effect(() => {
       if (this.isOpen() && this.stage() === 'pick') this.loadRecent();
+    });
+
+    // Settings' Apple Books row opens straight on Apple Books' steps.
+    effect(() => {
+      if (!this.isOpen() || this.service.startOn() !== 'applebooks') return;
+      untracked(() => {
+        if (this.stage() === 'pick') this.showAppleBooks();
+        this.service.startOn.set('all');
+      });
     });
 
     this.searchSubject
@@ -278,15 +294,41 @@ export class HighlightImportModal {
    */
   onAppleBooksFolderSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = appleBooksFiles(Array.from(input.files ?? []));
+    const chosen = Array.from(input.files ?? []);
+    const files = appleBooksFiles(chosen);
     input.value = '';
+    if (chosen.length === 0) return;
     if (files.length === 0) {
-      this.undoError.set(null);
-      this.failures.set([{ fileName: 'Books folder', message: 'That folder has no Apple Books highlights. Choose the Documents folder inside com.apple.iBooksX.' }]);
-      this.stage.set('result');
+      this.appleBooksError.set(true);
       return;
     }
+    this.appleBooksError.set(false);
     void this.readFiles(files);
+  }
+
+  /** The chosen folder held no Apple Books highlights. */
+  readonly appleBooksError = signal(false);
+
+  showAppleBooks(): void {
+    this.fromAppleBooks.set(true);
+    this.appleBooksError.set(false);
+    this.folderCopied.set('idle');
+    this.stage.set('applebooks');
+  }
+
+  showAllSources(): void {
+    this.fromAppleBooks.set(false);
+    this.stage.set('pick');
+  }
+
+  async copyAppleBooksFolder(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.appleBooksFolder);
+      this.folderCopied.set('copied');
+    } catch {
+      // Without clipboard access the location is shown to copy by hand.
+      this.folderCopied.set('failed');
+    }
   }
 
   onFilesSelected(event: Event): void {
@@ -387,7 +429,7 @@ export class HighlightImportModal {
   }
 
   backToPick(): void {
-    this.stage.set('pick');
+    this.stage.set(this.fromAppleBooks() ? 'applebooks' : 'pick');
     this.closePicker();
   }
 
@@ -492,7 +534,7 @@ export class HighlightImportModal {
   }
 
   importAnother(): void {
-    this.stage.set('pick');
+    this.stage.set(this.fromAppleBooks() ? 'applebooks' : 'pick');
   }
 
   openBook(book: HighlightImportResultBook): void {
@@ -505,6 +547,8 @@ export class HighlightImportModal {
     if (this.busy() || this.undoing() || this.startingDraft()) return;
     this.service.close();
     this.stage.set('pick');
+    this.fromAppleBooks.set(false);
+    this.appleBooksError.set(false);
     this.rows.set([]);
     this.results.set([]);
     this.failures.set([]);

@@ -1594,8 +1594,9 @@ describe('SettingsComponent backup-only surface', () => {
     const highlightImport = TestBed.inject(HighlightImportService);
     const open = vi.spyOn(highlightImport, 'open');
     (section.querySelector('[data-testid="import-action-applebooks"]') as HTMLButtonElement).click();
+    expect(open).toHaveBeenCalledWith('applebooks');
     (section.querySelector('[data-testid="highlight-import-action"]') as HTMLButtonElement).click();
-    expect(open).toHaveBeenCalledTimes(2);
+    expect(open).toHaveBeenLastCalledWith('all');
 
     routerMock.navigate.mockClear();
     (section.querySelector('[data-testid="import-action-book-files"]') as HTMLButtonElement).click();

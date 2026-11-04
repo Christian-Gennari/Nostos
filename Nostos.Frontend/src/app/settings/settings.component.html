@@ -549,7 +549,7 @@
                       class="import-action"
                       [attr.data-testid]="source.id === 'kobo' ? 'highlight-import-action' : 'import-action-' + source.id"
                       [attr.aria-label]="'Import from ' + source.name"
-                      (click)="openHighlightImport()"
+                      (click)="openHighlightImport(source.id === 'applebooks' ? 'applebooks' : 'all')"
                     >
                       Import…
                     </button>

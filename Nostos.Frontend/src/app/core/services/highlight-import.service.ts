@@ -11,6 +11,11 @@ import type { NoteSearchHit } from '../dtos/note.dtos';
  */
 export type HighlightImportMatch = 'exact' | 'remembered' | 'suggested' | 'none';
 
+export type HighlightImportStart = 'all' | 'applebooks';
+
+/** Where Books keeps its databases on a Mac; the owner pastes it into the folder window. */
+export const APPLE_BOOKS_FOLDER = '~/Library/Containers/com.apple.iBooksX/Data/Documents';
+
 /** Files that go to the server as one import: a main file and the files that belong with it. */
 export interface HighlightImportUpload {
   file: File;
@@ -130,10 +135,13 @@ export interface HighlightImportBatch {
 @Injectable({ providedIn: 'root' })
 export class HighlightImportService {
   readonly isOpen = signal(false);
+  /** Where the dialog opens: the list of every source, or straight on Apple Books' steps. */
+  readonly startOn = signal<HighlightImportStart>('all');
 
   constructor(private http: HttpClient) {}
 
-  open(): void {
+  open(start: HighlightImportStart = 'all'): void {
+    this.startOn.set(start);
     this.isOpen.set(true);
   }
 

@@ -15,7 +15,7 @@
 >
   <header class="highlight-import-head" shellHeader>
     <h2 id="highlight-import-title" class="highlight-import-title">
-      {{ stage() === 'review' ? 'Review before importing' : 'Import highlights' }}
+      {{ stage() === 'review' ? 'Review before importing' : stage() === 'applebooks' ? 'Import from Apple Books' : 'Import highlights' }}
     </h2>
   </header>
 
@@ -48,7 +48,7 @@
           />
           <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
           <span class="nostos-drop-zone__title">Choose files or drop them here</span>
-          <span class="nostos-drop-zone__hint">KoboReader.sqlite, KOReader metadata.lua, My Clippings.txt, a Readwise CSV or the Apple Books files</span>
+          <span class="nostos-drop-zone__hint">KoboReader.sqlite, KOReader metadata.lua, My Clippings.txt or a Readwise CSV</span>
         </label>
 
         <dl class="highlight-sources">
@@ -77,27 +77,15 @@
           <div class="highlight-source" data-testid="highlight-source-applebooks">
             <dt>Apple Books</dt>
             <dd>
-              On a Mac, quit Books, then
+              Your highlights from Books on a Mac, iPhone and iPad.
               <button
                 type="button"
                 appButton
                 variant="link"
                 class="highlight-link"
-                data-testid="highlight-applebooks-folder"
-                (click)="appleFolderInput.click()"
-              >choose the Books folder</button>. In the window that opens, press <kbd>⇧⌘G</kbd>, enter
-              <code>~/Library/Containers/com.apple.iBooksX/Data/Documents</code> and choose
-              <strong>Upload</strong>. Nostos sends only the two Books databases from it. Highlights made on
-              an iPhone or iPad are there too when Books syncs with iCloud.
-              <input
-                #appleFolderInput
-                type="file"
-                class="visually-hidden"
-                tabindex="-1"
-                data-testid="highlight-applebooks-folder-input"
-                webkitdirectory
-                (change)="onAppleBooksFolderSelected($event)"
-              />
+                data-testid="highlight-applebooks-open"
+                (click)="showAppleBooks()"
+              >Import from Apple Books</button>
             </dd>
           </div>
           <div class="highlight-source">
@@ -133,6 +121,51 @@
             </ul>
           </section>
         }
+      }
+
+      @case ('applebooks') {
+        <p class="highlight-import-hint">
+          Your Apple Books highlights are kept on your Mac. Highlights you made on an iPhone or iPad are
+          there too, when Books uses iCloud.
+        </p>
+        <ol class="highlight-steps" data-testid="highlight-applebooks-steps">
+          <li>On your Mac, quit Books.</li>
+          <li>
+            <span>Copy where Books keeps your highlights.</span>
+            <button
+              appButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              class="highlight-step-action"
+              data-testid="highlight-applebooks-copy"
+              (click)="copyAppleBooksFolder()"
+            >
+              <nostos-icon [name]="folderCopied() === 'copied' ? 'check' : 'copy'" [size]="14"></nostos-icon>
+              {{ folderCopied() === 'copied' ? 'Copied' : 'Copy folder location' }}
+            </button>
+            @if (folderCopied() === 'failed') {
+              <span class="highlight-step-fallback">
+                Copy this instead: <code class="highlight-folder">{{ appleBooksFolder }}</code>
+              </span>
+            }
+          </li>
+          <li>
+            Press <strong>Choose the Books folder</strong> below. In the window that opens, press
+            <kbd>Shift</kbd>&#8239;<kbd>⌘</kbd>&#8239;<kbd>G</kbd>, paste, press <kbd>Return</kbd>, then
+            <strong>Upload</strong>.
+          </li>
+        </ol>
+        @if (appleBooksError()) {
+          <p class="highlight-failure" role="alert" data-testid="highlight-applebooks-error">
+            Nostos found no Apple Books highlights in that folder. Copy the folder location again and
+            paste it in the window, then press Upload.
+          </p>
+        }
+        <p class="highlight-import-hint highlight-steps-note">
+          Nostos only reads your Books highlights from that folder. You see where every book is going
+          before anything is added, and importing again later only adds what is new.
+        </p>
       }
 
       @case ('reading') {
@@ -288,6 +321,31 @@
       }
     }
   </div>
+
+  @if (stage() === 'applebooks') {
+    <app-dialog-actions shellActions>
+      <button appButton type="button" variant="secondary" (click)="showAllSources()">Other sources</button>
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        data-testid="highlight-applebooks-folder"
+        (click)="appleFolderInput.click()"
+      >
+        Choose the Books folder
+      </button>
+    </app-dialog-actions>
+  }
+  <input
+    #appleFolderInput
+    type="file"
+    class="visually-hidden"
+    tabindex="-1"
+    aria-hidden="true"
+    data-testid="highlight-applebooks-folder-input"
+    webkitdirectory
+    (change)="onAppleBooksFolderSelected($event)"
+  />
 
   @if (stage() === 'review') {
     <app-dialog-actions shellActions>
