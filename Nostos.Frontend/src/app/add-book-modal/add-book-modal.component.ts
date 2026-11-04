@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { EBOOK_CATEGORY_LABEL, EBOOK_CATEGORY_LABEL_PLURAL } from '../core/book-format';
 import { formatFileSize } from '../core/format';
 import { CommonModule } from '@angular/common';
@@ -59,6 +59,10 @@ export interface AddBookPrefill {
   publishedDate?: string | null;
 }
 
+/** Larger files are not sent just to read their title; the file name stays. */
+const MAX_METADATA_READ_BYTES = 50 * 1024 * 1024;
+const DEFAULT_LANGUAGE = 'en';
+
 @Component({
   selector: 'app-add-book-modal',
   standalone: true,
@@ -104,6 +108,7 @@ export class AddBookModal {
     { value: 'audiobook', label: 'Audiobook' },
   ] satisfies readonly DropdownOption[];
   private booksService = inject(BooksService);
+  private changeDetector = inject(ChangeDetectorRef);
   private providers = inject(ProvidersService);
   private toast = inject(ToastService);
   /** Resumable uploads outlive this modal, so they are owned by a root service. */
@@ -582,15 +587,43 @@ export class AddBookModal {
       ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension));
     this.form.type = audio ? 'audiobook' : 'ebook';
 
+    const nameTitle = file.name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!this.form.title.trim()) {
-      this.form.title = file.name
-        .replace(/\.[^.]+$/, '')
-        .replace(/[_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+      this.form.title = nameTitle;
     }
 
+    this.prefillFromFile(file, nameTitle);
+
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+  }
+
+  /**
+   * An EPUB or PDF knows its own title, author and language. Fill them in once
+   * the server has read the file, but only where the person has not typed
+   * anything of their own: the title still being the one taken from the file
+   * name, an empty author, a language still on the default.
+   */
+  private prefillFromFile(file: File, nameTitle: string): void {
+    if (!/\.(epub|pdf)$/i.test(file.name) || file.size > MAX_METADATA_READ_BYTES) return;
+
+    this.booksService.readFileMetadata(file).subscribe({
+      next: (found) => {
+        if (this.selectedFile() !== file) return;
+
+        const title = this.form.title.trim();
+        if (found.title && (!title || title === nameTitle)) this.form.title = found.title;
+        if (found.author && !this.form.author?.trim()) this.form.author = found.author;
+        if (found.language && this.form.language === DEFAULT_LANGUAGE)
+          this.form.language = found.language;
+        this.changeDetector.markForCheck();
+      },
+      // The file name stays as the title; nothing for the person to do.
+      error: () => undefined,
+    });
   }
 
   onCoverSelected(event: Event) {

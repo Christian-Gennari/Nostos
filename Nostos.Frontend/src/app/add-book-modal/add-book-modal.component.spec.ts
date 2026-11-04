@@ -253,6 +253,65 @@ describe('AddBookModal', () => {
     expect(fixture.nativeElement.textContent).toContain('the-magic-mountain.epub');
   });
 
+  it('prefills title, author and language from an EPUB the server could read', () => {
+    const books = TestBed.inject(BooksService);
+    vi.spyOn(books, 'readFileMetadata').mockReturnValue(
+      of({ title: 'Embedded Title', author: 'Embedded Author', language: 'French', pageCount: null }),
+    );
+
+    component.startIntent('upload');
+    component.onFileSelected({
+      target: { files: [new File(['ebook'], 'scan_final.epub', { type: 'application/epub+zip' })] },
+    } as unknown as Event);
+
+    expect(component.form.title).toBe('Embedded Title');
+    expect(component.form.author).toBe('Embedded Author');
+    expect(component.form.language).toBe('French');
+  });
+
+  it('keeps what the person already typed when the file has its own metadata', () => {
+    const books = TestBed.inject(BooksService);
+    vi.spyOn(books, 'readFileMetadata').mockReturnValue(
+      of({ title: 'Embedded Title', author: 'Embedded Author', language: 'French', pageCount: null }),
+    );
+
+    component.startIntent('upload');
+    component.form.title = 'My own title';
+    component.form.author = 'My Author';
+    component.form.language = 'Swedish';
+    component.onFileSelected({
+      target: { files: [new File(['ebook'], 'scan.epub', { type: 'application/epub+zip' })] },
+    } as unknown as Event);
+
+    expect(component.form.title).toBe('My own title');
+    expect(component.form.author).toBe('My Author');
+    expect(component.form.language).toBe('Swedish');
+  });
+
+  it('keeps the file name as the title when the file cannot be read', () => {
+    const books = TestBed.inject(BooksService);
+    vi.spyOn(books, 'readFileMetadata').mockReturnValue(throwError(() => new Error('no')));
+
+    component.startIntent('upload');
+    component.onFileSelected({
+      target: { files: [new File(['pdf'], 'broken-file.pdf', { type: 'application/pdf' })] },
+    } as unknown as Event);
+
+    expect(component.form.title).toBe('broken file');
+  });
+
+  it('does not send an audio file to be read', () => {
+    const books = TestBed.inject(BooksService);
+    const readSpy = vi.spyOn(books, 'readFileMetadata');
+
+    component.startIntent('upload');
+    component.onFileSelected({
+      target: { files: [new File(['audio'], 'ulysses.m4b', { type: 'audio/mp4' })] },
+    } as unknown as Event);
+
+    expect(readSpy).not.toHaveBeenCalled();
+  });
+
   it('infers audiobook format from an uploaded audio file', () => {
     component.startIntent('upload');
     component.onFileSelected({
