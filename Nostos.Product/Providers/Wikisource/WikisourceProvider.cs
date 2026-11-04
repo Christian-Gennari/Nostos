@@ -55,7 +55,7 @@ public sealed class WikisourceProvider : IContentProvider,
         | ProviderCapabilities.CoverArt
         | ProviderCapabilities.RightsInformation;
 
-    // Rights vary by work. The per-item Atom <rights> value is preserved
+    // Rights vary by work. The catalogue <rights> value is preserved
     // verbatim rather than turning Wikisource into a blanket public-domain
     // claim.
     public string? RightsNotice => null;
@@ -274,9 +274,12 @@ public sealed class WikisourceProvider : IContentProvider,
         if (page is null)
             return null;
 
-        var escaped = Uri.EscapeDataString(page);
-        var feed = await LoadAsync("/?lang=en&format=atom&page=" + escaped, ct);
-        return feed is null ? null : WikisourceCatalog.ParseItem(feed, page);
+        // WS Export no longer serves per-item Atom (format=atom answers 400,
+        // #1374). The Ready-for-export catalogue already carries title, author,
+        // rights, language and the EPUB link for every item, and is cached, so
+        // item detail is read from it instead of a second request.
+        var books = await GetCatalogAsync(ct);
+        return WikisourceCatalog.FindByPage(books, page);
     }
 
     private async Task<XDocument?> LoadAsync(string path, CancellationToken ct)
