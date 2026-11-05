@@ -22,7 +22,7 @@ List books with filtering, sorting, search, and pagination.
 | ----------- | ------ | -------- | ---------------------------------------------- |
 | `search`    | string | —        | Search by title or author (LIKE)               |
 | `filter`    | string | —        | `Favorites`, `Finished`, `Reading`, `Unsorted` |
-| `sort`      | string | `Recent` | `Recent`, `Title`, `Rating`, `LastRead`        |
+| `sort`      | string | `Recent` | `Recent`, `Title`, `Rating`, `LastRead`, `RecentlyFinished` |
 | `page`      | int    | 1        | Page number                                    |
 | `pageSize`  | int    | 20       | Items per page; values above 100 are clamped to 100 |
 | `collectionId` | guid | —      | Restrict the listing to one collection (subtree-inclusive: descendants match too) |

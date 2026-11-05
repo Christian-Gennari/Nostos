@@ -887,6 +887,8 @@ public sealed partial class LibraryService : ILibraryService
             {
                 book.Progress.FinishedAt ??= Now;
                 book.Progress.ProgressPercent = 100;
+                // Finishing is reading it last: finished books rank by Last read.
+                book.Progress.LastReadAt ??= book.Progress.FinishedAt;
             }
             else
             {

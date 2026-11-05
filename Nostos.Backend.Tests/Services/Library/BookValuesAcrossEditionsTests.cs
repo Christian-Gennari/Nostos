@@ -304,7 +304,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
     }
 
     [Fact]
-    public async Task A_reread_is_both_reading_and_finished()
+    public async Task A_reread_is_reading_only_never_in_two_lists()
     {
         var h = Harness();
         var epub = await CreateAsync(h, "ebook", "Fictions", "Borges");
@@ -314,12 +314,53 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         await h.Service.UpdateProgressAsync(audio, "10", 10);
 
         (await GroupedAsync(h, BookFilter.Reading)).Should().HaveCount(1);
-        (await GroupedAsync(h, BookFilter.Finished)).Should().HaveCount(1);
+        (await GroupedAsync(h, BookFilter.Finished)).Should().BeEmpty();
         (await GroupedAsync(h, BookFilter.NotStarted)).Should().BeEmpty();
 
         var counts = (LibraryStatusCountsDto)(await h.Service.GetStatusCountsAsync()).Data!;
-        (counts.Finished, counts.Reading, counts.NotStarted).Should().Be((1, 1, 0));
+        (counts.Finished, counts.Reading, counts.NotStarted).Should().Be((0, 1, 0));
         await AssertInMemoryRuleAgreesAsync(h);
+    }
+
+    [Fact]
+    public async Task A_page_without_a_page_count_is_progress_and_the_work_is_in_one_list()
+    {
+        var h = Harness();
+        var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
+        var paper = await CreateAsync(h, "physical", "Fictions", "Borges");
+        await h.Service.UpdateProgressAsync(audio, "cfi", 100);
+        await Task.Delay(5);
+        await h.Service.UpdateProgressAsync(paper, """{"page":40}""", PaperPageProgress.Percent(40, null));
+
+        (await GetAsync(h, paper)).ProgressPercent.Should().Be(0, "no page count, no made-up percentage");
+        (await GroupedAsync(h, BookFilter.Reading)).Should().HaveCount(1);
+        (await GroupedAsync(h, BookFilter.Finished)).Should().BeEmpty();
+        (await GroupedAsync(h, BookFilter.NotStarted)).Should().BeEmpty();
+        var counts = (LibraryStatusCountsDto)(await h.Service.GetStatusCountsAsync()).Data!;
+        (counts.Finished + counts.Reading + counts.NotStarted).Should().Be(counts.All);
+        await AssertInMemoryRuleAgreesAsync(h);
+    }
+
+    [Fact]
+    public async Task Recently_finished_ranks_by_the_latest_finish_and_marking_finished_sets_last_read()
+    {
+        var h = Harness();
+        var first = await CreateAsync(h, "ebook", "First", "A");
+        var second = await CreateAsync(h, "ebook", "Second", "B");
+        await CreateAsync(h, "ebook", "Unread", "C");
+        await h.Service.UpdateBookAsync(new(Client, "fin-1", first, IsFinished: true));
+        await Task.Delay(5);
+        await h.Service.UpdateBookAsync(new(Client, "fin-2", second, IsFinished: true));
+
+        (await GetAsync(h, first)).LastReadAt.Should().NotBeNull("finishing is reading it last");
+        (await GroupedAsync(h, BookFilter.All, BookSort.RecentlyFinished)).Select(b => b.Title)
+            .Should().Equal("Second", "First", "Unread");
+
+        var date = new DateTime(2020, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+        await h.Service.UpdateBookAsync(new(Client, "fin-edit", second, FinishedAt: date));
+        (await GetAsync(h, second)).FinishedAt.Should().Be(date);
+        (await GroupedAsync(h, BookFilter.All, BookSort.RecentlyFinished)).Select(b => b.Title)
+            .Should().Equal("First", "Second", "Unread");
     }
 
     [Fact]

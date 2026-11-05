@@ -80,10 +80,12 @@ internal sealed class LibraryReadService(
                 : query.Where(b => b.Progress.FinishedAt != null),
             BookFilter.Reading => byWork
                 ? WorkReadingStatus.WhereReading(query, db)
-                : query.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0),
+                : query.Where(b => b.Progress.FinishedAt == null
+                    && (b.Progress.ProgressPercent > 0 || b.Progress.LastLocation != null)),
             BookFilter.NotStarted => byWork
                 ? WorkReadingStatus.WhereNotStarted(query, db)
-                : query.Where(b => b.Progress.ProgressPercent == 0),
+                : query.Where(b => b.Progress.FinishedAt == null
+                    && b.Progress.ProgressPercent == 0 && b.Progress.LastLocation == null),
             BookFilter.Unsorted => query.Where(b =>
                 !db.BookCollections.Any(bc => bc.BookId == b.Id)),
             _ => query,
@@ -156,11 +158,15 @@ internal sealed class LibraryReadService(
                     b.CreatedAt,
                     b.Progress.LastReadAt,
                     b.Progress.ProgressPercent,
-                    b.Work!.Rating))
+                    b.Work!.Rating,
+                    b.Progress.FinishedAt))
                 .ToListAsync(ct);
 
             var primaries = SortGroupedBooks(
-                    candidates.GroupBy(c => c.WorkId).Select(SelectPrimaryEdition),
+                    candidates.GroupBy(c => c.WorkId).Select(g =>
+                        // The work's latest finish, whichever edition holds it: what
+                        // "Recently finished" ranks the work by.
+                        SelectPrimaryEdition(g) with { FinishedAt = g.Max(c => c.FinishedAt) }),
                     sort)
                 .ToList();
             totalCount = primaries.Count;
@@ -223,6 +229,10 @@ internal sealed class LibraryReadService(
                 BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Work!.Rating),
                 BookSort.LastRead => ImportingFirst(query)
                     .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
+                    .ThenByDescending(b => b.Progress.LastReadAt),
+                BookSort.RecentlyFinished => ImportingFirst(query)
+                    .ThenByDescending(b => b.Progress.FinishedAt.HasValue)
+                    .ThenByDescending(b => b.Progress.FinishedAt)
                     .ThenByDescending(b => b.Progress.LastReadAt),
                 _ => ImportingFirst(query).ThenByDescending(b => b.CreatedAt),
             };
@@ -634,7 +644,8 @@ internal sealed class LibraryReadService(
         DateTime CreatedAt,
         DateTime? LastReadAt,
         int ProgressPercent,
-        int Rating);
+        int Rating,
+        DateTime? FinishedAt);
 
     /// <summary>
     /// The edition that stands for a work in the list.
@@ -662,6 +673,12 @@ internal sealed class LibraryReadService(
             BookSort.Rating => ImportingFirst(books).ThenByDescending(b => b.Rating).ThenBy(b => b.Id),
             BookSort.LastRead => ImportingFirst(books)
                 .ThenByDescending(b => b.LastReadAt.HasValue)
+                .ThenByDescending(b => b.LastReadAt)
+                .ThenBy(b => b.Id),
+            // The representing edition carries the work's latest finish.
+            BookSort.RecentlyFinished => ImportingFirst(books)
+                .ThenByDescending(b => b.FinishedAt.HasValue)
+                .ThenByDescending(b => b.FinishedAt)
                 .ThenByDescending(b => b.LastReadAt)
                 .ThenBy(b => b.Id),
             _ => ImportingFirst(books).ThenByDescending(b => b.CreatedAt).ThenBy(b => b.Id),

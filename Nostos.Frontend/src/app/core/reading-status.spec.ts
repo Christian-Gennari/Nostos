@@ -41,7 +41,12 @@ describe('book reading status across editions', () => {
   it('is Finished when one edition is finished, even if the others were never opened', () => {
     const finished = { ...epub, progressPercent: 100, finishedAt: '2026-10-01T00:00:00Z' };
     expect(bookReadingStatusOf(audio, [finished]).status).toBe('finished');
-    expect(bookReadingStatusOf(finished, [audio])).toEqual({ status: 'finished', percent: null, percentEditionId: null });
+    expect(bookReadingStatusOf(finished, [audio])).toEqual({
+      status: 'finished',
+      percent: null,
+      percentEditionId: null,
+      finishedAt: '2026-10-01T00:00:00Z',
+    });
   });
 
   it('is Finished, not Reading, when an old partial listen came before the finish', () => {
@@ -55,6 +60,21 @@ describe('book reading status across editions', () => {
     const reread = { ...audio, progressPercent: 34, lastReadAt: '2026-10-01T00:00:00Z' };
     expect(bookReadingStatusOf(finished, [reread])).toEqual({ status: 'reading', percent: 34, percentEditionId: 'audio' });
     expect(bookReadingStatusOf(reread, [finished])).toMatchObject({ status: 'reading', percent: 34 });
+  });
+
+  it('the audiobook finished and a physical page set later is Reading only, with no made-up figure', () => {
+    const m4b = { ...audio, progressPercent: 100, finishedAt: '2026-10-01T00:00:00Z', lastReadAt: '2026-10-01T00:00:00Z' };
+    const paper = { id: 'paper', type: 'physical', pageCount: null, progressPercent: 1, hasPlace: true, lastReadAt: '2026-10-05T00:00:00Z' };
+    expect(bookReadingStatusOf(m4b, [paper])).toEqual({ status: 'reading', percent: null, percentEditionId: 'paper' });
+    // Each edition's own page asks about itself alone.
+    expect(bookReadingStatusOf(m4b).status).toBe('finished');
+    expect(bookReadingStatusOf({ ...paper, lastLocation: '{"page":40}' }).status).toBe('reading');
+    expect(bookReadingStatusOf({ id: 'p2', type: 'physical', progressPercent: 0 }).status).toBe('notstarted');
+  });
+
+  it('a saved place in a sibling edition counts as progress', () => {
+    const place = { id: 'paper', hasPlace: true, progressPercent: 0 };
+    expect(bookReadingStatusOf(epub, [place]).status).toBe('reading');
   });
 
   it('does not count an unfinished edition with no read date as a reread', () => {

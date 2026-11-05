@@ -1,6 +1,7 @@
 import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { InputDirective } from '../ui/form-control/form-control.directive';
 import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -105,6 +106,7 @@ interface StatusConfirmCopy {
   standalone: true,
   selector: 'app-book-detail',
   imports: [
+    InputDirective,
     CommonModule,
     FormsModule,
     RouterLink,
@@ -385,12 +387,11 @@ export class BookDetail implements OnInit, OnDestroy {
   readonly newNoteReady = computed(() => !draftIsEmpty({ words: this.newNote(), topics: [...this.newNoteTopics()] }));
 
   /**
-   * The book's reading status, worked out from all its editions (the Library's
-   * filters work it out the same way). Reading wins over Finished, so a reread
-   * shows as Reading; see `bookReadingStatusOf`.
+   * The status of the edition on this page, from its own progress alone. The
+   * Library lists a book by the status of all its editions together; this page
+   * says where this copy stands (see `bookReadingStatusOf`).
    */
-  private readonly bookStatus = computed(() =>
-    bookReadingStatusOf(this.store.book(), this.store.book()?.otherEditions));
+  private readonly bookStatus = computed(() => bookReadingStatusOf(this.store.book()));
 
   /** The status chip's label and colour. */
   readonly readingStatus = computed<{ label: string; modifier: string }>(() => {
@@ -534,15 +535,30 @@ export class BookDetail implements OnInit, OnDestroy {
    *  "Finished · 100%" would say the same thing twice. It is the edition on
    *  screen's when that one is being read, else the one read most recently. */
   readonly statusDetail = computed(() => {
-    const book = this.store.book();
-    const { status, percent, percentEditionId } = this.bookStatus();
-    // A paper book without a page count has a page, not a percentage: its 1%
-    // only exists so the Library counts it as Reading (issue #1091).
-    if (book?.type === 'physical' && !book.pageCount && this.paperPage() !== null && percentEditionId === book.id) {
-      return null;
-    }
+    const { status, percent } = this.bookStatus();
     return status === 'reading' && percent ? `${percent}%` : null;
   });
+
+  /** The day this edition was finished (yyyy-mm-dd, local), or null. */
+  readonly finishedDate = computed(() => {
+    const at = this.store.book()?.finishedAt;
+    if (!at) return null;
+    const d = new Date(at);
+    if (Number.isNaN(d.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+
+  /** Today (yyyy-mm-dd, local): the date picker's latest day. */
+  readonly today = (() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  })();
+
+  onFinishedDateChange(value: string): void {
+    this.store.setFinishedDate(value);
+  }
 
   // --- PAPER BOOK PAGE (issue #1091) ---
 

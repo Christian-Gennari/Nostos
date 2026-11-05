@@ -54,7 +54,11 @@ public record EditionSummaryDto(
     // APPENDED. This edition's OWN rating and review, an exception to the
     // book's (BookDto.Rating / PersonalReview). 0 / null means none.
     int Rating = 0,
-    string? PersonalReview = null
+    string? PersonalReview = null,
+    // APPENDED. True when the edition has a saved place (a paper book's page
+    // has no percentage without a page count), so a client can tell the
+    // edition is in progress without the location itself.
+    bool HasPlace = false
 );
 
 public record BookDto(

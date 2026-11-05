@@ -214,6 +214,9 @@
               <!-- Phones hide the Author column, so the row names the author
                    under the title instead (desktop hides this line). -->
               <span class="list-book-author">{{ book.author || unknownAuthor }}</span>
+              @if (statusLine(book); as line) {
+              <span class="list-book-status">{{ line }}</span>
+              }
 
               <!-- Import state, in the row the book will keep. The bar sits inside
                    the existing row height (measured: 63px desktop / 79px mobile
@@ -493,6 +496,9 @@
             <nostos-icon name="heart" weight="fill" [size]="13" class="meta-mark meta-mark--favorite" label="Favourite"></nostos-icon>
             }
           </div>
+          @if (statusLine(book); as line) {
+          <div class="meta-status">{{ line }}</div>
+          }
 
           <!-- A failed import explains itself on the card, not in a `title`
                tooltip: no phone can show a tooltip, and "Failed" alone says

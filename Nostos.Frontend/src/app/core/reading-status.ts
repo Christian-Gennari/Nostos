@@ -42,6 +42,8 @@ export interface BookReadingStatus {
   percent: number | null;
   /** The edition that figure comes from. */
   percentEditionId: string | null;
+  /** The latest finish across the editions, when the status is Finished. */
+  finishedAt?: string | null;
 }
 
 /** An edition as the book-level status reads it. */
@@ -51,20 +53,26 @@ interface StatusEdition {
   lastReadAt?: string | null;
   progressPercent?: number | null;
   lastLocation?: string | null;
+  /** A saved place, for an edition whose location is not sent (an edition summary). */
+  hasPlace?: boolean;
+  /** A paper book without a page count has a page, not a percentage. */
+  type?: string;
+  pageCount?: number | null;
 }
 
 /**
  * A book's status from all its editions. Reading status is never stored; the
  * Library's filters and counts work it out the same way.
  *
- * - Finished: any edition is finished.
- * - Reading: an unfinished edition has progress and either nothing is finished
- *   or it was read after the latest finish (a reread). A book can be Reading
- *   and Finished at once.
+ * A book has exactly one status, the same one the server gives it:
+ * - Reading: an unfinished edition has progress (a percentage or a saved
+ *   place) and either nothing is finished or it was read after the latest
+ *   finish (a reread).
+ * - Finished: any edition is finished and none was read after it.
  * - Not started: no edition has progress or a finish.
  *
- * The page's pill shows Reading when it holds, else Finished, else Not started.
- * A single edition gives the same answer as {@link readingStatusOf}.
+ * A single edition gives the same answer as {@link readingStatusOf}. A book's
+ * own page asks about its edition alone (no other editions).
  */
 export function bookReadingStatusOf(
   book: (StatusEdition & { id: string }) | null | undefined,
@@ -76,7 +84,7 @@ export function bookReadingStatusOf(
   // The edition on screen also counts a saved place as progress (a paper
   // book's page, before it has a percentage).
   const hasProgress = (edition: StatusEdition) =>
-    (edition.progressPercent ?? 0) > 0 || (edition === book && !!edition.lastLocation);
+    (edition.progressPercent ?? 0) > 0 || !!edition.lastLocation || !!edition.hasPlace;
 
   const readAt = (edition: StatusEdition) => Date.parse(edition.lastReadAt ?? '') || 0;
   const times = editions.flatMap((edition) => (edition.finishedAt ? [Date.parse(edition.finishedAt)] : []));
@@ -94,9 +102,15 @@ export function bookReadingStatusOf(
     const shown = inProgress.includes(book)
       ? book
       : inProgress.reduce((latest, edition) => (readAt(edition) > readAt(latest) ? edition : latest));
-    const percent = Math.round(shown.progressPercent ?? 0);
+    // A paper book without a page count has no honest figure (older saves
+    // stored 1%), only its page.
+    const noFigure = shown.type === 'physical' && !shown.pageCount;
+    const percent = noFigure ? 0 : Math.round(shown.progressPercent ?? 0);
     return { status: 'reading', percent: percent > 0 ? percent : null, percentEditionId: shown.id ?? null };
   }
-  if (anyFinished) return { status: 'finished', percent: null, percentEditionId: null };
+  if (anyFinished) {
+    const finishedAt = editions.find((edition) => edition.finishedAt && Date.parse(edition.finishedAt) === latestFinish)?.finishedAt ?? null;
+    return { status: 'finished', percent: null, percentEditionId: null, finishedAt };
+  }
   return { status: 'notstarted', percent: null, percentEditionId: null };
 }
