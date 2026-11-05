@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Nostos.Backend.Configuration;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services;
@@ -23,12 +24,46 @@ public class BackupSettingsProvider
     };
 
     public BackupSettingsProvider(IWebHostEnvironment env, IOptions<BackupSettings> defaults,
-        ILibraryMaintenanceCoordinator? maintenance = null)
+        ILibraryMaintenanceCoordinator? maintenance = null, IConfiguration? configuration = null)
     {
         Maintenance = maintenance ?? new LibraryMaintenanceCoordinator();
-        _filePath = Path.Combine(env.ContentRootPath, "backup-settings.json");
+        _filePath = ResolveSettingsPath(
+            configuration?[PersistenceRegistration.DatabasePathConfigurationKey], env.ContentRootPath);
+        MigrateLegacyFile(Path.Combine(env.ContentRootPath, FileName), _filePath);
         _defaults = defaults.Value;
         _current = LoadFromFile() ?? CloneDefaults();
+    }
+
+    private const string FileName = "backup-settings.json";
+
+    /// <summary>
+    /// The settings live beside the database (the data volume in Docker), so
+    /// they survive a container being recreated. Unset, that is the content
+    /// root, the historical location.
+    /// </summary>
+    public static string ResolveSettingsPath(string? configuredDatabasePath, string contentRootPath)
+    {
+        var dbPath = PersistenceRegistration.ResolveDatabasePath(configuredDatabasePath, contentRootPath);
+        return Path.Combine(Path.GetDirectoryName(dbPath) ?? contentRootPath, FileName);
+    }
+
+    // Installs that stored the file in the app folder keep their settings: the
+    // old file is moved over once, only when the new location has none yet.
+    private static void MigrateLegacyFile(string legacyPath, string newPath)
+    {
+        try
+        {
+            if (Path.GetFullPath(legacyPath) == Path.GetFullPath(newPath)
+                || File.Exists(newPath) || !File.Exists(legacyPath))
+                return;
+            Directory.CreateDirectory(Path.GetDirectoryName(newPath)!);
+            File.Copy(legacyPath, newPath);
+            File.Delete(legacyPath);
+        }
+        catch
+        {
+            // Best effort: defaults apply if the old file cannot be moved.
+        }
     }
 
     public BackupSettings Current
@@ -120,6 +155,7 @@ public class BackupSettingsProvider
         var tmpPath = _filePath + ".tmp";
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
             File.WriteAllText(tmpPath, json);
             File.Move(tmpPath, _filePath, overwrite: true);
         }
