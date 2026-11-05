@@ -376,6 +376,27 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task Update_with_topics_keeps_or_drops_a_link_the_text_never_declared()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var kept = await SeedNoteAsync(h, book.Id, "a note");
+        var dropped = await SeedNoteAsync(h, book.Id, "another note");
+        var old = await SeedTopicAsync(h, "older");
+        h.Db.NoteTopics.Add(new NoteTopicModel { NoteId = kept.Id, TopicId = old.Id });
+        h.Db.NoteTopics.Add(new NoteTopicModel { NoteId = dropped.Id, TopicId = old.Id });
+        await h.Db.SaveChangesAsync();
+
+        var keep = await h.Service.UpdateAsync(kept.Id, new UpdateNoteDto("a note", Topics: ["older"]));
+        var drop = await h.Service.UpdateAsync(dropped.Id, new UpdateNoteDto("another note", Topics: []));
+
+        keep.Value!.Content.Should().Be("a note\n\n[[older]]");
+        drop.Value!.Content.Should().Be("another note");
+        (await h.Db.NoteTopics.Select(l => l.NoteId).ToListAsync()).Should().Equal(kept.Id);
+    }
+
+    [Fact]
     public async Task Update_without_topics_sends_the_whole_text_as_before()
     {
         var h = CreateHarness();

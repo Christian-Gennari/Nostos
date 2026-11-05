@@ -542,8 +542,10 @@ public sealed class NoteService : INoteService
         if (dto.Topics is not null)
             existing.Content = TopicReferences.AppendAll(existing.Content, dto.Topics);
 
-        // Re-process topics (the processor clears old links then re-adds).
-        await _processor.ProcessNoteAsync(existing);
+        // Re-process topics (the processor clears old links then re-adds). An
+        // edit that sent its topics sent all of them: an old link the text
+        // never declared was shown as a pill, and one left out was removed.
+        await _processor.ProcessNoteAsync(existing, textIsComplete: dto.Topics is not null);
 
         await _notes.SaveChangesAsync();
 
