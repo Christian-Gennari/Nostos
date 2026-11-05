@@ -17,6 +17,8 @@ namespace Nostos.Backend.Services.Notes.Imports;
 public sealed class HighlightImportService
 {
     public const string Remembered = "remembered";
+    // How much of a highlight the review step carries; the import keeps all of it.
+    private const int SnippetLength = 400;
     private const string KoboClientId = "kobo-import";
     private const string KindleClientId = "kindle-import";
     private const string ReadwiseClientId = "readwise-import";
@@ -57,9 +59,15 @@ public sealed class HighlightImportService
             }
 
             var target = bookId ?? candidates.FirstOrDefault()?.BookId;
-            var newCount = target is null
-                ? sourceBook.Annotations.Count
-                : (await PlanAsync(source, sourceBook, target.Value, ct)).Count(entry => entry.IsNew);
+            var plan = target is null ? null : await PlanAsync(source, sourceBook, target.Value, ct);
+            var newCount = plan is null ? sourceBook.Annotations.Count : plan.Count(entry => entry.IsNew);
+            var highlights = sourceBook.Annotations
+                .Select((annotation, index) => new HighlightImportPreviewHighlight(
+                    index,
+                    Truncate(annotation.Text, SnippetLength),
+                    Truncate(annotation.Note, SnippetLength),
+                    plan is null || plan[index].IsNew))
+                .ToList();
 
             books.Add(new HighlightImportPreviewBook(
                 sourceBook.SourceKey,
@@ -70,7 +78,8 @@ public sealed class HighlightImportService
                 match,
                 bookId,
                 candidates,
-                sourceBook.Notice));
+                sourceBook.Notice,
+                highlights));
         }
 
         return new HighlightImportPreview(source, books, skipped);
@@ -100,12 +109,23 @@ public sealed class HighlightImportService
         var added = new List<NoteImportBatchNote>();
         var results = new List<HighlightImportResultBook>(sourceBooks.Count);
 
-        foreach (var sourceBook in sourceBooks)
+        foreach (var fullBook in sourceBooks)
         {
-            bySourceKey.TryGetValue(sourceBook.SourceKey, out var decision);
+            bySourceKey.TryGetValue(fullBook.SourceKey, out var decision);
             if (decision is null || (decision.BookId is null && !decision.Create))
             {
-                results.Add(Skipped(sourceBook, null));
+                results.Add(Skipped(fullBook, null));
+                continue;
+            }
+
+            // Highlights the owner unticked in the review are never read again.
+            var excluded = decision.ExcludedHighlights?.ToHashSet() ?? [];
+            var sourceBook = excluded.Count == 0
+                ? fullBook
+                : fullBook with { Annotations = fullBook.Annotations.Where((_, index) => !excluded.Contains(index)).ToList() };
+            if (sourceBook.Annotations.Count == 0)
+            {
+                results.Add(Skipped(sourceBook, "Every highlight was left out."));
                 continue;
             }
 
@@ -203,6 +223,7 @@ public sealed class HighlightImportService
                     NoteId = result.Value!.Id,
                     ClientId = entry.ClientId,
                     IdempotencyKey = entry.Key,
+                    CreatedBookId = created ? book.Id : null,
                 });
                 imported++;
             }
@@ -295,8 +316,9 @@ public sealed class HighlightImportService
     }
 
     /// <summary>
-    /// Removes the notes an import created. Books it added and the remembered
-    /// book links stay: both are the owner's decisions, not the import's notes.
+    /// Removes the notes an import created, and the books it added when nothing
+    /// else has come to them since: no other note, no file. The remembered book
+    /// links of a removed book go with it; the others stay.
     /// </summary>
     public async Task<int?> UndoAsync(Guid batchId, CancellationToken ct = default)
     {
@@ -321,7 +343,36 @@ public sealed class HighlightImportService
 
         _db.NoteImportBatches.Remove(batch);
         await _db.SaveChangesAsync(ct);
+
+        await RemoveCreatedBooksAsync(entries, ct);
         return entries.Count;
+    }
+
+    private async Task RemoveCreatedBooksAsync(IReadOnlyList<NoteImportBatchNote> entries, CancellationToken ct)
+    {
+        // The notes are gone by now; each entry remembers the book its import added.
+        var bookIds = entries
+            .Where(entry => entry.CreatedBookId is not null)
+            .Select(entry => entry.CreatedBookId!.Value)
+            .Distinct()
+            .ToList();
+        foreach (var bookId in bookIds)
+        {
+            var book = await _db.Books
+                .AsNoTracking()
+                .Where(candidate => candidate.Id == bookId)
+                .Select(candidate => new { IsPhysical = candidate is PhysicalBookModel, candidate.FileDetails.FileName })
+                .FirstOrDefaultAsync(ct);
+            if (book is null || !book.IsPhysical || !string.IsNullOrEmpty(book.FileName))
+                continue;
+            if (await _db.Notes.AnyAsync(note => note.BookId == bookId, ct))
+                continue;
+
+            _db.NoteImportBookLinks.RemoveRange(
+                await _db.NoteImportBookLinks.Where(link => link.BookId == bookId).ToListAsync(ct));
+            await _db.SaveChangesAsync(ct);
+            await _library.DeleteBookAsync(bookId, ct);
+        }
     }
 
     /// <summary>

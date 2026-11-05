@@ -28,6 +28,8 @@ import { DropZoneComponent } from '../drop-zone/drop-zone.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
 import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../../core/book-format';
+import { ConfirmModal } from '../confirm-modal/confirm-modal.component';
+import { CheckboxDirective } from '../check/check.directive';
 import { ChoiceRowComponent } from '../choice-row/choice-row.component';
 import { plural } from '../../core/format';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
@@ -48,6 +50,10 @@ export interface ReviewRow {
   /** The server's best guess, shown as a question until answered. */
   suggestion: HighlightImportCandidate | null;
   target: ImportTarget | null;
+  /** Highlights the owner unticked, by index. */
+  excluded: ReadonlySet<number>;
+  /** Whether the row lists its highlights. */
+  expanded: boolean;
 }
 
 interface FileFailure {
@@ -78,6 +84,8 @@ export interface UnimportableEntry extends HighlightImportSkipped {
   standalone: true,
   imports: [
     EmptyStateComponent,
+    ConfirmModal,
+    CheckboxDirective,
     ChoiceRowComponent,
     SearchFieldComponent,
     LoadingIndicatorComponent,
@@ -130,7 +138,10 @@ export class HighlightImportModal {
   readonly toCheck = computed(() => this.rows().filter((row) => row.book.match === 'suggested'));
   readonly missing = computed(() => this.rows().filter((row) => row.book.match === 'none'));
 
-  readonly included = computed(() => this.rows().filter((row) => row.target !== null));
+  // A book whose every highlight is unticked has nothing left to import.
+  readonly included = computed(() =>
+    this.rows().filter((row) => row.target !== null && !this.allExcluded(row)),
+  );
   readonly unanswered = computed(
     () => this.toCheck().filter((row) => row.target === null && row.suggestion !== null).length,
   );
@@ -355,9 +366,34 @@ export class HighlightImportModal {
    */
   rowCount(row: ReviewRow): number {
     const proposed = row.book.bookId ?? row.book.candidates[0]?.bookId ?? null;
-    return row.target?.kind === 'book' && row.target.bookId === proposed
-      ? row.book.newCount
-      : row.book.annotationCount;
+    const isProposed = row.target?.kind === 'book' && row.target.bookId === proposed;
+    const highlights = row.book.highlights;
+    if (!highlights?.length) return isProposed ? row.book.newCount : row.book.annotationCount;
+    return highlights.filter((h) => !row.excluded.has(h.index) && (!isProposed || h.isNew)).length;
+  }
+
+  /** What the row's heading says: all of them, or "2 of 6" once some are left out. */
+  highlightLabel(row: ReviewRow): string {
+    const total = row.book.annotationCount;
+    const kept = total - row.excluded.size;
+    return row.excluded.size === 0 ? this.count(total, 'highlight') : `${kept} of ${total} highlights`;
+  }
+
+  toggleExpanded(row: ReviewRow): void {
+    this.patch(row, { expanded: !row.expanded });
+  }
+
+  /** Ticks or unticks one highlight of a book. */
+  setHighlight(row: ReviewRow, index: number, keep: boolean): void {
+    const excluded = new Set(this.rows().find((r) => r.id === row.id)?.excluded ?? row.excluded);
+    if (keep) excluded.delete(index);
+    else excluded.add(index);
+    this.patch(row, { excluded });
+  }
+
+  private allExcluded(row: ReviewRow): boolean {
+    const total = row.book.highlights?.length ?? 0;
+    return total > 0 && row.excluded.size >= total;
   }
 
   backToPick(): void {
@@ -380,11 +416,16 @@ export class HighlightImportModal {
 
       const decisions: HighlightImportDecision[] = this.rows()
         .filter((row) => row.file === file && row.target !== null)
-        .map((row) =>
-          row.target!.kind === 'create'
-            ? { sourceKey: row.book.sourceKey, create: true }
-            : { sourceKey: row.book.sourceKey, bookId: row.target!.bookId },
-        );
+        .filter((row) => !this.allExcluded(row))
+        .map((row): HighlightImportDecision => {
+          const decision: HighlightImportDecision =
+            row.target!.kind === 'create'
+              ? { sourceKey: row.book.sourceKey, create: true }
+              : { sourceKey: row.book.sourceKey, bookId: row.target!.bookId };
+          if (row.excluded.size > 0) decision.excludedHighlights = [...row.excluded].sort((a, b) => a - b);
+          return decision;
+        });
+      if (decisions.length === 0) continue;
 
       try {
         const result = await firstValueFrom(
@@ -403,6 +444,37 @@ export class HighlightImportModal {
   }
 
   // --- Result -------------------------------------------------------------
+
+  /** What the confirmation is about, while it is open: this import, or one from the list. */
+  readonly pendingUndo = signal<{ batch: HighlightImportBatch | null } | null>(null);
+  readonly undoDescription = computed(() => {
+    const batch = this.pendingUndo()?.batch;
+    const noun = batch ? this.count(batch.noteCount, 'highlight') : this.count(this.importedCount(), 'highlight');
+    return (
+      `${noun} will be removed. A book this import added to your library is removed too, ` +
+      'unless it has other notes or a file.'
+    );
+  });
+
+  askUndoImport(): void {
+    if (!this.undoing() && this.batchIds().length > 0) this.pendingUndo.set({ batch: null });
+  }
+
+  askUndoRecent(batch: HighlightImportBatch): void {
+    if (!this.undoing()) this.pendingUndo.set({ batch });
+  }
+
+  cancelUndo(): void {
+    this.pendingUndo.set(null);
+  }
+
+  async confirmUndo(): Promise<void> {
+    const pending = this.pendingUndo();
+    if (!pending) return;
+    if (pending.batch) await this.undoRecent(pending.batch);
+    else await this.undoImport();
+    this.pendingUndo.set(null);
+  }
 
   /** Takes back everything this import just added. */
   async undoImport(): Promise<void> {
@@ -514,6 +586,8 @@ export class HighlightImportModal {
       book,
       suggestion: decided ? null : best,
       target: decided && best ? this.bookTarget(best) : null,
+      excluded: new Set<number>(),
+      expanded: false,
     };
   }
 

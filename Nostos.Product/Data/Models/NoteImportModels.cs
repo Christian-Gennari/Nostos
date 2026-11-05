@@ -52,4 +52,8 @@ public class NoteImportBatchNote
 
     [MaxLength(128)]
     public string IdempotencyKey { get; set; } = string.Empty;
+
+    // Set when the import added this note's book to the library, so undoing the
+    // import can take the book back when nothing else has come to it.
+    public Guid? CreatedBookId { get; set; }
 }
