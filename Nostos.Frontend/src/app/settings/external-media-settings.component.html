@@ -54,7 +54,7 @@
           }
         } @else if (summary(); as found) {
           Last scan found {{ count(found.discovered, 'book') }}: {{ found.ready }} ready,
-          {{ found.needsReview }} to check, {{ found.alreadyLinked }} already in Nostos.
+          {{ found.needsReview }} to check, {{ found.alreadyLinked }} already in Nostos@if (found.unusable > 0) {, {{ found.unusable }} cannot be imported}.
         } @else {
           Looks for audiobooks, EPUB and PDF files in the folder. Nothing is added until you have
           reviewed it.

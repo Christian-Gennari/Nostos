@@ -354,9 +354,20 @@ public static class ExternalMediaNaming
             title = candidate.Kind == ExternalMediaCandidate.Audiobook
                 ? description.Album ?? description.Title
                 : description.Title;
-            title ??= Path.GetFileNameWithoutExtension(ExternalMediaGrouper.FileNameOf(candidate.Location));
+            title ??= TitleFromFileName(candidate.Location);
         }
 
         return (string.IsNullOrWhiteSpace(title) ? "Untitled" : title, description.Author);
+    }
+
+    /// <summary>
+    /// A readable title from a file name when the file carries no tag: the
+    /// extension is dropped and underscores read as spaces.
+    /// </summary>
+    public static string TitleFromFileName(string relativePath)
+    {
+        var name = Path.GetFileNameWithoutExtension(ExternalMediaGrouper.FileNameOf(relativePath));
+        var spaced = System.Text.RegularExpressions.Regex.Replace(name.Replace('_', ' '), @"\s+", " ").Trim();
+        return spaced.Length > 0 ? spaced : name;
     }
 }
