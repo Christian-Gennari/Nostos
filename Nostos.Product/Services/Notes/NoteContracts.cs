@@ -127,7 +127,10 @@ public sealed record CaptureNoteRequest(
     string? ClientId = null,
     string? IdempotencyKey = null,
     // APPENDED (issue #861): the highlighter pen, by name.
-    string? HighlightColour = null);
+    string? HighlightColour = null,
+    // APPENDED (issue #1367): the note's own date, for an import that carries the
+    // source's. Null => now.
+    DateTime? CreatedAt = null);
 
 /// <summary>
 /// Read model for the note-review flow (issue #261): what the note says, which

@@ -139,7 +139,8 @@ internal static class HighlightImportSourceReader
                         "kobo_bookmark",
                         bookmark.BookmarkId,
                         bookmark.Text,
-                        bookmark.Annotation ?? string.Empty))
+                        bookmark.Annotation ?? string.Empty,
+                        CreatedAt: bookmark.CreatedAt))
                     .ToList()))
             .Where(book => book.Annotations.Count > 0)
             .ToList();
@@ -168,7 +169,8 @@ internal static class HighlightImportSourceReader
                 value,
                 text,
                 note,
-                KoreaderNoteImportService.EarlierShapes(annotation, text, note)));
+                KoreaderNoteImportService.EarlierShapes(annotation, text, note),
+                ImportDates.Iso(annotation.DateTime)));
         }
 
         return new ImportSourceBook(key, document.Title, document.Author, document.Isbn, annotations);

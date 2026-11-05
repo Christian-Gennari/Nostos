@@ -54,6 +54,8 @@ public sealed class KoreaderNoteImportEndpointTests
         notes.Should().Contain(note =>
             note.SelectedText == "A second synthetic highlight."
             && note.Content == string.Empty);
+        // The sidecar's `datetime` is the note's date, not the time of import (#1367).
+        notes.Should().OnlyContain(note => note.CreatedAt.Year == 2026 && note.CreatedAt.Month == 9);
     }
 
     [Fact]

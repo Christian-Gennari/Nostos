@@ -21,13 +21,14 @@ public sealed class ReadwiseCsvParserTests
 
         // A quoted field keeps its commas, its doubled quotes and its line break.
         books[0].Annotations.Should().Equal(
-            new ImportAnnotation("readwise_location", "5", "\"It is a truth\", she wrote,\nacross two lines.", "Opening line."),
-            new ImportAnnotation("readwise_location", "120", "A second synthetic highlight.", ""),
-            new ImportAnnotation("readwise_location", "130", null, "A note with no highlight."));
+            new ImportAnnotation("readwise_location", "5", "\"It is a truth\", she wrote,\nacross two lines.", "Opening line.", CreatedAt: At("2024-01-01T10:00:00")),
+            new ImportAnnotation("readwise_location", "120", "A second synthetic highlight.", "", CreatedAt: At("2024-01-01T10:05:00")),
+            new ImportAnnotation("readwise_location", "130", null, "A note with no highlight.", CreatedAt: At("2024-01-01T10:06:00")));
         books[0].Notice.Should().BeNull();
 
         books[1].Annotations.Single().Should().Be(
-            new ImportAnnotation("readwise_page", "88", "I went to the woods because I wished to live deliberately", ""));
+            new ImportAnnotation("readwise_page", "88", "I went to the woods because I wished to live deliberately", "", CreatedAt: books[1].Annotations.Single().CreatedAt));
+        books[1].Annotations.Single().CreatedAt.Should().NotBeNull();
 
         // Positioned by order with no Amazon id: perhaps an article, so flagged.
         books[2].Notice.Should().Be(ReadwiseCsvParser.ArticleNotice);
@@ -87,6 +88,34 @@ public sealed class ReadwiseCsvParserTests
 
         books.Should().ContainSingle().Which.Title.Should().Be("Book");
         skipped.Select(entry => entry.Reason).Should().Equal(ReadwiseCsvParser.UntitledReason, ReadwiseCsvParser.EmptyReason);
+    }
+
+    private static DateTime At(string utc) =>
+        DateTime.SpecifyKind(DateTime.Parse(utc, System.Globalization.CultureInfo.InvariantCulture), DateTimeKind.Utc);
+
+    [Fact]
+    public void Highlighted_at_is_read_as_utc_whatever_the_machine_culture_or_offset()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+        try
+        {
+            var csv = "Highlight,Book Title,Book Author,Amazon Book ID,Note,Location Type,Location,Highlighted at\n"
+                + "One,Walden,Thoreau,B00A,,location,1,2024-02-03 10:00:00+02:00\n"
+                + "Two,Walden,Thoreau,B00A,,location,2,2024-02-03T10:00:00Z\n"
+                + "Three,Walden,Thoreau,B00A,,location,3,2024-02-03 10:00:00\n"
+                + "Four,Walden,Thoreau,B00A,,location,4,not a date\n"
+                + "Five,Walden,Thoreau,B00A,,location,5,\n";
+
+            var (books, _) = ReadwiseCsvParser.Parse(csv);
+
+            books.Single().Annotations.Select(a => a.CreatedAt).Should().Equal(
+                At("2024-02-03T08:00:00"), At("2024-02-03T10:00:00"), At("2024-02-03T10:00:00"), null, null);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
     }
 
     private static string Fixture(string name) =>
