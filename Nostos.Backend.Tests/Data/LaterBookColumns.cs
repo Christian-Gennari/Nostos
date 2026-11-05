@@ -25,6 +25,7 @@ internal static class LaterBookColumns
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Notes\" ADD COLUMN \"HighlightColour\" TEXT NULL");
         await RestorePassageColumnsAsync(db);
+        await RestoreNoteUpdatedAtAsync(db);
         await RestoreTopicDescriptionAsync(db);
         await RestoreCoverVersionAsync(db);
         await RestoreTopicNormalizedNameAsync(db);
@@ -111,6 +112,14 @@ internal static class LaterBookColumns
     /// AddNotePassages (issue #1014): the passage columns the current model
     /// reads and writes on every note.
     /// </summary>
+    /// <summary>
+    /// AddNoteUpdatedAt (issue #1404): the note version the current model reads
+    /// and writes on every note.
+    /// </summary>
+    public static async Task RestoreNoteUpdatedAtAsync(NostosDbContext db) =>
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Notes\" ADD COLUMN \"UpdatedAt\" TEXT NULL");
+
     public static async Task RestorePassageColumnsAsync(NostosDbContext db)
     {
         await db.Database.ExecuteSqlRawAsync(

@@ -251,6 +251,8 @@ public static class NotesEndpoints
                 var result = await notes.UpdateAsync(id, dto);
                 if (result.Success)
                     return Results.Ok(result.Value);
+                if (result.ErrorCode == NoteErrorCodes.EditConflict)
+                    return Results.Json(result.Value, statusCode: StatusCodes.Status409Conflict);
                 return result.ErrorCode == NoteErrorCodes.NoteNotFound
                     ? Results.NotFound()
                     : Results.BadRequest(new { error = result.ErrorMessage });

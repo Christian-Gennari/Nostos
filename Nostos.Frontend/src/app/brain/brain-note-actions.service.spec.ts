@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 
 import type { Note, NoteSearchHit } from '../core/dtos/note.dtos';
@@ -53,6 +54,65 @@ describe('BrainNoteActionsService edit', () => {
     expect(toast.error).toHaveBeenCalledWith('Could not save the note. Try again.');
     expect(host.replace).not.toHaveBeenCalled();
     expect(host.edited).not.toHaveBeenCalled();
+    expect(service.busy().has('n1')).toBe(false);
+  });
+});
+
+describe('BrainNoteActionsService edit conflict (issue #1404)', () => {
+  const newer = { id: 'n1', content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' } as Note;
+  const hit = { id: 'n1', content: 'From the other tab' } as NoteSearchHit;
+  let service: BrainNoteActionsService;
+  let update: ReturnType<typeof vi.fn>;
+  let toast: { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn> };
+  const host = { replace: vi.fn(), remove: vi.fn(), edited: vi.fn() };
+  const conflict = () => throwError(() => new HttpErrorResponse({ status: 409, error: newer }));
+  const mine = { id: 'n1', content: 'Typed in this tab', baseUpdatedAt: '2026-01-01T00:00:00Z' };
+
+  beforeEach(() => {
+    host.replace.mockReset();
+    host.edited.mockReset();
+    update = vi.fn().mockReturnValue(conflict());
+    toast = { success: vi.fn(), error: vi.fn(), info: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        BrainNoteActionsService,
+        { provide: NotesService, useValue: { update, get: vi.fn().mockReturnValue(of(hit)) } },
+        { provide: TopicsService, useValue: {} },
+        { provide: ToastService, useValue: toast },
+        { provide: BrainStateService, useValue: { refresh: vi.fn() } },
+      ],
+    });
+    service = TestBed.inject(BrainNoteActionsService);
+    service.attach(host);
+  });
+
+  it('sends the version the edit started from, and on a 409 asks instead of failing', () => {
+    service.edit(mine);
+    expect(update).toHaveBeenCalledWith('n1', { content: 'Typed in this tab', baseUpdatedAt: '2026-01-01T00:00:00Z' });
+    expect(service.editConflict()?.theirs).toEqual(newer);
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(host.replace).not.toHaveBeenCalled();
+    expect(service.busy().has('n1')).toBe(false);
+  });
+
+  it('"Keep mine" saves the typed words over the newer note, based on the newer version', () => {
+    service.edit(mine);
+    update.mockReset();
+    update.mockReturnValue(of(newer));
+    service.keepMineAfterConflict();
+    expect(update).toHaveBeenCalledWith('n1', { content: 'Typed in this tab', baseUpdatedAt: '2026-09-09T00:00:00Z' });
+    expect(service.editConflict()).toBeNull();
+    expect(toast.success).toHaveBeenCalledWith('Note saved');
+  });
+
+  it('"Load the newer version" shows the newer note and puts the typed words on the clipboard', () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    service.edit(mine);
+    service.loadNewerAfterConflict();
+    expect(writeText).toHaveBeenCalledWith('Typed in this tab');
+    expect(host.replace).toHaveBeenCalledWith(hit);
+    expect(service.editConflict()).toBeNull();
     expect(service.busy().has('n1')).toBe(false);
   });
 });

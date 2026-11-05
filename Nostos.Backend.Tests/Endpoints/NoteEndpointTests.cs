@@ -232,6 +232,47 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     [Fact]
+    public async Task Update_note_with_a_stale_base_version_is_refused_with_409_and_the_current_note()
+    {
+        var book = await CreateBookAsync();
+        var note = await CreateNoteAsync(book.Id, "v0");
+        note.UpdatedAt.Should().NotBeNull("a note always carries a version");
+
+        var first = await Client.PutAsJsonAsync($"/api/notes/{note.Id}",
+            new UpdateNoteDto("tab one", BaseUpdatedAt: note.UpdatedAt));
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstSaved = (await first.Content.ReadFromJsonAsync<NoteDto>())!;
+        firstSaved.UpdatedAt.Should().BeAfter(note.UpdatedAt!.Value, "every write moves the version");
+
+        // The second tab still holds the version it loaded.
+        var stale = await Client.PutAsJsonAsync($"/api/notes/{note.Id}",
+            new UpdateNoteDto("tab two", BaseUpdatedAt: note.UpdatedAt));
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var current = (await stale.Content.ReadFromJsonAsync<NoteDto>())!;
+        current.Content.Should().Be("tab one", "the 409 carries the current note");
+        current.UpdatedAt.Should().Be(firstSaved.UpdatedAt);
+
+        (await Client.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.Content.Should().Be("tab one");
+
+        // Echoing the version it was given is accepted.
+        var ok = await Client.PutAsJsonAsync($"/api/notes/{note.Id}",
+            new UpdateNoteDto("tab one again", BaseUpdatedAt: firstSaved.UpdatedAt));
+        ok.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Update_note_without_a_base_version_still_overwrites_for_older_clients()
+    {
+        var book = await CreateBookAsync();
+        var note = await CreateNoteAsync(book.Id, "v0");
+        await Client.PutAsJsonAsync($"/api/notes/{note.Id}", new UpdateNoteDto("one"));
+
+        var second = await Client.PutAsJsonAsync($"/api/notes/{note.Id}", new UpdateNoteDto("two"));
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client.GetFromJsonAsync<NoteDto>($"/api/notes/{note.Id}"))!.Content.Should().Be("two");
+    }
+
+    [Fact]
     public async Task Update_note_recolours_a_highlight_and_lists_it_in_that_pen()
     {
         var book = await CreateBookAsync();
