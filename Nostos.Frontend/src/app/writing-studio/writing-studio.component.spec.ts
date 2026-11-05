@@ -1189,6 +1189,20 @@ describe('WritingStudio delete (no window.confirm)', () => {
       expect(writings.create).toHaveBeenCalledTimes(1);
     });
 
+    it('creates the new page in the folder chosen in the list', () => {
+      writings.create.mockReturnValue(
+        of({ id: 'new-2', name: 'Untitled document', type: 'Document', parentId: 'f1', updatedAt: '' }),
+      );
+      component.rootItems.set([{ id: 'f1', name: 'Essays', type: 'Folder', parentId: null } as never]);
+
+      component.handleItemSelected({ id: 'f1', name: 'Essays', type: 'Folder' });
+      expect(component.markedItemId()).toBe('f1');
+      component.createItem('Document');
+      component.onEditorChange('Words');
+
+      expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: 'f1' });
+    });
+
     it('renames a new folder in place and opens nothing', () => {
       writings.create.mockReturnValue(of({ id: 'f-1', name: 'Untitled folder', type: 'Folder' }));
 

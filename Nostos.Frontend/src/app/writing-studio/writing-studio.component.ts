@@ -261,6 +261,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
   blankPage = signal(false);
   /** The open writing takes its name from its first line until it is renamed. */
   private autoTitle = false;
+  /** The folder the blank page's writing will be created in. */
+  private blankParentId: string | null = null;
   private creatingFromBlank = false;
   /** Which blank page is showing; a new one (New, or leaving) bumps it. */
   private blankGeneration = 0;
@@ -335,6 +337,22 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   rootItems = signal<WritingDto[]>([]);
   activeItem = signal<WritingContentDto | null>(null);
+  /** The folder last chosen in the file list; New puts its page there. */
+  private readonly chosenFolderId = signal<string | null>(null);
+  /** Where a new page or folder goes: the chosen folder, else the open writing's folder, else the top. */
+  private readonly newItemParentId = computed<string | null>(() => {
+    const items = this.rootItems();
+    const folder = this.chosenFolderId();
+    if (folder && items.some((i) => i.id === folder && i.type === 'Folder')) return folder;
+    const open = this.activeItem()?.id;
+    return (open ? items.find((i) => i.id === open)?.parentId : null) ?? null;
+  });
+  /** The row marked in the file list: the chosen folder while one is, else the open writing. */
+  readonly markedItemId = computed<string | null>(() => {
+    const folder = this.chosenFolderId();
+    if (folder && this.rootItems().some((i) => i.id === folder)) return folder;
+    return this.activeItem()?.id ?? null;
+  });
 
   // --- What the writing touches (issue #1162) ---
   // Worked out from what the writing cites, read live from the editor's
@@ -891,6 +909,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
     // not dropped with the debounce the switch would cancel.
     const open = this.activeItem();
     if (open) void this.flushActiveWritingBeforeSource(open);
+    // Fixed now: the page is made later, when words arrive, and the open
+    // writing (whose folder this is) is gone by then.
+    this.blankParentId = this.newItemParentId();
     this.blankGeneration++;
     this.blankRetryAt = 0;
     this.activeItem.set(null);
@@ -918,7 +939,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const generation = this.blankGeneration;
     // Named on its first save, from its first line: at the first keystroke
     // the line is a single letter.
-    this.writingsService.create({ name: UNTITLED_DOCUMENT, type: 'Document', parentId: null }).subscribe({
+    this.writingsService.create({ name: UNTITLED_DOCUMENT, type: 'Document', parentId: this.blankParentId }).subscribe({
       next: (created) => {
         this.creatingFromBlank = false;
         if (generation !== this.blankGeneration || !this.blankPage()) {
@@ -928,6 +949,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
           return;
         }
         this.blankPageTexts.delete(generation);
+        this.chosenFolderId.set(null);
         // Empty server content: the nudge makes the save lane store the page.
         this.activeItem.set({ id: created.id, name: created.name, content: '', updatedAt: created.updatedAt });
         this.editorTitle.set(titleFromMarkdown(this.editorText()) || created.name);
@@ -1564,7 +1586,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   handleItemSelected(node: any) {
     const item = node as WritingDto;
-    if (item.type === 'Folder') return;
+    if (item.type === 'Folder') {
+      this.chosenFolderId.set(item.id);
+      return;
+    }
+    this.chosenFolderId.set(null);
 
     // Manual selection wins over any slower route-handoff request already in flight.
     this.handoffOpenGeneration++;
@@ -1591,6 +1617,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         }
         if (this.blankPage()) this.blankGeneration++;
         this.blankPage.set(false);
+        this.chosenFolderId.set(null);
         this.autoTitle = contentDto.name === UNTITLED_DOCUMENT;
         this.activeItem.set(contentDto);
         writeStudioValue(STUDIO_LAST_WRITING_KEY, contentDto.id);
@@ -1653,7 +1680,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.startBlankPage();
       return;
     }
-    this.writingsService.create({ name: 'Untitled folder', type, parentId: null }).subscribe({
+    this.writingsService.create({ name: 'Untitled folder', type, parentId: this.newItemParentId() }).subscribe({
       next: (created) => {
         // The file list is a slide-over; the rename field has to be on
         // screen to be typed into.

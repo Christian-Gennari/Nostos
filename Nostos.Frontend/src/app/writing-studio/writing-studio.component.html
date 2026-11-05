@@ -52,7 +52,7 @@
       } @else {
       <app-flat-tree
         [items]="rootItems()"
-        [activeId]="activeItem()?.id || null"
+        [activeId]="markedItemId()"
         [editingId]="editingId()"
         [renameError]="renameError()"
         [renameBusy]="renameBusy()"
