@@ -682,6 +682,57 @@ public sealed class HighlightImportEndpointTests : IDisposable
         (await db.NoteImportBatches.SingleAsync()).Source.Should().Be("readwise");
     }
 
+    [Fact]
+    public async Task The_same_highlight_from_another_source_is_already_in_nostos()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
+        var other = await CreateBookAsync(client, "Emma", "Jane Austen", type: "ebook");
+
+        var kindle = Path.Combine(_directory, "My Clippings.txt");
+        await File.WriteAllTextAsync(kindle,
+            "Pride and Prejudice (Austen, Jane)\n"
+            + "- Your Highlight on page 1 | Location 5-7 | Added on Monday, January 1, 2024 10:01:00 AM\n\n"
+            + "\u201CIt is a truth\u201D \u2014 the \uFB01rst \uFB02ourish   of the book.\n"
+            + "==========\n"
+            + "Pride and Prejudice (Austen, Jane)\n"
+            + "- Your Highlight on page 2 | Location 9-10 | Added on Monday, January 1, 2024 10:02:00 AM\n\n"
+            + "Only Kindle has this one.\n"
+            + "==========\n");
+        var readwise = Path.Combine(_directory, "readwise.csv");
+        await File.WriteAllTextAsync(readwise,
+            "Highlight,Book Title,Book Author,Amazon Book ID,Note,Color,Tags,Location Type,Location,Highlighted at,Document tags\n"
+            + "\"\"\"It is a truth\"\" - The FIRST flourish of the\nbook.\",Pride and Prejudice,Jane Austen,B00SYNTH01,A thought.,yellow,,location,5,2024-01-01 10:00:00+00:00,\n"
+            + "A passage only Readwise has.,Pride and Prejudice,Jane Austen,B00SYNTH01,,blue,,location,120,2024-01-01 10:05:00+00:00,\n");
+
+        var kindlePreview = await PreviewAsync(client, kindle);
+        var kindleBook = kindlePreview.Books.Single();
+        (await CommitAsync(client, kindle, new HighlightImportDecision(kindleBook.SourceKey, austen.Id)))
+            .Books.Single().ImportedCount.Should().Be(2);
+
+        var preview = await PreviewAsync(client, readwise);
+        var readwiseBook = preview.Books.Single();
+        readwiseBook.AnnotationCount.Should().Be(2);
+        readwiseBook.NewCount.Should().Be(1, "the first highlight is already there from Kindle");
+
+        var result = await CommitAsync(client, readwise, new HighlightImportDecision(readwiseBook.SourceKey, austen.Id));
+        var committed = result.Books.Single();
+        committed.ImportedCount.Should().Be(1);
+        committed.DuplicateCount.Should().Be(1);
+
+        await using var db = CreateContext(factory.DatabasePath);
+        var notes = await db.Notes.AsNoTracking().Where(note => note.BookId == austen.Id).ToListAsync();
+        notes.Should().HaveCount(3);
+        notes.Should().ContainSingle(note => note.SelectedText!.Contains("flourish", StringComparison.OrdinalIgnoreCase)
+            || note.SelectedText.Contains("\uFB02"));
+        notes.Should().NotContain(note => note.Content == "A thought.", "notes are never merged or copied");
+
+        // The same sentence in another book is a different highlight.
+        var elsewhere = await CommitAsync(client, readwise, new HighlightImportDecision(readwiseBook.SourceKey, other.Id));
+        elsewhere.Books.Single().ImportedCount.Should().Be(2);
+    }
+
     private const string Schema =
         """
             -- Column layout of Kobo firmware 4.38.23828 (the Bookmark table in

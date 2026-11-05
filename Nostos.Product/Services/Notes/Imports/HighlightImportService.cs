@@ -446,7 +446,67 @@ public sealed class HighlightImportService
             existing[identity] = Guid.Empty;
         }
 
+        // The same sentence arriving from another e-reader or app is not new
+        // either (#1369). Only notes already in the book count, so two equal
+        // passages inside one file stay as the file has them.
+        if (planned.Any(entry => entry.IsNew && !string.IsNullOrWhiteSpace(entry.Annotation.Text)))
+        {
+            var quoted = (await _db.Notes
+                    .AsNoTracking()
+                    .Where(note => note.BookId == bookId && note.SelectedText != null && note.SelectedText != "")
+                    .Select(note => note.SelectedText!)
+                    .ToListAsync(ct))
+                .Select(NormalizeQuote)
+                .ToHashSet(StringComparer.Ordinal);
+            for (var i = 0; i < planned.Count; i++)
+            {
+                var entry = planned[i];
+                if (entry.IsNew
+                    && !string.IsNullOrWhiteSpace(entry.Annotation.Text)
+                    && quoted.Contains(NormalizeQuote(entry.Annotation.Text)))
+                {
+                    planned[i] = entry with { IsNew = false };
+                }
+            }
+        }
+
         return planned;
+    }
+
+    /// <summary>
+    /// A quoted passage reduced to what the author wrote: compatibility forms
+    /// (the fi and fl ligatures) unfolded, curly quotes and dashes made plain,
+    /// whitespace collapsed and case ignored, so one highlight from Kindle,
+    /// Readwise and KOReader compares equal.
+    /// </summary>
+    internal static string NormalizeQuote(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        var pendingSpace = false;
+        foreach (var raw in text.Normalize(NormalizationForm.FormKC))
+        {
+            var c = raw switch
+            {
+                '\u2018' or '\u2019' or '\u201A' or '\u201B' or '\u2032' => '\'',
+                '\u201C' or '\u201D' or '\u201E' or '\u201F' or '\u2033' => '"',
+                '\u2010' or '\u2011' or '\u2012' or '\u2013' or '\u2014' or '\u2015' or '\u2212' => '-',
+                _ => raw,
+            };
+            if (c == '\u00AD' || c == '\u200B' || c == '\uFEFF')
+                continue;
+            if (char.IsWhiteSpace(c))
+            {
+                pendingSpace = builder.Length > 0;
+                continue;
+            }
+
+            if (pendingSpace)
+                builder.Append(' ');
+            pendingSpace = false;
+            builder.Append(char.ToLowerInvariant(c));
+        }
+
+        return builder.ToString();
     }
 
     private async Task RememberAsync(string source, string sourceKey, Guid bookId, CancellationToken ct)
