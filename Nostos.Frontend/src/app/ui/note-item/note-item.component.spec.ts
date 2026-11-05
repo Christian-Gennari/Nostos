@@ -112,7 +112,7 @@ describe('NoteItemComponent', () => {
     render();
     fixture.componentInstance.startEdit();
     fixture.detectChanges();
-    fixture.componentInstance.editContent.set('New words.');
+    fixture.componentInstance.editWords.set('New words.');
     fixture.componentInstance.saveEdit();
     fixture.componentRef.setInput('busy', true);
     fixture.detectChanges();
