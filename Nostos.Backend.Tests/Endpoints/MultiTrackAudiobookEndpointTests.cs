@@ -190,7 +190,7 @@ public sealed class MultiTrackAudiobookEndpointTests : IClassFixture<LibraryEndp
         var file = new ByteArrayContent([1, 2, 3, 4]);
         file.Headers.ContentType = new MediaTypeHeaderValue("audio/mpeg");
         form.Add(file, "file", "whole-book.mp3");
-        var upload = await Client.PostAsync($"/api/books/{id}/file", form);
+        var upload = await Client.PostAsync($"/api/books/{id}/file?replace=true", form);
         upload.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var book = await Client.GetFromJsonAsync<BookDto>($"/api/books/{id}");
