@@ -96,6 +96,7 @@ import {
   libronFaceUrls,
   libronFontFaceCss,
   marginInsetPercent,
+  markFloatedIllustrations,
   markGlyphElements,
   typographyCss,
   type EpubTypography,
@@ -130,6 +131,7 @@ export {
   fontFamilyFromStored,
   libronFontFaceCss,
   marginInsetPercent,
+  markFloatedIllustrations,
   markGlyphElements,
   typographyCss,
 } from './epub-typography';
@@ -2585,6 +2587,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.upsertTypographyStyle(contents.document);
     try {
       markGlyphElements(contents.document);
+      markFloatedIllustrations(contents.document);
       scaleAbsoluteFontSizes(contents.document);
     } catch {
       // A section mid-teardown has no stylesheets to read — skip it.

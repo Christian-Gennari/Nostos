@@ -13,6 +13,7 @@ import {
   fontFamilyFromStored,
   libronFontFaceCss,
   marginInsetPercent,
+  markFloatedIllustrations,
   markGlyphElements,
   progressLabel,
   resolveGroundedEpubResourceHref,
@@ -1190,6 +1191,35 @@ describe('typographyCss', () => {
     } finally {
       host.remove();
       nostos.remove();
+      publisher.remove();
+    }
+  });
+
+  it('takes publisher-floated illustrations out of the float on a narrow page only', () => {
+    const publisher = document.createElement('style');
+    publisher.textContent = '.floatl{float:left;margin-right:1em}';
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<img class="floatl" data-testid="img" alt="" width="40" height="40">' +
+      '<p class="floatl" data-testid="text">floated text without a picture</p>' +
+      '<p data-testid="plain">plain</p>';
+    document.head.append(publisher);
+    document.body.appendChild(host);
+    markFloatedIllustrations(document);
+
+    try {
+      const has = (id: string) =>
+        host.querySelector(`[data-testid="${id}"]`)!.hasAttribute('data-nostos-float');
+      expect(has('img')).toBe(true);
+      expect(has('text')).toBe(false);
+      expect(has('plain')).toBe(false);
+
+      for (const fontFamily of ['libron', 'publisher'] as const) {
+        const css = typographyCss({ fontFamily, lineHeight: 1.6, margin: 'normal' });
+        expect(css).toContain('@media (max-width:480px){[data-nostos-float]{float:none !important;');
+      }
+    } finally {
+      host.remove();
       publisher.remove();
     }
   });
