@@ -406,6 +406,27 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task Playback_rate_is_saved_with_the_position_and_kept_when_a_save_omits_it()
+    {
+        var h = Harness();
+        var created = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("audiobook", "Spoken", Key: "rate-1"), strictConfirmation: false);
+        var bookId = ((LibraryCreateOrMatchResultDto)created.Data!).BookId!.Value;
+        (await GetBookAsync(h, bookId)).PlaybackRate.Should().BeNull("no speed has been chosen");
+
+        await h.Service.UpdateProgressAsync(bookId, "120", 10, playbackRate: 1.35);
+        (await GetBookAsync(h, bookId)).PlaybackRate.Should().Be(1.35);
+
+        await h.Service.UpdateProgressAsync(bookId, "180", 15);
+        var kept = await GetBookAsync(h, bookId);
+        kept.PlaybackRate.Should().Be(1.35, "a position save without a speed leaves the saved one");
+        kept.LastLocation.Should().Be("180");
+
+        await h.Service.UpdateProgressAsync(bookId, "180", 15, playbackRate: 9);
+        (await GetBookAsync(h, bookId)).PlaybackRate.Should().Be(3, "the speed is clamped to the player's range");
+    }
+
+    [Fact]
     public async Task Paper_book_page_count_change_recomputes_the_percentage_without_touching_last_read()
     {
         var h = Harness();

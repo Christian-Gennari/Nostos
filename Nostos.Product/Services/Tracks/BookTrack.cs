@@ -42,6 +42,21 @@ public static class BookTrackList
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// The book's length as <c>HH:mm:ss</c>: the sum of its tracks. Players lay
+    /// the tracks end to end, so this is the length they play; a figure from a
+    /// provider's catalogue can differ by seconds. Null without tracks.
+    /// </summary>
+    public static string? FormatTotal(IReadOnlyList<BookTrack> tracks)
+    {
+        var totalMs = tracks.Sum(track => Math.Max(0, track.DurationMs));
+        if (totalMs <= 0)
+            return null;
+
+        var total = TimeSpan.FromSeconds(Math.Round(totalMs / 1000d));
+        return $"{(int)total.TotalHours:D2}:{total.Minutes:D2}:{total.Seconds:D2}";
+    }
+
     public static string Serialize(IReadOnlyList<BookTrack> tracks) =>
         JsonSerializer.Serialize(tracks, JsonOptions);
 

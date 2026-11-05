@@ -117,6 +117,9 @@ public sealed class PortableCompletenessInventoryTests
                     Excluded(
                         "BookModelId",
                         "EF Core owned entity shadow foreign key back to the owning book row; persistence detail."),
+                    Excluded(
+                        "PlaybackRate",
+                        "The speed an audiobook plays at, saved with its position; a listening preference, not library content, so an archive does not carry it."),
                 ]),
 
             ["FileInfoDetails"] = PortableEntity(

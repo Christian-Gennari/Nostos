@@ -188,7 +188,7 @@ public static class BooksEndpoints
             "/{id}/progress",
             async (Guid id, UpdateProgressDto dto, ILibraryService library, CancellationToken ct) =>
             {
-                var result = await library.UpdateProgressAsync(id, dto.Location, dto.Percentage, ct);
+                var result = await library.UpdateProgressAsync(id, dto.Location, dto.Percentage, dto.PlaybackRate, ct);
                 return LibraryHttpMapper.MapError(result) ?? Results.Ok(result.Data);
             }
         );

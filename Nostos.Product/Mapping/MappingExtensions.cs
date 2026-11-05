@@ -55,7 +55,7 @@ public static class MappingExtensions
             case AudioBookModel a:
                 type = "audiobook";
                 asin = a.Asin;
-                duration = a.Duration;
+                duration = BookTrackList.FormatTotal(BookTrackList.Parse(model.FileDetails.TracksJson)) ?? a.Duration;
                 narrator = a.Narrator;
                 break;
         }
@@ -157,7 +157,8 @@ public static class MappingExtensions
             Tracks: ToTrackDtos(model.FileDetails.TracksJson),
             CoverVersion: coverUrl is null ? null : model.FileDetails.CoverVersion,
             EditionRating: model.Progress.Rating,
-            EditionReview: model.Progress.PersonalReview
+            EditionReview: model.Progress.PersonalReview,
+            PlaybackRate: model.Progress.PlaybackRate
         );
     }
 
@@ -198,7 +199,9 @@ public static class MappingExtensions
             HasFile: model.FileDetails.HasFile,
             FileName: model.FileDetails.FileName,
             Narrator: (model as AudioBookModel)?.Narrator,
-            Duration: (model as AudioBookModel)?.Duration,
+            Duration: model is AudioBookModel audio
+                ? BookTrackList.FormatTotal(BookTrackList.Parse(model.FileDetails.TracksJson)) ?? audio.Duration
+                : null,
             Edition: model.Metadata.Edition,
             // The management UI names the book it will detach; the current
             // book's own title is NOT a valid substitute for a sibling's.

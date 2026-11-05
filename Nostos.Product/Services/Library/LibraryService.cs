@@ -107,6 +107,7 @@ public sealed partial class LibraryService : ILibraryService
         Guid bookId,
         string location,
         int percentage,
+        double? playbackRate = null,
         CancellationToken ct = default)
     {
         await using var db = await _contexts.CreateDbContextAsync(ct);
@@ -124,6 +125,9 @@ public sealed partial class LibraryService : ILibraryService
         var clamped = Math.Clamp(percentage, 0, 100);
         var lastLocation = string.IsNullOrWhiteSpace(location) ? null : location;
         var now = Now;
+        double? rate = playbackRate is { } requested && double.IsFinite(requested)
+            ? Math.Round(Math.Clamp(requested, 0.5, 3), 2)
+            : null;
 
         // Keep FinishedAt aligned with the percentage (regression fix: a
         // finished book that is read again becomes unfinished).
@@ -146,6 +150,8 @@ public sealed partial class LibraryService : ILibraryService
                     setters.SetProperty(b => b.Progress.LastLocation, lastLocation);
                     setters.SetProperty(b => b.Progress.ProgressPercent, clamped);
                     setters.SetProperty(b => b.Progress.LastReadAt, now);
+                    if (rate is not null)
+                        setters.SetProperty(b => b.Progress.PlaybackRate, rate);
                     if (finishedChanged)
                         setters.SetProperty(b => b.Progress.FinishedAt, finishedAt);
                 },

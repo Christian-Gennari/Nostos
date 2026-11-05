@@ -313,7 +313,7 @@ public sealed class BookTextSearchQueryCountTests(ITestOutputHelper output) : ID
         public Task<LibraryCommandResultDto> UpdateBookAsync(LibraryUpdateBookRequest request, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> LinkWorkAsync(LibraryLinkWorkRequest request, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> UnlinkWorkAsync(LibraryUnlinkWorkRequest request, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<LibraryCommandResultDto> UpdateProgressAsync(Guid bookId, string location, int percentage, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<LibraryCommandResultDto> UpdateProgressAsync(Guid bookId, string location, int percentage, double? playbackRate = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> ResetProgressAsync(Guid bookId, bool allEditions = false, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> DeleteBookAsync(Guid bookId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> SetBookStatusAsync(Guid bookId, BookStatus status, string? statusMessage = null, CancellationToken ct = default) => throw new NotSupportedException();

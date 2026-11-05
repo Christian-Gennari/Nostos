@@ -104,6 +104,8 @@ export interface Book {
   lastLocation: string | null;
   progressPercent: number;
   lastReadAt: string | null;
+  /** The speed an audiobook plays at, saved with its position; null until one is chosen. */
+  playbackRate?: number | null;
 
   // Metadata Fields. `rating`, `isFavorite` and `personalReview` are the BOOK's,
   // the same on every edition; the two below are this edition's own exceptions.
@@ -281,4 +283,6 @@ export interface UpdateBookDto {
 export interface UpdateProgressDto {
   location: string;
   percentage: number;
+  /** An audiobook's chosen speed; left out, the saved one stays. */
+  playbackRate?: number;
 }
