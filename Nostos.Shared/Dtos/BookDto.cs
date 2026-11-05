@@ -250,3 +250,6 @@ public sealed record UpdateBookCollectionsDto(IReadOnlyList<Guid> CollectionIds)
 /// the survivor.
 /// </summary>
 public sealed record LinkWorkDto(Guid TargetBookId);
+
+/// <summary>What an uploaded EPUB or PDF says about itself; every field may be null.</summary>
+public sealed record BookFileMetadataDto(string? Title, string? Author, string? Language, int? PageCount);

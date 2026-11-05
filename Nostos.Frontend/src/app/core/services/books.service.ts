@@ -49,6 +49,13 @@ export class BookLookupError extends Error {
   }
 }
 
+export interface BookFileMetadata {
+  title: string | null;
+  author: string | null;
+  language: string | null;
+  pageCount: number | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class BooksService {
   constructor(private http: HttpClient) {}
@@ -154,6 +161,17 @@ export class BooksService {
       reportProgress: true,
       observe: 'events',
     });
+  }
+
+  /**
+   * What an EPUB or PDF says about itself, read by the server. Nothing is
+   * stored; the add-book form uses it to prefill title, author and language.
+   */
+  readFileMetadata(file: File): Observable<BookFileMetadata> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.http.post<BookFileMetadata>('/api/books/file-metadata', formData);
   }
 
   uploadCover(bookId: string, file: File): Observable<any> {

@@ -332,6 +332,31 @@ public static class BooksEndpoints
             }
         );
 
+        // What an EPUB or PDF says about itself, so the add-book form can
+        // prefill title, author and language before the book exists. Nothing is
+        // stored. Files over the cap are not read; the form then keeps the
+        // file name.
+        uploadGroup.MapPost(
+            "/file-metadata",
+            async (HttpRequest request, CancellationToken ct) =>
+            {
+                if (request.ContentLength is > NostosProductRequestLimits.MaxFileMetadataRequestBytes)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+                var form = await request.ReadFormAsync(ct);
+                var file = form.Files.FirstOrDefault();
+                if (file is null)
+                    return Results.BadRequest("Missing file.");
+                if (file.Length > NostosProductRequestLimits.MaxFileMetadataRequestBytes)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+                await using var content = file.OpenReadStream();
+                var found = await BookFileMetadataReader.ReadAsync(content, file.FileName, ct);
+                return Results.Ok(new BookFileMetadataDto(
+                    found.Title, found.Author, found.Language, found.PageCount));
+            }
+        );
+
         // Upload file (legacy whole-request contract; still the Cloud path)
         uploadGroup.MapPost(
             "/{id}/file",

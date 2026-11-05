@@ -59,6 +59,10 @@ export interface AddBookPrefill {
   publishedDate?: string | null;
 }
 
+/** Larger files are not sent just to read their title; the file name stays. */
+const MAX_METADATA_READ_BYTES = 50 * 1024 * 1024;
+const DEFAULT_LANGUAGE = 'en';
+
 @Component({
   selector: 'app-add-book-modal',
   standalone: true,
@@ -583,46 +587,43 @@ export class AddBookModal {
       ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension));
     this.form.type = audio ? 'audiobook' : 'ebook';
 
-    let guessedTitle: string | null = null;
+    const nameTitle = file.name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!this.form.title.trim()) {
-      guessedTitle = file.name
-        .replace(/\.[^.]+$/, '')
-        .replace(/[_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      this.form.title = guessedTitle;
+      this.form.title = nameTitle;
     }
 
-    if (lower.endsWith('.epub')) void this.fillFromEpub(file, guessedTitle);
+    this.prefillFromFile(file, nameTitle);
 
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
   }
 
   /**
-   * An EPUB names its own title and author (issue #1358). They replace a
-   * title guessed from the file name and fill an empty author, never what
-   * the owner typed. A file that will not open leaves the form as it is.
+   * An EPUB or PDF knows its own title, author and language. Fill them in once
+   * the server has read the file, but only where the person has not typed
+   * anything of their own: the title still being the one taken from the file
+   * name, an empty author, a language still on the default.
    */
-  private async fillFromEpub(file: File, guessedTitle: string | null): Promise<void> {
-    try {
-      const { default: ePub } = await import('epubjs');
-      const book = ePub(await file.arrayBuffer());
-      const metadata = await book.loaded.metadata;
-      // Closed only once every part has loaded: epubjs keeps loading the
-      // navigation and display options after the metadata, and fails on a
-      // closed book. A part that fails to load does not matter here.
-      await book.ready.catch(() => undefined);
-      book.destroy();
-      if (this.selectedFile() !== file) return;
+  private prefillFromFile(file: File, nameTitle: string): void {
+    if (!/\.(epub|pdf)$/i.test(file.name) || file.size > MAX_METADATA_READ_BYTES) return;
 
-      const title = metadata.title?.trim();
-      const author = metadata.creator?.trim();
-      if (title && (this.form.title.trim() === '' || this.form.title === guessedTitle)) this.form.title = title;
-      if (author && !this.form.author?.trim()) this.form.author = author;
-      this.changeDetector.markForCheck();
-    } catch {
-      // Not every file that ends in .epub is one; the upload decides.
-    }
+    this.booksService.readFileMetadata(file).subscribe({
+      next: (found) => {
+        if (this.selectedFile() !== file) return;
+
+        const title = this.form.title.trim();
+        if (found.title && (!title || title === nameTitle)) this.form.title = found.title;
+        if (found.author && !this.form.author?.trim()) this.form.author = found.author;
+        if (found.language && this.form.language === DEFAULT_LANGUAGE)
+          this.form.language = found.language;
+        this.changeDetector.markForCheck();
+      },
+      // The file name stays as the title; nothing for the person to do.
+      error: () => undefined,
+    });
   }
 
   onCoverSelected(event: Event) {

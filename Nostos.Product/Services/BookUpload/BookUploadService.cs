@@ -362,7 +362,7 @@ public sealed class BookUploadService(
 
         await using (var staged = await store.OpenSealedAsync(sessionId, ct))
         {
-            commit.Enrich(book, staged);
+            await commit.EnrichAsync(book, staged, session.FileName, ct);
         }
 
         try
@@ -550,7 +550,7 @@ public sealed class BookUploadService(
 
         await using (var stored = await storage.OpenBookFileAsync(bookId, ct: ct))
         {
-            if (stored is not null) commit.Enrich(book, stored.Content);
+            if (stored is not null) await commit.EnrichAsync(book, stored.Content, session.FileName, ct);
         }
 
         await commit.FinishAsync(book, session.FileName, ct);
