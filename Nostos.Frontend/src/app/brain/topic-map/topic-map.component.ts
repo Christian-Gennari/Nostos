@@ -1617,15 +1617,20 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     );
 
     // Centre in the free band between the overlays, not on the whole stage.
-    // The camera state that shows the graph's centre at viewport y + dy is the
-    // framed point that sits at y - dy under a centred camera.
+    // The graph's centre is not Sigma's framed (0.5, 0.5): its framing also
+    // follows node sizes and the stage's shape, so ask Sigma where the centre
+    // is. The camera state that shows that centre at viewport y + dy is the
+    // framed point that sits at y - dy under a camera centred on it.
+    const centre =
+      this.graphPointToFramed((extent.minX + extent.maxX) / 2, (extent.minY + extent.maxY) / 2) ??
+      { x: 0.5, y: 0.5 };
     const dy = (insets.top - insets.bottom) / 2;
-    if (dy === 0) return { x: 0.5, y: 0.5, ratio };
+    if (dy === 0) return { x: centre.x, y: centre.y, ratio };
     const framed = sigma.viewportToFramedGraph(
       { x: width / 2, y: height / 2 - dy },
-      { cameraState: { x: 0.5, y: 0.5, angle: 0, ratio } }
+      { cameraState: { x: centre.x, y: centre.y, angle: 0, ratio } }
     );
-    if (!Number.isFinite(framed.x) || !Number.isFinite(framed.y)) return { x: 0.5, y: 0.5, ratio };
+    if (!Number.isFinite(framed.x) || !Number.isFinite(framed.y)) return { x: centre.x, y: centre.y, ratio };
     return { x: framed.x, y: framed.y, ratio };
   }
 

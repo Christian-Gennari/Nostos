@@ -577,7 +577,33 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
     const saveStatus = headerSaveStatus();
     expect(saveStatus).toBeTruthy();
-    expect(saveStatus!.textContent?.trim()).toBe('Saved');
+    expect(saveStatus!.textContent?.trim()).toMatch(/^Saved/);
+  });
+
+  it('renames the open writing from its title in the header', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as { update: ReturnType<typeof vi.fn> };
+    writings.update.mockReturnValue(of({ id: 'doc-1', name: 'Renamed', content: '', updatedAt: '' }));
+    openDocument();
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('button.header-doc-title') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('nostos-inline-rename')).toBeTruthy();
+
+    component.saveRename(component.activeItem()!.id, 'Renamed');
+    fixture.detectChanges();
+
+    expect(writings.update).toHaveBeenCalledWith(component.activeItem()!.id, { name: 'Renamed' });
+    expect(component.editorTitle()).toBe('Renamed');
+    expect(fixture.nativeElement.querySelector('nostos-inline-rename')).toBeNull();
+  });
+
+  it('says when the open writing was last saved', () => {
+    openDocument();
+    component.activeItem.update((item) => ({ ...item!, updatedAt: '2026-11-04T14:05:00' }));
+    fixture.detectChanges();
+
+    expect(headerSaveStatus()!.textContent?.replace(/\s+/g, ' ').trim()).toMatch(/^Saved · \d{1,2}[:.]05/);
   });
 
   it('uses the singular word form in desk telemetry for a single word', () => {
@@ -1191,6 +1217,20 @@ describe('WritingStudio delete (no window.confirm)', () => {
       // Only once, however fast the next words come.
       component.onEditorChange('# Morning pages\n\nThe first words. More.');
       expect(writings.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates the new page in the folder chosen in the list', () => {
+      writings.create.mockReturnValue(
+        of({ id: 'new-2', name: 'Untitled document', type: 'Document', parentId: 'f1', updatedAt: '' }),
+      );
+      component.rootItems.set([{ id: 'f1', name: 'Essays', type: 'Folder', parentId: null } as never]);
+
+      component.handleItemSelected({ id: 'f1', name: 'Essays', type: 'Folder' });
+      expect(component.markedItemId()).toBe('f1');
+      component.createItem('Document');
+      component.onEditorChange('Words');
+
+      expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: 'f1' });
     });
 
     it('renames a new folder in place and opens nothing', () => {

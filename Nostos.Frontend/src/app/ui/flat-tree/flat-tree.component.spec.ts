@@ -328,4 +328,16 @@ describe('FlatTreeComponent', () => {
       expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
     });
   });
+
+  it('opens the folders above the marked row, once', () => {
+    fixture.componentRef.setInput('activeId', 'd');
+    fixture.detectChanges();
+
+    expect(component.treeNodes().map((n) => n.id)).toEqual(['a', 'c', 'd', 'b']);
+
+    // Closing a folder afterwards is respected.
+    component.expandedIds.set(new Set());
+    fixture.detectChanges();
+    expect(component.treeNodes().map((n) => n.id)).toEqual(['a', 'b']);
+  });
 });

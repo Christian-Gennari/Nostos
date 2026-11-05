@@ -306,7 +306,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
           link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
         }),
         Placeholder.configure({ placeholder: 'Start writing…' }),
-        Typography,
+        // `--` stays two hyphens: the rule cannot tell prose from a table
+        // separator row or code, and an em dash there breaks the Markdown.
+        Typography.configure({ emDash: false }),
         // Writings saved under TinyMCE can hold pasted images as data URIs.
         Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),

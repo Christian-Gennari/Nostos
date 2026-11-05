@@ -52,4 +52,13 @@ describe('NoteFormatPipe', () => {
     expect(html).toContain('topic-tag--unresolved');
     expect(html).not.toBe('[[Unindexed]]');
   });
+
+  it('shows HTML typed in a note as text, not as markup', () => {
+    const html = pipe.transform('<img src=x onerror=alert(1)> and <b>bold</b> & [[Missing]]', new Map());
+
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt; and &lt;b&gt;bold&lt;/b&gt; &amp; ');
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<b>');
+    expect(html).toContain('topic-tag--unresolved');
+  });
 });

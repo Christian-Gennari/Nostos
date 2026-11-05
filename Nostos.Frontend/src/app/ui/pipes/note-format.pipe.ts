@@ -30,7 +30,20 @@ export class NoteFormatPipe implements PipeTransform {
 
     const topics = topicMap ?? new Map<string, TopicDto>();
 
-    return replaceNoteWikilinks(content, (topicName, displayText) => {
+    // The note is shown as typed: anything that is not a wikilink is text, so
+    // HTML in it is escaped rather than handed to the sanitiser to render.
+    let html = '';
+    let last = 0;
+    for (const match of content.matchAll(/\[\[(.*?)\]\]/g)) {
+      html += this.escapeHtml(content.slice(last, match.index));
+      html += this.renderLink(match[1], topics);
+      last = match.index + match[0].length;
+    }
+    return html + this.escapeHtml(content.slice(last));
+  }
+
+  private renderLink(rawLink: string, topics: ReadonlyMap<string, TopicDto>): string {
+    return replaceNoteWikilinks(`[[${rawLink}]]`, (topicName, displayText) => {
       const escapedName = this.escapeHtml(displayText);
       const topic = topics.get(topicName.toLocaleLowerCase());
 

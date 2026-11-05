@@ -24,9 +24,9 @@
 </div>
 } @else if (paragraphs().length) {
 <!-- The words read as text; a click on them, or Edit, opens them for editing. -->
-<div class="words-text" (click)="onTextClick()">
+<div class="words-text" (click)="onTextClick($event)">
   @for (paragraph of paragraphs(); track $index) {
-  <p class="words-paragraph">{{ paragraph }}</p>
+  <p class="words-paragraph" [innerHTML]="paragraph | noteFormat : state.lookup()"></p>
   }
 </div>
 <button #opener appButton variant="link" size="sm" type="button" class="words-edit-link"
