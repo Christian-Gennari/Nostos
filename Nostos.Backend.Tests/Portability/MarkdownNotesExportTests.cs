@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability.Markdown;
 using Nostos.Backend.Services.Writings;
 using Nostos.Backend.Tests.Support;
@@ -80,6 +81,61 @@ public sealed class MarkdownNotesExportTests
     }
 
     [Fact]
+    public void A_pdf_note_saved_before_anchors_still_has_its_page_and_its_place_in_order()
+    {
+        string Page(int n) => "{\"pageNumber\":" + n + ",\"rects\":[]}";
+        var p1 = Note(cfiRange: Page(1));
+        var p3 = Note(cfiRange: Page(3), passage: true, end: "5");
+        var p12 = Note(cfiRange: Page(12));
+
+        MarkdownNotesRenderer.InReadingOrder([p12, p3, p1]).Should().Equal(p1, p3, p12);
+        MarkdownNotesRenderer.Locate(p1).Words.Should().Be("Page 1");
+        MarkdownNotesRenderer.Locate(p3).Words.Should().Be("Pages 3–5");
+    }
+
+    [Fact]
+    public void An_epub_note_is_named_by_its_chapter_when_the_contents_have_one()
+    {
+        var note = Note(kind: "epub_cfi", value: "epubcfi(/6/6!/4/2/1:0)", verified: true);
+        IReadOnlyList<string?> sections = [null, "Preface", "The Storm", "The Storm"];
+
+        MarkdownNotesRenderer.Locate(note, sections: sections).Words.Should().Be("In “The Storm”");
+        MarkdownNotesRenderer.Locate(note, sections: [null, "Preface"]).Words.Should().Be("Section 3 of the book");
+        MarkdownNotesRenderer.Locate(note).Words.Should().Be("Section 3 of the book");
+    }
+
+    [Fact]
+    public void Chapter_titles_come_from_the_nav_document_and_carry_over_unnamed_sections()
+    {
+        using var epub = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(epub, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Add(string path, string text)
+            {
+                using var writer = new StreamWriter(zip.CreateEntry(path).Open());
+                writer.Write(text);
+            }
+
+            Add("META-INF/container.xml",
+                "<container xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/></rootfiles></container>");
+            Add("OEBPS/content.opf",
+                "<package xmlns=\"http://www.idpf.org/2007/opf\"><manifest>"
+                + "<item id=\"nav\" href=\"nav.xhtml\" properties=\"nav\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c0\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c1\" href=\"text/one.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c2\" href=\"text/two.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c3\" href=\"text/three.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "</manifest><spine><itemref idref=\"c0\"/><itemref idref=\"c1\"/><itemref idref=\"c2\"/><itemref idref=\"c3\"/></spine></package>");
+            Add("OEBPS/nav.xhtml",
+                "<html xmlns:epub=\"http://www.idpf.org/2007/ops\"><body><nav epub:type=\"toc\"><ol>"
+                + "<li><a href=\"text/one.xhtml\">Part  One</a></li>"
+                + "<li><a href=\"text/three.xhtml#s2\">The Storm</a></li></ol></nav></body></html>");
+        }
+
+        EpubSections.Titles(epub).Should().Equal(null, "Part One", "Part One", "The Storm");
+    }
+
+    [Fact]
     public void A_location_is_said_in_words_and_a_page_only_when_verified()
     {
         var chapters = new List<MarkdownNotesRenderer.AudioChapter>
@@ -111,8 +167,7 @@ public sealed class MarkdownNotesExportTests
             .Words.Should().Be("From Readwise");
 
         var epub = MarkdownNotesRenderer.Locate(Note(cfiRange: "epubcfi(/6/8[ch3]!/4/2,/1:0,/1:5)"));
-        epub.Words.Should().Be("Section 4 of the book");
-        epub.Position.Should().Be("epubcfi(/6/8[ch3]!/4/2,/1:0,/1:5)");
+        epub.Words.Should().Be("Section 4 of the book", "the raw CFI is not printed");
     }
 
     [Fact]
@@ -176,7 +231,7 @@ public sealed class MarkdownNotesExportTests
         // The book's words are escaped; the reader's words and links stay as written.
         epub.Should().Contain("> Anxiety is the \\*dizziness\\* of freedom \\[sic\\]");
         epub.Should().Contain("Dread *is* freedom's possibility. [[Angst]] [[Either/or]]");
-        epub.Should().Contain("*Highlight · 2026-03-02 · `epubcfi(/6/4!/4/2,/1:0,/1:10)`*");
+        epub.Should().Contain("*Highlight · 2026-03-02*").And.NotContain("epubcfi");
 
         var audio = files["Nostos notes/Books/The Odyssey.md"];
         audio.Should().Contain("format: \"Audiobook\"\n");

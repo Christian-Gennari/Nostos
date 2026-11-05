@@ -41,13 +41,18 @@ export function sourceHumanLabel(source: SourceInsertionSource): HumanSourceLabe
     // Quoted from a kept passage: name the passage, not where it starts.
     return { title: escapeMarkdownInline(title), author, locator: `“${escapeMarkdownInline(passage)}”` };
   }
-  if (
-    source.anchorVerified === true &&
-    source.sourceAnchorKind?.trim().toLowerCase() === 'pdf_page'
-  ) {
-    const rawPage = normalizeInlineText(source.sourceAnchorValue);
-    const page = Number(rawPage);
-    if (Number.isInteger(page) && page > 0) locator = `p. ${page}`;
+  const kind = source.sourceAnchorKind?.trim().toLowerCase();
+  const rawValue = normalizeInlineText(source.sourceAnchorValue);
+  const value = rawValue ? Number(rawValue) : NaN;
+  // A PDF page only when verified; a paper book's page as the reader typed it.
+  if ((kind === 'pdf_page' && source.anchorVerified === true) || kind === 'physical_page') {
+    if (Number.isInteger(value) && value > 0) locator = `p. ${value}`;
+  } else if (kind === 'audio_timestamp' && source.anchorVerified === true && Number.isFinite(value) && value >= 0) {
+    const whole = Math.floor(value);
+    const h = Math.floor(whole / 3600);
+    const mm = String(Math.floor((whole % 3600) / 60)).padStart(2, '0');
+    const ss = String(whole % 60).padStart(2, '0');
+    locator = `at ${h > 0 ? `${h}:${mm}:${ss}` : `${Math.floor(whole / 60)}:${ss}`}`;
   }
 
   return { title: escapeMarkdownInline(title), author, locator };

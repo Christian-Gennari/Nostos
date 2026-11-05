@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Notes;
 
 namespace Nostos.Backend.Services.Portability.Markdown;
 
@@ -27,7 +28,7 @@ public interface IMarkdownNotesExporter
     Task<Stream> ExportAsync(bool includeWritings, CancellationToken cancellationToken = default);
 }
 
-public sealed class MarkdownNotesExporter(NostosDbContext db) : IMarkdownNotesExporter
+public sealed class MarkdownNotesExporter(NostosDbContext db, IBookAssetStorage storage) : IMarkdownNotesExporter
 {
     public const string RootFolder = "Nostos notes";
 
@@ -120,9 +121,18 @@ public sealed class MarkdownNotesExporter(NostosDbContext db) : IMarkdownNotesEx
             var ordered = MarkdownNotesRenderer.InReadingOrder(notes);
             noteCount += ordered.Count;
 
+            // The chapter titles an EPUB's notes are named by; any other format has none.
+            var isEpub = string.Equals(Path.GetExtension(book.FileName ?? string.Empty), ".epub", StringComparison.OrdinalIgnoreCase);
+            IReadOnlyList<string?>? sections = null;
+            if (isEpub && notes.Count > 0)
+            {
+                try { sections = await EpubSections.ReadAsync(storage, book.Id, ct); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { sections = null; }
+            }
+
             var fileName = names.Claim(book.Title, MarkdownNotesRenderer.Authors(book.Author).FirstOrDefault(), fallback: "Untitled book");
             await AddAsync(archive, $"{MarkdownNotesRenderer.BooksFolder}/{fileName}.md",
-                MarkdownNotesRenderer.Book(book, ordered), now, ct);
+                MarkdownNotesRenderer.Book(book, ordered, sections), now, ct);
 
             var chapters = MarkdownNotesRenderer.AudioChapters(book.ChaptersJson);
             foreach (var note in ordered)
@@ -130,7 +140,7 @@ public sealed class MarkdownNotesExporter(NostosDbContext db) : IMarkdownNotesEx
                 foreach (var topicId in note.TopicIds.Distinct())
                 {
                     if (topicEntries.TryGetValue(topicId, out var entries))
-                        entries.Add(MarkdownNotesRenderer.TopicEntry(fileName, book, note, chapters));
+                        entries.Add(MarkdownNotesRenderer.TopicEntry(fileName, book, note, chapters, sections));
                 }
             }
         }

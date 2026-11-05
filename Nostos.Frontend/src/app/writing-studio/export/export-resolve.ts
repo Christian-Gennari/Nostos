@@ -198,8 +198,12 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
   // 6. One bibliography.
   let bibliography: ExportDocument['bibliography'] = null;
   if (hadBibliography || citedBooks.length) {
+    const canonical = (book: string) => renderer.canonicalBook?.(book) ?? book;
     const books: string[] = [];
-    const add = (book: string) => book && !books.includes(book) && books.push(book);
+    const add = (book: string) => {
+      const one = book && canonical(book);
+      return one && !books.includes(one) && books.push(one);
+    };
     citedBooks.forEach(add);
     if (hadBibliography) {
       renderer.bibliographyBooks.forEach(add);
@@ -215,7 +219,7 @@ export async function resolveExport(input: ResolveExportInput): Promise<ExportDo
     const seen = new Set<string>();
     const all = entries.filter((entry) => !seen.has(entry.book) && seen.add(entry.book));
     for (const [book, text] of listed) {
-      if (seen.has(book)) continue;
+      if (seen.has(canonical(book))) continue;
       seen.add(book);
       all.push({ book, text });
       warnings.add(

@@ -12,9 +12,11 @@ import { of, throwError } from 'rxjs';
 
 import { Book } from '../../core/dtos/book.dtos';
 import { BooksService } from '../../core/services/books.service';
+import { NotesService } from '../../core/services/notes.service';
 import { MarkdownEditorComponent } from '../../ui/markdown-editor/markdown-editor.component';
-import { CitationService, houseText } from './citation.service';
+import { CitationService, citationLocator, clock, editionRepresentatives, epubSectionOf, houseText, locatorOfRef, locatorToRef } from './citation.service';
 import { htmlToMarkdown, markdownToHtml } from '../../ui/markdown-editor/markdown-conversion';
+import { citationHref, parseCitationHref } from '../../ui/markdown-editor/citation.extension';
 import { CitationEngine, cslHtmlToMarkdown } from './citation-engine';
 import { CITATION_STYLES, citationStyle } from './citation-styles';
 import { bookToCslItem, missingForStyle, missingPhrase, parseNames, publishedYear } from './csl-item';
@@ -265,5 +267,85 @@ describe('the house format and missing details (#1157)', () => {
     expect(missingPhrase(['year'])).toBe('year');
     expect(missingPhrase(['year', 'publisher'])).toBe('year and publisher');
     expect(missingPhrase(['author', 'year', 'publisher'])).toBe('author, year and publisher');
+  });
+});
+
+describe('locators in citations (issue #1382)', () => {
+  const candide = { id: 'c1', title: 'Candide', subtitle: null, author: 'Voltaire', editor: null, translator: null, publisher: 'Cramer', placeOfPublication: null, publishedDate: '1759', edition: null, workId: 'w1' } as unknown as Book;
+
+  it('finds a page, a paper page and a time, and never an unverified page', () => {
+    expect(citationLocator({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '12', anchorVerified: true })).toEqual({ page: 12 });
+    expect(citationLocator({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '12', anchorVerified: false })).toBeNull();
+    expect(citationLocator({ sourceAnchorKind: 'physical_page', sourceAnchorValue: '88', anchorVerified: false })).toEqual({ page: 88 });
+    expect(citationLocator({ sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '3723.4', anchorVerified: true })).toEqual({ time: '1:02:03' });
+    expect(citationLocator({ sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '754', anchorVerified: true })).toEqual({ time: '12:34' });
+    expect(citationLocator({ sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '754', anchorVerified: false })).toBeNull();
+    expect(clock(5)).toBe('0:05');
+  });
+
+  it('reads the section of an EPUB from its CFI', () => {
+    expect(epubSectionOf('epubcfi(/6/8[ch3]!/4/2/1:0)')).toBe(4);
+    expect(epubSectionOf('epubcfi(/6/1!/4)')).toBeNull();
+    expect(epubSectionOf('not a cfi')).toBeNull();
+  });
+
+  it('keeps a locator in a citation address and reads it back, parentheses and all', () => {
+    const loc = 'c:The Storm (Part 2) & more';
+    const href = citationHref({ book: 'b1', page: null, loc, src: null, as: 'quote' });
+    expect(href).not.toMatch(/[()]\w*[()]/);
+    expect(href.slice('nostos:cite/b1'.length)).not.toContain('(');
+    expect(parseCitationHref(href)).toEqual({ book: 'b1', page: null, loc, src: null, as: 'quote' });
+    expect(locatorOfRef({ page: null, loc })).toEqual({ chapter: 'The Storm (Part 2) & more' });
+    expect(locatorToRef({ time: '12:34' })).toEqual({ page: null, loc: 't:12:34' });
+  });
+
+  it('names a chapter or a time in the house format', () => {
+    const base = { book: 'b1', page: null, src: null, as: 'quote' as const };
+    expect(houseText(candide, { ...base, loc: 'c:The Storm' }, null)).toBe('— Voltaire, *Candide*, “The Storm”');
+    expect(houseText(candide, { ...base, loc: 't:12:34' }, null)).toBe('— Voltaire, *Candide*, at 12:34');
+    expect(houseText(candide, { ...base, page: 7 }, null)).toBe('— Voltaire, *Candide*, p. 7');
+  });
+
+  it('puts a chapter title or a time in a Chicago footnote, and keeps the stored title', async () => {
+    const engine = await CitationEngine.create(citationStyle('chicago-notes'));
+    const item = { ...bookToCslItem(candide), title: 'pg2701 and arXiv 1706.03762' };
+    expect(engine.cite(item, { chapter: 'The Storm' })).toBe('Voltaire, *pg2701 and arXiv 1706.03762* (Cramer, 1759), “The Storm.”');
+    expect(engine.cite(item, { time: '12:34' })).toBe('Voltaire, *pg2701 and arXiv 1706.03762* (Cramer, 1759), at 12:34.');
+    expect(engine.cite(item, { page: 9 })).toContain('(Cramer, 1759), 9.');
+    expect(engine.bibliography([item])[0]).toContain('*pg2701 and arXiv 1706.03762*');
+  });
+
+  it('lists one work once, however many editions the library holds', async () => {
+    const edition = (id: string, workId: string) => ({ ...candide, id, workId }) as Book;
+    const books = new Map(
+      [edition('c3', 'w1'), edition('c1', 'w1'), edition('c2', 'w1'), edition('d1', 'w2')].map((b) => [b.id, b]),
+    );
+    expect(editionRepresentatives(books.values()).get('c3')).toBe('c1');
+    TestBed.configureTestingModule({
+      providers: [{ provide: BooksService, useValue: { get: vi.fn((id: string) => of(books.get(id))) } }],
+    });
+    const service = TestBed.inject(CitationService);
+    const entries = await service.bibliographyEntries(['c3', 'c1', 'c2', 'd1'], citationStyle('chicago-notes'));
+    expect(entries.map((e) => e.book).sort()).toEqual(['c1', 'd1']);
+
+    const renderer = await service.renderer(citationStyle('chicago-notes'), ['c3', 'c1', 'c2'], []);
+    expect(renderer.canonicalBook?.('c3')).toBe('c1');
+    expect(renderer.bibliography(['c3', 'c1', 'c2'])).toHaveLength(1);
+  });
+
+  it('cites the chapter of an EPUB highlight from the book\'s contents, and nothing when they have none', async () => {
+    const titles = vi.fn((id: string) => of({ titles: id === 'c1' ? [null, 'Preface', 'The Storm'] : [] }));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: BooksService, useValue: { get: vi.fn(() => of(candide)) } },
+        { provide: NotesService, useValue: { sections: titles } },
+      ],
+    });
+    const service = TestBed.inject(CitationService);
+    const source = (bookId: string) => ({ bookId, sourceAnchorKind: 'epub_cfi', sourceAnchorValue: 'epubcfi(/6/6!/4/2/1:0)', anchorVerified: true });
+    expect(await service.locator(source('c1'))).toEqual({ chapter: 'The Storm' });
+    expect(await service.locator(source('c2'))).toBeNull();
+    expect(await service.cite(source('c1'), citationStyle('chicago-notes'), false, 'quote')).toContain('“The Storm.”');
+    expect(titles).toHaveBeenCalledTimes(2);
   });
 });

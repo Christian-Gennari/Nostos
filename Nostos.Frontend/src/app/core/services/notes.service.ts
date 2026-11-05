@@ -47,6 +47,11 @@ export class NotesService {
     return this.http.get<Note[]>(`/api/books/${bookId}/notes`);
   }
 
+  /** The chapter titles of an EPUB in reading order: index 0 is the first section (issue #1382). */
+  sections(bookId: string): Observable<{ titles: (string | null)[] }> {
+    return this.http.get<{ titles: (string | null)[] }>(`/api/books/${bookId}/sections`);
+  }
+
   get(id: string): Observable<NoteSearchHit> {
     return this.http.get<NoteSearchHit>(`/api/notes/${id}`);
   }

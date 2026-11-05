@@ -5,7 +5,7 @@ import { CslItem } from './csl-item';
 interface CiteprocEngine {
   setOutputFormat(format: 'html' | 'text'): void;
   updateItems(ids: string[]): void;
-  makeCitationCluster(items: { id: string; locator?: string; label?: string; position?: number }[]): string;
+  makeCitationCluster(items: { id: string; locator?: string; label?: string; suffix?: string; position?: number }[]): string;
   makeBibliography(): [{ entry_ids?: string[][] }, string[]] | false;
 }
 
@@ -17,9 +17,29 @@ interface CiteprocModule {
   ) => CiteprocEngine;
 }
 
-/** A page in the source, when Nostos knows it for certain. Never invented. */
-export interface CitationLocator {
-  page: number;
+/**
+ * Where in the source, when Nostos knows it for certain. Never invented: a
+ * page of a PDF or a paper book, the chapter of an EPUB from its table of
+ * contents, or a time in a recording (issue #1382).
+ */
+export type CitationLocator = { page: number } | { chapter: string } | { time: string };
+
+/** The CSL cluster fields a locator becomes. */
+function locatorFields(locator: CitationLocator | null): { locator?: string; label?: string; suffix?: string } {
+  if (!locator) return {};
+  if ('page' in locator) return { locator: String(locator.page), label: 'page' };
+  // No CSL label fits a chapter's title or a time, so they follow as words.
+  if ('chapter' in locator) return { suffix: `, “${locator.chapter}”` };
+  return { suffix: `, at ${locator.time}` };
+}
+
+/**
+ * A title as stored. Styles set titles in title case ("Pg2701" for "pg2701",
+ * "Arxiv 1706.03762" for "arXiv 1706.03762"); the nocase span keeps the words
+ * the writer's library holds.
+ */
+function keepTitle(item: CslItem): CslItem {
+  return item.title ? { ...item, title: `<span class="nocase">${item.title}</span>` } : item;
 }
 
 const files = new Map<string, Promise<string>>();
@@ -83,7 +103,7 @@ export class CitationEngine {
     const html = this.engine.makeCitationCluster([
       {
         id: item.id,
-        ...(locator ? { locator: String(locator.page), label: 'page' } : {}),
+        ...locatorFields(locator),
         ...(subsequent ? { position: 1 } : {}),
       },
     ]);
@@ -109,7 +129,7 @@ export class CitationEngine {
 
   private register(items: readonly CslItem[], only = false): void {
     if (only) this.items.clear();
-    for (const item of items) this.items.set(item.id, item);
+    for (const item of items) this.items.set(item.id, keepTitle(item));
     this.engine.updateItems([...this.items.keys()]);
   }
 }
