@@ -264,7 +264,7 @@
               <nostos-icon concept="audiobook" [size]="18"></nostos-icon>
               <span>Listen</span>
             </button>
-            } @else {
+            } @else if (!isDownloadOnly(store.book())) {
             <button appButton variant="primary" size="lg" class="primary-action" (click)="openReader()">
               <nostos-icon concept="readingRoom" [size]="18"></nostos-icon>
               <span>Read book</span>
@@ -286,6 +286,11 @@
               <span class="download-hint">{{ hint }}</span>
               }
             </button>
+            @if (isDownloadOnly(store.book())) {
+            <p class="page-stepper-hint" data-testid="download-only-note">
+              Kept for download. Nostos cannot read this format; EPUB, PDF and audiobook files open in the reader.
+            </p>
+            }
             } @else if (store.book()?.type !== 'physical') {
             <button appButton variant="primary" size="lg" class="primary-action" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
               <nostos-icon concept="ebook" [size]="18"></nostos-icon>

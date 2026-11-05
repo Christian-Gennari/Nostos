@@ -225,6 +225,113 @@ public sealed class BookUploadEndpointTests
         Sha256Hex(await File.ReadAllBytesAsync(stored)).Should().Be(Sha256Hex(bytes));
     }
 
+    [Theory]
+    [InlineData("truncated.epub", "application/epub+zip", "PK\u0003\u0004 not really a zip")]
+    [InlineData("renamed.epub", "application/epub+zip", "MZ\u0090\u0000 pretend executable")]
+    [InlineData("fake.pdf", "application/pdf", "<html>not a pdf</html>")]
+    [InlineData("fake.mp3", "audio/mpeg", "this is plain text, not audio")]
+    public async Task Resumable_complete_rejects_bytes_that_do_not_match_the_name(
+        string fileName, string contentType, string text)
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+        var book = await CreateBookAsync(client);
+        var bytes = Encoding.Latin1.GetBytes(text);
+
+        var session = await StageAsync(client, book.Id, bytes, fileName, contentType);
+        using var response = await CompleteAsync(client, book.Id, session.SessionId);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("book_upload_invalid_file");
+
+        // No file was adopted: the book row still has none.
+        File.Exists(Path.Combine(factory.BooksRootPath, book.Id.ToString(), Path.ChangeExtension("book", Path.GetExtension(fileName))))
+            .Should().BeFalse();
+        using var scope = factory.Services.CreateScope();
+        var row = await scope.ServiceProvider.GetRequiredService<IBookRepository>().GetByIdAsync(book.Id);
+        row!.FileDetails.HasFile.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Empty_file_is_rejected_when_the_session_is_created()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+        var book = await CreateBookAsync(client);
+
+        using var response = await CreateSessionAsync(
+            client, book.Id, 0, "empty.epub", Sha256Hex([]), "application/epub+zip");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("book_upload_invalid_file");
+    }
+
+    [Fact]
+    public async Task Valid_epub_pdf_and_mp3_are_accepted_and_txt_and_mobi_are_stored_as_is()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+
+        var cases = new (string Name, string Type, byte[] Bytes)[]
+        {
+            ("ok.epub", "application/epub+zip", MinimalEpub()),
+            ("ok.pdf", "application/pdf", Encoding.ASCII.GetBytes("%PDF-1.4\n%%EOF")),
+            ("ok.mp3", "audio/mpeg", SilentMp3(40)),
+            ("ok.txt", "text/plain", Encoding.ASCII.GetBytes("plain words")),
+            ("ok.mobi", "application/x-mobipocket-ebook", Encoding.ASCII.GetBytes("BOOKMOBI")),
+        };
+        foreach (var (name, type, bytes) in cases)
+        {
+            var book = await CreateBookAsync(client);
+            var session = await StageAsync(client, book.Id, bytes, name, type);
+            using var response = await CompleteAsync(client, book.Id, session.SessionId);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, name);
+        }
+    }
+
+    [Theory]
+    [InlineData("bad.epub", "application/epub+zip", "not a zip")]
+    [InlineData("bad.pdf", "application/pdf", "not a pdf")]
+    [InlineData("empty.pdf", "application/pdf", "")]
+    public async Task Legacy_upload_rejects_bad_files_with_a_clear_400(
+        string fileName, string contentType, string text)
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+        var book = await CreateBookAsync(client);
+
+        using var form = new MultipartFormDataContent();
+        using var file = new ByteArrayContent(Encoding.ASCII.GetBytes(text));
+        file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        form.Add(file, "file", fileName);
+
+        using var response = await client.PostAsync($"/api/books/{book.Id}/file", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("book_upload_invalid_file");
+    }
+
+    private static byte[] MinimalEpub()
+    {
+        using var ms = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            void Add(string name, string text)
+            {
+                using var w = new StreamWriter(zip.CreateEntry(name).Open());
+                w.Write(text);
+            }
+            Add("mimetype", "application/epub+zip");
+            Add("META-INF/container.xml",
+                "<container xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles>" +
+                "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>" +
+                "</rootfiles></container>");
+            Add("OEBPS/content.opf", "<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\"/>");
+        }
+        return ms.ToArray();
+    }
+
     [Fact]
     public async Task Capability_advertises_the_contract_on_this_host()
     {

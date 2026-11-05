@@ -48,6 +48,7 @@ import {
   BookUploadService,
   BookUploadPhase,
   describeBookUploadFailure,
+  rejectedFileMessage,
 } from '../core/services/book-upload.service';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
@@ -893,6 +894,7 @@ export class AddBookModal {
         this.uploadByteProgress.set(null);
         this.isSubmitting.set(false);
         this.detachBeforeUnload();
+        if (this.discardRejectedBook(createdBook, error)) return;
         this.uploadError.set(this.describeUploadFailure(error));
       },
     });
@@ -933,10 +935,32 @@ export class AddBookModal {
         this.uploadByteProgress.set(null);
         this.isSubmitting.set(false);
         this.detachBeforeUnload();
+        if (this.discardRejectedBook(createdBook, error)) return;
         this.uploadError.set(
           describeBookUploadFailure(error, { bookSaved: true }),
         );
       });
+  }
+
+  /**
+   * The server read the file and refused it (empty, damaged, wrong kind). A
+   * book this form just made would be left without a file, so remove it and
+   * send the reader back to the form to choose another file. A book that
+   * already had a file is kept as it was.
+   */
+  private discardRejectedBook(createdBook: BookModel, error: unknown): boolean {
+    const message = rejectedFileMessage(error);
+    if (!message) return false;
+    if (!createdBook.hasFile) {
+      this.booksService.delete(createdBook.id).subscribe({
+        next: () => this.bookAdded.emit(),
+        error: () => undefined,
+      });
+    }
+    this.pendingUploadBook.set(null);
+    this.selectedFile.set(null);
+    this.uploadError.set(`${message} Choose a different file.`);
+    return true;
   }
 
   private onUploadComplete(createdBook: BookModel): void {
