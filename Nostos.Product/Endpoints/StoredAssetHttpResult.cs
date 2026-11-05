@@ -9,6 +9,48 @@ namespace Nostos.Backend.Endpoints;
 /// </summary>
 public sealed class StoredAssetHttpResult : IResult
 {
+    private static readonly string[] GetAndHead = [HttpMethods.Get, HttpMethods.Head];
+
+    /// <summary>
+    /// Maps a stored-asset route for GET and HEAD. Some e-reader apps probe a
+    /// download with HEAD before fetching it; the authorization and rate-limit
+    /// metadata of the group applies to both verbs.
+    /// </summary>
+    public static RouteHandlerBuilder MapGetAndHead(
+        IEndpointRouteBuilder routes,
+        string pattern,
+        Delegate handler) =>
+        routes.MapMethods(pattern, GetAndHead, handler).AddEndpointFilter(HeadWithoutBody);
+
+    private static async ValueTask<object?> HeadWithoutBody(
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        var result = await next(context);
+        return HttpMethods.IsHead(context.HttpContext.Request.Method) && result is IResult inner
+            ? new BodylessResult(inner)
+            : result;
+    }
+
+    // Runs the GET result with its body discarded, so headers (Content-Type,
+    // Content-Length, ...) match GET whatever the result type is.
+    private sealed class BodylessResult(IResult inner) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            var original = httpContext.Response.Body;
+            httpContext.Response.Body = Stream.Null;
+            try
+            {
+                await inner.ExecuteAsync(httpContext);
+            }
+            finally
+            {
+                httpContext.Response.Body = original;
+            }
+        }
+    }
+
     private readonly StoredAssetRead _read;
     private readonly bool _attachment;
     private readonly string? _cacheControl;
@@ -161,6 +203,11 @@ public sealed class StoredAssetHttpResult : IResult
             disposition.SetHttpFileName(info.FileName);
             response.Headers.ContentDisposition = disposition.ToString();
         }
+
+        // HEAD gets the headers a GET would, including Content-Length, and no
+        // body: the stored object is never read.
+        if (HttpMethods.IsHead(httpContext.Request.Method))
+            return;
 
         await CopyExactlyAsync(
             read.Content,
