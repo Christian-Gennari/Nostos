@@ -563,6 +563,99 @@ describe('MarkdownEditorComponent', () => {
     fixture.destroy();
     expect(emitted).toEqual(['Last words.']);
   });
+
+  describe('reporting typing (issue #1392)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    /** What the keyboard does: a key goes down, then the text changes. */
+    function type(text: string): void {
+      page().dispatchEvent(new KeyboardEvent('keydown', { key: text, bubbles: true }));
+      (component as unknown as { editor: { commands: { insertContent(t: string): boolean } } }).editor.commands.insertContent(text);
+    }
+
+    it('serialises the page once the writer pauses, not on every key', async () => {
+      await create('Start');
+      vi.useFakeTimers();
+      const before = emitted.length;
+
+      type('a');
+      type('b');
+      type('c');
+      expect(emitted.length).toBe(before);
+
+      vi.advanceTimersByTime(399);
+      expect(emitted.length).toBe(before);
+      vi.advanceTimersByTime(1);
+      expect(emitted.length).toBe(before + 1);
+      expect(emitted.at(-1)).toContain('abc');
+    });
+
+    it('reports a long stretch of typing before the writer pauses', async () => {
+      await create('Start');
+      vi.useFakeTimers();
+      const before = emitted.length;
+
+      for (let i = 0; i < 100; i++) {
+        type('x');
+        vi.advanceTimersByTime(100);
+      }
+
+      expect(emitted.length).toBeGreaterThan(before);
+    });
+
+    it('reports typing at once when asked, and once only', async () => {
+      await create('Start');
+      vi.useFakeTimers();
+      const before = emitted.length;
+      const wordsBefore = counts.length;
+
+      type(' more');
+      component.flushPendingChange();
+
+      expect(emitted.length).toBe(before + 1);
+      expect(emitted.at(-1)).toContain('more');
+      expect(counts.length).toBe(wordsBefore + 1);
+      vi.advanceTimersByTime(1000);
+      expect(emitted.length).toBe(before + 1);
+      component.flushPendingChange();
+      expect(emitted.length).toBe(before + 1);
+    });
+
+    it('reports the last keystrokes when the page goes away', async () => {
+      await create('Start');
+      vi.useFakeTimers();
+
+      type(' end');
+      fixture.destroy();
+
+      expect(emitted.at(-1)).toContain('end');
+    });
+
+    it('reports an insertion the Studio makes without waiting', async () => {
+      await create('Start');
+      vi.useFakeTimers();
+      const before = emitted.length;
+
+      await component.insertMarkdown('Inserted.');
+
+      expect(emitted.length).toBe(before + 1);
+      expect(emitted.at(-1)).toContain('Inserted.');
+    });
+
+    it('drops typing that has not been reported when another writing opens', async () => {
+      await create('Start');
+      vi.useFakeTimers();
+      type('zzz');
+      const before = emitted.length;
+
+      fixture.componentRef.setInput('initialContent', 'Another writing');
+      fixture.detectChanges();
+      vi.advanceTimersByTime(1000);
+
+      expect(emitted.length).toBe(before);
+      expect(page().textContent).toContain('Another writing');
+    });
+  });
 });
 
 describe('caretScrollDelta (typewriter geometry)', () => {

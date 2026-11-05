@@ -644,6 +644,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const state = this.compactDrawerCaret;
     this.compactDrawerCaret = null;
     if (!state || !this.activeItem() || !this.markdownEditor) return;
+    this.markdownEditor.flushPendingChange();
     void this.markdownEditor.restoreTransientState(state, this.editorText());
   }
 
@@ -891,6 +892,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     // not dropped with the debounce the switch would cancel.
     const open = this.activeItem();
     if (open) void this.flushActiveWritingBeforeSource(open);
+    else this.markdownEditor?.flushPendingChange();
     this.blankGeneration++;
     this.blankRetryAt = 0;
     this.activeItem.set(null);
@@ -2181,6 +2183,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       const current = this.activeItem();
       if (!current || current.id !== item.id) return false;
 
+      // Typing is reported once the writer pauses; what was typed a moment ago is saved too.
+      this.markdownEditor?.flushPendingChange();
       const title = this.editorTitle();
       const content = this.editorText();
       const dirty = title !== current.name || content !== current.content;
