@@ -1089,6 +1089,14 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(
       fixture.nativeElement.querySelector('.entry .entry-anchor').textContent,
     ).toContain('The Magic Mountain · p. 247');
+
+    // The captured note shows its topics as pills, with + Topic (issue #1449).
+    http.expectOne('/api/topics').flush([]);
+    http.expectOne('/api/notes/note-1').flush({ id: 'note-1', content: 'Page 247.\n\n[[Time]]', topicNames: ['Time'] });
+    fixture.detectChanges();
+    const captured = fixture.nativeElement.querySelector('[data-testid="assistant-capture-topics"]') as HTMLElement;
+    expect(captured.querySelector('.topic-chip-name')?.textContent?.trim()).toBe('Time');
+    expect(captured.querySelector('[data-testid="topic-row-add"]')?.textContent?.trim()).toBe('Topic');
   });
 
   it('keeps the pending question and transcript across a close and reopen', () => {

@@ -244,6 +244,10 @@ read-only scheduled-audit contract, see `.agents/README.md`.
   without an architectural reason. Weights exist per glyph (`regular` is the
   default; `fill` for selected states); sizes are px numbers on a small shared
   scale (`NOSTOS_ICON_SIZE`).
+- **Note fields:** a field where someone writes a note's words is
+  `app-note-composer` (words with `[[` autocomplete, topic pills under them),
+  never a bare `<textarea>`. See `docs/topic-system.md`, "Writing a note";
+  `note-fields.guard.spec.ts` enforces it.
 - **UI/theme changes:** `styles.css` holds the token graph; a colour token
   added to `:root` needs its `:root[data-theme='dark']` counterpart or
   `npm run check:theme` fails. Genuinely theme-invariant tokens belong in that
