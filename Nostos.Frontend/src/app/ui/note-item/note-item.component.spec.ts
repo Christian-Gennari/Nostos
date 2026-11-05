@@ -149,7 +149,7 @@ describe('NoteItemComponent', () => {
   });
 
   it('calls the link "Open book" for a physical book, which has no reader', () => {
-    render({ bookFormat: 'physical', sourceAnchorKind: null, sourceAnchorValue: null });
+    render({ bookFormat: 'physical', sourceAnchorKind: undefined, sourceAnchorValue: undefined });
 
     const link = element.querySelector('.note-item-source') as HTMLAnchorElement;
     expect(link.textContent).toContain('Open book');
