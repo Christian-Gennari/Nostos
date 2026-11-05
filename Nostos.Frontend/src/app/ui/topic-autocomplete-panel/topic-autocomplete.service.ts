@@ -1,15 +1,6 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { TopicDto } from '../../core/services/topics.service';
 
-/**
- * How the picker presents itself.
- *
- * `dialog` is the deliberate path — the "Link a topic" button — and gets a real
- * dialog with its own search field. `inline` is the typing path (`[[`): the
- * textarea is already the search field, so it only needs a suggestion list.
- */
-export type TopicPickerMode = 'dialog' | 'inline';
-
 let nextPickerId = 0;
 
 @Injectable({ providedIn: 'root' })
@@ -21,7 +12,6 @@ export class TopicAutocompleteService {
   suggestions = signal<TopicDto[]>([]);
   activeIndex = signal(0);
   pickerOpen = signal(false);
-  mode = signal<TopicPickerMode>('dialog');
   query = signal('');
 
   /** Bumped on every arrow-key move, so the list can keep the active row in view. */
@@ -62,8 +52,8 @@ export class TopicAutocompleteService {
     if (this.pickerOpen()) this.setQuery(this.query());
   }
 
-  openPicker(query = '', mode: TopicPickerMode = 'dialog'): void {
-    this.mode.set(mode);
+  /** The `[[` suggestions, filtered by what follows the brackets. */
+  openPicker(query = ''): void {
     this.pickerOpen.set(true);
     this.setQuery(query);
   }
@@ -111,7 +101,7 @@ export class TopicAutocompleteService {
       return;
     }
 
-    this.openPicker(fragment, 'inline');
+    this.openPicker(fragment);
   }
 
   moveUp(): void {

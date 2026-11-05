@@ -12,7 +12,6 @@ import {
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
 
 import { formatAudioTime, isPassage, passageSizeLabel, type NoteSearchHit } from '../../core/dtos/note.dtos';
 import { noteSourceLink } from '../../core/note-source';
@@ -29,20 +28,18 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { ButtonComponent } from '../button/button.component';
 import { CheckboxDirective } from '../check/check.directive';
 import { InputDirective, TextareaDirective } from '../form-control/form-control.directive';
-import { TopicInputComponent } from '../topic-input.component/topic-input.component';
+import { NoteComposerComponent, draftChanged, draftForNote, draftToSave } from '../note-composer/note-composer.component';
+import { TopicRowComponent } from '../topic-row/topic-row.component';
 import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
 import { QuoteBlockComponent } from '../quote-block/quote-block.component';
-import { TopicChipComponent } from '../topic-chip/topic-chip.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NoteCaptureDetailsComponent } from '../note-capture-details/note-capture-details.component';
 import { PassageViewerService, type PassageViewerRequest } from '../passage-viewer/passage-viewer.service';
-import {
-  TopicPickerPopoverComponent,
-  type TopicSuggestionState,
-} from '../topic-picker-popover/topic-picker-popover.component';
+import type { TopicSuggestionState } from '../topic-picker-popover/topic-picker-popover.component';
 import { inlineTopicHref, noteLocationLabel, thoughtForDisplay, topicLookup } from './note-item.helpers';
 import type { Note } from '../../core/dtos/note.dtos';
 import { UNKNOWN_BOOK, formatOfConcept } from '../../core/book-format';
+
 
 /** What an edit changed. Fields that did not change are absent. */
 export interface NoteItemEdit {
@@ -51,18 +48,14 @@ export interface NoteItemEdit {
   selectedText?: string;
   highlightColour?: HighlightColour;
   passageTitle?: string;
+  /** The note's pill topics; with them, `content` is the words only (issue #1446). */
+  topics?: string[];
 }
 
 /** Above this many characters a quote is cut to a few lines, with "Show all". */
 const LONG_QUOTE = 420;
 /** Above this many characters the note's own words are cut too. */
 const LONG_THOUGHT = 600;
-
-const PICKER_POSITIONS: ConnectedPosition[] = [
-  { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 6 },
-  { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -6 },
-  { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top', offsetY: 6 },
-];
 
 /**
  * One note, the same everywhere the Brain shows it: the quote, your own words,
@@ -87,8 +80,6 @@ export interface CitingWriting {
     NostosDatePipe,
     FormsModule,
     RouterLink,
-    CdkConnectedOverlay,
-    CdkOverlayOrigin,
     ...NOSTOS_MENU,
     NostosIconComponent,
     IconButtonComponent,
@@ -96,13 +87,12 @@ export interface CitingWriting {
     CheckboxDirective,
     InputDirective,
     TextareaDirective,
-    TopicInputComponent,
+    NoteComposerComponent,
+    TopicRowComponent,
     NoteFormatPipe,
     NoteCaptureDetailsComponent,
-    TopicPickerPopoverComponent,
     PenSwatchesComponent,
     QuoteBlockComponent,
-    TopicChipComponent,
   ],
   templateUrl: './note-item.component.html',
   styleUrls: ['./note-item.component.css'],
@@ -202,9 +192,6 @@ export class NoteItemComponent {
     void this.router.navigate(['/studio'], { queryParams: { writingId: writing.id } });
   }
 
-  readonly pickerPositions = PICKER_POSITIONS;
-
-  readonly pickerOpen = signal(false);
   readonly expanded = signal(false);
   readonly editing = signal(false);
   /** A saved edit is out; the form stays until the note comes back changed. */
@@ -228,7 +215,9 @@ export class NoteItemComponent {
     });
   }
 
-  readonly editContent = signal('');
+  /** The edit's words and pill topics (the composer's draft). */
+  readonly editWords = signal('');
+  readonly editTopics = signal<readonly string[]>([]);
   readonly editQuote = signal('');
   readonly editTitle = signal('');
   readonly editColour = signal<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
@@ -250,10 +239,6 @@ export class NoteItemComponent {
 
   readonly lookup = computed(() => this.topicMap() ?? topicLookup(this.topics()));
 
-  /** The chips: each topic name with its id, when the topic still exists. */
-  readonly chips = computed(() =>
-    this.topicNames().map((name) => ({ name, id: this.lookup().get(name.trim().toLocaleLowerCase())?.id ?? null })));
-
   /** A highlight (or passage) has a pen that can be shown and changed. */
   readonly hasPen = computed(() => !!this.note().selectedText || this.isPassage());
 
@@ -269,23 +254,6 @@ export class NoteItemComponent {
     const seconds = this.audioTime();
     return seconds === null ? null : formatAudioTime(seconds);
   });
-
-  openPicker(): void {
-    if (this.busy()) return;
-    this.pickerOpen.set(true);
-    this.pickerOpened.emit();
-  }
-
-  closePicker(): void {
-    if (!this.pickerOpen()) return;
-    this.pickerOpen.set(false);
-    this.pickerClosed.emit();
-  }
-
-  chooseTopic(name: string): void {
-    this.closePicker();
-    this.topicAdded.emit(name);
-  }
 
   readPassage(): void {
     this.passageViewer.open(this.note().id, this.passageViewerOptions() ?? {});
@@ -305,8 +273,9 @@ export class NoteItemComponent {
 
   startEdit(): void {
     const note = this.note();
-    this.pickerOpen.set(false);
-    this.editContent.set(note.content ?? '');
+    const draft = draftForNote(note.content, this.topicNames());
+    this.editWords.set(draft.words);
+    this.editTopics.set(draft.topics);
     this.editQuote.set(note.selectedText ?? '');
     this.editTitle.set(note.passageTitle ?? '');
     this.editColour.set(noteHighlightColour(note));
@@ -332,9 +301,9 @@ export class NoteItemComponent {
 
   saveEdit(): void {
     const note = this.note();
-    const content = this.editContent().trim();
-    const edit: NoteItemEdit = { id: note.id, content };
-    let changed = content !== (note.content ?? '').trim();
+    const draft = draftToSave({ words: this.editWords(), topics: [...this.editTopics()] });
+    const edit: NoteItemEdit = { id: note.id, content: draft.words, topics: draft.topics };
+    let changed = draftChanged(draft, draftForNote(note.content, this.topicNames()));
 
     if (this.isPassage()) {
       // A passage's text and ends are fixed; its title, words and pen are not.

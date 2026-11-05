@@ -189,29 +189,55 @@ describe('NoteItemComponent', () => {
   it('offers "Add a topic" on a note with none', () => {
     render({ topicNames: [], content: '' });
 
-    expect(element.querySelector('.note-item-add')?.textContent?.trim()).toBe('Add a topic');
+    expect(element.querySelector('[data-testid="topic-row-add"]')?.textContent?.trim()).toBe('Add a topic');
     expect(element.querySelector('.note-item-thought')).toBeNull();
   });
 
-  it('adds a topic chosen in the picker and closes it', () => {
+  it('reports a topic added from the pill row', () => {
     render();
     const added: string[] = [];
     fixture.componentInstance.topicAdded.subscribe((name) => added.push(name));
 
-    fixture.componentInstance.openPicker();
-    fixture.componentInstance.chooseTopic('choice');
+    const row = fixture.debugElement.query((node) => node.name === 'app-topic-row');
+    row.triggerEventHandler('added', 'choice');
 
     expect(added).toEqual(['choice']);
-    expect(fixture.componentInstance.pickerOpen()).toBe(false);
   });
 
-  it('does not open the picker while a topic change is in flight', () => {
-    fixture.componentRef.setInput('busy', true);
+  it('opens the editor with the words only and the topic lines as pills', async () => {
     render();
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+    // Template-driven forms write the value a tick later.
+    await fixture.whenStable();
+    fixture.detectChanges();
 
-    fixture.componentInstance.openPicker();
+    const words = element.querySelector('textarea.note-input') as HTMLTextAreaElement;
+    expect(words.value).toBe('A compact definition of virtue.');
+    expect(words.value).not.toContain('[[');
+    const pills = Array.from(element.querySelectorAll('app-note-composer .topic-chip-name')).map((chip) => chip.textContent?.trim());
+    expect(pills).toEqual(['virtue', 'mean']);
+    // While writing, a pill does not navigate away from the words.
+    expect(element.querySelector('app-note-composer a.topic-chip-name')).toBeNull();
+  });
 
-    expect(fixture.componentInstance.pickerOpen()).toBe(false);
+  it('keeps an older link the text never declared as a pill in the editor', () => {
+    render({ content: 'A thought.', topicNames: ['older'] });
+    fixture.componentInstance.startEdit();
+
+    expect(fixture.componentInstance.editTopics()).toEqual(['older']);
+  });
+
+  it('sends a removed pill as a topic list without it', () => {
+    render();
+    const edits: NoteItemEdit[] = [];
+    fixture.componentInstance.edited.subscribe((edit) => edits.push(edit));
+
+    fixture.componentInstance.startEdit();
+    fixture.componentInstance.editTopics.set(['virtue']);
+    fixture.componentInstance.saveEdit();
+
+    expect(edits[0]).toMatchObject({ content: 'A compact definition of virtue.', topics: ['virtue'] });
   });
 
   it('emits only what an edit changed', () => {
@@ -220,13 +246,14 @@ describe('NoteItemComponent', () => {
     fixture.componentInstance.edited.subscribe((edit) => edits.push(edit));
 
     fixture.componentInstance.startEdit();
-    fixture.componentInstance.editContent.set('A sharper definition.\n\n[[virtue]] [[mean]]');
+    fixture.componentInstance.editWords.set('A sharper definition.');
     fixture.componentInstance.editColour.set('blue');
     fixture.componentInstance.saveEdit();
 
     expect(edits).toEqual([{
       id: 'note-1',
-      content: 'A sharper definition.\n\n[[virtue]] [[mean]]',
+      content: 'A sharper definition.',
+      topics: ['virtue', 'mean'],
       selectedText: NOTE.selectedText ?? undefined,
       highlightColour: 'blue',
     }]);
@@ -238,7 +265,7 @@ describe('NoteItemComponent', () => {
   function saveAndSettle(replaceNote: boolean): void {
     render();
     fixture.componentInstance.startEdit();
-    fixture.componentInstance.editContent.set('Words I do not want to lose.');
+    fixture.componentInstance.editWords.set('Words I do not want to lose.');
     fixture.componentInstance.saveEdit();
     fixture.componentRef.setInput('busy', true);
     fixture.detectChanges();
@@ -257,7 +284,7 @@ describe('NoteItemComponent', () => {
     saveAndSettle(false);
     expect(fixture.componentInstance.editing()).toBe(true);
     expect(fixture.componentInstance.saving()).toBe(false);
-    expect(fixture.componentInstance.editContent()).toBe('Words I do not want to lose.');
+    expect(fixture.componentInstance.editWords()).toBe('Words I do not want to lose.');
   });
 
   it('emits nothing when an edit changed nothing', () => {
@@ -326,7 +353,7 @@ describe('NoteItemComponent', () => {
       fixture.componentInstance.edited.subscribe((edit) => edits.push(edit));
 
       fixture.componentInstance.startEdit();
-      fixture.componentInstance.editContent.set('Another thought.');
+      fixture.componentInstance.editWords.set('Another thought.');
       fixture.componentInstance.saveEdit();
 
       expect(edits).toHaveLength(1);

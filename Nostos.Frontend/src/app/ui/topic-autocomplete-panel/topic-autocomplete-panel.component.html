@@ -1,4 +1,4 @@
-<!-- The option rows, shared by both presentations so they cannot drift.
+<!-- The option rows.
      mousemove, not mouseenter: a row that merely appears under a resting pointer
      must not take the highlight away from the first result. -->
 <ng-template #options>
@@ -35,66 +35,6 @@
     (click)="select(name, $event)"
   ></button>
   }
-</ng-template>
-
-<!-- "Link a topic" button: a real dialog. A full-screen sheet on a phone, so the
-     search sits at the top and the results stay above the keyboard. -->
-<ng-template #dialogTpl>
-  <app-modal-shell
-    closeLabel="Close"
-    [isOpen]="true"
-    variant="sheet"
-    [maxWidth]="'460px'"
-    [maxHeight]="'min(560px, calc(100dvh - 2.5rem))'"
-    [layer]="130"
-    [trapFocus]="true"
-    [ariaLabelledBy]="auto.uid + '-title'"
-    [headDivider]="false"
-    [style.--modal-head-padding]="'0.85rem 1rem 0.7rem'"
-    (closed)="cancel()"
-  >
-    <h2 shellHeader [id]="auto.uid + '-title'" class="picker-title">Link a topic</h2>
-
-    <!-- The field is pinned under the title, full width, whatever the list does. -->
-    <div shellTabs class="picker-head">
-      <!-- No clear button: the dialog's Close sits right above the field. -->
-      <nostos-search-field class="picker-search" [clearable]="false">
-        <input
-          appInput
-          cdkFocusInitial
-          type="search"
-          class="picker-search-input"
-          role="combobox"
-          autocomplete="off"
-          spellcheck="false"
-          enterkeyhint="done"
-          placeholder="Find or create a topic…"
-          aria-label="Find or create a topic"
-          aria-autocomplete="list"
-          aria-expanded="true"
-          [attr.aria-controls]="auto.listId"
-          [attr.aria-activedescendant]="auto.activeOptionId()"
-          [value]="auto.query()"
-          (input)="onSearchInput($event)"
-          (keydown)="onSearchKeydown($event)"
-        />
-      </nostos-search-field>
-    </div>
-
-    <div class="picker-list" role="listbox" aria-label="Topics" [id]="auto.listId">
-      <ng-container [ngTemplateOutlet]="options"></ng-container>
-
-      @if (auto.optionCount() === 0) {
-      <p class="picker-empty">{{ noTopics }}</p>
-      }
-    </div>
-
-    <div shellActions class="picker-foot">
-      <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-      <span><kbd>↵</kbd> link</span>
-      <span><kbd>esc</kbd> close</span>
-    </div>
-  </app-modal-shell>
 </ng-template>
 
 <!-- Typing `[[`: the textarea is already the search field, so this is only the

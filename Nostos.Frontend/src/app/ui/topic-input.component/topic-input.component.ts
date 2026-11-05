@@ -2,6 +2,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  HostBinding,
   Input,
   OnInit,
   Output,
@@ -15,24 +16,20 @@ import {
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 
-import { ButtonComponent } from '../button/button.component';
-import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { TopicAutocompleteDirective } from '../../core/directives/topic-autocomplete.directive';
 import { TopicAutocompletePanel } from '../topic-autocomplete-panel/topic-autocomplete-panel.component';
 import { BrainStateService } from '../../brain/brain-state.service';
 import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-autocomplete.service';
 
+/**
+ * The words of a note, with `[[` autocomplete for a topic inside a sentence.
+ * Used only inside the note composer (`app-note-composer`), which adds the
+ * topic pills below it.
+ */
 @Component({
   selector: 'app-topic-input',
   standalone: true,
-  imports: [
-    CommonModule,
-    FormsModule,
-    ButtonComponent,
-    NostosIconComponent,
-    TopicAutocompleteDirective,
-    TopicAutocompletePanel,
-  ],
+  imports: [CommonModule, FormsModule, TopicAutocompleteDirective, TopicAutocompletePanel],
   templateUrl: './topic-input.component.html',
   styleUrls: ['./topic-input.component.css'],
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -48,13 +45,17 @@ import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-auto
 export class TopicInputComponent implements ControlValueAccessor, OnInit {
   @Input() placeholder = '';
   @Input() rows = 3;
+  @Input() inputId: string | null = null;
+  @Input() ariaLabel: string | null = null;
+  @Input() testId: string | null = null;
+  /** The reader's selection bar and highlight card: a tighter field. */
+  @Input() @HostBinding('class.is-compact') compact = false;
   @Output() submitTrigger = new EventEmitter<void>();
 
   @ViewChild('textarea') textarea!: ElementRef<HTMLTextAreaElement>;
   protected readonly autocompleteService = inject(TopicAutocompleteService);
   private readonly brain = inject(BrainStateService);
   private readonly cdr = inject(ChangeDetectorRef);
-  private pickerSelection: { start: number; end: number } | null = null;
 
   value = '';
   isDisabled = false;
@@ -64,7 +65,7 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit {
 
   /** True while the `[[` suggestion list is showing, for the textarea's ARIA wiring. */
   protected inlineOpen(): boolean {
-    return this.autocompleteService.pickerOpen() && this.autocompleteService.mode() === 'inline';
+    return this.autocompleteService.pickerOpen();
   }
 
   constructor() {
@@ -77,34 +78,13 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit {
     this.brain.ensureTopicsLoaded();
   }
 
-  rememberSelection(): void {
-    const textarea = this.textarea?.nativeElement;
-    if (!textarea) return;
-    this.pickerSelection = {
-      start: textarea.selectionStart ?? this.value.length,
-      end: textarea.selectionEnd ?? this.value.length,
-    };
+  focus(): void {
+    this.textarea?.nativeElement.focus();
   }
 
-  openTopicPicker(): void {
-    this.rememberSelection();
-    const selection = this.pickerSelection;
-    const prefill = selection
-      ? this.value.slice(selection.start, selection.end).trim()
-      : '';
-
-    this.autocompleteService.openPicker(prefill);
-  }
-
+  /** The `[[` list closed without a choice: back to the words. */
   cancelTopicPicker(): void {
-    const selection = this.pickerSelection;
-    this.pickerSelection = null;
-
-    setTimeout(() => {
-      const textarea = this.textarea.nativeElement;
-      textarea.focus();
-      if (selection) textarea.setSelectionRange(selection.start, selection.end);
-    }, 0);
+    setTimeout(() => this.textarea?.nativeElement.focus(), 0);
   }
 
   insertTopicName(rawName: string): void {
@@ -113,27 +93,12 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit {
 
     const textarea = this.textarea.nativeElement;
     const text = this.value;
-    const storedSelection = this.pickerSelection;
-
-    let start: number;
-    let end: number;
-
-    if (storedSelection) {
-      start = storedSelection.start;
-      end = storedSelection.end;
-    } else {
-      const cursor = textarea.selectionStart ?? text.length;
-      const wikilinkStart = text.lastIndexOf('[[', cursor);
-      const lastClose = text.lastIndexOf(']]', Math.max(0, cursor - 1));
-
-      if (wikilinkStart >= 0 && lastClose < wikilinkStart) {
-        start = wikilinkStart;
-        end = cursor;
-      } else {
-        start = cursor;
-        end = cursor;
-      }
-    }
+    const cursor = textarea.selectionStart ?? text.length;
+    const wikilinkStart = text.lastIndexOf('[[', cursor);
+    const lastClose = text.lastIndexOf(']]', Math.max(0, cursor - 1));
+    const inLink = wikilinkStart >= 0 && lastClose < wikilinkStart;
+    const start = inLink ? wikilinkStart : cursor;
+    const end = cursor;
 
     const link = `[[${name}]]`;
     const after = text.slice(end);
@@ -142,15 +107,14 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit {
       : '';
 
     this.value = text.slice(0, start) + link + spacer + after;
+    // Written to the field now, not at the next render: a key typed straight
+    // after Enter must land after the link, not overwrite it.
+    textarea.value = this.value;
+    const caret = start + link.length + spacer.length;
+    textarea.setSelectionRange(caret, caret);
     this.onChange(this.value);
     this.autocompleteService.clear();
-    this.pickerSelection = null;
-
-    const caret = start + link.length + spacer.length;
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(caret, caret);
-    }, 0);
+    if (document.activeElement !== textarea) textarea.focus();
   }
 
   writeValue(obj: unknown): void {
@@ -173,7 +137,6 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit {
   handleInput(event: Event): void {
     const value = (event.target as HTMLTextAreaElement).value;
     this.value = value;
-    this.pickerSelection = null;
     this.onChange(value);
   }
 }

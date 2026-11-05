@@ -48,6 +48,8 @@ import { QuoteBlockComponent } from '../quote-block/quote-block.component';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { PagingStatusComponent } from '../paging-status/paging-status.component';
 import { TopicChipComponent } from '../topic-chip/topic-chip.component';
+import { TopicRowComponent } from '../topic-row/topic-row.component';
+import { NoteComposerComponent } from '../note-composer/note-composer.component';
 import { NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import type { HighlightColour } from '../../reader/highlight-colours';
 import { PlaybackSpeedMenuComponent } from '../playback-speed-menu/playback-speed-menu.component';
@@ -96,6 +98,8 @@ import { TO_READ_LABEL } from '../../core/reading-status';
     PenSwatchesComponent,
     QuoteBlockComponent,
     TopicChipComponent,
+    TopicRowComponent,
+    NoteComposerComponent,
     TopicOptionComponent,
     EmptyStateComponent,
     PagingStatusComponent,

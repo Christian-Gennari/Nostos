@@ -598,7 +598,10 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   'src/app/ui/markdown-editor/markdown-editor.component.html': ['editor-bubble-btn'],
   // NoteItem's footer: the time, "Cited in", "Show in book" and the topic add are
   // quiet inline text in the meta line, next to plain <a> twins with the same look.
-  'src/app/ui/note-item/note-item.component.html': ['note-item-add', 'note-item-time', 'note-item-cited', 'note-item-source'],
+  'src/app/ui/note-item/note-item.component.html': ['note-item-time', 'note-item-cited', 'note-item-source'],
+  // The topic row's "+ Topic": the dashed pill beside the topic chips, the same
+  // shape as a chip so the row reads as one list (issue #1447).
+  'src/app/ui/topic-row/topic-row.component.ts': ['topic-row-add'],
   // An imported book in the import report: the same row as the non-interactive
   // failure rows beside it, made clickable.
   'src/app/ui/highlight-import-modal/highlight-import-modal.component.html': ['highlight-row'],

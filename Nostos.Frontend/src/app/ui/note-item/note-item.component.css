@@ -145,49 +145,7 @@
 }
 
 /* --- Topics ---------------------------------------------------------------- */
-.note-item-topics {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-/* Each topic is the shared topic chip (ui/topic-chip). */
-.note-item-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.18rem 0.65rem;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--color-text-light);
-  font: inherit;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  cursor: pointer;
-  transition: color var(--motion-fast) ease, border-color var(--motion-fast) ease;
-}
-
-.note-item-add.is-first {
-  border-color: var(--color-text-light);
-  color: var(--color-text-main);
-}
-
-.note-item-add:hover:not(:disabled),
-.note-item-add[aria-expanded='true'] {
-  border-color: var(--color-text-muted);
-  color: var(--color-text-main);
-}
-
-.note-item-add:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.note-item-add:disabled {
-  cursor: progress;
-}
+/* The topics are the shared pill row (ui/topic-row). */
 
 /* --- Where it comes from --------------------------------------------------- */
 .note-item-meta {
@@ -313,27 +271,17 @@ button.note-item-source {
    invisible hit area instead; the gaps between chips are wide enough that no
    two areas meet. */
 @media (pointer: coarse), (hover: none) {
-  .note-item-topics {
-    gap: 1rem 1.25rem;
-  }
-
-  .note-item-add,
   .note-item-source,
   .note-item-time {
     position: relative;
   }
 
-  .note-item-add::after,
   .note-item-source::after,
   .note-item-time::after {
     content: '';
     position: absolute;
     inset-block: calc(50% - 22px);
     inset-inline: 0;
-  }
-
-  .note-item-add::after {
-    inset-inline: min(0px, calc(50% - 22px));
   }
 
   .note-item-read,
@@ -357,8 +305,3 @@ button.note-item-source {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .note-item-add {
-    transition: none;
-  }
-}

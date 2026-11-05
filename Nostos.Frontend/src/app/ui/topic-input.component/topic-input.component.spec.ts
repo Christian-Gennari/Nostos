@@ -36,23 +36,22 @@ describe('TopicInputComponent topic linking', () => {
     textarea = fixture.nativeElement.querySelector('textarea');
   });
 
-  // The picker renders into an overlay on the document, not inside the fixture.
+  // The suggestions render into an overlay on the document, not inside the fixture.
   const inPicker = <T extends Element>(selector: string) => document.querySelector<T>(selector);
-  const dialog = () => inPicker<HTMLElement>('[role="dialog"]');
-  const search = () => inPicker<HTMLInputElement>('input[aria-label="Find or create a topic"]');
   const items = () => [...document.querySelectorAll<HTMLButtonElement>('.item')];
 
-  function openDialog(): void {
-    (fixture.nativeElement.querySelector('.topic-link-action') as HTMLButtonElement).click();
+  function type(value: string): void {
+    component.value = value;
+    textarea.value = value;
+    textarea.setSelectionRange(value.length, value.length);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
     fixture.detectChanges();
   }
 
-  function setValue(value: string, start = value.length, end = start): void {
-    component.value = value;
-    textarea.value = value;
-    textarea.setSelectionRange(start, end);
+  const key = (name: string) => {
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true }));
     fixture.detectChanges();
-  }
+  };
 
   it('takes its topics from the Brain\'s state and makes no request of its own', () => {
     fixture.detectChanges();
@@ -60,52 +59,21 @@ describe('TopicInputComponent topic linking', () => {
     expect(ensureTopicsLoaded).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a labelled modal dialog from Link a topic, prefilled from the selected text', () => {
-    setValue('Power matters', 0, 5);
-    openDialog();
-
-    expect(dialog()).toBeTruthy();
-    expect(dialog()!.getAttribute('aria-modal')).toBe('true');
-    const title = document.getElementById(dialog()!.getAttribute('aria-labelledby')!);
-    expect(title?.textContent?.trim()).toBe('Link a topic');
-    expect(search()!.value).toBe('Power');
-
-    items()[0].click();
+  it('has no button of its own: the composer\'s + Topic adds a topic as a pill', () => {
     fixture.detectChanges();
 
-    expect(component.value).toBe('[[Power]] matters');
-    expect(changed).toHaveBeenLastCalledWith('[[Power]] matters');
-    expect(dialog()).toBeNull();
-  });
-
-  it('inserts the same canonical wikilink at the caret when no text is selected', () => {
-    setValue('Think about it', 6);
-    openDialog();
-
-    search()!.value = 'Freedom';
-    search()!.dispatchEvent(new Event('input', { bubbles: true }));
-    fixture.detectChanges();
-
-    items()[0].click();
-
-    expect(component.value).toBe('Think [[Freedom]] about it');
+    expect(fixture.nativeElement.querySelector('button')).toBeNull();
   });
 
   it('typing [[ shows suggestions without a second search field, and Enter completes the link', () => {
-    setValue('Think [[');
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    fixture.detectChanges();
+    type('Think [[');
 
     expect(inPicker('.suggest-panel')).toBeTruthy();
     expect(items().map((item) => item.textContent?.trim())).toEqual(['Freedom4', 'Power2']);
-    expect(dialog()).toBeNull();
-    expect(search()).toBeNull();
+    expect(inPicker('[role="dialog"]')).toBeNull();
 
-    textarea.value = 'Think [[Fre';
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    fixture.detectChanges();
+    type('Think [[Fre');
+    key('Enter');
 
     expect(component.value).toBe('Think [[Freedom]] ');
     expect(changed).toHaveBeenLastCalledWith('Think [[Freedom]] ');
@@ -113,9 +81,7 @@ describe('TopicInputComponent topic linking', () => {
   });
 
   it('closes the [[ suggestions when the textarea loses focus', () => {
-    setValue('Think [[');
-    textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    fixture.detectChanges();
+    type('Think [[');
     expect(inPicker('.suggest-panel')).toBeTruthy();
 
     textarea.dispatchEvent(new FocusEvent('blur'));
@@ -125,88 +91,46 @@ describe('TopicInputComponent topic linking', () => {
     expect(component.value).toBe('Think [[');
   });
 
-  it('can create a new canonical topic link from the dialog', () => {
-    setValue('A thought worth returning to', 2, 9);
-    openDialog();
-
-    const create = inPicker<HTMLButtonElement>('.create-item');
-    expect(create?.textContent).toContain('Create “thought”');
-    create!.click();
-
-    expect(component.value).toBe('A [[thought]] worth returning to');
-  });
-
-  it('reaches the create row with the arrow keys and links it with Enter', () => {
-    setValue('Free will', 0, 4);
-    openDialog();
+  it('reaches the create row with the arrow keys and links a new topic with Enter', () => {
+    type('[[Free');
 
     // "Free" matches Freedom but is not itself a topic, so both rows are offered.
     expect(items().length).toBe(2);
-    expect(search()!.getAttribute('aria-activedescendant')).toBe(items()[0].id);
+    expect(textarea.getAttribute('aria-activedescendant')).toBe(items()[0].id);
 
-    search()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    fixture.detectChanges();
+    key('ArrowDown');
 
     expect(items()[1].classList.contains('create-item')).toBe(true);
     expect(items()[1].getAttribute('aria-selected')).toBe('true');
-    expect(search()!.getAttribute('aria-activedescendant')).toBe(items()[1].id);
+    expect(textarea.getAttribute('aria-activedescendant')).toBe(items()[1].id);
 
-    search()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    key('Enter');
 
-    expect(component.value).toBe('[[Free]] will');
+    expect(component.value).toBe('[[Free]] ');
   });
 
   it('does not offer to create a topic that already exists', () => {
-    setValue('power', 0, 5);
-    openDialog();
+    type('[[power');
 
     expect(inPicker('.create-item')).toBeNull();
     expect(items().length).toBe(1);
   });
 
-  it('closes without mutating the note and restores the previous selection', async () => {
-    setValue('Power matters', 0, 5);
-    const original = component.value;
+  it('clicking a suggestion links it where the [[ was typed', () => {
+    type('Think [[Pow');
+    items()[0].click();
 
-    openDialog();
-    inPicker<HTMLButtonElement>('.modal-close')!.click();
-    fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(dialog()).toBeNull();
-    expect(component.value).toBe(original);
-    expect(changed).not.toHaveBeenCalled();
-    expect(textarea.selectionStart).toBe(0);
-    expect(textarea.selectionEnd).toBe(5);
+    expect(component.value).toBe('Think [[Power]] ');
   });
 
-  it('Escape closes only the dialog, without reaching listeners behind it', () => {
-    setValue('Power', 0, 5);
-    openDialog();
-    const behind = vi.fn();
-    document.addEventListener('keydown', behind);
-
-    search()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  it('Ctrl+Enter and Cmd+Enter ask to save', () => {
+    const submitted = vi.fn();
+    component.submitTrigger.subscribe(submitted);
     fixture.detectChanges();
-    document.removeEventListener('keydown', behind);
 
-    expect(dialog()).toBeNull();
-    expect(behind).not.toHaveBeenCalled();
-    expect(component.value).toBe('Power');
-  });
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
 
-  it('uses real buttons for pointer and touch selection targets', () => {
-    setValue('Power', 0, 5);
-    openDialog();
-
-    const action = fixture.nativeElement.querySelector('.topic-link-action') as HTMLButtonElement;
-    const option = items()[0];
-    const close = inPicker<HTMLButtonElement>('.modal-close')!;
-
-    expect(action.tagName).toBe('BUTTON');
-    expect(option.tagName).toBe('BUTTON');
-    expect(close.tagName).toBe('BUTTON');
-    expect(action.type).toBe('button');
-    expect(option.type).toBe('button');
+    expect(submitted).toHaveBeenCalledTimes(2);
   });
 });
