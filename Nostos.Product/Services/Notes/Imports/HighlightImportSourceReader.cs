@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using Nostos.Backend.Services.Library;
 
@@ -46,8 +47,7 @@ internal static class HighlightImportSourceReader
         if (length > MaxTextBytes)
             throw new FormatException(Unrecognised);
 
-        // UTF-8 with or without a byte-order mark, as both devices write it.
-        var text = File.ReadAllText(path);
+        var text = DecodeText(File.ReadAllBytes(path));
 
         if (ReadwiseCsvParser.Looks(text))
         {
@@ -92,6 +92,38 @@ internal static class HighlightImportSourceReader
         if (annotations != path && library != path)
             return null;
         return new ImportSourceFile(AppleBooks, AppleBooksDatabaseReader.Read(annotations, library), []);
+    }
+
+    /// <summary>
+    /// A byte-order mark names its own encoding (UTF-8, UTF-16, UTF-32). Without
+    /// one the bytes are UTF-8 when they decode strictly, and Windows-1252
+    /// otherwise: that is what older Kindles and Windows exports write, and
+    /// decoding it as UTF-8 would turn every accent and dash into U+FFFD.
+    /// </summary>
+    internal static string DecodeText(byte[] bytes)
+    {
+        using (var reader = new StreamReader(
+            new MemoryStream(bytes),
+            new UTF8Encoding(false),
+            detectEncodingFromByteOrderMarks: true))
+        {
+            var hasBom = bytes.Length >= 2
+                && ((bytes[0] == 0xFF && bytes[1] == 0xFE)
+                    || (bytes[0] == 0xFE && bytes[1] == 0xFF)
+                    || (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF));
+            if (hasBom)
+                return reader.ReadToEnd();
+        }
+
+        try
+        {
+            return new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(1252).GetString(bytes);
+        }
     }
 
     private static List<ImportSourceBook> ReadKobo(string path) =>

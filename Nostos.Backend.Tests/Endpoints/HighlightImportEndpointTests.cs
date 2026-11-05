@@ -1,3 +1,4 @@
+using System.Text;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -566,6 +567,36 @@ public sealed class HighlightImportEndpointTests : IDisposable
             (await db.Notes.CountAsync()).Should().Be(0);
             (await db.Books.CountAsync()).Should().Be(3, "undo removes notes, never books the owner chose to add");
         }
+    }
+
+    [Fact]
+    public async Task A_windows_1252_clippings_file_reads_cleanly_and_adds_no_duplicates_after_a_utf8_import()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Sommarboken", "Tove Jansson", type: "ebook");
+        const string quote = "Det var \u201Csommar\u201D \u2014 \u00E5\u00E4\u00F6 och \u00C5\u00C4\u00D6, s\u00E5 klart.";
+        var text = "Sommarboken (Jansson, Tove)\r\n- Your Highlight on page 1 | Location 5-6 | Added on Monday, January 1, 2024 10:00:00 AM\r\n\r\n"
+            + quote + "\r\n==========\r\n";
+        var directory = Directory.CreateTempSubdirectory().FullName;
+        var utf8 = Path.Combine(directory, "utf8.txt");
+        var cp1252 = Path.Combine(directory, "My Clippings.txt");
+        await File.WriteAllTextAsync(utf8, text, new UTF8Encoding(false));
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        await File.WriteAllBytesAsync(cp1252, Encoding.GetEncoding(1252).GetBytes(text));
+
+        var first = await PreviewAsync(client, utf8);
+        await CommitAsync(client, utf8, new HighlightImportDecision(first.Books.Single().SourceKey, book.Id));
+
+        var again = await PreviewAsync(client, cp1252);
+        again.Books.Single().NewCount.Should().Be(0);
+        var repeat = await CommitAsync(client, cp1252, new HighlightImportDecision(again.Books.Single().SourceKey, book.Id));
+        repeat.BatchId.Should().BeNull();
+
+        await using var db = CreateContext(factory.DatabasePath);
+        var note = await db.Notes.AsNoTracking().SingleAsync(candidate => candidate.BookId == book.Id);
+        note.SelectedText.Should().Be(quote);
+        Directory.Delete(directory, true);
     }
 
     [Fact]
