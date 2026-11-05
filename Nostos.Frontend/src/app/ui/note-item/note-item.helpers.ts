@@ -6,6 +6,20 @@ import { isReferenceLine, splitTopics } from '../note-composer/topic-text';
 
 export { isReferenceLine };
 
+// A candidate reference: [[ then text with no [[, ]], | or line break, then ]].
+// The same shape as TopicReferences on the server; a candidate is a reference
+// only when its name passes isValidTopicName.
+const REFERENCE = /\[\[((?:(?!\[\[|\]\])[^\r\n|])*)\]\]/g;
+
+/**
+ * `text` with each `[[Topic]]` reference replaced by `render(name)`. Anything
+ * else (an unclosed `[[`, `[[]]`, `[[a|b]]`, a stray `]]`) stays as typed.
+ */
+export function replaceTopicReferences(text: string, render: (name: string) => string): string {
+  return text.replace(REFERENCE, (match, raw: string) =>
+    isValidTopicName(raw) ? render(raw.trim()) : match);
+}
+
 /**
  * A note's own words as the card shows them. Lines that hold only `[[Topic]]`
  * references are left out, because the card lists the topics as chips right

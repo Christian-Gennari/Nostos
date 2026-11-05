@@ -48,6 +48,7 @@ import {
   ReaderSourceTarget,
   TocItem,
 } from '../reader.interface';
+import { applyDocumentDirection, epubReadingDirection, type EpubDirection } from './epub-direction';
 import {
   isInteractiveTarget,
   isTypingTarget,
@@ -547,6 +548,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   // RxJS Subjects
   private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
+  /**
+   * Whether this open has reported a position yet. A reader who has only opened
+   * the book has not moved it: the layout and locations settling later must
+   * refresh the progress pill, but must not write the page the reader landed on
+   * (the first page of a spread, which can be before the saved CFI) over the
+   * saved position (#1364).
+   */
+  private positionReported = false;
   private resizeSubject$ = new Subject<void>();
   private resizeObserver: ResizeObserver | null = null;
   private resizeAfterFirstPage = false;
@@ -1026,6 +1035,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
   }
 
+  /** Reading direction of the open book (#1388): drives spreads, keys and tap zones. */
+  readonly readingDirection = signal<EpubDirection>('ltr');
+
+  /** Left/right page controls run backwards in a right-to-left book. */
+  isRtl(): boolean {
+    return this.readingDirection() === 'rtl';
+  }
+
   next() {
     this.beginNavigation();
     this.sourceNavigationMessage.set(null);
@@ -1383,7 +1400,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     const finish = () => {
       cleanup();
-      void this.verifyGroundedNavigation(generation);
+      void this.afterSectionFonts().then(() => this.verifyGroundedNavigation(generation));
     };
 
     // Every re-layout restarts the quiet window: the settle is not one resize
@@ -1401,6 +1418,33 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     resizeSubscription = this.resizeSubject$.subscribe(restartQuietWindow);
     deadlineTimer = setTimeout(finish, GROUNDED_SETTLE_MAX_MS);
     restartQuietWindow();
+  }
+
+  /**
+   * Resolves once the rendered sections have stopped loading their web fonts,
+   * or after GROUNDED_SETTLE_MAX_MS. The book's typeface arrives after the
+   * first layout and moves the text without any resize: on a Gutenberg EPUB at
+   * 1920 px the saved passage was on the page at 400 ms and three pages later
+   * at 800 ms, while the display had already been confirmed (#1364). Verifying
+   * only after the fonts are in judges, and if need be re-asserts, the layout
+   * the reader will actually see.
+   */
+  private async afterSectionFonts(): Promise<void> {
+    const loading: Promise<unknown>[] = [];
+    for (const content of this.renderedContents()) {
+      const fonts = content?.document?.fonts;
+      if (fonts && fonts.status === 'loading') loading.push(fonts.ready);
+    }
+    if (loading.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, GROUNDED_SETTLE_MAX_MS);
+    });
+    try {
+      await Promise.race([Promise.all(loading).catch(() => undefined), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -1977,6 +2021,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.notesSeen.clear();
     this.locating = Promise.resolve();
     this.progressUnlocked = false;
+    this.positionReported = false;
     this.chapterRanges = [];
     this.chapterBounds = null;
     this.pageEndCfi = null;
@@ -1997,6 +2042,18 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // `book.opened`.
     const epubBook = ePub({});
     this.epubBook = epubBook;
+    // Before the rendition starts: it reads the direction from the package
+    // metadata when the book opens, and many right-to-left books never say it.
+    this.readingDirection.set('ltr');
+    void epubBook.loaded.metadata.then((metadata: any) => {
+      if (this.epubBook !== epubBook) return;
+      const direction = epubReadingDirection({
+        pageProgressionDirection: metadata?.direction,
+        language: metadata?.language,
+      });
+      if (metadata) metadata.direction = direction;
+      this.readingDirection.set(direction);
+    });
     this.lazyResources = new EpubLazyResources(epubBook);
 
     // 2. Setup Rendition Immediately
@@ -2027,6 +2084,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     // 3. Register Hooks
     rendition.hooks.content.register((contents: Contents) => {
+      applyDocumentDirection(contents.document, this.readingDirection());
       this.injectCustomStyles(contents);
       this.annotationManager?.registerContents(contents);
       this.registerContentsKeyboard(contents);
@@ -2110,7 +2168,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
               epubBook.locations.load(dto.locations);
               this.chapterBounds = null;
               this.locationsReady.set(true);
-              if (this.currentCfi) this.updateProgressState(this.currentCfi);
+              if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
             }
           },
           error: () => {
@@ -2124,7 +2182,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
               void epubBook.locations.generate(1000).then(() => {
                 this.chapterBounds = null;
                 this.locationsReady.set(true);
-                if (this.currentCfi) this.updateProgressState(this.currentCfi);
+                if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
 
                 // Save them for next time
                 const json = epubBook.locations.save();
@@ -2273,6 +2331,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // (#1270).
     if (this.groundedNavigation || this.selectionAnchor) return;
 
+    if (this.progressUnlocked) this.positionReported = true;
     this.progressUpdater$.next({ location: cfi, percentage: percent });
   }
 
@@ -2367,7 +2426,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       if (isTypingTarget(event.target) || isInteractiveTarget(event.target)) return;
 
-      const action = pageActionForKey(event);
+      const action = pageActionForKey(event, this.isRtl());
       if (!action) return;
 
       if (action === 'next') this.next();
@@ -2444,6 +2503,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         width,
         coarsePointer: coarsePointer(),
         edgePaging: true,
+        rtl: this.isRtl(),
       });
 
       if (action === 'next') this.next();
@@ -2491,6 +2551,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         endX: touch.clientX,
         endY: touch.clientY,
         durationMs: now - start.at,
+        rtl: this.isRtl(),
       });
 
       // A tap with no selection hands the page back after the deferred capture

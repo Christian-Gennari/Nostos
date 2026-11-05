@@ -72,7 +72,7 @@ describe('live citations (issue #1157)', () => {
 
     it('leaves an ordinary link alone, and reads only its own addresses', () => {
       expect(markdownToHtml('[site](https://example.com)')).toContain('<a href="https://example.com"');
-      expect(parseCitationHref('nostos:cite/b1?p=0&as=bogus')).toEqual({ book: 'b1', page: null, src: null, as: null });
+      expect(parseCitationHref('nostos:cite/b1?p=0&as=bogus')).toEqual({ book: 'b1', page: null, loc: null, src: null, as: null });
       expect(parseCitationHref('nostos:cite/../x')).toBeNull();
       expect(citationMarkdown(' (Kant, 1992) ', { book: 'b2', page: 3, src: null, as: 'quote' })).toBe(
         '[(Kant, 1992)](nostos:cite/b2?p=3&as=quote)',

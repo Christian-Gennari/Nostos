@@ -64,6 +64,9 @@ export class ClipPlayer {
               duration: track.duration,
             })),
             callbacks,
+            undefined,
+            // Open in the track the clip is in, not track 1 (issue #1391).
+            start,
           )
         : (new Howl({
             src: [`/api/books/${book.id}/file`],

@@ -75,7 +75,13 @@ class FakeAudio extends EventTarget {
 }
 
 function setup(durations = [100, 250.5, 4]) {
-  const audio = new FakeAudio();
+  // The first element made is the one that plays; any later one only preloads.
+  const audios: FakeAudio[] = [];
+  const makeAudio = () => {
+    const created = new FakeAudio();
+    audios.push(created);
+    return created as unknown as HTMLAudioElement;
+  };
   const events: string[] = [];
   const player = new TrackPlaylistPlayer(
     durations.map((duration, index) => ({ url: `/tracks/${index + 1}`, duration })),
@@ -86,9 +92,10 @@ function setup(durations = [100, 250.5, 4]) {
       onpause: () => events.push('pause'),
       onend: () => events.push('end'),
     },
-    () => audio as unknown as HTMLAudioElement,
+    makeAudio,
   );
-  return { audio, events, player };
+  const audio = audios[0];
+  return { audio, audios, events, player };
 }
 
 describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
@@ -175,6 +182,58 @@ describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
     audio.finishLoading();
     expect(audio.playCalls).toBe(2);
     expect(events).toEqual(['load', 'play']);
+  });
+
+  it('fetches the next track shortly before the current one ends, on a second element', () => {
+    const { audio, audios, player } = setup([100, 250.5, 4]);
+    audio.finishLoading();
+    player.play();
+
+    audio.currentTime = 40;
+    audio.dispatchEvent(new Event('timeupdate'));
+    expect(audios).toHaveLength(1);
+
+    audio.currentTime = 75;
+    audio.dispatchEvent(new Event('timeupdate'));
+    expect(audios).toHaveLength(2);
+    expect(audios[1].loads).toEqual(['/tracks/2']);
+    expect(audios[1].playCalls).toBe(0);
+    expect(audio.loads).toEqual(['/tracks/1']);
+
+    // Asked once per track, however often the time moves.
+    audio.currentTime = 90;
+    audio.dispatchEvent(new Event('timeupdate'));
+    expect(audios[1].loads).toEqual(['/tracks/2']);
+
+    // The hand-off still happens on the playing element.
+    audio.runOut();
+    expect(audio.loads).toEqual(['/tracks/1', '/tracks/2']);
+    expect(player.trackIndex()).toBe(1);
+  });
+
+  it('fetches the track after that in turn, and nothing after the last one', () => {
+    const { audio, audios, player } = setup([10, 20, 30]);
+    audio.finishLoading();
+    player.play();
+
+    // A short track is within the lead from its first moment.
+    audio.dispatchEvent(new Event('timeupdate'));
+    expect(audios[1].loads).toEqual(['/tracks/2']);
+
+    audio.runOut();
+    audio.finishLoading();
+    audio.dispatchEvent(new Event('timeupdate'));
+    expect(audios[1].loads).toEqual(['/tracks/2', '/tracks/3']);
+
+    audio.runOut();
+    audio.finishLoading();
+    audio.dispatchEvent(new Event('timeupdate'));
+    expect(audios[1].loads).toEqual(['/tracks/2', '/tracks/3']);
+  });
+
+  it('adds up to the sum of the track durations', () => {
+    const { player } = setup([600, 61.5, 3600.25]);
+    expect(player.duration()).toBeCloseTo(4261.75, 5);
   });
 
   it('reports the end only after the last track', () => {
@@ -381,5 +440,36 @@ describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
     const { events } = setup([]);
     await Promise.resolve();
     expect(events).toEqual(['loaderror']);
+  });
+});
+
+describe('TrackPlaylistPlayer start position (issue #1391)', () => {
+  function build(startAt: number) {
+    const audio = new FakeAudio();
+    const player = new TrackPlaylistPlayer(
+      [100, 250.5, 4].map((duration, index) => ({ url: `/tracks/${index + 1}`, duration })),
+      { onload: () => {}, onloaderror: () => {}, onplay: () => {}, onpause: () => {}, onend: () => {} },
+      () => audio as unknown as HTMLAudioElement,
+      startAt,
+    );
+    return { audio, player };
+  }
+
+  it('requests only the track holding the start position', () => {
+    const { audio, player } = build(120);
+    expect(audio.loads).toEqual(['/tracks/2']);
+    audio.finishLoading();
+    expect(audio.currentTime).toBeCloseTo(20);
+    expect(player.seek()).toBeCloseTo(120);
+  });
+
+  it('starts at track 1 by default', () => {
+    const { audio } = build(0);
+    expect(audio.loads).toEqual(['/tracks/1']);
+  });
+
+  it('clamps a start past the end to the last track', () => {
+    const { audio } = build(99999);
+    expect(audio.loads).toEqual(['/tracks/3']);
   });
 });

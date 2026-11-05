@@ -118,7 +118,10 @@ public record BookDto(
     // (shared by every edition). These are this edition's own exceptions:
     // 0 / null means none. The favourite has no exception.
     int EditionRating = 0,
-    string? EditionReview = null
+    string? EditionReview = null,
+    // APPENDED. The speed this audiobook plays at, saved with its reading
+    // position so another device opens at it. Null until one is chosen.
+    double? PlaybackRate = null
 );
 
 /// <summary>
@@ -230,7 +233,7 @@ public record UpdateBookDto(
     string? EditionReview = null
 );
 
-public record UpdateProgressDto(string Location, int Percentage);
+public record UpdateProgressDto(string Location, int Percentage, double? PlaybackRate = null);
 
 /// <summary>
 /// Full replacement set of collections a book belongs to. An empty list clears

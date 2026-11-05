@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { delay, of, throwError } from 'rxjs';
 import ePub from 'epubjs';
 
 import { NotesService } from '../../core/services/notes.service';
@@ -91,6 +91,7 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     const book = {
       renderTo: vi.fn(() => rendition),
       ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
       on: vi.fn((type: string, cb: (...args: unknown[]) => void) => {
         if (!listeners[type]) listeners[type] = [];
         listeners[type].push(cb);
@@ -714,6 +715,7 @@ describe('EpubReader theme-following normalization', () => {
         return rendition;
       }),
       ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
       on: vi.fn(),
       off: vi.fn(),
       locations: {
@@ -1296,6 +1298,7 @@ describe('EpubReader typography persistence', () => {
             resize: vi.fn(),
           }),
           ready: Promise.resolve({ navigation: { toc: [] } }),
+          loaded: { metadata: Promise.resolve({ language: 'en' }) },
           on: vi.fn(),
           off: vi.fn(),
           locations: {
@@ -1788,6 +1791,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     const book = {
       renderTo: vi.fn(() => rendition),
       ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
       on: vi.fn(),
       off: vi.fn(),
       locations: {
@@ -2355,6 +2359,54 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       expect(booksService.updateProgress).not.toHaveBeenCalled();
 
       // … and once confirmed, the reader's own moves are saved as usual.
+      fixture.componentInstance.next();
+      emitRelocated(USER_CFI);
+      await vi.advanceTimersByTimeAsync(1100);
+      expect(booksService.updateProgress).toHaveBeenCalledTimes(1);
+      expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
+    });
+
+    it('judges the restore only after the book fonts have loaded (#1364)', async () => {
+      // The typeface arrives after the first layout and moves the text without
+      // a resize: the passage is on the page at the quiet point, and not after.
+      let fontsLoaded!: () => void;
+      const ready = new Promise<void>((resolve) => (fontsLoaded = resolve));
+      Object.defineProperty(contents.document, 'fonts', {
+        configurable: true,
+        value: { status: 'loading', ready },
+      });
+      rangeRect = onPage();
+      await openAtSavedPosition();
+      emitRelocated(STALE_CFI);
+      await vi.advanceTimersByTimeAsync(400); // quiet, but fonts still loading
+      expect(displayCallsFor(TARGET_CFI)).toBe(2); // the opening display, and the restore
+
+      rangeRect = offPage(); // the fonts moved the text
+      fontsLoaded();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(displayCallsFor(TARGET_CFI)).toBe(3); // verified on the new layout, re-asserted
+
+      rangeRect = onPage();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+    });
+
+    it('does not save the spread start when locations arrive after a confirmed open (#1364)', async () => {
+      // The saved CFI is on the second page of a spread, so epub.js reports the
+      // spread's first page as the start. Locations arrive later than the
+      // restore; refreshing the pill from them must not write that start.
+      booksService.getLocations.mockReturnValueOnce(
+        of({ locations: '["x"]' }).pipe(delay(5000)) as never,
+      );
+      rangeRect = onPage();
+      await openAtSavedPosition();
+      emitRelocated(STALE_CFI);
+      await vi.advanceTimersByTimeAsync(400); // confirmed
+      await vi.advanceTimersByTimeAsync(6000); // locations loaded, pill refreshed
+
+      expect(booksService.updateProgress).not.toHaveBeenCalled();
+
+      // Once the reader has moved, the refined percentage is saved with the move.
       fixture.componentInstance.next();
       emitRelocated(USER_CFI);
       await vi.advanceTimersByTimeAsync(1100);

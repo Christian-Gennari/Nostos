@@ -165,9 +165,10 @@ public interface ILibraryService
     /// <summary>
     /// High-frequency progress update. Deliberately NOT receipt-guarded
     /// (last-write-wins, idempotent by nature); validates 0..100 and keeps
-    /// FinishedAt aligned with the percentage.
+    /// FinishedAt aligned with the percentage. A <paramref name="playbackRate"/>
+    /// is the audiobook's saved speed (clamped to 0.5..3); null leaves it as it is.
     /// </summary>
-    Task<LibraryCommandResultDto> UpdateProgressAsync(Guid bookId, string location, int percentage, CancellationToken ct = default);
+    Task<LibraryCommandResultDto> UpdateProgressAsync(Guid bookId, string location, int percentage, double? playbackRate = null, CancellationToken ct = default);
 
     /// <summary>
     /// Resets a book's reading progress to the canonical "not started" state

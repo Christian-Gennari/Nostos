@@ -66,6 +66,7 @@ class MarkdownEditorStub {
   readonly citationsChange = output<string>();
   readonly focus = vi.fn();
   readonly undo = vi.fn();
+  readonly flushPendingChange = vi.fn();
 }
 
 @Component({ selector: 'app-flat-tree', standalone: true, template: '' })
@@ -1727,17 +1728,17 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(editor.insertMarkdown).not.toHaveBeenCalled();
   });
 
-  it('renders source previews as readable Markdown text with wikilinks resolved to their labels', () => {
+  it('renders source previews as readable Markdown text with wikilinks resolved to their names', () => {
     const preview = component.referencePreview({
       id: 'preview-note',
       bookId: 'book-1',
       content:
-        '## [[S2 Topic 01 — Attention and the Reader]]\n\n**A note without** _markup_ and [[Attention|the displayed text]].',
+        '## [[S2 Topic 01 — Attention and the Reader]]\n\n**A note without** _markup_ and [[Attention]].',
       createdAt: '2026-08-01T10:00:00Z',
     } as any);
 
     expect(preview).toBe(
-      'S2 Topic 01 — Attention and the Reader A note without markup and the displayed text.',
+      'S2 Topic 01 — Attention and the Reader A note without markup and Attention.',
     );
     expect(preview).not.toMatch(/[\[\]_*`#|]/);
   });
@@ -2447,6 +2448,26 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(component.saveStatus()).toBe('Unsaved');
     expect(toastService.error).toHaveBeenCalledWith(
       'Could not save this document. Your draft is still open.',
+    );
+  });
+
+  it('asks the editor for typing it has not reported yet before it saves for a source (issue #1392)', async () => {
+    (component as any).router = { navigate: vi.fn(() => Promise.resolve(true)) };
+    component.activeItem.set(sampleDoc1);
+    component.editorTitle.set(sampleDoc1.name);
+    component.editorText.set(sampleDoc1.content);
+    fixture.detectChanges();
+    const editor = (component as any).markdownEditor as MarkdownEditorStub;
+    // The editor holds the last words until the writer pauses; asked, it reports them.
+    editor.flushPendingChange.mockImplementation(() => component.onEditorChange('Typed a moment ago'));
+    writingsService.update.mockReturnValueOnce(of({ ...sampleDoc1, content: 'Typed a moment ago' }));
+
+    await component.openSource(sourceBeta as any);
+
+    expect(editor.flushPendingChange).toHaveBeenCalled();
+    expect(writingsService.update).toHaveBeenCalledWith(
+      'doc-1',
+      expect.objectContaining({ content: 'Typed a moment ago' }),
     );
   });
 

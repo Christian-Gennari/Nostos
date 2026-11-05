@@ -440,6 +440,43 @@ describe('AudioReader audio quick wins (speeds, chapters, persisted rate)', () =
     expect(mockPlayer(component).rate).toHaveBeenCalledWith(1.75);
   });
 
+  function renderBook(book: Book) {
+    fixture.componentRef.setInput('bookId', book.id);
+    fixture.componentRef.setInput('book', book);
+    fixture.detectChanges();
+  }
+
+  it("opens at the book's saved speed, ahead of the device's last one", () => {
+    localStorage.setItem('nostos.audio-rate', '1.75');
+    renderBook(makeBook({ playbackRate: 1.3 }));
+
+    expect(component.currentRate()).toBe(1.3);
+    mockPlayer(component).config.onload();
+    expect(mockPlayer(component).rate).toHaveBeenCalledWith(1.3);
+    // Opening the book does not overwrite what the device last chose.
+    expect(localStorage.getItem('nostos.audio-rate')).toBe('1.75');
+  });
+
+  it('falls back to the device speed when the book has none saved', () => {
+    localStorage.setItem('nostos.audio-rate', '1.75');
+    renderBook(makeBook({ playbackRate: null }));
+
+    expect(component.currentRate()).toBe(1.75);
+  });
+
+  it('sends a chosen speed with the position save, and nothing before one is chosen', () => {
+    renderBook(makeBook({ lastLocation: '100' }));
+    mockPlayer(component).config.onload();
+    booksServiceMock.updateProgress.mockClear();
+
+    (component as unknown as { saveProgressImmediately: () => void }).saveProgressImmediately();
+    expect(booksServiceMock.updateProgress.mock.calls.every((call: unknown[]) => call.length === 3)).toBe(true);
+
+    component.setRate(1.4);
+    const last = booksServiceMock.updateProgress.mock.calls.at(-1) as unknown[];
+    expect(last[3]).toBe(1.4);
+  });
+
   it('adopts a speed that was saved per book before this change', () => {
     localStorage.setItem('nostos.audio-rate.book-9', '1.5');
     fixture.componentRef.setInput('bookId', 'book-9');
@@ -907,11 +944,11 @@ describe('AudioReader with a multi-track audiobook (issue #835)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('plays the tracks through one audio element instead of a single file', () => {
+  it('plays the tracks through one audio element, first requesting the track of the saved position (issue #1391)', () => {
     fixture.detectChanges();
 
     expect(StubAudio.instances.length).toBe(1);
-    expect(StubAudio.instances[0].src).toBe('/api/books/multi-track-book/tracks/1');
+    expect(StubAudio.instances[0].src).toBe('/api/books/multi-track-book/tracks/2');
     expect(playerState.instances.length).toBe(0);
   });
 

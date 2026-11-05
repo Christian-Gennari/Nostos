@@ -1,4 +1,4 @@
-import { NoteFormatPipe } from './note-format.pipe';
+import { NoteFormatPipe, noteWikilinksToText } from './note-format.pipe';
 import { TopicDto } from '../../core/services/topics.service';
 
 describe('NoteFormatPipe', () => {
@@ -16,12 +16,25 @@ describe('NoteFormatPipe', () => {
     expect(html).toContain('>Freedom</a>');
   });
 
-  it('uses a wikilink alias as the visible text while resolving the canonical topic', () => {
-    const html = pipe.transform('Thinking about [[Freedom|liberty]].', map);
+  it('leaves text that is not a valid reference as plain text', () => {
+    const text = 'open [[ no close and [[]] empty and [[a|b]] pipe and ]] stray';
+    const html = pipe.transform(text, map);
 
-    expect(html).toContain('data-topic-id="topic-1"');
-    expect(html).toContain('>liberty</a>');
-    expect(html).not.toContain('Freedom|liberty');
+    expect(html).not.toContain('topic-tag');
+    expect(html).toBe(text);
+  });
+
+  it('reads the valid reference after an unclosed opener', () => {
+    const html = pipe.transform('x [[ open and [[Freedom]] done', map);
+
+    expect(html).toContain('x [[ open and <a');
+    expect(html).toContain('>Freedom</a>');
+  });
+
+  it('shows wikilinks in text-only previews the same way', () => {
+    expect(noteWikilinksToText('[[Freedom]] and [[a|b]] and [[]] and [[ open')).toBe(
+      'Freedom and [[a|b]] and [[]] and [[ open',
+    );
   });
 
   it('keeps an unresolved wikilink visibly unresolved', () => {

@@ -13,7 +13,7 @@ import {
   ChangeDetectionStrategy,
 } from '@angular/core';
 import { Editor, Range, createDocument } from '@tiptap/core';
-import { EditorState, TextSelection } from '@tiptap/pm/state';
+import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Typography from '@tiptap/extension-typography';
@@ -89,6 +89,9 @@ type BlockKind = 'paragraph' | 'h1' | 'h2' | 'h3' | 'blockquote' | 'codeBlock';
  * Only formatting that survives a save is offered: Markdown has no underline,
  * so there is none. Tables load, edit and save as GFM pipe tables.
  */
+/** The events through which a writer's keyboard changes the page. */
+const KEY_INPUT_EVENTS = ['keydown', 'beforeinput', 'input', 'compositionupdate'] as const;
+
 @Component({
   selector: 'app-markdown-editor',
   standalone: true,
@@ -371,10 +374,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         }),
         handlePaste: (_view, event) => this.pasteMarkdown(event),
       },
-      onUpdate: () => {
-        this.emitMarkdown();
-        this.emitWordCount();
-        this.emitCitations();
+      onUpdate: ({ transaction }) => {
+        // Typing is the hot path: the page is not serialised, counted and
+        // scanned for citations on every key (issue #1392), only once the
+        // writer pauses. Everything else (an insertion, a paste) reports now.
+        if (this.isTypingTransaction(transaction)) this.scheduleChangeReport();
+        else this.flushPendingChange(true);
         this.followCaret();
       },
       onSelectionUpdate: () => this.followCaret(),
@@ -398,6 +403,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     dom.addEventListener('keydown', this.onSoundKeydown);
     dom.addEventListener('keyup', this.onSoundKeyup);
     dom.addEventListener('beforeinput', this.onSoundInput);
+    for (const type of KEY_INPUT_EVENTS) this.scroller.nativeElement.addEventListener(type, this.onKeyInputCapture, true);
     this.scroller.nativeElement.addEventListener('scroll', this.followBlockMenu, { passive: true });
     this.editorStarting.set(false);
     this.refreshToolbar();
@@ -419,7 +425,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       dom.removeEventListener('keyup', this.onSoundKeyup);
       dom.removeEventListener('beforeinput', this.onSoundInput);
       this.scroller.nativeElement.removeEventListener('scroll', this.followBlockMenu);
+      for (const type of KEY_INPUT_EVENTS) this.scroller.nativeElement.removeEventListener(type, this.onKeyInputCapture, true);
       // The last keystrokes may still be inside the debounce window upstream.
+      this.clearChangeTimers();
       this.emitMarkdown();
       this.editor.destroy();
       this.editor = null;
@@ -1082,6 +1090,62 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.soundPlayer().play(sound, this.soundVolume(), event.data?.charCodeAt(0) ?? 0);
   };
 
+  /**
+   * How long the writer must pause before the page is reported upstream, and
+   * the longest a stretch of typing goes unreported (issue #1392). Serialising
+   * the page to Markdown costs time in proportion to its length.
+   */
+  static readonly CHANGE_REPORT_IDLE_MS = 400;
+  static readonly CHANGE_REPORT_MAX_MS = 8000;
+
+  private changeIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  private changeMaxTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the writer last pressed a key or the keyboard last changed the text. */
+  private lastKeyInputAt = Number.NEGATIVE_INFINITY;
+
+  private readonly onKeyInputCapture = () => {
+    this.lastKeyInputAt = performance.now();
+  };
+
+  /**
+   * Whether a transaction is the writer typing. ProseMirror tags no ordinary
+   * keystroke, so it is told by what just happened: a key or the keyboard
+   * touched the page a moment ago. An insertion the Studio makes is not.
+   */
+  private isTypingTransaction(transaction: Transaction): boolean {
+    const uiEvent = transaction.getMeta('uiEvent');
+    if (uiEvent === 'paste' || uiEvent === 'drop' || uiEvent === 'cut') return false;
+    return performance.now() - this.lastKeyInputAt < 150;
+  }
+
+  private scheduleChangeReport(): void {
+    if (this.changeIdleTimer !== null) clearTimeout(this.changeIdleTimer);
+    this.changeIdleTimer = setTimeout(() => this.flushPendingChange(), MarkdownEditorComponent.CHANGE_REPORT_IDLE_MS);
+    this.changeMaxTimer ??= setTimeout(() => this.flushPendingChange(), MarkdownEditorComponent.CHANGE_REPORT_MAX_MS);
+  }
+
+  private clearChangeTimers(): void {
+    if (this.changeIdleTimer !== null) clearTimeout(this.changeIdleTimer);
+    if (this.changeMaxTimer !== null) clearTimeout(this.changeMaxTimer);
+    this.changeIdleTimer = null;
+    this.changeMaxTimer = null;
+  }
+
+  /**
+   * Report the page now if typing has not been reported yet: its Markdown, word
+   * count and citations. The Studio calls this before it reads the text to
+   * save it. `always` reports even when nothing is waiting (a non-typing edit).
+   */
+  flushPendingChange(always = false): void {
+    const waiting = this.changeIdleTimer !== null || this.changeMaxTimer !== null;
+    this.clearChangeTimers();
+    if (!waiting && !always) return;
+    if (!this.editor || this.editor.isDestroyed) return;
+    this.emitMarkdown();
+    this.emitWordCount();
+    this.emitCitations();
+  }
+
   private emitMarkdown(): void {
     if (!this.editor) return;
     const markdown = htmlToMarkdown(this.editor.getHTML());
@@ -1095,6 +1159,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * the previous writing back on the page and autosaved it into this one.
    */
   private replaceDocument(editor: Editor, markdown: string): void {
+    this.clearChangeTimers();
     const doc = createDocument(markdownToHtml(markdown), editor.schema);
     editor.view.updateState(EditorState.create({ doc, plugins: editor.state.plugins }));
     this.lastEmittedMarkdown = null;

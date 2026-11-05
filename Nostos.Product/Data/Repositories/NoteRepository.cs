@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
 
@@ -136,7 +137,8 @@ public class NoteRepository : INoteRepository
     public async Task<List<NoteModel>> SearchByAllTermsAsync(
         IReadOnlyList<string> terms,
         int limit,
-        IReadOnlyCollection<Guid>? bookIds = null)
+        IReadOnlyCollection<Guid>? bookIds = null,
+        bool forgiving = false)
     {
         var cleaned = terms.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct().ToList();
         if (cleaned.Count == 0 || bookIds is { Count: 0 }) return [];
@@ -149,10 +151,24 @@ public class NoteRepository : INoteRepository
         if (bookIds is { Count: > 0 })
             notes = notes.Where(n => bookIds.Contains(n.BookId));
 
+        var scoped = notes;
         foreach (var term in cleaned)
             notes = WhereAnyFieldContains(notes, term);
 
-        return await notes
+        var found = await notes
+            .OrderByDescending(n => n.CreatedAt)
+            .Take(limit)
+            .ToListWithBookHeadlineAsync();
+        if (found.Count > 0 || !forgiving)
+            return found;
+
+        // Nothing contains the words as typed: try again ignoring accents and
+        // forgiving a small typo (issue #1380).
+        var fuzzyIds = await FuzzyNoteIdsAsync(scoped, cleaned);
+        if (fuzzyIds.Count == 0)
+            return [];
+        return await scoped
+            .Where(n => fuzzyIds.Contains(n.Id))
             .OrderByDescending(n => n.CreatedAt)
             .Take(limit)
             .ToListWithBookHeadlineAsync();
@@ -174,7 +190,7 @@ public class NoteRepository : INoteRepository
 
     public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(NoteBrowseQuery query, int limit, int offset)
     {
-        var notes = Filter(query);
+        var notes = await FilterAsync(query);
         var total = await notes.CountAsync();
         var ordered = query.Order switch
         {
@@ -198,7 +214,7 @@ public class NoteRepository : INoteRepository
 
     public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(NoteBrowseQuery query)
     {
-        var rows = await Filter(query with { BookId = null, WorkId = null })
+        var rows = await (await FilterAsync(query with { BookId = null, WorkId = null }))
             .GroupBy(note => new
             {
                 note.BookId,
@@ -243,7 +259,7 @@ public class NoteRepository : INoteRepository
     }
 
     /// <summary>The notes in one place of the Brain, before order and paging.</summary>
-    private IQueryable<NoteModel> Filter(NoteBrowseQuery query)
+    private async Task<IQueryable<NoteModel>> FilterAsync(NoteBrowseQuery query)
     {
         var notes = _db.Notes.AsNoTracking().AsQueryable();
         if (query.BookId is { } bookId) notes = notes.Where(n => n.BookId == bookId);
@@ -257,10 +273,64 @@ public class NoteRepository : INoteRepository
         var term = query.Text?.Trim();
         if (!string.IsNullOrEmpty(term))
         {
-            notes = WhereAnyFieldContains(notes, term);
+            var matched = WhereAnyFieldContains(notes, term);
+            if (await matched.AnyAsync())
+                return matched;
+
+            // Nothing contains the text as typed: ignore accents and forgive a
+            // small typo before saying there is nothing (issue #1380).
+            var fuzzyIds = await FuzzyNoteIdsAsync(notes, [term]);
+            return notes.Where(n => fuzzyIds.Contains(n.Id));
         }
         return notes;
     }
+
+    /// <summary>The most notes read to look for accent or typo matches.</summary>
+    private const int FuzzyCandidateCap = 20000;
+
+    /// <summary>
+    /// Ids of the notes in <paramref name="scope"/> that match every term once
+    /// accents and case are ignored, or with a small typo. SQL LIKE cannot do
+    /// this alike on SQLite and PostgreSQL, so it runs in memory over the
+    /// searchable fields of the notes in scope, and only as the fallback when
+    /// the exact search found nothing.
+    /// </summary>
+    private static async Task<List<Guid>> FuzzyNoteIdsAsync(
+        IQueryable<NoteModel> scope, IReadOnlyList<string> terms)
+    {
+        var rows = await scope
+            .AsNoTracking()
+            .OrderBy(n => n.Id)
+            .Select(n => new
+            {
+                n.Id,
+                n.Content,
+                n.SelectedText,
+                n.PassageTitle,
+                BookTitle = n.Book != null ? n.Book.Title : null,
+                BookAuthor = n.Book != null ? n.Book.Author : null,
+            })
+            .Take(FuzzyCandidateCap)
+            .ToListAsync();
+        var candidates = rows
+            .Select(r => new FuzzyRow(
+                r.Id,
+                $"{r.Content} {r.SelectedText} {r.PassageTitle}",
+                $"{r.BookTitle} {r.BookAuthor}"))
+            .ToList();
+
+        IEnumerable<Guid>? ids = null;
+        foreach (var term in terms)
+        {
+            var matched = LibrarySearchMatcher
+                .Match(term, candidates, r => r.Text, r => r.Book)
+                .Select(r => r.Id);
+            ids = ids is null ? matched : ids.Intersect(matched);
+        }
+        return ids?.ToList() ?? [];
+    }
+
+    private sealed record FuzzyRow(Guid Id, string? Text, string? Book);
 
     public async Task<int> CountWithoutTopicsAsync()
     {
@@ -318,6 +388,31 @@ public class NoteRepository : INoteRepository
     {
         var typed = $"%{Escape(term)}%";
         var lower = $"%{Escape(term.ToLowerInvariant())}%";
+        // Quotes saved before ligatures were cleaned still hold "ﬁ" for "fi".
+        var ligatured = TextLigatures.LigatureForm(term);
+        if (ligatured is not null)
+        {
+            var ligTyped = $"%{Escape(ligatured)}%";
+            var ligLower = $"%{Escape(ligatured.ToLowerInvariant())}%";
+            return notes.Where(n =>
+                EF.Functions.Like(n.Content, typed, "\\")
+                || EF.Functions.Like(n.Content.ToLower(), lower, "\\")
+                || (n.SelectedText != null
+                    && (EF.Functions.Like(n.SelectedText, typed, "\\")
+                        || EF.Functions.Like(n.SelectedText.ToLower(), lower, "\\")
+                        || EF.Functions.Like(n.SelectedText, ligTyped, "\\")
+                        || EF.Functions.Like(n.SelectedText.ToLower(), ligLower, "\\")))
+                || (n.PassageTitle != null
+                    && (EF.Functions.Like(n.PassageTitle, typed, "\\")
+                        || EF.Functions.Like(n.PassageTitle.ToLower(), lower, "\\")))
+                || (n.Book != null && n.Book.Title != null
+                    && (EF.Functions.Like(n.Book.Title, typed, "\\")
+                        || EF.Functions.Like(n.Book.Title.ToLower(), lower, "\\")))
+                || (n.Book != null && n.Book.Author != null
+                    && (EF.Functions.Like(n.Book.Author, typed, "\\")
+                        || EF.Functions.Like(n.Book.Author.ToLower(), lower, "\\"))));
+        }
+
         return notes.Where(n =>
             EF.Functions.Like(n.Content, typed, "\\")
             || EF.Functions.Like(n.Content.ToLower(), lower, "\\")

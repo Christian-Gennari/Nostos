@@ -30,8 +30,8 @@ import { RangeDirective } from '../range/range.directive';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { PassageViewerRequest, PassageViewerService } from './passage-viewer.service';
-import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
-import { PdfDocument, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
+import { passageBodyHtml, passageSourceParams, pdfSelectionText } from './passage-viewer.helpers';
+import { PdfDocument, PdfJsLib, PdfLoadingTask, createPdfWorker, loadPdfJs } from './pdfjs-loader';
 import { noteWikilinksToText } from '../pipes/note-format.pipe';
 import { UNKNOWN_BOOK } from '../../core/book-format';
 
@@ -167,12 +167,17 @@ export class PassageViewerComponent {
   private readonly frame = viewChild<ElementRef<HTMLElement>>('frame');
   private readonly columns = viewChild<ElementRef<HTMLElement>>('columns');
   private readonly pdfCanvas = viewChild<ElementRef<HTMLCanvasElement>>('pdfCanvas');
+  private readonly pdfTextLayer = viewChild<ElementRef<HTMLElement>>('pdfTextLayer');
 
   private pdfTask: PdfLoadingTask | null = null;
   private pdfWorker: { terminate(): void } | null = null;
   private pdfDoc: PdfDocument | null = null;
   private readonly pdfDocReady = signal(0);
   private pdfRender: { cancel(): void } | null = null;
+  private pdfText: { cancel(): void } | null = null;
+  private pdfLib: PdfJsLib | null = null;
+  /** The latest page draw; an older one still waiting on pdf.js gives up. */
+  private drawId = 0;
 
   private load: Subscription | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -300,14 +305,24 @@ export class PassageViewerComponent {
   @HostListener('document:selectionchange')
   onSelectionChange(): void {
     if (!this.request()?.quoteSelection) return;
-    const columns = this.columns()?.nativeElement;
+    const columns = this.isPdf() ? this.pdfTextLayer()?.nativeElement : this.columns()?.nativeElement;
     const selection = window.getSelection();
     if (!columns || !selection || selection.rangeCount === 0 || selection.isCollapsed) {
       this.selection.set('');
       return;
     }
     const range = selection.getRangeAt(0);
-    this.selection.set(columns.contains(range.commonAncestorContainer) ? selection.toString() : '');
+    // A drag or triple click over a page's loose words can end outside the text
+    // layer, so a PDF selection counts when it starts in it.
+    const inside = this.isPdf()
+      ? columns.contains(selection.anchorNode)
+      : columns.contains(range.commonAncestorContainer);
+    if (!inside) {
+      this.selection.set('');
+      return;
+    }
+    const text = selection.toString();
+    this.selection.set(this.isPdf() ? pdfSelectionText(text) : text);
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -404,6 +419,7 @@ export class PassageViewerComponent {
       try {
         const pdfjs = await loadPdfJs();
         if (this.passage()?.id !== passage.id) return;
+        this.pdfLib = pdfjs;
         const worker = await createPdfWorker(pdfjs);
         if (this.passage()?.id !== passage.id) {
           worker.terminate();
@@ -436,6 +452,9 @@ export class PassageViewerComponent {
   private closePdf(): void {
     this.pdfRender?.cancel();
     this.pdfRender = null;
+    this.pdfText?.cancel();
+    this.pdfText = null;
+    this.pdfLib = null;
     const task = this.pdfTask;
     const worker = this.pdfWorker;
     this.pdfTask = null;
@@ -454,10 +473,15 @@ export class PassageViewerComponent {
   ): Promise<void> {
     const doc = this.pdfDoc;
     if (!doc) return;
+    const drawId = ++this.drawId;
     this.pdfRender?.cancel();
+    this.pdfText?.cancel();
+    this.pdfText = null;
+    const textHost = this.pdfTextLayer()?.nativeElement;
+    textHost?.replaceChildren();
     try {
       const page = await doc.getPage(pageNumber);
-      if (doc !== this.pdfDoc) return;
+      if (doc !== this.pdfDoc || drawId !== this.drawId) return;
       const base = page.getViewport({ scale: 1 });
       const fit = Math.min(size.width / base.width, size.height / base.height);
       const ratio = window.devicePixelRatio || 1;
@@ -470,10 +494,25 @@ export class PassageViewerComponent {
       canvas.style.height = `${Math.floor(base.height * fit)}px`;
       const task = page.render({ canvasContext: context, viewport });
       this.pdfRender = task;
-      await task.promise;
+      const drawn = task.promise;
+      // The text layer is the page's words over the picture, so they can be selected.
+      const lib = this.pdfLib;
+      if (lib && textHost) {
+        textHost.style.setProperty('--total-scale-factor', String(fit));
+        const layer = new lib.TextLayer({
+          textContentSource: page.streamTextContent(),
+          container: textHost,
+          viewport: page.getViewport({ scale: fit }),
+        });
+        this.pdfText = layer;
+        await Promise.all([drawn, layer.render()]);
+      } else {
+        await drawn;
+      }
     } catch (error) {
       // A render cancelled by the next page turn is not a failure.
-      if ((error as { name?: string })?.name !== 'RenderingCancelledException') {
+      const name = (error as { name?: string })?.name;
+      if (name !== 'RenderingCancelledException' && name !== 'AbortException') {
         console.warn('Could not draw the PDF page:', error);
       }
     }

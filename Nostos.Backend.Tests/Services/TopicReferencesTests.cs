@@ -92,4 +92,31 @@ public sealed class TopicReferencesTests
         TopicReferences.Names("[[a]] and [[ A ]] and [[b]] and [[ ]]")
             .Should().Equal("a", "b");
     }
+
+    [Fact]
+    public void Names_reads_only_valid_references_from_the_audit_note()
+    {
+        TopicReferences.Names("open [[ no close and [[]] empty and [[a|b]] pipe and ]] stray")
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("an [[ unclosed opener", new string[0])]
+    [InlineData("empty [[]] here", new string[0])]
+    [InlineData("pipe [[a|b]] here", new string[0])]
+    [InlineData("stray ]] closer", new string[0])]
+    [InlineData("[[[x]]", new string[0])]
+    [InlineData("[[a]]]", new[] { "a" })]
+    [InlineData("[[ open and [[Real]] done", new[] { "Real" })]
+    [InlineData("[[ no close\n[[Real]]", new[] { "Real" })]
+    [InlineData("[[split\nname]] and [[ok]]", new[] { "ok" })]
+    public void Names_ignores_text_that_is_not_a_valid_reference(string content, string[] expected) =>
+        TopicReferences.Names(content).Should().Equal(expected);
+
+    [Fact]
+    public void Remove_leaves_invalid_brackets_untouched()
+    {
+        TopicReferences.Remove("see [[a|b]] and [[x]] [[ open", "x")
+            .Should().Be("see [[a|b]] and x [[ open");
+    }
 }

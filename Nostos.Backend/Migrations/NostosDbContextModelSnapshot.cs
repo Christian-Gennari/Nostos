@@ -1565,6 +1565,9 @@ namespace Nostos.Backend.Migrations
                             b1.Property<string>("PersonalReview")
                                 .HasColumnType("TEXT");
 
+                            b1.Property<double?>("PlaybackRate")
+                                .HasColumnType("REAL");
+
                             b1.Property<int>("ProgressPercent")
                                 .HasColumnType("INTEGER");
 

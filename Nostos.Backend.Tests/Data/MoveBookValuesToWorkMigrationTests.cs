@@ -36,7 +36,10 @@ public sealed class MoveBookValuesToWorkMigrationTests : IClassFixture<SqliteTes
         var path = await PreviousSchemaAsync(pre);
 
         await using (var db = Open(path))
+        {
             await db.Database.MigrateAsync();
+            await LaterBookColumns.RestorePlaybackRateAsync(db);
+        }
 
         await using var after = Open(path);
         var works = await after.Works.AsNoTracking().ToDictionaryAsync(w => w.Id);
@@ -71,11 +74,16 @@ public sealed class MoveBookValuesToWorkMigrationTests : IClassFixture<SqliteTes
         var pre = Scenario(seed: 11, works: 40);
         var path = await PreviousSchemaAsync(pre);
         await using (var db = Open(path))
+        {
             await db.Database.MigrateAsync();
+            await LaterBookColumns.RestorePlaybackRateAsync(db);
+        }
         var firstUp = await StateAsync(path);
 
         await using (var db = Open(path))
+        {
             await db.GetService<IMigrator>().MigrateAsync(await PreviousMigrationAsync(db));
+        }
 
         (await ColumnsAsync(path, "Works")).Should().NotContain("Rating");
         var down = await ReadPerEditionAsync(path);
@@ -92,7 +100,10 @@ public sealed class MoveBookValuesToWorkMigrationTests : IClassFixture<SqliteTes
         }
 
         await using (var db = Open(path))
+        {
             await db.Database.MigrateAsync();
+            await LaterBookColumns.RestorePlaybackRateAsync(db);
+        }
         (await StateAsync(path)).Should().BeEquivalentTo(firstUp, "up, down and up again is stable");
     }
 

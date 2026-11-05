@@ -19,12 +19,27 @@ namespace Nostos.Backend.Services;
 /// so no sentence loses a word.</item>
 /// <item>Renaming rewrites the reference in place.</item>
 /// </list>
+/// A reference is <c>[[name]]</c> with a valid name (<see cref="IsValidName"/>)
+/// on one line. Anything else (<c>[[</c> with no <c>]]</c> after it, <c>[[]]</c>,
+/// <c>[[a|b]]</c>, a stray <c>]]</c>) is plain text; there is no alias syntax.
 /// Names compare trimmed and case-insensitively, as the processor matches them.
 /// </summary>
 public static partial class TopicReferences
 {
-    [GeneratedRegex(@"\[\[(.*?)\]\]")]
+    // A candidate: [[ then text with no [[, ]], | or line break, then ]]. An
+    // opener with no closer on its line, or a second opener first, is no
+    // candidate, so the scan moves on to the next [[. Candidates still pass
+    // IsValidName (see Matches), so one rule decides what a reference is.
+    [GeneratedRegex(@"\[\[((?:(?!\[\[|\]\])[^\r\n|])*)\]\]")]
     private static partial Regex ReferenceRegex();
+
+    /// <summary>The references in <paramref name="text"/>: candidates whose name is valid.</summary>
+    private static List<Match> Matches(string text) =>
+        ReferenceRegex().Matches(text).Where(match => IsValidName(match.Groups[1].Value)).ToList();
+
+    private static string ReplaceReferences(string text, MatchEvaluator evaluator) =>
+        ReferenceRegex().Replace(text, match =>
+            IsValidName(match.Groups[1].Value) ? evaluator(match) : match.Value);
 
     public const int MaxNameLength = 200;
 
@@ -49,7 +64,7 @@ public static partial class TopicReferences
 
     /// <summary>The topic names <paramref name="content"/> declares, trimmed and distinct.</summary>
     public static IReadOnlyList<string> Names(string? content) =>
-        ReferenceRegex().Matches(content ?? string.Empty)
+        Matches(content ?? string.Empty)
             .Select(match => match.Groups[1].Value.Trim())
             .Where(name => name.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -58,7 +73,7 @@ public static partial class TopicReferences
     public static bool Declares(string? content, string name)
     {
         var topic = name.Trim();
-        return ReferenceRegex().Matches(content ?? string.Empty).Any(match => Is(match, topic));
+        return Matches(content ?? string.Empty).Any(match => Is(match, topic));
     }
 
     /// <summary>
@@ -124,7 +139,7 @@ public static partial class TopicReferences
         for (var i = 0; i < lines.Count; i++)
         {
             var line = lines[i]!;
-            if (!ReferenceRegex().Matches(line).Any(match => Is(match, topic))) continue;
+            if (!Matches(line).Any(match => Is(match, topic))) continue;
 
             if (!IsReferenceLine(line))
             {
@@ -149,14 +164,15 @@ public static partial class TopicReferences
     /// A line made of references and separators only: what linking writes, or a
     /// hand-typed row of tags. Anything with words outside the brackets is prose.
     /// </summary>
-    private static bool IsReferenceLine(string line)
+    public static bool IsReferenceLine(string line)
     {
-        var rest = ReferenceRegex().Replace(line, string.Empty);
+        if (Matches(line).Count == 0) return false;
+        var rest = ReplaceReferences(line, _ => string.Empty);
         return rest.All(c => char.IsWhiteSpace(c) || c is ',' or ';' or '·' or '|');
     }
 
     private static string ReplaceMatching(string line, string topic, Func<string, string> replace) =>
-        ReferenceRegex().Replace(line, match => Is(match, topic) ? replace(match.Groups[1].Value) : match.Value);
+        ReplaceReferences(line, match => Is(match, topic) ? replace(match.Groups[1].Value) : match.Value);
 
     /// <summary>
     /// Drops the matching references from a line of references, with the
@@ -164,7 +180,7 @@ public static partial class TopicReferences
     /// </summary>
     private static string RemoveFromReferenceLine(string line, string topic)
     {
-        var matches = ReferenceRegex().Matches(line);
+        var matches = Matches(line);
         var tokens = matches.Select((match, m) =>
         {
             var end = match.Index + match.Length;

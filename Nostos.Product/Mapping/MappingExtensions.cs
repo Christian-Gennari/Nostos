@@ -55,7 +55,7 @@ public static class MappingExtensions
             case AudioBookModel a:
                 type = "audiobook";
                 asin = a.Asin;
-                duration = a.Duration;
+                duration = BookTrackList.FormatTotal(BookTrackList.Parse(model.FileDetails.TracksJson)) ?? a.Duration;
                 narrator = a.Narrator;
                 break;
         }
@@ -157,7 +157,8 @@ public static class MappingExtensions
             Tracks: ToTrackDtos(model.FileDetails.TracksJson),
             CoverVersion: coverUrl is null ? null : model.FileDetails.CoverVersion,
             EditionRating: model.Progress.Rating,
-            EditionReview: model.Progress.PersonalReview
+            EditionReview: model.Progress.PersonalReview,
+            PlaybackRate: model.Progress.PlaybackRate
         );
     }
 
@@ -198,7 +199,9 @@ public static class MappingExtensions
             HasFile: model.FileDetails.HasFile,
             FileName: model.FileDetails.FileName,
             Narrator: (model as AudioBookModel)?.Narrator,
-            Duration: (model as AudioBookModel)?.Duration,
+            Duration: model is AudioBookModel audio
+                ? BookTrackList.FormatTotal(BookTrackList.Parse(model.FileDetails.TracksJson)) ?? audio.Duration
+                : null,
             Edition: model.Metadata.Edition,
             // The management UI names the book it will detach; the current
             // book's own title is NOT a valid substitute for a sibling's.
@@ -217,7 +220,7 @@ public static class MappingExtensions
             Content: model.Content,
             CfiRange: model.CfiRange,
             // A passage travels as its opening; the viewer fetches the rest.
-            SelectedText: model.IsPassage() ? PassageText.Opening(model.SelectedText) : model.SelectedText,
+            SelectedText: TextLigatures.Expand(model.IsPassage() ? PassageText.Opening(model.SelectedText) : model.SelectedText),
             CreatedAt: model.CreatedAt,
             BookTitle: model.Book?.Title,
             // Capture provenance (issue #260 §2, §4). These are distinct from
@@ -248,7 +251,7 @@ public static class MappingExtensions
             Start: model.SourceAnchorValue ?? string.Empty,
             End: model.PassageEnd ?? string.Empty,
             Html: model.PassageHtml,
-            Text: model.SelectedText,
+            Text: TextLigatures.Expand(model.SelectedText),
             WordCount: PassageText.WordCount(model.SelectedText),
             Content: model.Content,
             HighlightColour: model.HighlightColour,
@@ -343,7 +346,7 @@ public static class MappingExtensions
             BookId = bookId,
             Content = dto.Content,
             CfiRange = dto.CfiRange,
-            SelectedText = dto.SelectedText,
+            SelectedText = TextLigatures.Expand(dto.SelectedText),
             // A captured note keeps the raw capture alongside the Content; an
             // ordinary typed note falls back to the model's text/verbatim/unknown.
             RawContent = dto.RawContent,
@@ -484,7 +487,7 @@ public static class MappingExtensions
         // sent that back must not cut the passage down to it.
         if (dto.SelectedText != null && !model.IsPassage())
         {
-            model.SelectedText = dto.SelectedText;
+            model.SelectedText = TextLigatures.Expand(dto.SelectedText);
         }
 
         if (dto.PassageTitle != null && model.IsPassage())
@@ -505,9 +508,9 @@ public static class MappingExtensions
             BookId: model.Note.BookId,
             BookTitle: model.Note.Book?.Title,
             Content: model.Note.Content,
-            SelectedText: model.Note.IsPassage()
+            SelectedText: TextLigatures.Expand(model.Note.IsPassage()
                 ? PassageText.Opening(model.Note.SelectedText)
-                : model.Note.SelectedText,
+                : model.Note.SelectedText),
             CfiRange: model.Note.CfiRange,
             CreatedAt: model.Note.CreatedAt,
             AddedAt: model.AddedAt,

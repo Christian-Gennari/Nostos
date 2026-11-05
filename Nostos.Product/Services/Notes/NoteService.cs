@@ -218,17 +218,30 @@ public sealed class NoteService : INoteService
         string query,
         int limit,
         CancellationToken ct = default) =>
-        SearchAsync(query, limit, bookIds: null, ct);
+        SearchCoreAsync(query, limit, bookIds: null, forgiving: true, ct);
 
     // Above the planner's phrase weight (4): every word present beats the exact
     // phrase being absent, and the phrase is rare in a short "@" query anyway.
     private const int AllTermsWeight = 5;
 
-    public async Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,
         int limit,
         IReadOnlyList<Guid>? bookIds,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        SearchCoreAsync(query, limit, bookIds, forgiving: false, ct);
+
+    /// <summary>
+    /// <paramref name="forgiving"/> is for what a person types into a search box:
+    /// when no note holds the words as typed, accents are ignored and a small
+    /// typo is allowed (issue #1380). Retrieval for the assistant stays exact.
+    /// </summary>
+    private async Task<IReadOnlyList<NoteSearchHitDto>> SearchCoreAsync(
+        string query,
+        int limit,
+        IReadOnlyList<Guid>? bookIds,
+        bool forgiving,
+        CancellationToken ct)
     {
         var take = Clamp(limit);
         var variants = LexicalQueryPlanner.Build(query);
@@ -284,6 +297,14 @@ public sealed class NoteService : INoteService
                         : current.SnippetTerm,
                 };
             }
+        }
+
+        if (fused.Count == 0 && forgiving)
+        {
+            var forgiven = await _notes.SearchByAllTermsAsync(
+                [query.Trim()], candidateLimit, bookIds, forgiving: true);
+            foreach (var note in forgiven)
+                fused[note.Id] = new NoteFusionCandidate(note, 0, query.Trim(), MatchedVariants: 1);
         }
 
         // With several words: a note holding every word comes first, and among
@@ -446,6 +467,9 @@ public sealed class NoteService : INoteService
         if (dto.Topics is { Count: > 0 })
             model.Content = TopicReferences.AppendAll(model.Content, dto.Topics);
 
+        // A reader's place becomes the note's anchor (issue #1381).
+        LocationAnchor.Apply(model);
+
         await _notes.AddAsync(model);
 
         // EF Core tracks 'model', so the processor can add links to it before we save.
@@ -558,6 +582,9 @@ public sealed class NoteService : INoteService
         // processor drops a link whose reference the edit removed.
         if (dto.Topics is not null)
             existing.Content = TopicReferences.AppendAll(existing.Content, dto.Topics);
+
+        // Notes saved before the anchor was derived get it on their next edit.
+        LocationAnchor.Apply(existing);
 
         // Re-process topics (the processor clears old links then re-adds). An
         // edit that sent its topics sent all of them: an old link the text
@@ -690,6 +717,7 @@ public sealed class NoteService : INoteService
         if (FoundNoteLocation.Fills(existing, found))
         {
             existing.CfiRange = found;
+            LocationAnchor.Apply(existing);
             await _notes.SaveChangesAsync();
         }
 
@@ -1005,8 +1033,8 @@ public sealed class NoteService : INoteService
         n.Content,
         // A passage travels as its opening; the snippet still finds the match
         // anywhere in it.
-        n.IsPassage() ? PassageText.Opening(n.SelectedText) : n.SelectedText,
-        Snippet(n.Content, n.SelectedText, term),
+        TextLigatures.Expand(n.IsPassage() ? PassageText.Opening(n.SelectedText) : n.SelectedText),
+        Snippet(n.Content, TextLigatures.Expand(n.SelectedText), term),
         n.NoteTopics
             .Where(nc => nc.Topic != null)
             .Select(nc => nc.Topic!.Topic)

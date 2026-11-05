@@ -208,6 +208,8 @@ export class AudioReader implements OnDestroy, IReader {
   private progressSubject = new Subject<{ timestamp: number; percent: number }>();
   private progressSubscription!: Subscription;
   private progressTimer: any;
+  /** True once the listener picked a speed on this book; it then travels with every position save. */
+  private rateChosen = false;
   private isInitialized = false;
   private onVisibilityChange = this.handleVisibilityChange.bind(this);
   private onBeforeUnload = this.saveProgressImmediately.bind(this);
@@ -233,7 +235,7 @@ export class AudioReader implements OnDestroy, IReader {
       filter(() => this.isInitialized),
     ).subscribe((data) => {
       this.booksService
-        .updateProgress(this.bookId(), data.timestamp.toString(), data.percent)
+        .updateProgress(this.bookId(), data.timestamp.toString(), data.percent, ...this.savedRateArgs())
         .subscribe({
           error: (err) => console.error('Failed to save progress:', err),
         });
@@ -305,8 +307,13 @@ export class AudioReader implements OnDestroy, IReader {
     if (!recovering) this.resetRecovery();
     this.loading.set(true);
     this.loadError.set(null);
-    // Show the remembered speed immediately; applied to the player on load.
-    this.currentRate.set(this.restoreSavedRate());
+    // Show the speed immediately; applied to the player on load. This book's own
+    // saved speed comes first, then the device's last one. A reload after a drop
+    // keeps the speed in use, which may be newer than the book object.
+    if (!recovering) {
+      this.rateChosen = false;
+      this.currentRate.set(this.initialRate());
+    }
 
     // Read without tracking: this runs inside the effect keyed on the book id,
     // and a refreshed book object (a saved position, say) must not restart
@@ -367,7 +374,9 @@ export class AudioReader implements OnDestroy, IReader {
             duration: track.duration,
           }))
         : [{ url: `/api/books/${id}/file`, duration: 0 }];
-    this.player = this.createPlayer(playlist, callbacks);
+    // Load the track the listener is actually in, not track 1 first.
+    const startAt = this.resumeAt ?? this.pendingSourceTime ?? this.savedPosition();
+    this.player = this.createPlayer(playlist, callbacks, startAt);
   }
 
   /**
@@ -436,6 +445,12 @@ export class AudioReader implements OnDestroy, IReader {
     this.resumeAt = null;
     this.resumeAfterReload = false;
     this.reconnecting.set(false);
+  }
+
+  /** The saved position in seconds, or 0. */
+  private savedPosition(): number {
+    const saved = parseFloat(untracked(() => this.book())?.lastLocation ?? '');
+    return Number.isFinite(saved) && saved > 0 ? saved : 0;
   }
 
   restoreProgress() {
@@ -567,7 +582,12 @@ export class AudioReader implements OnDestroy, IReader {
   private savePosition(seconds: number) {
     const duration = this.duration();
     this.booksService
-      .updateProgress(this.bookId(), seconds.toString(), duration > 0 ? Math.floor((seconds / duration) * 100) : 0)
+      .updateProgress(
+        this.bookId(),
+        seconds.toString(),
+        duration > 0 ? Math.floor((seconds / duration) * 100) : 0,
+        ...this.savedRateArgs(),
+      )
       .subscribe({ error: (err) => console.error('Failed to save progress:', err) });
   }
 
@@ -577,9 +597,27 @@ export class AudioReader implements OnDestroy, IReader {
     return parseFloat(clamped.toFixed(2));
   }
 
+  /**
+   * The speed to send with a position save: only one the listener chose on this
+   * book, so opening a book never pins it to the device's speed.
+   */
+  private savedRateArgs(): [number] | [] {
+    return this.rateChosen ? [this.currentRate()] : [];
+  }
+
+  /** This book's saved speed, else the device's last one. */
+  private initialRate(): number {
+    const saved = untracked(() => this.book())?.playbackRate;
+    return typeof saved === 'number' && saved > 0 ? this.clampRate(saved) : this.restoreSavedRate();
+  }
+
   setRate(rate: number) {
     this.player?.rate(rate);
     this.currentRate.set(rate);
+    this.rateChosen = true;
+    // Saved with the place right away, so a speed picked while paused still
+    // reaches the other devices.
+    if (this.isInitialized) this.savePosition(this.currentTime());
     try {
       localStorage.setItem(AudioReader.RATE_KEY, String(rate));
     } catch {
@@ -929,6 +967,7 @@ export class AudioReader implements OnDestroy, IReader {
         this.bookId(),
         seek.toString(),
         this.duration() > 0 ? Math.floor((seek / this.duration()) * 100) : 0,
+        ...this.savedRateArgs(),
       ).subscribe();
     }
   }

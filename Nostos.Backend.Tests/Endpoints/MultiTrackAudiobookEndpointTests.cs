@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
@@ -71,6 +72,17 @@ public sealed class MultiTrackAudiobookEndpointTests : IClassFixture<LibraryEndp
         using var missing = await Client.SendAsync(
             new HttpRequestMessage(HttpMethod.Head, $"/opds/books/{id}/tracks/9"));
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Book_duration_is_the_sum_of_its_tracks_not_a_catalogue_figure()
+    {
+        var id = await SeedAsync("Duration Is The Sum");
+
+        var book = await Client.GetFromJsonAsync<BookDto>($"/api/books/{id}");
+
+        // 600 s + 61.5 s = 661.5 s, shown as the player lays the tracks end to end.
+        book!.Duration.Should().Be("00:11:02");
     }
 
     [Fact]
@@ -265,6 +277,8 @@ public sealed class MultiTrackAudiobookEndpointTests : IClassFixture<LibraryEndp
         stored.FileDetails.HasFile = true;
         stored.FileDetails.FileName = null;
         stored.FileDetails.TracksJson = BookTrackList.Serialize(tracks);
+        // A catalogue figure that disagrees with the tracks, as a provider's does.
+        ((AudioBookModel)stored).Duration = "00:10:00";
         await db.SaveChangesAsync();
 
         return book.Id;
