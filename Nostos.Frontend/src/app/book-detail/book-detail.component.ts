@@ -84,7 +84,7 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
 import { EditionSwitcherComponent, type EditionRatingAction } from '../ui/edition-switcher/edition-switcher.component';
 import { buildEditionSwitchOptions, editionRatingNoun } from './edition-switch-options';
 import { coverImageUrl } from '../core/cover-url';
-import { readPaperPage } from './paper-page-progress';
+import { parsePaperPage, readPaperPage } from './paper-page-progress';
 import { UNKNOWN_AUTHOR, UNKNOWN_BOOK, formatOf, formatOfConcept, type BookFormat } from '../core/book-format';
 
 /** An edition as the notes filter and the switcher name it: "Ebook · 2nd edition". */
@@ -650,13 +650,23 @@ export class BookDetail implements OnInit, OnDestroy {
     this.store.resetProgress(() => this.pendingStatus.set(null));
   }
 
+  /** The page a paper-book note is saved at: what was typed, else the current page. */
+  readonly newNotePageText = signal<string | null>(null);
+  readonly newNotePage = computed(() => this.newNotePageText() ?? this.paperPage()?.toString() ?? '');
+
   addNote(): void {
     const content = this.newNote().trim();
     if (!content) return;
-    this.store.addNote(content, () => {
-      this.newNote.set('');
-      this.brain.refresh();
-    });
+    const page = this.isPaperBook() ? parsePaperPage(this.newNotePage()) : null;
+    this.store.addNote(
+      content,
+      () => {
+        this.newNote.set('');
+        this.newNotePageText.set(null);
+        this.brain.refresh();
+      },
+      page,
+    );
   }
 
   /** True while the cover-remove question is up (asked through ConfirmModal). */

@@ -613,12 +613,17 @@ export class BookDetailStore {
    * Saves a new note; `saved` runs once it exists (new [[topics]] included). A
    * failure toasts and leaves the caller's text where it is.
    */
-  addNote(content: string, saved?: () => void) {
+  addNote(content: string, saved?: () => void, page?: number | null) {
     const b = this.book();
     if (!b || !content.trim() || this.noteSaving()) return;
 
     this.noteSaving.set(true);
-    this.notesService.create(b.id, { content }).subscribe({
+    // A page typed by hand on a paper book (issue #1377): the reader's word, so
+    // it is an unverified "physical_page" anchor, the kind the assistant sets.
+    const anchor = page
+      ? { sourceAnchorKind: 'physical_page', sourceAnchorValue: String(page), anchorVerified: false }
+      : {};
+    this.notesService.create(b.id, { content, ...anchor }).subscribe({
       next: () => {
         this.noteSaving.set(false);
         this.loadNotes(b.id);

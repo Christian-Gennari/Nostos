@@ -73,6 +73,17 @@ describe('source insertion provenance (#493)', () => {
     ).toBe('*See: Meditations*');
   });
 
+  it('cites a hand-typed paper page even though it is not verified (#1377)', () => {
+    expect(
+      sourceHumanLabel({
+        bookTitle: 'Meditations',
+        sourceAnchorKind: 'physical_page',
+        sourceAnchorValue: '12',
+        anchorVerified: false,
+      })?.locator,
+    ).toBe('p. 12');
+  });
+
   it('requires meaningful source text for quote/note actions and a readable title for references', () => {
     expect(hasMeaningfulSelectedText({ selectedText: '  \n ' })).toBe(false);
     expect(hasMeaningfulSelectedText({ selectedText: 'quoted' })).toBe(true);

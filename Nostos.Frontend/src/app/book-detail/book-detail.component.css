@@ -992,6 +992,42 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   border-color: var(--scrollbar-thumb);
 }
+.new-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.new-note-page {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+.new-note-page input {
+  width: 4ch;
+  padding: 0.125rem 0.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--color-text-main);
+  font: inherit;
+  text-align: center;
+}
+.new-note-page input::-webkit-inner-spin-button,
+.new-note-page input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.new-note-page input[type='number'] {
+  appearance: textfield;
+}
+.new-note-page input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--border-focus);
+}
 .notes-feed {
   display: flex;
   flex-direction: column;

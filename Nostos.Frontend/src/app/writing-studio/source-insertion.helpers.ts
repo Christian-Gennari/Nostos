@@ -41,10 +41,9 @@ export function sourceHumanLabel(source: SourceInsertionSource): HumanSourceLabe
     // Quoted from a kept passage: name the passage, not where it starts.
     return { title: escapeMarkdownInline(title), author, locator: `“${escapeMarkdownInline(passage)}”` };
   }
-  if (
-    source.anchorVerified === true &&
-    source.sourceAnchorKind?.trim().toLowerCase() === 'pdf_page'
-  ) {
+  const anchorKind = source.sourceAnchorKind?.trim().toLowerCase();
+  // A paper page is the reader's own word (issue #1377): cited without verification.
+  if ((source.anchorVerified === true && anchorKind === 'pdf_page') || anchorKind === 'physical_page') {
     const rawPage = normalizeInlineText(source.sourceAnchorValue);
     const page = Number(rawPage);
     if (Number.isInteger(page) && page > 0) locator = `p. ${page}`;

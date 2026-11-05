@@ -211,6 +211,39 @@ describe('BookDetail reset progress', () => {
     httpMock.expectOne(bookNotes).flush(notesPage([]));
   });
 
+  it('saves a paper-book note at the typed page, prefilled with the current page (#1377)', async () => {
+    await setup(readableBook({ type: 'physical', hasFile: false, fileName: null, lastLocation: '{"page":12}' }));
+    component.newNote.set('On habit');
+    fixture.detectChanges();
+
+    const field = fixture.nativeElement.querySelector('.new-note-page input') as HTMLInputElement;
+    expect(field.value).toBe('12');
+    field.value = '47';
+    field.dispatchEvent(new Event('input'));
+
+    component.addNote();
+    const post = httpMock.expectOne((r) => r.method === 'POST' && r.url.includes('/notes'));
+    expect(post.request.body).toMatchObject({
+      content: 'On habit',
+      sourceAnchorKind: 'physical_page',
+      sourceAnchorValue: '47',
+    });
+    post.flush({ id: 'n10', content: 'On habit' });
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
+    expect(component.newNotePage()).toBe('12');
+  });
+
+  it('saves a paper-book note without a page when the field is cleared (#1377)', async () => {
+    await setup(readableBook({ type: 'physical', hasFile: false, fileName: null, lastLocation: '{"page":12}' }));
+    component.newNote.set('No page');
+    component.newNotePageText.set('');
+    component.addNote();
+    const post = httpMock.expectOne((r) => r.method === 'POST' && r.url.includes('/notes'));
+    expect(post.request.body.sourceAnchorKind).toBeUndefined();
+    post.flush({ id: 'n11', content: 'No page' });
+    httpMock.expectOne(bookNotes).flush(notesPage([]));
+  });
+
   it('uses shared primitives for ordinary Book Detail controls without flattening product interactions', async () => {
     await setup(readableBook({ isFavorite: true }));
 
