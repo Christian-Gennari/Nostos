@@ -217,6 +217,12 @@ public sealed class PortableCompletenessInventoryTests
                     "PassageEnd",
                     "PassageHtml",
                 ],
+                excluded:
+                [
+                    Excluded(
+                        "UpdatedAt",
+                        "Edit-conflict version token (issue #1404), not library content; a note without one is versioned by its CreatedAt, so an imported note works unchanged and the next edit stamps it."),
+                ],
                 excludedNavigations:
                 [
                     Excluded("Book", NavigationReason),

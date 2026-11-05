@@ -116,6 +116,7 @@ public class NostosDbContext : DbContext
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         AssignMissingWorks();
+        StampNoteUpdates();
         if (!HasPortableChanges())
             return base.SaveChanges(acceptAllChangesOnSuccess);
 
@@ -161,6 +162,7 @@ public class NostosDbContext : DbContext
         CancellationToken cancellationToken)
     {
         await AssignMissingWorksAsync(cancellationToken);
+        StampNoteUpdates();
         if (!HasPortableChanges())
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
 
@@ -421,6 +423,28 @@ public class NostosDbContext : DbContext
 
     /// <summary>The last committed transaction already announced, so it is announced once.</summary>
     private Guid? _libraryChangeAnnouncedTransactionId;
+
+    // Every write to a note moves its UpdatedAt (issue #1404), so a second tab
+    // holding an older copy can be told apart. One hook covers every path that
+    // saves a note: edit, topic link, location, restore, import.
+    private void StampNoteUpdates()
+    {
+        DateTime? now = null;
+        foreach (var entry in ChangeTracker.Entries<NoteModel>())
+        {
+            // Edits only: a note that is added (made, imported, restored) is
+            // versioned by its CreatedAt until its first edit, so a rebuilt
+            // library stays byte-identical to a clean build.
+            if (entry.State is not EntityState.Modified)
+                continue;
+            // Strictly after the version it replaces (to the millisecond the
+            // conflict check compares at), so two quick saves never share one.
+            var note = entry.Entity;
+            var stamp = now ??= DateTime.UtcNow;
+            var previous = note.UpdatedAt ?? note.CreatedAt;
+            note.UpdatedAt = stamp > previous.AddMilliseconds(1) ? stamp : previous.AddMilliseconds(1);
+        }
+    }
 
     private void AssignMissingWorks()
     {

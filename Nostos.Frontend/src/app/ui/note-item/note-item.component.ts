@@ -51,6 +51,8 @@ export interface NoteItemEdit {
   selectedText?: string;
   highlightColour?: HighlightColour;
   passageTitle?: string;
+  /** The version of the note this edit started from (issue #1404). */
+  baseUpdatedAt?: string;
 }
 
 /** Above this many characters a quote is cut to a few lines, with "Show all". */
@@ -333,7 +335,7 @@ export class NoteItemComponent {
   saveEdit(): void {
     const note = this.note();
     const content = this.editContent().trim();
-    const edit: NoteItemEdit = { id: note.id, content };
+    const edit: NoteItemEdit = { id: note.id, content, baseUpdatedAt: note.updatedAt };
     let changed = content !== (note.content ?? '').trim();
 
     if (this.isPassage()) {

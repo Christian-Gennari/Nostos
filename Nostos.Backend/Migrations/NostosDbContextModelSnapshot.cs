@@ -1133,6 +1133,9 @@ namespace Nostos.Backend.Migrations
                     b.Property<string>("SourceAnchorValue")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BookId");

@@ -55,6 +55,10 @@ public static class NoteErrorCodes
     // A passage needs a title and both ends in its book's own terms; one that
     // is incomplete, or too large to be a passage, is refused (issue #1014).
     public const string InvalidPassage = "invalid_passage";
+
+    // The save was made from a copy older than the stored note (issue #1404).
+    // The result's Value carries the current note.
+    public const string EditConflict = "edit_conflict";
 }
 
 /// <summary>

@@ -233,7 +233,8 @@ public static class MappingExtensions
             PassageTitle: model.PassageTitle,
             PassageEnd: model.PassageEnd,
             PassageWordCount: model.IsPassage() ? PassageText.WordCount(model.SelectedText) : null,
-            BookAuthor: model.Book?.Author
+            BookAuthor: model.Book?.Author,
+            UpdatedAt: model.UpdatedAt ?? model.CreatedAt
         );
 
     public static bool IsPassage(this NoteModel model) => model.Kind == NoteKinds.Passage;

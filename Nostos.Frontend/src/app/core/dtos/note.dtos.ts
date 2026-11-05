@@ -33,6 +33,11 @@ export interface Note {
   passageWordCount?: number | null;
   /** The book's author, when known (issue #1038). */
   bookAuthor?: string | null;
+  /**
+   * The note's version (issue #1404): when it was last written. Sent back as
+   * `baseUpdatedAt` so a save from an older copy is refused with 409.
+   */
+  updatedAt?: string;
 }
 
 export type NoteKind = 'note' | 'passage';
@@ -269,6 +274,11 @@ export interface UpdateNoteDto {
   highlightColour?: string;
   /** A passage's title; omitted leaves it as it is. */
   passageTitle?: string;
+  /**
+   * The `updatedAt` this copy was loaded with (issue #1404). The server refuses
+   * the save with 409 when the note has changed since. Left out = no check.
+   */
+  baseUpdatedAt?: string;
 }
 
 /**
@@ -306,6 +316,8 @@ export interface NoteSearchHit {
   editionCount?: number;
   /** The note's book (work), which the Brain's Book filter keys on. */
   workId?: string | null;
+  /** The note's version (issue #1404); see `Note.updatedAt`. */
+  updatedAt?: string;
 }
 
 export interface NoteRawTranscript {

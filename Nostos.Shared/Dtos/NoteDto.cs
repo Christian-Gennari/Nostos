@@ -32,7 +32,10 @@ public record NoteDto(
     string? PassageEnd = null,
     int? PassageWordCount = null,
     // APPENDED (issue #1038): the book's author, so a quote can name who said it.
-    string? BookAuthor = null
+    string? BookAuthor = null,
+    // APPENDED (issue #1404): the note's version — when it was last written, or
+    // when it was made if it never was. A client echoes it as BaseUpdatedAt.
+    DateTime? UpdatedAt = null
 );
 
 public record CreateNoteDto(
@@ -67,7 +70,11 @@ public record UpdateNoteDto(
     string Content,
     string? SelectedText = null,
     string? HighlightColour = null,
-    string? PassageTitle = null);
+    string? PassageTitle = null,
+    // APPENDED (issue #1404): the NoteDto.UpdatedAt this copy was loaded with.
+    // When sent and the note has changed since, the save is refused with 409 and
+    // the current note. Null = no check (older clients).
+    DateTime? BaseUpdatedAt = null);
 
 public record NoteLocationDto(string? CfiRange);
 
@@ -115,7 +122,10 @@ public record NoteSearchHitDto(
     // is alone or its row is gone.
     int EditionCount = 1,
     // APPENDED (#1302): the note's book (work), what the Brain's Book filter keys on.
-    Guid? WorkId = null
+    Guid? WorkId = null,
+    // APPENDED (issue #1404): the note's version, as NoteDto.UpdatedAt, to send
+    // back as BaseUpdatedAt when the note is edited from a list.
+    DateTime? UpdatedAt = null
 );
 
 /// <summary>
