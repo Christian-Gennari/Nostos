@@ -155,6 +155,17 @@ public interface ILibraryService
     Task<LibraryCommandResultDto> LinkWorkAsync(LibraryLinkWorkRequest request, CancellationToken ct = default);
 
     /// <summary>
+    /// Other works that look like the same book as <paramref name="bookId"/>
+    /// (see <see cref="EditionMatcher.IsSuggestion"/>), one entry per work. Read
+    /// only: it never links anything. The default is no suggestion, so a host
+    /// that implements this interface without overriding it keeps working.
+    /// </summary>
+    Task<IReadOnlyList<EditionSuggestionDto>> FindEditionSuggestionsAsync(
+        Guid bookId,
+        CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<EditionSuggestionDto>>([]);
+
+    /// <summary>
     /// Manual multi-edition override: move <c>BookId</c> out of its work into
     /// a NEW work carrying that book's own current title/author identity. The
     /// book always ends up with a valid work — never a null or empty WorkId.

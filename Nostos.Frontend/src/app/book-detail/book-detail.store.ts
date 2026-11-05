@@ -535,6 +535,21 @@ export class BookDetailStore {
       });
   }
 
+  /**
+   * Asks which other book looks like this one (same title, author spelled
+   * alike) and hands the first to `offer`. Read only: the caller asks the
+   * person before anything is linked. A failed read offers nothing.
+   */
+  loadWorkSuggestion(bookId: string, offer: (candidate: LinkableBookDto) => void) {
+    this.booksService.workSuggestions(bookId).subscribe({
+      next: (found) => {
+        // The person may have moved on to another book while this was in flight.
+        if (found.length > 0 && this.book()?.id === bookId) offer(found[0]);
+      },
+      error: () => {},
+    });
+  }
+
   /** Split a book out into its own work. Defaults to the book being viewed. */
   unlinkFromWork(bookId?: string, onSuccess?: () => void) {
     const b = this.book();
