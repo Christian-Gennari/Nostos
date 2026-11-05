@@ -6,4 +6,5 @@ public enum BookSort
     Title,
     Rating,
     LastRead,
+    RecentlyFinished,
 }

@@ -635,6 +635,32 @@
   font-size: var(--text-xs);
 }
 
+.finished-date {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+.finished-date input {
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-main);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color-scheme: light dark;
+}
+.finished-date input:hover {
+  border-color: var(--border-color);
+}
+.finished-date input:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-halo);
+}
+
 .status-dropdown.reading {
   --dropdown-pill-bg: color-mix(in srgb, var(--color-brand-accent) 12%, transparent);
   --dropdown-pill-bg-hover: color-mix(in srgb, var(--color-brand-accent) 20%, transparent);

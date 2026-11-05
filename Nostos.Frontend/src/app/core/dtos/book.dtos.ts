@@ -57,6 +57,8 @@ export interface EditionSummaryDto {
   rating?: number;
   /** This edition's own review, an exception to the book's. Null means none. */
   personalReview?: string | null;
+  /** The edition has a saved place (a paper page has no percentage without a page count). */
+  hasPlace?: boolean;
 }
 
 export interface Book {

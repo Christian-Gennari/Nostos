@@ -29,11 +29,11 @@ describe('paper page progress (issue #1091)', () => {
     expect(clampPaperPage(5000, null)).toBe(5000);
   });
 
-  it('derives the percentage by the PDF reader rule, and 1% without a page count', () => {
+  it('derives the percentage by the PDF reader rule, and none without a page count', () => {
     expect(paperPagePercent(143, 880)).toBe(16);
     expect(paperPagePercent(880, 880)).toBe(100);
     expect(paperPagePercent(1, 880)).toBe(1);
-    expect(paperPagePercent(50, null)).toBe(1);
+    expect(paperPagePercent(50, null)).toBe(0);
   });
 });
 
@@ -212,7 +212,7 @@ describe('BookDetail paper page stepper (issue #1091)', () => {
 
     vi.advanceTimersByTime(BookDetailStore.PAPER_PAGE_SAVE_DELAY_MS);
     const [write] = progressWrites();
-    expect(write.request.body).toEqual({ location: '{"page":42}', percentage: 1 });
+    expect(write.request.body).toEqual({ location: '{"page":42}', percentage: 0 });
     write.flush({});
   });
 

@@ -408,6 +408,15 @@ app-sidebar-collections.no-transition {
   font-size: 0.88rem;
 }
 
+.list-book-status,
+.meta-status {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .list-book-author {
   /* Phones only: the Author column is hidden there (see the phone block). */
   display: none;

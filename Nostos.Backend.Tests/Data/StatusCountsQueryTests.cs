@@ -60,7 +60,7 @@ public sealed class StatusCountsQueryTests : IClassFixture<SqliteTestFixture>
         actual.Should().Be(expected);
         // Guard against a vacuous seed: every count is distinct and non-zero.
         actual.Should().Be(new LibraryStatusCountsDto(
-            All: 9, NotStarted: 5, Reading: 2, Favorites: 2, Finished: 3, Unsorted: 8,
+            All: 9, NotStarted: 5, Reading: 2, Favorites: 2, Finished: 2, Unsorted: 8,
             Audiobooks: 2, Ebooks: 5, Pdfs: 2));
     }
 
@@ -118,7 +118,7 @@ public sealed class StatusCountsQueryTests : IClassFixture<SqliteTestFixture>
         var w1 = Work("Finished work", favorite: true);
         var b1a = Book(new EBookModel(), w1, "a.epub", 100, finished: t.AddDays(1), lastRead: t.AddDays(1));
         var b1b = Book(new AudioBookModel(), w1, "a.m4b");
-        // 2: reread: finished earlier, an edition read after the finish (Reading and Finished).
+        // 2: reread: finished earlier, an edition read after the finish (Reading only: one status per work).
         var w2 = Work("Reread work");
         var b2a = Book(new EBookModel(), w2, "b.epub", 100, finished: t.AddDays(1), lastRead: t.AddDays(1));
         var b2b = Book(new EBookModel(), w2, "b2.epub", 30, lastRead: t.AddDays(5));

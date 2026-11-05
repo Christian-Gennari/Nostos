@@ -55,7 +55,8 @@ import { coverImageUrl } from '../core/cover-url';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
-import { READING_STATUS_LABEL } from '../core/reading-status';
+import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
+import { formatNostosDate } from '../core/date-formats';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 
@@ -171,6 +172,7 @@ export class Library implements OnInit, OnDestroy {
   protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   readonly sortOptions = [
     { value: BookSort.LastRead, label: 'Last read' },
+    { value: BookSort.RecentlyFinished, label: 'Recently finished' },
     { value: BookSort.Recent, label: 'Recently added' },
     { value: BookSort.Title, label: 'Title (A-Z)' },
     { value: BookSort.Rating, label: 'Highest rated' },
@@ -803,9 +805,9 @@ export class Library implements OnInit, OnDestroy {
       case 'finished':
         return !!book.finishedAt;
       case 'reading':
-        return !book.finishedAt && book.progressPercent > 0;
+        return !book.finishedAt && (book.progressPercent > 0 || !!book.lastLocation);
       case 'notstarted':
-        return book.progressPercent === 0;
+        return book.progressPercent === 0 && !book.lastLocation && !book.finishedAt;
       case 'unsorted':
         // Membership is a set now: a book is sorted if it is in ANY collection.
         // Reading the singular field here would call a multi-collection book
@@ -1124,6 +1126,27 @@ export class Library implements OnInit, OnDestroy {
         this.toast.error('Could not update the favourite');
       },
     });
+  }
+
+  /**
+   * The quiet status line under a book: "Reading · 40% · read 3 Nov 2026" or
+   * "Finished 4 Nov 2026". It is the book's status (all editions together, the
+   * same rule as the Reading and Finished filters); a book not started has none.
+   */
+  statusLine(book: Book): string {
+    if (book.status === 1 || book.status === 2 || book.status === 3) return '';
+    const { status, percent, finishedAt } = bookReadingStatusOf(book, book.otherEditions);
+    if (status === 'finished') {
+      return finishedAt ? `${READING_STATUS_LABEL.finished} ${formatNostosDate(finishedAt)}` : READING_STATUS_LABEL.finished;
+    }
+    if (status !== 'reading') return '';
+    const read = [book.lastReadAt, ...(book.otherEditions ?? []).map((e) => e.lastReadAt)]
+      .filter((at): at is string => !!at)
+      .sort()
+      .pop();
+    return [READING_STATUS_LABEL.reading, percent ? `${percent}%` : null, read ? `read ${formatNostosDate(read)}` : null]
+      .filter(Boolean)
+      .join(' · ');
   }
 
   toggleFinished(book: Book, event: Event): void {
