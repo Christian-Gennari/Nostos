@@ -2,6 +2,12 @@
 export interface PdfJsLib {
   getDocument(source: { url: string; withCredentials?: boolean; worker?: unknown }): PdfLoadingTask;
   PDFWorker: new (options: { port: Worker }) => { destroy(): void };
+  /** pdf.js's own text layer: invisible, selectable text laid over a page. */
+  TextLayer: new (options: {
+    textContentSource: unknown;
+    container: HTMLElement;
+    viewport: unknown;
+  }) => { render(): Promise<void>; cancel(): void };
 }
 
 /**
@@ -35,6 +41,7 @@ export interface PdfDocument {
 
 export interface PdfPage {
   getViewport(options: { scale: number }): { width: number; height: number };
+  streamTextContent(): unknown;
   render(options: {
     canvasContext: CanvasRenderingContext2D;
     viewport: { width: number; height: number };

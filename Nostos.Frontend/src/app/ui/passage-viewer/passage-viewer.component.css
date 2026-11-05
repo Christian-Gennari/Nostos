@@ -205,6 +205,7 @@
 }
 
 .pv-pdf-sheet {
+  position: relative;
   display: flex;
   max-width: 100%;
   max-height: 100%;
@@ -224,6 +225,41 @@
   display: block;
   max-width: 100%;
   max-height: 100%;
+}
+
+/* pdf.js's text layer (the quote picker): transparent words placed over the
+   page, only so the browser can select them. pdf.js sizes and positions each
+   span through these custom properties. */
+.pv-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  --total-scale-factor: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pv-text-layer ::ng-deep :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
+.pv-text-layer ::ng-deep span {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pv-text-layer ::ng-deep ::selection {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
 /* The PDF reader's dark page (issue #259): the same filter, so a page reads
