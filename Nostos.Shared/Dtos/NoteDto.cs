@@ -56,18 +56,27 @@ public record CreateNoteDto(
     string Kind = "note",
     string? PassageTitle = null,
     string? PassageEnd = null,
-    string? PassageHtml = null
+    string? PassageHtml = null,
+    // APPENDED (issue #1446): topics added as pills where the note was written.
+    // Each one the Content does not already declare is written into it as its
+    // own [[Name]] paragraph before the note is processed. Null adds none.
+    IReadOnlyList<string>? Topics = null
 );
 
 // HighlightColour APPENDED (issue #861). Null leaves the stored pen unchanged,
 // so a client that only edits text never clears a colour.
 // PassageTitle APPENDED (issue #1014): null leaves it unchanged. A passage's
 // text and ends are fixed when it is saved.
+// Topics APPENDED (issue #1446): the note's pill topics, written into Content
+// as [[Name]] paragraphs the way CreateNoteDto.Topics is. With Topics, Content
+// is the note's own words only, so a pill topic left out of the list is
+// removed. Null sends Content as the whole text, as before.
 public record UpdateNoteDto(
     string Content,
     string? SelectedText = null,
     string? HighlightColour = null,
-    string? PassageTitle = null);
+    string? PassageTitle = null,
+    IReadOnlyList<string>? Topics = null);
 
 public record NoteLocationDto(string? CfiRange);
 

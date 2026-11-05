@@ -335,6 +335,80 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     // ------------------------------------------------------------------
+    // Pill topics sent with the note (issue #1446)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Create_writes_pill_topics_into_the_text_and_links_them()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(book.Id, new CreateNoteDto(
+            "[[Attention]] is a spiritual journey.", Topics: ["attention", "Faith"]));
+
+        result.Success.Should().BeTrue();
+        result.Value!.Content.Should().Be("[[Attention]] is a spiritual journey.\n\n[[Faith]]",
+            "a pill for a topic the words already link is not written twice");
+        (await h.Db.Topics.Select(t => t.Topic).OrderBy(n => n).ToListAsync())
+            .Should().Equal("Attention", "Faith");
+        (await h.Db.NoteTopics.CountAsync()).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Update_with_topics_keeps_adds_and_removes_pill_topics()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var created = await h.Service.CreateAsync(book.Id, new CreateNoteDto(
+            "A thought.", Topics: ["Faith", "Attention"]));
+        var id = created.Value!.Id;
+
+        var edited = await h.Service.UpdateAsync(id, new UpdateNoteDto(
+            "An edited thought.", Topics: ["Faith", "Silence"]));
+
+        edited.Success.Should().BeTrue();
+        edited.Value!.Content.Should().Be("An edited thought.\n\n[[Faith]]\n\n[[Silence]]");
+        (await h.Db.NoteTopics.Where(l => l.NoteId == id).Select(l => l.Topic.Topic)
+            .OrderBy(n => n).ToListAsync()).Should().Equal("Faith", "Silence");
+    }
+
+    [Fact]
+    public async Task Update_without_topics_sends_the_whole_text_as_before()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var created = await h.Service.CreateAsync(book.Id, new CreateNoteDto("A thought.\n\n[[Faith]]"));
+
+        var edited = await h.Service.UpdateAsync(created.Value!.Id, new UpdateNoteDto("Another.\n\n[[Faith]]"));
+
+        edited.Value!.Content.Should().Be("Another.\n\n[[Faith]]");
+        (await h.Db.NoteTopics.CountAsync()).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData("a]] b")]
+    [InlineData("")]
+    [InlineData("one|two")]
+    public async Task A_pill_topic_that_cannot_stand_in_brackets_is_refused(string name)
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var created = await h.Service.CreateAsync(book.Id, new CreateNoteDto("A thought.", Topics: [name]));
+        var note = await SeedNoteAsync(h, book.Id, "a note");
+        var edited = await h.Service.UpdateAsync(note.Id, new UpdateNoteDto("a note", Topics: [name]));
+
+        created.ErrorCode.Should().Be("invalid_topic_link");
+        edited.ErrorCode.Should().Be("invalid_topic_link");
+        (await h.Db.Notes.CountAsync()).Should().Be(1, "only the seeded note exists");
+    }
+
+    // ------------------------------------------------------------------
     // Review read
     // ------------------------------------------------------------------
 
