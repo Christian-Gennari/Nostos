@@ -183,6 +183,10 @@ A book that already has a file answers `409` `{ "code": "book_has_file", "messag
 author and can return an existing book. A book that is importing answers `409`
 `book_import_in_progress`.
 
+The resumable contract (`POST /api/books/{id}/file/uploads`) follows the same rule: creating a
+session for a book that already has a file answers `409` `book_has_file` unless the request carries
+`?replace=true`. A session that already matches the file resumes either way.
+
 For audio files, metadata (chapters, duration) is extracted automatically via ATL.NET.
 
 Uploading a file to a multi-track audiobook replaces its tracks: a book holds

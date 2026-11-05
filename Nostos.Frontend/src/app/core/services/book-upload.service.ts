@@ -37,6 +37,8 @@ export interface BookUploadProgress {
 export interface BookUploadOptions {
   signal?: AbortSignal;
   onProgress?: (progress: BookUploadProgress) => void;
+  /** Must be true to upload over a file the book already has (409 `book_has_file`). */
+  replace?: boolean;
 }
 
 /** One in-flight run, kept so a caller can stop it without owning the File. */
@@ -196,6 +198,7 @@ export class BookUploadService {
         sha256,
       },
       signal,
+      options.replace === true,
     );
 
     if (status.state === 'Complete') {
@@ -361,6 +364,8 @@ export function describeBookUploadFailure(
       return 'There is not enough free storage for this file.';
     case 'book_upload_unsupported_type':
       return 'This file type cannot be uploaded as a book.';
+    case 'book_has_file':
+      return 'This book already has a file. Your new file was not added.';
     case 'book_upload_in_progress':
       return 'This book is already importing or uploading a file. Wait until it finishes.';
     case 'book_upload_not_found':
