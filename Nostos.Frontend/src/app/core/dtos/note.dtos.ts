@@ -260,6 +260,8 @@ export interface CreateNoteDto {
   passageTitle?: string;
   passageEnd?: string;
   passageHtml?: string;
+  /** Pill topics (issue #1446): the server writes each as a `[[Name]]` line. */
+  topics?: string[];
 }
 
 export interface UpdateNoteDto {
@@ -269,6 +271,11 @@ export interface UpdateNoteDto {
   highlightColour?: string;
   /** A passage's title; omitted leaves it as it is. */
   passageTitle?: string;
+  /**
+   * The note's pill topics (issue #1446). With them, `content` is the words
+   * only and a pill topic left out is removed; omitted sends the whole text.
+   */
+  topics?: string[];
 }
 
 /**

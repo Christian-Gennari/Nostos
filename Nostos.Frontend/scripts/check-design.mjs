@@ -294,7 +294,7 @@ for (const f of files) {
    onto app-confirm-modal: its two rgba() drop shadows are gone.
    Lowered 39 -> 38 when the note card was removed (#1191): its floating
    action pill carried an `rgba(0, 0, 0, 0.08)` shadow. */
-const LITERAL_COLOUR_BUDGET = 38;
+const LITERAL_COLOUR_BUDGET = 37;
 
 {
   const ALLOW = [

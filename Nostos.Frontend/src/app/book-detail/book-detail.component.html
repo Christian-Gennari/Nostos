@@ -496,14 +496,16 @@
             </div>
 
             <div class="new-note-box">
-              <app-topic-input
-                placeholder="Jot down a thought…"
-                [(ngModel)]="newNote"
-                [rows]="1"
-                (submitTrigger)="addNote()"
-              ></app-topic-input>
+              <app-note-composer
+                [(words)]="newNote"
+                [(topics)]="newNoteTopics"
+                ariaLabel="New note"
+                testId="book-new-note"
+                [rows]="2"
+                (submitted)="addNote()"
+              />
 
-              @if (newNote().length > 0) {
+              @if (newNoteReady()) {
               <button appButton variant="primary" size="sm" [disabled]="store.noteSaving()" (click)="addNote()">Save</button>
               }
             </div>

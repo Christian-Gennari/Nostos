@@ -81,10 +81,11 @@ export interface IReader {
   /** Redraws a saved highlight after its pen was changed from the note's edit UI. */
   recolourHighlight?(note: Note, colour: HighlightColour): void;
   /**
-   * Saves the pending mark; `content` is optional note text for EPUB/PDF, and
-   * `colour` a pen chosen in the same gesture (default: the book's pen).
+   * Saves the pending mark; `content` is optional note text for EPUB/PDF,
+   * `colour` a pen chosen in the same gesture (default: the book's pen), and
+   * `topics` the note's pill topics (issue #1448), written by the server.
    */
-  commitHighlight(content?: string, colour?: HighlightColour): void;
+  commitHighlight(content?: string, colour?: HighlightColour, topics?: readonly string[]): void;
   discardHighlight(): void;
 
   // Passages (issue #1014): two marks, in either order, and what lies between.

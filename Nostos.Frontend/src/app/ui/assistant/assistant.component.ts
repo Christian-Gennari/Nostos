@@ -32,6 +32,7 @@ import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { AssistantChangesetCardComponent } from './changeset-card/assistant-changeset-card.component';
+import { CapturedNoteTopicsComponent } from './captured-note-topics.component';
 import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 
 /** A ready-made question offered while the conversation is empty. */
@@ -287,7 +288,15 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
 @Component({
   selector: 'app-assistant',
   standalone: true,
-  imports: [IconTileComponent, NostosIconComponent, AssistantMarkdownPipe, ButtonComponent, IconButtonComponent, AssistantChangesetCardComponent],
+  imports: [
+    IconTileComponent,
+    NostosIconComponent,
+    AssistantMarkdownPipe,
+    ButtonComponent,
+    IconButtonComponent,
+    AssistantChangesetCardComponent,
+    CapturedNoteTopicsComponent,
+  ],
   templateUrl: './assistant.component.html',
   styleUrl: './assistant.component.css',
   changeDetection: ChangeDetectionStrategy.Eager,

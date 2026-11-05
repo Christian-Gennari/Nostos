@@ -2,7 +2,9 @@ import { formatAudioTime, parseAudioSeconds, type Note, type NoteSearchHit } fro
 import { normalizeSearchText } from '../../core/search-text';
 import type { TopicDto } from '../../core/services/topics.service';
 
-const REFERENCE = /\[\[(.*?)\]\]/g;
+import { isReferenceLine, splitTopics } from '../note-composer/topic-text';
+
+export { isReferenceLine };
 
 /**
  * A note's own words as the card shows them. Lines that hold only `[[Topic]]`
@@ -10,20 +12,7 @@ const REFERENCE = /\[\[(.*?)\]\]/g;
  * under the text; a reference inside a sentence stays, as a link.
  */
 export function thoughtForDisplay(content: string | null | undefined): string {
-  if (!content) return '';
-  const kept = content
-    .split('\n')
-    .filter((line) => !isReferenceLine(line));
-  return kept
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-/** A line of references and separators only: what linking a topic writes. */
-export function isReferenceLine(line: string): boolean {
-  if (!line.match(REFERENCE)) return false;
-  return /^[\s,;·|]*$/.test(line.replace(REFERENCE, ''));
+  return splitTopics(content).words;
 }
 
 /**

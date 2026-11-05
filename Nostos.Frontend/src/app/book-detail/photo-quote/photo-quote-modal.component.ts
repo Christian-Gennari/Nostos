@@ -16,6 +16,7 @@ import { DialogActionsComponent } from '../../ui/dialog-actions/dialog-actions.c
 import { FormFieldComponent } from '../../ui/form-field/form-field.component';
 import { InputDirective, TextareaDirective } from '../../ui/form-control/form-control.directive';
 import { ProgressComponent } from '../../ui/progress/progress.component';
+import { NoteComposerComponent, draftToSave } from '../../ui/note-composer/note-composer.component';
 import { LOW_CONFIDENCE, OcrWord, PageOcrService, selectionText } from './page-ocr';
 
 /** What the page saves: the quote as checked, the user's comment, the page. */
@@ -23,6 +24,8 @@ export interface PhotoQuote {
   text: string;
   comment: string;
   page: number | null;
+  /** The note's pill topics (issue #1448). */
+  topics?: string[];
 }
 
 type Stage = 'reading' | 'select' | 'failed';
@@ -45,6 +48,7 @@ type Stage = 'reading' | 'select' | 'failed';
     InputDirective,
     TextareaDirective,
     ProgressComponent,
+    NoteComposerComponent,
   ],
   templateUrl: './photo-quote-modal.component.html',
   styleUrl: './photo-quote-modal.component.css',
@@ -74,6 +78,7 @@ export class PhotoQuoteModal {
 
   readonly quote = signal('');
   readonly comment = signal('');
+  readonly topics = signal<readonly string[]>([]);
   readonly pageValue = signal<number | null>(null);
 
   readonly lowConfidence = LOW_CONFIDENCE;
@@ -198,10 +203,12 @@ export class PhotoQuoteModal {
 
   submit(): void {
     if (!this.canSave()) return;
+    const note = draftToSave({ words: this.comment(), topics: [...this.topics()] });
     this.save.emit({
       text: this.quote().trim(),
-      comment: this.comment().trim(),
+      comment: note.words,
       page: this.pageValue(),
+      ...(note.topics.length ? { topics: note.topics } : {}),
     });
   }
 }

@@ -363,20 +363,17 @@
            Chrome's bottom Touch to Search sheet and of the selection handles. -->
       <ng-template #selectionNoteField>
         <div class="selection-note">
-          <label class="visually-hidden" for="selection-note-input">Note for this passage</label>
-          <textarea
-            appTextarea
-            controlSize="compact"
-            id="selection-note-input"
-            class="selection-note-input"
-            rows="3"
-            placeholder="Write a note…"
-            [value]="noteDraft()"
-            (input)="noteDraft.set($any($event.target).value)"
-            (keydown)="onNoteDraftKeydown($event)"
+          <app-note-composer
+            [compact]="true"
+            [(words)]="noteDraft"
+            [(topics)]="noteDraftTopics"
+            inputId="selection-note-input"
+            ariaLabel="Note for this passage"
+            testId="selection-note-input"
+            [rows]="3"
             [disabled]="highlightSaving()"
-            data-testid="selection-note-input"
-          ></textarea>
+            (submitted)="saveNote()"
+          />
         </div>
       </ng-template>
 
@@ -402,7 +399,7 @@
             variant="primary"
             class="reader-confirm-action selection-primary"
             (click)="saveNote()"
-            [disabled]="highlightSaving() || !noteDraft().trim()"
+            [disabled]="highlightSaving() || !noteDraftReady()"
             [busy]="highlightSaving()"
             data-testid="selection-save-note"
           >
@@ -612,27 +609,34 @@
 
         @if (highlightNoteEditing()) {
           <div class="selection-note">
-            <label class="visually-hidden" for="highlight-card-input">Note for this highlight</label>
-            <textarea
-              appTextarea
-              controlSize="compact"
-              id="highlight-card-input"
-              class="highlight-card-input selection-note-input"
-              rows="3"
-              placeholder="Write a note…"
-              [value]="highlightNoteDraft()"
-              (input)="highlightNoteDraft.set($any($event.target).value)"
-              (keydown)="onHighlightNoteKeydown($event)"
+            <app-note-composer
+              [compact]="true"
+              [(words)]="highlightNoteDraft"
+              [(topics)]="highlightNoteTopics"
+              inputId="highlight-card-input"
+              ariaLabel="Note for this highlight"
+              testId="highlight-card-input"
+              [rows]="3"
               [disabled]="highlightNoteSaving()"
-              data-testid="highlight-card-input"
-            ></textarea>
+              (submitted)="saveHighlightNote()"
+            />
           </div>
         } @else if (activeHighlightHasNote()) {
+          @if (activeHighlightWords()) {
           <div
             class="highlight-card-note"
-            [innerHTML]="hl.content | noteFormat : topicMap()"
+            [innerHTML]="activeHighlightWords() | noteFormat : topicMap()"
             data-testid="highlight-card-note"
           ></div>
+          }
+          @if (activeHighlightTopics().length) {
+          <app-topic-row
+            class="highlight-card-topics"
+            [names]="activeHighlightTopics()"
+            [topicMap]="topicMap()"
+            [editable]="false"
+          />
+          }
         }
 
         @if (!highlightNoteEditing()) {
@@ -712,7 +716,7 @@
               data-testid="highlight-card-save"
             >
               <nostos-icon name="check" [size]="16"></nostos-icon>
-              {{ highlightNoteSaving() ? 'Saving…' : activeHighlightHasNote() && !highlightNoteDraft().trim() ? 'Remove note' : 'Save note' }}
+              {{ highlightNoteSaving() ? 'Saving…' : activeHighlightHasNote() && highlightNoteEmpty() ? 'Remove note' : 'Save note' }}
             </button>
           } @else {
             <button
@@ -831,13 +835,15 @@
 
       <div class="quick-note">
         <div class="input-wrapper">
-          <app-topic-input
-            [ngModel]="quickNoteContent()"
-            (ngModelChange)="onQuickNoteInput($event)"
-            placeholder="Add a quick note…"
+          <app-note-composer
+            [words]="quickNoteContent()"
+            (wordsChange)="onQuickNoteInput($event)"
+            [(topics)]="quickNoteTopics"
+            ariaLabel="Quick note"
+            testId="quick-note-input"
             [rows]="2"
-            (submitTrigger)="saveQuickNote()"
-          ></app-topic-input>
+            (submitted)="saveQuickNote()"
+          />
         </div>
         <div class="quick-actions">
           @if (quickNotePinnedTime(); as time) {
@@ -850,7 +856,7 @@
             type="button"
             variant="primary"
             (click)="saveQuickNote()"
-            [disabled]="!quickNoteContent() || quickNoteSaving()"
+            [disabled]="!quickNoteReady() || quickNoteSaving()"
             [busy]="quickNoteSaving()"
           >
             {{ quickNoteSaving() ? 'Saving…' : 'Save' }}
@@ -1314,15 +1320,15 @@
     }
 
     <label class="passage-sheet-label" for="passage-sheet-note">Note <span class="passage-sheet-optional">(optional)</span></label>
-    <textarea
-      appTextarea
-      id="passage-sheet-note"
-      rows="3"
-      placeholder="Why keep this passage?"
-      [value]="passageNote()"
-      (input)="passageNote.set($any($event.target).value)"
-      data-testid="passage-sheet-note"
-    ></textarea>
+    <app-note-composer
+      [(words)]="passageNote"
+      [(topics)]="passageTopics"
+      inputId="passage-sheet-note"
+      testId="passage-sheet-note"
+      placeholder="Why keep this passage? Link a [[Topic]]"
+      [rows]="3"
+      [disabled]="passageSaving()"
+    />
     }
   </div>
 

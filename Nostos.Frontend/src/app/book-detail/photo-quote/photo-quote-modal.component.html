@@ -89,18 +89,18 @@
                 (input)="setPage($any($event.target).value)"
               />
             </app-form-field>
-
-            <app-form-field label="Your note" labelNote="Optional" forId="photo-quote-comment" class="photo-quote-comment">
-              <input
-                appInput
-                id="photo-quote-comment"
-                type="text"
-                data-testid="photo-quote-comment"
-                [ngModel]="comment()"
-                (ngModelChange)="comment.set($event)"
-              />
-            </app-form-field>
           </div>
+
+          <app-form-field label="Your note" labelNote="Optional" forId="photo-quote-comment" class="photo-quote-comment">
+            <app-note-composer
+              [(words)]="comment"
+              [(topics)]="topics"
+              inputId="photo-quote-comment"
+              testId="photo-quote-comment"
+              [rows]="2"
+              [disabled]="busy()"
+            />
+          </app-form-field>
         }
       }
     }

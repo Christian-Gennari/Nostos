@@ -59,7 +59,10 @@ One card, everywhere a note appears (the Brain and a book's page):
 - your thought, where inline `[[topics]]` are links;
 - topic chips: a chip opens the topic, its × removes the link (with Undo),
   **+ Topic** adds one (type to filter, Enter to link, a new name creates the
-  topic; AI suggestions appear in the picker when AI is available);
+  topic; AI suggestions appear in the picker when AI is available). **Edit
+  note** opens the same words and pills in the note composer; how the two
+  ways of adding a topic fit together is in `docs/topic-system.md`, "Writing
+  a note";
 - book · author · date · location, and **Open in book** (to the passage when
   its place in the book is known);
 - a ⋯ menu: Edit note, Keep with writing…, More from this book, Select,

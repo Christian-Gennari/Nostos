@@ -919,6 +919,14 @@
         </ul>
         <span class="catalogue-label">{{ noTopicsYet }}</span>
       </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Topic row · a note's topics, + Topic to add one</span>
+        <app-topic-row [names]="catalogueTopics()" [linked]="false" />
+      </div>
+      <div class="catalogue-example">
+        <span class="catalogue-label">Note composer · every place a note is written (inline [[ ]] and pills)</span>
+        <app-note-composer words="[[Attention]] is a spiritual journey." [topics]="['Faith']" [rows]="2" />
+      </div>
     </div>
   </section>
 

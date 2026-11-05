@@ -1,29 +1,7 @@
-/* The topic picker. Tokens only, so both presentations follow light and dark
-   without a palette of their own. Geometry of the dialog itself (backdrop,
-   card, phone sheet) belongs to the modal shell, not to this file. */
+/* The `[[` suggestions. Tokens only, so they follow light and dark without a
+   palette of their own. */
 
-/* ---- Dialog: header --------------------------------------------------- */
-
-.picker-head {
-  padding: 0 1rem 0.9rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.picker-title {
-  margin: 0;
-  color: var(--color-text-main);
-  font-size: 1.05rem;
-  font-weight: var(--fw-medium);
-  line-height: 1.3;
-}
-
-/* <nostos-search-field> owns the glass and its gutter. */
-.picker-search-input {
-  /* 16px: anything smaller makes iOS zoom the page when the field takes focus. */
-  font-size: var(--text-md);
-}
-
-/* ---- The list, shared by both presentations --------------------------- */
+/* ---- The list --------------------------------------------------------- */
 
 .picker-list {
   padding: 0.375rem;
@@ -37,35 +15,6 @@
   color: var(--color-text-light);
   font-size: var(--text-sm);
   text-align: center;
-}
-
-/* ---- Dialog: footer --------------------------------------------------- */
-
-.picker-foot {
-  display: flex;
-  flex-shrink: 0;
-  gap: 1rem;
-  padding: 0.5rem 1rem;
-  border-top: 1px solid var(--border-color);
-  color: var(--color-text-light);
-  font-size: var(--text-xs);
-}
-
-.picker-foot kbd {
-  margin-right: 0.2rem;
-  padding: 0.0625rem 0.375rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface-alt);
-  font-family: inherit;
-}
-
-/* On a wide viewport the dialog keeps its height while the list is filtered,
-   so it does not jump with every keystroke. */
-@media (min-width: 769px) {
-  app-modal-shell .picker-list {
-    min-height: 15rem;
-  }
 }
 
 /* ---- Inline suggestions (typing `[[`) --------------------------------- */

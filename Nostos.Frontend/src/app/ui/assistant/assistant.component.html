@@ -323,6 +323,9 @@
               <span class="entry-status">{{ artifactLabel(artifact) }}</span>
             </footer>
             }
+            @if (artifact.kind === 'capture') {
+            <app-captured-note-topics [noteId]="artifact.noteId" data-testid="assistant-capture-topics" />
+            }
             @if (artifact.kind === 'changeset') {
             <app-assistant-changeset-card
               [changeset]="artifact.changeset"

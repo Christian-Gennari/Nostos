@@ -313,9 +313,14 @@ Create a note. Topics wrapped in `[[double brackets]]` are auto-extracted and li
   "content": "This is about [[Philosophy]] and [[Ethics]]",
   "cfiRange": "string? (epub CFI range)",
   "selectedText": "string? (highlighted text)",
-  "highlightColour": "string? (amber | sage | blue | rose)"
+  "highlightColour": "string? (amber | sage | blue | rose)",
+  "topics": ["string"]
 }
 ```
+
+`topics` are topics added as pills: each one `content` does not already
+declare is written into it as its own `[[Name]]` paragraph. A note may be only
+topics. At most 50; a name that cannot stand inside `[[ ]]` is a `400`.
 
 **Response:** `201 Created` with `NoteDto`. An unknown `highlightColour` is a
 `400`.
@@ -330,9 +335,15 @@ Update a note. Re-processes `[[topic]]` links.
 {
   "content": "Updated content with [[NewTopic]]",
   "selectedText": "string?",
-  "highlightColour": "string? (amber | sage | blue | rose)"
+  "highlightColour": "string? (amber | sage | blue | rose)",
+  "topics": ["string"]
 }
 ```
+
+With `topics`, `content` is the note's own words and `topics` all of its pill
+topics: each is written as a `[[Name]]` paragraph, and a pill topic left out
+(or an older link the text never declared) is removed. Without `topics`,
+`content` is the whole text, as before.
 
 `highlightColour` recolours a highlight. Omitted, it leaves the stored pen
 unchanged; a name that is not one of the four pens is a `400`. A note with no

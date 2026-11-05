@@ -1,0 +1,27 @@
+{
+  "_about": "Cases for the [[Topic]] text rules, run by both Nostos.Backend.Tests (TopicReferences) and the frontend specs (topic-text.ts), so the server and the note composer cannot drift. See docs/topic-system.md.",
+  "compose": [
+    { "words": "", "topics": ["Attention"], "content": "[[Attention]]" },
+    { "words": "A thought.", "topics": [], "content": "A thought." },
+    { "words": "A thought.", "topics": ["Attention"], "content": "A thought.\n\n[[Attention]]" },
+    { "words": "A thought.\n\n", "topics": ["Attention", "Faith"], "content": "A thought.\n\n[[Attention]]\n\n[[Faith]]" },
+    { "words": "[[Attention]] is a spiritual journey.", "topics": ["attention", "Faith"], "content": "[[Attention]] is a spiritual journey.\n\n[[Faith]]" },
+    { "words": "Two\n\nparagraphs.", "topics": ["Faith", "faith"], "content": "Two\n\nparagraphs.\n\n[[Faith]]" }
+  ],
+  "split": [
+    { "content": "", "words": "", "topics": [] },
+    { "content": "A thought.", "words": "A thought.", "topics": [] },
+    { "content": "A thought.\n\n[[Attention]]", "words": "A thought.", "topics": ["Attention"] },
+    { "content": "A thought.\n\n[[Attention]]\n\n[[Faith]]", "words": "A thought.", "topics": ["Attention", "Faith"] },
+    { "content": "[[Attention]] is a spiritual journey.\n\n[[Faith]]", "words": "[[Attention]] is a spiritual journey.", "topics": ["Faith"] },
+    { "content": "[[a]], [[b]]\n\nA note.", "words": "A note.", "topics": ["a", "b"] },
+    { "content": "A note.\nConcepts: [[virtue]], [[mean]]", "words": "A note.\nConcepts: [[virtue]], [[mean]]", "topics": [] },
+    { "content": "[[ Faith ]]\n\n[[faith]]", "words": "", "topics": ["Faith"] }
+  ],
+  "remove": [
+    { "content": "This explores [[Stoicism]] and [[Virtue Ethics]].", "name": "stoicism", "expected": "This explores Stoicism and [[Virtue Ethics]]." },
+    { "content": "[[Attention]] is a spiritual journey.", "name": "Attention", "expected": "Attention is a spiritual journey." },
+    { "content": "Note [[ a ]] and [[a]].", "name": "A", "expected": "Note a and a." },
+    { "content": "No reference here.", "name": "a", "expected": "No reference here." }
+  ]
+}

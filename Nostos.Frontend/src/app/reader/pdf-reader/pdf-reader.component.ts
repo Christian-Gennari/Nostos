@@ -1522,7 +1522,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  commitHighlight(content = '', pen?: HighlightColour) {
+  commitHighlight(content = '', pen?: HighlightColour, topics: readonly string[] = []) {
     if (!this.pendingHighlight) {
       // Never leave the shell in Saving... if its confirmation and the reader
       // somehow drift out of sync.
@@ -1539,7 +1539,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       pageNumber: p.pageNumber,
       rects: p.rects,
       colour,
-      noted: !!content.trim(),
+      noted: !!content.trim() || topics.length > 0,
     };
     this.savedHighlights.push(newHighlight);
     this.repaintPage(p.pageNumber);
@@ -1560,6 +1560,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         selectedText: p.selectedText,
         cfiRange: JSON.stringify(cfiPayload),
         highlightColour: colour,
+        ...(topics.length ? { topics: [...topics] } : {}),
       })
       .subscribe({
         next: (createdNote) => {

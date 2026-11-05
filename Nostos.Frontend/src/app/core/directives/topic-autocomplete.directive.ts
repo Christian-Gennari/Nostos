@@ -53,9 +53,9 @@ export class TopicAutocompleteDirective {
     this.auto.clear();
   }
 
-  /** Leaving the textarea ends an inline suggestion session; the dialog owns its own focus. */
+  /** Leaving the textarea ends a suggestion session. */
   @HostListener('blur')
   onBlur(): void {
-    if (this.auto.pickerOpen() && this.auto.mode() === 'inline') this.auto.clear();
+    if (this.auto.pickerOpen()) this.auto.clear();
   }
 }

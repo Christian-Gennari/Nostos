@@ -53,6 +53,7 @@ by writing its reference into the text, unless the caller removed it.
 | `POST /api/topics/{id}/merge` | Merge into `targetId` |
 | `PUT /api/topics/{id}/description` | Set the topic's own words; empty clears them |
 | `DELETE /api/topics/{id}` | Delete, turning references into plain words |
+| `POST /api/books/{bookId}/notes`, `PUT /api/notes/{id}` | Create or edit a note; optional `topics` are its pill topics (see "Writing a note") |
 | `POST /api/topics/link` | Add the named topics to many notes (creates new topics); one unit of work |
 | `POST /api/topics/unlink` | Remove the named topics from many notes; how a link is undone |
 | `GET /api/notes?topicId=&withTopicId=&withoutTopics=&kind=&bookId=&query=&order=` | Browse notes in any place of the Brain |
@@ -88,12 +89,54 @@ TopicModel (1) ←→ (M) NoteTopicModel (M) ←→ (1) NoteModel ──→ Book
 **unless the reader described them**: a topic's own words are theirs to
 delete.
 
+## Writing a note
+
+There are two ways to give a note a topic, and every place a note is written
+offers both:
+
+- **Inline**, for a topic that is part of the sentence:
+  `[[Attention]] is a spiritual journey.` Typing `[[` opens the topic
+  autocomplete.
+- **A pill**, for a topic that is a label: write the words, then **+ Topic**
+  under them.
+
+The rules that make the two one system (issue #1445):
+
+1. Every topic on a note shows as a pill under its words, typed or added.
+2. Every place a note is written is the note composer
+   (`ui/note-composer`): the words with `[[` autocomplete, and the topic row
+   (`ui/topic-row`) under them. That is the Brain's card editor, the reader's
+   selection note, highlight card, quick note and passage sheet, the book
+   page's new note and the photo quote. A guard spec
+   (`note-fields.guard.spec.ts`) fails on a new `<textarea>` until it is the
+   composer or listed with what it holds.
+3. The `[[Name]]` lines a pill becomes in the stored text are never shown:
+   not on a card (`thoughtForDisplay`) and not in the editor (the composer
+   opens a note's words and shows those lines as pills).
+4. Removing the pill of an inline topic turns its word plain; removing an
+   added pill drops its line.
+5. The placeholder is "Write your thought, or link a [[Topic]]", which teaches
+   the inline way; a field that asks its own question (the passage sheet's
+   "Why keep this passage?") ends with "Link a [[Topic]]".
+
+The composer sends the words as `content` and the pills as `topics`; the
+server writes each pill as its own `[[Name]]` paragraph
+(`TopicReferences.AppendAll`). An edit that sends `topics` sends all of them:
+a pill topic left out is removed, and so is an older link the text never
+declared. The client's copy of the text rules (`ui/note-composer/topic-text.ts`)
+and the server's run the same cases,
+`Nostos.Shared/Fixtures/topic-references.json`.
+
+A note of only a topic is a note: a highlight tagged **Faith** with no words
+saves.
+
 ## Rendering and autocomplete
 
 `NoteFormatPipe` turns a reference into a link to `/brain/topics/:id` (or an
 "unresolved" tag when no such topic exists); a plain click opens it in the app
-without a page load. `[[` in a note's text field opens the topic autocomplete
-(`TopicAutocompleteService`); **+ Topic** on a card opens the topic picker.
+without a page load. `[[` in a note's words opens the topic autocomplete
+(`TopicAutocompleteService`); **+ Topic** under them opens the topic picker,
+which is a sheet over the keyboard on a phone.
 
 ## Writing Studio
 

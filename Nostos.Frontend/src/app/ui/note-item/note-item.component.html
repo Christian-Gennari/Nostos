@@ -45,15 +45,19 @@
     />
     }
 
-    <span class="note-item-label">Your words</span>
-    <app-topic-input
-      [ngModel]="editContent()"
-      (ngModelChange)="editContent.set($event)"
-      name="content"
+    <label class="note-item-label" [attr.for]="'note-item-words-' + note().id">Your words</label>
+    <app-note-composer
+      [(words)]="editWords"
+      [(topics)]="editTopics"
+      [inputId]="'note-item-words-' + note().id"
       [rows]="4"
-      placeholder="Write your thought, or link a [[Topic]]"
-      (submitTrigger)="saveEdit()"
-    ></app-topic-input>
+      [disabled]="saving()"
+      [suggestions]="suggestions()"
+      [suggestionState]="suggestionState()"
+      (pickerOpened)="pickerOpened.emit()"
+      (pickerClosed)="pickerClosed.emit()"
+      (submitted)="saveEdit()"
+    />
 
     <div class="note-item-edit-actions">
       <button appButton variant="primary" size="sm" type="submit" [disabled]="saving()">Save</button>
@@ -106,50 +110,19 @@
   }
 
   @if (!readOnly()) {
-  <div class="note-item-topics" role="group" aria-label="Topics">
-    @for (chip of chips(); track chip.name) {
-    <app-topic-chip
-      class="note-item-topic"
-      [name]="chip.name"
-      [link]="chip.id ? ['/brain/topics', chip.id] : null"
-      [removable]="true"
-      [disabled]="busy()"
-      (removed)="topicRemoved.emit(chip.name)"
-    />
-    }
-    <button
-      type="button"
-      class="note-item-add"
-      [class.is-first]="topicNames().length === 0"
-      cdkOverlayOrigin
-      #addOrigin="cdkOverlayOrigin"
-      [disabled]="busy()"
-      [attr.aria-expanded]="pickerOpen()"
-      aria-haspopup="dialog"
-      (click)="pickerOpen() ? closePicker() : openPicker()"
-    >
-      <nostos-icon name="plus" [size]="12" />{{ topicNames().length === 0 ? 'Add a topic' : 'Topic' }}
-    </button>
-    <ng-template
-      cdkConnectedOverlay
-      [cdkConnectedOverlayOrigin]="addOrigin"
-      [cdkConnectedOverlayOpen]="pickerOpen()"
-      [cdkConnectedOverlayPositions]="pickerPositions"
-      [cdkConnectedOverlayPush]="true"
-      (overlayOutsideClick)="closePicker()"
-      (detach)="closePicker()"
-    >
-      <app-topic-picker-popover
-        [topics]="topics()"
-        [exclude]="topicNames()"
-        [suggestions]="suggestions()"
-        [suggestionState]="suggestionState()"
-        [label]="'Add a topic to this note'"
-        (chosen)="chooseTopic($event)"
-        (closed)="closePicker()"
-      />
-    </ng-template>
-  </div>
+  <app-topic-row
+    class="note-item-topics"
+    [names]="topicNames()"
+    [topics]="topics()"
+    [topicMap]="lookup()"
+    [disabled]="busy()"
+    [suggestions]="suggestions()"
+    [suggestionState]="suggestionState()"
+    (added)="topicAdded.emit($event)"
+    (removed)="topicRemoved.emit($event)"
+    (pickerOpened)="pickerOpened.emit()"
+    (pickerClosed)="pickerClosed.emit()"
+  />
 
   <app-note-capture-details [note]="note()" (restored)="restored.emit($event)" />
   }

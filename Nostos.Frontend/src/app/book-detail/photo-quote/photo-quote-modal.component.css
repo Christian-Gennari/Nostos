@@ -87,6 +87,6 @@
 }
 
 .photo-quote-comment {
-  flex: 1;
-  min-width: 0;
+  display: block;
+  margin-top: 0.75rem;
 }

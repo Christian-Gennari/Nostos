@@ -385,7 +385,9 @@ public sealed class NoteService : INoteService
             if (passageError is not null)
                 return InvalidPassage(passageError);
         }
-        else if (string.IsNullOrWhiteSpace(dto.Content) && string.IsNullOrWhiteSpace(dto.SelectedText))
+        else if (string.IsNullOrWhiteSpace(dto.Content)
+            && string.IsNullOrWhiteSpace(dto.SelectedText)
+            && dto.Topics is not { Count: > 0 })
         {
             return NoteCommandResult<NoteDto>.Fail(
                 NoteErrorCodes.EmptyNote, "Note must have content or selected text.");
@@ -393,6 +395,9 @@ public sealed class NoteService : INoteService
 
         if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
             return InvalidHighlightColour();
+
+        if (!ValidTopics(dto.Topics))
+            return InvalidTopics();
 
         var model = dto.ToModel(bookId);
         model.HighlightColour = colour;
@@ -421,6 +426,11 @@ public sealed class NoteService : INoteService
         // non-verbatim mode rewrites Content from the raw capture, which is kept
         // in RawContent. Verbatim is a no-op that makes no provider call.
         await ApplyCaptureProcessingAsync(model, dto.ProcessingMode, ct);
+
+        // Pill topics are written as text after any rewrite, so a capture mode
+        // that rewrites the words cannot drop them.
+        if (dto.Topics is { Count: > 0 })
+            model.Content = TopicReferences.AppendAll(model.Content, dto.Topics);
 
         await _notes.AddAsync(model);
 
@@ -518,6 +528,9 @@ public sealed class NoteService : INoteService
         if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
             return InvalidHighlightColour();
 
+        if (!ValidTopics(dto.Topics))
+            return InvalidTopics();
+
         if (existing.IsPassage() && dto.PassageTitle is not null)
         {
             var title = dto.PassageTitle.Trim();
@@ -526,9 +539,15 @@ public sealed class NoteService : INoteService
         }
 
         existing.Apply(dto with { HighlightColour = colour });
+        // A pill topic missing from the list is gone from the text, and the
+        // processor drops a link whose reference the edit removed.
+        if (dto.Topics is not null)
+            existing.Content = TopicReferences.AppendAll(existing.Content, dto.Topics);
 
-        // Re-process topics (the processor clears old links then re-adds).
-        await _processor.ProcessNoteAsync(existing);
+        // Re-process topics (the processor clears old links then re-adds). An
+        // edit that sent its topics sent all of them: an old link the text
+        // never declared was shown as a pill, and one left out was removed.
+        await _processor.ProcessNoteAsync(existing, textIsComplete: dto.Topics is not null);
 
         await _notes.SaveChangesAsync();
 
@@ -546,6 +565,18 @@ public sealed class NoteService : INoteService
         colour = NoteHighlightColours.Normalize(value);
         return colour is not null;
     }
+
+    private const int MaxTopicsPerNote = 50;
+
+    /// <summary>Pill topics are optional; sent ones must each read back as themselves.</summary>
+    private static bool ValidTopics(IReadOnlyList<string>? topics) =>
+        topics is null
+        || (topics.Count <= MaxTopicsPerNote && topics.All(TopicReferences.IsValidName));
+
+    private static NoteCommandResult<NoteDto> InvalidTopics() =>
+        NoteCommandResult<NoteDto>.Fail(
+            NoteErrorCodes.InvalidTopicLink,
+            $"A note takes at most {MaxTopicsPerNote} topics. {TopicReferences.InvalidNameMessage}");
 
     private const int PassageTitleMaxLength = 300;
     private const int PassageAnchorMaxLength = 1024;
