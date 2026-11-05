@@ -385,7 +385,9 @@ public sealed class NoteService : INoteService
             if (passageError is not null)
                 return InvalidPassage(passageError);
         }
-        else if (string.IsNullOrWhiteSpace(dto.Content) && string.IsNullOrWhiteSpace(dto.SelectedText))
+        else if (string.IsNullOrWhiteSpace(dto.Content)
+            && string.IsNullOrWhiteSpace(dto.SelectedText)
+            && dto.Topics is not { Count: > 0 })
         {
             return NoteCommandResult<NoteDto>.Fail(
                 NoteErrorCodes.EmptyNote, "Note must have content or selected text.");

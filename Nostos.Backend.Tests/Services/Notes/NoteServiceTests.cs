@@ -357,6 +357,19 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task A_note_of_only_a_pill_topic_is_saved()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(book.Id, new CreateNoteDto("", Topics: ["Faith"]));
+
+        result.Success.Should().BeTrue();
+        result.Value!.Content.Should().Be("[[Faith]]");
+    }
+
+    [Fact]
     public async Task Update_with_topics_keeps_adds_and_removes_pill_topics()
     {
         var h = CreateHarness();
