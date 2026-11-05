@@ -576,6 +576,24 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(saveStatus!.textContent?.trim()).toMatch(/^Saved/);
   });
 
+  it('renames the open writing from its title in the header', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as { update: ReturnType<typeof vi.fn> };
+    writings.update.mockReturnValue(of({ id: 'doc-1', name: 'Renamed', content: '', updatedAt: '' }));
+    openDocument();
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('button.header-doc-title') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('nostos-inline-rename')).toBeTruthy();
+
+    component.saveRename(component.activeItem()!.id, 'Renamed');
+    fixture.detectChanges();
+
+    expect(writings.update).toHaveBeenCalledWith(component.activeItem()!.id, { name: 'Renamed' });
+    expect(component.editorTitle()).toBe('Renamed');
+    expect(fixture.nativeElement.querySelector('nostos-inline-rename')).toBeNull();
+  });
+
   it('says when the open writing was last saved', () => {
     openDocument();
     component.activeItem.update((item) => ({ ...item!, updatedAt: '2026-11-04T14:05:00' }));

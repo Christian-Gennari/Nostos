@@ -86,7 +86,24 @@
 
       @if (activeItem(); as item) {
         <div class="header-doc-meta">
-          <span class="header-doc-title" [title]="editorTitle() || item.name">{{ editorTitle() || item.name }}</span>
+          @if (titleEditing()) {
+            <nostos-inline-rename
+              class="header-doc-rename"
+              variant="title"
+              [name]="editorTitle() || item.name"
+              [error]="renameError()"
+              [busy]="renameBusy()"
+              (committed)="saveRename(item.id, $event)"
+              (cancelled)="stopTitleRename()"
+            />
+          } @else {
+            <button
+              type="button"
+              class="header-doc-title header-doc-title-button"
+              [title]="(editorTitle() || item.name) + ' (click to rename)'"
+              (click)="startTitleRename()"
+            >{{ editorTitle() || item.name }}</button>
+          }
           <span class="header-save-status" [class.is-saving]="saveStatus() === 'Saving…'">
             {{ saveStatus() }}@if (saveStatus() === 'Saved' && (item.updatedAt | nostosDate: 'time'); as savedAt) { · {{ savedAt }}}
           </span>

@@ -22,6 +22,7 @@ import { DragDropModule } from '@angular/cdk/drag-drop';
 import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, finalize, forkJoin, map, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
+import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
 import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 
 import { WritingsService } from '../core/services/writings.service';
@@ -206,6 +207,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     TopicOptionComponent,
     EmptyStateComponent,
     LoadingIndicatorComponent,
+    InlineRenameComponent,
     NostosDatePipe,
   ],
   templateUrl: './writing-studio.component.html',
@@ -914,6 +916,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     // Fixed now: the page is made later, when words arrive, and the open
     // writing (whose folder this is) is gone by then.
     this.blankParentId = this.newItemParentId();
+    this.titleEditing.set(false);
     this.blankGeneration++;
     this.blankRetryAt = 0;
     this.activeItem.set(null);
@@ -1620,6 +1623,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         if (this.blankPage()) this.blankGeneration++;
         this.blankPage.set(false);
         this.chosenFolderId.set(null);
+        this.titleEditing.set(false);
         this.autoTitle = contentDto.name === UNTITLED_DOCUMENT;
         this.activeItem.set(contentDto);
         writeStudioValue(STUDIO_LAST_WRITING_KEY, contentDto.id);
@@ -1694,6 +1698,20 @@ export class WritingStudio implements OnInit, AfterViewInit {
     });
   }
 
+  /** The open writing's name in the header, being edited where it is shown. */
+  readonly titleEditing = signal(false);
+
+  startTitleRename(): void {
+    this.renameError.set(null);
+    this.titleEditing.set(true);
+  }
+
+  stopTitleRename(): void {
+    if (this.renameBusy()) return;
+    this.renameError.set(null);
+    this.titleEditing.set(false);
+  }
+
   startRename(node: any) {
     this.renameError.set(null);
     this.editingId.set(node.id);
@@ -1713,6 +1731,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.renameBusy.set(false);
         this.loadTree();
         this.editingId.set(null);
+        this.titleEditing.set(false);
         this.recent.relabel('document', id, newName);
 
         // Opened after the save lands, so the editor title shows the new name.
