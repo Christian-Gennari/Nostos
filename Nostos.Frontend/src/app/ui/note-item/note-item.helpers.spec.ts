@@ -54,6 +54,19 @@ describe('noteLocationLabel', () => {
     expect(at('pdf_page', '1e3')).toBeNull();
   });
 
+  it('names the page range of a multi-page PDF passage', () => {
+    const passage = (end: string) =>
+      noteLocationLabel({
+        kind: 'passage',
+        passageEnd: end,
+        sourceAnchorKind: 'pdf_page',
+        sourceAnchorValue: '3',
+        anchorVerified: true,
+      });
+    expect(passage('5')).toBe('pp. 3–5');
+    expect(passage('3')).toBe('p. 3');
+  });
+
   it('shows nothing for a location the reader cannot open', () => {
     expect(noteLocationLabel({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '53', anchorVerified: false })).toBeNull();
   });

@@ -32,13 +32,20 @@ export function isReferenceLine(line: string): boolean {
  * "Open in book" link follows; an EPUB location has no number worth showing.
  */
 export function noteLocationLabel(
-  note: Pick<NoteSearchHit, 'sourceAnchorKind' | 'sourceAnchorValue' | 'anchorVerified'>,
+  note: Pick<NoteSearchHit, 'sourceAnchorKind' | 'sourceAnchorValue' | 'anchorVerified'> & {
+    kind?: string;
+    passageEnd?: string | null;
+  },
 ): string | null {
   if (!note.anchorVerified) return null;
   const value = note.sourceAnchorValue?.trim() ?? '';
   switch (note.sourceAnchorKind?.toLowerCase()) {
-    case 'pdf_page':
-      return /^[1-9]\d*$/.test(value) ? `p. ${value}` : null;
+    case 'pdf_page': {
+      if (!/^[1-9]\d*$/.test(value)) return null;
+      // A passage spans pages: name the range, not just where it starts.
+      const end = note.kind === 'passage' ? (note.passageEnd?.trim() ?? '') : '';
+      return /^[1-9]\d*$/.test(end) && Number(end) > Number(value) ? `pp. ${value}–${end}` : `p. ${value}`;
+    }
     case 'audio_timestamp': {
       const seconds = parseAudioSeconds(value);
       return seconds === null ? null : formatAudioTime(seconds);
