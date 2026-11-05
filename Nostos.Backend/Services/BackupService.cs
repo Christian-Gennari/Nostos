@@ -146,7 +146,8 @@ public class BackupService : IBackupService
         string? persistentLocalPath = null;
         try
         {
-            archivePath = await BuildArchiveAsync(recordId, ct);
+            var built = await BuildArchiveAsync(recordId, ct);
+            archivePath = built.ArchivePath;
             _settingsProvider.UpdateProgress("Verifying backup", 80, 4, 5);
 
             var fileSize = new FileInfo(archivePath).Length;
@@ -163,8 +164,8 @@ public class BackupService : IBackupService
                     var manifest = new BackupManifestDto(
                         Version: "1",
                         Timestamp: recordCreatedAt,
-                        DatabaseSizeBytes: 0,
-                        BookFileCount: 0,
+                        DatabaseSizeBytes: built.DatabaseSizeBytes,
+                        BookFileCount: built.BookFileCount,
                         TotalSizeBytes: fileSize,
                         Checksum: checksum
                     );
@@ -271,11 +272,16 @@ public class BackupService : IBackupService
             _logger.LogInformation("Restore acquired exclusive library maintenance after draining operations.");
 
             _settingsProvider.UpdateProgress("Restoring data", 30, 2, 3);
-            await RestoreFromArchiveAsync(archivePath, ct);
+            var safetyCopyName = await RestoreFromArchiveAsync(archivePath, ct);
 
             _settingsProvider.UpdateProgress("Completing restore", 90, 3, 3);
+            await ReconcileBackupRecordsAfterRestoreAsync(record, archivePath, ct);
             _logger.LogInformation("Restore from backup {Id} completed.", backupId);
-            return new RestoreResultDto(true, "Backup restored. Restart the application to apply the changes.");
+
+            var message = "Backup restored. No restart is needed.";
+            if (safetyCopyName is not null)
+                message += $" A safety copy of the previous database was saved as {safetyCopyName}, next to the database file. Only the latest safety copy is kept.";
+            return new RestoreResultDto(true, message);
         }
         catch (Portability.MigrationActivationException ex) when (ex.Code == Portability.MigrationActivationErrorCodes.Busy)
         {
@@ -427,7 +433,9 @@ public class BackupService : IBackupService
         return imported;
     }
 
-    private async Task<string> BuildArchiveAsync(Guid backupId, CancellationToken ct)
+    private sealed record BuiltArchive(string ArchivePath, long DatabaseSizeBytes, int BookFileCount);
+
+    private async Task<BuiltArchive> BuildArchiveAsync(Guid backupId, CancellationToken ct)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"nostos-backup-{backupId}");
         Directory.CreateDirectory(tempDir);
@@ -444,6 +452,7 @@ public class BackupService : IBackupService
 
             var booksDir = Path.Combine(tempDir, "books");
             Directory.CreateDirectory(booksDir);
+            var copiedBookFiles = 0;
 
             if (Settings.IncludeBookFiles)
             {
@@ -455,10 +464,11 @@ public class BackupService : IBackupService
                     {
                         var folderName = Path.GetFileName(bookFolder);
                         var destFolder = Path.Combine(booksDir, folderName);
-                        Directory.CreateDirectory(destFolder);
 
                         foreach (var file in Directory.EnumerateFiles(bookFolder))
                         {
+                            Directory.CreateDirectory(destFolder);
+                            copiedBookFiles++;
                             var destFile = Path.Combine(destFolder, Path.GetFileName(file));
                             using var src = File.OpenRead(file);
                             using var dst = File.Create(destFile);
@@ -511,13 +521,19 @@ public class BackupService : IBackupService
             }
 
             var dbFileSize = new FileInfo(backupDbPath).Length;
-            var bookFileCount = Directory.GetDirectories(booksDir).Length;
+            // The manifest cannot hold the archive's own size or checksum (they
+            // exist only once the archive is written; the database record keeps
+            // them). It holds what is known now: the real number of book files
+            // copied and the uncompressed size of everything that goes in.
+            var contentBytes = new DirectoryInfo(tempDir)
+                .EnumerateFiles("*", SearchOption.AllDirectories)
+                .Sum(f => f.Length);
             var manifest = new BackupManifestDto(
                 Version: "1",
                 Timestamp: DateTime.UtcNow,
                 DatabaseSizeBytes: dbFileSize,
-                BookFileCount: bookFileCount,
-                TotalSizeBytes: 0,
+                BookFileCount: copiedBookFiles,
+                TotalSizeBytes: contentBytes,
                 Checksum: ""
             );
 
@@ -540,7 +556,7 @@ public class BackupService : IBackupService
                 AddDirectoryToArchive(archive, tempDir, "");
             }
 
-            return archivePath;
+            return new BuiltArchive(archivePath, dbFileSize, copiedBookFiles);
         }
         finally
         {
@@ -618,10 +634,12 @@ public class BackupService : IBackupService
         }
     }
 
-    private async Task RestoreFromArchiveAsync(string archivePath, CancellationToken ct)
+    /// <returns>The file name of the safety copy of the previous database, or null when none was made.</returns>
+    private async Task<string?> RestoreFromArchiveAsync(string archivePath, CancellationToken ct)
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"nostos-restore-{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
+        string? safetyCopyName = null;
 
         try
         {
@@ -634,7 +652,21 @@ public class BackupService : IBackupService
                 var preRestoreBackup = $"{activeDbPath}.pre-restore-{DateTime.UtcNow:yyyyMMddHHmmss}";
 
                 if (File.Exists(activeDbPath))
+                {
                     File.Copy(activeDbPath, preRestoreBackup, true);
+                    safetyCopyName = Path.GetFileName(preRestoreBackup);
+
+                    // Keep only the latest safety copy; older ones are never
+                    // shown anywhere and would pile up beside the database.
+                    var dir = Path.GetDirectoryName(activeDbPath)!;
+                    foreach (var old in Directory.GetFiles(dir, $"{Path.GetFileName(activeDbPath)}.pre-restore-*"))
+                    {
+                        if (!string.Equals(old, preRestoreBackup, StringComparison.Ordinal))
+                        {
+                            try { File.Delete(old); } catch { /* best effort */ }
+                        }
+                    }
+                }
 
                 SqliteConnection.ClearAllPools();
                 await Task.Delay(200, ct);
@@ -668,7 +700,65 @@ public class BackupService : IBackupService
         {
             try { Directory.Delete(tempDir, true); } catch { /* cleanup */ }
         }
+
+        return safetyCopyName;
     }
+
+    /// <summary>
+    /// A restored database carries the backup records as they were when that
+    /// backup was taken: the backup's own row is still InProgress with 0 bytes,
+    /// and rows for backups retention deleted since are back. Brings the records
+    /// in line with the archive files on disk. Adds no rows.
+    /// </summary>
+    private async Task ReconcileBackupRecordsAfterRestoreAsync(
+        BackupRecord restored, string archivePath, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+
+        var rows = await db.BackupRecords.ToListAsync(ct);
+        foreach (var row in rows)
+        {
+            if (row.Id == restored.Id)
+            {
+                row.Status = BackupStatus.Completed;
+                row.SizeBytes = new FileInfo(archivePath).Length;
+                row.Provider = BackupProvider.Local;
+                row.LocalArchivePath = archivePath;
+                row.ErrorMessage = null;
+                // The snapshot predates the manifest; keep the live one so a
+                // later restore still verifies the checksum.
+                row.ManifestJson ??= restored.ManifestJson;
+                continue;
+            }
+
+            // Only finished-looking rows can be ghosts; a Failed row never had a file.
+            if (row.Status is not (BackupStatus.Completed or BackupStatus.InProgress))
+                continue;
+
+            var path = ArchivePathFor(row);
+            if (File.Exists(path))
+            {
+                if (row.Status == BackupStatus.InProgress)
+                {
+                    row.Status = BackupStatus.Completed;
+                    row.SizeBytes = new FileInfo(path).Length;
+                }
+            }
+            else
+            {
+                _logger.LogInformation("Dropping backup record {Id}: its archive is gone", row.Id);
+                db.BackupRecords.Remove(row);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private string ArchivePathFor(BackupRecord row) =>
+        !string.IsNullOrEmpty(row.LocalArchivePath)
+            ? row.LocalArchivePath
+            : Path.Combine(LocalBackupDir, $"{row.Id}.nostos");
 
     /// <summary>
     /// A restored database brings back cover versions the browser may already
@@ -719,23 +809,46 @@ public class BackupService : IBackupService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
-        var records = await db
-            .BackupRecords.Where(b => b.Status == BackupStatus.Completed)
-            .OrderByDescending(b => b.CreatedAt)
-            .ToListAsync(ct);
+        var rows = await db.BackupRecords.ToListAsync(ct);
+        var byId = rows.ToDictionary(r => r.Id);
 
-        var toRemove = records.Skip(Settings.MaxBackups).ToList();
-        foreach (var record in toRemove)
+        // Retention counts what is on disk: every archive file in the backup
+        // folder, whatever state its row is in (a restored or stuck row must not
+        // hide a file from the limit), plus Completed rows that name a file
+        // elsewhere. Completed rows whose file is gone are ghosts and are dropped.
+        var kept = new List<(BackupRecord? Row, string Path, DateTime At)>();
+        var seen = new HashSet<Guid>();
+        if (Directory.Exists(LocalBackupDir))
         {
-            if (!string.IsNullOrEmpty(record.LocalArchivePath))
+            foreach (var file in Directory.GetFiles(LocalBackupDir, "*.nostos"))
             {
-                DeleteArchiveIfOwned(record.LocalArchivePath);
+                if (!Guid.TryParse(Path.GetFileNameWithoutExtension(file), out var id))
+                    continue;
+                byId.TryGetValue(id, out var row);
+                seen.Add(id);
+                kept.Add((row, file, row?.CreatedAt ?? File.GetLastWriteTimeUtc(file)));
             }
-
-            db.BackupRecords.Remove(record);
         }
 
-        if (toRemove.Count > 0)
+        foreach (var row in rows.Where(r => r.Status == BackupStatus.Completed && !seen.Contains(r.Id)))
+        {
+            var path = ArchivePathFor(row);
+            if (File.Exists(path))
+                kept.Add((row, path, row.CreatedAt));
+            else
+                db.BackupRecords.Remove(row);
+        }
+
+        var changed = db.ChangeTracker.HasChanges();
+        foreach (var (row, path, _) in kept.OrderByDescending(k => k.At).Skip(Settings.MaxBackups))
+        {
+            DeleteArchiveIfOwned(path);
+            if (row is not null)
+                db.BackupRecords.Remove(row);
+            changed = true;
+        }
+
+        if (changed)
             await db.SaveChangesAsync(ct);
     }
 

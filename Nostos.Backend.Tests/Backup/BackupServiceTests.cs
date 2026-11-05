@@ -867,6 +867,121 @@ public sealed class BackupServiceTests
         imported[0].CreatedAt.Should().Be(writeTime);
     }
 
+    [Fact]
+    public async Task Restore_ReconcilesRecordsWithFilesOnDisk_AndRetentionCountsFiles()
+    {
+        using var h = BackupHarness.Create(maxBackups: 3);
+        var backupsDir = Path.Combine(h.ContentRoot, "Storage", "backups");
+
+        // The backup to restore, then later backups whose rows are not in its snapshot.
+        var first = await h.Service.CreateBackupAsync();
+        await Task.Delay(30);
+        var second = await h.Service.CreateBackupAsync();
+        await Task.Delay(30);
+
+        // Ghost: a row (in the first backup's future) cannot be simulated directly,
+        // so add a Completed row whose file never existed and make the snapshot
+        // state explicit: the restored backup's row is InProgress / 0 B there.
+        var ghostId = Guid.NewGuid();
+        await using (var db = h.NewDbContext())
+        {
+            db.BackupRecords.Add(new BackupRecord
+            {
+                Id = ghostId, CreatedAt = DateTime.UtcNow.AddDays(-5), SizeBytes = 10,
+                Provider = "Local", Status = BackupStatus.Completed,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Make the restored backup's own row look as it does inside its snapshot.
+        var archive = h.Service.GetLocalArchivePath(first.Id)!;
+        var snapshot = Path.Combine(Path.GetTempPath(), $"snap-{Guid.NewGuid():N}.db");
+        using (var zip = ZipFile.OpenRead(archive))
+            zip.GetEntry("database/nostos.db")!.ExtractToFile(snapshot, true);
+        await using (var c = new SqliteConnection($"Data Source={snapshot};Pooling=False"))
+        {
+            await c.OpenAsync();
+            await using var cmd = c.CreateCommand();
+            cmd.CommandText = "UPDATE BackupRecords SET Status = 'InProgress', SizeBytes = 0 WHERE Id = $id";
+            cmd.Parameters.AddWithValue("$id", first.Id.ToString().ToUpperInvariant());
+            (await cmd.ExecuteNonQueryAsync()).Should().Be(1, "the snapshot holds the row of its own backup");
+        }
+        File.Delete(archive);
+        using (var zipOut = ZipFile.Open(archive, ZipArchiveMode.Create))
+        {
+            zipOut.CreateEntryFromFile(snapshot, "database/nostos.db");
+        }
+        await using (var db = h.NewDbContext())
+        {
+            var row = await db.BackupRecords.FindAsync(first.Id);
+            row!.ManifestJson = null; // the archive was rebuilt; skip the checksum
+            await db.SaveChangesAsync();
+        }
+        SqliteConnection.ClearAllPools();
+        File.Delete(snapshot);
+
+        var restored = await h.Service.RestoreBackupAsync(first.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+        restored.Message.Should().Contain("pre-restore").And.NotContain("Restart the application");
+
+        await using (var db = h.NewDbContext())
+        {
+            var rows = await db.BackupRecords.ToListAsync();
+            var row = rows.Single(r => r.Id == first.Id);
+            row.Status.Should().Be(BackupStatus.Completed);
+            row.SizeBytes.Should().Be(new FileInfo(archive).Length).And.BeGreaterThan(0);
+            rows.Should().NotContain(r => r.Status == BackupStatus.InProgress);
+            rows.Should().NotContain(r => r.Id == ghostId, "its file is gone");
+            rows.Select(r => r.Id).Should().BeSubsetOf(Directory.GetFiles(backupsDir, "*.nostos")
+                .Select(f => Guid.Parse(Path.GetFileNameWithoutExtension(f))));
+        }
+
+        // Only the newest safety copy survives a second restore.
+        await Task.Delay(1100);
+        (await h.Service.RestoreBackupAsync(first.Id)).Success.Should().BeTrue();
+        Directory.GetFiles(Path.GetDirectoryName(h.DatabasePath)!, "nostos.db.pre-restore-*")
+            .Should().HaveCount(1);
+
+        // Retention counts files: an orphan file with no row still fills the limit.
+        var orphan = Path.Combine(backupsDir, $"{Guid.NewGuid()}.nostos");
+        File.Copy(archive, orphan);
+        File.SetLastWriteTimeUtc(orphan, DateTime.UtcNow.AddDays(-30));
+        await Task.Delay(30);
+        var third = await h.Service.CreateBackupAsync();
+        third.Status.Should().Be(BackupStatus.Completed);
+        Directory.GetFiles(backupsDir, "*.nostos").Should().HaveCount(3);
+        File.Exists(orphan).Should().BeFalse("the oldest file is over the limit");
+        File.Exists(h.Service.GetLocalArchivePath(second.Id)!).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Manifest_HasRealCounts_AndSizes()
+    {
+        using var h = BackupHarness.Create(includeBookFiles: true);
+        var storage = Path.Combine(h.ContentRoot, "Storage", "books");
+        var withFile = Path.Combine(storage, "a");
+        Directory.CreateDirectory(withFile);
+        await File.WriteAllBytesAsync(Path.Combine(withFile, "book.epub"), new byte[100]);
+        Directory.CreateDirectory(Path.Combine(storage, "empty-linked"));
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        using var zip = ZipFile.OpenRead(h.Service.GetLocalArchivePath(created.Id)!);
+        using var stream = zip.GetEntry("manifest.json")!.Open();
+        var inArchive = (await JsonSerializer.DeserializeAsync<BackupManifestDto>(stream, TestJsonOpts))!;
+        inArchive.BookFileCount.Should().Be(1);
+        inArchive.DatabaseSizeBytes.Should().BeGreaterThan(0);
+        inArchive.TotalSizeBytes.Should().BeGreaterThan(inArchive.DatabaseSizeBytes);
+
+        await using var db = h.NewDbContext();
+        var stored = JsonSerializer.Deserialize<BackupManifestDto>(
+            (await db.BackupRecords.SingleAsync(r => r.Id == created.Id)).ManifestJson!, TestJsonOpts)!;
+        stored.BookFileCount.Should().Be(1);
+        stored.DatabaseSizeBytes.Should().Be(inArchive.DatabaseSizeBytes);
+        stored.Checksum.Should().NotBeEmpty();
+    }
+
     private sealed class BackupHarness : IDisposable
     {
         public string ContentRoot { get; }
