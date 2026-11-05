@@ -51,6 +51,7 @@ import { citationMarkdown, citedSourceIds } from '../ui/markdown-editor/citation
 import { removedCitedIds, sourceKey, touchedTopics } from './writing-touches.helpers';
 import { StyledInsertion, bibliographyMarkdown } from './citations/styled-insertion';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
+import { buildFlatTree } from '../ui/flat-tree/flat-tree.helper';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
@@ -519,6 +520,56 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (this.exportBlockedReason()) return;
     this.pageSettingsOpen.set(false);
     this.exportOpen.set(true);
+  }
+
+  /** The "Move to…" dialog: Top level and the folders, to file the open writing in. */
+  readonly moveOpen = signal(false);
+  readonly moveBusy = signal(false);
+
+  /** Where the open writing sits now: a folder id, or null at the top level. */
+  readonly moveCurrentParent = computed(() => {
+    const id = this.activeItem()?.id;
+    return this.rootItems().find((item) => item.id === id)?.parentId ?? null;
+  });
+
+  /** Every folder, nested the way the file list nests them. */
+  readonly moveFolders = computed(() => {
+    const folders = this.rootItems().filter((item) => item.type === 'Folder');
+    return buildFlatTree(folders, new Set(folders.map((folder) => folder.id)));
+  });
+
+  openMove(): void {
+    if (!this.activeItem()) return;
+    this.pageSettingsOpen.set(false);
+    this.moveOpen.set(true);
+  }
+
+  closeMove(): void {
+    if (!this.moveBusy()) this.moveOpen.set(false);
+  }
+
+  /** Moves the open writing; choosing where it already is just closes the dialog. */
+  moveTo(parentId: string | null): void {
+    const item = this.activeItem();
+    if (!item || this.moveBusy()) return;
+    if (parentId === this.moveCurrentParent()) {
+      this.moveOpen.set(false);
+      return;
+    }
+    this.moveBusy.set(true);
+    this.writingsService.move(item.id, parentId).subscribe({
+      next: () => {
+        this.moveBusy.set(false);
+        this.moveOpen.set(false);
+        this.loadTree();
+        const folder = parentId ? this.rootItems().find((candidate) => candidate.id === parentId) : null;
+        this.toast.success(folder ? `Moved to “${folder.name}”` : 'Moved to the top level');
+      },
+      error: () => {
+        this.moveBusy.set(false);
+        this.toast.error('Could not move it');
+      },
+    });
   }
 
   togglePageSettings(): void {

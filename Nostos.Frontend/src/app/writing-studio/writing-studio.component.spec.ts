@@ -2902,6 +2902,58 @@ describe('WritingStudio export menu (issue #1164)', () => {
     expect(component.exportBlockedReason()).toBeNull();
   });
 
+  describe('Move to… (issue #1443)', () => {
+    function moveService(): { move: ReturnType<typeof vi.fn> } {
+      return TestBed.inject(WritingsService) as unknown as { move: ReturnType<typeof vi.fn> };
+    }
+
+    function openMoveDialog(): void {
+      (fixture.nativeElement.querySelector('[data-testid="studio-more"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (document.querySelector('[data-testid="studio-move"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    it('lists Top level and the folders, and moves the writing into a folder', () => {
+      open('doc', 'Words.');
+      openMoveDialog();
+      expect(document.querySelector('[data-testid="studio-move-top"]')).toBeTruthy();
+      const folders = document.querySelectorAll('[data-testid="studio-move-folder"]');
+      expect(folders.length).toBe(1);
+      expect(folders[0].textContent).toContain('Folder');
+
+      (folders[0] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(moveService().move).toHaveBeenCalledWith('doc', 'folder');
+      expect(component.moveOpen()).toBe(false);
+    });
+
+    it('moves a writing out of a folder to the top level', () => {
+      open('doc', 'Words.', 'folder');
+      openMoveDialog();
+      (document.querySelector('[data-testid="studio-move-top"]') as HTMLButtonElement).click();
+      expect(moveService().move).toHaveBeenCalledWith('doc', null);
+    });
+
+    it('closes without a request when the writing is already there', () => {
+      moveService().move.mockClear();
+      open('doc', 'Words.', 'folder');
+      openMoveDialog();
+      (document.querySelector('[data-testid="studio-move-folder"]') as HTMLButtonElement).click();
+      expect(moveService().move).not.toHaveBeenCalled();
+      expect(component.moveOpen()).toBe(false);
+    });
+
+    it('keeps the dialog open and says so when the move fails', () => {
+      open('doc', 'Words.');
+      moveService().move.mockReturnValueOnce(throwError(() => new Error('no')));
+      component.openMove();
+      component.moveTo('folder');
+      expect(component.moveOpen()).toBe(true);
+      expect(component.moveBusy()).toBe(false);
+    });
+  });
+
   it('has nothing to export on a blank page', () => {
     component.activeItem.set(null);
     expect(component.exportBlockedReason()).toBe('Nothing to export yet');

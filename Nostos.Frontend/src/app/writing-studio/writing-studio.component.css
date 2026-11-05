@@ -1536,6 +1536,33 @@
   line-height: 1.25;
 }
 
+/* The "Move to…" dialog: the folder list. */
+.move-sheet-header h2 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: var(--text-xl);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0 1.5rem 1rem;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.move-list .nostos-choice-row {
+  width: 100%;
+  align-items: center;
+  gap: 0.625rem;
+  text-align: left;
+}
+
 .shortcut-list {
   margin: 0;
   padding: 0 1.5rem 0.75rem;
