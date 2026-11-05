@@ -449,6 +449,40 @@ public static class BooksEndpoints
             }
         );
 
+        // Upload several audio files as the tracks of ONE audiobook. Tracks go
+        // in natural file-name order; the book's single file, if any, is replaced.
+        uploadGroup.MapPost(
+            "/{id}/tracks",
+            async (
+                Guid id,
+                HttpRequest request,
+                IBookRepository repo,
+                BookFileMutationGate fileMutationGate,
+                CancellationToken ct
+            ) =>
+            {
+                var upload = request.HttpContext.RequestServices.GetRequiredService<BookTrackUpload>();
+
+                using var fileLease = fileMutationGate.TryEnter(id);
+                if (fileLease is null)
+                    return Results.Conflict(new { code = "book_import_in_progress",
+                        message = "Wait for this book's current import or upload to finish." });
+
+                var book = await repo.GetByIdAsync(id);
+                if (book is null)
+                    return Results.NotFound();
+                if (book.Status is BookStatus.Downloading or BookStatus.Transcoding)
+                    return Results.Conflict(new { code = "book_import_in_progress",
+                        message = "This book is still importing. Wait until it finishes before uploading files." });
+
+                var form = await request.ReadFormAsync(ct);
+                var result = await upload.CommitAsync(book, form.Files, ct);
+                return result.Ok
+                    ? Results.Ok(new { uploaded = true, tracks = result.Tracks })
+                    : Results.BadRequest(result.Error);
+            }
+        );
+
         // Stream file (inline) for media playback; supports HTTP Range requests
         StoredAssetHttpResult.MapGetAndHead(
             group,

@@ -289,7 +289,7 @@
                   <div class="section-heading">
                     <div>
                       <h3 id="manual-file-heading">Book file (optional)</h3>
-                      <p>EPUB, PDF, TXT, MOBI or audiobook file. Choosing one sets the book type automatically.</p>
+                      <p>EPUB, PDF, TXT, MOBI or audiobook file. Choose several MP3 or M4A files to make one audiobook.</p>
                     </div>
                   </div>
                   <label
@@ -302,6 +302,7 @@
                   >
                     <input
                       type="file"
+                      multiple
                       class="file-input"
                       (change)="onFileSelected($event)"
                       accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
