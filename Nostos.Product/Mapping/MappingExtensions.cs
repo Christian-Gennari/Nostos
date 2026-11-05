@@ -343,7 +343,7 @@ public static class MappingExtensions
             BookId = bookId,
             Content = dto.Content,
             CfiRange = dto.CfiRange,
-            SelectedText = dto.SelectedText,
+            SelectedText = TextLigatures.Expand(dto.SelectedText),
             // A captured note keeps the raw capture alongside the Content; an
             // ordinary typed note falls back to the model's text/verbatim/unknown.
             RawContent = dto.RawContent,
@@ -484,7 +484,7 @@ public static class MappingExtensions
         // sent that back must not cut the passage down to it.
         if (dto.SelectedText != null && !model.IsPassage())
         {
-            model.SelectedText = dto.SelectedText;
+            model.SelectedText = TextLigatures.Expand(dto.SelectedText);
         }
 
         if (dto.PassageTitle != null && model.IsPassage())
