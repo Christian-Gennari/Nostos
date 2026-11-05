@@ -2,7 +2,19 @@ import { formatAudioTime, parseAudioSeconds, type Note, type NoteSearchHit } fro
 import { normalizeSearchText } from '../../core/search-text';
 import type { TopicDto } from '../../core/services/topics.service';
 
-const REFERENCE = /\[\[(.*?)\]\]/g;
+// A candidate reference: [[ then text with no [[, ]], | or line break, then ]].
+// The same shape as TopicReferences on the server; a candidate is a reference
+// only when its name passes isValidTopicName.
+const REFERENCE = /\[\[((?:(?!\[\[|\]\])[^\r\n|])*)\]\]/g;
+
+/**
+ * `text` with each `[[Topic]]` reference replaced by `render(name)`. Anything
+ * else (an unclosed `[[`, `[[]]`, `[[a|b]]`, a stray `]]`) stays as typed.
+ */
+export function replaceTopicReferences(text: string, render: (name: string) => string): string {
+  return text.replace(REFERENCE, (match, raw: string) =>
+    isValidTopicName(raw) ? render(raw.trim()) : match);
+}
 
 /**
  * A note's own words as the card shows them. Lines that hold only `[[Topic]]`
@@ -22,8 +34,12 @@ export function thoughtForDisplay(content: string | null | undefined): string {
 
 /** A line of references and separators only: what linking a topic writes. */
 export function isReferenceLine(line: string): boolean {
-  if (!line.match(REFERENCE)) return false;
-  return /^[\s,;·|]*$/.test(line.replace(REFERENCE, ''));
+  let found = false;
+  const rest = replaceTopicReferences(line, () => {
+    found = true;
+    return '';
+  });
+  return found && /^[\s,;·|]*$/.test(rest);
 }
 
 /**
