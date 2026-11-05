@@ -22,6 +22,9 @@
       (cdkDragEnded)="onDragEnded()"
       [tabindex]="activeId() === node.id ? 0 : -1"
       (keydown)="onKeydown($event, node)"
+      (dragover)="onExternalDragOver($event, node)"
+      (dragleave)="onExternalDragLeave($event, node)"
+      (drop)="onExternalDrop($event, node)"
     >
       <div *cdkDragPreview class="drag-preview">
         <nostos-icon
@@ -96,6 +99,20 @@
       }
 
       <div class="node-actions" (click)="$event.stopPropagation()">
+        @if (allowAddChild()) {
+          <button
+            appIconButton
+            size="xxs"
+            icon="plus"
+            [glyphSize]="13"
+            class="action-mini"
+            type="button"
+            (click)="nodeAddChild.emit(node.originalData)"
+            title="New collection inside…"
+            aria-label="New collection inside {{ node.name }}"
+          ></button>
+        }
+
         @if (node.parentId !== null) {
           <button
             appIconButton

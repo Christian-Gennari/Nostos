@@ -183,7 +183,8 @@ export class BooksService {
     return this.http.post<BookFileMetadata>('/api/books/file-metadata', formData);
   }
 
-  * Several audio files that become the tracks of one audiobook. The server
+  /**
+   * Several audio files that become the tracks of one audiobook. The server
    * puts them in natural file-name order, so the order sent does not matter.
    */
   uploadTracks(bookId: string, files: File[]): Observable<any> {
