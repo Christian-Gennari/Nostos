@@ -56,7 +56,7 @@ public static partial class AssistantCapabilities
               "properties": {
                 "search": { "type": "string", "description": "Words to match against book titles and authors. Omit it to list everything." },
                 "filter": { "type": "string", "enum": ["All", "Favorites", "Finished", "Reading", "Unsorted", "NotStarted"], "description": "Restrict the list to one shelf. Defaults to All." },
-                "sort": { "type": "string", "enum": ["Recent", "Title", "Rating", "LastRead"], "description": "How to order the results. Defaults to Recent." },
+                "sort": { "type": "string", "enum": ["Recent", "Title", "Rating", "LastRead", "RecentlyFinished"], "description": "How to order the results. Defaults to Recent." },
                 "page": { "type": "integer", "description": "The 1-based page of results to return. Defaults to 1." },
                 "pageSize": { "type": "integer", "description": "How many books to return per page. Defaults to 20; the service clamps it to 100." },
                 "collectionId": { "type": "string", "format": "uuid", "description": "Limit the list to one collection by its id. Omit it for the whole library." },
