@@ -148,6 +148,14 @@ describe('NoteItemComponent', () => {
     expect(element.querySelector('[data-testid="note-edition-format"]')).toBeNull();
   });
 
+  it('calls the link "Open book" for a physical book, which has no reader', () => {
+    render({ bookFormat: 'physical', sourceAnchorKind: null, sourceAnchorValue: null });
+
+    const link = element.querySelector('.note-item-source') as HTMLAnchorElement;
+    expect(link.textContent).toContain('Open book');
+    expect(link.textContent).not.toContain('Open in book');
+  });
+
   it('opens a note from another edition in that edition', () => {
     render({ bookId: 'audio-edition', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '42', bookFormat: 'audiobook' });
 

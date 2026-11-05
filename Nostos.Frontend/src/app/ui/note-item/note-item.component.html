@@ -201,7 +201,8 @@
     </button>
     } @else {
     <a class="note-item-source" [routerLink]="source().commands" [queryParams]="source().queryParams">
-      Open in book <nostos-icon name="arrow-right" [size]="12" />
+      {{ note().bookFormat === 'physical' ? 'Open book' : 'Open in book' }}
+      <nostos-icon name="arrow-right" [size]="12" />
     </a>
     }
   </footer>
