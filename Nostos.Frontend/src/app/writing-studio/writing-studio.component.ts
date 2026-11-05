@@ -1290,8 +1290,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!editor || !this.activeItem()) return;
 
     if (source.kind === 'passage' && mode === 'quote') {
-      // Kept and remembered only once something is quoted from it.
-      editor.clearSourceQuery();
+      // Kept and remembered only once something is quoted from it. The typed
+      // words stay on the page until then, so closing the viewer loses nothing.
+      editor.holdSourceQuery();
       this.palettePassageSource = source;
       this.passageViewer.open(source.id, this.palettePassageOptions);
       return;
@@ -1531,6 +1532,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       passageTitle: passage.title,
     });
     if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown, footnoteOf(styled))) {
+      this.markdownEditor.releaseHeldQuery();
       if (styled) void this.warnIfIncomplete(passage.bookId);
       this.keepNote(passage.id);
       const source = this.palettePassageSource;

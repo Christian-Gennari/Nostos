@@ -32,10 +32,12 @@ import {
   fromKeptSource,
   fromSearchHit,
   highlightSegments,
+  insertModeLabel,
   queryWords,
   rankSources,
   readRecentSources,
   rememberRecentSource,
+  resolveInsertMode,
   sourceByline,
   vocabularyOf,
 } from './source-palette.helpers';
@@ -127,6 +129,9 @@ export class SourcePaletteComponent {
   });
   /** The source being read in the preview: the highlighted row. */
   readonly activeItem = computed(() => this.items()[this.active()] ?? null);
+  /** What Enter and Shift+Enter do to the highlighted row, for the key hints. */
+  readonly enterLabel = computed(() => insertModeLabel(this.activeItem(), 'quote'));
+  readonly shiftEnterLabel = computed(() => insertModeLabel(this.activeItem(), 'note'));
   /**
    * Decided when the palette opens, and again only when the caret moves to
    * another line or the window changes; never because the results did.
@@ -139,6 +144,11 @@ export class SourcePaletteComponent {
   private readonly search$ = new Subject<string>();
   /** Enter pressed while results were still coming: the mode to pick with. */
   private pendingPick: PaletteInsertMode | null = null;
+  /** The row the writer moved to while results were coming; kept when they land. */
+  private chosenId: string | null = null;
+  /** The query last sent to search: the same words again (a trailing space) are not asked twice. */
+  private searched = '';
+  private pointer: { x: number; y: number } | null = null;
   /** Recents belong to the signed-in account; self-hosted is one 'local' reader. */
   private recentScope = 'local';
 
@@ -184,8 +194,10 @@ export class SourcePaletteComponent {
         this.loading.set(false);
         const pending = this.pendingPick;
         this.pendingPick = null;
-        const first = this.items()[0];
-        if (pending && first) this.pick(first, pending);
+        // Enter pressed while searching picks the row highlighted now, which
+        // is the row the writer moved to if it is still there, else the first.
+        const target = this.items()[this.active()];
+        if (pending && target) this.pick(target, pending);
       });
 
     effect(() => {
@@ -227,6 +239,8 @@ export class SourcePaletteComponent {
         this.moreFor.set(null);
         this.loading.set(false);
         this.pendingPick = null;
+        this.chosenId = null;
+        this.searched = '';
         this.search$.next('');
         return;
       }
@@ -235,12 +249,18 @@ export class SourcePaletteComponent {
         const trimmed = query.trim();
         if (!trimmed) {
           // Cancels any search still in flight for a longer query.
+          this.searched = '';
+          this.chosenId = null;
           this.search$.next('');
           this.answered.set('');
           this.loading.set(false);
           this.setItems(this.emptyQueryItems());
           return;
         }
+        // The same words with a space after them are the same question: the
+        // list on screen already answers it and must not be redrawn.
+        if (trimmed === this.searched) return;
+        this.searched = trimmed;
         this.loading.set(true);
         this.search$.next(trimmed);
       });
@@ -285,8 +305,7 @@ export class SourcePaletteComponent {
   }
 
   pick(item: PaletteSource, mode: PaletteInsertMode = 'quote'): void {
-    // A note with no quotation is a thought, not a quote: it goes in as a note.
-    const effective = mode === 'quote' && item.kind === 'note' && !item.note && !item.selectedText?.trim() ? 'note' : mode;
+    const effective = resolveInsertMode(item, mode);
     this.moreFor.set(null);
     this.choose.emit({ source: item, mode: effective });
   }
@@ -308,7 +327,17 @@ export class SourcePaletteComponent {
     this.moreFor.update((id) => (id === item.id ? null : item.id));
   }
 
+  /** The pointer highlights a row only when it really moved, not when the list moved under it. */
+  pointerOver(index: number, event: MouseEvent): void {
+    const last = this.pointer;
+    this.pointer = { x: event.clientX, y: event.clientY };
+    if (last && last.x === event.clientX && last.y === event.clientY) return;
+    this.active.set(index);
+    this.chosenId = this.items()[index]?.id ?? null;
+  }
+
   setActive(index: number): void {
+    this.chosenId = this.items()[index]?.id ?? null;
     this.active.set(index);
     queueMicrotask(() =>
       this.host.nativeElement
@@ -325,9 +354,16 @@ export class SourcePaletteComponent {
     return highlightSegments(text, this.words());
   }
 
+  /**
+   * New rows replace the list. The highlight stays on the row the writer
+   * moved to when it is still there, so Enter inserts what was highlighted;
+   * otherwise it starts at the top.
+   */
   private setItems(items: PaletteSource[]): void {
+    const keep = this.chosenId ? items.findIndex((item) => item.id === this.chosenId) : -1;
     this.items.set(items);
-    this.active.set(0);
+    this.active.set(keep >= 0 ? keep : 0);
+    if (keep < 0) this.chosenId = null;
     this.moreFor.set(null);
   }
 

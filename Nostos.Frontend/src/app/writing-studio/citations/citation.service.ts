@@ -2,6 +2,8 @@ import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { Book } from '../../core/dtos/book.dtos';
+import { parseAudioSeconds } from '../../core/dtos/note.dtos';
+import { formatAudioTime } from '../../core/format';
 import { BooksService } from '../../core/services/books.service';
 import { citationMarkdown, type CitationRef } from '../../ui/markdown-editor/citation.extension';
 import type { CitationRenderer } from '../../ui/markdown-editor/live-citations';
@@ -31,6 +33,13 @@ export function citationLocator(source: CitableSource): CitationLocator | null {
   if (source.anchorVerified !== true || source.sourceAnchorKind?.trim().toLowerCase() !== 'pdf_page') return null;
   const page = Number((source.sourceAnchorValue ?? '').trim());
   return Number.isInteger(page) && page > 0 ? { page } : null;
+}
+
+/** Whole seconds into a recording, only when Nostos verified the time of an audio note. */
+export function citationTime(source: CitableSource): number | null {
+  if (source.anchorVerified !== true || source.sourceAnchorKind?.trim().toLowerCase() !== 'audio_timestamp') return null;
+  const seconds = parseAudioSeconds(source.sourceAnchorValue);
+  return seconds !== null && seconds >= 1 ? Math.floor(seconds) : null;
 }
 
 /**
@@ -100,7 +109,7 @@ export class CitationService {
   async cite(source: CitableSource, style: CitationStyle, subsequent = false, role: CitationRef['as'] = null): Promise<string | null> {
     const book = await this.book(source.bookId);
     if (!book) return null;
-    const ref: CitationRef = { book: book.id, page: citationLocator(source)?.page ?? null, src: null, as: role };
+    const ref: CitationRef = { book: book.id, page: citationLocator(source)?.page ?? null, time: citationTime(source), src: null, as: role };
     if (!style.file) return houseText(book, ref, (source.passageTitle ?? '').trim() || null);
     return (await this.engine(style)).cite(bookToCslItem(book), citationLocator(source), subsequent);
   }
@@ -131,6 +140,7 @@ export class CitationService {
     const citation = citationMarkdown(text, {
       book: source.bookId,
       page: citationLocator(source)?.page ?? null,
+      time: citationTime(source),
       src: source.id ?? null,
       as: mode,
     });
@@ -239,7 +249,7 @@ function clean(text: string | null | undefined): string {
 export function houseText(book: Book, ref: CitationRef, passage: string | null, framed = true): string {
   const author = clean(book.author) || clean(book.editor);
   const title = escape(clean(book.title));
-  const locator = passage ? `“${escape(clean(passage))}”` : ref.page ? `p. ${ref.page}` : null;
+  const locator = passage ? `“${escape(clean(passage))}”` : ref.page ? `p. ${ref.page}` : ref.time ? formatAudioTime(ref.time) : null;
   const parts = (shownTitle: string) => [author && escape(author), shownTitle, locator].filter(Boolean).join(', ');
   if (!framed) return parts(`*${title}*`);
   if (ref.as === 'quote') return `— ${parts(`*${title}*`)}`;

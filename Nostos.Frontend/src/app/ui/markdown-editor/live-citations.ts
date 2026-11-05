@@ -41,8 +41,8 @@ function attrsOf(node: PMNode): CitationAttrs {
 }
 
 function refOf(node: PMNode): CitationRef {
-  const { book, page, src, as } = attrsOf(node);
-  return { book, page, src, as };
+  const { book, page, time, src, as } = attrsOf(node);
+  return { book, page, time, src, as };
 }
 
 /** The top-level block a position is in. */
@@ -89,8 +89,8 @@ export function citationSignature(doc: PMNode): string {
   const parts: string[] = [];
   doc.descendants((node, pos) => {
     if (node.type.name === 'citation') {
-      const { book, page, as } = attrsOf(node);
-      parts.push(`${book}:${page ?? ''}:${as ?? ''}:${inDefinition(doc, pos) ? 'n' : 't'}`);
+      const { book, page, time, as } = attrsOf(node);
+      parts.push(`${book}:${page ?? ''}${time ? `@${time}` : ''}:${as ?? ''}:${inDefinition(doc, pos) ? 'n' : 't'}`);
     } else if (node.type.name === 'footnoteRef') {
       parts.push(`^${node.attrs['number']}`);
     }

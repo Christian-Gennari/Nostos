@@ -377,6 +377,26 @@ describe('MarkdownEditorComponent', () => {
       expect(component.currentMarkdown()).toBe('As _See: Author, Book_ is right.');
     });
 
+    it('keeps the typed query until a held choice lands, and loses nothing if it never does (issue #1378)', async () => {
+      await create('Intro.');
+      (component as any).editor.commands.focus('end');
+      typeText(' @nine cases');
+      expect(component.holdSourceQuery()).toBe(true);
+      expect(component.currentMarkdown()).toContain('@nine cases');
+      component.releaseHeldQuery();
+      expect(component.currentMarkdown()).not.toContain('@nine cases');
+    });
+
+    it('leaves held words alone when the page moved under them (issue #1378)', async () => {
+      await create('Intro.');
+      (component as any).editor.commands.focus('end');
+      typeText(' @again');
+      expect(component.holdSourceQuery()).toBe(true);
+      (component as any).editor.commands.insertContentAt(1, 'Before ');
+      component.releaseHeldQuery();
+      expect(component.currentMarkdown()).toContain('@again');
+    });
+
     it('opens with the shortcut and takes its @ (and its space) back when closed empty', async () => {
       await create('Word');
       (component as any).editor.commands.focus('end');

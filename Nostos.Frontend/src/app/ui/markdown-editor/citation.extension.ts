@@ -24,6 +24,8 @@ export interface CitationRef {
   book: string;
   /** A page Nostos verified; never invented. */
   page: number | null;
+  /** Whole seconds into a recording, when Nostos verified the time of an audio note. */
+  time?: number | null;
   /** The kept source (note or passage) it was inserted from. */
   src: string | null;
   as: CitationRole | null;
@@ -51,10 +53,12 @@ export function parseCitationHref(href: string | null | undefined): CitationRef 
   if (!book) return null;
   const params = new URLSearchParams(query);
   const page = Number(params.get('p'));
+  const time = Number(params.get('t'));
   const as = params.get('as') as CitationRole | null;
   return {
     book,
     page: Number.isInteger(page) && page > 0 ? page : null,
+    time: Number.isInteger(time) && time > 0 ? time : null,
     src: cleanId(params.get('src')),
     as: as && ROLES.includes(as) ? as : null,
   };
@@ -88,6 +92,7 @@ export function citedSourceIds(markdown: string | null | undefined): string[] {
 export function citationHref(ref: CitationRef): string {
   const params: string[] = [];
   if (ref.page) params.push(`p=${ref.page}`);
+  if (ref.time) params.push(`t=${ref.time}`);
   if (ref.as) params.push(`as=${ref.as}`);
   if (ref.src) params.push(`src=${ref.src}`);
   return `${CITATION_SCHEME}${ref.book}${params.length ? `?${params.join('&')}` : ''}`;
@@ -149,6 +154,7 @@ export function citationTextSpec(markdown: string): (DOMOutputSpec | string)[] {
 const ATTR = {
   book: 'data-cite-book',
   page: 'data-cite-page',
+  time: 'data-cite-time',
   src: 'data-cite-src',
   as: 'data-cite-as',
   text: 'data-cite-text',
@@ -162,6 +168,7 @@ export function escapeAttribute(value: string): string {
 function citationAttributes(attrs: CitationAttrs): Record<string, string> {
   const out: Record<string, string> = { [ATTR.book]: attrs.book, [ATTR.text]: attrs.text, class: 'citation' };
   if (attrs.page) out[ATTR.page] = String(attrs.page);
+  if (attrs.time) out[ATTR.time] = String(attrs.time);
   if (attrs.src) out[ATTR.src] = attrs.src;
   if (attrs.as) out[ATTR.as] = attrs.as;
   return out;
@@ -172,6 +179,7 @@ export function citationFromElement(element: HTMLElement): CitationAttrs | null 
   const ref = parseCitationHref(
     `${CITATION_SCHEME}${element.getAttribute(ATTR.book) ?? ''}?${new URLSearchParams({
       p: element.getAttribute(ATTR.page) ?? '',
+      t: element.getAttribute(ATTR.time) ?? '',
       as: element.getAttribute(ATTR.as) ?? '',
       src: element.getAttribute(ATTR.src) ?? '',
     }).toString()}`,
@@ -193,6 +201,7 @@ export const Citation = Node.create({
     return {
       book: { default: '', parseHTML: (element) => read(element)?.book ?? '', renderHTML: () => ({}) },
       page: { default: null, parseHTML: (element) => read(element)?.page ?? null, renderHTML: () => ({}) },
+      time: { default: null, parseHTML: (element) => read(element)?.time ?? null, renderHTML: () => ({}) },
       src: { default: null, parseHTML: (element) => read(element)?.src ?? null, renderHTML: () => ({}) },
       as: { default: null, parseHTML: (element) => read(element)?.as ?? null, renderHTML: () => ({}) },
       text: { default: '', parseHTML: (element) => read(element)?.text ?? '', renderHTML: () => ({}) },

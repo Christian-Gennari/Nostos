@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Editor } from '@tiptap/core';
 
 import { MarkdownEditorComponent } from './markdown-editor.component';
-import { CitationRef, citationMarkdown, citationTextSpec, parseCitationHref } from './citation.extension';
+import { CitationRef, citationHref, citationMarkdown, citationTextSpec, parseCitationHref } from './citation.extension';
 import { CitationRenderer } from './live-citations';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
 
@@ -72,8 +72,11 @@ describe('live citations (issue #1157)', () => {
 
     it('leaves an ordinary link alone, and reads only its own addresses', () => {
       expect(markdownToHtml('[site](https://example.com)')).toContain('<a href="https://example.com"');
-      expect(parseCitationHref('nostos:cite/b1?p=0&as=bogus')).toEqual({ book: 'b1', page: null, src: null, as: null });
+      expect(parseCitationHref('nostos:cite/b1?p=0&as=bogus')).toEqual({ book: 'b1', page: null, time: null, src: null, as: null });
       expect(parseCitationHref('nostos:cite/../x')).toBeNull();
+      // A time into a recording survives the round trip (issue #1378).
+      const timed = { book: 'b1', page: null, time: 754, src: null, as: 'note' as const };
+      expect(parseCitationHref(citationHref(timed))).toEqual(timed);
       expect(citationMarkdown(' (Kant, 1992) ', { book: 'b2', page: 3, src: null, as: 'quote' })).toBe(
         '[(Kant, 1992)](nostos:cite/b2?p=3&as=quote)',
       );

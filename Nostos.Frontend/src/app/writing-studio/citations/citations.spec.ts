@@ -13,7 +13,7 @@ import { of, throwError } from 'rxjs';
 import { Book } from '../../core/dtos/book.dtos';
 import { BooksService } from '../../core/services/books.service';
 import { MarkdownEditorComponent } from '../../ui/markdown-editor/markdown-editor.component';
-import { CitationService, houseText } from './citation.service';
+import { CitationService, citationTime, houseText } from './citation.service';
 import { htmlToMarkdown, markdownToHtml } from '../../ui/markdown-editor/markdown-conversion';
 import { CitationEngine, cslHtmlToMarkdown } from './citation-engine';
 import { CITATION_STYLES, citationStyle } from './citation-styles';
@@ -101,6 +101,9 @@ describe('citation styles (issue #1109): Markdown it produces', () => {
   it('cites a note after its text and a reference in the sentence', () => {
     expect(styledNote('My thought.', '(Schopenhauer, 1851)', apa, 1)?.markdown).toBe('My thought. (Schopenhauer, 1851)');
     expect(styledNote('My thought.', 'Note.', chicagoNotes, 2)?.markdown).toBe('My thought.[^2]');
+    // Topic links read as plain words (issue #1378).
+    expect(styledNote('p. 12 [[Irony]] opens it.', 'Note.', chicagoNotes, 2)?.markdown).toBe('p. 12 Irony opens it.[^2]');
+    expect(styledNote('[[Irony]]', 'Note.', chicagoNotes, 2)).toBeNull();
     expect(styledReference('(Schopenhauer, 1851)', apa, 1)).toEqual({ markdown: '(Schopenhauer, 1851)', footnote: null });
     expect(styledReference('Note.', chicagoNotes, 4).markdown).toBe('[^4]');
   });
@@ -256,6 +259,15 @@ describe('the house format and missing details (#1157)', () => {
     expect(houseText(voltaire, { book: 'b1', page: null, src: null, as: 'note' }, null)).toBe('*Source: Voltaire, Candide*');
     expect(houseText(voltaire, { book: 'b1', page: 4, src: 'p1', as: 'reference' }, 'On Hope')).toBe('*See: Voltaire, Candide, “On Hope”*');
     expect(houseText({ ...voltaire, author: null, title: 'A [b]' } as Book, { book: 'b1', page: null, src: null, as: 'quote' }, null)).toBe('— *A \\[b\\]*');
+  });
+
+  it('names the time of an audio note (issue #1378)', () => {
+    expect(houseText(voltaire, { book: 'b1', page: null, time: 754, src: null, as: 'note' }, null)).toBe('*Source: Voltaire, Candide, 12:34*');
+    expect(houseText(voltaire, { book: 'b1', page: null, time: 3725, src: null, as: 'quote' }, null)).toBe('— Voltaire, *Candide*, 1:02:05');
+    const audio = { sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '754.9', anchorVerified: true };
+    expect(citationTime(audio)).toBe(754);
+    expect(citationTime({ ...audio, anchorVerified: false })).toBeNull();
+    expect(citationTime({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '12', anchorVerified: true })).toBeNull();
   });
 
   it('asks the house format only for an author, and names what is missing', () => {

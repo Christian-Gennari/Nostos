@@ -1,3 +1,6 @@
+import { parseAudioSeconds } from '../core/dtos/note.dtos';
+import { formatAudioTime } from '../core/format';
+
 export interface SourceInsertionSource {
   bookTitle?: string | null;
   /** The book's author (issue #1044): when a thinker is quoted, the name is what readers look for. */
@@ -9,6 +12,29 @@ export interface SourceInsertionSource {
   anchorVerified?: boolean | null;
   /** A passage's title (issue #1014): the passage is the locator. */
   passageTitle?: string | null;
+}
+
+const TOPIC_REFERENCE = /\[\[([^\[\]]*?)\]\]/g;
+
+/**
+ * A note's words as they read in an essay: `[[Topic]]` links become the plain
+ * topic name (the Brain does the same when a topic is unlinked), and a line
+ * that holds only topic links, which is what linking a topic writes, is left
+ * out. Without this the editor would escape the brackets and show them.
+ */
+export function noteTextForWriting(content: string | null | undefined): string {
+  const text = (content ?? '').replace(/\r\n?/g, '\n');
+  const onlyLinks = (line: string) => {
+    const rest = line.replace(TOPIC_REFERENCE, '');
+    return rest !== line && /^[\s,;·|]*$/.test(rest);
+  };
+  return text
+    .split('\n')
+    .filter((line) => !onlyLinks(line))
+    .join('\n')
+    .replace(TOPIC_REFERENCE, (_, name: string) => name.trim())
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 export interface HumanSourceLabel {
@@ -48,6 +74,12 @@ export function sourceHumanLabel(source: SourceInsertionSource): HumanSourceLabe
     const rawPage = normalizeInlineText(source.sourceAnchorValue);
     const page = Number(rawPage);
     if (Number.isInteger(page) && page > 0) locator = `p. ${page}`;
+  } else if (
+    source.anchorVerified === true &&
+    source.sourceAnchorKind?.trim().toLowerCase() === 'audio_timestamp'
+  ) {
+    const seconds = parseAudioSeconds(source.sourceAnchorValue);
+    if (seconds !== null && seconds >= 1) locator = formatAudioTime(seconds);
   }
 
   return { title: escapeMarkdownInline(title), author, locator };
@@ -63,7 +95,7 @@ export function hasMeaningfulSelectedText(source: SourceInsertionSource): boolea
 }
 
 export function hasMeaningfulNoteContent(source: SourceInsertionSource): boolean {
-  return normalizeBlockText(source.content).length > 0;
+  return noteTextForWriting(source.content).length > 0;
 }
 
 export function buildQuoteMarkdown(source: SourceInsertionSource): string | null {
@@ -79,7 +111,7 @@ export function buildQuoteMarkdown(source: SourceInsertionSource): string | null
 }
 
 export function buildNoteMarkdown(source: SourceInsertionSource): string | null {
-  const content = normalizeBlockText(source.content);
+  const content = noteTextForWriting(source.content);
   const label = sourceHumanLabel(source);
   if (!content || !label) return null;
 
