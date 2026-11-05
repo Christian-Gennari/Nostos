@@ -40,8 +40,13 @@ export function noteLocationLabel(
     passageEnd?: string | null;
   },
 ): string | null {
-  if (!note.anchorVerified) return null;
   const value = note.sourceAnchorValue?.trim() ?? '';
+  // A page typed by hand on a paper book is the reader's word and never opens
+  // anything, so it shows without being verified (issue #1377).
+  if (note.sourceAnchorKind?.toLowerCase() === 'physical_page') {
+    return /^[1-9]\d*$/.test(value) ? `p. ${value}` : null;
+  }
+  if (!note.anchorVerified) return null;
   switch (note.sourceAnchorKind?.toLowerCase()) {
     case 'pdf_page': {
       if (!/^[1-9]\d*$/.test(value)) return null;

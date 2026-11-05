@@ -27,12 +27,14 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 
 import {
   MigrationActivationPhase,
   MigrationErrorCode,
   MigrationJobState,
+  MigrationJobStatusResponseDto,
 } from '../models/migration-http.dtos';
 import {
   HostActivationState,
@@ -140,6 +142,22 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
    * adopts the lease it already holds instead of tracking a local flag.
    */
   readonly blockedByOtherTab = computed(() => this.otherTabActive());
+
+  /**
+   * The import the server is running while another tab holds the lease. The
+   * customer needs to know it is the server doing the work, not that a tab is
+   * in the way, so this tab shows the server's own progress read-only.
+   */
+  readonly serverImport = signal<MigrationJobStatusResponseDto | null>(null);
+  readonly serverImportPhase = computed<TransferProgressPhase>(() =>
+    progressPhaseForJobState(this.serverImport()?.job.state),
+  );
+  readonly serverImportProgress = computed(() => {
+    const progress = this.serverImport()?.progress;
+    return progress && progress.totalBytes !== null ? progress : null;
+  });
+  private serverImportTimer: ReturnType<typeof setTimeout> | null = null;
+  private serverImportAbort: AbortController | null = null;
 
   readonly pausing = signal(false);
   readonly resuming = signal(false);
@@ -406,6 +424,16 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
       }
     });
 
+    // While another tab holds the lease, look (read-only) for an import the
+    // server is running and keep its progress fresh.
+    effect(() => {
+      if (this.blockedByOtherTab()) {
+        untracked(() => this.pollServerImport());
+      } else {
+        untracked(() => this.stopServerImportPoll());
+      }
+    });
+
     // A blocked auto-resume retries as soon as the foreign lease frees
     // (expiry timer, storage event, focus) without a page reload.
     effect(() => {
@@ -432,6 +460,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.stopServerImportPoll();
     // The coordinator is root-scoped: if a transfer is still active the host is
     // only being torn down, not the transfer, so the lease must stay (and the
     // root service keeps heartbeating it). A later remount adopts it through
@@ -588,6 +617,25 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     this.openPicker();
   }
 
+  private pollServerImport(): void {
+    this.stopServerImportPoll();
+    const abort = new AbortController();
+    this.serverImportAbort = abort;
+    void this.coordinator.peekRunningImport(abort.signal).then((status) => {
+      if (abort.signal.aborted) return;
+      this.serverImport.set(status);
+      this.serverImportTimer = setTimeout(() => this.pollServerImport(), SERVER_IMPORT_POLL_MS);
+    });
+  }
+
+  private stopServerImportPoll(): void {
+    this.serverImportAbort?.abort();
+    this.serverImportAbort = null;
+    if (this.serverImportTimer !== null) clearTimeout(this.serverImportTimer);
+    this.serverImportTimer = null;
+    this.serverImport.set(null);
+  }
+
   private transferActive(): boolean {
     const kind = this.state().kind;
     return kind !== 'idle' && kind !== 'completed' && kind !== 'cancelled' && kind !== 'failed';
@@ -621,6 +669,8 @@ function asKind<K extends StateKind>(
 ): Extract<TransferFlowState, { kind: K }> | null {
   return state.kind === kind ? (state as Extract<TransferFlowState, { kind: K }>) : null;
 }
+
+const SERVER_IMPORT_POLL_MS = 3000;
 
 function progressPhaseForJobState(jobState: MigrationJobState | undefined): TransferProgressPhase {
   switch (jobState) {

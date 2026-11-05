@@ -80,6 +80,29 @@ public sealed class MigrationHttpApiTests
     }
 
     [Fact]
+    public async Task Active_import_is_204_when_idle_and_reports_the_running_import()
+    {
+        await using var h = new MigrationHttpHarness().Start();
+
+        var (idleStatus, _) = await h.SendAsync(HttpMethod.Get, "/api/portability/migration/active-import");
+        idleStatus.Should().Be(HttpStatusCode.NoContent);
+
+        var jobId = await h.CreateImportJobAsync("active-key");
+        var file = MigrationHttpHarness.DeterministicBytes(4096);
+        (await h.CreateSessionAsync(jobId, file)).Status.Should().Be(HttpStatusCode.Created);
+
+        var (status, body) = await h.SendAsync(HttpMethod.Get, "/api/portability/migration/active-import");
+        status.Should().Be(HttpStatusCode.OK);
+        body.RootElement.GetProperty("job").GetProperty("id").GetGuid().Should().Be(jobId);
+        body.RootElement.GetProperty("job").GetProperty("direction").GetString().Should().Be("Import");
+
+        (await h.SendAsync(HttpMethod.Post, $"/api/portability/migration/jobs/{jobId}/cancel",
+            new StringContent("{}", Encoding.UTF8, "application/json"))).Status.Should().Be(HttpStatusCode.OK);
+        var (afterStatus, _) = await h.SendAsync(HttpMethod.Get, "/api/portability/migration/active-import");
+        afterStatus.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
     public async Task Resume_after_restart_reports_receipts_and_accepts_only_missing_chunks()
     {
         await using var h = new MigrationHttpHarness().Start();

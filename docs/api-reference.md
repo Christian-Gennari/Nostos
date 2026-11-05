@@ -528,11 +528,10 @@ verified. The public contract ceiling is not a Cloud plan quota. See
 and [MigrationContractLimits](../Nostos.Product/Services/Portability/MigrationContracts.cs)
 for the route map and fixed limits.
 
-The shared browser client also has an optional GET /active-import discovery
-request when it has no local resume record. That route is not registered by
-the public SelfHosted endpoint group above; discovery after local browser data
-is lost therefore depends on the host and is not guaranteed by this API
-reference.
+`GET /api/portability/migration/active-import` returns the status of the import
+running on the host (same body as `GET /jobs/{id}`), or `204 No Content` when
+none runs. A browser that lost its resume record uses it to show the import the
+server is working on.
 
 ## Collections — `/api/collections`
 

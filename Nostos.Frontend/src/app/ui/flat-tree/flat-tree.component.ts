@@ -7,6 +7,8 @@
   inject,
   ElementRef,
   ChangeDetectionStrategy,
+  effect,
+  untracked,
 } from '@angular/core';
 import { DragDropModule, CdkDragMove } from '@angular/cdk/drag-drop';
 import { buildFlatTree, FlatTreeNode, TreeItem } from './flat-tree.helper';
@@ -74,6 +76,32 @@ export class FlatTreeComponent {
   readonly dropIndicator = signal<DropIndicator | null>(null);
   readonly isDragging = signal(false);
 
+  constructor() {
+    // The marked row is never hidden inside a closed folder: a page made in a
+    // folder, or opened from outside the list, shows where it lives.
+    effect(() => {
+      const id = this.activeId();
+      if (!id) return;
+      const items = this.items();
+      const ancestors: string[] = [];
+      let parent = items.find((i) => i.id === id)?.parentId ?? null;
+      while (parent && !ancestors.includes(parent)) {
+        ancestors.push(parent);
+        parent = items.find((i) => i.id === parent)?.parentId ?? null;
+      }
+      // Once per place: a folder the reader then closes stays closed.
+      const place = `${id}>${ancestors.join('>')}`;
+      if (ancestors.length === 0 || place === this.lastRevealed) return;
+      this.lastRevealed = place;
+      untracked(() =>
+        this.expandedIds.update((set) =>
+          ancestors.every((a) => set.has(a)) ? set : new Set([...set, ...ancestors]),
+        ),
+      );
+    });
+  }
+
+  private lastRevealed = '';
   private draggedNode: FlatTreeNode | null = null;
   private wasExpanded = false;
 

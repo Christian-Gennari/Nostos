@@ -36,7 +36,19 @@ public sealed record HighlightImportPreviewBook(
     string Match,
     Guid? BookId,
     IReadOnlyList<HighlightImportCandidate> Candidates,
-    string? Notice = null);
+    string? Notice = null,
+    IReadOnlyList<HighlightImportPreviewHighlight>? Highlights = null);
+
+/// <summary>
+/// One highlight of a book in the file, cut short for the review step. <c>Index</c>
+/// is its place in the book, which a decision names to leave it out; <c>IsNew</c>
+/// is false for one Nostos already holds (for the book proposed first).
+/// </summary>
+public sealed record HighlightImportPreviewHighlight(
+    int Index,
+    string? Text,
+    string? Note,
+    bool IsNew);
 
 /// <param name="Format">
 /// The library book's format, as the app's format concepts name it:
@@ -53,12 +65,14 @@ public sealed record HighlightImportCandidate(
 /// <summary>
 /// The owner's answer for one book in the file. A book with no decision is
 /// left out. <c>Create</c> adds the book to the library from the device's
-/// title and author first.
+/// title and author first. <c>ExcludedHighlights</c> are the indexes of the
+/// highlights the owner unticked in the review.
 /// </summary>
 public sealed record HighlightImportDecision(
     string SourceKey,
     Guid? BookId = null,
-    bool Create = false);
+    bool Create = false,
+    IReadOnlyList<int>? ExcludedHighlights = null);
 
 public sealed record HighlightImportResult(
     Guid? BatchId,

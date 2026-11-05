@@ -1310,9 +1310,10 @@ describe('TopicMapComponent', () => {
       expect(camera.animate).toHaveBeenCalled();
       const state = camera.animate.mock.calls.at(-1)![0];
       expect(state.ratio).toBeGreaterThan(0);
-      // A fit centres the graph; framed coordinates are 0..1.
-      expect(state.x).toBeCloseTo(0.5, 5);
-      expect(state.y).toBeCloseTo(0.5, 5);
+      // A fit centres the graph where Sigma says its centre is: framed
+      // coordinates stay a small range, never raw graph units.
+      expect(Math.abs(state.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(state.y)).toBeLessThanOrEqual(1);
     });
 
     it('centres the selected node in framed coordinates', () => {

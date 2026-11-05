@@ -9,6 +9,10 @@ namespace Nostos.Backend.Endpoints;
 
 public static class WritingsEndpoints
 {
+    private static bool SameInstantToMillisecond(DateTime a, DateTime b) =>
+        a.ToUniversalTime().Ticks / TimeSpan.TicksPerMillisecond
+        == b.ToUniversalTime().Ticks / TimeSpan.TicksPerMillisecond;
+
     public static IEndpointRouteBuilder MapWritingsEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/writings");
@@ -84,6 +88,16 @@ public static class WritingsEndpoints
                 var item = await repo.GetByIdAsync(id);
                 if (item is null)
                     return Results.NotFound();
+
+                // Optimistic concurrency (issue #1363): a save made from a copy
+                // older than the stored one is refused, not written over it.
+                // Compared to the millisecond: PostgreSQL keeps microseconds,
+                // SQLite 100 ns, and the client echoes back what it was given.
+                if (dto.BaseUpdatedAt is { } baseUpdatedAt
+                    && !SameInstantToMillisecond(baseUpdatedAt, item.UpdatedAt))
+                {
+                    return Results.Json(item.ToContentDto(), statusCode: StatusCodes.Status409Conflict);
+                }
 
                 item.Name = dto.Name;
                 if (HasPropertyIgnoreCase(body, "content"))

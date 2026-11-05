@@ -1018,6 +1018,9 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CreatedBookId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -1131,6 +1134,9 @@ namespace Nostos.Backend.Migrations
                         .HasDefaultValue("unknown");
 
                     b.Property<string>("SourceAnchorValue")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");

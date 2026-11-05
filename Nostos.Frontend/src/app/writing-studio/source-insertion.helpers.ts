@@ -11,6 +11,29 @@ export interface SourceInsertionSource {
   passageTitle?: string | null;
 }
 
+const TOPIC_REFERENCE = /\[\[([^\[\]]*?)\]\]/g;
+
+/**
+ * A note's words as they read in an essay: `[[Topic]]` links become the plain
+ * topic name (the Brain does the same when a topic is unlinked), and a line
+ * that holds only topic links, which is what linking a topic writes, is left
+ * out. Without this the editor would escape the brackets and show them.
+ */
+export function noteTextForWriting(content: string | null | undefined): string {
+  const text = (content ?? '').replace(/\r\n?/g, '\n');
+  const onlyLinks = (line: string) => {
+    const rest = line.replace(TOPIC_REFERENCE, '');
+    return rest !== line && /^[\s,;·|]*$/.test(rest);
+  };
+  return text
+    .split('\n')
+    .filter((line) => !onlyLinks(line))
+    .join('\n')
+    .replace(TOPIC_REFERENCE, (_, name: string) => name.trim())
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export interface HumanSourceLabel {
   title: string;
   author: string | null;
@@ -68,7 +91,7 @@ export function hasMeaningfulSelectedText(source: SourceInsertionSource): boolea
 }
 
 export function hasMeaningfulNoteContent(source: SourceInsertionSource): boolean {
-  return normalizeBlockText(source.content).length > 0;
+  return noteTextForWriting(source.content).length > 0;
 }
 
 export function buildQuoteMarkdown(source: SourceInsertionSource): string | null {
@@ -84,7 +107,7 @@ export function buildQuoteMarkdown(source: SourceInsertionSource): string | null
 }
 
 export function buildNoteMarkdown(source: SourceInsertionSource): string | null {
-  const content = normalizeBlockText(source.content);
+  const content = noteTextForWriting(source.content);
   const label = sourceHumanLabel(source);
   if (!content || !label) return null;
 

@@ -73,6 +73,7 @@ public static class MigrationEndpoints
 
         group.MapPost("/preflight", PreflightAsync);
         group.MapPost("/jobs", CreateJobAsync);
+        group.MapGet("/active-import", GetActiveImportAsync);
         group.MapGet("/jobs/{id}", GetJobAsync);
         group.MapPost("/jobs/{id}/cancel", CancelAsync);
         group.MapPost("/jobs/{id}/retry", RetryAsync);
@@ -269,6 +270,18 @@ public static class MigrationEndpoints
         return result.WasReplay
             ? Results.Ok(status)
             : Results.Created($"{BasePath}/jobs/{status.Job.Id}", status);
+    });
+
+    /// <summary>
+    /// 200 with the job status while an import runs on this host, 204 when none
+    /// does (an idle library is the normal case, not an error).
+    /// </summary>
+    private static Task<IResult> GetActiveImportAsync(
+        SelfHostedMigrationJobService service,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        var status = await service.GetActiveImportAsync(ct);
+        return status is null ? Results.NoContent() : Results.Ok(status);
     });
 
     private static Task<IResult> GetJobAsync(

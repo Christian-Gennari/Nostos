@@ -49,7 +49,9 @@
           <h3 class="book-subtitle">{{ store.book()?.subtitle }}</h3>
           }
 
+          @if (store.book()?.author || !isLinkedExternally()) {
           <h2 class="book-author">{{ store.book()?.author || unknownAuthor }}</h2>
+          }
 
           @if (store.book()?.editor || store.book()?.translator) {
           <div class="hero-contributors">
@@ -526,7 +528,24 @@
               />
 
               @if (newNoteReady()) {
-              <button appButton variant="primary" size="sm" [disabled]="store.noteSaving()" (click)="addNote()">Save</button>
+              <div class="new-note-actions">
+                @if (isPaperBook()) {
+                <label class="new-note-page">
+                  <span>p.</span>
+                  <input
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    autocomplete="off"
+                    aria-label="Page (optional)"
+                    placeholder="–"
+                    [value]="newNotePage()"
+                    (input)="newNotePageText.set($any($event.target).value)"
+                  />
+                </label>
+                }
+                <button appButton variant="primary" size="sm" [disabled]="store.noteSaving()" (click)="addNote()">Save</button>
+              </div>
               }
             </div>
 

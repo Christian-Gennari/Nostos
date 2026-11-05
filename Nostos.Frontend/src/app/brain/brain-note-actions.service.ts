@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
@@ -42,6 +43,12 @@ export class BrainNoteActionsService {
   /** What the delete confirm calls the thing: a note, or a highlight on the page. */
   readonly deleteKind = signal<'note' | 'highlight'>('note');
   readonly handoffIds = signal<string[]>([]);
+  /**
+   * Set when a save is refused because the note was changed elsewhere (issue
+   * #1404): the edit that was refused, and the newer note. The note's form
+   * stays open with the typed words until the reader chooses.
+   */
+  readonly editConflict = signal<{ edit: NoteItemEdit; options: { quiet?: boolean }; theirs: Note } | null>(null);
 
   readonly deleteHeading = computed(() => {
     const count = this.deleteIds().length;
@@ -126,11 +133,44 @@ export class BrainNoteActionsService {
         this.host?.edited?.(saved, edit);
         this.reload(id, options.quiet ? null : 'Note saved');
       },
-      error: () => {
+      error: (error: unknown) => {
         this.setBusy([id], false);
+        if (error instanceof HttpErrorResponse && error.status === 409 && error.error?.id === id) {
+          // Saved from another tab or device since this copy was loaded.
+          this.editConflict.set({ edit, options, theirs: error.error as Note });
+          return;
+        }
         this.toast.error('Could not save the note. Try again.');
       },
     });
+  }
+
+  /** "Keep mine": saves the typed words over the newer note, now that the reader has seen the question. */
+  keepMineAfterConflict(): void {
+    const conflict = this.editConflict();
+    if (!conflict) return;
+    this.editConflict.set(null);
+    // Based on the newer note, so a third change in the meantime is asked about too.
+    this.edit({ ...conflict.edit, baseUpdatedAt: conflict.theirs.updatedAt }, conflict.options);
+  }
+
+  /**
+   * "Load the newer version". What was typed is put on the clipboard first, so
+   * it can still be pasted back; it is never dropped without a copy.
+   */
+  loadNewerAfterConflict(): void {
+    const conflict = this.editConflict();
+    if (!conflict) return;
+    this.editConflict.set(null);
+    const mine = conflict.edit.content;
+    if (mine !== conflict.theirs.content) {
+      void navigator.clipboard?.writeText(mine).then(
+        () => this.toast.info('Your version is on the clipboard'),
+        () => undefined,
+      );
+    }
+    this.setBusy([conflict.edit.id], true);
+    this.reload(conflict.edit.id, null);
   }
 
   /** The note's original wording was restored (capture details): show it. */

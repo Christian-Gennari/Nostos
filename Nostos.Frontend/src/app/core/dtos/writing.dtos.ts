@@ -22,6 +22,11 @@ export interface CreateWritingDto {
 export interface UpdateWritingDto {
   name: string;
   content?: string;
+  /**
+   * The `updatedAt` this copy was loaded with (issue #1363). The server refuses
+   * the save with 409 when the writing has changed since. Left out = no check.
+   */
+  baseUpdatedAt?: string;
 }
 
 export interface MoveWritingDto {

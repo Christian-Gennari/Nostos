@@ -94,7 +94,7 @@ internal static class KoboDatabaseReader
                     return new KoboVolume(
                         volumeId,
                         meta?.Title ?? TitleFromVolumeId(volumeId),
-                        meta?.Author,
+                        meta is null ? AuthorFromVolumeId(volumeId) : meta.Author,
                         meta?.Isbn,
                         grouped[volumeId]);
                 })
@@ -177,6 +177,26 @@ internal static class KoboDatabaseReader
 
         name = Uri.UnescapeDataString(name).Trim();
         return name.Length == 0 || name.Length == volumeId.Length ? null : name;
+    }
+
+    private static readonly HashSet<string> GenericFolders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "books", "book", "ebooks", "documents", "downloads", "download", "library", "epub", "pdf", "sideloaded",
+    };
+
+    // file:///mnt/onboard/Author/Some Book.epub: the folder directly under the
+    // device root names the author, unless it is a generic shelf like "Books".
+    internal static string? AuthorFromVolumeId(string volumeId)
+    {
+        const string root = "/mnt/onboard/";
+        var start = volumeId.IndexOf(root, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+            return null;
+        var parts = volumeId[(start + root.Length)..].Split('/');
+        if (parts.Length != 2)
+            return null;
+        var folder = Uri.UnescapeDataString(parts[0]).Trim();
+        return folder.Length == 0 || GenericFolders.Contains(folder) ? null : folder;
     }
 
     public static bool HasSqliteHeader(string path)

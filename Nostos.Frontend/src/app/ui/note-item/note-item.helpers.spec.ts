@@ -67,6 +67,14 @@ describe('noteLocationLabel', () => {
     expect(passage('3')).toBe('p. 3');
   });
 
+  it('shows a hand-typed paper page even though it is not verified', () => {
+    const at = (value: string) =>
+      noteLocationLabel({ sourceAnchorKind: 'physical_page', sourceAnchorValue: value, anchorVerified: false });
+    expect(at('12')).toBe('p. 12');
+    expect(at('0')).toBeNull();
+    expect(at('12abc')).toBeNull();
+  });
+
   it('shows nothing for a location the reader cannot open', () => {
     expect(noteLocationLabel({ sourceAnchorKind: 'pdf_page', sourceAnchorValue: '53', anchorVerified: false })).toBeNull();
   });

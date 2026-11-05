@@ -206,6 +206,13 @@ const LINKABLE_SECTIONS: readonly SettingsSection[] = [
   'account',
 ];
 
+/** Spellings people reasonably guess for a section key. */
+const SECTION_ALIASES: Readonly<Record<string, SettingsSection>> = {
+  'external-media': 'external',
+  'backups': 'data',
+  'backups-data': 'data',
+};
+
 type AiProviderStatusTone = 'neutral' | 'ok' | 'error';
 
 interface AiProviderStatus {
@@ -350,8 +357,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   constructor() {
     effect(() => {
-      const requested = this.queryParamMap().get('section') as SettingsSection | null;
-      if (this.isManageLibraryPage || !requested || !LINKABLE_SECTIONS.includes(requested)) return;
+      const raw = this.queryParamMap().get('section');
+      const requested = (raw && SECTION_ALIASES[raw]) || (raw as SettingsSection | null);
+      if (this.isManageLibraryPage || !requested) return;
+      if (requested === 'data') {
+        untracked(() => void this.router?.navigate(['/settings/library'], { replaceUrl: true }));
+        return;
+      }
+      if (!LINKABLE_SECTIONS.includes(requested)) return;
       // A link to a section this deployment does not have leaves the default open.
       if (requested === 'connections' && !this.canConfigureAiProvider()) return;
       if (requested === 'external' && !this.supportsExternalMediaLibraries()) return;

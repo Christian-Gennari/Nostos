@@ -43,7 +43,7 @@ These API routes do not establish that Cloud exposes the operation to customers.
 
 The browser stores job/session identifiers and file identity in origin-local storage; it does not store the archive bytes. While the page stays open, a paused upload can continue with **Resume upload**. After a reload, return to the same Nostos origin with its browser storage intact and, when prompted, select the same archive again. The client checks the file size and whole-file SHA-256, then asks the host which chunks are missing. A different file cannot continue that upload.
 
-The server transfer session expires after 24 hours. The public client and SelfHosted browser suite cover refresh and same-file reselection; recovery after clearing site data or switching browser profiles is not established for every host. Only one import can hold the active-tab lease across tabs for the same browser origin. The shared client also has an optional active-import discovery request, but that route is not mapped by the public SelfHosted migration endpoint group.
+The server transfer session expires after 24 hours. The public client and SelfHosted browser suite cover refresh and same-file reselection; recovery after clearing site data or switching browser profiles is not established for every host. Only one import can hold the active-tab lease across tabs for the same browser origin. The SelfHosted migration endpoint group answers `GET /active-import` (204 when no import runs), so a browser that lost its local record, or a tab blocked by the lease of another tab, shows the import the server is running.
 
 ### Size limits and account plans
 

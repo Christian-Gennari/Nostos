@@ -248,9 +248,76 @@ public sealed class HighlightImportEndpointTests : IDisposable
 
         (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        (await db.Books.CountAsync()).Should().Be(1);
+        // The book only this import added goes with it, and so does its remembered link.
+        (await db.Books.CountAsync()).Should().Be(0);
         (await db.Notes.CountAsync()).Should().Be(0);
-        (await db.NoteImportBookLinks.SingleAsync()).BookId.Should().Be(book.Id);
+        (await db.NoteImportBookLinks.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Undo_keeps_a_created_book_that_has_other_notes_since()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+
+        var result = await CommitAsync(client, CreateKoboDatabase(),
+            new HighlightImportDecision("vol-3", Create: true));
+
+        await using (var db = CreateContext(factory.DatabasePath))
+        {
+            var book = await db.Books.AsNoTracking().SingleAsync();
+            var own = await client.PostAsJsonAsync($"/api/books/{book.Id}/notes", new CreateNoteDto("My own thought"));
+            own.EnsureSuccessStatusCode();
+        }
+
+        (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}"))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var verify = CreateContext(factory.DatabasePath);
+        (await verify.Books.CountAsync()).Should().Be(1);
+        (await verify.Notes.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Undo_keeps_a_book_that_was_already_in_the_library()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
+
+        var result = await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", owned.Id));
+        (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}")).EnsureSuccessStatusCode();
+
+        await using var db = CreateContext(factory.DatabasePath);
+        (await db.Books.CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Preview_lists_each_highlight_and_commit_leaves_out_the_unticked_ones()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
+        var database = CreateKoboDatabase();
+
+        var preview = await PreviewAsync(client, database);
+        var highlights = preview.Books.Single(book => book.SourceKey == "vol-1").Highlights!;
+        highlights.Should().HaveCount(2);
+        highlights.Select(highlight => highlight.Index).Should().Equal(0, 1);
+        highlights.Should().OnlyContain(highlight => highlight.IsNew);
+
+        var result = await CommitAsync(client, database,
+            new HighlightImportDecision("vol-1", owned.Id, ExcludedHighlights: [0]));
+
+        result.Books.Single(book => book.SourceKey == "vol-1").ImportedCount.Should().Be(1);
+        await using var db = CreateContext(factory.DatabasePath);
+        (await db.Notes.CountAsync()).Should().Be(1);
+
+        // Unticking every highlight imports nothing and creates nothing.
+        var none = await CommitAsync(client, database,
+            new HighlightImportDecision("vol-3", Create: true, ExcludedHighlights: [0, 1]));
+        none.Books.Single(book => book.SourceKey == "vol-3").Status.Should().Be("skipped");
+        (await db.Books.CountAsync()).Should().Be(1);
     }
 
     [Fact]
@@ -567,7 +634,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         await using (var db = CreateContext(factory.DatabasePath))
         {
             (await db.Notes.CountAsync()).Should().Be(0);
-            (await db.Books.CountAsync()).Should().Be(3, "undo removes notes, never books the owner chose to add");
+            (await db.Books.CountAsync()).Should().Be(2, "undo takes back the one book the import added, and no book that was already there");
         }
     }
 

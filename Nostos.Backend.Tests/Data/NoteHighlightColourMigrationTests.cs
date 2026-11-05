@@ -116,6 +116,7 @@ public sealed class NoteHighlightColourMigrationTests : IDisposable
             (await db.Database.GetPendingMigrationsAsync()).Should().NotContain(migrationId);
             // The current model also reads the later passage columns.
             await LaterBookColumns.RestorePassageColumnsAsync(db);
+            await LaterBookColumns.RestoreNoteUpdatedAtAsync(db);
         }
 
         await using (var db = new NostosDbContext(options))

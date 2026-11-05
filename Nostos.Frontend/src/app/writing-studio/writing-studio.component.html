@@ -52,7 +52,7 @@
       } @else {
       <app-flat-tree
         [items]="rootItems()"
-        [activeId]="activeItem()?.id || null"
+        [activeId]="markedItemId()"
         [editingId]="editingId()"
         [renameError]="renameError()"
         [renameBusy]="renameBusy()"
@@ -86,9 +86,25 @@
 
       @if (activeItem(); as item) {
         <div class="header-doc-meta">
-          <span class="header-doc-title" [title]="editorTitle() || item.name">{{ editorTitle() || item.name }}</span>
+          @if (titleEditing()) {
+            <nostos-inline-rename
+              class="header-doc-rename"
+              [name]="editorTitle() || item.name"
+              [error]="renameError()"
+              [busy]="renameBusy()"
+              (committed)="saveRename(item.id, $event)"
+              (cancelled)="stopTitleRename()"
+            />
+          } @else {
+            <button
+              type="button"
+              class="header-doc-title header-doc-title-button"
+              [title]="(editorTitle() || item.name) + ' (click to rename)'"
+              (click)="startTitleRename()"
+            >{{ editorTitle() || item.name }}</button>
+          }
           <span class="header-save-status" [class.is-saving]="saveStatus() === 'Saving…'">
-            {{ saveStatus() }}
+            {{ saveStatus() }}@if (saveStatus() === 'Saved' && (item.updatedAt | nostosDate: 'time'); as savedAt) { · {{ savedAt }}}
           </span>
         </div>
       } @else {
@@ -164,6 +180,13 @@
                 [hint]="exportBlockedReason()"
                 (triggered)="openExport()"
               >Export…</button>
+              <button
+                nostosMenuItem
+                icon="folder"
+                data-testid="studio-move"
+                [disabled]="!activeItem()"
+                (triggered)="openMove()"
+              >Move to…</button>
             </nostos-menu>
           </ng-template>
 
@@ -726,6 +749,19 @@
   >
   </app-confirm-modal>
 
+  <!-- Saved from another tab or device since this copy was loaded (issue #1363). -->
+  <app-confirm-modal
+    [isOpen]="!!saveConflict()"
+    heading="This writing changed somewhere else"
+    description="A newer version was saved from another tab or device. Your text stays on the page until you choose."
+    confirmLabel="Keep mine (overwrite)"
+    cancelLabel="Load the newer version"
+    tone="neutral"
+    (confirm)="keepMineAfterConflict()"
+    (cancel)="loadNewerAfterConflict()"
+  >
+  </app-confirm-modal>
+
   @if (pageSettingsOpen()) {
     <app-studio-page-settings
       [anchor]="pageSettingsButton?.nativeElement ?? null"
@@ -743,6 +779,41 @@
       [documentId]="item.id"
       [currentMarkdown]="editorText()"
       (closed)="exportOpen.set(false)" />
+  }
+
+  @if (moveOpen() && activeItem()) {
+    <app-modal-shell
+      closeLabel="Close"
+      [isOpen]="true"
+      variant="dialog"
+      [maxWidth]="'420px'"
+      ariaLabelledBy="move-sheet-title"
+      (closed)="closeMove()"
+    >
+      <header class="move-sheet-header" shellHeader>
+        <h2 id="move-sheet-title">Move to…</h2>
+      </header>
+      <ul class="move-list" data-testid="studio-move-list">
+        <li>
+          <button appChoiceRow type="button" data-testid="studio-move-top"
+            [selected]="moveCurrentParent() === null" [disabled]="moveBusy()"
+            (click)="moveTo(null)">
+            <nostos-icon name="folder-open" [size]="16"></nostos-icon>
+            <span class="nostos-choice-row__title">Top level</span>
+          </button>
+        </li>
+        @for (folder of moveFolders(); track folder.id) {
+          <li [style.padding-left.rem]="folder.level * 1.25">
+            <button appChoiceRow type="button" data-testid="studio-move-folder"
+              [selected]="moveCurrentParent() === folder.id" [disabled]="moveBusy()"
+              (click)="moveTo(folder.id)">
+              <nostos-icon name="folder" [size]="16"></nostos-icon>
+              <span class="nostos-choice-row__title">{{ folder.name }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </app-modal-shell>
   }
 
   @if (shortcutsOpen()) {

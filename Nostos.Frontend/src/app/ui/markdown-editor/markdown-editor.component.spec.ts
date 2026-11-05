@@ -91,6 +91,21 @@ describe('MarkdownEditorComponent', () => {
     });
   });
 
+  describe('typography', () => {
+    it('keeps "--" as typed instead of turning it into an em dash', async () => {
+      await create('');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      const view = editor.view;
+      for (const ch of 'a--b') {
+        const { from, to } = view.state.selection;
+        const handled = view.someProp('handleTextInput', (f) => f(view, from, to, ch, () => view.state.tr.insertText(ch, from, to)));
+        if (!handled) view.dispatch(view.state.tr.insertText(ch, from, to));
+      }
+
+      expect(editor.getText()).toBe('a--b');
+    });
+  });
+
   describe('writing your own footnotes (issue #1342)', () => {
     type TipTap = import('@tiptap/core').Editor;
     const editorOf = () => (component as any).editor as TipTap;
@@ -375,6 +390,26 @@ describe('MarkdownEditorComponent', () => {
       expect(component.replaceSourceQuery('*See: Author, Book*', 'inline')).toBe(true);
       typeText(' is right.');
       expect(component.currentMarkdown()).toBe('As _See: Author, Book_ is right.');
+    });
+
+    it('keeps the typed query until a held choice lands, and loses nothing if it never does (issue #1378)', async () => {
+      await create('Intro.');
+      (component as any).editor.commands.focus('end');
+      typeText(' @nine cases');
+      expect(component.holdSourceQuery()).toBe(true);
+      expect(component.currentMarkdown()).toContain('@nine cases');
+      component.releaseHeldQuery();
+      expect(component.currentMarkdown()).not.toContain('@nine cases');
+    });
+
+    it('leaves held words alone when the page moved under them (issue #1378)', async () => {
+      await create('Intro.');
+      (component as any).editor.commands.focus('end');
+      typeText(' @again');
+      expect(component.holdSourceQuery()).toBe(true);
+      (component as any).editor.commands.insertContentAt(1, 'Before ');
+      component.releaseHeldQuery();
+      expect(component.currentMarkdown()).toContain('@again');
     });
 
     it('opens with the shortcut and takes its @ (and its space) back when closed empty', async () => {

@@ -53,6 +53,8 @@ export interface NoteItemEdit {
   passageTitle?: string;
   /** The note's pill topics; with them, `content` is the words only (issue #1446). */
   topics?: string[];
+  /** The version of the note this edit started from (issue #1404). */
+  baseUpdatedAt?: string;
 }
 
 /** Above this many characters a quote is cut to a few lines, with "Show all". */
@@ -328,7 +330,7 @@ export class NoteItemComponent {
   saveEdit(): void {
     const note = this.note();
     const draft = draftToSave({ words: this.editWords(), topics: [...this.editTopics()] });
-    const edit: NoteItemEdit = { id: note.id, content: draft.words, topics: draft.topics };
+    const edit: NoteItemEdit = { id: note.id, content: draft.words, topics: draft.topics, baseUpdatedAt: note.updatedAt };
     let changed = draftChanged(draft, draftForNote(note.content, this.topicNames()));
 
     if (this.isPassage()) {

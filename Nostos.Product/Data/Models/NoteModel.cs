@@ -22,6 +22,11 @@ public class NoteModel
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    // When the note was last written (issue #1404): the version a client echoes
+    // back so a save from an older copy can be refused. Null on a note saved
+    // before the column existed; its version is then CreatedAt (NoteDto.UpdatedAt).
+    public DateTime? UpdatedAt { get; set; }
+
     public Guid BookId { get; set; }
     public BookModel? Book { get; set; }
 

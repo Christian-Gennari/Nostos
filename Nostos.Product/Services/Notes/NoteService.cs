@@ -564,6 +564,18 @@ public sealed class NoteService : INoteService
         if (existing is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
+        // Optimistic concurrency (issue #1404): a save made from a copy older
+        // than the stored note is refused, not written over it. Compared to the
+        // millisecond: PostgreSQL keeps microseconds, SQLite 100 ns, and the
+        // client echoes back what it was given.
+        if (dto.BaseUpdatedAt is { } baseUpdatedAt
+            && !SameInstantToMillisecond(baseUpdatedAt, existing.UpdatedAt ?? existing.CreatedAt))
+        {
+            var current = await SavedNoteAsync(noteId);
+            return new NoteCommandResult<NoteDto>(
+                false, NoteErrorCodes.EditConflict, "The note changed since this copy was loaded.", current);
+        }
+
         if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
             return InvalidHighlightColour();
 
@@ -619,6 +631,10 @@ public sealed class NoteService : INoteService
         NoteCommandResult<NoteDto>.Fail(
             NoteErrorCodes.InvalidTopicLink,
             $"A note takes at most {MaxTopicsPerNote} topics. {TopicReferences.InvalidNameMessage}");
+
+    private static bool SameInstantToMillisecond(DateTime a, DateTime b) =>
+        a.ToUniversalTime().Ticks / TimeSpan.TicksPerMillisecond
+        == b.ToUniversalTime().Ticks / TimeSpan.TicksPerMillisecond;
 
     private const int PassageTitleMaxLength = 300;
     private const int PassageAnchorMaxLength = 1024;
@@ -1056,7 +1072,8 @@ public sealed class NoteService : INoteService
         n.HighlightColour,
         FormatOf(n.Book),
         n.Book is not null && editions is not null && editions.TryGetValue(n.Book.WorkId, out var count) ? count : 1,
-        n.Book?.WorkId);
+        n.Book?.WorkId,
+        n.UpdatedAt ?? n.CreatedAt);
 
     /// <summary>The format glyph's name for an edition: audiobook, pdf, ebook or physical.</summary>
     private static string? FormatOf(BookModel? book) => book switch

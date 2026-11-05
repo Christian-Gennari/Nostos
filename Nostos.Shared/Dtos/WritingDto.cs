@@ -23,9 +23,15 @@ public record CreateWritingDto(
     Guid? ParentId
 );
 
+/// <summary>
+/// BaseUpdatedAt (APPENDED, issue #1363): the UpdatedAt the client last loaded.
+/// When sent and the writing has changed since, the save is refused with 409
+/// and the current content. Null = no check (older clients).
+/// </summary>
 public record UpdateWritingDto(
     string Name,
-    string? Content
+    string? Content,
+    DateTime? BaseUpdatedAt = null
 );
 
 public record MoveWritingDto(

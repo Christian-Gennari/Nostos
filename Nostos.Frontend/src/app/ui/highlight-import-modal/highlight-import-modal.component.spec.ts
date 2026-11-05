@@ -482,6 +482,117 @@ describe('HighlightImportModal', () => {
     expect(service.isOpen()).toBe(true);
   });
 
+  describe('highlights in the review', () => {
+    const withHighlights = (overrides: Partial<HighlightImportPreviewBook> = {}) =>
+      previewBook({
+        annotationCount: 3,
+        newCount: 2,
+        highlights: [
+          { index: 0, text: 'First passage', note: 'my note', isNew: true },
+          { index: 1, text: 'Second passage', note: null, isNew: true },
+          { index: 2, text: 'Third passage', note: null, isNew: false },
+        ],
+        ...overrides,
+      });
+
+    it('lists the highlights of a book on demand, with a checkbox each', async () => {
+      await review(withHighlights());
+      expect(fixture.nativeElement.querySelector('[data-testid="highlight-quotes"]')).toBeNull();
+
+      (fixture.nativeElement.querySelector('[data-testid="highlight-review-toggle"]') as HTMLElement).click();
+      fixture.detectChanges();
+
+      const checks = fixture.nativeElement.querySelectorAll('[data-testid="highlight-quote-check"]');
+      expect(checks).toHaveLength(3);
+      expect(text()).toContain('First passage');
+      expect(text()).toContain('my note');
+      expect(text()).toContain('Already in Nostos');
+    });
+
+    it('counts and sends only the highlights left ticked', async () => {
+      await review(withHighlights());
+      const commit = vi
+        .spyOn(service, 'commit')
+        .mockReturnValue(of({ batchId: 'batch-1', source: 'kobo', books: [resultBook({})] }));
+      const row = component.ready()[0];
+      expect(component.rowCount(row)).toBe(2);
+
+      component.setHighlight(row, 1, false);
+      fixture.detectChanges();
+      expect(component.rowCount(component.ready()[0])).toBe(1);
+      expect(text()).toContain('2 of 3 highlights');
+
+      await component.importReviewed();
+      expect(commit.mock.calls[0][1]).toEqual([{ sourceKey: 'vol-1', bookId: 'b1', excludedHighlights: [1] }]);
+    });
+
+    it('treats a book with every highlight unticked as left out', async () => {
+      await review(withHighlights());
+      const commit = vi.spyOn(service, 'commit');
+      const row = component.ready()[0];
+      for (const index of [0, 1, 2]) component.setHighlight(row, index, false);
+      fixture.detectChanges();
+
+      expect(component.included()).toEqual([]);
+      expect(text()).toContain('Nothing selected');
+      await component.importReviewed();
+      expect(commit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('undo confirmation', () => {
+    it('asks first and removes nothing until confirmed', async () => {
+      await review(previewBook({}));
+      vi.spyOn(service, 'commit').mockReturnValue(
+        of({ batchId: 'batch-1', source: 'kobo', books: [resultBook({})] }),
+      );
+      const undo = vi.spyOn(service, 'undo').mockReturnValue(of({ removed: 3 }));
+      await component.importReviewed();
+      fixture.detectChanges();
+
+      (fixture.nativeElement.querySelector('[data-testid="highlight-import-undo"]') as HTMLElement).click();
+      fixture.detectChanges();
+      expect(undo).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain('Undo this import?');
+      expect(document.body.textContent).toContain('A book this import added to your library is removed too');
+
+      component.cancelUndo();
+      expect(undo).not.toHaveBeenCalled();
+
+      component.askUndoImport();
+      await component.confirmUndo();
+      expect(undo).toHaveBeenCalledWith('batch-1');
+      expect(component.pendingUndo()).toBeNull();
+    });
+
+    it('asks before undoing a recent import too', async () => {
+      const batch = { id: 'old', source: 'kobo' as const, fileName: null, createdAtUtc: '2026-11-01T00:00:00Z', noteCount: 4, bookCount: 1 };
+      const undo = vi.spyOn(service, 'undo').mockReturnValue(of({ removed: 4 }));
+      component.askUndoRecent(batch);
+      expect(undo).not.toHaveBeenCalled();
+      expect(component.undoDescription()).toContain('4 highlights will be removed');
+      await component.confirmUndo();
+      expect(undo).toHaveBeenCalledWith('old');
+    });
+  });
+
+  it('says that books left out are not kept and can be imported later', async () => {
+    await review(previewBook({}));
+    vi.spyOn(service, 'commit').mockReturnValue(
+      of({
+        batchId: 'batch-1',
+        source: 'kobo',
+        books: [resultBook({}), resultBook({ sourceKey: 'vol-3', status: 'skipped', bookId: null, importedCount: 0 })],
+      }),
+    );
+    await component.importReviewed();
+    fixture.detectChanges();
+
+    const note = fixture.nativeElement.querySelector('[data-testid="highlight-left-out-note"]') as HTMLElement;
+    expect(note.textContent).toContain('does not keep these');
+    expect(note.textContent).toContain('Import the same file again');
+  });
+
   it('posts the file to preview, and the file with its decisions to commit', () => {
     const http = TestBed.inject(HttpTestingController);
 

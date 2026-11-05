@@ -103,6 +103,9 @@ describe('citation styles (issue #1109): Markdown it produces', () => {
   it('cites a note after its text and a reference in the sentence', () => {
     expect(styledNote('My thought.', '(Schopenhauer, 1851)', apa, 1)?.markdown).toBe('My thought. (Schopenhauer, 1851)');
     expect(styledNote('My thought.', 'Note.', chicagoNotes, 2)?.markdown).toBe('My thought.[^2]');
+    // Topic links read as plain words (issue #1378).
+    expect(styledNote('p. 12 [[Irony]] opens it.', 'Note.', chicagoNotes, 2)?.markdown).toBe('p. 12 Irony opens it.[^2]');
+    expect(styledNote('[[Irony]]', 'Note.', chicagoNotes, 2)).toBeNull();
     expect(styledReference('(Schopenhauer, 1851)', apa, 1)).toEqual({ markdown: '(Schopenhauer, 1851)', footnote: null });
     expect(styledReference('Note.', chicagoNotes, 4).markdown).toBe('[^4]');
   });

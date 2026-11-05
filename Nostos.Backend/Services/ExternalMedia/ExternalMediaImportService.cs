@@ -348,7 +348,7 @@ public sealed class ExternalMediaImportService(
             var fileName = BookTrackFormats.CanonicalFileName(
                 number, Path.GetExtension(file.RelativePath).ToLowerInvariant());
             var title = description.Title
-                ?? Path.GetFileNameWithoutExtension(ExternalMediaGrouper.FileNameOf(file.RelativePath));
+                ?? ExternalMediaNaming.TitleFromFileName(file.RelativePath);
 
             tracks.Add(new BookTrack(
                 number, fileName, MediaTypeMap.ForBookFile(fileName), description.DurationMs, bytes, crc, title));

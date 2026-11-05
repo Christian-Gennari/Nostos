@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
 import { Component, input, output, Input, signal } from '@angular/core';
@@ -55,6 +56,8 @@ class MarkdownEditorStub {
   readonly sourceSuggestion = output<unknown>();
   readonly replaceSourceQuery = vi.fn((_markdown: string, _placement: 'block' | 'inline') => true);
   readonly clearSourceQuery = vi.fn(() => true);
+  readonly holdSourceQuery = vi.fn(() => true);
+  readonly releaseHeldQuery = vi.fn();
   readonly closeSourceQuery = vi.fn();
   readonly insertBlockMarkdown = vi.fn((_markdown: string) => true);
   readonly nextFootnoteNumber = vi.fn(() => 1);
@@ -574,7 +577,33 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
     const saveStatus = headerSaveStatus();
     expect(saveStatus).toBeTruthy();
-    expect(saveStatus!.textContent?.trim()).toBe('Saved');
+    expect(saveStatus!.textContent?.trim()).toMatch(/^Saved/);
+  });
+
+  it('renames the open writing from its title in the header', () => {
+    const writings = TestBed.inject(WritingsService) as unknown as { update: ReturnType<typeof vi.fn> };
+    writings.update.mockReturnValue(of({ id: 'doc-1', name: 'Renamed', content: '', updatedAt: '' }));
+    openDocument();
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('button.header-doc-title') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('nostos-inline-rename')).toBeTruthy();
+
+    component.saveRename(component.activeItem()!.id, 'Renamed');
+    fixture.detectChanges();
+
+    expect(writings.update).toHaveBeenCalledWith(component.activeItem()!.id, { name: 'Renamed' });
+    expect(component.editorTitle()).toBe('Renamed');
+    expect(fixture.nativeElement.querySelector('nostos-inline-rename')).toBeNull();
+  });
+
+  it('says when the open writing was last saved', () => {
+    openDocument();
+    component.activeItem.update((item) => ({ ...item!, updatedAt: '2026-11-04T14:05:00' }));
+    fixture.detectChanges();
+
+    expect(headerSaveStatus()!.textContent?.replace(/\s+/g, ' ').trim()).toMatch(/^Saved · \d{1,2}[:.]05/);
   });
 
   it('uses the singular word form in desk telemetry for a single word', () => {
@@ -1188,6 +1217,20 @@ describe('WritingStudio delete (no window.confirm)', () => {
       // Only once, however fast the next words come.
       component.onEditorChange('# Morning pages\n\nThe first words. More.');
       expect(writings.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates the new page in the folder chosen in the list', () => {
+      writings.create.mockReturnValue(
+        of({ id: 'new-2', name: 'Untitled document', type: 'Document', parentId: 'f1', updatedAt: '' }),
+      );
+      component.rootItems.set([{ id: 'f1', name: 'Essays', type: 'Folder', parentId: null } as never]);
+
+      component.handleItemSelected({ id: 'f1', name: 'Essays', type: 'Folder' });
+      expect(component.markedItemId()).toBe('f1');
+      component.createItem('Document');
+      component.onEditorChange('Words');
+
+      expect(writings.create).toHaveBeenCalledWith({ name: 'Untitled document', type: 'Document', parentId: 'f1' });
     });
 
     it('renames a new folder in place and opens nothing', () => {
@@ -2237,7 +2280,10 @@ describe('WritingStudio kept sources (#491)', () => {
 
       component.insertFromPalette({ source: passage, mode: 'quote' });
 
-      expect(editor.clearSourceQuery).toHaveBeenCalled();
+      // The typed words stay until a quote lands (issue #1378).
+      expect(editor.holdSourceQuery).toHaveBeenCalled();
+      expect(editor.clearSourceQuery).not.toHaveBeenCalled();
+      expect(editor.releaseHeldQuery).not.toHaveBeenCalled();
       expect(editor.replaceSourceQuery).not.toHaveBeenCalled();
       expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
 
@@ -2257,6 +2303,7 @@ describe('WritingStudio kept sources (#491)', () => {
       );
       // Kept only once something was quoted from it.
       expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
+      expect(editor.releaseHeldQuery).toHaveBeenCalled();
       // The viewer confirms on its own button; no toast lands on the page.
       expect(quoted).toBe(true);
       expect(success).not.toHaveBeenCalled();
@@ -2425,6 +2472,68 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(navigate).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the conflict question when a save is refused because the writing changed elsewhere, and keeps the typed text', async () => {
+    const navigate = vi.fn(() => Promise.resolve(true));
+    (component as any).router = { navigate };
+    const newer: WritingContentDto = { ...sampleDoc1, content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' };
+    component.activeItem.set(sampleDoc1);
+    component.editorTitle.set(sampleDoc1.name);
+    component.editorText.set('Typed in this tab');
+    fixture.detectChanges();
+    writingsService.update.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 409, error: newer })),
+    );
+
+    await component.openSource(sourceBeta as any);
+
+    expect(writingsService.update).toHaveBeenCalledWith('doc-1', {
+      name: sampleDoc1.name,
+      content: 'Typed in this tab',
+      baseUpdatedAt: sampleDoc1.updatedAt,
+    });
+    expect(component.saveConflict()?.theirs).toEqual(newer);
+    expect(component.editorText()).toBe('Typed in this tab');
+    expect(navigate).not.toHaveBeenCalled();
+    fixture.detectChanges();
+    expect(document.body.textContent).toContain('This writing changed somewhere else');
+  });
+
+  it('"Keep mine" saves the typed text without the version check', async () => {
+    const newer: WritingContentDto = { ...sampleDoc1, content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' };
+    component.activeItem.set(sampleDoc1);
+    component.editorTitle.set(sampleDoc1.name);
+    component.editorText.set('Typed in this tab');
+    component.saveConflict.set({ theirs: newer, title: sampleDoc1.name, content: 'Typed in this tab' });
+    writingsService.update.mockClear();
+    writingsService.update.mockReturnValueOnce(of({ ...newer, content: 'Typed in this tab' }));
+
+    component.keepMineAfterConflict();
+    await settleSaveQueue();
+
+    expect(writingsService.update).toHaveBeenCalledWith('doc-1', {
+      name: sampleDoc1.name,
+      content: 'Typed in this tab',
+    });
+    expect(component.saveConflict()).toBeNull();
+    expect(component.activeItem()?.content).toBe('Typed in this tab');
+  });
+
+  it('"Load the newer version" shows the newer text and puts the typed text on the clipboard', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const newer: WritingContentDto = { ...sampleDoc1, content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' };
+    component.activeItem.set(sampleDoc1);
+    component.editorText.set('Typed in this tab');
+    component.saveConflict.set({ theirs: newer, title: sampleDoc1.name, content: 'Typed in this tab' });
+
+    component.loadNewerAfterConflict();
+
+    expect(writeText).toHaveBeenCalledWith('Typed in this tab');
+    expect(component.editorText()).toBe('From the other tab');
+    expect(component.activeItem()).toEqual(newer);
+    expect(component.saveConflict()).toBeNull();
+  });
+
   it('flushes pending prose before source navigation and keeps the draft on save failure', async () => {
     const navigate = vi.fn(() => Promise.resolve(true));
     (component as any).router = { navigate };
@@ -2442,6 +2551,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(writingsService.update).toHaveBeenCalledWith('doc-1', {
       name: sampleDoc1.name,
       content: 'Newest unsaved paragraph',
+      baseUpdatedAt: sampleDoc1.updatedAt,
     });
     expect(navigate).not.toHaveBeenCalled();
     expect(component.editorText()).toBe('Newest unsaved paragraph');
@@ -2500,6 +2610,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(writingsService.update).toHaveBeenLastCalledWith('doc-1', {
       name: sampleDoc1.name,
       content: 'Typed while save was running',
+      baseUpdatedAt: sampleDoc1.updatedAt,
     });
     expect(navigate).not.toHaveBeenCalled();
 
@@ -2542,6 +2653,7 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(writingsService.update).toHaveBeenLastCalledWith('doc-1', {
         name: sampleDoc1.name,
         content: 'Latest text before source',
+        baseUpdatedAt: sampleDoc1.updatedAt,
       });
 
       latestSave.next({ ...sampleDoc1, content: 'Latest text before source' });
@@ -2921,6 +3033,58 @@ describe('WritingStudio export menu (issue #1164)', () => {
   it('keeps it open for an empty writing in a folder, which may still be exported whole', () => {
     open('doc', '', 'folder');
     expect(component.exportBlockedReason()).toBeNull();
+  });
+
+  describe('Move to… (issue #1443)', () => {
+    function moveService(): { move: ReturnType<typeof vi.fn> } {
+      return TestBed.inject(WritingsService) as unknown as { move: ReturnType<typeof vi.fn> };
+    }
+
+    function openMoveDialog(): void {
+      (fixture.nativeElement.querySelector('[data-testid="studio-more"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (document.querySelector('[data-testid="studio-move"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    it('lists Top level and the folders, and moves the writing into a folder', () => {
+      open('doc', 'Words.');
+      openMoveDialog();
+      expect(document.querySelector('[data-testid="studio-move-top"]')).toBeTruthy();
+      const folders = document.querySelectorAll('[data-testid="studio-move-folder"]');
+      expect(folders.length).toBe(1);
+      expect(folders[0].textContent).toContain('Folder');
+
+      (folders[0] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(moveService().move).toHaveBeenCalledWith('doc', 'folder');
+      expect(component.moveOpen()).toBe(false);
+    });
+
+    it('moves a writing out of a folder to the top level', () => {
+      open('doc', 'Words.', 'folder');
+      openMoveDialog();
+      (document.querySelector('[data-testid="studio-move-top"]') as HTMLButtonElement).click();
+      expect(moveService().move).toHaveBeenCalledWith('doc', null);
+    });
+
+    it('closes without a request when the writing is already there', () => {
+      moveService().move.mockClear();
+      open('doc', 'Words.', 'folder');
+      openMoveDialog();
+      (document.querySelector('[data-testid="studio-move-folder"]') as HTMLButtonElement).click();
+      expect(moveService().move).not.toHaveBeenCalled();
+      expect(component.moveOpen()).toBe(false);
+    });
+
+    it('keeps the dialog open and says so when the move fails', () => {
+      open('doc', 'Words.');
+      moveService().move.mockReturnValueOnce(throwError(() => new Error('no')));
+      component.openMove();
+      component.moveTo('folder');
+      expect(component.moveOpen()).toBe(true);
+      expect(component.moveBusy()).toBe(false);
+    });
   });
 
   it('has nothing to export on a blank page', () => {

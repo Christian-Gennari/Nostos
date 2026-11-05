@@ -306,7 +306,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
           link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
         }),
         Placeholder.configure({ placeholder: 'Start writing…' }),
-        Typography,
+        // `--` stays two hyphens: the rule cannot tell prose from a table
+        // separator row or code, and an em dash there breaks the Markdown.
+        Typography.configure({ emDash: false }),
         // Writings saved under TinyMCE can hold pasted images as data URIs.
         Image.configure({ allowBase64: true }),
         TableKit.configure({ table: { resizable: false } }),
@@ -501,6 +503,34 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.suggestionRange = null;
     return true;
   }
+
+  /**
+   * Close the open `@` query but remember what it was, for a choice that is
+   * finished somewhere else (a passage read in the viewer). The typed words
+   * stay on the page until the choice lands, so closing the viewer without
+   * quoting loses nothing.
+   */
+  holdSourceQuery(): boolean {
+    const editor = this.editor;
+    const range = this.suggestionRange;
+    if (!editor || editor.isDestroyed || !range) return false;
+    this.heldQuery = { from: range.from, to: range.to, text: editor.state.doc.textBetween(range.from, range.to, ' ', ' ') };
+    exitSuggestion(editor.view, SOURCE_SUGGESTION_KEY);
+    return true;
+  }
+
+  /** Remove the held `@` query, if the page still holds exactly those words there. */
+  releaseHeldQuery(): void {
+    const editor = this.editor;
+    const held = this.heldQuery;
+    this.heldQuery = null;
+    if (!editor || editor.isDestroyed || !held) return;
+    const size = editor.state.doc.content.size;
+    if (held.to > size || editor.state.doc.textBetween(held.from, held.to, ' ', ' ') !== held.text) return;
+    editor.chain().deleteRange({ from: held.from, to: held.to }).run();
+  }
+
+  private heldQuery: { from: number; to: number; text: string } | null = null;
 
   /** Insert Markdown as blocks after the caret's paragraph, never inside it. */
   insertBlockMarkdown(markdown: string, footnote: InsertedFootnote | null = null): boolean {
