@@ -446,4 +446,52 @@ describe('BookDetail across editions', () => {
       expect(link).toContain('a rating or review that differs stays with its edition');
     });
   });
+
+  describe('grouping offered after an edit', () => {
+    const suggestionsUrl = '/api/books/b1/work/suggestions';
+    const candidate = { id: 'z9', title: 'Pride and Prejudice', author: 'Jane Austen', workId: 'w9', editionCount: 1 };
+
+    it('offers to link, and links nothing until it is confirmed', async () => {
+      await setup(epub);
+
+      component.onBookUpdated({ ...epub, title: 'Pride and Prejudice', author: 'Jane Austen' });
+      httpMock.expectOne(suggestionsUrl).flush([candidate]);
+
+      expect(component.pendingWorkAction()).toEqual({
+        kind: 'link',
+        bookId: 'z9',
+        label: 'Pride and Prejudice',
+        merge: true, // the fixture book already has editions of its own
+        suggested: true,
+      });
+      expect(component.workActionHeading()).toBe('Group with “Pride and Prejudice”?');
+      expect(component.workActionDescription()).toContain('This looks like the same book.');
+      httpMock.expectNone('/api/books/b1/work/link');
+
+      component.confirmWorkAction();
+      const link = httpMock.expectOne('/api/books/b1/work/link');
+      expect(link.request.body).toEqual({ targetBookId: 'z9' });
+      link.flush({ workId: 'w9', editionCount: 2 });
+      httpMock.expectOne('/api/books/b1').flush(epub);
+      httpMock.match((request) => request.url.startsWith('/api/notes')).forEach((request) => request.flush(notesPage([])));
+    });
+
+    it('stays quiet when the title and author did not change', async () => {
+      await setup(epub);
+
+      component.onBookUpdated({ ...epub, description: 'A new blurb' });
+
+      httpMock.expectNone(suggestionsUrl);
+      expect(component.pendingWorkAction()).toBeNull();
+    });
+
+    it('stays quiet when nothing looks like this book', async () => {
+      await setup(epub);
+
+      component.onBookUpdated({ ...epub, title: 'Something else' });
+      httpMock.expectOne(suggestionsUrl).flush([]);
+
+      expect(component.pendingWorkAction()).toBeNull();
+    });
+  });
 });

@@ -45,6 +45,8 @@ interface PendingWorkAction {
   label: string;
   /** True when the action joins two multi-edition groups, not just two books. */
   merge: boolean;
+  /** True when the app offered this link after an edit; the person did not pick it. */
+  suggested?: boolean;
 }
 
 // UI Components
@@ -832,7 +834,7 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   /** A link always merges whole groups, so confirm what will actually happen. */
-  askLink(candidate: LinkableBookDto): void {
+  askLink(candidate: LinkableBookDto, suggested = false): void {
     const current = this.store.book();
     if (!current) return;
 
@@ -843,6 +845,7 @@ export class BookDetail implements OnInit, OnDestroy {
       bookId: candidate.id,
       label: candidate.title,
       merge,
+      suggested,
     });
   }
 
@@ -869,6 +872,7 @@ export class BookDetail implements OnInit, OnDestroy {
   workActionHeading = computed(() => {
     const action = this.pendingWorkAction();
     if (!action) return '';
+    if (action.suggested) return `Group with “${action.label}”?`;
     return action.kind === 'link'
       ? `Link “${action.label}” to this edition set?`
       : `Unlink “${action.label}”?`;
@@ -883,12 +887,14 @@ export class BookDetail implements OnInit, OnDestroy {
         "and gets a copy of this book's rating, favourite and review, unless it has a rating or review of its own."
       );
     }
+    const lead = action.suggested ? 'This looks like the same book. ' : '';
     const combined =
       "Their rating, favourite and review are combined into the book's; a rating or review that differs stays with its edition.";
     return action.merge
-      ? 'Both edition sets and everything already grouped with them become one book. ' +
+      ? lead +
+          'Both edition sets and everything already grouped with them become one book. ' +
           `Every edition keeps its file, progress, notes and collections. ${combined}`
-      : `Both books become editions of one book. Each keeps its file, progress, notes and collections. ${combined}`;
+      : `${lead}Both books become editions of one book. Each keeps its file, progress, notes and collections. ${combined}`;
   });
 
   // --- File Actions ---
@@ -1040,7 +1046,14 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   onBookUpdated(updatedBook: Book): void {
+    const before = this.store.book();
     this.store.book.set(updatedBook);
+
+    // Renaming never regroups by itself. When the new title and author now
+    // look like another book's, offer the link and let the person confirm.
+    if (before && (before.title !== updatedBook.title || before.author !== updatedBook.author)) {
+      this.store.loadWorkSuggestion(updatedBook.id, (candidate) => this.askLink(candidate, true));
+    }
   }
 
   /**

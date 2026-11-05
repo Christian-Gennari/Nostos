@@ -251,5 +251,18 @@ public sealed record UpdateBookCollectionsDto(IReadOnlyList<Guid> CollectionIds)
 /// </summary>
 public sealed record LinkWorkDto(Guid TargetBookId);
 
+/// <summary>
+/// A book in another work that looks like the same book (same title, author
+/// spelled alike). Only ever an offer: the client asks before linking.
+/// </summary>
+public sealed record EditionSuggestionDto(
+    Guid Id,
+    string Title,
+    string? Author,
+    Guid WorkId,
+    int EditionCount,
+    string Type,
+    string? FileName);
+
 /// <summary>What an uploaded EPUB or PDF says about itself; every field may be null.</summary>
 public sealed record BookFileMetadataDto(string? Title, string? Author, string? Language, int? PageCount);

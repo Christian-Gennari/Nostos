@@ -10,6 +10,7 @@ import {
   PaginatedResponse,
   LibraryStatusCountsDto,
   WorkMembershipDto,
+  LinkableBookDto,
 } from '../dtos/book.dtos';
 import { BookFilter, BookSort } from '../dtos/book.enums';
 
@@ -131,6 +132,14 @@ export class BooksService {
    */
   linkWork(id: string, targetBookId: string): Observable<WorkMembershipDto> {
     return this.http.post<WorkMembershipDto>(`/api/books/${id}/work/link`, { targetBookId });
+  }
+
+  /**
+   * Books in other works that look like the same book (same title, author
+   * spelled alike), one per work. An offer only: nothing is linked by asking.
+   */
+  workSuggestions(id: string): Observable<LinkableBookDto[]> {
+    return this.http.get<LinkableBookDto[]>(`/api/books/${id}/work/suggestions`);
   }
 
   /** Split this book out into its own new work. */

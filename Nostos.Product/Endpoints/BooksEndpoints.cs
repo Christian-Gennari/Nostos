@@ -209,6 +209,14 @@ public static class BooksEndpoints
             }
         );
 
+        // SUGGESTIONS: other works that look like the same book. Read only; the
+        // client asks the person before it calls /work/link.
+        group.MapGet(
+            "/{id}/work/suggestions",
+            async (Guid id, ILibraryService library, CancellationToken ct) =>
+                Results.Ok(await library.FindEditionSuggestionsAsync(id, ct))
+        );
+
         // UNLINK this book into its own new work (manual split). The book
         // always ends up with a valid work; there is no "no work" state to
         // fall into.

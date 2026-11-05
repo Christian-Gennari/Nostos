@@ -402,6 +402,51 @@ internal sealed class LibraryReadService(
         return Result(LibraryReplyFormatter.Book(book.Title), dto, version);
     }
 
+    public async Task<IReadOnlyList<EditionSuggestionDto>> FindEditionSuggestionsAsync(
+        Guid bookId,
+        CancellationToken ct = default)
+    {
+        await using var db = await _contexts.CreateDbContextAsync(ct);
+
+        var book = await db.Books.AsNoTracking()
+            .Where(b => b.Id == bookId)
+            .Select(b => new { b.Title, b.Author, b.WorkId })
+            .SingleOrDefaultAsync(ct);
+        if (book is null || string.IsNullOrWhiteSpace(book.Author))
+            return [];
+
+        // Personal-library scale: compare in memory, as create-or-match does.
+        var all = await CountableBooks(db)
+            .Select(b => new
+            {
+                b.Id,
+                b.Title,
+                b.Author,
+                b.WorkId,
+                IsAudio = b is AudioBookModel,
+                IsEbook = b is EBookModel,
+                b.FileDetails.FileName,
+            })
+            .ToListAsync(ct);
+
+        var sizes = all.GroupBy(b => b.WorkId).ToDictionary(g => g.Key, g => g.Count());
+        return all
+            .Where(b => b.WorkId != book.WorkId
+                && EditionMatcher.IsSuggestion(book.Title, book.Author, b.Title, b.Author))
+            .GroupBy(b => b.WorkId)
+            .Select(g => g.First())
+            .Take(5)
+            .Select(b => new EditionSuggestionDto(
+                b.Id,
+                b.Title,
+                b.Author,
+                b.WorkId,
+                sizes[b.WorkId],
+                b.IsAudio ? "audiobook" : b.IsEbook ? "ebook" : "physical",
+                b.FileName))
+            .ToList();
+    }
+
     public async Task<LibraryResolveResult> ResolveBookAsync(LibraryResolveBookRequest request, CancellationToken ct = default)
     {
         var nIsbn = BookIdentityNormalizer.NormalizeIsbn(request.Isbn);

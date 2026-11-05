@@ -33,6 +33,97 @@ public sealed class LibraryWorkMembershipTests : IClassFixture<SqliteTestFixture
     public LibraryWorkMembershipTests(SqliteTestFixture fixture) => _fixture = fixture;
 
     // ------------------------------------------------------------------
+    // Grouping after a rename, and near-identical titles (issue #1366)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Suggestions_after_a_rename_offer_the_matching_edition_without_linking()
+    {
+        var h = Harness();
+        var epub = await CreateBookAsync(h, "ebook", "Pride and Prejudice", "Jane Austen");
+        var imported = await CreateBookAsync(h, "ebook", "pg1342", "Unknown");
+
+        (await h.Service.FindEditionSuggestionsAsync(imported)).Should().BeEmpty();
+
+        var rename = await h.Service.UpdateBookAsync(new LibraryUpdateBookRequest(
+            Client, Key(), imported, Title: "Pride and Prejudice", Author: "Jane Austen"));
+        rename.Data.Should().BeOfType<BookDto>();
+
+        var suggestions = await h.Service.FindEditionSuggestionsAsync(imported);
+        suggestions.Should().ContainSingle().Which.Id.Should().Be(epub);
+        (await WorkIdOfAsync(h, imported)).Should().NotBe(await WorkIdOfAsync(h, epub),
+            "a suggestion is an offer; nothing is linked until a person confirms");
+    }
+
+    [Fact]
+    public async Task Suggestions_cover_spelling_variants_once_per_work_and_skip_own_work()
+    {
+        var h = Harness();
+        var own = await CreateBookAsync(h, "physical", "Meditations", "Marcus Aurelius");
+        var sibling = await CreateBookAsync(h, "ebook", "Meditations", "Marcus Aurelius");
+        var emperor = await CreateBookAsync(h, "ebook", "Meditations", "Emperor of Rome Marcus Aurelius");
+        var emperorAudio = await CreateBookAsync(h, "audiobook", "Meditations", "Emperor of Rome Marcus Aurelius");
+        await CreateBookAsync(h, "ebook", "Meditations", "Someone Else");
+        await CreateBookAsync(h, "ebook", "Letters", "Marcus Aurelius");
+
+        (await WorkIdOfAsync(h, own)).Should().Be(await WorkIdOfAsync(h, sibling));
+        (await WorkIdOfAsync(h, emperor)).Should().Be(await WorkIdOfAsync(h, emperorAudio));
+
+        var suggestions = await h.Service.FindEditionSuggestionsAsync(own);
+
+        var one = suggestions.Should().ContainSingle().Subject;
+        one.WorkId.Should().Be(await WorkIdOfAsync(h, emperor));
+        one.EditionCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Create_joins_an_existing_work_on_a_title_that_differs_only_by_subtitle_and_case()
+    {
+        var h = Harness();
+        var first = await h.Service.CreateOrMatchBookAsync(new LibraryCreateBookRequest(
+            Client, Key(), "ebook", "Crime and punishment", Author: "Fyodor Dostoyevsky"), strictConfirmation: false);
+        var firstId = ((LibraryCreateOrMatchResultDto)first.Data!).BookId!.Value;
+
+        var second = await h.Service.CreateOrMatchBookAsync(new LibraryCreateBookRequest(
+            Client, Key(), "physical", "Crime and Punishment; Or, A Novel", Author: "FYODOR DOSTOYEVSKY"),
+            strictConfirmation: false);
+        var secondId = ((LibraryCreateOrMatchResultDto)second.Data!).BookId!.Value;
+
+        secondId.Should().NotBe(firstId, "a physical copy is another edition");
+        (await WorkIdOfAsync(h, secondId)).Should().Be(await WorkIdOfAsync(h, firstId));
+        (await WorkCountAsync(h)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_keeps_a_colon_subtitle_separate_but_offers_it()
+    {
+        var h = Harness();
+        var dune = await CreateBookAsync(h, "ebook", "Dune", "Frank Herbert");
+
+        var second = await h.Service.CreateOrMatchBookAsync(new LibraryCreateBookRequest(
+            Client, Key(), "ebook", "Dune: Messiah", Author: "Frank Herbert"), strictConfirmation: false);
+        var messiah = ((LibraryCreateOrMatchResultDto)second.Data!).BookId!.Value;
+
+        (await WorkIdOfAsync(h, messiah)).Should().NotBe(await WorkIdOfAsync(h, dune));
+        (await h.Service.FindEditionSuggestionsAsync(messiah)).Should().ContainSingle().Which.Id.Should().Be(dune);
+    }
+
+    [Fact]
+    public async Task Create_does_not_join_a_fuzzy_author_on_its_own()
+    {
+        var h = Harness();
+        var first = await CreateBookAsync(h, "ebook", "Crime and Punishment", "Fyodor Dostoyevsky");
+
+        var second = await h.Service.CreateOrMatchBookAsync(new LibraryCreateBookRequest(
+            Client, Key(), "physical", "Crime and Punishment", Author: "Fiódor Dostoievski"),
+            strictConfirmation: false);
+        var secondId = ((LibraryCreateOrMatchResultDto)second.Data!).BookId!.Value;
+
+        (await WorkIdOfAsync(h, secondId)).Should().NotBe(await WorkIdOfAsync(h, first));
+        (await h.Service.FindEditionSuggestionsAsync(secondId)).Should().ContainSingle().Which.Id.Should().Be(first);
+    }
+
+    // ------------------------------------------------------------------
     // Link: singleton → group
     // ------------------------------------------------------------------
 
