@@ -998,3 +998,18 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
+
+.backup-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 480px) {
+  .backup-warning {
+    flex-wrap: wrap;
+  }
+}

@@ -1459,6 +1459,16 @@
               archives.
             </p>
           }
+          @if (backupWarning(); as warning) {
+            <div appNotice tone="caution" role="status" class="backup-warning" data-testid="backup-warning">
+              <span>{{ warning.message }}</span>
+              @if (warning.action === 'enable') {
+                <button appButton variant="secondary" size="sm" (click)="enableAutomaticBackup()">Turn on</button>
+              } @else {
+                <button appButton variant="secondary" size="sm" [disabled]="backingUp()" (click)="triggerBackup()">Back up now</button>
+              }
+            </div>
+          }
           <!-- Enable Toggle -->
           <div class="setting-row">
             <div class="setting-label">
