@@ -328,6 +328,25 @@ export class BookUploadService {
 }
 
 /**
+ * The server's reason when it read the bytes and found they are not the kind of
+ * file the name claims (an empty or damaged EPUB, say), else null. Works for a
+ * resumable transport error and for the whole-request upload's HTTP error.
+ */
+export function rejectedFileMessage(error: unknown): string | null {
+  const failure = error as
+    | { code?: string; message?: string; error?: { error?: string; message?: string } }
+    | null
+    | undefined;
+  if (failure?.code === 'book_upload_invalid_file') {
+    return failure.message || 'This file could not be read as a book.';
+  }
+  if (failure?.error?.error === 'book_upload_invalid_file') {
+    return failure.error.message || 'This file could not be read as a book.';
+  }
+  return null;
+}
+
+/**
  * Reader-facing copy for a failed resumable upload (#1266). The codes are
  * stable; the words say what happened and what the reader can do next.
  */
@@ -346,6 +365,9 @@ export function describeBookUploadFailure(
     | { code?: string; status?: number; cause?: unknown }
     | null
     | undefined;
+  const rejected = rejectedFileMessage(error);
+  if (rejected) return `${rejected} Choose a different file.`;
+
   const resume = options.bookSaved
     ? 'Your book is saved; choose the same file to resume.'
     : 'Choose the same file to resume.';

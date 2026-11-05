@@ -187,7 +187,15 @@ public sealed class MultiTrackAudiobookEndpointTests : IClassFixture<LibraryEndp
         var id = await SeedAsync("Replaced By Upload");
 
         using var form = new MultipartFormDataContent();
-        var file = new ByteArrayContent([1, 2, 3, 4]);
+        // Real MPEG-1 Layer III frames: uploads are checked for being playable audio.
+        var frames = new byte[40 * 417];
+        for (var offset = 0; offset < frames.Length; offset += 417)
+        {
+            frames[offset] = 0xFF;
+            frames[offset + 1] = 0xFB;
+            frames[offset + 2] = 0x90;
+        }
+        var file = new ByteArrayContent(frames);
         file.Headers.ContentType = new MediaTypeHeaderValue("audio/mpeg");
         form.Add(file, "file", "whole-book.mp3");
         var upload = await Client.PostAsync($"/api/books/{id}/file", form);

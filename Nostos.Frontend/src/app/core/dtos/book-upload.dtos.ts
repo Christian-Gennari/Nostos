@@ -64,6 +64,7 @@ export const BOOK_UPLOAD_SERVER_ERROR_CODES = [
   'book_upload_book_not_found',
   'book_upload_invalid_request',
   'book_upload_unsupported_type',
+  'book_upload_invalid_file',
   'book_upload_invalid_state',
   'book_upload_in_progress',
   'book_upload_part_conflict',

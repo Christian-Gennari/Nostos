@@ -53,6 +53,7 @@ public sealed class BookUploadException : Exception
     public const string NotFound = "book_upload_not_found";
     public const string InvalidRequest = "book_upload_invalid_request";
     public const string UnsupportedType = "book_upload_unsupported_type";
+    public const string InvalidFile = "book_upload_invalid_file";
     public const string InvalidState = "book_upload_invalid_state";
     public const string InProgress = "book_upload_in_progress";
     public const string PartConflict = "book_upload_part_conflict";
@@ -69,6 +70,9 @@ public sealed class BookUploadException : Exception
     public string Code { get; }
 
     public static BookUploadException Error(string code) => new(code);
+
+    /// <summary>The bytes are not the kind of file the name claims; the message says why.</summary>
+    public static BookUploadException InvalidFileError(string reason) => new(InvalidFile, reason);
 }
 
 /// <summary>Establishes whose uploads this request may see or change.</summary>

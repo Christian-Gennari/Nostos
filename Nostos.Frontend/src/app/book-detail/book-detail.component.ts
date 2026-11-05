@@ -1087,6 +1087,16 @@ export class BookDetail implements OnInit, OnDestroy {
       .filter((name): name is string => !!name);
   }
 
+  /**
+   * TXT and MOBI files are accepted and kept for download, but the reader
+   * cannot open them, so the page says so instead of offering "Read book".
+   */
+  isDownloadOnly(book: Book | null): boolean {
+    if (!book || book.type === 'audiobook') return false;
+    const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
+    return extension === 'txt' || extension === 'mobi' || extension === 'azw3';
+  }
+
   isAudioBook(book: Book | null): boolean {
     return book?.type === 'audiobook';
   }

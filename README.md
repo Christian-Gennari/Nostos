@@ -52,7 +52,7 @@
 
 ### Library
 
-- **Every kind of book in one place:** physical books, EPUB, PDF, TXT, MOBI and audiobooks (MP3, M4A, M4B). Audiobooks split into many files play as one book.
+- **Every kind of book in one place:** physical books, EPUB, PDF and audiobooks (MP3, M4A, M4B) to read or play. TXT and MOBI files can be stored and downloaded, but Nostos cannot read them yet. Audiobooks split into many files play as one book.
 - **Free books, built in:** search Project Gutenberg, Standard Ebooks, Wikisource and LibriVox from **Add a book**. Litteraturbanken (Swedish literature) is available to turn on.
 - **Collections and editions:** nested collections, drag and drop, and editions of the same work grouped together.
 - **A To read list:** keep the books you want but don't own yet, with a short **Next up** shelf.

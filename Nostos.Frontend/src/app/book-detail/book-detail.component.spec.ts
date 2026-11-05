@@ -357,6 +357,15 @@ describe('BookDetail reset progress', () => {
       .toContain('Read book');
   });
 
+  it('says a stored TXT or MOBI file is kept for download and offers no reader', async () => {
+    await setup(readableBook({ type: 'ebook', hasFile: true, fileName: 'book.mobi' }));
+    const actions = fixture.nativeElement.querySelector('.primary-actions')?.textContent;
+    expect(actions).not.toContain('Read book');
+    expect(actions).toContain('Download');
+    expect(fixture.nativeElement.querySelector('[data-testid="download-only-note"]')?.textContent)
+      .toContain('Kept for download');
+  });
+
   it('renders a failed provider import without hiding its failure reason', async () => {
     await setup(readableBook({
       status: 3, hasFile: false, fileName: null, statusMessage: 'Download failed',

@@ -333,6 +333,21 @@ public sealed class BookUploadService(
                 throw BookUploadException.Error(BookUploadException.FileHashMismatch);
             }
 
+            // The bytes are the ones the client sent; now check they are the
+            // kind of file the name claims, before any book row sees them.
+            string? invalid;
+            await using (var staged = await store.OpenSealedAsync(sessionId, ct))
+            {
+                invalid = BookFileValidator.Validate(staged, session.FileName);
+            }
+
+            if (invalid is not null)
+            {
+                await DiscardSessionAsync(session, BookUploadState.Failed, ct,
+                    BookUploadException.InvalidFile);
+                throw BookUploadException.InvalidFileError(invalid);
+            }
+
             await store.SealAsync(sessionId, ct);
             session.StateValue = BookUploadState.Completing;
             session.UpdatedAtUtc = Now;
@@ -651,7 +666,9 @@ public sealed class BookUploadService(
     private static void ValidateRequest(BookUploadCreateRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.TotalBytes <= 0 || request.TotalBytes > BookUploadLimits.MaxBookBytes)
+        if (request.TotalBytes == 0)
+            throw BookUploadException.InvalidFileError("This file is empty.");
+        if (request.TotalBytes < 0 || request.TotalBytes > BookUploadLimits.MaxBookBytes)
             throw BookUploadException.Error(BookUploadException.InvalidRequest);
         if (string.IsNullOrWhiteSpace(request.FileName)
             || request.FileName.Length > 255

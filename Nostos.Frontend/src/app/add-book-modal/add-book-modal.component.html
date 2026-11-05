@@ -183,7 +183,7 @@
                   />
                   <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
                   <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
-                  <span class="nostos-drop-zone__hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
+                  <span class="nostos-drop-zone__hint">EPUB, PDF, MP3, M4A, M4B to read or play. TXT and MOBI are kept for download only.</span>
                 </label>
               </section>
             } @else {
@@ -237,15 +237,17 @@
                     <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
                     {{ err }}
                   </span>
-                  <button
-                    appButton
-                    type="button"
-                    variant="secondary"
-                    [disabled]="isSubmitting()"
-                    (click)="retryUpload()"
-                  >
-                    Try again
-                  </button>
+                  @if (hasPendingUpload()) {
+                    <button
+                      appButton
+                      type="button"
+                      variant="secondary"
+                      [disabled]="isSubmitting()"
+                      (click)="retryUpload()"
+                    >
+                      Try again
+                    </button>
+                  }
                 </div>
               }
 
@@ -287,7 +289,7 @@
                   <div class="section-heading">
                     <div>
                       <h3 id="manual-file-heading">Book file (optional)</h3>
-                      <p>EPUB, PDF, TXT, MOBI or audiobook file. Choosing one sets the book type automatically.</p>
+                      <p>EPUB, PDF or audiobook file. Choosing one sets the book type automatically. TXT and MOBI files are kept for download; Nostos cannot read them.</p>
                     </div>
                   </div>
                   <label
@@ -310,7 +312,7 @@
                       <span class="nostos-drop-zone__hint">Choose another file to replace it</span>
                     } @else {
                       <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
-                      <span class="nostos-drop-zone__hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
+                      <span class="nostos-drop-zone__hint">EPUB, PDF, MP3, M4A, M4B to read or play. TXT and MOBI are kept for download only.</span>
                     }
                   </label>
                 </section>

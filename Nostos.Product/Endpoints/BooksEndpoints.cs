@@ -395,6 +395,13 @@ public static class BooksEndpoints
                 if (!allowed)
                     return Results.BadRequest($"Unsupported file type: {file.ContentType}");
 
+                await using (var probe = file.OpenReadStream())
+                {
+                    var invalid = BookFileValidator.Validate(probe, file.FileName);
+                    if (invalid is not null)
+                        return BookUploadHttpErrors.From(BookUploadException.InvalidFileError(invalid));
+                }
+
                 await commit.CommitStreamAsync(
                     book,
                     file.OpenReadStream,
