@@ -2519,7 +2519,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       || isInteractiveTarget(event.target)
     ) return;
 
-    const action = pageActionForKey(event);
+    const action = pageActionForKey(event, this.activeReader()?.isRtl?.() ?? false);
     if (!action) return;
 
     if (action === 'next') this.nextPage();

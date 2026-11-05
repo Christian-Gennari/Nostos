@@ -14,12 +14,17 @@ export type PageAction = 'next' | 'previous';
  * is included because it is what most readers use to advance, with Shift+Space
  * going back.
  */
-export function pageActionForKey(event: { key: string; shiftKey?: boolean }): PageAction | null {
+export function pageActionForKey(
+  event: { key: string; shiftKey?: boolean },
+  rtl = false,
+): PageAction | null {
   switch (event.key) {
     case 'ArrowLeft':
+      return rtl ? 'next' : 'previous';
+    case 'ArrowRight':
+      return rtl ? 'previous' : 'next';
     case 'PageUp':
       return 'previous';
-    case 'ArrowRight':
     case 'PageDown':
       return 'next';
     case ' ':
@@ -88,13 +93,15 @@ export function surfaceActionForPoint(input: {
   width: number;
   coarsePointer: boolean;
   edgePaging: boolean;
+  /** Right-to-left book: the left edge turns forward. */
+  rtl?: boolean;
 }): ReaderSurfaceAction | null {
   if (input.selectedText?.trim() || isInteractiveTarget(input.target, input.focusableSurface)) return null;
 
   if (input.coarsePointer && input.edgePaging && input.width > 0) {
     const edge = Math.min(96, input.width * 0.24);
-    if (input.clientX <= edge) return 'previous';
-    if (input.clientX >= input.width - edge) return 'next';
+    if (input.clientX <= edge) return input.rtl ? 'next' : 'previous';
+    if (input.clientX >= input.width - edge) return input.rtl ? 'previous' : 'next';
   }
 
   return 'toggle-chrome';
@@ -115,6 +122,8 @@ export function swipePageAction(input: {
   endX: number;
   endY: number;
   durationMs: number;
+  /** Right-to-left book: swiping right turns forward. */
+  rtl?: boolean;
 }): PageAction | null {
   if (input.selectedText?.trim() || isInteractiveTarget(input.target, input.focusableSurface)) return null;
   if (input.durationMs > 800) return null;
@@ -123,7 +132,7 @@ export function swipePageAction(input: {
   const dy = input.endY - input.startY;
   if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.2) return null;
 
-  return dx < 0 ? 'next' : 'previous';
+  return (dx < 0) !== !!input.rtl ? 'next' : 'previous';
 }
 
 
