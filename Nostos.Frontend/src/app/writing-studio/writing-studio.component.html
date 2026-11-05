@@ -180,6 +180,13 @@
                 [hint]="exportBlockedReason()"
                 (triggered)="openExport()"
               >Export…</button>
+              <button
+                nostosMenuItem
+                icon="folder"
+                data-testid="studio-move"
+                [disabled]="!activeItem()"
+                (triggered)="openMove()"
+              >Move to…</button>
             </nostos-menu>
           </ng-template>
 
@@ -772,6 +779,41 @@
       [documentId]="item.id"
       [currentMarkdown]="editorText()"
       (closed)="exportOpen.set(false)" />
+  }
+
+  @if (moveOpen() && activeItem()) {
+    <app-modal-shell
+      closeLabel="Close"
+      [isOpen]="true"
+      variant="dialog"
+      [maxWidth]="'420px'"
+      ariaLabelledBy="move-sheet-title"
+      (closed)="closeMove()"
+    >
+      <header class="move-sheet-header" shellHeader>
+        <h2 id="move-sheet-title">Move to…</h2>
+      </header>
+      <ul class="move-list" data-testid="studio-move-list">
+        <li>
+          <button appChoiceRow type="button" data-testid="studio-move-top"
+            [selected]="moveCurrentParent() === null" [disabled]="moveBusy()"
+            (click)="moveTo(null)">
+            <nostos-icon name="folder-open" [size]="16"></nostos-icon>
+            <span class="nostos-choice-row__title">Top level</span>
+          </button>
+        </li>
+        @for (folder of moveFolders(); track folder.id) {
+          <li [style.padding-left.rem]="folder.level * 1.25">
+            <button appChoiceRow type="button" data-testid="studio-move-folder"
+              [selected]="moveCurrentParent() === folder.id" [disabled]="moveBusy()"
+              (click)="moveTo(folder.id)">
+              <nostos-icon name="folder" [size]="16"></nostos-icon>
+              <span class="nostos-choice-row__title">{{ folder.name }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </app-modal-shell>
   }
 
   @if (shortcutsOpen()) {
