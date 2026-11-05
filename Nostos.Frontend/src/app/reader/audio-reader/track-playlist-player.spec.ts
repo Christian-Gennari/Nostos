@@ -383,3 +383,34 @@ describe('TrackPlaylistPlayer (multi-track audiobooks, issue #835)', () => {
     expect(events).toEqual(['loaderror']);
   });
 });
+
+describe('TrackPlaylistPlayer start position (issue #1391)', () => {
+  function build(startAt: number) {
+    const audio = new FakeAudio();
+    const player = new TrackPlaylistPlayer(
+      [100, 250.5, 4].map((duration, index) => ({ url: `/tracks/${index + 1}`, duration })),
+      { onload: () => {}, onloaderror: () => {}, onplay: () => {}, onpause: () => {}, onend: () => {} },
+      () => audio as unknown as HTMLAudioElement,
+      startAt,
+    );
+    return { audio, player };
+  }
+
+  it('requests only the track holding the start position', () => {
+    const { audio, player } = build(120);
+    expect(audio.loads).toEqual(['/tracks/2']);
+    audio.finishLoading();
+    expect(audio.currentTime).toBeCloseTo(20);
+    expect(player.seek()).toBeCloseTo(120);
+  });
+
+  it('starts at track 1 by default', () => {
+    const { audio } = build(0);
+    expect(audio.loads).toEqual(['/tracks/1']);
+  });
+
+  it('clamps a start past the end to the last track', () => {
+    const { audio } = build(99999);
+    expect(audio.loads).toEqual(['/tracks/3']);
+  });
+});

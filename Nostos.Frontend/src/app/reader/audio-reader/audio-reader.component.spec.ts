@@ -907,11 +907,11 @@ describe('AudioReader with a multi-track audiobook (issue #835)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('plays the tracks through one audio element instead of a single file', () => {
+  it('plays the tracks through one audio element, first requesting the track of the saved position (issue #1391)', () => {
     fixture.detectChanges();
 
     expect(StubAudio.instances.length).toBe(1);
-    expect(StubAudio.instances[0].src).toBe('/api/books/multi-track-book/tracks/1');
+    expect(StubAudio.instances[0].src).toBe('/api/books/multi-track-book/tracks/2');
     expect(playerState.instances.length).toBe(0);
   });
 
