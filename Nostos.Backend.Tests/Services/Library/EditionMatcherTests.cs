@@ -27,6 +27,28 @@ public sealed class EditionMatcherTests
         EditionMatcher.SameTitle(b, a).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("Little Women", "Little Women; Or, Meg, Jo, Beth, and Amy", true)]
+    [InlineData("Frankenstein", "Frankenstein; or, The Modern Prometheus", true)]
+    [InlineData("Frankenstein", "Frankenstein, Or The Modern Prometheus", true)]
+    [InlineData("Crime and punishment", "Crime and Punishment", true)]
+    [InlineData("Dune", "Dune: Messiah", false)]
+    [InlineData("Meditations", "Meditations: A New Translation", false)]
+    [InlineData("Dune", "Dune; Messiah", false)]
+    [InlineData("Orwell", "Orlando", false)]
+    public void Auto_grouping_ignores_only_an_or_alternative_title(string a, string b, bool expected)
+    {
+        EditionMatcher.IsAutoMatch(a, "Same Author", b, "Same Author").Should().Be(expected);
+        EditionMatcher.IsAutoMatch(b, "Same Author", a, "Same Author").Should().Be(expected);
+    }
+
+    [Fact]
+    public void A_subtitle_is_offered_never_auto_grouped()
+    {
+        EditionMatcher.IsAutoMatch("Dune", "Frank Herbert", "Dune: Messiah", "Frank Herbert").Should().BeFalse();
+        EditionMatcher.IsSuggestion("Dune", "Frank Herbert", "Dune: Messiah", "Frank Herbert").Should().BeTrue();
+    }
+
     [Fact]
     public void AutoMatch_joins_on_loose_title_and_case_accent_punctuation_insensitive_author()
     {

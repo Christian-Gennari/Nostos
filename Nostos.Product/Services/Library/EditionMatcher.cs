@@ -14,10 +14,10 @@ namespace Nostos.Backend.Services.Library;
 /// Two levels:
 /// <list type="bullet">
 /// <item><see cref="IsAutoMatch"/> joins books on its own: the title agrees
-/// ignoring case, accents, punctuation and a subtitle after ";" or ":", and the
+/// ignoring case, accents, punctuation and a "; or," alternative title, and the
 /// author agrees ignoring case, accents and punctuation. Nothing fuzzier.</item>
 /// <item><see cref="IsSuggestion"/> only OFFERS a link: the title agrees the
-/// same way and the authors look like one person written differently (a
+/// same way (a subtitle after ";" or ":" may differ) and the authors look like one person written differently (a
 /// missing middle word, a different order, a one-letter spelling slip).
 /// A person confirms it; it is never applied silently.</item>
 /// </list>
@@ -28,7 +28,7 @@ public static class EditionMatcher
     {
         var a = AuthorTokens(authorA);
         var b = AuthorTokens(authorB);
-        return a.Count > 0 && a.SequenceEqual(b, StringComparer.Ordinal) && SameTitle(titleA, titleB);
+        return a.Count > 0 && a.SequenceEqual(b, StringComparer.Ordinal) && SameTitleStrict(titleA, titleB);
     }
 
     public static bool IsSuggestion(string? titleA, string? authorA, string? titleB, string? authorB)
@@ -36,6 +36,23 @@ public static class EditionMatcher
         var a = AuthorTokens(authorA);
         var b = AuthorTokens(authorB);
         return a.Count > 0 && b.Count > 0 && RelatedTokens(a, b) && SameTitle(titleA, titleB);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex AlternativeTitle = new(
+        @"\s*[;,]\s*or\b\s*,?.*$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Equal after folding case, accents and punctuation, ignoring only an
+    /// alternative title introduced by "; or," or ", or," ("Little Women; Or,
+    /// Meg, Jo, Beth, and Amy"). Any other subtitle makes a different title:
+    /// "Dune" and "Dune: Messiah" are two books (see <see cref="SameTitle"/>).
+    /// </summary>
+    public static bool SameTitleStrict(string? a, string? b)
+    {
+        var left = Fold(AlternativeTitle.Replace(a ?? string.Empty, string.Empty));
+        var right = Fold(AlternativeTitle.Replace(b ?? string.Empty, string.Empty));
+        return left.Length > 0 && string.Equals(left, right, StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -95,6 +95,20 @@ public sealed class LibraryWorkMembershipTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Create_keeps_a_colon_subtitle_separate_but_offers_it()
+    {
+        var h = Harness();
+        var dune = await CreateBookAsync(h, "ebook", "Dune", "Frank Herbert");
+
+        var second = await h.Service.CreateOrMatchBookAsync(new LibraryCreateBookRequest(
+            Client, Key(), "ebook", "Dune: Messiah", Author: "Frank Herbert"), strictConfirmation: false);
+        var messiah = ((LibraryCreateOrMatchResultDto)second.Data!).BookId!.Value;
+
+        (await WorkIdOfAsync(h, messiah)).Should().NotBe(await WorkIdOfAsync(h, dune));
+        (await h.Service.FindEditionSuggestionsAsync(messiah)).Should().ContainSingle().Which.Id.Should().Be(dune);
+    }
+
+    [Fact]
     public async Task Create_does_not_join_a_fuzzy_author_on_its_own()
     {
         var h = Harness();
