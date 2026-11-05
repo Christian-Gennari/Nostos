@@ -41,6 +41,7 @@ import { RadioDirective } from '../ui/check/check.directive';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
+import { BulkEbookAddComponent } from './bulk-ebook-add.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { planLimitMessage } from '../core/plan-limit-message';
 import {
@@ -89,6 +90,7 @@ const DEFAULT_LANGUAGE = 'en';
     BadgeComponent,
     SegmentedComponent,
     ConfirmModal,
+    BulkEbookAddComponent,
   ],
   templateUrl: './add-book-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -451,6 +453,7 @@ export class AddBookModal {
   }
 
   resetForm(): void {
+    this.bulkFiles.set([]);
     this.form = {
       type: 'physical',
       title: '',
@@ -624,6 +627,22 @@ export class AddBookModal {
       // The file name stays as the title; nothing for the person to do.
       error: () => undefined,
     });
+  }
+
+  /** Several EPUB/PDF files at once: the list view owns them from here (#1407). */
+  readonly bulkFiles = signal<File[]>([]);
+
+  onBulkFilesSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter((f) => /\.(epub|pdf)$/i.test(f.name));
+    input.value = '';
+    if (files.length > 0) this.bulkFiles.set(files);
+  }
+
+  onBulkClosed(result: { changed: boolean }): void {
+    this.bulkFiles.set([]);
+    if (result.changed) this.finishAdd();
+    else this.closeModal.emit();
   }
 
   onCoverSelected(event: Event) {
