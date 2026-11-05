@@ -573,7 +573,15 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
     const saveStatus = headerSaveStatus();
     expect(saveStatus).toBeTruthy();
-    expect(saveStatus!.textContent?.trim()).toBe('Saved');
+    expect(saveStatus!.textContent?.trim()).toMatch(/^Saved/);
+  });
+
+  it('says when the open writing was last saved', () => {
+    openDocument();
+    component.activeItem.update((item) => ({ ...item!, updatedAt: '2026-11-04T14:05:00' }));
+    fixture.detectChanges();
+
+    expect(headerSaveStatus()!.textContent?.replace(/\s+/g, ' ').trim()).toMatch(/^Saved · \d{1,2}[:.]05/);
   });
 
   it('uses the singular word form in desk telemetry for a single word', () => {

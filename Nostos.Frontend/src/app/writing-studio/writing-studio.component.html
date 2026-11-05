@@ -88,7 +88,7 @@
         <div class="header-doc-meta">
           <span class="header-doc-title" [title]="editorTitle() || item.name">{{ editorTitle() || item.name }}</span>
           <span class="header-save-status" [class.is-saving]="saveStatus() === 'Saving…'">
-            {{ saveStatus() }}
+            {{ saveStatus() }}@if (saveStatus() === 'Saved' && (item.updatedAt | nostosDate: 'time'); as savedAt) { · {{ savedAt }}}
           </span>
         </div>
       } @else {

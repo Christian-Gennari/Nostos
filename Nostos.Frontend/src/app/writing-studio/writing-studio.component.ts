@@ -22,6 +22,7 @@ import { DragDropModule } from '@angular/cdk/drag-drop';
 import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, finalize, forkJoin, map, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -205,6 +206,7 @@ function writeCarets(carets: RememberedCaret[]): void {
     TopicOptionComponent,
     EmptyStateComponent,
     LoadingIndicatorComponent,
+    NostosDatePipe,
   ],
   templateUrl: './writing-studio.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
