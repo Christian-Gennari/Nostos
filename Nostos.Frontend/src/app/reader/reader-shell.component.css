@@ -281,6 +281,12 @@
     background-color 0.2s,
     color 0.2s;
 }
+@media (pointer: coarse) {
+  .toc-item {
+    min-height: var(--control-h-touch);
+    align-items: center;
+  }
+}
 .toc-item:hover {
   background-color: var(--bg-hover);
   color: var(--color-primary);
@@ -1622,4 +1628,11 @@ button.passage-pill-action {
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   border-top: 1px solid var(--border-color);
+}
+
+/* A finger needs 44px: the dialog's own buttons, as the contents rows above. */
+@media (pointer: coarse) {
+  .passage-sheet-actions [appButton] {
+    min-height: var(--control-h-touch);
+  }
 }

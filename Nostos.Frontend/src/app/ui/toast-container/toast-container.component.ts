@@ -132,6 +132,12 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
         flex: 0 0 auto;
       }
 
+      @media (pointer: coarse) {
+        .toast-action {
+          min-height: var(--control-h-touch);
+        }
+      }
+
       .toast-dismiss {
         flex: 0 0 auto;
         border-radius: var(--radius-md);
