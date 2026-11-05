@@ -23,6 +23,7 @@ import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, finaliz
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { marked } from 'marked';
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
@@ -411,6 +412,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
   editorText = signal('');
   editorTitle = signal('');
   saveStatus = signal<'Saved' | 'Saving…' | 'Unsaved'>('Saved');
+  /**
+   * Set when a save is refused because the writing was changed elsewhere
+   * (issue #1363). Holds the newer copy and the writer's own text.
+   */
+  readonly saveConflict = signal<{ theirs: WritingContentDto; title: string; content: string } | null>(null);
 
   // Zen (focus) mode — issue #49. Session-only: never persisted.
   isZen = signal(false);
@@ -2216,11 +2222,51 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return false;
   }
 
+  /**
+   * "Keep mine": saves the typed text over the newer copy, now that the writer
+   * has seen the question.
+   */
+  keepMineAfterConflict(): void {
+    const conflict = this.saveConflict();
+    const item = this.activeItem();
+    if (!conflict || !item) return;
+    this.saveConflict.set(null);
+    const generation = ++this.saveGeneration;
+    // The text on the page may have moved on while the question was open.
+    void this.queueWritingSave(item, this.editorTitle(), this.editorText(), generation, true).catch(
+      () => this.toast.error('Could not save this document. Your draft is still open.'),
+    );
+  }
+
+  /**
+   * "Load the newer version". What was typed is put on the clipboard first, so
+   * it can still be pasted back; it is never dropped without a copy.
+   */
+  loadNewerAfterConflict(): void {
+    const conflict = this.saveConflict();
+    if (!conflict) return;
+    const mine = this.editorText();
+    const differs = mine !== conflict.theirs.content;
+    this.saveConflict.set(null);
+    this.saveGeneration++;
+    this.activeItem.set(conflict.theirs);
+    this.editorTitle.set(conflict.theirs.name);
+    this.editorText.set(conflict.theirs.content);
+    this.saveStatus.set('Saved');
+    if (differs) {
+      void navigator.clipboard?.writeText(mine).then(
+        () => this.toast.info('Your version is on the clipboard'),
+        () => undefined,
+      );
+    }
+  }
+
   private queueWritingSave(
     item: WritingContentDto,
     title: string,
     content: string,
     generation: number,
+    force = false,
   ): Promise<void> {
     this.pendingSaveCount++;
 
@@ -2228,10 +2274,23 @@ export class WritingStudio implements OnInit, AfterViewInit {
       // A newer debounce/flush superseded this request before it began.
       if (generation !== this.saveGeneration) return;
 
+      // Nothing is saved over a newer copy until the writer has chosen.
+      if (this.saveConflict()) {
+        this.saveStatus.set('Unsaved');
+        throw new Error('save-conflict');
+      }
+
       this.saveStatus.set('Saving…');
       try {
+        // The version this tab last loaded or saved: an earlier save in the
+        // queue may have moved it on since `item` was captured.
+        const current = this.activeItem();
+        const baseUpdatedAt = (current?.id === item.id ? current : item).updatedAt;
         const updated = await firstValueFrom(
-          this.writingsService.update(item.id, { name: title, content }),
+          this.writingsService.update(
+            item.id,
+            force ? { name: title, content } : { name: title, content, baseUpdatedAt },
+          ),
         );
 
         // An explicit flush may have been queued behind this request. Let that
@@ -2247,6 +2306,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
         }
       } catch (error) {
         if (generation === this.saveGeneration) this.saveStatus.set('Unsaved');
+        if (error instanceof HttpErrorResponse && error.status === 409 && error.error?.id === item.id) {
+          // Saved from another tab or device since this copy was loaded.
+          this.saveConflict.set({ theirs: error.error as WritingContentDto, title, content });
+        }
         throw error;
       }
     };

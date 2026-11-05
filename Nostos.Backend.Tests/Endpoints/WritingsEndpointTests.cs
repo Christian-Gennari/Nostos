@@ -48,6 +48,44 @@ public sealed class WritingsEndpointTests : IClassFixture<LibraryEndpointFactory
     }
 
     [Fact]
+    public async Task Update_WithStaleBaseUpdatedAt_IsRefusedWith409_AndKeepsTheNewerText()
+    {
+        var writing = await SeedWritingAsync(content: "v0");
+
+        var first = await Client.PutAsJsonAsync($"/api/writings/{writing.Id}",
+            new UpdateWritingDto("Draft", "tab one", writing.UpdatedAt));
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        var firstSaved = (await first.Content.ReadFromJsonAsync<WritingContentDto>())!;
+
+        // The second tab still holds the version it loaded.
+        var stale = await Client.PutAsJsonAsync($"/api/writings/{writing.Id}",
+            new UpdateWritingDto("Draft", "tab two", writing.UpdatedAt));
+        stale.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var current = (await stale.Content.ReadFromJsonAsync<WritingContentDto>())!;
+        current.Content.Should().Be("tab one", "the 409 carries the current content");
+
+        var read = (await Client.GetFromJsonAsync<WritingContentDto>($"/api/writings/{writing.Id}"))!;
+        read.Content.Should().Be("tab one");
+
+        // Echoing the version it was given is accepted.
+        var ok = await Client.PutAsJsonAsync($"/api/writings/{writing.Id}",
+            new UpdateWritingDto("Draft", "tab one again", firstSaved.UpdatedAt));
+        ok.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Update_WithoutBaseUpdatedAt_StillOverwrites_ForOlderClients()
+    {
+        var writing = await SeedWritingAsync(content: "v0");
+        await Client.PutAsJsonAsync($"/api/writings/{writing.Id}", new UpdateWritingDto("Draft", "one"));
+
+        var second = await Client.PutAsJsonAsync($"/api/writings/{writing.Id}", new UpdateWritingDto("Draft", "two"));
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Client.GetFromJsonAsync<WritingContentDto>($"/api/writings/{writing.Id}"))!
+            .Content.Should().Be("two");
+    }
+
+    [Fact]
     public async Task PageSetup_IsEmptyUntilSaved_ThenReadsBackAsWritten_WithoutTouchingTheWriting()
     {
         var writing = await SeedWritingAsync();
