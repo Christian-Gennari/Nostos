@@ -207,6 +207,8 @@ export class AddBookModal {
   };
 
   selectedFile = signal<File | null>(null);
+  /** Two or more audio files chosen together: the tracks of one audiobook. */
+  trackFiles = signal<File[]>([]);
   selectedCover = signal<File | null>(null);
 
   /**
@@ -227,8 +229,11 @@ export class AddBookModal {
   fileSummary = computed(() => {
     const file = this.selectedFile();
     if (!file) return null;
-    const size = this.formatBytes(file.size);
-    return size ? `${file.name} · ${size}` : file.name;
+    const tracks = this.trackFiles();
+    const bytes = tracks.length > 1 ? tracks.reduce((sum, t) => sum + t.size, 0) : file.size;
+    const name = tracks.length > 1 ? `${tracks.length} audio files` : file.name;
+    const size = this.formatBytes(bytes);
+    return size ? `${name} · ${size}` : name;
   });
   uploadProgress = signal<number | null>(null);
   /** Which visible stage the resumable path is in; null on the legacy path. */
@@ -255,7 +260,9 @@ export class AddBookModal {
   readonly uploadBookTitle = computed(
     () => this.pendingUploadBook()?.title || this.form.title || 'This book',
   );
-  readonly uploadFileName = computed(() => this.selectedFile()?.name ?? '');
+  readonly uploadFileName = computed(() =>
+    this.trackFiles().length > 1 ? `${this.trackFiles().length} audio files` : (this.selectedFile()?.name ?? ''),
+  );
   readonly uploadStatusText = computed(() => {
     const percent = this.uploadProgress() ?? 0;
     const bytes = this.uploadByteProgress();
@@ -405,6 +412,7 @@ export class AddBookModal {
     // cannot be carried invisibly into a later submit.
     if (bookType === 'physical') {
       this.selectedFile.set(null);
+      this.trackFiles.set([]);
       this.fileDragActive.set(false);
     }
   }
@@ -570,17 +578,32 @@ export class AddBookModal {
 
   onFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
-    this.selectedFile.set(file);
+    const chosen = Array.from(input.files ?? []);
     this.fileDragActive.set(false);
+    this.trackFiles.set([]);
+
+    // Several files at once are the parts of one audiobook; anything else
+    // stays a single-file choice.
+    if (chosen.length > 1) {
+      if (!chosen.every((f) => this.isAudioFile(f))) {
+        this.selectedFile.set(null);
+        input.value = '';
+        this.toast.info('Choose several audio files for one audiobook, or one ebook file.');
+        return;
+      }
+      this.trackFiles.set(chosen);
+      this.selectedFile.set(chosen[0]);
+      this.form.type = 'audiobook';
+      setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+      return;
+    }
+
+    const file = chosen[0] ?? null;
+    this.selectedFile.set(file);
 
     if (!file) return;
 
-    const lower = file.name.toLowerCase();
-    const audio =
-      file.type.startsWith('audio/') ||
-      ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension));
-    this.form.type = audio ? 'audiobook' : 'ebook';
+    this.form.type = this.isAudioFile(file) ? 'audiobook' : 'ebook';
 
     if (!this.form.title.trim()) {
       this.form.title = file.name
@@ -591,6 +614,14 @@ export class AddBookModal {
     }
 
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+  }
+
+  private isAudioFile(file: File): boolean {
+    const lower = file.name.toLowerCase();
+    return (
+      file.type.startsWith('audio/') ||
+      ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension))
+    );
   }
 
   onCoverSelected(event: Event) {
@@ -609,6 +640,7 @@ export class AddBookModal {
   /** Both reset paths clear the chosen file, the cover, and the preview URL. */
   private clearChosenFiles(): void {
     this.selectedFile.set(null);
+    this.trackFiles.set([]);
     this.setCoverPreview(null);
     this.selectedCover.set(null);
   }
@@ -688,7 +720,7 @@ export class AddBookModal {
         // does not present it before /file succeeds. The resumable contract
         // keeps the book visible while its parts arrive: the upload session,
         // not the row's status, says a transfer is in progress.
-        fileUploadExpected: wantsUpload && !resumable,
+        fileUploadExpected: wantsUpload && (!resumable || this.trackFiles().length > 1),
         // Said on both paths: without it the resumable path looked like a
         // metadata-only add, matched an edition with its own file, and the
         // new file (another translation, say) could not be added at all.
@@ -771,15 +803,23 @@ export class AddBookModal {
     this.isSubmitting.set(true);
     this.uploadStartTime = performance.now();
     this.uploadProgress.set(0);
-    this.uploadByteProgress.set({ loaded: 0, total: file.size });
+    const tracks = this.trackFiles();
+    const several = tracks.length > 1;
+    const totalBytes = several ? tracks.reduce((sum, t) => sum + t.size, 0) : file.size;
+    this.uploadByteProgress.set({ loaded: 0, total: totalBytes });
     this.attachBeforeUnload();
 
-    if (this.bookUploads.supportsResumable()) {
+    // The resumable contract carries one file per session, so the parts of
+    // one audiobook always go in a single request.
+    if (!several && this.bookUploads.supportsResumable()) {
       this.uploadResumable(createdBook, file, generation);
       return;
     }
 
-    this.legacyUploadSub = this.booksService.uploadFile(createdBook.id, file).subscribe({
+    const upload$ = several
+      ? this.booksService.uploadTracks(createdBook.id, tracks)
+      : this.booksService.uploadFile(createdBook.id, file);
+    this.legacyUploadSub = upload$.subscribe({
       next: (event) => {
         if (this.isStaleUpload(generation)) return;
         if (event.type === HttpEventType.UploadProgress) {
@@ -787,7 +827,7 @@ export class AddBookModal {
           this.uploadProgress.set(percent);
           this.uploadByteProgress.set({
             loaded: event.loaded,
-            total: event.total ?? file.size,
+            total: event.total ?? totalBytes,
           });
         }
         if (event.type === HttpEventType.Response) {

@@ -155,6 +155,20 @@ export class BooksService {
     });
   }
 
+  /**
+   * Several audio files that become the tracks of one audiobook. The server
+   * puts them in natural file-name order, so the order sent does not matter.
+   */
+  uploadTracks(bookId: string, files: File[]): Observable<any> {
+    const formData = new FormData();
+    for (const file of files) formData.append('files', file, file.name);
+
+    return this.http.post(`/api/books/${bookId}/tracks`, formData, {
+      reportProgress: true,
+      observe: 'events',
+    });
+  }
+
   uploadCover(bookId: string, file: File): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);
