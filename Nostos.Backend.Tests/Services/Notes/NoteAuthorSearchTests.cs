@@ -144,6 +144,55 @@ public sealed class NoteAuthorSearchTests : IClassFixture<SqliteTestFixture>
         hits.Should().ContainSingle().Which.Id.Should().Be(seed.PassageId);
     }
 
+    [Fact]
+    public async Task Accents_are_ignored_when_nothing_matches_as_typed()
+    {
+        // Issue #1380: "karlek" found nothing for a note that says "kärlek".
+        using var h = CreateHarness();
+        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Dagbok", Author = "Åsa Öberg" };
+        h.Db.Books.Add(book);
+        var note = new NoteModel { Id = Guid.NewGuid(), BookId = book.Id, Content = "Om kärlek och Ilíada.", CreatedAt = DateTime.UtcNow };
+        h.Db.Notes.Add(note);
+        await h.Db.SaveChangesAsync();
+        var repo = new NoteRepository(h.Db);
+
+        (await repo.SearchByAllTermsAsync(["karlek"], 50, forgiving: true)).Should().ContainSingle().Which.Id.Should().Be(note.Id);
+        (await repo.SearchByAllTermsAsync(["iliada"], 50, forgiving: true)).Should().ContainSingle();
+        (await repo.SearchByAllTermsAsync(["oberg", "karlek"], 50, forgiving: true)).Should().ContainSingle();
+        (await repo.BrowseAsync(new NoteBrowseQuery("karlek"), 50, 0)).Total.Should().Be(1);
+        (await h.Service.SearchAsync("karlek", 50)).Should().ContainSingle().Which.Id.Should().Be(note.Id);
+    }
+
+    [Fact]
+    public async Task A_small_typo_in_a_note_word_still_finds_the_note()
+    {
+        // Issue #1380: "transfomers" found nothing.
+        using var h = CreateHarness();
+        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Papers", Author = "Someone" };
+        h.Db.Books.Add(book);
+        var note = new NoteModel { Id = Guid.NewGuid(), BookId = book.Id, Content = "Transformers changed everything.", CreatedAt = DateTime.UtcNow };
+        h.Db.Notes.Add(note);
+        await h.Db.SaveChangesAsync();
+        var repo = new NoteRepository(h.Db);
+
+        (await repo.SearchByAllTermsAsync(["transfomers"], 50, forgiving: true)).Should().ContainSingle().Which.Id.Should().Be(note.Id);
+        (await repo.BrowseAsync(new NoteBrowseQuery("transfomers"), 50, 0)).Total.Should().Be(1);
+        (await repo.SearchByAllTermsAsync(["zebrafish"], 50, forgiving: true)).Should().BeEmpty();
+        (await repo.SearchByAllTermsAsync(["transfomers"], 50)).Should().BeEmpty("exact search stays exact");
+        (await h.Service.SearchAsync("transfomers", 50)).Should().ContainSingle().Which.Id.Should().Be(note.Id);
+    }
+
+    [Fact]
+    public async Task The_forgiving_pass_is_not_used_when_the_exact_search_finds_notes()
+    {
+        using var h = CreateHarness();
+        var seed = await AuthorSearchSeed.SeedAsync(h.Db);
+
+        var hits = await new NoteRepository(h.Db).SearchByAllTermsAsync(["pendulum"], 50, forgiving: true);
+
+        hits.Should().ContainSingle().Which.Id.Should().Be(seed.SufferingQuoteId);
+    }
+
     private Harness CreateHarness()
     {
         var path = _fixture.CreateDatabasePath();

@@ -345,6 +345,8 @@ export class Library implements OnInit, OnDestroy {
   }
 
   private readonly route = inject(ActivatedRoute);
+  private incomingSearch = '';
+  private constructed = false;
   private readonly router = inject(Router);
 
   constructor() {
@@ -354,6 +356,22 @@ export class Library implements OnInit, OnDestroy {
     // ?add=book. Open the dialog, then drop the parameter so a reload or Back
     // does not open it again.
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      // "Show all books" in the command palette lands here as ?q=words: the
+      // words become the search over the whole library, then the parameter goes.
+      const incoming = params.get('q')?.trim();
+      if (incoming) {
+        this.incomingSearch = incoming;
+        this.filters.clearAll();
+        this.searchQuery.set(incoming);
+        if (this.constructed) this.refreshBooks();
+        this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { q: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+        return;
+      }
       if (params.get('add') !== 'book') return;
       this.openAddModal();
       this.router.navigate([], {
@@ -391,7 +409,7 @@ export class Library implements OnInit, OnDestroy {
     if (this.preferences.hasLoadedBooks()) this.loading.set(false);
 
     // Coming Back: the list as it was left, on the same card, at once.
-    this.restored = this.restoreList();
+    this.restored = this.incomingSearch ? false : this.restoreList();
     let firstLoad = true;
 
     this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
@@ -418,6 +436,7 @@ export class Library implements OnInit, OnDestroy {
         if (firstLoad && this.restored) this.refreshInPlace();
         else this.refreshBooks();
         firstLoad = false;
+        this.constructed = true;
       });
     });
 

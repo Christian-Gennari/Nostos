@@ -214,7 +214,7 @@ describe('CommandPalette', () => {
       type('attention');
 
       expect(titles()).toEqual(['Books', 'Topics', 'Notes', 'Documents', 'Ask Nostos']);
-      expect(booksList).toHaveBeenCalledWith({ search: 'attention', page: 1, pageSize: 5, groupByWork: true });
+      expect(booksList).toHaveBeenCalledWith({ search: 'attention', page: 1, pageSize: 50, groupByWork: true });
       expect(notesSearch).toHaveBeenCalledWith('attention', 4);
       // Topics and documents are matched here, by name; folders are not documents.
       expect(entry('topic')).toMatchObject({ id: 't2', sub: '1 note' });
@@ -296,6 +296,64 @@ describe('CommandPalette', () => {
     });
   });
 
+  describe('forgiving matches', () => {
+    it('finds a topic whatever the accents or a small typo', () => {
+      topicsList.mockReturnValue(
+        of([
+          { id: 't1', name: 'Kärlek', usageCount: 2 },
+          { id: 't2', name: 'Överlåtelse', usageCount: 1 },
+          { id: 't3', name: 'Pretraining', usageCount: 1 },
+        ]),
+      );
+      component.open();
+      fixture.detectChanges();
+      for (const [typed, id] of [['karlek', 't1'], ['overlatelse', 't2'], ['pretrainnig', 't3']]) {
+        type(typed);
+        const topics = component.sections().find((s) => s.id === 'topics');
+        expect(topics?.entries.map((e) => e.id)).toEqual([id]);
+      }
+    });
+
+    it('marks an accented word the accent-free query found', () => {
+      expect(highlightParts('Kärlek', 'karlek')).toEqual([{ text: 'Kärlek', hit: true }]);
+    });
+
+    it('ranks books by fit and offers every match in the Library', () => {
+      booksList.mockReturnValue(
+        of({
+          items: ['A history of the world', 'Bathe', 'The Hobbit', 'The', 'Other'].map((title, i) => ({
+            id: `b${i}`, title, author: 'x',
+          })),
+          totalCount: 64,
+        }),
+      );
+      openPalette();
+      type('the');
+      const books = component.sections().find((s) => s.id === 'books')!.entries;
+      expect(books.map((e) => e.label)).toEqual([
+        'The', 'The Hobbit', 'A history of the world', 'Bathe', 'Other', 'Show all 64 books',
+      ]);
+      expect(books.at(-1)).toMatchObject({ kind: 'more-books', label: 'Show all 64 books' });
+    });
+
+    it('opens the Library search with the typed words', () => {
+      booksList.mockReturnValue(
+        of({ items: [1, 2, 3, 4, 5, 6].map((i) => ({ id: `b${i}`, title: `The ${i}`, author: 'x' })), totalCount: 6 }),
+      );
+      openPalette();
+      type('the');
+      component.run(entry('more-books'));
+      expect(router.navigate).toHaveBeenCalledWith(['/library'], { queryParams: { q: 'the' } });
+    });
+
+    it('shows no "Show all" row when every match is listed', () => {
+      booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'The', author: 'x' }], totalCount: 1 }));
+      openPalette();
+      type('the');
+      expect(component.entries().some((e) => e.kind === 'more-books')).toBe(false);
+    });
+  });
+
   describe('with a scope prefix', () => {
     it('> lists only actions, matched by the words after it', () => {
       enableAssistant();
@@ -333,7 +391,7 @@ describe('CommandPalette', () => {
 
       booksList.mockReturnValue(of({ items: [{ id: 'b1', title: 'Dune Messiah', author: 'Frank Herbert' }], totalCount: 1 }));
       type('@dune');
-      expect(booksList).toHaveBeenCalledWith({ search: 'dune', page: 1, pageSize: 5, groupByWork: true });
+      expect(booksList).toHaveBeenCalledWith({ search: 'dune', page: 1, pageSize: 50, groupByWork: true });
       expect(notesSearch).not.toHaveBeenCalled();
       expect(titles()).toEqual(['Books']);
     });
