@@ -613,12 +613,12 @@ export class BookDetailStore {
    * Saves a new note; `saved` runs once it exists (new [[topics]] included). A
    * failure toasts and leaves the caller's text where it is.
    */
-  addNote(content: string, saved?: () => void) {
+  addNote(content: string, saved?: () => void, topics: readonly string[] = []) {
     const b = this.book();
-    if (!b || !content.trim() || this.noteSaving()) return;
+    if (!b || (!content.trim() && topics.length === 0) || this.noteSaving()) return;
 
     this.noteSaving.set(true);
-    this.notesService.create(b.id, { content }).subscribe({
+    this.notesService.create(b.id, { content, ...(topics.length ? { topics: [...topics] } : {}) }).subscribe({
       next: () => {
         this.noteSaving.set(false);
         this.loadNotes(b.id);
@@ -636,7 +636,7 @@ export class BookDetailStore {
    * checked text as the quotation, the user's comment as the note, at a page.
    * The photo never leaves the device.
    */
-  addPhotoQuote(quote: { text: string; comment: string; page: number | null }, saved?: () => void) {
+  addPhotoQuote(quote: { text: string; comment: string; page: number | null; topics?: string[] }, saved?: () => void) {
     const b = this.book();
     if (!b || !quote.text.trim() || this.noteSaving()) return;
 
@@ -644,6 +644,7 @@ export class BookDetailStore {
     this.notesService
       .create(b.id, {
         content: quote.comment.trim(),
+        ...(quote.topics?.length ? { topics: quote.topics } : {}),
         selectedText: quote.text.trim(),
         captureSource: 'photo',
         sourceAnchorKind: quote.page ? 'physical_page' : 'unknown',

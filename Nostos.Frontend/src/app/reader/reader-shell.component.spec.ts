@@ -1,7 +1,6 @@
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { Component, forwardRef, Injector, input, output, signal } from '@angular/core';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
+import { Component, Injector, input, output, signal } from '@angular/core';
 import {
   ActivatedRoute,
   convertToParamMap,
@@ -32,7 +31,6 @@ import {
 } from './audio-reader/track-playlist-player';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
-import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainStateService } from '../brain/brain-state.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
@@ -179,28 +177,6 @@ class EpubReaderStub {
   goToSource = vi.fn(() => Promise.resolve());
 }
 
-// The shell binds [(ngModel)] to app-topic-input; the stub must be a
-// ControlValueAccessor so the ngModel directive resolves.
-@Component({
-  selector: 'app-topic-input',
-  standalone: true,
-  template: '',
-  providers: [
-    {
-      provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => TopicInputStub),
-      multi: true,
-    },
-  ],
-})
-class TopicInputStub implements ControlValueAccessor {
-  placeholder = input('');
-  rows = input(1);
-  submitTrigger = output<void>();
-  writeValue(): void {}
-  registerOnChange(): void {}
-  registerOnTouched(): void {}
-}
 
 @Component({
   selector: 'app-note-item',
@@ -240,6 +216,7 @@ function brainStateStub() {
     topics: signal([]),
     lookup: signal(new Map()),
     ensureLoaded: vi.fn(),
+    ensureTopicsLoaded: vi.fn(),
     refresh: vi.fn(),
   };
 }
@@ -329,11 +306,11 @@ async function configureReaderShell(
 
   TestBed.overrideComponent(ReaderShell, {
     remove: {
-      imports: [PdfReader, EpubReader, TopicInputComponent, NoteItemComponent],
+      imports: [PdfReader, EpubReader, NoteItemComponent],
       providers: [BrainTopicSuggestionsService],
     },
     add: {
-      imports: [PdfReaderStub, EpubReaderStub, TopicInputStub, NoteItemStub],
+      imports: [PdfReaderStub, EpubReaderStub, NoteItemStub],
       providers: [{ provide: BrainTopicSuggestionsService, useValue: suggestionsStub }],
     },
   });
@@ -2574,7 +2551,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     (el('selection-save-note') as HTMLButtonElement).click();
 
-    expect(stub().commitHighlight).toHaveBeenCalledWith('The rage that starts it all.', expect.any(String));
+    expect(stub().commitHighlight).toHaveBeenCalledWith('The rage that starts it all.', expect.any(String), []);
 
     component.handleNoteCreated({
       id: 'n-new',
@@ -2600,7 +2577,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(stub().commitHighlight).not.toHaveBeenCalled();
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
-    expect(stub().commitHighlight).toHaveBeenCalledWith('A thought', expect.any(String));
+    expect(stub().commitHighlight).toHaveBeenCalledWith('A thought', expect.any(String), []);
   });
 
   it('a failed save keeps the menu and the typed note', async () => {
@@ -2959,7 +2936,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     (el('selection-save-note') as HTMLButtonElement).click();
 
-    expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.', expect.any(String));
+    expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.', expect.any(String), []);
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 
@@ -3243,7 +3220,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     render();
 
     // Only the text is sent: the passage and the pen are left as stored.
-    expect(notesService().update).toHaveBeenCalledWith('n-1', { content: 'Why rage?' });
+    expect(notesService().update).toHaveBeenCalledWith('n-1', { content: 'Why rage?', topics: [] });
     expect(epub().recolourHighlight).toHaveBeenCalledWith(saved, 'sage');
     expect(component.dbNotes()[0].content).toBe('Why rage?');
     expect(el('highlight-card-input')).toBeNull();
@@ -3262,7 +3239,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     notesService().update.mockReturnValue(of(note({ content: '' })));
     (el('highlight-card-save') as HTMLButtonElement).click();
 
-    expect(notesService().update).toHaveBeenCalledWith('n-1', { content: '' });
+    expect(notesService().update).toHaveBeenCalledWith('n-1', { content: '', topics: [] });
     expect(notesService().delete).not.toHaveBeenCalled();
   });
 

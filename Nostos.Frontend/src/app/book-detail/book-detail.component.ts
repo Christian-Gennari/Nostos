@@ -55,7 +55,7 @@ import { tesseractLanguage } from './photo-quote/page-ocr';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { BookCoverComponent, bookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { ConfirmModal, type ConfirmTone } from '../ui/confirm-modal/confirm-modal.component';
-import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
+import { NoteComposerComponent, draftIsEmpty, draftToSave } from '../ui/note-composer/note-composer.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
@@ -114,7 +114,7 @@ interface StatusConfirmCopy {
     ConfirmModal,
     ProgressComponent,
     BookCoverComponent,
-    TopicInputComponent,
+    NoteComposerComponent,
     NoteItemComponent,
     BrainNoteDialogsComponent,
     StarRatingComponent,
@@ -378,6 +378,9 @@ export class BookDetail implements OnInit, OnDestroy {
   readonly coverSrc = computed<string | null>(() => coverImageUrl(this.store.book()));
 
   newNote = model<string>('');
+  /** The new note's pill topics (issue #1448). */
+  readonly newNoteTopics = signal<readonly string[]>([]);
+  readonly newNoteReady = computed(() => !draftIsEmpty({ words: this.newNote(), topics: [...this.newNoteTopics()] }));
 
   /**
    * The book's reading status, worked out from all its editions (the Library's
@@ -651,12 +654,13 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   addNote(): void {
-    const content = this.newNote().trim();
-    if (!content) return;
-    this.store.addNote(content, () => {
+    if (!this.newNoteReady()) return;
+    const draft = draftToSave({ words: this.newNote(), topics: [...this.newNoteTopics()] });
+    this.store.addNote(draft.words, () => {
       this.newNote.set('');
+      this.newNoteTopics.set([]);
       this.brain.refresh();
-    });
+    }, draft.topics);
   }
 
   /** True while the cover-remove question is up (asked through ConfirmModal). */

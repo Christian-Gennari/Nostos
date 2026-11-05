@@ -979,18 +979,16 @@
 .notes-edition-filter {
   margin-left: auto;
 }
+/* The field and its topic pills are the note composer (ui/note-composer). */
 .new-note-box {
-  position: relative;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
   margin-bottom: 2rem;
-  transition: box-shadow 0.2s;
 }
-.new-note-box:focus-within {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  border-color: var(--scrollbar-thumb);
+.new-note-box app-note-composer {
+  align-self: stretch;
 }
 .notes-feed {
   display: flex;

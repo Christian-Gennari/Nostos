@@ -209,19 +209,7 @@
   background: var(--bg-body);
   flex-shrink: 0;
 }
-.quick-note .input-wrapper {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-field);
-  padding: 0.5rem;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-}
-.quick-note .input-wrapper:focus-within {
-  border-color: var(--border-focus);
-  box-shadow: var(--shadow-sm);
-}
+/* The field and its topic pills are the note composer (ui/note-composer). */
 .quick-actions {
   display: flex;
   align-items: center;
@@ -566,10 +554,8 @@
   width: 100%;
 }
 
-.selection-note-input {
-  width: 100%;
-  min-height: 4.5rem;
-  resize: vertical;
+.selection-note app-note-composer {
+  flex: 1 1 auto;
 }
 
 /* The docked bar is three explicit groups (#1255): the passage and its pens,

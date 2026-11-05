@@ -52,7 +52,15 @@ import { EditionSummaryDto } from '../core/dtos/book.dtos';
 import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.component';
 import { EditionPlaceKeeper, KeeperPlace } from './switch-edition/edition-place-keeper';
 import { AlignmentService } from '../core/services/alignment.service';
-import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
+import {
+  NoteComposerComponent,
+  draftChanged,
+  draftForNote,
+  draftIsEmpty,
+  draftToSave,
+} from '../ui/note-composer/note-composer.component';
+import { TopicRowComponent } from '../ui/topic-row/topic-row.component';
+import { thoughtForDisplay } from '../ui/note-item/note-item.helpers';
 import { NoteItemComponent, type NoteItemEdit } from '../ui/note-item/note-item.component';
 import { noteAsItem } from '../ui/note-item/note-item.helpers';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
@@ -62,7 +70,7 @@ import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { ModalStack } from '../ui/modal-shell/modal-stack.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
+import { InputDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { ThemePickerComponent } from '../ui/theme-picker/theme-picker.component';
 import { ToastService } from '../core/services/toast.service';
@@ -195,13 +203,13 @@ import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
     EpubReader,
     AudioReader,
     SwitchEditionDialog,
-    TopicInputComponent,
+    NoteComposerComponent,
+    TopicRowComponent,
     NoteItemComponent,
     BrainNoteDialogsComponent,
     IconButtonComponent,
     ButtonComponent,
     InputDirective,
-    TextareaDirective,
     ReadAloudBarComponent,
     SegmentedComponent,
     NoteFormatPipe,
@@ -360,6 +368,10 @@ export class ReaderShell implements OnInit, OnDestroy {
   selectionAnchor = signal<SelectionAnchor | null>(null);
   noteDraftOpen = signal(false);
   noteDraft = signal('');
+  /** The selection note's pill topics (issue #1448). */
+  noteDraftTopics = signal<readonly string[]>([]);
+  /** Save note needs words or a topic: a highlight tagged with a topic is a note. */
+  readonly noteDraftReady = computed(() => !draftIsEmpty({ words: this.noteDraft(), topics: [...this.noteDraftTopics()] }));
   private committingNote = false;
 
   /**
@@ -407,6 +419,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly highlightCard = signal<{ noteId: string; anchor: SelectionAnchor | null } | null>(null);
   readonly highlightNoteEditing = signal(false);
   readonly highlightNoteDraft = signal('');
+  readonly highlightNoteTopics = signal<readonly string[]>([]);
   readonly highlightNoteSaving = signal(false);
 
   /** The opened highlight's note, kept current with the notes list; null closes the card. */
@@ -418,6 +431,13 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly activeHighlightHasNote = computed(() => {
     const note = this.activeHighlight();
     return !!note && noteHasText(note);
+  });
+  /** The opened highlight's own words, without the lines its topic pills are. */
+  readonly activeHighlightWords = computed(() => thoughtForDisplay(this.activeHighlight()?.content));
+  /** The opened highlight's topics, as its card in the notes list shows them. */
+  readonly activeHighlightTopics = computed(() => {
+    const note = this.activeHighlight();
+    return note ? (this.noteTopicNames().get(note.id) ?? []) : [];
   });
   readonly activeHighlightPen = computed<HighlightColour>(() =>
     noteHighlightColour(this.activeHighlight() ?? {}),
@@ -999,7 +1019,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     return `${notes.length} from${kind ?? (editions.size === 1 ? ' another edition' : ' other editions')}`;
   });
   quickNoteContent = signal('');
+  quickNoteTopics = signal<readonly string[]>([]);
   quickNoteSaving = signal(false);
+  readonly quickNoteReady = computed(() => !draftIsEmpty({ words: this.quickNoteContent(), topics: [...this.quickNoteTopics()] }));
   /**
    * The audio position the quick-note draft was started at, as the reader
    * reports it (issue #906). Playback keeps running while the user types, so
@@ -1515,6 +1537,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly passageSaving = signal(false);
   readonly passageTitle = signal('');
   readonly passageNote = signal('');
+  readonly passageTopics = signal<readonly string[]>([]);
   private passageBuildSeq = 0;
   readonly readingMinutes = passageReadingMinutes;
   readonly formatAudioTime = formatAudioTime;
@@ -1616,6 +1639,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.passageBuilding.set(true);
     this.passageTitle.set('');
     this.passageNote.set('');
+    this.passageTopics.set([]);
     this.passageSheetOpen.set(true);
 
     let draft: PassageDraft | null = null;
@@ -1649,9 +1673,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!bookId || !draft || !title || this.passageSaving()) return;
 
     this.passageSaving.set(true);
+    const note = draftToSave({ words: this.passageNote(), topics: [...this.passageTopics()] });
     this.notesService
       .create(bookId, {
-        content: this.passageNote().trim(),
+        content: note.words,
+        ...(note.topics.length ? { topics: note.topics } : {}),
         kind: 'passage',
         passageTitle: title,
         sourceAnchorKind: draft.anchorKind,
@@ -1845,25 +1871,18 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.updateSelectionShift();
     setTimeout(() => {
       this.host.nativeElement
-        .querySelector<HTMLTextAreaElement>('.selection-note-input')
+        .querySelector<HTMLTextAreaElement>('#selection-note-input')
         ?.focus({ preventScroll: true });
     }, 0);
   }
 
   /** Saves the mark together with the typed note, through the same commit. */
   saveNote(): void {
-    const content = this.noteDraft().trim();
-    if (!content || this.highlightSaving()) return;
+    if (!this.noteDraftReady() || this.highlightSaving()) return;
+    const draft = draftToSave({ words: this.noteDraft(), topics: [...this.noteDraftTopics()] });
     this.committingNote = true;
     this.highlightSaving.set(true);
-    this.activeReader()?.commitHighlight(content, this.highlightColour());
-  }
-
-  onNoteDraftKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      this.saveNote();
-    }
+    this.activeReader()?.commitHighlight(draft.words, this.highlightColour(), draft.topics);
   }
 
   /**
@@ -1954,6 +1973,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.selectionAnchor.set(null);
     this.noteDraftOpen.set(false);
     this.noteDraft.set('');
+    this.noteDraftTopics.set([]);
   }
 
   /**
@@ -1984,6 +2004,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.typoOpen.set(false);
     this.highlightNoteEditing.set(false);
     this.highlightNoteDraft.set('');
+    this.highlightNoteTopics.set([]);
     this.highlightCard.set({ noteId: best.note.id, anchor: best.anchor });
 
     // Desktop: focus moves into the card so Escape and the keyboard reach it.
@@ -2014,6 +2035,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.highlightCard.set(null);
     this.highlightNoteEditing.set(false);
     this.highlightNoteDraft.set('');
+    this.highlightNoteTopics.set([]);
     this.highlightNoteSaving.set(false);
   }
 
@@ -2021,10 +2043,12 @@ export class ReaderShell implements OnInit, OnDestroy {
   editHighlightNote(): void {
     const note = this.activeHighlight();
     if (!note) return;
-    this.highlightNoteDraft.set(note.content ?? '');
+    const draft = draftForNote(note.content, this.activeHighlightTopics());
+    this.highlightNoteDraft.set(draft.words);
+    this.highlightNoteTopics.set(draft.topics);
     this.highlightNoteEditing.set(true);
     setTimeout(() => {
-      const input = this.host.nativeElement.querySelector<HTMLTextAreaElement>('.highlight-card-input');
+      const input = this.host.nativeElement.querySelector<HTMLTextAreaElement>('#highlight-card-input');
       input?.focus({ preventScroll: true });
       input?.setSelectionRange(input.value.length, input.value.length);
     }, 0);
@@ -2034,12 +2058,20 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (this.highlightNoteSaving()) return;
     this.highlightNoteEditing.set(false);
     this.highlightNoteDraft.set('');
+    this.highlightNoteTopics.set([]);
   }
 
   /** True when Save would change the note: adding, editing or clearing it. */
-  readonly highlightNoteChanged = computed(
-    () => this.highlightNoteDraft().trim() !== (this.activeHighlight()?.content ?? '').trim(),
-  );
+  readonly highlightNoteChanged = computed(() => {
+    const note = this.activeHighlight();
+    return draftChanged(
+      { words: this.highlightNoteDraft(), topics: [...this.highlightNoteTopics()] },
+      draftForNote(note?.content, this.activeHighlightTopics()),
+    );
+  });
+  /** Save would leave the highlight with no note: Save reads "Remove note". */
+  readonly highlightNoteEmpty = computed(() =>
+    draftIsEmpty({ words: this.highlightNoteDraft(), topics: [...this.highlightNoteTopics()] }));
 
   /**
    * Saves the note on the opened highlight. Clearing the text keeps the
@@ -2048,10 +2080,11 @@ export class ReaderShell implements OnInit, OnDestroy {
   saveHighlightNote(): void {
     const note = this.activeHighlight();
     if (!note || this.highlightNoteSaving() || !this.highlightNoteChanged()) return;
-    const content = this.highlightNoteDraft().trim();
+    const draft = draftToSave({ words: this.highlightNoteDraft(), topics: [...this.highlightNoteTopics()] });
+    const removing = draftIsEmpty(draft);
     this.highlightNoteSaving.set(true);
 
-    this.notesService.update(note.id, { content }).subscribe({
+    this.notesService.update(note.id, { content: draft.words, topics: draft.topics }).subscribe({
       next: (updated) => {
         this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
         this.refreshNoteTopics(updated.id);
@@ -2060,9 +2093,10 @@ export class ReaderShell implements OnInit, OnDestroy {
         this.highlightNoteSaving.set(false);
         this.highlightNoteEditing.set(false);
         this.highlightNoteDraft.set('');
+    this.highlightNoteTopics.set([]);
         // Docked, the card shows the saved note in the notice's place; a
         // notice there would cover the card's own actions.
-        if (this.highlightCardPlacement()) this.showSaveFeedback(content ? 'Note saved' : 'Note removed');
+        if (this.highlightCardPlacement()) this.showSaveFeedback(removing ? 'Note removed' : 'Note saved');
         this.loadTopics();
       },
       error: () => {
@@ -2071,13 +2105,6 @@ export class ReaderShell implements OnInit, OnDestroy {
         this.toast.error('Could not save the note');
       },
     });
-  }
-
-  onHighlightNoteKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      this.saveHighlightNote();
-    }
   }
 
   /** A pen dot in the card recolours the highlight straight away. */
@@ -2188,9 +2215,9 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   saveQuickNote() {
-    if (this.quickNoteSaving()) return;
-    const content = this.quickNoteContent().trim();
-    if (!content) return;
+    if (this.quickNoteSaving() || !this.quickNoteReady()) return;
+    const draft = draftToSave({ words: this.quickNoteContent(), topics: [...this.quickNoteTopics()] });
+    const content = draft.words;
     const bookId = this.book()?.id;
     if (!bookId) return;
 
@@ -2199,7 +2226,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       (isAudio ? this.quickNotePinnedLocation() : null) ||
       this.activeReader()?.getCurrentLocation() ||
       undefined;
-    const dto: CreateNoteDto = { content, cfiRange: location };
+    const dto: CreateNoteDto = { content, cfiRange: location, ...(draft.topics.length ? { topics: draft.topics } : {}) };
     if (isAudio && location && Number.isFinite(Number(location))) {
       // The reader itself reported this time, so the anchor is verified and
       // Second Brain can link back to the moment. cfiRange stays for the
@@ -2215,6 +2242,7 @@ export class ReaderShell implements OnInit, OnDestroy {
         // Do not erase text typed while the request was in flight.
         if (this.quickNoteContent().trim() === content) {
           this.quickNoteContent.set('');
+          this.quickNoteTopics.set([]);
           this.quickNotePinnedLocation.set(null);
         }
         this.quickNoteSaving.set(false);

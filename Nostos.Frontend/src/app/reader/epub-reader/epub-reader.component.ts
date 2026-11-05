@@ -2827,8 +2827,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
   }
 
-  commitHighlight(content = '', colour?: HighlightColour): void {
-    const committed = this.annotationManager?.commitHighlight(content, colour);
+  commitHighlight(content = '', colour?: HighlightColour, topics: readonly string[] = []): void {
+    const committed = this.annotationManager?.commitHighlight(content, colour, topics);
     void committed?.then((success) => {
       if (success) {
         this.assistantSelection.set(null);

@@ -609,7 +609,7 @@ export class EpubAnnotationManager {
    * the confirmation bar open — the user never loses a difficult selection to
    * a transient request failure.
    */
-  commitHighlight(content = '', pen?: HighlightColour): Promise<boolean> {
+  commitHighlight(content = '', pen?: HighlightColour, topics: readonly string[] = []): Promise<boolean> {
     const pending = this.pendingHighlight;
     if (!pending) {
       return Promise.resolve(false);
@@ -636,13 +636,14 @@ export class EpubAnnotationManager {
           cfiRange: snapshot.cfiRange,
           selectedText: snapshot.selectedText,
           highlightColour: colour,
+          ...(topics.length ? { topics: [...topics] } : {}),
         })
         .subscribe({
           next: (created) => {
             // Persisted: swap the temporary annotation for the permanent one,
             // then report success so the shell closes the bar.
             this.committing = false;
-            this.addPersistedHighlight(snapshot.cfiRange, colour, !!content.trim());
+            this.addPersistedHighlight(snapshot.cfiRange, colour, !!content.trim() || topics.length > 0);
             this.removeAnnotation(snapshot.temporaryAnnotation);
             this.textMarks?.remove(snapshot.temporaryMark);
             // A touch selection is still live; left in place it would be

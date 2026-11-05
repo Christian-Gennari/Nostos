@@ -1,11 +1,9 @@
-import { Component, forwardRef, input, output, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BehaviorSubject, of, throwError } from 'rxjs';
 
 import { ReaderShell } from './reader-shell.component';
-import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { AudioReader } from './audio-reader/audio-reader.component';
 import { BooksService } from '../core/services/books.service';
@@ -21,27 +19,6 @@ import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.s
 @Component({ standalone: true, template: '' })
 class BlankComponent {}
 
-/** The quick-note field is always in the DOM; the real one needs ngModel wiring. */
-@Component({
-  selector: 'app-topic-input',
-  standalone: true,
-  template: '',
-  providers: [
-    {
-      provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => TopicInputStub),
-      multi: true,
-    },
-  ],
-})
-class TopicInputStub implements ControlValueAccessor {
-  placeholder = input('');
-  rows = input(1);
-  submitTrigger = output<void>();
-  writeValue(): void {}
-  registerOnChange(): void {}
-  registerOnTouched(): void {}
-}
 
 @Component({ selector: 'app-pdf-reader', standalone: true, template: '' })
 class PdfReaderStub {
@@ -137,9 +114,9 @@ describe('ReaderShell header tools', () => {
     const queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
 
     TestBed.overrideComponent(ReaderShell, {
-      remove: { imports: [TopicInputComponent, PdfReader, AudioReader], providers: [BrainTopicSuggestionsService] },
+      remove: { imports: [PdfReader, AudioReader], providers: [BrainTopicSuggestionsService] },
       add: {
-        imports: [TopicInputStub, PdfReaderStub, AudioReaderStub],
+        imports: [PdfReaderStub, AudioReaderStub],
         // The notes panel's topic suggestions talk to Ask Nostos; not under test here.
         providers: [{ provide: BrainTopicSuggestionsService, useValue: { namesFor: () => [], stateFor: () => 'off' } }],
       },
@@ -174,7 +151,7 @@ describe('ReaderShell header tools', () => {
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
         {
           provide: BrainStateService,
-          useValue: { topics: signal([]), lookup: signal(new Map()), ensureLoaded: vi.fn(), refresh: vi.fn() },
+          useValue: { topics: signal([]), lookup: signal(new Map()), ensureLoaded: vi.fn(), ensureTopicsLoaded: vi.fn(), refresh: vi.fn() },
         },
         { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
         {
