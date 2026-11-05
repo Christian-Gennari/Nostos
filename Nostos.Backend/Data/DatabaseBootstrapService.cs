@@ -58,6 +58,9 @@ public sealed class DatabaseBootstrapService(NostosDbContext db) : IDatabaseBoot
             // content: AddWritingCitations creates the table empty and this
             // pass fills it, then keeps it right. Writes only differences.
             await Services.Writings.WritingCitationIndex.RebuildAllAsync(db, cancellationToken);
+            // Highlights saved with anchor "unknown" get the page or CFI their
+            // stored location holds (issue #1381).
+            await Services.Notes.LocationAnchor.BackfillAsync(db, cancellationToken);
             await EnsureLibraryStateRowAsync(cancellationToken);
             return;
         }

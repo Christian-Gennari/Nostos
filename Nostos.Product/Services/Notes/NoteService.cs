@@ -467,6 +467,9 @@ public sealed class NoteService : INoteService
         if (dto.Topics is { Count: > 0 })
             model.Content = TopicReferences.AppendAll(model.Content, dto.Topics);
 
+        // A reader's place becomes the note's anchor (issue #1381).
+        LocationAnchor.Apply(model);
+
         await _notes.AddAsync(model);
 
         // EF Core tracks 'model', so the processor can add links to it before we save.
@@ -579,6 +582,9 @@ public sealed class NoteService : INoteService
         // processor drops a link whose reference the edit removed.
         if (dto.Topics is not null)
             existing.Content = TopicReferences.AppendAll(existing.Content, dto.Topics);
+
+        // Notes saved before the anchor was derived get it on their next edit.
+        LocationAnchor.Apply(existing);
 
         // Re-process topics (the processor clears old links then re-adds). An
         // edit that sent its topics sent all of them: an old link the text
@@ -711,6 +717,7 @@ public sealed class NoteService : INoteService
         if (FoundNoteLocation.Fills(existing, found))
         {
             existing.CfiRange = found;
+            LocationAnchor.Apply(existing);
             await _notes.SaveChangesAsync();
         }
 
