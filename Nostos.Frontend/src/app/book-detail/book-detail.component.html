@@ -526,7 +526,24 @@
               />
 
               @if (newNoteReady()) {
-              <button appButton variant="primary" size="sm" [disabled]="store.noteSaving()" (click)="addNote()">Save</button>
+              <div class="new-note-actions">
+                @if (isPaperBook()) {
+                <label class="new-note-page">
+                  <span>p.</span>
+                  <input
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    autocomplete="off"
+                    aria-label="Page (optional)"
+                    placeholder="–"
+                    [value]="newNotePage()"
+                    (input)="newNotePageText.set($any($event.target).value)"
+                  />
+                </label>
+                }
+                <button appButton variant="primary" size="sm" [disabled]="store.noteSaving()" (click)="addNote()">Save</button>
+              </div>
               }
             </div>
 

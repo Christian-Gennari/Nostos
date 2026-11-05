@@ -17,6 +17,12 @@ export function readPaperPage(location: string | null | undefined): number | nul
   }
 }
 
+/** A page the reader typed: a whole number from 1, anything else is "no page". */
+export function parsePaperPage(text: string | null | undefined): number | null {
+  const t = (text ?? '').trim();
+  return /^[1-9]\d{0,5}$/.test(t) ? Number(t) : null;
+}
+
 export function writePaperPage(page: number): string {
   return JSON.stringify({ page });
 }
