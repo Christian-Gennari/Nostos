@@ -48,6 +48,7 @@ import {
   ReaderSourceTarget,
   TocItem,
 } from '../reader.interface';
+import { applyDocumentDirection, epubReadingDirection, type EpubDirection } from './epub-direction';
 import {
   isInteractiveTarget,
   isTypingTarget,
@@ -1032,6 +1033,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       // optional temporary paint.
       console.warn('Could not paint EPUB search result:', error);
     }
+  }
+
+  /** Reading direction of the open book (#1388): drives spreads, keys and tap zones. */
+  readonly readingDirection = signal<EpubDirection>('ltr');
+
+  /** Left/right page controls run backwards in a right-to-left book. */
+  isRtl(): boolean {
+    return this.readingDirection() === 'rtl';
   }
 
   next() {
@@ -2033,6 +2042,18 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // `book.opened`.
     const epubBook = ePub({});
     this.epubBook = epubBook;
+    // Before the rendition starts: it reads the direction from the package
+    // metadata when the book opens, and many right-to-left books never say it.
+    this.readingDirection.set('ltr');
+    void epubBook.loaded.metadata.then((metadata: any) => {
+      if (this.epubBook !== epubBook) return;
+      const direction = epubReadingDirection({
+        pageProgressionDirection: metadata?.direction,
+        language: metadata?.language,
+      });
+      if (metadata) metadata.direction = direction;
+      this.readingDirection.set(direction);
+    });
     this.lazyResources = new EpubLazyResources(epubBook);
 
     // 2. Setup Rendition Immediately
@@ -2063,6 +2084,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     // 3. Register Hooks
     rendition.hooks.content.register((contents: Contents) => {
+      applyDocumentDirection(contents.document, this.readingDirection());
       this.injectCustomStyles(contents);
       this.annotationManager?.registerContents(contents);
       this.registerContentsKeyboard(contents);
@@ -2404,7 +2426,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       if (isTypingTarget(event.target) || isInteractiveTarget(event.target)) return;
 
-      const action = pageActionForKey(event);
+      const action = pageActionForKey(event, this.isRtl());
       if (!action) return;
 
       if (action === 'next') this.next();
@@ -2481,6 +2503,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         width,
         coarsePointer: coarsePointer(),
         edgePaging: true,
+        rtl: this.isRtl(),
       });
 
       if (action === 'next') this.next();
@@ -2528,6 +2551,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         endX: touch.clientX,
         endY: touch.clientY,
         durationMs: now - start.at,
+        rtl: this.isRtl(),
       });
 
       // A tap with no selection hands the page back after the deferred capture

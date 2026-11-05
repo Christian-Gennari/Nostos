@@ -56,6 +56,8 @@ export interface IReader {
   next(): void;
   previous(): void;
   goTo(target: string | number): void;
+  /** True for a right-to-left book: the left arrow turns forward (#1388). */
+  isRtl?(): boolean;
   goToSource?(target: ReaderSourceTarget): void | Promise<void>;
   /** Opens an imported highlight by its text and its e-reader's position. */
   goToPassage?(location: ImportedNoteLocation): void | Promise<void>;

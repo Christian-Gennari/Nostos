@@ -91,6 +91,7 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     const book = {
       renderTo: vi.fn(() => rendition),
       ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
       on: vi.fn((type: string, cb: (...args: unknown[]) => void) => {
         if (!listeners[type]) listeners[type] = [];
         listeners[type].push(cb);
@@ -714,6 +715,7 @@ describe('EpubReader theme-following normalization', () => {
         return rendition;
       }),
       ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
       on: vi.fn(),
       off: vi.fn(),
       locations: {
@@ -1296,6 +1298,7 @@ describe('EpubReader typography persistence', () => {
             resize: vi.fn(),
           }),
           ready: Promise.resolve({ navigation: { toc: [] } }),
+          loaded: { metadata: Promise.resolve({ language: 'en' }) },
           on: vi.fn(),
           off: vi.fn(),
           locations: {
@@ -1788,6 +1791,7 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     const book = {
       renderTo: vi.fn(() => rendition),
       ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
       on: vi.fn(),
       off: vi.fn(),
       locations: {
