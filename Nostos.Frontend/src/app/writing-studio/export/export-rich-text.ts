@@ -15,9 +15,22 @@ export interface RichTextClip {
 
 export function renderExportRichText(doc: ExportDocument): RichTextClip {
   return {
-    html: `<meta charset="utf-8"><div>${renderExportBody(doc, { notes: 'document' })}</div>`,
+    html: `<meta charset="utf-8"><div>${withoutNoteLinks(renderExportBody(doc, { notes: 'document' }))}</div>`,
     text: renderExportPlainText(doc),
   };
+}
+
+/**
+ * The browser rewrites every relative link on the clipboard to an absolute
+ * one against the page it copied from, so a `#fn1` link pasted into Substack
+ * would open the Nostos server. The note numbers therefore stay plain
+ * superscripts and the notes plain list items, with no link in either place.
+ */
+function withoutNoteLinks(html: string): string {
+  return html
+    .replace(/<sup id="fnref\d+"><a href="#fn\d+">(\d+)<\/a><\/sup>/g, '<sup>$1</sup>')
+    .replace(/<li id="fn(\d+)"/g, '<li')
+    .replace(/ <a href="#fnref\d+" aria-label="Back to the text">↩<\/a>/g, '');
 }
 
 /** The document as plain text: blocks a blank line apart, notes as [1]. */

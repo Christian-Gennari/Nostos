@@ -215,7 +215,8 @@ export class ExportDialogComponent {
     try {
       const [saved, source] = await Promise.all([this.exporter.savedSetup(id, studio), this.exporter.load(this.items(), id, overrides)]);
       if (run !== this.loadRun) return;
-      this.setup.set(saved ?? studio);
+      // The words follow the writing's own citation style, not the one an earlier export left behind.
+      this.setup.set({ ...(saved ?? studio), citationStyle: studio.citationStyle });
       this.source.set(source);
     } catch {
       if (run !== this.loadRun) return;

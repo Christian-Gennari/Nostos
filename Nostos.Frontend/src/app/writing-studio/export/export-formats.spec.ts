@@ -219,7 +219,11 @@ describe('copy as rich text (issue #1165)', () => {
     expect(view.querySelector('blockquote p')?.textContent).toBe('All is for the best.2');
     expect(view.querySelectorAll('table thead th')).toHaveLength(2);
     expect(view.querySelector('table tbody td')?.textContent).toBe('Candide | a tale');
-    expect(view.querySelector('sup a')?.textContent).toBe('1');
+    expect(view.querySelector('sup')?.textContent).toBe('1');
+    // The browser turns a relative link on the clipboard into one on the Nostos server (issue #1383).
+    expect(view.querySelector('a[href^="#"]')).toBeNull();
+    expect(html).not.toContain('href="#fn');
+    expect(view.querySelector('li[id]')).toBeNull();
     const notes = view.querySelector('.footnotes')!;
     expect(notes.querySelector('h2')?.textContent).toBe('Notes');
     expect(notes.querySelector('li em')?.textContent).toBe('Candide');

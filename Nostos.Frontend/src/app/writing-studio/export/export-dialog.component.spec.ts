@@ -207,10 +207,12 @@ describe('ExportDialogComponent (issue #1164)', () => {
     }
   });
 
-  it('uses the page setup saved with the writing', async () => {
-    exporter.savedSetup.mockResolvedValueOnce({ paper: 'letter', marginMm: 12.7, font: 'inter', lineSpacing: 2, citationStyle: 'apa' });
+  it('uses the page setup saved with the writing, but the writing’s own citation style (issue #1383)', async () => {
+    exporter.savedSetup.mockResolvedValueOnce({ paper: 'letter', marginMm: 12.7, font: 'inter', lineSpacing: 2, citationStyle: 'nostos' });
     await open('one');
-    expect(fixture.componentInstance.setup()).toEqual({ paper: 'letter', marginMm: 12.7, font: 'inter', lineSpacing: 2, citationStyle: 'apa' });
+    // The saved style is the one an earlier export used; the Studio's (MLA here) is what the writer set.
+    expect(fixture.componentInstance.setup()).toEqual({ paper: 'letter', marginMm: 12.7, font: 'inter', lineSpacing: 2, citationStyle: 'mla' });
+    expect(exporter.resolve).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ citationStyle: 'mla' }), null, expect.anything());
   });
 
   it('offers Try again after the citations fail, and asks once more', async () => {
@@ -289,8 +291,9 @@ describe('ExportDialogComponent (issue #1164)', () => {
   });
 
   it('names the house style as such', async () => {
-    exporter.savedSetup.mockResolvedValueOnce({ paper: 'a4', marginMm: 25.4, font: 'lora', lineSpacing: 1.5, citationStyle: 'nostos' });
     await open('one');
+    fixture.componentInstance.setCitationStyle('nostos');
+    fixture.detectChanges();
     expect(el('export-setup-summary')?.textContent?.trim()).toMatch(/· Nostos \(house style\)$/);
   });
 
