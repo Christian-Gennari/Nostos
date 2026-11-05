@@ -11,14 +11,49 @@ import type { NoteSearchHit } from '../dtos/note.dtos';
  */
 export type HighlightImportMatch = 'exact' | 'remembered' | 'suggested' | 'none';
 
+export type HighlightImportStart = 'all' | 'applebooks';
+
+/** Where Books keeps its databases on a Mac; the owner pastes it into the folder window. */
+export const APPLE_BOOKS_FOLDER = '~/Library/Containers/com.apple.iBooksX/Data/Documents';
+
+/** Files that go to the server as one import: a main file and the files that belong with it. */
+export interface HighlightImportUpload {
+  file: File;
+  companions: File[];
+}
+
+const APPLE_ANNOTATIONS = /^AEAnnotation.*\.sqlite$/i;
+const APPLE_LIBRARY = /^BKLibrary.*\.sqlite$/i;
+const APPLE_WAL = /^(AEAnnotation|BKLibrary).*\.sqlite-(wal|shm)$/i;
+
+/** Apple Books' own databases and their -wal files, out of a whole folder. */
+export function appleBooksFiles(files: File[]): File[] {
+  return files.filter((file) => APPLE_ANNOTATIONS.test(file.name) || APPLE_LIBRARY.test(file.name) || APPLE_WAL.test(file.name));
+}
+
+/**
+ * Apple Books keeps its highlights and its book titles in two databases
+ * (issue #1357), and recent changes can sit in a `-wal` file beside each.
+ * Those travel as one upload, led by the highlights database; every other
+ * file is its own upload. The server still tells files apart by content.
+ */
+export function groupHighlightImportFiles(files: File[]): HighlightImportUpload[] {
+  const apple = appleBooksFiles(files);
+  const others = files.filter((file) => !apple.includes(file)).map((file) => ({ file, companions: [] }));
+  const lead = apple.find((file) => APPLE_ANNOTATIONS.test(file.name)) ?? apple.find((file) => APPLE_LIBRARY.test(file.name));
+  if (!lead) return [...others, ...apple.map((file) => ({ file, companions: [] }))];
+  return [{ file: lead, companions: apple.filter((file) => file !== lead) }, ...others];
+}
+
 /** Where a file came from, as the server tells it apart by content. */
-export type HighlightImportSource = 'kobo' | 'koreader' | 'kindle' | 'readwise';
+export type HighlightImportSource = 'kobo' | 'koreader' | 'kindle' | 'readwise' | 'applebooks';
 
 export const HIGHLIGHT_IMPORT_SOURCE_LABEL: Record<HighlightImportSource, string> = {
   kobo: 'Kobo',
   koreader: 'KOReader',
   kindle: 'Kindle',
   readwise: 'Readwise',
+  applebooks: 'Apple Books',
 };
 
 export interface HighlightImportCandidate {
@@ -94,16 +129,19 @@ export interface HighlightImportBatch {
 }
 
 /**
- * Highlight import from an e-reader or an export (issues #656, #1219). Also owns whether the import dialog
+ * Highlight import from an e-reader, an export or Apple Books on a Mac (issues #656, #1219, #1357). Also owns whether the import dialog
  * is open, so Settings and the command palette open the same one.
  */
 @Injectable({ providedIn: 'root' })
 export class HighlightImportService {
   readonly isOpen = signal(false);
+  /** Where the dialog opens: the list of every source, or straight on Apple Books' steps. */
+  readonly startOn = signal<HighlightImportStart>('all');
 
   constructor(private http: HttpClient) {}
 
-  open(): void {
+  open(start: HighlightImportStart = 'all'): void {
+    this.startOn.set(start);
     this.isOpen.set(true);
   }
 
@@ -112,8 +150,8 @@ export class HighlightImportService {
   }
 
   /** Reads a file and proposes a library book per device book. Writes nothing. */
-  preview(file: File): Observable<HighlightImportPreview> {
-    return this.http.post<HighlightImportPreview>('/api/notes/imports/preview', this.body(file));
+  preview(file: File, companions: File[] = []): Observable<HighlightImportPreview> {
+    return this.http.post<HighlightImportPreview>('/api/notes/imports/preview', this.body(file, companions));
   }
 
   /** Imports the books that have a decision; a book without one is left out. */
@@ -121,8 +159,9 @@ export class HighlightImportService {
     file: File,
     decisions: HighlightImportDecision[],
     batchId: string | null = null,
+    companions: File[] = [],
   ): Observable<HighlightImportResult> {
-    const body = this.body(file);
+    const body = this.body(file, companions);
     body.append('decisions', JSON.stringify(decisions));
     // Files chosen together are one import, and so one thing to undo.
     if (batchId) body.append('batchId', batchId);
@@ -147,9 +186,10 @@ export class HighlightImportService {
     return this.http.delete<{ removed: number }>(`/api/notes/imports/batches/${batchId}`);
   }
 
-  private body(file: File): FormData {
+  private body(file: File, companions: File[] = []): FormData {
     const body = new FormData();
     body.append('file', file, file.name);
+    for (const companion of companions) body.append('companion', companion, companion.name);
     return body;
   }
 }

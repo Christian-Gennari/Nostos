@@ -55,7 +55,7 @@ import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
-import { HighlightImportService } from '../core/services/highlight-import.service';
+import { HighlightImportService, type HighlightImportStart } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -174,10 +174,20 @@ const BOOK_PROVIDER_COPY = {
   saveFailed: 'Could not save this source. Your previous choice is still in effect.',
 } as const;
 
+/** One source in Import › Highlights & notes. */
+interface ImportSourceRow {
+  id: string;
+  name: string;
+  hint: string;
+  /** New and checked on few real devices yet. */
+  beta?: boolean;
+}
+
 /** How a section's inline status line is coloured. */
 type SettingsSection =
   | 'general'
   | 'library'
+  | 'import'
   | 'assistant'
   | 'connections'
   | 'external'
@@ -188,6 +198,7 @@ type SettingsSection =
 const LINKABLE_SECTIONS: readonly SettingsSection[] = [
   'general',
   'library',
+  'import',
   'assistant',
   'connections',
   'external',
@@ -345,6 +356,23 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (requested === 'external' && !this.supportsExternalMediaLibraries()) return;
       if (requested === 'account' && !this.isCloud()) return;
       untracked(() => this.showSection(requested));
+    });
+
+    // `?section=import&open=applebooks` opens straight on Apple Books' steps,
+    // so help pages and support replies can link to them (#1357). The
+    // parameter is dropped once used, so a reload does not reopen it.
+    effect(() => {
+      if (this.isManageLibraryPage || this.queryParamMap().get('open') !== 'applebooks') return;
+      untracked(() => {
+        this.showSection('import');
+        this.openHighlightImport('applebooks');
+        void this.router?.navigate([], {
+          relativeTo: this.route,
+          queryParams: { open: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
     });
 
     effect(() => {
@@ -570,8 +598,26 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { value: '20', label: '20' },
   ] satisfies readonly DropdownOption[];
 
-  openHighlightImport(): void {
-    this.highlightImport.open();
+  /** The rows of Import › Highlights & notes; each opens the one highlight import. */
+  readonly highlightImportSources: readonly ImportSourceRow[] = [
+    { id: 'kobo', name: 'Kobo', hint: 'KoboReader.sqlite from the e-reader, connected by USB.' },
+    { id: 'koreader', name: 'KOReader', hint: "A book's metadata.lua, from its .sdr folder." },
+    { id: 'kindle', name: 'Kindle', hint: 'My Clippings.txt from the Kindle, connected by USB.' },
+    { id: 'applebooks', name: 'Apple Books', hint: 'From Books on your Mac, with what you highlighted on iPhone and iPad.', beta: true },
+    { id: 'readwise', name: 'Readwise', hint: 'A CSV export from Readwise.' },
+  ];
+
+  openHighlightImport(start: HighlightImportStart = 'all'): void {
+    this.highlightImport.open(start);
+  }
+
+  openAddBook(): void {
+    void this.router?.navigate(['/library'], { queryParams: { add: 'file' } });
+  }
+
+  /** The .nostos import lives with the rest of Backups & data. */
+  openLibraryArchiveImport(): void {
+    void this.router?.navigate(['/settings/library'], { queryParams: { action: 'import' } });
   }
 
   setSettingsSection(section: SettingsSection): void {

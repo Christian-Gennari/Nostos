@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { EBOOK_CATEGORY_LABEL, EBOOK_CATEGORY_LABEL_PLURAL } from '../core/book-format';
 import { formatFileSize } from '../core/format';
 import { CommonModule } from '@angular/common';
@@ -106,6 +106,7 @@ export class AddBookModal {
   private booksService = inject(BooksService);
   private providers = inject(ProvidersService);
   private toast = inject(ToastService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
   /** Resumable uploads outlive this modal, so they are owned by a root service. */
   private bookUploads = inject(BookUploadService);
   /** The import feed: opened on demand once an import has actually been queued. */
@@ -582,15 +583,46 @@ export class AddBookModal {
       ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension));
     this.form.type = audio ? 'audiobook' : 'ebook';
 
+    let guessedTitle: string | null = null;
     if (!this.form.title.trim()) {
-      this.form.title = file.name
+      guessedTitle = file.name
         .replace(/\.[^.]+$/, '')
         .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+      this.form.title = guessedTitle;
     }
 
+    if (lower.endsWith('.epub')) void this.fillFromEpub(file, guessedTitle);
+
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+  }
+
+  /**
+   * An EPUB names its own title and author (issue #1358). They replace a
+   * title guessed from the file name and fill an empty author, never what
+   * the owner typed. A file that will not open leaves the form as it is.
+   */
+  private async fillFromEpub(file: File, guessedTitle: string | null): Promise<void> {
+    try {
+      const { default: ePub } = await import('epubjs');
+      const book = ePub(await file.arrayBuffer());
+      const metadata = await book.loaded.metadata;
+      // Closed only once every part has loaded: epubjs keeps loading the
+      // navigation and display options after the metadata, and fails on a
+      // closed book. A part that fails to load does not matter here.
+      await book.ready.catch(() => undefined);
+      book.destroy();
+      if (this.selectedFile() !== file) return;
+
+      const title = metadata.title?.trim();
+      const author = metadata.creator?.trim();
+      if (title && (this.form.title.trim() === '' || this.form.title === guessedTitle)) this.form.title = title;
+      if (author && !this.form.author?.trim()) this.form.author = author;
+      this.changeDetector.markForCheck();
+    } catch {
+      // Not every file that ends in .epub is one; the upload decides.
+    }
   }
 
   onCoverSelected(event: Event) {

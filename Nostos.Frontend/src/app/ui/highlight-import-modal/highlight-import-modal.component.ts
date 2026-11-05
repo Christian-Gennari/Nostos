@@ -1,5 +1,5 @@
 import { editionChoices } from '../../book-detail/edition-switch-options';
-import { Component, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked, ChangeDetectionStrategy } from '@angular/core';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
 import { NgTemplateOutlet } from '@angular/common';
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
@@ -8,6 +8,9 @@ import { Router } from '@angular/router';
 import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
+  APPLE_BOOKS_FOLDER,
+  appleBooksFiles,
+  groupHighlightImportFiles,
   HIGHLIGHT_IMPORT_SOURCE_LABEL,
   HighlightImportBatch,
   HighlightImportCandidate,
@@ -25,6 +28,8 @@ import { ButtonComponent } from '../button/button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
 import { DropZoneComponent } from '../drop-zone/drop-zone.component';
+import { BadgeComponent } from '../badge/badge.component';
+import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
 import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../../core/book-format';
@@ -33,7 +38,7 @@ import { plural } from '../../core/format';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
 import { answerStarterOffer } from '../../writing-studio/starter-draft/starter-draft';
 
-type Stage = 'pick' | 'reading' | 'review' | 'importing' | 'result';
+type Stage = 'pick' | 'applebooks' | 'reading' | 'review' | 'importing' | 'result';
 
 /** Where one device book's highlights will go. `null` on a row means "leave out". */
 export type ImportTarget =
@@ -62,7 +67,8 @@ export interface UnimportableEntry extends HighlightImportSkipped {
 
 /**
  * Import highlights and notes from an e-reader (issue #656), a Kindle's
- * My Clippings.txt or a Readwise CSV export (issue #1219).
+ * My Clippings.txt or a Readwise CSV export (issue #1219), or Apple Books'
+ * two databases from a Mac, chosen together (issue #1357).
  *
  * Nothing is written until the owner has seen where every book is going.
  * Books whose identity is certain arrive already decided; a book that only
@@ -82,6 +88,7 @@ export interface UnimportableEntry extends HighlightImportSkipped {
     SearchFieldComponent,
     LoadingIndicatorComponent,
     DropZoneComponent,
+    BadgeComponent,
     NostosDatePipe,
     NgTemplateOutlet,
     ModalShell,
@@ -192,11 +199,38 @@ export class HighlightImportModal {
     return '';
   });
 
+  /**
+   * Apple Books is in beta until it has run on more Macs: its database was
+   * checked on a real macOS, the folder window only on a few. A Cloud owner
+   * reaches the feedback page; a self-hosted one the issue on GitHub.
+   */
+  private readonly feedbackLink = inject(FeedbackLinkService);
+  readonly appleBooksFeedbackUrl = computed(
+    () => this.feedbackLink.url() ?? 'https://github.com/Christian-Gennari/Nostos/issues/1357',
+  );
+
+  /** Apple Books' own steps (issue #1357): the owner points at one folder, Nostos does the rest. */
+  readonly appleBooksFolder = APPLE_BOOKS_FOLDER;
+  readonly folderCopied = signal<'idle' | 'copied' | 'failed'>('idle');
+  /** The import started from Apple Books' steps, so Back and "again" return there. */
+  readonly fromAppleBooks = signal(false);
+
   private nextRowId = 0;
+  /** Files that went up with a main file, so the commit sends the same set. */
+  private readonly companions = new Map<File, File[]>();
 
   constructor() {
     effect(() => {
       if (this.isOpen() && this.stage() === 'pick') this.loadRecent();
+    });
+
+    // Settings' Apple Books row opens straight on Apple Books' steps.
+    effect(() => {
+      if (!this.isOpen() || this.service.startOn() !== 'applebooks') return;
+      untracked(() => {
+        if (this.stage() === 'pick') this.showAppleBooks();
+        this.service.startOn.set('all');
+      });
     });
 
     this.searchSubject
@@ -266,6 +300,50 @@ export class HighlightImportModal {
     void this.readFiles(Array.from(event.dataTransfer?.files ?? []));
   }
 
+  /**
+   * The Books folder on a Mac holds the two databases in separate folders,
+   * which one file window cannot select together. The whole folder is
+   * chosen instead, and only Apple Books' own files are sent.
+   */
+  onAppleBooksFolderSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const chosen = Array.from(input.files ?? []);
+    const files = appleBooksFiles(chosen);
+    input.value = '';
+    if (chosen.length === 0) return;
+    if (files.length === 0) {
+      this.appleBooksError.set(true);
+      return;
+    }
+    this.appleBooksError.set(false);
+    void this.readFiles(files);
+  }
+
+  /** The chosen folder held no Apple Books highlights. */
+  readonly appleBooksError = signal(false);
+
+  showAppleBooks(): void {
+    this.fromAppleBooks.set(true);
+    this.appleBooksError.set(false);
+    this.folderCopied.set('idle');
+    this.stage.set('applebooks');
+  }
+
+  showAllSources(): void {
+    this.fromAppleBooks.set(false);
+    this.stage.set('pick');
+  }
+
+  async copyAppleBooksFolder(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.appleBooksFolder);
+      this.folderCopied.set('copied');
+    } catch {
+      // Without clipboard access the location is shown to copy by hand.
+      this.folderCopied.set('failed');
+    }
+  }
+
   onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
@@ -286,14 +364,17 @@ export class HighlightImportModal {
     this.undone.set(null);
     this.undoError.set(null);
     this.draftError.set(null);
-    this.fileCount.set(files.length);
+    const uploads = groupHighlightImportFiles(files);
+    this.companions.clear();
+    for (const upload of uploads) this.companions.set(upload.file, upload.companions);
+    this.fileCount.set(uploads.length);
     this.stage.set('reading');
 
-    for (const [index, file] of files.entries()) {
+    for (const [index, { file, companions }] of uploads.entries()) {
       this.currentIndex.set(index + 1);
       this.currentFileName.set(file.name);
       try {
-        const preview = await firstValueFrom(this.service.preview(file));
+        const preview = await firstValueFrom(this.service.preview(file, companions));
         this.rows.update((rows) => [...rows, ...preview.books.map((book) => this.toRow(file, book))]);
         const skipped = (preview.skipped ?? []).map((entry) => ({ ...entry, fileName: file.name }));
         if (skipped.length > 0) this.unimportable.update((all) => [...all, ...skipped]);
@@ -361,7 +442,7 @@ export class HighlightImportModal {
   }
 
   backToPick(): void {
-    this.stage.set('pick');
+    this.stage.set(this.fromAppleBooks() ? 'applebooks' : 'pick');
     this.closePicker();
   }
 
@@ -388,7 +469,7 @@ export class HighlightImportModal {
 
       try {
         const result = await firstValueFrom(
-          this.service.commit(file, decisions, this.batchIds()[0] ?? null),
+          this.service.commit(file, decisions, this.batchIds()[0] ?? null, this.companions.get(file) ?? []),
         );
         this.results.update((all) => [...all, ...result.books]);
         if (result.batchId && !this.batchIds().includes(result.batchId)) {
@@ -466,7 +547,7 @@ export class HighlightImportModal {
   }
 
   importAnother(): void {
-    this.stage.set('pick');
+    this.stage.set(this.fromAppleBooks() ? 'applebooks' : 'pick');
   }
 
   openBook(book: HighlightImportResultBook): void {
@@ -479,6 +560,8 @@ export class HighlightImportModal {
     if (this.busy() || this.undoing() || this.startingDraft()) return;
     this.service.close();
     this.stage.set('pick');
+    this.fromAppleBooks.set(false);
+    this.appleBooksError.set(false);
     this.rows.set([]);
     this.results.set([]);
     this.failures.set([]);

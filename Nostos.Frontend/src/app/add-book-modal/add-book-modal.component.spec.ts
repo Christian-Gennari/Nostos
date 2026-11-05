@@ -10,6 +10,15 @@ import {
 import { BookUploadStatusDto } from '../core/dtos/book-upload.dtos';
 import { ToastService } from '../core/services/toast.service';
 
+// An EPUB's own metadata (issue #1358). `null` stands for a file epubjs cannot open.
+const epubMetadata = vi.hoisted(() => ({ value: null as { title?: string; creator?: string } | null }));
+vi.mock('epubjs', () => ({
+  default: () => {
+    const metadata = epubMetadata.value ? Promise.resolve(epubMetadata.value) : Promise.reject(new Error('not an EPUB'));
+    return { loaded: { metadata }, ready: metadata, destroy: () => undefined };
+  },
+}));
+
 const collections = [
   { id: 'root', name: 'Root', parentId: null },
   { id: 'child', name: 'Child', parentId: 'root' },
@@ -251,6 +260,27 @@ describe('AddBookModal', () => {
     expect(component.form.title).toBe('the magic mountain');
     expect(fixture.nativeElement.querySelector('#book-title')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('the-magic-mountain.epub');
+  });
+
+  it('fills title and author from the EPUB itself, but never over what the owner typed', async () => {
+    epubMetadata.value = { title: 'Persuasion', creator: 'Jane Austen' };
+    component.startIntent('upload');
+    component.onFileSelected({
+      target: { files: [new File(['epub'], 'scan_0042_final.epub', { type: 'application/epub+zip' })] },
+    } as unknown as Event);
+    expect(component.form.title).toBe('scan 0042 final');
+    await vi.waitFor(() => expect(component.form.title).toBe('Persuasion'));
+    expect(component.form.author).toBe('Jane Austen');
+
+    component.form.title = 'My own title';
+    component.form.author = 'My own author';
+    component.onFileSelected({
+      target: { files: [new File(['epub'], 'other.epub', { type: 'application/epub+zip' })] },
+    } as unknown as Event);
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(component.form.title).toBe('My own title');
+    expect(component.form.author).toBe('My own author');
+    epubMetadata.value = null;
   });
 
   it('infers audiobook format from an uploaded audio file', () => {

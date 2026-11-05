@@ -20,6 +20,7 @@ public sealed class HighlightImportService
     private const string KoboClientId = "kobo-import";
     private const string KindleClientId = "kindle-import";
     private const string ReadwiseClientId = "readwise-import";
+    private const string AppleBooksClientId = "applebooks-import";
     private readonly NostosDbContext _db;
     private readonly INoteService _notes;
     private readonly ILibraryService _library;
@@ -31,9 +32,13 @@ public sealed class HighlightImportService
         _library = library;
     }
 
-    public async Task<HighlightImportPreview> PreviewAsync(string path, CancellationToken ct = default)
+    public Task<HighlightImportPreview> PreviewAsync(string path, CancellationToken ct = default) =>
+        PreviewAsync(path, [], ct);
+
+    /// <param name="companions">Files chosen together with the main one (Apple Books' library database).</param>
+    public async Task<HighlightImportPreview> PreviewAsync(string path, IReadOnlyList<string> companions, CancellationToken ct = default)
     {
-        var (source, sourceBooks, skipped) = HighlightImportSourceReader.Read(path);
+        var (source, sourceBooks, skipped) = HighlightImportSourceReader.Read(path, companions);
         var library = await LoadLibraryAsync(ct);
         var links = await LoadLinksAsync(source, sourceBooks, ct);
 
@@ -76,14 +81,23 @@ public sealed class HighlightImportService
         return new HighlightImportPreview(source, books, skipped);
     }
 
+    public Task<HighlightImportResult> CommitAsync(
+        string path,
+        string? fileName,
+        IReadOnlyList<HighlightImportDecision> decisions,
+        Guid? batchId = null,
+        CancellationToken ct = default) =>
+        CommitAsync(path, [], fileName, decisions, batchId, ct);
+
     public async Task<HighlightImportResult> CommitAsync(
         string path,
+        IReadOnlyList<string> companions,
         string? fileName,
         IReadOnlyList<HighlightImportDecision> decisions,
         Guid? batchId = null,
         CancellationToken ct = default)
     {
-        var (source, sourceBooks, _) = HighlightImportSourceReader.Read(path);
+        var (source, sourceBooks, _) = HighlightImportSourceReader.Read(path, companions);
         var bySourceKey = decisions
             .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
@@ -344,6 +358,7 @@ public sealed class HighlightImportService
             HighlightImportSourceReader.Kobo => KoboClientId,
             HighlightImportSourceReader.Kindle => KindleClientId,
             HighlightImportSourceReader.Readwise => ReadwiseClientId,
+            HighlightImportSourceReader.AppleBooks => AppleBooksClientId,
             _ => KoreaderNoteImportService.ClientId,
         };
 

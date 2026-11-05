@@ -159,6 +159,72 @@ public sealed class HighlightImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Apple_books_files_from_a_mac_import_together_and_again_add_nothing()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var walden = await CreateBookAsync(client, "Walden", "Henry David Thoreau");
+        var annotations = AppleBooksFixtures.CreateAnnotations(_directory,
+            new AppleBooksFixtures.Annotation("ASSET-W", "Our life is frittered away by detail.", "Keep this."),
+            new AppleBooksFixtures.Annotation("ASSET-W", "Simplify, simplify.", RangeStart: 5),
+            new AppleBooksFixtures.Annotation("ASSET-W", "Gone.", Deleted: 1));
+        var library = AppleBooksFixtures.CreateLibrary(_directory,
+            new AppleBooksFixtures.Asset("ASSET-W", "Walden", "Henry David Thoreau"));
+
+        var preview = await UploadWithCompanionsAsync(client, "preview", annotations, [library]);
+        preview.StatusCode.Should().Be(HttpStatusCode.OK);
+        var read = (await preview.Content.ReadFromJsonAsync<HighlightImportPreview>())!;
+        read.Source.Should().Be("applebooks");
+        var book = read.Books.Single();
+        (book.Title, book.Match, book.BookId, book.AnnotationCount).Should().Be(("Walden", "exact", walden.Id, 2));
+
+        var decision = new[] { new HighlightImportDecision("applebooks:ASSET-W", walden.Id) };
+        var first = await UploadWithCompanionsAsync(client, "commit", annotations, [library], decision);
+        (await first.Content.ReadFromJsonAsync<HighlightImportResult>())!.Books.Single().ImportedCount.Should().Be(2);
+        var again = await UploadWithCompanionsAsync(client, "commit", annotations, [library], decision);
+        var second = (await again.Content.ReadFromJsonAsync<HighlightImportResult>())!.Books.Single();
+        (second.ImportedCount, second.DuplicateCount).Should().Be((0, 2));
+
+        await using var db = CreateContext(factory.DatabasePath);
+        var notes = await db.Notes.AsNoTracking().OrderBy(note => note.SelectedText).ToListAsync();
+        notes.Select(note => (note.SelectedText, note.Content, note.SourceAnchorKind)).Should().Equal(
+            ("Our life is frittered away by detail.", "Keep this.", "applebooks_cfi"),
+            ("Simplify, simplify.", "", "applebooks_cfi"));
+        notes.Should().OnlyContain(note => note.SourceAnchorValue!.StartsWith("epubcfi("));
+    }
+
+    [Fact]
+    public async Task Apple_books_highlights_still_in_the_wal_file_are_read_when_it_comes_along()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var (database, wal) = AppleBooksFixtures.CreateAnnotationsWithPendingWal(_directory,
+            [new AppleBooksFixtures.Annotation("ASSET-1", "Saved before.")],
+            [new AppleBooksFixtures.Annotation("ASSET-1", "Made while Books was open.")]);
+
+        var without = await UploadWithCompanionsAsync(client, "preview", database, []);
+        (await without.Content.ReadFromJsonAsync<HighlightImportPreview>())!.Books.Single().AnnotationCount.Should().Be(1);
+
+        var with = await UploadWithCompanionsAsync(client, "preview", database, [wal]);
+        with.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await with.Content.ReadFromJsonAsync<HighlightImportPreview>())!.Books.Single().AnnotationCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task The_apple_books_library_file_alone_says_which_file_is_missing()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var library = AppleBooksFixtures.CreateLibrary(_directory,
+            new AppleBooksFixtures.Asset("ASSET-W", "Walden", "Henry David Thoreau"));
+
+        var response = await UploadWithCompanionsAsync(client, "preview", library, []);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("AEAnnotation");
+    }
+
+    [Fact]
     public async Task Commit_can_add_a_missing_book_to_the_library()
     {
         using var factory = new LibraryEndpointFactory();
@@ -695,6 +761,22 @@ public sealed class HighlightImportEndpointTests : IDisposable
             body.Add(new StringContent(JsonSerializer.Serialize(decisions, JsonSerializerOptions.Web)), "decisions");
         if (batchId is not null)
             body.Add(new StringContent(batchId.Value.ToString()), "batchId");
+        return await client.PostAsync($"/api/notes/imports/{step}", body);
+    }
+
+    private static async Task<HttpResponseMessage> UploadWithCompanionsAsync(
+        HttpClient client,
+        string step,
+        string path,
+        IReadOnlyList<string> companions,
+        HighlightImportDecision[]? decisions = null)
+    {
+        using var body = new MultipartFormDataContent();
+        body.Add(new ByteArrayContent(await File.ReadAllBytesAsync(path)), "file", Path.GetFileName(path));
+        foreach (var companion in companions)
+            body.Add(new ByteArrayContent(await File.ReadAllBytesAsync(companion)), "companion", Path.GetFileName(companion));
+        if (decisions is not null)
+            body.Add(new StringContent(JsonSerializer.Serialize(decisions, JsonSerializerOptions.Web)), "decisions");
         return await client.PostAsync($"/api/notes/imports/{step}", body);
     }
 

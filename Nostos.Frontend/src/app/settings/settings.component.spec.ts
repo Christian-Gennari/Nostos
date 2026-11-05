@@ -1,3 +1,4 @@
+import { HighlightImportService } from '../core/services/highlight-import.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
@@ -585,7 +586,7 @@ describe('SettingsComponent backup-only surface', () => {
       nav.map((item) =>
         item.query(By.css('.settings-nav-copy')).nativeElement.textContent.trim(),
       ),
-    ).toEqual(['General', 'Library', 'Assistant', 'AI connections', 'Backups & data']);
+    ).toEqual(['General', 'Library', 'Import', 'Assistant', 'AI connections', 'Backups & data']);
     expect(
       Array.from(fixture.nativeElement.querySelectorAll('.settings-nav-label')).map((label) =>
         ((label as HTMLElement).textContent ?? '').trim(),
@@ -597,7 +598,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelectorAll('.settings-nav a').length).toBe(0);
 
     const hashBefore = window.location.hash;
-    nav[2].nativeElement.click();
+    nav[3].nativeElement.click();
     fixture.detectChanges();
 
     expect(fixture.componentInstance.activeSettingsSection()).toBe('assistant');
@@ -1252,7 +1253,7 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.debugElement
         .queryAll(By.css('.settings-nav-copy'))
         .map((item) => item.nativeElement.textContent.trim()),
-    ).toEqual(['General', 'Library', 'Assistant', 'Backups & data', 'Account']);
+    ).toEqual(['General', 'Library', 'Import', 'Assistant', 'Backups & data', 'Account']);
     expect(
       fixture.nativeElement
         .querySelector('[data-testid="settings-nav-infrastructure-label"]')
@@ -1372,7 +1373,7 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.debugElement
         .queryAll(By.css('.settings-nav-copy'))
         .map((item) => item.nativeElement.textContent.trim()),
-    ).toEqual(['General', 'Library', 'Assistant', 'Backups & data', 'Account']);
+    ).toEqual(['General', 'Library', 'Import', 'Assistant', 'Backups & data', 'Account']);
     expect(fixture.nativeElement.querySelector('[data-testid="manage-library-open"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeNull();
@@ -1569,7 +1570,49 @@ describe('SettingsComponent backup-only surface', () => {
     expect((entries[0] as HTMLElement).textContent).toContain('Backups & data');
     expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-card"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-highlights-card"]')).toBeTruthy();
+  });
+
+  it('opens Apple Books steps from a link', () => {
+    const highlightImport = TestBed.inject(HighlightImportService);
+    const open = vi.spyOn(highlightImport, 'open');
+    routerMock.navigate.mockClear();
+    routeParamMap.next(convertToParamMap({ section: 'import', open: 'applebooks' }));
+    fixture.detectChanges();
+
+    expect(open).toHaveBeenCalledWith('applebooks');
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('import');
+    expect(routerMock.navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { open: null } }));
+  });
+
+  it('gathers every way into Nostos under Import', () => {
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    const section = fixture.nativeElement.querySelector('[data-testid="settings-import-section"]') as HTMLElement;
+    expect(section.hidden).toBe(false);
+    const rows = Array.from(section.querySelectorAll('[data-testid^="import-source-"]')).map((row) =>
+      row.getAttribute('data-testid'),
+    );
+    expect(rows).toEqual(expect.arrayContaining([
+      'import-source-kobo',
+      'import-source-koreader',
+      'import-source-kindle',
+      'import-source-applebooks',
+      'import-source-readwise',
+      'import-source-book-files',
+    ]));
+
+    const highlightImport = TestBed.inject(HighlightImportService);
+    const open = vi.spyOn(highlightImport, 'open');
+    (section.querySelector('[data-testid="import-action-applebooks"]') as HTMLButtonElement).click();
+    expect(open).toHaveBeenCalledWith('applebooks');
+    (section.querySelector('[data-testid="highlight-import-action"]') as HTMLButtonElement).click();
+    expect(open).toHaveBeenLastCalledWith('all');
+
+    routerMock.navigate.mockClear();
+    (section.querySelector('[data-testid="import-action-book-files"]') as HTMLButtonElement).click();
+    expect(routerMock.navigate).toHaveBeenCalledWith(['/library'], { queryParams: { add: 'file' } });
   });
 
   it('describes Backups & data for this deployment and marks it as the open section', () => {

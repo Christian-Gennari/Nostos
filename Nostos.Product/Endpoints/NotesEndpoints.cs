@@ -177,24 +177,26 @@ public static class NotesEndpoints
         // book per device book; `commit` takes the same file again with the
         // owner's decisions. Stateless on purpose — the server keeps no upload
         // between the two calls. The file is a Kobo database, a KOReader
-        // sidecar, a Kindle's My Clippings.txt or a Readwise CSV export (#1219),
-        // told apart by content.
+        // sidecar, a Kindle's My Clippings.txt, a Readwise CSV export (#1219)
+        // or Apple Books' annotation database (#1357), told apart by content.
+        // Apple Books' library database, and either database's -wal file,
+        // come along as `companion` parts of the same request.
         group.MapPost(
             "/notes/imports/preview",
             (HttpRequest request, HighlightImportService importer, CancellationToken ct) =>
-                WithImportFileAsync(request, ct, (path, _, _) => importer.PreviewAsync(path, ct))
+                WithImportFileAsync(request, ct, (path, companions, _, _) => importer.PreviewAsync(path, companions, ct))
         );
 
         group.MapPost(
             "/notes/imports/commit",
             (HttpRequest request, HighlightImportService importer, CancellationToken ct) =>
-                WithImportFileAsync(request, ct, (path, fileName, form) =>
+                WithImportFileAsync(request, ct, (path, companions, fileName, form) =>
                 {
                     var decisions = JsonSerializer.Deserialize<List<HighlightImportDecision>>(
                         form["decisions"].ToString() is { Length: > 0 } json ? json : "[]",
                         ImportJson) ?? [];
                     Guid? batchId = Guid.TryParse(form["batchId"].ToString(), out var parsed) ? parsed : null;
-                    return importer.CommitAsync(path, fileName, decisions, batchId, ct);
+                    return importer.CommitAsync(path, companions, fileName, decisions, batchId, ct);
                 })
         );
 
@@ -277,13 +279,15 @@ public static class NotesEndpoints
 
     // SQLite needs a real file and may create -wal/-shm beside it, so the
     // upload is spooled to a private temp directory that is removed whatever
-    // the outcome.
+    // the outcome. Files keep their own names there, so a database's -wal
+    // file sits beside it under the name SQLite looks for.
     private static async Task<IResult> WithImportFileAsync<T>(
         HttpRequest request,
         CancellationToken ct,
-        Func<string, string, IFormCollection, Task<T>> run)
+        Func<string, IReadOnlyList<string>, string, IFormCollection, Task<T>> run)
     {
         const long maxBytes = 256L * 1024 * 1024;
+        const int maxCompanions = 4;
         if (!request.HasFormContentType)
             return Results.BadRequest(new { error = "Expected multipart/form-data with a highlights file." });
 
@@ -294,17 +298,39 @@ public static class NotesEndpoints
         if (file.Length <= 0 || file.Length > maxBytes)
             return Results.BadRequest(new { error = "The file must be between 1 byte and 256 MB." });
 
+        var companions = form.Files.GetFiles("companion");
+        if (companions.Count > maxCompanions)
+            return Results.BadRequest(new { error = "Choose at most five files for one import." });
+        if (companions.Any(companion => companion.Length <= 0 || companion.Length > maxBytes))
+            return Results.BadRequest(new { error = "Each file must be between 1 byte and 256 MB." });
+
         var directory = Directory.CreateTempSubdirectory("nostos-highlight-import-");
         try
         {
-            var path = Path.Combine(directory.FullName, "upload");
-            await using (var target = File.Create(path))
-            await using (var source = file.OpenReadStream())
+            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            async Task<string> SaveAsync(IFormFile upload, string fallback)
             {
-                await source.CopyToAsync(target, ct);
+                var name = SafeUploadName(upload.FileName) ?? fallback;
+                if (!used.Add(name))
+                    name = $"{fallback}-{used.Count}";
+                used.Add(name);
+                var target = Path.Combine(directory.FullName, name);
+                await using var stream = File.Create(target);
+                await using var source = upload.OpenReadStream();
+                await source.CopyToAsync(stream, ct);
+                return target;
             }
 
-            return Results.Ok(await run(path, Path.GetFileName(file.FileName), form));
+            var path = await SaveAsync(file, "upload");
+            var companionPaths = new List<string>(companions.Count);
+            for (var i = 0; i < companions.Count; i++)
+                companionPaths.Add(await SaveAsync(companions[i], $"companion-{i}"));
+
+            // A -wal file is read through its database, never on its own.
+            companionPaths.RemoveAll(candidate => candidate.EndsWith("-wal", StringComparison.OrdinalIgnoreCase)
+                || candidate.EndsWith("-shm", StringComparison.OrdinalIgnoreCase));
+
+            return Results.Ok(await run(path, companionPaths, Path.GetFileName(file.FileName), form));
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
@@ -315,6 +341,15 @@ public static class NotesEndpoints
             try { directory.Delete(recursive: true); }
             catch (IOException) { }
         }
+    }
+
+    /// <summary>A plain file name to spool an upload under, or null when it has none worth keeping.</summary>
+    private static string? SafeUploadName(string? fileName)
+    {
+        var name = Path.GetFileName(fileName ?? string.Empty).Trim();
+        if (name.Length is 0 or > 200 || name.StartsWith('.'))
+            return null;
+        return name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ? null : name;
     }
 
     private static string? HeaderValue(HttpRequest request, string name) =>

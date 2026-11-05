@@ -11,6 +11,7 @@ import {
   HighlightImportService,
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { Book, PaginatedResponse } from '../../core/dtos/book.dtos';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
 import type { NoteSearchHit } from '../../core/dtos/note.dtos';
@@ -84,6 +85,8 @@ describe('HighlightImportModal', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [], totalCount: 0 })) } },
+        // Self-hosted: the beta feedback link goes to GitHub, and no request is left open.
+        { provide: DeploymentCapabilitiesService, useValue: { get: () => of({ deploymentMode: 'SelfHosted' }) } },
       ],
     }).compileComponents();
 
@@ -103,6 +106,75 @@ describe('HighlightImportModal', () => {
     fixture.detectChanges();
     expect(text()).toContain('Import highlights');
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-input"]')).not.toBeNull();
+  });
+
+  it('sends Apple Books files chosen together as one upload, and commits the same set', async () => {
+    const annotations = file('AEAnnotation_v10312011_1727_local.sqlite');
+    const wal = file('AEAnnotation_v10312011_1727_local.sqlite-wal');
+    const library = file('BKLibrary-1-091020131601.sqlite');
+    const kindle = file('My Clippings.txt');
+    const preview = vi.spyOn(service, 'preview').mockImplementation((main) =>
+      of({ source: main === kindle ? 'kindle' : 'applebooks', books: [previewBook({ sourceKey: main.name })] }),
+    );
+    const commit = vi.spyOn(service, 'commit').mockReturnValue(of({ batchId: 'b', source: 'applebooks', books: [resultBook({})] }));
+    service.open();
+
+    await component.readFiles([library, kindle, wal, annotations]);
+
+    expect(preview.mock.calls.map(([main, companions]) => [main.name, (companions ?? []).map((f) => f.name)])).toEqual([
+      ['AEAnnotation_v10312011_1727_local.sqlite', ['BKLibrary-1-091020131601.sqlite', 'AEAnnotation_v10312011_1727_local.sqlite-wal']],
+      ['My Clippings.txt', []],
+    ]);
+    expect(component.fileCount()).toBe(2);
+
+    await component.importReviewed();
+    const appleCommit = commit.mock.calls.find(([main]) => main === annotations)!;
+    expect(appleCommit[3]).toEqual([library, wal]);
+  });
+
+  it('opens on Apple Books steps, copies the folder location and sends only Books files from the folder', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const preview = vi.spyOn(service, 'preview').mockReturnValue(of({ source: 'applebooks', books: [previewBook({})] }));
+
+    service.open('applebooks');
+    fixture.detectChanges();
+    expect(component.stage()).toBe('applebooks');
+    expect(text()).toContain('Import from Apple Books');
+    expect(text()).not.toContain('sqlite');
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-beta"]')).not.toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-feedback"] a') as HTMLAnchorElement).href,
+    ).toContain('github.com/Christian-Gennari/Nostos/issues/1357');
+
+    (fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-copy"]') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(writeText).toHaveBeenCalledWith('~/Library/Containers/com.apple.iBooksX/Data/Documents');
+    expect(text()).toContain('Copied');
+
+    const folder = (names: string[]) => ({ target: { files: names.map((name) => file(name)), value: 'x' } }) as unknown as Event;
+    component.onAppleBooksFolderSelected(folder(['BCCloudAsset-1.sqlite', '.DS_Store']));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-applebooks-error"]')).not.toBeNull();
+    expect(preview).not.toHaveBeenCalled();
+
+    component.onAppleBooksFolderSelected(
+      folder(['.DS_Store', 'BKLibrary-1-091020131601.sqlite', 'BCCloudAsset-1.sqlite', 'AEAnnotation_v10312011_1727_local.sqlite']),
+    );
+    await vi.waitFor(() => expect(component.stage()).toBe('review'));
+    expect(preview.mock.calls[0][0].name).toBe('AEAnnotation_v10312011_1727_local.sqlite');
+    expect(preview.mock.calls[0][1]!.map((f) => f.name)).toEqual(['BKLibrary-1-091020131601.sqlite']);
+
+    // Back from the review returns to the Apple Books steps.
+    component.backToPick();
+    expect(component.stage()).toBe('applebooks');
+  });
+
+  it('offers no "Add to library" for a book whose title the file does not give', async () => {
+    await review(previewBook({ sourceKey: 'applebooks:A', title: null, author: null, match: 'none', bookId: null, candidates: [] }));
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-add"]')).toBeNull();
+    expect(text()).toContain('Choose a book');
   });
 
   it('decides a certain match, asks about a resemblance, and leaves a missing book out', async () => {

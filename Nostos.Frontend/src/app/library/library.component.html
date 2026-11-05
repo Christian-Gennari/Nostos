@@ -121,7 +121,8 @@
       <app-add-book-modal
         [isOpen]="showAddModal()"
         [collections]="collections()"
-        [sourceFirst]="true"
+        [sourceFirst]="!addStartsOnFile()"
+        [initialIntent]="addStartsOnFile() ? 'upload' : null"
         (closeModal)="closeAddModal()"
         (bookAdded)="onBookAdded()"
       >

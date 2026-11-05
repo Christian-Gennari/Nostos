@@ -15,7 +15,10 @@
 >
   <header class="highlight-import-head" shellHeader>
     <h2 id="highlight-import-title" class="highlight-import-title">
-      {{ stage() === 'review' ? 'Review before importing' : 'Import highlights' }}
+      {{ stage() === 'review' ? 'Review before importing' : stage() === 'applebooks' ? 'Import from Apple Books' : 'Import highlights' }}
+      @if (stage() === 'applebooks') {
+        <span appBadge class="highlight-beta" data-testid="highlight-applebooks-beta">Beta</span>
+      }
     </h2>
   </header>
 
@@ -26,7 +29,7 @@
     @switch (stage()) {
       @case ('pick') {
         <p class="highlight-import-hint">
-          Bring the highlights and notes you made on an e-reader or in Readwise into Nostos. You see
+          Bring the highlights and notes you made on an e-reader, in Apple Books or in Readwise into Nostos. You see
           where every book is going before anything is added, and importing the same file again never
           creates duplicates.
         </p>
@@ -74,6 +77,20 @@
               device arrives once, as its latest version.
             </dd>
           </div>
+          <div class="highlight-source" data-testid="highlight-source-applebooks">
+            <dt>Apple Books</dt>
+            <dd>
+              Your highlights from Books on a Mac, iPhone and iPad.
+              <button
+                type="button"
+                appButton
+                variant="link"
+                class="highlight-link"
+                data-testid="highlight-applebooks-open"
+                (click)="showAppleBooks()"
+              >Import from Apple Books</button>
+            </dd>
+          </div>
           <div class="highlight-source">
             <dt>Readwise</dt>
             <dd>
@@ -107,6 +124,55 @@
             </ul>
           </section>
         }
+      }
+
+      @case ('applebooks') {
+        <p class="highlight-import-hint">
+          Your Apple Books highlights are kept on your Mac. Highlights you made on an iPhone or iPad are
+          there too, when Books uses iCloud.
+        </p>
+        <ol class="highlight-steps" data-testid="highlight-applebooks-steps">
+          <li>On your Mac, quit Books.</li>
+          <li>
+            <span>Copy where Books keeps your highlights.</span>
+            <button
+              appButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              class="highlight-step-action"
+              data-testid="highlight-applebooks-copy"
+              (click)="copyAppleBooksFolder()"
+            >
+              <nostos-icon [name]="folderCopied() === 'copied' ? 'check' : 'copy'" [size]="14"></nostos-icon>
+              {{ folderCopied() === 'copied' ? 'Copied' : 'Copy folder location' }}
+            </button>
+            @if (folderCopied() === 'failed') {
+              <span class="highlight-step-fallback">
+                Copy this instead: <code class="highlight-folder">{{ appleBooksFolder }}</code>
+              </span>
+            }
+          </li>
+          <li>
+            Press <strong>Choose the Books folder</strong> below. In the window that opens, press
+            <kbd>Shift</kbd>&#8239;<kbd>⌘</kbd>&#8239;<kbd>G</kbd>, paste, press <kbd>Return</kbd>, then
+            <strong>Upload</strong>.
+          </li>
+        </ol>
+        @if (appleBooksError()) {
+          <p class="highlight-failure" role="alert" data-testid="highlight-applebooks-error">
+            Nostos found no Apple Books highlights in that folder. Copy the folder location again and
+            paste it in the window, then press Upload.
+          </p>
+        }
+        <p class="highlight-import-hint highlight-steps-note">
+          Nostos only reads your Books highlights from that folder. You see where every book is going
+          before anything is added, and importing again later only adds what is new.
+        </p>
+        <p class="highlight-import-hint" data-testid="highlight-applebooks-feedback">
+          Apple Books import is new.
+          <a class="highlight-link" [href]="appleBooksFeedbackUrl()" target="_blank" rel="noopener">Tell us whether it worked for you</a>.
+        </p>
       }
 
       @case ('reading') {
@@ -262,6 +328,31 @@
       }
     }
   </div>
+
+  @if (stage() === 'applebooks') {
+    <app-dialog-actions shellActions>
+      <button appButton type="button" variant="secondary" (click)="showAllSources()">Other sources</button>
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        data-testid="highlight-applebooks-folder"
+        (click)="appleFolderInput.click()"
+      >
+        Choose the Books folder
+      </button>
+    </app-dialog-actions>
+  }
+  <input
+    #appleFolderInput
+    type="file"
+    class="visually-hidden"
+    tabindex="-1"
+    aria-hidden="true"
+    data-testid="highlight-applebooks-folder-input"
+    webkitdirectory
+    (change)="onAppleBooksFolderSelected($event)"
+  />
 
   @if (stage() === 'review') {
     <app-dialog-actions shellActions>
@@ -440,10 +531,12 @@
     } @else {
       <div class="highlight-review-buttons">
         <span class="highlight-review-left-out">Left out</span>
-        <button appButton type="button" variant="secondary" size="sm" data-testid="highlight-add" (click)="addToLibrary(row)">
-          <nostos-icon name="plus" [size]="13"></nostos-icon>
-          Add to library
-        </button>
+        @if (row.book.title) {
+          <button appButton type="button" variant="secondary" size="sm" data-testid="highlight-add" (click)="addToLibrary(row)">
+            <nostos-icon name="plus" [size]="13"></nostos-icon>
+            Add to library
+          </button>
+        }
         <button appButton type="button" variant="ghost" size="sm" (click)="openPicker(row)">
           Choose a book
         </button>
@@ -497,9 +590,11 @@
           }
         </ul>
         <div class="highlight-picker-footer">
-          <button type="button" appButton variant="link" class="highlight-link" (click)="addToLibrary(row)">
-            Add as a new book instead
-          </button>
+          @if (row.book.title) {
+            <button type="button" appButton variant="link" class="highlight-link" (click)="addToLibrary(row)">
+              Add as a new book instead
+            </button>
+          }
           <button type="button" appButton variant="link" class="highlight-link" (click)="closePicker()">Cancel</button>
         </div>
       </div>
