@@ -210,26 +210,55 @@ internal sealed class LibraryReadService(
             // Imports sort FIRST, whatever the sort key is. The boundary above also
             // keeps them in the result through ordinary filters, so their own card
             // remains the single progress surface until the import settles.
+            List<BookModel> items;
             IOrderedQueryable<BookModel> ImportingFirst(IQueryable<BookModel> source) =>
                 source.OrderByDescending(b =>
                     b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding);
 
-            query = sort switch
+            if (sort == BookSort.Title)
             {
-                BookSort.Title => ImportingFirst(query).ThenBy(b => b.Title),
-                BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Work!.Rating),
-                BookSort.LastRead => ImportingFirst(query)
-                    .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
-                    .ThenByDescending(b => b.Progress.LastReadAt),
-                _ => ImportingFirst(query).ThenByDescending(b => b.CreatedAt),
-            };
+                // Title order is computed in C# (TitleSortKey), not by the database,
+                // so SQLite and PostgreSQL agree. Only three narrow columns are
+                // loaded to order the set; full books load for the page alone.
+                var rows = await query
+                    .Select(b => new TitleRow(b.Id, b.Status, b.Title))
+                    .ToListAsync(ct);
+                var orderedIds = rows
+                    .OrderByDescending(r => r.Status == BookStatus.Downloading || r.Status == BookStatus.Transcoding)
+                    .ThenBy(r => r.Title, TitleSortKey.Comparer)
+                    .ThenBy(r => r.Id)
+                    .Select(r => r.Id)
+                    .ToList();
+                totalCount = orderedIds.Count;
+                var pageIds = orderedIds
+                    .Skip((safePage - 1) * safePageSize)
+                    .Take(safePageSize)
+                    .ToList();
+                var byId = (await query
+                        .Where(b => pageIds.Contains(b.Id))
+                        .Select(BookReadShapes.WithoutLocations)
+                        .ToListAsync(ct))
+                    .ToDictionary(b => b.Id);
+                items = pageIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+            }
+            else
+            {
+                query = sort switch
+                {
+                    BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Work!.Rating),
+                    BookSort.LastRead => ImportingFirst(query)
+                        .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
+                        .ThenByDescending(b => b.Progress.LastReadAt),
+                    _ => ImportingFirst(query).ThenByDescending(b => b.CreatedAt),
+                };
 
-            totalCount = await query.CountAsync(ct);
-            var items = await query
-                .Skip((safePage - 1) * safePageSize)
-                .Take(safePageSize)
-                .Select(BookReadShapes.WithoutLocations)
-                .ToListAsync(ct);
+                totalCount = await query.CountAsync(ct);
+                items = await query
+                    .Skip((safePage - 1) * safePageSize)
+                    .Take(safePageSize)
+                    .Select(BookReadShapes.WithoutLocations)
+                    .ToListAsync(ct);
+            }
 
             var pageWorkIds = items.Select(b => b.WorkId).Distinct().ToList();
             var pageSiblings = await CountableBooks(db)
@@ -577,6 +606,8 @@ internal sealed class LibraryReadService(
             book is AudioBookModel a ? a.Asin : null,
             reason);
 
+    private sealed record TitleRow(Guid Id, BookStatus Status, string Title);
+
     /// <summary>The columns that group, rank and sort a book in the grouped list.</summary>
     private sealed record GroupCandidate(
         Guid Id,
@@ -610,7 +641,7 @@ internal sealed class LibraryReadService(
         IEnumerable<GroupCandidate> books,
         BookSort sort) => sort switch
         {
-            BookSort.Title => ImportingFirst(books).ThenBy(b => b.Title).ThenBy(b => b.Id),
+            BookSort.Title => ImportingFirst(books).ThenBy(b => b.Title, TitleSortKey.Comparer).ThenBy(b => b.Id),
             BookSort.Rating => ImportingFirst(books).ThenByDescending(b => b.Rating).ThenBy(b => b.Id),
             BookSort.LastRead => ImportingFirst(books)
                 .ThenByDescending(b => b.LastReadAt.HasValue)
