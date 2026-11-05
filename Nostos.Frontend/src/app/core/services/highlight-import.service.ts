@@ -65,6 +65,15 @@ export interface HighlightImportCandidate {
   format: BookFormatConcept;
 }
 
+/** One highlight of a device book, cut short; `index` names it in a decision. */
+export interface HighlightImportPreviewHighlight {
+  index: number;
+  text: string | null;
+  note: string | null;
+  /** False for a highlight Nostos already holds (for the book proposed first). */
+  isNew: boolean;
+}
+
 export interface HighlightImportPreviewBook {
   sourceKey: string;
   title: string | null;
@@ -76,6 +85,7 @@ export interface HighlightImportPreviewBook {
   candidates: HighlightImportCandidate[];
   /** Something to know before choosing, such as a Readwise row that looks like a web article. */
   notice?: string | null;
+  highlights?: HighlightImportPreviewHighlight[] | null;
 }
 
 /** Entries a file holds that cannot be imported, by book and reason. */
@@ -97,6 +107,8 @@ export interface HighlightImportDecision {
   sourceKey: string;
   bookId?: string;
   create?: boolean;
+  /** Indexes of the highlights the owner unticked. */
+  excludedHighlights?: number[];
 }
 
 export interface HighlightImportResultBook {

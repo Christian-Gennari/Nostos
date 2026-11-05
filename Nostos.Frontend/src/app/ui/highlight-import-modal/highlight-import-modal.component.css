@@ -254,6 +254,10 @@ summary.highlight-section-header:focus-visible {
   transition: transform 0.15s ease;
 }
 
+.highlight-disclosure.is-open {
+  transform: rotate(90deg);
+}
+
 .highlight-unplaced[open] .highlight-disclosure {
   transform: rotate(90deg);
 }
@@ -489,4 +493,66 @@ summary.highlight-section-header:focus-visible {
 .highlight-footer-note {
   font-size: 0.78rem;
   color: var(--color-text-muted);
+}
+
+/* --- Highlights of one book ---------------------------------------------- */
+
+.highlight-review-toggle {
+  align-self: flex-start;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.highlight-quotes {
+  display: flex;
+  flex-direction: column;
+  max-height: 14rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border-top: 1px solid var(--border-light);
+}
+
+.highlight-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+}
+
+.highlight-quote input {
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+}
+
+.highlight-quote-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.highlight-quote-passage {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--color-text-main);
+}
+
+.highlight-quote-note {
+  font-size: 0.74rem;
+  color: var(--color-text-light);
+  overflow-wrap: anywhere;
+}
+
+.highlight-left-out-note {
+  margin-bottom: 0.55rem;
 }

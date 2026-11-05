@@ -116,7 +116,7 @@
                       {{ sourceName(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }}
                     </span>
                   </span>
-                  <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="undoRecent(batch)">
+                  <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="askUndoRecent(batch)">
                     Undo
                   </button>
                 </li>
@@ -305,6 +305,10 @@
               <h3 class="highlight-section-title">Left out</h3>
               <span class="highlight-count-badge">{{ skipped().length }}</span>
             </summary>
+            <p class="highlight-import-hint highlight-left-out-note" data-testid="highlight-left-out-note">
+              Nostos does not keep these. Import the same file again to add them later; highlights
+              already imported are not duplicated.
+            </p>
             <ul class="highlight-rows">
               @for (book of skipped(); track $index) {
                 <li class="highlight-row">
@@ -390,7 +394,7 @@
           data-testid="highlight-import-undo"
           [disabled]="undoing()"
           [busy]="undoing()"
-          (click)="undoImport()"
+          (click)="askUndoImport()"
         >
           <nostos-icon name="arrow-counter-clockwise" [size]="14"></nostos-icon>
           Undo import
@@ -404,6 +408,18 @@
   }
 </app-modal-shell>
 }
+
+<app-confirm-modal
+  [isOpen]="pendingUndo() !== null"
+  heading="Undo this import?"
+  [description]="undoDescription()"
+  confirmLabel="Undo import"
+  busyLabel="Undoing…"
+  icon="arrow-counter-clockwise"
+  [busy]="undoing()"
+  (confirm)="confirmUndo()"
+  (cancel)="cancelUndo()"
+></app-confirm-modal>
 
 <ng-template #progress let-verb>
   <div class="highlight-progress" role="status" aria-live="polite">
@@ -480,12 +496,55 @@
         @if (row.book.author) {
           {{ row.book.author }} ·
         }
-        {{ count(row.book.annotationCount, 'highlight') }}
+        {{ highlightLabel(row) }}
       </span>
+      @if (row.book.highlights?.length) {
+        <button
+          type="button"
+          appButton
+          variant="link"
+          class="highlight-link highlight-review-toggle"
+          data-testid="highlight-review-toggle"
+          [attr.aria-expanded]="row.expanded"
+          (click)="toggleExpanded(row)"
+        >
+          <nostos-icon name="caret-right" [size]="11" class="highlight-disclosure" [class.is-open]="row.expanded"></nostos-icon>
+          {{ row.expanded ? 'Hide highlights' : 'Show highlights' }}
+        </button>
+      }
       @if (row.book.notice) {
         <span class="highlight-review-reason" data-testid="highlight-review-notice">{{ row.book.notice }}</span>
       }
     </div>
+
+    @if (row.expanded) {
+      <ul class="highlight-quotes" data-testid="highlight-quotes">
+        @for (h of row.book.highlights; track h.index) {
+          <li>
+            <label class="highlight-quote">
+              <input
+                type="checkbox"
+                appCheckbox
+                data-testid="highlight-quote-check"
+                [checked]="!row.excluded.has(h.index)"
+                (change)="setHighlight(row, h.index, $any($event.target).checked)"
+              />
+              <span class="highlight-quote-text">
+                @if (h.text) {
+                  <span class="highlight-quote-passage">{{ h.text }}</span>
+                }
+                @if (h.note) {
+                  <span class="highlight-quote-note">{{ h.note }}</span>
+                }
+                @if (!h.isNew) {
+                  <span class="highlight-quote-note">Already in Nostos</span>
+                }
+              </span>
+            </label>
+          </li>
+        }
+      </ul>
+    }
 
     @if (row.target; as target) {
       <div class="highlight-review-target">

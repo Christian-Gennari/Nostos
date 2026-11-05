@@ -1018,6 +1018,9 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CreatedBookId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
                         .HasMaxLength(128)
