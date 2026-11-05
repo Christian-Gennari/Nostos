@@ -31,6 +31,9 @@ import {
 
 export const DEFAULT_EXPORT_POLL_MS = 1_500;
 
+/** The export job this browser started last, so a reload can offer its download again. */
+export const EXPORT_JOB_STORAGE_KEY = 'nostos.library-transfer.export-job.v1';
+
 export interface ExportMaintenanceWait {
   operation: string;
   retryAfterMs: number | null;
@@ -43,6 +46,13 @@ export type LibraryExportState =
   | { kind: 'ready'; jobId: string; downloadUrl: string; expiresAt?: string | null }
   | { kind: 'failed'; jobId?: string; failure: LibraryTransferFailure }
   | { kind: 'cancelled'; jobId: string };
+
+interface ExportJobStatus {
+  job: { id: string; state: string };
+  progress: MigrationProgressDto;
+  downloadAvailable: boolean;
+  artifactExpiresAtUtc?: string | null;
+}
 
 @Injectable({ providedIn: 'root' })
 export class LibraryExportCoordinator {
@@ -61,6 +71,9 @@ export class LibraryExportCoordinator {
   private operationAbort: AbortController | null = null;
   private jobId: string | null = null;
 
+  /** The job a reload picked up again; the flow must not auto-download it. */
+  reattachedJobId: string | null = null;
+
   /** Creates the export job and polls until it is downloadable or terminal. */
   async startExport(): Promise<void> {
     const { token, signal } = this.beginOperation();
@@ -77,24 +90,67 @@ export class LibraryExportCoordinator {
       if (!this.isCurrent(token)) return;
       this.jobId = created.job.id;
 
-      let status = created;
-      for (;;) {
-        if (!this.isCurrent(token)) return;
-        this.applyStatus(status);
-        if (!this.polling()) return;
-
-        await this.sleep(this.pollIntervalMs, signal);
-        if (!this.isCurrent(token)) return;
-        status = await this.withBusyRetry(
-          'getJob',
-          token,
-          () => this.transport.getJob(created.job.id, signal),
-        );
-      }
+      rememberExportJob(created.job.id);
+      await this.pollUntilSettled(created, token, signal);
     } catch (error) {
       if (!this.isCurrent(token)) return;
       if (isAborted(error)) return;
       this.failWith(toTransferFailure(error), this.jobId ?? undefined);
+    }
+  }
+
+  /**
+   * After a reload: picks up the export this browser started, so a finished
+   * archive can be downloaded again while the host still keeps it.
+   */
+  async reattach(): Promise<void> {
+    if (this.stateSignal().kind !== 'idle') return;
+    const jobId = recalledExportJob();
+    if (!jobId) return;
+
+    const { token, signal } = this.beginOperation();
+    try {
+      const status = await this.withBusyRetry(
+        'getJob',
+        token,
+        () => this.transport.getJob(jobId, signal),
+      );
+      if (!this.isCurrent(token)) return;
+      const state = status.job.state;
+      const settled = state === 'Completed' ? status.downloadAvailable : false;
+      const running = state === 'Pending' || state === 'Preparing' || state === 'Validating' || (state === 'Completed' && !settled);
+      if (!settled && !running) {
+        forgetExportJob();
+        return;
+      }
+      this.jobId = jobId;
+      this.reattachedJobId = jobId;
+      await this.pollUntilSettled(status, token, signal);
+    } catch (error) {
+      if (!this.isCurrent(token)) return;
+      // The host forgot the job (or is unreachable): stay idle rather than show an error.
+      if (!isAborted(error)) forgetExportJob();
+    }
+  }
+
+  private async pollUntilSettled(
+    first: ExportJobStatus,
+    token: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let status = first;
+    for (;;) {
+      if (!this.isCurrent(token)) return;
+      this.applyStatus(status);
+      if (!this.polling()) return;
+
+      await this.sleep(this.pollIntervalMs, signal);
+      if (!this.isCurrent(token)) return;
+      status = await this.withBusyRetry(
+        'getJob',
+        token,
+        () => this.transport.getJob(first.job.id, signal),
+      );
     }
   }
 
@@ -107,6 +163,7 @@ export class LibraryExportCoordinator {
     const token = this.operationToken;
     const signal = this.operationAbort.signal;
 
+    forgetExportJob();
     if (!jobId) {
       this.setState({ kind: 'cancelled', jobId: '' });
       return;
@@ -131,16 +188,12 @@ export class LibraryExportCoordinator {
   dismiss(): void {
     const kind = this.stateSignal().kind;
     if (kind === 'ready' || kind === 'cancelled' || kind === 'failed') {
+      forgetExportJob();
       this.setState({ kind: 'idle' });
     }
   }
 
-  private applyStatus(status: {
-    job: { id: string; state: string };
-    progress: MigrationProgressDto;
-    downloadAvailable: boolean;
-    artifactExpiresAtUtc?: string | null;
-  }): void {
+  private applyStatus(status: ExportJobStatus): void {
     const jobId = status.job.id;
     switch (status.job.state) {
       case 'Completed':
@@ -287,4 +340,28 @@ function newIdempotencyKey(): string {
   const uuid = globalThis.crypto?.randomUUID;
   if (typeof uuid === 'function') return uuid.call(globalThis.crypto);
   return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function rememberExportJob(jobId: string): void {
+  try {
+    localStorage.setItem(EXPORT_JOB_STORAGE_KEY, jobId);
+  } catch {
+    // Storage can be blocked; the export still runs, it just cannot be re-attached.
+  }
+}
+
+function recalledExportJob(): string | null {
+  try {
+    return localStorage.getItem(EXPORT_JOB_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function forgetExportJob(): void {
+  try {
+    localStorage.removeItem(EXPORT_JOB_STORAGE_KEY);
+  } catch {
+    // Nothing to forget.
+  }
 }

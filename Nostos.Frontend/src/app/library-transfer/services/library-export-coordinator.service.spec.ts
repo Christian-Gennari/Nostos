@@ -25,6 +25,35 @@ describe('LibraryExportCoordinator', () => {
   afterEach(() => {
     TestBed.resetTestingModule();
     vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('offers the finished export again after a reload', async () => {
+    const { transport, coordinator } = setup();
+    transport.readyOnCreate = true;
+    await coordinator.startExport();
+    expect(coordinator.state().kind).toBe('ready');
+
+    const reloaded = TestBed.runInInjectionContext(() => new LibraryExportCoordinator());
+    expect(reloaded.state().kind).toBe('idle');
+    await reloaded.reattach();
+
+    const state = reloaded.state();
+    expect(state.kind).toBe('ready');
+    if (state.kind === 'ready') expect(state.downloadUrl).toContain('/export-download');
+    expect(reloaded.reattachedJobId).toBe(state.kind === 'ready' ? state.jobId : null);
+  });
+
+  it('stays idle after a reload once the export was dismissed', async () => {
+    const { transport, coordinator } = setup();
+    transport.readyOnCreate = true;
+    await coordinator.startExport();
+    coordinator.dismiss();
+
+    const reloaded = TestBed.runInInjectionContext(() => new LibraryExportCoordinator());
+    await reloaded.reattach();
+
+    expect(reloaded.state().kind).toBe('idle');
   });
 
   it('creates the export job and reaches ready with the native download URL', async () => {

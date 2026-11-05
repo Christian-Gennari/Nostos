@@ -103,9 +103,11 @@ export class LibraryExportFlowComponent {
       const ready = this.ready();
       if (!ready || !this.autoDownload() || !this.downloadUrlSafe()) return;
       if (this.autoDownloadedJobId === ready.jobId) return;
+      if (this.coordinator.reattachedJobId === ready.jobId) return;
       this.autoDownloadedJobId = ready.jobId;
       this.attemptNativeDownload(ready.downloadUrl);
     });
+    void this.coordinator.reattach();
   }
 
   start(): void {
