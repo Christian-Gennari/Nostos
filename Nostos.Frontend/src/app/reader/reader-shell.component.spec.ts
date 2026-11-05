@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Component, forwardRef, Injector, input, output, signal } from '@angular/core';
@@ -1169,6 +1170,20 @@ describe('ReaderShell shared save and load ownership (#479)', () => {
     expect(component.quickNoteContent()).toBe('First thought, and more');
     expect(component.quickNotePinnedLocation()).toBe('100');
     fixture.destroy();
+  });
+
+  it('says so when the book is gone, instead of a generic failure', async () => {
+    booksGetSpy.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
+    );
+    const fixture = await configureReaderShell();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const error = fixture.nativeElement.querySelector(
+      '[data-testid="reader-load-error"]',
+    ) as HTMLElement;
+    expect(error.textContent).toContain('not in your library any more');
   });
 
   it('keeps an initial Book-load failure visible, actionable, and retryable', async () => {
