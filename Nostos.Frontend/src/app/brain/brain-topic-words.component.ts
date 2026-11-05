@@ -5,6 +5,9 @@ import { ToastService } from '../core/services/toast.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { TextareaDirective } from '../ui/form-control/form-control.directive';
 import { BrainStateService } from './brain-state.service';
+import { Router } from '@angular/router';
+import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
+import { inlineTopicHref } from '../ui/note-item/note-item.helpers';
 
 /** The longest description the server keeps. */
 export const TOPIC_WORDS_MAX = 4000;
@@ -18,7 +21,7 @@ export const TOPIC_WORDS_MAX = 4000;
 @Component({
   selector: 'app-brain-topic-words',
   standalone: true,
-  imports: [ButtonComponent, TextareaDirective],
+  imports: [ButtonComponent, TextareaDirective, NoteFormatPipe],
   templateUrl: './brain-topic-words.component.html',
   styleUrls: ['./brain-topic-words.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -26,7 +29,8 @@ export const TOPIC_WORDS_MAX = 4000;
 export class BrainTopicWordsComponent {
   private readonly topics = inject(TopicsService);
   private readonly toast = inject(ToastService);
-  private readonly state = inject(BrainStateService);
+  protected readonly state = inject(BrainStateService);
+  private readonly router = inject(Router);
   private readonly injector = inject(Injector);
 
   readonly topic = input.required<TopicDto>();
@@ -61,7 +65,16 @@ export class BrainTopicWordsComponent {
   }
 
   /** A click on the words edits them, unless it ended a text selection. */
-  onTextClick(): void {
+  /** A [[link]] in the words opens that topic; anywhere else on them edits. */
+  onTextClick(event: MouseEvent): void {
+    const href = inlineTopicHref(event);
+    if (href) {
+      event.preventDefault();
+      void this.router.navigateByUrl(href);
+      return;
+    }
+    // A modified click on a link is the browser's (a new tab), not an edit.
+    if ((event.target as HTMLElement | null)?.closest('a.topic-tag')) return;
     if (!globalThis.getSelection?.()?.toString()) this.edit();
   }
 
