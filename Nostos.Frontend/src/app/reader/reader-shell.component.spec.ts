@@ -2255,6 +2255,19 @@ describe('ReaderShell immersive chrome (#759)', () => {
       .toBe(true);
   });
 
+  it('offers a keyboard way into the resting chrome: a reveal button that opens it', async () => {
+    const component = await openBook('book.epub');
+    const reveal = fixture.nativeElement.querySelector('[data-testid="reader-chrome-reveal"]') as HTMLButtonElement;
+    expect(reveal).not.toBeNull();
+    expect(reveal.classList).toContain('visually-hidden-until-focus');
+    reveal.click();
+    fixture.detectChanges();
+    expect(component.chromeVisible()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-reveal"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
+      .toBe(false);
+  });
+
   it('opens PDF in the same chrome-free immersive resting state', async () => {
     const component = await openBook('book.pdf');
     expect(component.immersiveReader()).toBe(true);

@@ -880,6 +880,46 @@ app-sidebar-collections.no-transition {
   margin-bottom: 0.2rem;
 }
 
+/* A real link whose ::after covers the card (z-index 0): the cover buttons
+   (z-index 1-2) and the failure actions sit above it and stay clickable. */
+.card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.card-link:focus-visible {
+  outline: none;
+}
+
+.card-link:focus-visible::after {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-md, 8px);
+}
+
+.item-failure-actions,
+.table-row .list-row-status,
+.table-row .col.rating {
+  position: relative;
+  z-index: 1;
+}
+
+.table-row .actions-cell {
+  z-index: 1;
+}
+
+.table-row .card-link:focus-visible::after {
+  border-radius: 0;
+  outline-offset: -2px;
+}
+
 .meta-author {
   display: flex;
   align-items: center;

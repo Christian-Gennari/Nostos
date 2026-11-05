@@ -92,6 +92,38 @@ describe('NoteItemComponent', () => {
     document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
   });
 
+  it('moves focus into the words when Edit note opens, and back to the ⋯ button on Cancel', async () => {
+    document.body.appendChild(element);
+    render();
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(element.querySelector('app-topic-input textarea'));
+
+    fixture.componentInstance.cancelEdit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(element.querySelector('.note-item-more'));
+    element.remove();
+  });
+
+  it('returns focus to the ⋯ button once a saved edit settles', async () => {
+    document.body.appendChild(element);
+    render();
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+    fixture.componentInstance.editContent.set('New words.');
+    fixture.componentInstance.saveEdit();
+    fixture.componentRef.setInput('busy', true);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('note', { ...NOTE, content: 'New words.' });
+    fixture.componentRef.setInput('busy', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(element.querySelector('.note-item-more'));
+    element.remove();
+  });
+
   it('Escape in the edit form cancels the edit and goes no further (a drawer around it stays open)', () => {
     render();
     const outer = vi.fn();

@@ -1,9 +1,12 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  afterNextRender,
   computed,
   effect,
+  ElementRef,
   inject,
+  Injector,
   untracked,
   input,
   output,
@@ -186,6 +189,8 @@ export class NoteItemComponent {
 
   private readonly passageViewer = inject(PassageViewerService);
   private readonly router = inject(Router);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
 
   /** Opens a writing that cites this note in the Studio. */
   openWriting(writing: CitingWriting): void {
@@ -204,6 +209,27 @@ export class NoteItemComponent {
    * the save failed and the words stay in the form to try again.
    */
   constructor() {
+    // Keyboard focus follows the edit: into the words when the form opens, and
+    // back to the note's "More actions" button when it closes (that button is
+    // not in the page while the form is, so focus would fall to <body>).
+    let wasEditing = false;
+    effect(() => {
+      const editing = this.editing();
+      untracked(() => {
+        if (editing === wasEditing) return;
+        wasEditing = editing;
+        afterNextRender(
+          () => {
+            const host = this.host.nativeElement;
+            const target = editing
+              ? (host.querySelector('app-topic-input textarea') ?? host.querySelector('form input, form textarea'))
+              : host.querySelector('.note-item-more');
+            (target as HTMLElement | null)?.focus();
+          },
+          { injector: this.injector },
+        );
+      });
+    });
     effect(() => {
       const busy = this.busy();
       const note = this.note();

@@ -1609,3 +1609,11 @@ button.passage-pill-action {
   padding: 0.75rem 1.25rem;
   border-top: 1px solid var(--border-color);
 }
+
+/* Shown only while a keyboard focuses it (see .visually-hidden-until-focus). */
+.reader-chrome-reveal:focus-visible {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 60;
+}

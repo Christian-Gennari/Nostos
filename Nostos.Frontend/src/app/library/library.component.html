@@ -184,7 +184,7 @@
         </div>
 
         @for (book of books(); track book.id) {
-        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
+        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
           <div class="col title">
             <nostos-book-cover
               class="list-cover-frame"
@@ -196,7 +196,7 @@
             />
 
             <div class="list-title-text">
-              <span class="list-book-title">{{ book.title }}</span>
+              <a class="list-book-title card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="['/library', getBookRouteId(book)]">{{ book.title }}</a>
               @if (book.subtitle) {
                 <span class="list-book-subtitle">{{ book.subtitle }}</span>
               }
@@ -352,7 +352,7 @@
       <div class="book-grid">
         @for (book of books(); track book.id) {
 
-        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
+        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
           <div class="cover-wrapper">
             @if (book.status === 1 || book.status === 2) {
               <!-- In flight: the progress lives ON the card, at the top of the cover
@@ -463,7 +463,9 @@
             </div>
           </div>
 
-          <div class="meta-title">{{ book.title }}</div>
+          <!-- The title is the card's one real link; its ::after stretches over the
+               whole card, so a click anywhere opens the book and Tab/Enter reach it. -->
+          <div class="meta-title"><a class="card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="['/library', getBookRouteId(book)]">{{ book.title }}</a></div>
           <!-- The book's own state rides on the author line, so the cover is
                left to its art. The toggles on the cover appear on hover. -->
           <div class="meta-author">
