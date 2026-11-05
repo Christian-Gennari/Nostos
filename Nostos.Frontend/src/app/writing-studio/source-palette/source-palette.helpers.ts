@@ -2,7 +2,7 @@ import { formatOfConcept } from '../../core/book-format';
 import { NoteSearchHit } from '../../core/dtos/note.dtos';
 import { WritingSourceDto } from '../../core/dtos/writing.dtos';
 import { HighlightColour, quotePen } from '../../reader/highlight-colours';
-import { SourceInsertionSource } from '../source-insertion.helpers';
+import { SourceInsertionSource, noteTextForWriting } from '../source-insertion.helpers';
 
 /**
  * One thing the `@` palette can put on the page (issue #1039): a kept note,
@@ -34,6 +34,40 @@ export type PaletteInsertMode = 'quote' | 'note' | 'reference';
 export interface PaletteChoice {
   source: PaletteSource;
   mode: PaletteInsertMode;
+}
+
+/**
+ * What a key press really puts on the page for this row. A passage in a PDF
+ * or an audiobook has no text to choose sentences from, so Enter cannot open
+ * a reader on it: it goes in as the writer's note on it, or as a reference.
+ * A note with no quotation is a thought, not a quote. Shift+Enter on a row
+ * with nothing to say as a note falls to a reference instead of failing.
+ * `quote` on a passage that can be read means "open it and choose".
+ */
+export function resolveInsertMode(item: PaletteSource, mode: PaletteInsertMode): PaletteInsertMode {
+  if (mode === 'reference') return 'reference';
+  const hasNote = noteTextForWriting(item.content).length > 0;
+  const hasQuote = !!item.selectedText?.trim();
+  if (item.kind === 'passage') {
+    if (isReadablePassage(item)) return mode === 'quote' ? 'quote' : hasNote ? 'note' : 'reference';
+    return hasNote ? 'note' : 'reference';
+  }
+  if (mode === 'quote') return hasQuote ? 'quote' : hasNote ? 'note' : 'reference';
+  return hasNote || hasQuote ? 'note' : 'reference';
+}
+
+/** A passage with words to choose from (an EPUB or text passage), not a PDF page range or an audio clip. */
+export function isReadablePassage(item: Pick<PaletteSource, 'kind' | 'sourceAnchorKind'>): boolean {
+  if (item.kind !== 'passage') return false;
+  const kind = item.sourceAnchorKind?.toLowerCase();
+  return kind !== 'pdf_page' && kind !== 'audio_timestamp';
+}
+
+/** The words the key hints use for what a key does to this row. */
+export function insertModeLabel(item: PaletteSource | null, mode: PaletteInsertMode): string {
+  if (!item) return mode === 'quote' ? 'quote' : mode;
+  const effective = resolveInsertMode(item, mode);
+  return effective === 'quote' && item.kind === 'passage' ? 'choose text' : effective;
 }
 
 function clean(value: string | null | undefined): string {

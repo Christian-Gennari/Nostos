@@ -1,3 +1,4 @@
+import { noteTextForWriting } from '../source-insertion.helpers';
 import { CitationStyle, bibliographyHeading } from './citation-styles';
 
 /** What goes in at the caret, and the footnote that goes at the end of the writing. */
@@ -39,7 +40,7 @@ export function styledNote(
   style: CitationStyle,
   footnoteNumber: number,
 ): StyledInsertion | null {
-  const text = block(content);
+  const text = noteTextForWriting(content);
   if (!text) return null;
   if (style.kind === 'note') {
     return { markdown: `${text}[^${footnoteNumber}]`, footnote: { number: footnoteNumber, text: citation } };

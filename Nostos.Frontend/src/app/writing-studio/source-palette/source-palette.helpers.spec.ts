@@ -4,10 +4,12 @@ import {
   editDistance,
   fromSearchHit,
   highlightSegments,
+  insertModeLabel,
   queryWords,
   rankSources,
   readRecentSources,
   rememberRecentSource,
+  resolveInsertMode,
   sourceByline,
   vocabularyOf,
 } from './source-palette.helpers';
@@ -101,5 +103,36 @@ describe('the @ palette helpers (issue #1039)', () => {
     }, new Set());
     expect(sourceByline(hit(2))).toBe('Thomas Mann · The Magic Mountain · Audiobook');
     expect(sourceByline(hit(1))).toBe('Thomas Mann · The Magic Mountain');
+  });
+});
+
+describe('resolveInsertMode (issue #1378)', () => {
+  const pdf = source({ kind: 'passage', sourceAnchorKind: 'pdf_page', content: '' });
+  const clip = source({ kind: 'passage', sourceAnchorKind: 'audio_timestamp', content: 'Heard it.' });
+  const epub = source({ kind: 'passage', sourceAnchorKind: 'epub_cfi', content: '' });
+  const thought = source({ selectedText: null, content: 'A thought.' });
+  const topicsOnly = source({ selectedText: null, content: '[[Irony]]' });
+
+  it('sends a passage with no readable text to its note, or to a reference', () => {
+    expect(resolveInsertMode(pdf, 'quote')).toBe('reference');
+    expect(resolveInsertMode(pdf, 'note')).toBe('reference');
+    expect(resolveInsertMode(clip, 'quote')).toBe('note');
+    expect(resolveInsertMode(clip, 'reference')).toBe('reference');
+  });
+
+  it('leaves a readable passage to be read and chosen from', () => {
+    expect(resolveInsertMode(epub, 'quote')).toBe('quote');
+    expect(resolveInsertMode(epub, 'note')).toBe('reference');
+  });
+
+  it('puts a note with no quotation in as a note, and a note of topic links only as a reference', () => {
+    expect(resolveInsertMode(thought, 'quote')).toBe('note');
+    expect(resolveInsertMode(topicsOnly, 'quote')).toBe('reference');
+  });
+
+  it('names the key for the row in the hint bar', () => {
+    expect(insertModeLabel(epub, 'quote')).toBe('choose text');
+    expect(insertModeLabel(clip, 'quote')).toBe('note');
+    expect(insertModeLabel(null, 'quote')).toBe('quote');
   });
 });

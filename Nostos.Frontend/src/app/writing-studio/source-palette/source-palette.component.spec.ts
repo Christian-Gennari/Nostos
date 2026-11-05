@@ -186,6 +186,80 @@ describe('SourcePaletteComponent (issue #1039)', () => {
     expect(chosen[0].mode).toBe('note');
   });
 
+  describe('Enter inserts what is highlighted (issue #1378)', () => {
+    const pdfPassage = { ...hits[1], id: 'pdf', content: '', selectedText: null, sourceAnchorKind: 'pdf_page', sourceAnchorValue: '3' };
+    const clip = { ...hits[1], id: 'clip', content: 'Heard on the walk.', selectedText: null, sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '120' };
+    const epubPassage = { ...hits[1], id: 'epub', sourceAnchorKind: 'epub_cfi', sourceAnchorValue: 'epubcfi(/6/2)' };
+
+    it('inserts a PDF passage as a reference and an audio clip as its note, never opens nothing', async () => {
+      search.mockReturnValue(of([pdfPassage, clip, epubPassage]));
+      await typeQuery('schopenhauer');
+      for (const id of ['pdf', 'clip', 'epub']) {
+        component.setActive(component.items().findIndex((item) => item.id === id));
+        component.handleKey(key('Enter'));
+      }
+      expect(chosen.map((c) => [c.source.id, c.mode])).toEqual([
+        ['pdf', 'reference'],
+        ['clip', 'note'],
+        ['epub', 'quote'],
+      ]);
+    });
+
+    it('Shift+Enter on a clip with no note falls back to a reference', async () => {
+      search.mockReturnValue(of([{ ...clip, content: '' }]));
+      await typeQuery('schopenhauer');
+      component.handleKey(key('Enter', { shiftKey: true }));
+      expect(chosen[0].mode).toBe('reference');
+    });
+
+    it('keeps the key hints true for the highlighted row', async () => {
+      search.mockReturnValue(of([pdfPassage, clip, epubPassage, hits[0]]));
+      await typeQuery('schopenhauer');
+      const hint = () => (fixture.nativeElement.querySelector('.sp-hint') as HTMLElement).textContent!.replace(/\s+/g, ' ');
+      const show = (id: string) => {
+        component.setActive(component.items().findIndex((item) => item.id === id));
+        fixture.detectChanges();
+        return hint();
+      };
+      expect(show('pdf')).toContain('↵ reference');
+      expect(show('clip')).toContain('↵ note');
+      expect(show('epub')).toContain('↵ choose text');
+      expect(show('q')).toContain('↵ quote');
+    });
+
+    it('does not search the same words again for a trailing space, and keeps the highlight', async () => {
+      await typeQuery('schopenhauer');
+      component.handleKey(key('ArrowDown'));
+      const calls = search.mock.calls.length;
+      await typeQuery('schopenhauer ');
+      expect(search.mock.calls.length).toBe(calls);
+      expect(component.active()).toBe(1);
+    });
+
+    it('keeps the row the writer moved to when the answer lands after it, and Enter picks that row', async () => {
+      await typeQuery('schopenhauer');
+      fixture.componentRef.setInput('query', 'schopenhauer will');
+      fixture.detectChanges();
+      component.handleKey(key('ArrowDown'));
+      component.handleKey(key('Enter'));
+      await vi.advanceTimersByTimeAsync(200);
+      expect(chosen.map((c) => c.source.id)).toEqual(['p']);
+    });
+
+    it('ignores a pointer that has not moved when the list is redrawn under it', async () => {
+      await typeQuery('schopenhauer');
+      const rows = fixture.nativeElement.querySelectorAll('.sp-row') as NodeListOf<HTMLElement>;
+      const over = (el: HTMLElement, x: number, y: number) =>
+        el.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }));
+      over(rows[0], 10, 10);
+      component.handleKey(key('ArrowDown'));
+      over(rows[0], 10, 10);
+      expect(component.active()).toBe(1);
+      over(rows[0], 12, 10);
+      expect(component.active()).toBe(0);
+    });
+  });
+
   describe('a steady palette (issue #1111)', () => {
     const longQuote = 'It is a long quotation. '.repeat(120);
 

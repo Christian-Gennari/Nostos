@@ -56,6 +56,8 @@ class MarkdownEditorStub {
   readonly sourceSuggestion = output<unknown>();
   readonly replaceSourceQuery = vi.fn((_markdown: string, _placement: 'block' | 'inline') => true);
   readonly clearSourceQuery = vi.fn(() => true);
+  readonly holdSourceQuery = vi.fn(() => true);
+  readonly releaseHeldQuery = vi.fn();
   readonly closeSourceQuery = vi.fn();
   readonly insertBlockMarkdown = vi.fn((_markdown: string) => true);
   readonly nextFootnoteNumber = vi.fn(() => 1);
@@ -2238,7 +2240,10 @@ describe('WritingStudio kept sources (#491)', () => {
 
       component.insertFromPalette({ source: passage, mode: 'quote' });
 
-      expect(editor.clearSourceQuery).toHaveBeenCalled();
+      // The typed words stay until a quote lands (issue #1378).
+      expect(editor.holdSourceQuery).toHaveBeenCalled();
+      expect(editor.clearSourceQuery).not.toHaveBeenCalled();
+      expect(editor.releaseHeldQuery).not.toHaveBeenCalled();
       expect(editor.replaceSourceQuery).not.toHaveBeenCalled();
       expect(open).toHaveBeenCalledWith('passage-1', expect.objectContaining({ quoteSelection: expect.any(Function) }));
 
@@ -2258,6 +2263,7 @@ describe('WritingStudio kept sources (#491)', () => {
       );
       // Kept only once something was quoted from it.
       expect(writingsService.addSource).toHaveBeenCalledWith('doc-1', 'passage-1');
+      expect(editor.releaseHeldQuery).toHaveBeenCalled();
       // The viewer confirms on its own button; no toast lands on the page.
       expect(quoted).toBe(true);
       expect(success).not.toHaveBeenCalled();

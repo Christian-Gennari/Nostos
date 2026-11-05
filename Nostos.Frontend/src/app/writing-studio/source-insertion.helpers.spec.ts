@@ -4,6 +4,7 @@ import {
   buildReferenceMarkdown,
   hasMeaningfulNoteContent,
   hasMeaningfulSelectedText,
+  noteTextForWriting,
   sourceHumanLabel,
 } from './source-insertion.helpers';
 
@@ -182,5 +183,39 @@ describe('naming the author (issue #1044)', () => {
     ).toBe(
       '> Time is that in which all things pass away.\n>\n> — Arthur Schopenhauer, *Studies in Pessimism*, “On the Vanity of Existence”',
     );
+  });
+});
+
+describe('notes in an essay (issue #1378)', () => {
+  const base = { bookTitle: 'Pride and Prejudice', bookAuthor: 'Jane Austen' };
+
+  it('turns [[Topic]] links into plain words, as unlinking a topic does', () => {
+    expect(noteTextForWriting('p. 12 [[Irony]] the famous opening line')).toBe('p. 12 Irony the famous opening line');
+  });
+
+  it('leaves out a line that holds only topic links', () => {
+    expect(noteTextForWriting('A thought.\n\n[[Irony]], [[Marriage]]')).toBe('A thought.');
+    expect(noteTextForWriting('[[Marriage]]')).toBe('');
+  });
+
+  it('never writes brackets into the essay', () => {
+    const markdown = buildNoteMarkdown({ ...base, content: 'p. 12 [[Irony]] the famous opening line' });
+    expect(markdown).toBe('p. 12 Irony the famous opening line\n\n*Source: Jane Austen, Pride and Prejudice*');
+    expect(markdown).not.toContain('[');
+  });
+
+  it('does not count a note of links only as having words of its own', () => {
+    expect(hasMeaningfulNoteContent({ content: '[[Irony]]' })).toBe(false);
+  });
+
+  it('names the time of an audio note in the citation', () => {
+    const audio = { ...base, content: 'Heard it.', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '754.2', anchorVerified: true };
+    expect(buildNoteMarkdown(audio)).toBe('Heard it.\n\n*Source: Jane Austen, Pride and Prejudice, at 12:34*');
+    expect(buildReferenceMarkdown(audio)).toBe('*See: Jane Austen, Pride and Prejudice, at 12:34*');
+  });
+
+  it('names no time that was not verified', () => {
+    const audio = { ...base, content: 'Heard it.', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '754', anchorVerified: false };
+    expect(buildReferenceMarkdown(audio)).toBe('*See: Jane Austen, Pride and Prejudice*');
   });
 });
