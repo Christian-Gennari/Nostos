@@ -91,6 +91,21 @@ describe('MarkdownEditorComponent', () => {
     });
   });
 
+  describe('typography', () => {
+    it('keeps "--" as typed instead of turning it into an em dash', async () => {
+      await create('');
+      const editor = (component as any).editor as import('@tiptap/core').Editor;
+      const view = editor.view;
+      for (const ch of 'a--b') {
+        const { from, to } = view.state.selection;
+        const handled = view.someProp('handleTextInput', (f) => f(view, from, to, ch, () => view.state.tr.insertText(ch, from, to)));
+        if (!handled) view.dispatch(view.state.tr.insertText(ch, from, to));
+      }
+
+      expect(editor.getText()).toBe('a--b');
+    });
+  });
+
   describe('writing your own footnotes (issue #1342)', () => {
     type TipTap = import('@tiptap/core').Editor;
     const editorOf = () => (component as any).editor as TipTap;
