@@ -422,6 +422,9 @@ public sealed class NoteService : INoteService
         // in RawContent. Verbatim is a no-op that makes no provider call.
         await ApplyCaptureProcessingAsync(model, dto.ProcessingMode, ct);
 
+        // A reader's place becomes the note's anchor (issue #1381).
+        LocationAnchor.Apply(model);
+
         await _notes.AddAsync(model);
 
         // EF Core tracks 'model', so the processor can add links to it before we save.
@@ -526,6 +529,8 @@ public sealed class NoteService : INoteService
         }
 
         existing.Apply(dto with { HighlightColour = colour });
+        // Notes saved before the anchor was derived get it on their next edit.
+        LocationAnchor.Apply(existing);
 
         // Re-process topics (the processor clears old links then re-adds).
         await _processor.ProcessNoteAsync(existing);
@@ -644,6 +649,7 @@ public sealed class NoteService : INoteService
         if (FoundNoteLocation.Fills(existing, found))
         {
             existing.CfiRange = found;
+            LocationAnchor.Apply(existing);
             await _notes.SaveChangesAsync();
         }
 

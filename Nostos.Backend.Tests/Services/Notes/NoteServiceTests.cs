@@ -405,6 +405,95 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     // Harness
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // Anchor derived from the stored location (issue #1381)
+    // ------------------------------------------------------------------
+
+    private const string PdfLocation = "{\"pageNumber\":2,\"rects\":[{\"left\":0.1,\"top\":0.2,\"width\":0.3,\"height\":0.04}],\"colour\":\"sage\"}";
+    private const string EpubRange = "epubcfi(/6/4!/4/2,/1:0,/1:5)";
+
+    [Fact]
+    public async Task Create_derives_pdf_page_anchor_from_the_location()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(
+            book.Id, new CreateNoteDto("", PdfLocation, "quoted text"));
+
+        result.Value!.SourceAnchorKind.Should().Be("pdf_page");
+        result.Value.SourceAnchorValue.Should().Be("2");
+        result.Value.AnchorVerified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Create_derives_epub_cfi_anchor_from_the_start_of_the_range()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(
+            book.Id, new CreateNoteDto("", EpubRange, "quoted text"));
+
+        result.Value!.SourceAnchorKind.Should().Be("epub_cfi");
+        result.Value.SourceAnchorValue.Should().Be("epubcfi(/6/4!/4/2/1:0)");
+        result.Value.AnchorVerified.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Create_keeps_an_anchor_the_caller_set_and_ignores_locations_without_one()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var audio = await h.Service.CreateAsync(
+            book.Id, new CreateNoteDto("t", "12.5", null, SourceAnchorKind: "audio_timestamp", SourceAnchorValue: "12.5", AnchorVerified: true));
+        var plain = await h.Service.CreateAsync(book.Id, new CreateNoteDto("typed"));
+        var junk = await h.Service.CreateAsync(book.Id, new CreateNoteDto("x", "{\"pageNumber\":0}"));
+
+        audio.Value!.SourceAnchorKind.Should().Be("audio_timestamp");
+        plain.Value!.SourceAnchorKind.Should().Be("unknown");
+        junk.Value!.SourceAnchorKind.Should().Be("unknown");
+        junk.Value.SourceAnchorValue.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Update_and_backfill_anchor_notes_saved_before_the_rule()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        NoteModel Old(string location) => new()
+        {
+            Id = Guid.NewGuid(), BookId = book.Id, Content = "", SelectedText = "q", CfiRange = location,
+        };
+        var pdf = Old(PdfLocation);
+        var epub = Old(EpubRange);
+        var touched = Old(PdfLocation);
+        var keep = Old(PdfLocation);
+        keep.SourceAnchorKind = "kobo_bookmark";
+        keep.SourceAnchorValue = "k1";
+        h.Db.Notes.AddRange(pdf, epub, touched, keep);
+        await h.Db.SaveChangesAsync();
+
+        var edited = await h.Service.UpdateAsync(touched.Id, new UpdateNoteDto("my thought"));
+        await LocationAnchor.BackfillAsync(h.Db);
+        await LocationAnchor.BackfillAsync(h.Db); // idempotent
+
+        edited.Value!.SourceAnchorKind.Should().Be("pdf_page");
+        h.Db.ChangeTracker.Clear();
+        var rows = await h.Db.Notes.ToDictionaryAsync(n => n.Id);
+        rows[pdf.Id].SourceAnchorKind.Should().Be("pdf_page");
+        rows[pdf.Id].SourceAnchorValue.Should().Be("2");
+        rows[epub.Id].SourceAnchorKind.Should().Be("epub_cfi");
+        rows[epub.Id].AnchorVerified.Should().BeTrue();
+        rows[keep.Id].SourceAnchorKind.Should().Be("kobo_bookmark");
+        rows[keep.Id].SourceAnchorValue.Should().Be("k1");
+    }
+
     private Harness CreateHarness()
     {
         var path = _fixture.CreateDatabasePath();
