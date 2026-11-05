@@ -53,6 +53,27 @@ public sealed class MultiTrackAudiobookEndpointTests : IClassFixture<LibraryEndp
     }
 
     [Fact]
+    public async Task Head_on_a_track_returns_the_get_headers_and_no_body()
+    {
+        var id = await SeedAsync("Track Head");
+
+        foreach (var path in new[] { $"/api/books/{id}/tracks/1", $"/opds/books/{id}/tracks/1" })
+        {
+            using var response = await Client.SendAsync(new HttpRequestMessage(HttpMethod.Head, path));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, path);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("audio/mpeg", path);
+            response.Content.Headers.ContentLength.Should().Be(TrackBytes[0].Length, path);
+            response.Headers.AcceptRanges.Should().Contain("bytes", path);
+            (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty(path);
+        }
+
+        using var missing = await Client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Head, $"/opds/books/{id}/tracks/9"));
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Track_streams_inline_and_honours_byte_ranges()
     {
         var id = await SeedAsync("Track Stream");

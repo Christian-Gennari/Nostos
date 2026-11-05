@@ -76,7 +76,8 @@ public static class OpdsEndpoints
         if (!string.IsNullOrWhiteSpace(authorizationPolicy))
             group.RequireAuthorization(authorizationPolicy);
 
-        group.MapGet(
+        StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/",
             async (HttpContext context, IBookRepository bookRepo) =>
             {
@@ -139,7 +140,8 @@ public static class OpdsEndpoints
             }
         );
 
-        var fileEndpoint = group.MapGet(
+        var fileEndpoint = StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/books/{id:guid}/file",
             async (
                 Guid id,
@@ -161,7 +163,8 @@ public static class OpdsEndpoints
         // one Readium audiobook archive; the manifest lets a client that can
         // stream play it without downloading everything; the track route is
         // what that manifest points at.
-        var packageEndpoint = group.MapGet(
+        var packageEndpoint = StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/books/{id:guid}/audiobook",
             async (
                 Guid id,
@@ -186,7 +189,8 @@ public static class OpdsEndpoints
             }
         );
 
-        group.MapGet(
+        StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/books/{id:guid}/manifest.json",
             async (
                 Guid id,
@@ -210,7 +214,8 @@ public static class OpdsEndpoints
             }
         );
 
-        var trackEndpoint = group.MapGet(
+        var trackEndpoint = StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/books/{id:guid}/tracks/{number:int}",
             async (
                 Guid id,
@@ -237,7 +242,8 @@ public static class OpdsEndpoints
             trackEndpoint.RequireRateLimiting(mediaRateLimitPolicy);
         }
 
-        group.MapGet(
+        StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/books/{id:guid}/cover",
             async (
                 Guid id,

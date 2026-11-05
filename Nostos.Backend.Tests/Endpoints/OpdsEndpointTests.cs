@@ -391,6 +391,75 @@ public sealed class OpdsEndpointTests : IClassFixture<LibraryEndpointFactory>
         (await response.Content.ReadAsByteArrayAsync()).Should().Equal(bytes[2..6]);
     }
 
+    [Fact]
+    public async Task Head_answers_every_opds_route_with_the_get_headers_and_no_body()
+    {
+        using var factory = new OpdsMediaFactory();
+        var bytes = Encoding.ASCII.GetBytes("0123456789");
+        var bookId = Guid.NewGuid();
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var storage = scope.ServiceProvider.GetRequiredService<IBookAssetStorage>();
+            await using var content = new MemoryStream(bytes, writable: false);
+            await storage.SaveBookFileAsync(bookId, content, "head.epub");
+        }
+
+        var client = factory.CreateClient();
+
+        using (var file = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Head, $"/opds/books/{bookId}/file")))
+        {
+            file.StatusCode.Should().Be(HttpStatusCode.OK);
+            file.Content.Headers.ContentType!.MediaType.Should().Be("application/epub+zip");
+            file.Content.Headers.ContentLength.Should().Be(bytes.Length);
+            file.Headers.AcceptRanges.Should().Contain("bytes");
+            (await file.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        }
+
+        using (var feed = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/opds/")))
+        {
+            feed.StatusCode.Should().Be(HttpStatusCode.OK);
+            feed.Content.Headers.ContentType!.ToString().Should().Contain("kind=acquisition");
+            (await feed.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        }
+
+        using (var missing = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Head, $"/opds/books/{Guid.NewGuid()}/file")))
+        {
+            missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        // The main API file route answers HEAD too.
+        using var apiFile = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Head, $"/api/books/{bookId}/file"));
+        apiFile.StatusCode.Should().Be(HttpStatusCode.OK);
+        apiFile.Content.Headers.ContentLength.Should().Be(bytes.Length);
+    }
+
+    [Fact]
+    public async Task Every_opds_route_maps_head_and_keeps_the_authorization_policy()
+    {
+        await using var app = MapForMetadata("HostedOpds");
+
+        var opdsEndpoints = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/opds", StringComparison.Ordinal) == true)
+            .ToList();
+
+        opdsEndpoints.Should().NotBeEmpty();
+        foreach (var endpoint in opdsEndpoints)
+        {
+            var methods = endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods;
+            methods.Should().BeEquivalentTo(["GET", "HEAD"], endpoint.RoutePattern.RawText);
+            endpoint.Metadata
+                .GetOrderedMetadata<IAuthorizeData>()
+                .Should()
+                .Contain(data => data.Policy == "HostedOpds", endpoint.RoutePattern.RawText);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------

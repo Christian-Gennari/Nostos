@@ -406,7 +406,8 @@ public static class BooksEndpoints
         );
 
         // Stream file (inline) for media playback; supports HTTP Range requests
-        group.MapGet(
+        StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/{id}/file",
             async (
                 Guid id,
@@ -484,7 +485,8 @@ public static class BooksEndpoints
 
         // Stream one track of a multi-track audiobook (inline) for playback;
         // supports HTTP Range requests like the single-file stream above.
-        group.MapGet(
+        StoredAssetHttpResult.MapGetAndHead(
+            group,
             "/{id}/tracks/{number:int}",
             async (
                 Guid id,
