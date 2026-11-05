@@ -1129,6 +1129,12 @@ export class ReaderShell implements OnInit, OnDestroy {
     else this.chromeVisible.set(true);
   }
 
+  /** Keyboard way into the resting chrome: show it and focus its first tool. */
+  revealChromeFromKeyboard(): void {
+    this.chromeVisible.set(true);
+    this.focusOverlay('.reader-header-tools button');
+  }
+
   /**
    * Remove focus from transient chrome before making it inert. Without this,
    * Escape could strand keyboard focus inside a

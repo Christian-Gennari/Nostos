@@ -7,6 +7,23 @@
   [class.selection-docked]="immersiveReader() && chromeShown() && !headerShown()"
   data-testid="reader-layout"
 >
+  <!-- The reading chrome rests hidden and inert, so Tab would go straight into
+       the book. This is the keyboard's way in: first in the Tab order, it shows
+       itself on focus and, on Enter or Space, opens the chrome and moves focus
+       to its first tool. -->
+  @if (immersiveReader() && !chromeShown() && !loadError() && fileType()) {
+  <button
+    type="button"
+    appButton
+    variant="secondary"
+    size="sm"
+    class="reader-chrome-reveal visually-hidden-until-focus"
+    data-testid="reader-chrome-reveal"
+    (click)="revealChromeFromKeyboard()"
+  >
+    Show reader controls
+  </button>
+  }
   <!-- Surface header, in the app's own rhythm (the Library's and the
        Brain's toolbars): title on the left, tools on the right, one
        hairline. Everything that CONFIGURES the reader lives here; the reading

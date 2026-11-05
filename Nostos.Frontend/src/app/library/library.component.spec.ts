@@ -854,6 +854,32 @@ describe('Library', () => {
     expect(marks).toEqual(['Finished', 'Favourite']);
   });
 
+  it('gives each card one real link named by the title, so Tab and Enter open the book', () => {
+    component.viewMode.set('grid');
+    component.rawBooks.set([
+      {
+        id: 'book-1',
+        title: 'A Title',
+        author: 'An Author',
+        type: 'ebook',
+        coverUrl: null,
+        rating: 0,
+        isFavorite: false,
+        finishedAt: null,
+        progressPercent: 0,
+        createdAt: '2026-01-01T00:00:00Z',
+        otherEditions: [],
+      } as unknown as Book,
+    ]);
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('.book-card') as HTMLElement;
+    expect(card.hasAttribute('tabindex')).toBe(false);
+    const link = card.querySelector('a.card-link') as HTMLAnchorElement;
+    expect(link.textContent?.trim()).toBe('A Title');
+    expect(link.getAttribute('href')).toBe('/library/book-1');
+  });
+
   it('leaves the author line bare for a book that is neither finished nor a favourite', () => {
     component.viewMode.set('grid');
     component.rawBooks.set([
