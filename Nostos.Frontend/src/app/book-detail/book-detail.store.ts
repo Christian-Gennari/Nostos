@@ -731,7 +731,7 @@ export class BookDetailStore {
       return;
     }
 
-    this.booksService.uploadFile(b.id, file).pipe(
+    this.booksService.uploadFile(b.id, file, true).pipe(
       finalize(() => this.uploadingFile.set(false)),
     ).subscribe({
       next: (event) => {

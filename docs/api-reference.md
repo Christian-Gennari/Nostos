@@ -24,10 +24,11 @@ List books with filtering, sorting, search, and pagination.
 | `filter`    | string | —        | `Favorites`, `Finished`, `Reading`, `Unsorted` |
 | `sort`      | string | `Recent` | `Recent`, `Title`, `Rating`, `LastRead`        |
 | `page`      | int    | 1        | Page number                                    |
-| `pageSize`  | int    | 20       | Items per page                                 |
+| `pageSize`  | int    | 20       | Items per page; values above 100 are clamped to 100 |
 | `collectionId` | guid | —      | Restrict the listing to one collection (subtree-inclusive: descendants match too) |
 
-**Response:** `PaginatedResponse<BookDto>` — `{ items, totalCount, page, pageSize }`
+**Response:** `PaginatedResponse<BookDto>` — `{ items, totalCount, page, pageSize }`. `pageSize` is the
+effective size after clamping, and the `X-Max-Page-Size` response header carries the ceiling (100).
 
 ### `GET /api/books/{id}`
 
@@ -172,6 +173,15 @@ referenced by a note.
 Upload a book file (epub, pdf, mobi, azw3, m4b, m4a, mp3, txt).
 
 **Body:** `multipart/form-data` with file. Max size: 4 GB.
+
+| Query Param | Type | Default | Description |
+| ----------- | ---- | ------- | ----------- |
+| `replace`   | bool | false   | Must be `true` to replace a file the book already has |
+
+A book that already has a file answers `409` `{ "code": "book_has_file", "message": … }` unless
+`replace=true` is passed. This matters because `POST /api/books` is create-or-match by title and
+author and can return an existing book. A book that is importing answers `409`
+`book_import_in_progress`.
 
 For audio files, metadata (chapters, duration) is extracted automatically via ATL.NET.
 

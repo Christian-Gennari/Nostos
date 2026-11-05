@@ -33,7 +33,7 @@ keep their repository-backed implementations.
 | `GET`    | `/{id}/locations` | Get cached epub locations                          | `IBookRepository`                                                |
 | `POST`   | `/{id}/locations` | Save epub locations                                | `IBookRepository`                                                |
 | `DELETE` | `/{id}`           | Delete book + files (row first, then storage)      | `ILibraryService`, `IFileStorageService`                         |
-| `POST`   | `/{id}/file`      | Upload book file                                   | `IBookRepository`, `IFileStorageService`, `MediaMetadataService` |
+| `POST`   | `/{id}/file`      | Upload book file (409 `book_has_file` unless `?replace=true`) | `IBookRepository`, `IFileStorageService`, `MediaMetadataService` |
 | `GET`    | `/{id}/file`      | Download/stream book file                          | `IFileStorageService`                                            |
 | `POST`   | `/{id}/cover`     | Upload cover image                                 | `IBookRepository`, `IFileStorageService`                         |
 | `GET`    | `/{id}/cover`     | Download cover image                               | `IFileStorageService`                                            |

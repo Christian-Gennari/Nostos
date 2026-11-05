@@ -245,7 +245,7 @@ describe('BookDetail reset progress', () => {
     );
 
     httpMock
-      .expectOne('/api/books/b1/file')
+      .expectOne('/api/books/b1/file?replace=true')
       .flush('timeout', { status: 504, statusText: 'Gateway Timeout' });
 
     expect(errorToast).toHaveBeenCalledWith('The upload timed out. Try again.');

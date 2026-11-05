@@ -44,7 +44,7 @@ curl -s "$B/api/books?collectionId=<collection-id>"
 curl -s "$B/api/books/<book-id>"
 ```
 
-- Returns `{ items, totalCount, page, pageSize }`. `pageSize` is capped at 100.
+- Returns `{ items, totalCount, page, pageSize }`. `pageSize` is capped at 100 (the `X-Max-Page-Size` header says so).
   Page through with `page=` when `totalCount` is larger.
 - `filter`: `all` (default), `favorites`, `finished`, `reading`, `notStarted`,
   `unsorted` (in no collection).
