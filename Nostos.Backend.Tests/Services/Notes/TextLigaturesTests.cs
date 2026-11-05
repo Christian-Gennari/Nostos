@@ -6,6 +6,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Mapping;
 using Nostos.Backend.Services.Notes;
+using Nostos.Backend.Services.Portability.Markdown;
 using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
 using Xunit;
@@ -81,5 +82,30 @@ public sealed class TextLigaturesTests : IClassFixture<SqliteTestFixture>
         (await repo.SearchByAllTermsAsync(["OFFICE"], 50)).Should().ContainSingle();
         (await repo.BrowseAsync(new NoteBrowseQuery("Specifically"), 50, 0)).Total.Should().Be(1);
         (await repo.SearchByAllTermsAsync(["specifically", "nothing"], 50)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_stored_quote_with_ligatures_is_shown_as_letters_without_changing_the_row()
+    {
+        var model = new NoteModel
+        {
+            Id = Guid.NewGuid(), Content = "", SelectedText = "Speci\uFB01cally", CreatedAt = DateTime.UtcNow,
+        };
+
+        model.ToDto().SelectedText.Should().Be("Specifically");
+        model.SelectedText.Should().Be("Speci\uFB01cally");
+    }
+
+    [Fact]
+    public void The_markdown_export_writes_letters_for_a_stored_ligature_quote()
+    {
+        var book = new MarkdownBook(Guid.NewGuid(), "T", null, "A", null, null, null, null, null, null, null,
+            "pdf", null, false, null);
+        var note = new MarkdownNote(Guid.NewGuid(), "", null, "Speci\uFB01cally",
+            new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), "note", "unknown", null, false, null, null, []);
+
+        var markdown = MarkdownNotesRenderer.Book(book, [note]);
+
+        markdown.Should().Contain("Specifically").And.NotContain("\uFB01");
     }
 }

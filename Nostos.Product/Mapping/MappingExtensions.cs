@@ -217,7 +217,7 @@ public static class MappingExtensions
             Content: model.Content,
             CfiRange: model.CfiRange,
             // A passage travels as its opening; the viewer fetches the rest.
-            SelectedText: model.IsPassage() ? PassageText.Opening(model.SelectedText) : model.SelectedText,
+            SelectedText: TextLigatures.Expand(model.IsPassage() ? PassageText.Opening(model.SelectedText) : model.SelectedText),
             CreatedAt: model.CreatedAt,
             BookTitle: model.Book?.Title,
             // Capture provenance (issue #260 §2, §4). These are distinct from
@@ -248,7 +248,7 @@ public static class MappingExtensions
             Start: model.SourceAnchorValue ?? string.Empty,
             End: model.PassageEnd ?? string.Empty,
             Html: model.PassageHtml,
-            Text: model.SelectedText,
+            Text: TextLigatures.Expand(model.SelectedText),
             WordCount: PassageText.WordCount(model.SelectedText),
             Content: model.Content,
             HighlightColour: model.HighlightColour,
@@ -505,9 +505,9 @@ public static class MappingExtensions
             BookId: model.Note.BookId,
             BookTitle: model.Note.Book?.Title,
             Content: model.Note.Content,
-            SelectedText: model.Note.IsPassage()
+            SelectedText: TextLigatures.Expand(model.Note.IsPassage()
                 ? PassageText.Opening(model.Note.SelectedText)
-                : model.Note.SelectedText,
+                : model.Note.SelectedText),
             CfiRange: model.Note.CfiRange,
             CreatedAt: model.Note.CreatedAt,
             AddedAt: model.AddedAt,

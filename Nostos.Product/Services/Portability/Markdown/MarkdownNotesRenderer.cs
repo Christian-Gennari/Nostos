@@ -179,7 +179,7 @@ public static partial class MarkdownNotesRenderer
         var parts = new List<string> { $"## {EscapeLineStart(EscapeText(heading))}" };
 
         if (!string.IsNullOrWhiteSpace(note.SelectedText))
-            parts.Add(Quote(note.SelectedText));
+            parts.Add(Quote(TextLigatures.Expand(note.SelectedText)!));
 
         var thought = note.Content?.Trim();
         if (!string.IsNullOrEmpty(thought)) parts.Add(thought);
@@ -396,7 +396,7 @@ public static partial class MarkdownNotesRenderer
             bookFile,
             book.Title,
             location,
-            Excerpt(note.SelectedText),
+            Excerpt(TextLigatures.Expand(note.SelectedText)),
             Excerpt(Thought(note.Content)),
             note.CreatedAt);
     }

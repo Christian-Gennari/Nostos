@@ -75,9 +75,9 @@ public static class TopicsEndpoints
                         nc.Note.Book?.Author
                     ) with
                     {
-                        SelectedText = nc.Note.IsPassage()
+                        SelectedText = TextLigatures.Expand(nc.Note.IsPassage()
                             ? PassageText.Opening(nc.Note.SelectedText)
-                            : nc.Note.SelectedText,
+                            : nc.Note.SelectedText),
                     })
                     .ToList();
 
