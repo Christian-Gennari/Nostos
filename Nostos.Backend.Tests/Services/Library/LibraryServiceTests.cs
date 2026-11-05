@@ -663,6 +663,24 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         page.Items.Select(b => b.Id).Should().Contain(bookId);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Title_sort_puts_Swedish_letters_after_Z_and_ignores_case_and_accents(bool groupByWork)
+    {
+        var h = Harness();
+        foreach (var title in new[] { "Örnen", "Zebra", "Ängel", "apple", "Åska", "Élan", "Banana" })
+            await h.Service.CreateOrMatchBookAsync(
+                CreateRequest("physical", title, Author: "Test " + title), strictConfirmation: true);
+
+        var listed = await h.Service.ListBooksAsync(
+            BookFilter.All, BookSort.Title, null, 1, 20, null, groupByWork);
+        var page = (PaginatedResponse<BookDto>)listed.Data!;
+
+        page.Items.Select(b => b.Title).Should().Equal(
+            "apple", "Banana", "Élan", "Zebra", "Åska", "Ängel", "Örnen");
+    }
+
     [Fact]
     public async Task An_importing_book_sorts_first_whatever_the_sort_key_is()
     {

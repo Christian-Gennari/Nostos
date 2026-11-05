@@ -1,4 +1,4 @@
-import { closingOf, countWords, excerptOf, readPassageMark, writePassageMark } from './passage-mark';
+import { closingOf, countWords, excerptOf, readPassageMark, withoutLeadingLabels, writePassageMark } from './passage-mark';
 
 describe('passage marks (issue #1014)', () => {
   afterEach(() => localStorage.clear());
@@ -26,5 +26,18 @@ describe('passage marks (issue #1014)', () => {
     expect(excerptOf('Short.', 30)).toBe('Short.');
     expect(countWords('  one two\n\nthree ')).toBe(3);
     expect(countWords(null)).toBe(0);
+  });
+});
+
+describe('withoutLeadingLabels', () => {
+  it('skips the figure labels a page starts with', () => {
+    const text = 'Figure 3\nBERT (Ours)\nOpenAI GPT\nWe introduce a new language representation model.\nIt is simple.';
+    expect(withoutLeadingLabels(text)).toBe('We introduce a new language representation model.\nIt is simple.');
+  });
+
+  it('keeps text that starts with prose, and text made of labels alone', () => {
+    const prose = 'Language model pre-training has been shown to be effective.\nFigure 3';
+    expect(withoutLeadingLabels(prose)).toBe(prose);
+    expect(withoutLeadingLabels('Figure 3\nBERT (Ours)')).toBe('Figure 3\nBERT (Ours)');
   });
 });

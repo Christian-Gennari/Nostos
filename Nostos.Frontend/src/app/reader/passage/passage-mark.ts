@@ -73,6 +73,28 @@ export function writePassageMark(bookId: string, mark: PassageMark | null): void
   }
 }
 
+/**
+ * A short line that is not a sentence: "Figure 3", "BERT (Ours)", the labels
+ * a figure leaves in a PDF's text layer. At most five words and forty
+ * characters, and no closing punctuation.
+ */
+function isLabelLine(line: string): boolean {
+  const flat = line.replace(/\s+/g, ' ').trim();
+  return flat.length <= 40 && flat.split(' ').length <= 5 && !/[.!?:;,…"”]$/u.test(flat);
+}
+
+/**
+ * A passage's text without the figure-label lines it starts with, so the quote
+ * opens on prose. Lines are the text's own line breaks. Nothing is dropped when
+ * no prose follows, so a passage of labels alone is kept whole.
+ */
+export function withoutLeadingLabels(text: string): string {
+  const lines = text.split('\n');
+  let skip = 0;
+  while (skip < lines.length && (!lines[skip].trim() || isLabelLine(lines[skip]))) skip++;
+  return skip > 0 && skip < lines.length ? lines.slice(skip).join('\n').trim() : text;
+}
+
 /** A few words from the start of a text, for a mark's label. */
 export function excerptOf(text: string, length = 60): string {
   const flat = text.replace(/\s+/g, ' ').trim();

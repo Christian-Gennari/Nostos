@@ -195,6 +195,36 @@ export function markGlyphElements(doc: Document): void {
   }
 }
 
+export const FLOAT_ATTRIBUTE = 'data-nostos-float';
+
+/**
+ * Tag illustrations the publisher floats to a side (an image, or a figure or
+ * block that holds one). On a narrow page the text column beside a float is a
+ * few words wide, so {@link typographyCss} sets these back in the flow there.
+ * A section's markup does not change after it renders, so one pass per
+ * contents document is enough.
+ */
+export function markFloatedIllustrations(doc: Document): void {
+  const view = doc.defaultView;
+  if (!view || !doc.body) return;
+  for (const el of Array.from(doc.body.querySelectorAll('*'))) {
+    const float = view.getComputedStyle(el).float;
+    if (float !== 'left' && float !== 'right') continue;
+    if (el.matches('img,svg,picture') || el.querySelector('img,svg,picture')) {
+      el.setAttribute(FLOAT_ATTRIBUTE, '');
+    }
+  }
+}
+
+/** Floated illustrations stop floating below this page width (px). */
+const NARROW_PAGE_PX = 480;
+
+const NARROW_PAGE_CSS =
+  `@media (max-width:${NARROW_PAGE_PX}px){` +
+  `[${FLOAT_ATTRIBUTE}]{float:none !important;max-width:100% !important;` +
+  `margin-left:auto !important;margin-right:auto !important;}` +
+  `img[${FLOAT_ATTRIBUTE}]{display:block;height:auto;}}`;
+
 /**
  * Prose blocks that should honour the reader's line-height choice even when an
  * EPUB assigns line-height directly. Headings and preformatted/code elements
@@ -235,11 +265,12 @@ const PROSE_LINE_HEIGHT_SELECTOR = [
 export function typographyCss(t: EpubTypography): string {
   const lineHeight =
     `${PROSE_LINE_HEIGHT_SELECTOR}{line-height:${t.lineHeight} !important;}`;
-  if (t.fontFamily === 'publisher') return lineHeight;
+  if (t.fontFamily === 'publisher') return lineHeight + NARROW_PAGE_CSS;
 
   return (
     `${READING_FONT_SELECTOR},${INLINE_TEXT_SELECTOR}` +
     `{font-family:${FONT_STACKS[t.fontFamily]} !important;}` +
-    lineHeight
+    lineHeight +
+    NARROW_PAGE_CSS
   );
 }
