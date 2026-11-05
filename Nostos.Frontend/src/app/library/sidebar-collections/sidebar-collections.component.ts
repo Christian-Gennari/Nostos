@@ -9,6 +9,8 @@ import {
   ElementRef,
   effect,
   ChangeDetectionStrategy,
+  output,
+  viewChild,
 } from '@angular/core';
 import { isPhoneViewport } from '../../ui/breakpoints';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -38,6 +40,7 @@ import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { BrandLockupComponent } from '../../ui/brand-lockup/brand-lockup.component';
 import { plural } from '../../core/format';
+import { BOOKS_DRAG_TYPE } from '../library-drag';
 
 @Component({
   standalone: true,
@@ -99,6 +102,12 @@ export class SidebarCollections implements OnInit {
   statusCounts = signal<LibraryStatusCountsDto | null>(null);
   expanded = this.preferences.sidebarExpanded;
   adding = signal(false);
+  /** The collection a new one is being added inside; null adds at the top level. */
+  addParent = signal<Collection | null>(null);
+  readonly booksDragType = BOOKS_DRAG_TYPE;
+  private readonly tree = viewChild(FlatTreeComponent);
+  /** Books were dropped on a collection row. */
+  readonly booksDropped = output<{ collectionId: string; bookIds: string[] }>();
   editingId = signal<string | null>(null);
   /** Why the last rename was refused, said under the field (issue #1209). */
   readonly renameError = signal<string | null>(null);
@@ -278,14 +287,16 @@ export class SidebarCollections implements OnInit {
     this.closeDrawerOnMobile();
   }
 
-  startAdd(): void {
+  startAdd(parent?: { id: string }): void {
     this.ignoreClick = true;
+    this.addParent.set(parent ? (this.collections().find((c) => c.id === parent.id) ?? null) : null);
     this.adding.set(true);
     if (!this.expanded()) this.setExpanded(true);
   }
 
   resetInput(): void {
     this.adding.set(false);
+    this.addParent.set(null);
     this.newName.set('');
     this.editingId.set(null);
   }
@@ -296,8 +307,10 @@ export class SidebarCollections implements OnInit {
       this.resetInput();
       return;
     }
-    this.collectionsService.create({ name }).subscribe({
+    const parent = this.addParent();
+    this.collectionsService.create(parent ? { name, parentId: parent.id } : { name }).subscribe({
       next: (newCol) => {
+        if (parent) this.tree()?.expand(parent.id);
         this.resetInput();
         this.load();
         this.loadCounts();
@@ -409,6 +422,17 @@ export class SidebarCollections implements OnInit {
 
   getNameForId(id: string): string {
     return this.collections().find((c) => c.id === id)?.name || '';
+  }
+
+  onBooksDropped(event: { item: { id: string }; data: string }): void {
+    let bookIds: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(event.data);
+      if (Array.isArray(parsed)) bookIds = parsed.filter((id): id is string => typeof id === 'string');
+    } catch {
+      return;
+    }
+    if (bookIds.length) this.booksDropped.emit({ collectionId: event.item.id, bookIds });
   }
 
   onItemMoved(event: { item: any; newParentId: string | null }) {

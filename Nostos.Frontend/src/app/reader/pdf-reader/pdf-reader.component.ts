@@ -1,5 +1,4 @@
 // src/app/reader/pdf-reader/pdf-reader.ts
-import { isPhoneViewport } from '../../ui/breakpoints';
 import {
   Component,
   ElementRef,
@@ -39,7 +38,14 @@ import { PdfReadAloud } from './pdf-read-aloud';
 import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
 import { buildPdfPageText, type PageRect } from './pdf-read-aloud-text';
 import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
-import { PassageDraft, PassageMark, closingOf, countWords, excerptOf } from '../passage/passage-mark';
+import {
+  PassageDraft,
+  PassageMark,
+  closingOf,
+  countWords,
+  excerptOf,
+  withoutLeadingLabels,
+} from '../passage/passage-mark';
 import { isDesktopMouseSelection, type SelectionAnchor } from '../selection-anchor';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
@@ -472,8 +478,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   });
 
   // Internal State
-  // `page-width` on a phone: a fitted full page renders a 512-page book at about
-  // 9.5px, which is not reading, it is squinting. Desktop keeps the full-page fit.
+  // `page-width` everywhere: a fitted full page renders a 512-page book at about
+  // 9.5px on a phone, and a two-column page at about 7px on a 1280px screen. That
+  // is not reading, it is squinting. "Whole page" stays one tap away in the zoom menu.
   zoomLevel = signal<string | number>(this.initialZoom());
 
   /**
@@ -654,7 +661,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   private initialZoom(): string {
-    return isPhoneViewport() ? 'page-width' : 'page-fit';
+    return 'page-width';
   }
 
   private initialLoadComplete = false;
@@ -1656,7 +1663,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       });
     }
 
-    const text = blocks.join('\n\n').trim() || null;
+    const joined = blocks.join('\n\n').trim();
+    const text = (joined && withoutLeadingLabels(joined)) || null;
     const range = first === last ? `Page ${this.pageName(first)}` : `Pages ${this.pageName(first)}–${this.pageName(last)}`;
     return {
       anchorKind: 'pdf_page',

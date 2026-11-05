@@ -52,6 +52,11 @@ public sealed partial class LibraryService : ILibraryService
         CancellationToken ct = default) =>
         _reads.ListBookScopeAsync(bookIds, collectionId, limit, ct);
 
+    public Task<IReadOnlyList<EditionSuggestionDto>> FindEditionSuggestionsAsync(
+        Guid bookId,
+        CancellationToken ct = default) =>
+        _reads.FindEditionSuggestionsAsync(bookId, ct);
+
     public Task<LibraryCommandResultDto> GetStatusCountsAsync(CancellationToken ct = default) =>
         _reads.GetStatusCountsAsync(ct);
 
@@ -401,9 +406,7 @@ public sealed partial class LibraryService : ILibraryService
             var hasAuthor = !string.IsNullOrEmpty(nAuthor);
             var exact = hasAuthor
                 ? all
-                    .Where(b =>
-                        string.Equals(BookIdentityNormalizer.NormalizeTitle(b.Title), nTitle, StringComparison.Ordinal) &&
-                        string.Equals(BookIdentityNormalizer.NormalizeAuthor(b.Author), nAuthor, StringComparison.Ordinal))
+                    .Where(b => EditionMatcher.IsAutoMatch(b.Title, b.Author, request.Title, request.Author))
                     .ToList()
                 : [];
 
@@ -884,6 +887,8 @@ public sealed partial class LibraryService : ILibraryService
             {
                 book.Progress.FinishedAt ??= Now;
                 book.Progress.ProgressPercent = 100;
+                // Finishing is reading it last: finished books rank by Last read.
+                book.Progress.LastReadAt ??= book.Progress.FinishedAt;
             }
             else
             {

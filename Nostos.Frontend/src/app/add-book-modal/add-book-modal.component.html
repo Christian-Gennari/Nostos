@@ -152,7 +152,9 @@
 
           <!-- Acquisition-first add / direct edit. The full bibliographic record
                is one shallow disclosure away, never the default task. -->
-          @if (!uploadViewOpen() && !sourceMode()) {
+          @if (bulkFiles().length > 0) {
+            <app-bulk-ebook-add [files]="bulkFiles()" (closed)="onBulkClosed($event)" />
+          } @else if (!uploadViewOpen() && !sourceMode()) {
           <div class="review-flow">
             @if (awaitingLocalFile()) {
               <section class="acquisition-start" aria-labelledby="local-upload-heading">
@@ -183,7 +185,7 @@
                   />
                   <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
                   <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
-                  <span class="nostos-drop-zone__hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
+                  <span class="nostos-drop-zone__hint">EPUB, PDF, MP3, M4A, M4B to read or play. TXT and MOBI are kept for download only.</span>
                 </label>
               </section>
             } @else {
@@ -237,15 +239,17 @@
                     <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
                     {{ err }}
                   </span>
-                  <button
-                    appButton
-                    type="button"
-                    variant="secondary"
-                    [disabled]="isSubmitting()"
-                    (click)="retryUpload()"
-                  >
-                    Try again
-                  </button>
+                  @if (hasPendingUpload()) {
+                    <button
+                      appButton
+                      type="button"
+                      variant="secondary"
+                      [disabled]="isSubmitting()"
+                      (click)="retryUpload()"
+                    >
+                      Try again
+                    </button>
+                  }
                 </div>
               }
 
@@ -287,7 +291,7 @@
                   <div class="section-heading">
                     <div>
                       <h3 id="manual-file-heading">Book file (optional)</h3>
-                      <p>EPUB, PDF, TXT, MOBI or audiobook file. Choosing one sets the book type automatically.</p>
+                      <p>EPUB, PDF or audiobook file. Choose several MP3 or M4A files to make one audiobook. TXT and MOBI files are kept for download; Nostos cannot read them.</p>
                     </div>
                   </div>
                   <label
@@ -300,6 +304,7 @@
                   >
                     <input
                       type="file"
+                      multiple
                       class="file-input"
                       (change)="onFileSelected($event)"
                       accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
@@ -310,8 +315,20 @@
                       <span class="nostos-drop-zone__hint">Choose another file to replace it</span>
                     } @else {
                       <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
-                      <span class="nostos-drop-zone__hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
+                      <span class="nostos-drop-zone__hint">EPUB, PDF, MP3, M4A, M4B to read or play. TXT and MOBI are kept for download only.</span>
                     }
+                  </label>
+                  <label class="review-change-file bulk-pick">
+                    <input
+                      type="file"
+                      class="review-change-file__input"
+                      multiple
+                      accept=".epub,.pdf"
+                      data-testid="bulk-file-input"
+                      (change)="onBulkFilesSelected($event)"
+                    />
+                    <nostos-icon name="upload-simple" [size]="14"></nostos-icon>
+                    Add several EPUB or PDF files at once
                   </label>
                 </section>
               }
@@ -1113,7 +1130,7 @@
             {{ sourcePrimaryAction().label }}
           </button>
         </app-dialog-actions>
-      } @else if (!uploadViewOpen()) {
+      } @else if (!uploadViewOpen() && bulkFiles().length === 0) {
         <!-- The upload view carries its own single Stop upload action, so the
              footer steps aside instead of offering a second Cancel (#1275). -->
         <app-dialog-actions shellActions>

@@ -272,4 +272,60 @@ describe('FlatTreeComponent', () => {
       expect(press('ArrowLeft').defaultPrevented).toBe(false);
     });
   });
+
+  describe('drops from outside the tree', () => {
+    const TYPE = 'application/x-test';
+
+    function drag(type: 'dragover' | 'drop' | 'dragleave', row: HTMLElement, types: string[], payload = '["x"]'): Event {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      (event as unknown as { dataTransfer: unknown }).dataTransfer = {
+        types,
+        getData: () => payload,
+        dropEffect: 'none',
+      };
+      row.dispatchEvent(event);
+      return event;
+    }
+
+    beforeEach(() => {
+      fixture.componentRef.setInput('acceptDropType', TYPE);
+      fixture.detectChanges();
+    });
+
+    it('lights the row under an accepted drag and emits the payload on drop', () => {
+      const row = fixture.nativeElement.querySelector('[data-node-id="b"]') as HTMLElement;
+      const dropped = vi.fn();
+      component.dropped.subscribe(dropped);
+
+      expect(drag('dragover', row, [TYPE]).defaultPrevented).toBe(true);
+      fixture.detectChanges();
+      expect(row.getAttribute('data-drop-zone')).toBe('inside');
+
+      drag('drop', row, [TYPE], '["book-1"]');
+      fixture.detectChanges();
+      expect(dropped).toHaveBeenCalledWith({ item: expect.objectContaining({ id: 'b' }), data: '["book-1"]' });
+      expect(row.getAttribute('data-drop-zone')).toBeNull();
+    });
+
+    it('ignores drags of anything else', () => {
+      const row = fixture.nativeElement.querySelector('[data-node-id="b"]') as HTMLElement;
+      const dropped = vi.fn();
+      component.dropped.subscribe(dropped);
+
+      expect(drag('dragover', row, ['Files']).defaultPrevented).toBe(false);
+      drag('drop', row, ['Files']);
+      expect(dropped).not.toHaveBeenCalled();
+    });
+
+    it('offers "New collection inside…" on a row only when asked to', () => {
+      expect(fixture.nativeElement.querySelector('[aria-label^="New collection inside"]')).toBeNull();
+      fixture.componentRef.setInput('allowAddChild', true);
+      fixture.detectChanges();
+      const add = fixture.nativeElement.querySelector('[data-node-id="b"] [aria-label^="New collection inside"]') as HTMLButtonElement;
+      const emitted = vi.fn();
+      component.nodeAddChild.subscribe(emitted);
+      add.click();
+      expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+    });
+  });
 });

@@ -783,3 +783,8 @@
     width: 100%;
   }
 }
+
+.bulk-pick {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+}

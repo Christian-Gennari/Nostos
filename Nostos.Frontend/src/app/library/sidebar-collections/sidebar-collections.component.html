@@ -166,7 +166,8 @@
               [(ngModel)]="newName"
               (keydown.enter)="create()"
               (keydown.escape)="resetInput()"
-              placeholder="Name…"
+              [placeholder]="addParent() ? 'Inside ' + addParent()!.name + '…' : 'Name…'"
+              [attr.aria-label]="addParent() ? 'New collection inside ' + addParent()!.name : 'New collection name'"
               autoFocus
             />
           </div>
@@ -179,6 +180,7 @@
           <nostos-empty-state compact error message="Collections could not be loaded." (retry)="retryLoad()" />
           } @else {
           <app-flat-tree
+            #tree
             [items]="treeItems()"
             [activeId]="filters.collectionId()"
             [editingId]="editingId()"
@@ -188,6 +190,10 @@
             [treatAllAsFolders]="true"
             [emptyLabel]="'No collections yet'"
             appearance="quiet"
+            [acceptDropType]="booksDragType"
+            [allowAddChild]="true"
+            (dropped)="onBooksDropped($event)"
+            (nodeAddChild)="startAdd($event)"
             (nodeSelected)="select($event.id)"
             (nodeMoved)="onItemMoved($event)"
             (nodeRenamed)="startRename($event)"

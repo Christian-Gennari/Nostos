@@ -10,6 +10,7 @@ import {
   PaginatedResponse,
   LibraryStatusCountsDto,
   WorkMembershipDto,
+  LinkableBookDto,
 } from '../dtos/book.dtos';
 import { BookFilter, BookSort } from '../dtos/book.enums';
 
@@ -47,6 +48,13 @@ export class BookLookupError extends Error {
     super(`Book lookup failed: ${reason}`);
     this.name = 'BookLookupError';
   }
+}
+
+export interface BookFileMetadata {
+  title: string | null;
+  author: string | null;
+  language: string | null;
+  pageCount: number | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -126,6 +134,14 @@ export class BooksService {
     return this.http.post<WorkMembershipDto>(`/api/books/${id}/work/link`, { targetBookId });
   }
 
+  /**
+   * Books in other works that look like the same book (same title, author
+   * spelled alike), one per work. An offer only: nothing is linked by asking.
+   */
+  workSuggestions(id: string): Observable<LinkableBookDto[]> {
+    return this.http.get<LinkableBookDto[]>(`/api/books/${id}/work/suggestions`);
+  }
+
   /** Split this book out into its own new work. */
   unlinkWork(id: string): Observable<WorkMembershipDto> {
     return this.http.post<WorkMembershipDto>(`/api/books/${id}/work/unlink`, null);
@@ -151,6 +167,31 @@ export class BooksService {
     formData.append('file', file);
 
     return this.http.post(`/api/books/${bookId}/file${replace ? '?replace=true' : ''}`, formData, {
+      reportProgress: true,
+      observe: 'events',
+    });
+  }
+
+  /**
+   * What an EPUB or PDF says about itself, read by the server. Nothing is
+   * stored; the add-book form uses it to prefill title, author and language.
+   */
+  readFileMetadata(file: File): Observable<BookFileMetadata> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.http.post<BookFileMetadata>('/api/books/file-metadata', formData);
+  }
+
+  /**
+   * Several audio files that become the tracks of one audiobook. The server
+   * puts them in natural file-name order, so the order sent does not matter.
+   */
+  uploadTracks(bookId: string, files: File[]): Observable<any> {
+    const formData = new FormData();
+    for (const file of files) formData.append('files', file, file.name);
+
+    return this.http.post(`/api/books/${bookId}/tracks`, formData, {
       reportProgress: true,
       observe: 'events',
     });

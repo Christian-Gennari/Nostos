@@ -80,10 +80,12 @@ internal sealed class LibraryReadService(
                 : query.Where(b => b.Progress.FinishedAt != null),
             BookFilter.Reading => byWork
                 ? WorkReadingStatus.WhereReading(query, db)
-                : query.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0),
+                : query.Where(b => b.Progress.FinishedAt == null
+                    && (b.Progress.ProgressPercent > 0 || b.Progress.LastLocation != null)),
             BookFilter.NotStarted => byWork
                 ? WorkReadingStatus.WhereNotStarted(query, db)
-                : query.Where(b => b.Progress.ProgressPercent == 0),
+                : query.Where(b => b.Progress.FinishedAt == null
+                    && b.Progress.ProgressPercent == 0 && b.Progress.LastLocation == null),
             BookFilter.Unsorted => query.Where(b =>
                 !db.BookCollections.Any(bc => bc.BookId == b.Id)),
             _ => query,
@@ -156,11 +158,15 @@ internal sealed class LibraryReadService(
                     b.CreatedAt,
                     b.Progress.LastReadAt,
                     b.Progress.ProgressPercent,
-                    b.Work!.Rating))
+                    b.Work!.Rating,
+                    b.Progress.FinishedAt))
                 .ToListAsync(ct);
 
             var primaries = SortGroupedBooks(
-                    candidates.GroupBy(c => c.WorkId).Select(SelectPrimaryEdition),
+                    candidates.GroupBy(c => c.WorkId).Select(g =>
+                        // The work's latest finish, whichever edition holds it: what
+                        // "Recently finished" ranks the work by.
+                        SelectPrimaryEdition(g) with { FinishedAt = g.Max(c => c.FinishedAt) }),
                     sort)
                 .ToList();
             totalCount = primaries.Count;
@@ -213,26 +219,59 @@ internal sealed class LibraryReadService(
             // Imports sort FIRST, whatever the sort key is. The boundary above also
             // keeps them in the result through ordinary filters, so their own card
             // remains the single progress surface until the import settles.
+            List<BookModel> items;
             IOrderedQueryable<BookModel> ImportingFirst(IQueryable<BookModel> source) =>
                 source.OrderByDescending(b =>
                     b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding);
 
-            query = sort switch
+            if (sort == BookSort.Title)
             {
-                BookSort.Title => ImportingFirst(query).ThenBy(b => b.Title),
-                BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Work!.Rating),
-                BookSort.LastRead => ImportingFirst(query)
-                    .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
-                    .ThenByDescending(b => b.Progress.LastReadAt),
-                _ => ImportingFirst(query).ThenByDescending(b => b.CreatedAt),
-            };
+                // Title order is computed in C# (TitleSortKey), not by the database,
+                // so SQLite and PostgreSQL agree. Only three narrow columns are
+                // loaded to order the set; full books load for the page alone.
+                var rows = await query
+                    .Select(b => new TitleRow(b.Id, b.Status, b.Title))
+                    .ToListAsync(ct);
+                var orderedIds = rows
+                    .OrderByDescending(r => r.Status == BookStatus.Downloading || r.Status == BookStatus.Transcoding)
+                    .ThenBy(r => r.Title, TitleSortKey.Comparer)
+                    .ThenBy(r => r.Id)
+                    .Select(r => r.Id)
+                    .ToList();
+                totalCount = orderedIds.Count;
+                var pageIds = orderedIds
+                    .Skip((safePage - 1) * safePageSize)
+                    .Take(safePageSize)
+                    .ToList();
+                var byId = (await query
+                        .Where(b => pageIds.Contains(b.Id))
+                        .Select(BookReadShapes.WithoutLocations)
+                        .ToListAsync(ct))
+                    .ToDictionary(b => b.Id);
+                items = pageIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+            }
+            else
+            {
+                query = sort switch
+                {
+                    BookSort.Rating => ImportingFirst(query).ThenByDescending(b => b.Work!.Rating),
+                    BookSort.LastRead => ImportingFirst(query)
+                        .ThenByDescending(b => b.Progress.LastReadAt.HasValue)
+                        .ThenByDescending(b => b.Progress.LastReadAt),
+                    BookSort.RecentlyFinished => ImportingFirst(query)
+                        .ThenByDescending(b => b.Progress.FinishedAt.HasValue)
+                        .ThenByDescending(b => b.Progress.FinishedAt)
+                        .ThenByDescending(b => b.Progress.LastReadAt),
+                    _ => ImportingFirst(query).ThenByDescending(b => b.CreatedAt),
+                };
 
-            totalCount = await query.CountAsync(ct);
-            var items = await query
-                .Skip((safePage - 1) * safePageSize)
-                .Take(safePageSize)
-                .Select(BookReadShapes.WithoutLocations)
-                .ToListAsync(ct);
+                totalCount = await query.CountAsync(ct);
+                items = await query
+                    .Skip((safePage - 1) * safePageSize)
+                    .Take(safePageSize)
+                    .Select(BookReadShapes.WithoutLocations)
+                    .ToListAsync(ct);
+            }
 
             var pageWorkIds = items.Select(b => b.WorkId).Distinct().ToList();
             var pageSiblings = await CountableBooks(db)
@@ -400,6 +439,51 @@ internal sealed class LibraryReadService(
         };
 
         return Result(LibraryReplyFormatter.Book(book.Title), dto, version);
+    }
+
+    public async Task<IReadOnlyList<EditionSuggestionDto>> FindEditionSuggestionsAsync(
+        Guid bookId,
+        CancellationToken ct = default)
+    {
+        await using var db = await _contexts.CreateDbContextAsync(ct);
+
+        var book = await db.Books.AsNoTracking()
+            .Where(b => b.Id == bookId)
+            .Select(b => new { b.Title, b.Author, b.WorkId })
+            .SingleOrDefaultAsync(ct);
+        if (book is null || string.IsNullOrWhiteSpace(book.Author))
+            return [];
+
+        // Personal-library scale: compare in memory, as create-or-match does.
+        var all = await CountableBooks(db)
+            .Select(b => new
+            {
+                b.Id,
+                b.Title,
+                b.Author,
+                b.WorkId,
+                IsAudio = b is AudioBookModel,
+                IsEbook = b is EBookModel,
+                b.FileDetails.FileName,
+            })
+            .ToListAsync(ct);
+
+        var sizes = all.GroupBy(b => b.WorkId).ToDictionary(g => g.Key, g => g.Count());
+        return all
+            .Where(b => b.WorkId != book.WorkId
+                && EditionMatcher.IsSuggestion(book.Title, book.Author, b.Title, b.Author))
+            .GroupBy(b => b.WorkId)
+            .Select(g => g.First())
+            .Take(5)
+            .Select(b => new EditionSuggestionDto(
+                b.Id,
+                b.Title,
+                b.Author,
+                b.WorkId,
+                sizes[b.WorkId],
+                b.IsAudio ? "audiobook" : b.IsEbook ? "ebook" : "physical",
+                b.FileName))
+            .ToList();
     }
 
     public async Task<LibraryResolveResult> ResolveBookAsync(LibraryResolveBookRequest request, CancellationToken ct = default)
@@ -580,6 +664,8 @@ internal sealed class LibraryReadService(
             book is AudioBookModel a ? a.Asin : null,
             reason);
 
+    private sealed record TitleRow(Guid Id, BookStatus Status, string Title);
+
     /// <summary>The columns that group, rank and sort a book in the grouped list.</summary>
     private sealed record GroupCandidate(
         Guid Id,
@@ -589,7 +675,8 @@ internal sealed class LibraryReadService(
         DateTime CreatedAt,
         DateTime? LastReadAt,
         int ProgressPercent,
-        int Rating);
+        int Rating,
+        DateTime? FinishedAt);
 
     /// <summary>
     /// The edition that stands for a work in the list.
@@ -613,10 +700,16 @@ internal sealed class LibraryReadService(
         IEnumerable<GroupCandidate> books,
         BookSort sort) => sort switch
         {
-            BookSort.Title => ImportingFirst(books).ThenBy(b => b.Title).ThenBy(b => b.Id),
+            BookSort.Title => ImportingFirst(books).ThenBy(b => b.Title, TitleSortKey.Comparer).ThenBy(b => b.Id),
             BookSort.Rating => ImportingFirst(books).ThenByDescending(b => b.Rating).ThenBy(b => b.Id),
             BookSort.LastRead => ImportingFirst(books)
                 .ThenByDescending(b => b.LastReadAt.HasValue)
+                .ThenByDescending(b => b.LastReadAt)
+                .ThenBy(b => b.Id),
+            // The representing edition carries the work's latest finish.
+            BookSort.RecentlyFinished => ImportingFirst(books)
+                .ThenByDescending(b => b.FinishedAt.HasValue)
+                .ThenByDescending(b => b.FinishedAt)
                 .ThenByDescending(b => b.LastReadAt)
                 .ThenBy(b => b.Id),
             _ => ImportingFirst(books).ThenByDescending(b => b.CreatedAt).ThenBy(b => b.Id),

@@ -128,20 +128,37 @@ describe('BookDetail across editions', () => {
   // ── Status ──────────────────────────────────────────────────────────────────
 
   describe('reading status', () => {
-    it('is Finished on the untouched audiobook when the EPUB was finished', async () => {
+    it('says the status of the edition on screen, whatever the others are', async () => {
       await setup(twoEditions({ progressPercent: 100, finishedAt: '2026-09-01T08:00:00Z' }));
       expect(statusPill().textContent).toContain('Finished');
-    });
+      expect(statusPill().querySelector('.nostos-dropdown__detail')).toBeNull();
 
-    it('is Reading on a reread, with the figure of the edition read', async () => {
+      // A reread in the other edition does not change what this copy says.
+      fixture.destroy();
       await setup(
         twoEditions(
           { progressPercent: 100, finishedAt: '2026-01-01T08:00:00Z', lastReadAt: '2026-01-01T08:00:00Z' },
           { progressPercent: 34, lastReadAt: '2026-10-01T08:00:00Z' },
         ),
       );
-      expect(statusPill().textContent).toContain('Reading');
-      expect(statusPill().querySelector('.nostos-dropdown__detail')?.textContent?.trim()).toBe('· 34%');
+      expect(statusPill().textContent).toContain('Finished');
+    });
+
+    it('is Not started on an untouched edition although another one is Finished', async () => {
+      await setup(twoEditions({}, { progressPercent: 100, finishedAt: '2026-09-01T08:00:00Z' }));
+      expect(statusPill().textContent).toContain('Not started');
+    });
+
+    it('shows the finished date and saves a date picked by the reader', async () => {
+      await setup(twoEditions({ progressPercent: 100, finishedAt: '2026-09-01T12:00:00Z' }));
+      const input = el().querySelector('.finished-date input') as HTMLInputElement;
+      expect(input.value).toBe('2026-09-01');
+
+      input.value = '2026-08-15';
+      input.dispatchEvent(new Event('change'));
+      const put = httpMock.expectOne((request) => request.method === 'PUT' && request.url === '/api/books/b1');
+      expect(new Date((put.request.body as { finishedAt: string }).finishedAt).getDate()).toBe(15);
+      put.flush(twoEditions({ progressPercent: 100, finishedAt: '2026-08-15T12:00:00Z' }));
     });
 
     it('shows the figure of the edition on screen when it is the one being read', async () => {
@@ -444,6 +461,54 @@ describe('BookDetail across editions', () => {
       const link = component.workActionDescription();
       expect(link).toContain('combined');
       expect(link).toContain('a rating or review that differs stays with its edition');
+    });
+  });
+
+  describe('grouping offered after an edit', () => {
+    const suggestionsUrl = '/api/books/b1/work/suggestions';
+    const candidate = { id: 'z9', title: 'Pride and Prejudice', author: 'Jane Austen', workId: 'w9', editionCount: 1 };
+
+    it('offers to link, and links nothing until it is confirmed', async () => {
+      await setup(epub);
+
+      component.onBookUpdated({ ...epub, title: 'Pride and Prejudice', author: 'Jane Austen' });
+      httpMock.expectOne(suggestionsUrl).flush([candidate]);
+
+      expect(component.pendingWorkAction()).toEqual({
+        kind: 'link',
+        bookId: 'z9',
+        label: 'Pride and Prejudice',
+        merge: true, // the fixture book already has editions of its own
+        suggested: true,
+      });
+      expect(component.workActionHeading()).toBe('Group with “Pride and Prejudice”?');
+      expect(component.workActionDescription()).toContain('This looks like the same book.');
+      httpMock.expectNone('/api/books/b1/work/link');
+
+      component.confirmWorkAction();
+      const link = httpMock.expectOne('/api/books/b1/work/link');
+      expect(link.request.body).toEqual({ targetBookId: 'z9' });
+      link.flush({ workId: 'w9', editionCount: 2 });
+      httpMock.expectOne('/api/books/b1').flush(epub);
+      httpMock.match((request) => request.url.startsWith('/api/notes')).forEach((request) => request.flush(notesPage([])));
+    });
+
+    it('stays quiet when the title and author did not change', async () => {
+      await setup(epub);
+
+      component.onBookUpdated({ ...epub, description: 'A new blurb' });
+
+      httpMock.expectNone(suggestionsUrl);
+      expect(component.pendingWorkAction()).toBeNull();
+    });
+
+    it('stays quiet when nothing looks like this book', async () => {
+      await setup(epub);
+
+      component.onBookUpdated({ ...epub, title: 'Something else' });
+      httpMock.expectOne(suggestionsUrl).flush([]);
+
+      expect(component.pendingWorkAction()).toBeNull();
     });
   });
 });

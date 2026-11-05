@@ -1019,12 +1019,12 @@ describe('PdfReader reading mode', () => {
     expect(fixture.componentInstance.scrollMode()).toBe(ScrollModeType.page);
   });
 
-  it('fits the page width on a phone, the whole page on desktop', () => {
+  it('fits the page width on a phone and on desktop', () => {
     withViewport(390, () => {
       expect(make().componentInstance.zoomLevel()).toBe('page-width');
     });
     withViewport(1440, () => {
-      expect(make().componentInstance.zoomLevel()).toBe('page-fit');
+      expect(make().componentInstance.zoomLevel()).toBe('page-width');
     });
   });
 

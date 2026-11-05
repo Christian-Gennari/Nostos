@@ -369,6 +369,28 @@ export class BookDetailStore {
     });
   }
 
+  /** Sets the day this edition was finished ("yyyy-mm-dd", the reader's local day). */
+  setFinishedDate(day: string) {
+    const b = this.book();
+    if (!b || !b.finishedAt || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+    const [y, m, d] = day.split('-').map(Number);
+    // Midday local time keeps the day the same in every timezone.
+    const iso = new Date(y, m - 1, d, 12).toISOString();
+    if (new Date(b.finishedAt).toDateString() === new Date(iso).toDateString()) return;
+
+    this.book.update((curr) => (curr ? { ...curr, finishedAt: iso } : null));
+    this.booksService.update(b.id, { finishedAt: iso }, HANDLED).subscribe({
+      next: (updated) => {
+        this.book.set(updated);
+        this.toast.success('Finished date saved');
+      },
+      error: () => {
+        this.loadBook(b.id, { background: true });
+        this.toast.error('Could not save the finished date');
+      },
+    });
+  }
+
   // --- PAPER BOOK PAGE (issue #1091) ---
 
   /** A run of −/+ taps or keystrokes is one save, sent this long after the last. */
@@ -533,6 +555,21 @@ export class BookDetailStore {
         },
         error: () => this.toast.error('Could not link these books'),
       });
+  }
+
+  /**
+   * Asks which other book looks like this one (same title, author spelled
+   * alike) and hands the first to `offer`. Read only: the caller asks the
+   * person before anything is linked. A failed read offers nothing.
+   */
+  loadWorkSuggestion(bookId: string, offer: (candidate: LinkableBookDto) => void) {
+    this.booksService.workSuggestions(bookId).subscribe({
+      next: (found) => {
+        // The person may have moved on to another book while this was in flight.
+        if (found.length > 0 && this.book()?.id === bookId) offer(found[0]);
+      },
+      error: () => {},
+    });
   }
 
   /** Split a book out into its own work. Defaults to the book being viewed. */

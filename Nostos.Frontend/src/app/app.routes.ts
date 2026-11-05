@@ -87,9 +87,9 @@ export const routes: Routes = [
     ],
   },
 
-  // Catch-all: redirect unknown routes to library
+  // Catch-all: an address that matches nothing says so and offers the Library.
   {
     path: '**',
-    redirectTo: 'library',
+    loadComponent: () => import('./not-found/not-found.component').then((m) => m.NotFoundComponent),
   },
 ];

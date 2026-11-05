@@ -209,6 +209,14 @@ public static class BooksEndpoints
             }
         );
 
+        // SUGGESTIONS: other works that look like the same book. Read only; the
+        // client asks the person before it calls /work/link.
+        group.MapGet(
+            "/{id}/work/suggestions",
+            async (Guid id, ILibraryService library, CancellationToken ct) =>
+                Results.Ok(await library.FindEditionSuggestionsAsync(id, ct))
+        );
+
         // UNLINK this book into its own new work (manual split). The book
         // always ends up with a valid work; there is no "no work" state to
         // fall into.
@@ -246,10 +254,9 @@ public static class BooksEndpoints
                 if (book is null)
                     return Results.NotFound();
 
-                if (string.IsNullOrWhiteSpace(book.FileDetails.LocationsJson))
-                    return Results.NotFound();
-
-                return Results.Ok(new BookLocationsDto(book.FileDetails.LocationsJson));
+                // Not cached yet is a normal first open, not an error: answer 200
+                // with an empty value so the browser console stays clean.
+                return Results.Ok(new BookLocationsDto(book.FileDetails.LocationsJson ?? ""));
             }
         );
 
@@ -332,6 +339,31 @@ public static class BooksEndpoints
             }
         );
 
+        // What an EPUB or PDF says about itself, so the add-book form can
+        // prefill title, author and language before the book exists. Nothing is
+        // stored. Files over the cap are not read; the form then keeps the
+        // file name.
+        uploadGroup.MapPost(
+            "/file-metadata",
+            async (HttpRequest request, CancellationToken ct) =>
+            {
+                if (request.ContentLength is > NostosProductRequestLimits.MaxFileMetadataRequestBytes)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+                var form = await request.ReadFormAsync(ct);
+                var file = form.Files.FirstOrDefault();
+                if (file is null)
+                    return Results.BadRequest("Missing file.");
+                if (file.Length > NostosProductRequestLimits.MaxFileMetadataRequestBytes)
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+
+                await using var content = file.OpenReadStream();
+                var found = await BookFileMetadataReader.ReadAsync(content, file.FileName, ct);
+                return Results.Ok(new BookFileMetadataDto(
+                    found.Title, found.Author, found.Language, found.PageCount));
+            }
+        );
+
         // Upload file (legacy whole-request contract; still the Cloud path)
         uploadGroup.MapPost(
             "/{id}/file",
@@ -406,6 +438,13 @@ public static class BooksEndpoints
                 if (!allowed)
                     return Results.BadRequest($"Unsupported file type: {file.ContentType}");
 
+                await using (var probe = file.OpenReadStream())
+                {
+                    var invalid = BookFileValidator.Validate(probe, file.FileName);
+                    if (invalid is not null)
+                        return BookUploadHttpErrors.From(BookUploadException.InvalidFileError(invalid));
+                }
+
                 await commit.CommitStreamAsync(
                     book,
                     file.OpenReadStream,
@@ -413,6 +452,40 @@ public static class BooksEndpoints
                     ct);
 
                 return Results.Ok(new { uploaded = true });
+            }
+        );
+
+        // Upload several audio files as the tracks of ONE audiobook. Tracks go
+        // in natural file-name order; the book's single file, if any, is replaced.
+        uploadGroup.MapPost(
+            "/{id}/tracks",
+            async (
+                Guid id,
+                HttpRequest request,
+                IBookRepository repo,
+                BookFileMutationGate fileMutationGate,
+                CancellationToken ct
+            ) =>
+            {
+                var upload = request.HttpContext.RequestServices.GetRequiredService<BookTrackUpload>();
+
+                using var fileLease = fileMutationGate.TryEnter(id);
+                if (fileLease is null)
+                    return Results.Conflict(new { code = "book_import_in_progress",
+                        message = "Wait for this book's current import or upload to finish." });
+
+                var book = await repo.GetByIdAsync(id);
+                if (book is null)
+                    return Results.NotFound();
+                if (book.Status is BookStatus.Downloading or BookStatus.Transcoding)
+                    return Results.Conflict(new { code = "book_import_in_progress",
+                        message = "This book is still importing. Wait until it finishes before uploading files." });
+
+                var form = await request.ReadFormAsync(ct);
+                var result = await upload.CommitAsync(book, form.Files, ct);
+                return result.Ok
+                    ? Results.Ok(new { uploaded = true, tracks = result.Tracks })
+                    : Results.BadRequest(result.Error);
             }
         );
 

@@ -7,8 +7,10 @@ namespace Nostos.Backend.Services.Library;
 /// Where a reader is in a paper book (issue #1091). The book detail page stores
 /// the page in <see cref="ReadingProgress.LastLocation"/> as <c>{"page":n}</c>
 /// and the percentage in <see cref="ReadingProgress.ProgressPercent"/>, through
-/// the readers' progress endpoint. Without a page count the percentage is 1, so
-/// the Library still counts the book as Reading.
+/// the readers' progress endpoint. Without a page count there is no honest
+/// percentage: the page is stored and the percentage stays 0. A saved place
+/// counts as progress (see <see cref="WorkReadingStatus"/>), so the Library
+/// still counts the book as Reading.
 /// </summary>
 public static class PaperPageProgress
 {
@@ -33,11 +35,11 @@ public static class PaperPageProgress
         }
     }
 
-    /// <summary>The PDF reader's rule: floor(page / pageCount * 100), and 1 without a count.</summary>
+    /// <summary>The PDF reader's rule: floor(page / pageCount * 100), and 0 (none) without a count.</summary>
     public static int Percent(int page, int? pageCount)
     {
         if (pageCount is not > 0)
-            return 1;
+            return 0;
         var percent = (int)Math.Floor(Math.Min(page, pageCount.Value) * 100.0 / pageCount.Value);
         return Math.Clamp(percent, 1, 100);
     }

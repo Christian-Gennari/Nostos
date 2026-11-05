@@ -97,6 +97,7 @@ import {
   libronFaceUrls,
   libronFontFaceCss,
   marginInsetPercent,
+  markFloatedIllustrations,
   markGlyphElements,
   typographyCss,
   type EpubTypography,
@@ -131,6 +132,7 @@ export {
   fontFamilyFromStored,
   libronFontFaceCss,
   marginInsetPercent,
+  markFloatedIllustrations,
   markGlyphElements,
   typographyCss,
 } from './epub-typography';
@@ -2161,6 +2163,27 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
         // --- OPTIMIZATION START ---
         // Try to fetch locations from backend first
+        const generateLocations = () => {
+          // Cache MISS: Generate locations (Expensive). The progress pill
+          // shows a spine-based percentage while this runs, so a large book
+          // is never left on "Calculating…" with no position at all
+          // (issue #225 §1.4). It waits for the first page: it parses every
+          // chapter on this thread, and the page is what the reader came for.
+          void firstPage.then(() => {
+            if (this.epubBook !== epubBook) return;
+            void epubBook.locations.generate(1000).then(() => {
+              this.chapterBounds = null;
+              this.locationsReady.set(true);
+              if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
+
+              // Save them for next time
+              const json = epubBook.locations.save();
+              if (json) {
+                this.booksService.saveLocations(id, json).subscribe();
+              }
+            });
+          });
+        };
         this.booksService.getLocations(id).subscribe({
           next: (dto) => {
             // Cache HIT: Load saved locations
@@ -2169,29 +2192,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
               this.chapterBounds = null;
               this.locationsReady.set(true);
               if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
+            } else {
+              generateLocations();
             }
           },
-          error: () => {
-            // Cache MISS: Generate locations (Expensive). The progress pill
-            // shows a spine-based percentage while this runs, so a large book
-            // is never left on "Calculating…" with no position at all
-            // (issue #225 §1.4). It waits for the first page: it parses every
-            // chapter on this thread, and the page is what the reader came for.
-            void firstPage.then(() => {
-              if (this.epubBook !== epubBook) return;
-              void epubBook.locations.generate(1000).then(() => {
-                this.chapterBounds = null;
-                this.locationsReady.set(true);
-                if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
-
-                // Save them for next time
-                const json = epubBook.locations.save();
-                if (json) {
-                  this.booksService.saveLocations(id, json).subscribe();
-                }
-              });
-            });
-          },
+          error: generateLocations,
         });
         // --- OPTIMIZATION END ---
       })
@@ -2646,6 +2651,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.upsertTypographyStyle(contents.document);
     try {
       markGlyphElements(contents.document);
+      markFloatedIllustrations(contents.document);
       scaleAbsoluteFontSizes(contents.document);
     } catch {
       // A section mid-teardown has no stylesheets to read — skip it.

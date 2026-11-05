@@ -12,4 +12,5 @@ export enum BookSort {
   Title = 'title',
   Rating = 'rating',
   LastRead = 'lastread',
+  RecentlyFinished = 'recentlyfinished',
 }

@@ -433,7 +433,8 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         var bookId = await CreatePaperBookAsync(h, "paper-2", pageCount: null);
         await h.Service.UpdateProgressAsync(bookId, """{"page":100}""", PaperPageProgress.Percent(100, null));
         var before = await GetBookAsync(h, bookId);
-        before.ProgressPercent.Should().Be(1, "without a page count the book counts as Reading");
+        before.ProgressPercent.Should().Be(0, "without a page count there is no percentage, only the page");
+        before.LastLocation.Should().Be("""{"page":100}""");
 
         await h.Service.UpdateBookAsync(new(Client, "paper-2-pc2", bookId, PageCount: 400));
 
@@ -484,8 +485,8 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
     [InlineData(880, 880, 100)]
     [InlineData(1, 880, 1)]
     [InlineData(1000, 880, 100)]
-    [InlineData(50, null, 1)]
-    [InlineData(50, 0, 1)]
+    [InlineData(50, null, 0)]
+    [InlineData(50, 0, 0)]
     public void Paper_page_percent_follows_the_pdf_rule(int page, int? pageCount, int expected) =>
         PaperPageProgress.Percent(page, pageCount).Should().Be(expected);
 
@@ -660,6 +661,24 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
             BookFilter.All, BookSort.Title, null, 1, 20, coll2.Id, null, null);
         var page = (PaginatedResponse<BookDto>)listed.Data!;
         page.Items.Select(b => b.Id).Should().Contain(bookId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Title_sort_puts_Swedish_letters_after_Z_and_ignores_case_and_accents(bool groupByWork)
+    {
+        var h = Harness();
+        foreach (var title in new[] { "Örnen", "Zebra", "Ängel", "apple", "Åska", "Élan", "Banana" })
+            await h.Service.CreateOrMatchBookAsync(
+                CreateRequest("physical", title, Author: "Test " + title), strictConfirmation: true);
+
+        var listed = await h.Service.ListBooksAsync(
+            BookFilter.All, BookSort.Title, null, 1, 20, null, groupByWork);
+        var page = (PaginatedResponse<BookDto>)listed.Data!;
+
+        page.Items.Select(b => b.Title).Should().Equal(
+            "apple", "Banana", "Élan", "Zebra", "Åska", "Ängel", "Örnen");
     }
 
     [Fact]

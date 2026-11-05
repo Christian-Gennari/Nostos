@@ -33,8 +33,8 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
 import { DrawerFocusDirective } from '../core/directives/drawer-focus.directive';
 import { SidebarCollections } from './sidebar-collections/sidebar-collections.component';
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
-import { Subject, Subscription, forkJoin } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { Observable, Subject, Subscription, forkJoin, from, of } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, mergeMap, tap, toArray } from 'rxjs/operators';
 import { EBOOK_CATEGORY_LABEL_PLURAL, BOOK_FORMAT_LABEL, UNKNOWN_AUTHOR, formatOf, type BookFormatConcept } from '../core/book-format';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
@@ -55,9 +55,15 @@ import { coverImageUrl } from '../core/cover-url';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
-import { READING_STATUS_LABEL } from '../core/reading-status';
+import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
+import { formatNostosDate } from '../core/date-formats';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
+import { CheckboxDirective } from '../ui/check/check.directive';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
+import { buildFlatTree } from '../ui/flat-tree/flat-tree.helper';
+import { plural } from '../core/format';
+import { BOOKS_DRAG_TYPE } from './library-drag';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -162,6 +168,8 @@ interface WorkFormatGlyph {
     EmptyStateComponent,
     PagingStatusComponent,
     BookCoverComponent,
+    CheckboxDirective,
+    ...NOSTOS_MENU,
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css'],
@@ -171,6 +179,7 @@ export class Library implements OnInit, OnDestroy {
   protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   readonly sortOptions = [
     { value: BookSort.LastRead, label: 'Last read' },
+    { value: BookSort.RecentlyFinished, label: 'Recently finished' },
     { value: BookSort.Recent, label: 'Recently added' },
     { value: BookSort.Title, label: 'Title (A-Z)' },
     { value: BookSort.Rating, label: 'Highest rated' },
@@ -437,6 +446,8 @@ export class Library implements OnInit, OnDestroy {
       this.filters.format();
       this.filters.collectionId();
       untracked(() => {
+        // What was ticked belongs to the list that was on screen.
+        if (this.selected().size) this.selected.set(new Set());
         // A kept list is already on screen: it is checked quietly, not replaced.
         if (firstLoad && this.restored) this.refreshInPlace();
         else this.refreshBooks();
@@ -828,9 +839,9 @@ export class Library implements OnInit, OnDestroy {
       case 'finished':
         return !!book.finishedAt;
       case 'reading':
-        return !book.finishedAt && book.progressPercent > 0;
+        return !book.finishedAt && (book.progressPercent > 0 || !!book.lastLocation);
       case 'notstarted':
-        return book.progressPercent === 0;
+        return book.progressPercent === 0 && !book.lastLocation && !book.finishedAt;
       case 'unsorted':
         // Membership is a set now: a book is sorted if it is in ANY collection.
         // Reading the singular field here would call a multi-collection book
@@ -841,14 +852,14 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
-  private syncToggledBook(updated: Book): void {
+  private syncToggledBook(updated: Book, refreshCounts = true): void {
     if (this.matchesActiveFilter(updated)) {
       this.rawBooks.update((books) => books.map((b) => (b.id === updated.id ? updated : b)));
     } else {
       this.rawBooks.update((books) => books.filter((b) => b.id !== updated.id));
       this.totalItems.update((c) => Math.max(0, c - 1));
     }
-    this.refreshStatusCounts();
+    if (refreshCounts) this.refreshStatusCounts();
   }
 
   private refreshStatusCounts(): void {
@@ -1151,6 +1162,27 @@ export class Library implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * The quiet status line under a book: "Reading · 40% · read 3 Nov 2026" or
+   * "Finished 4 Nov 2026". It is the book's status (all editions together, the
+   * same rule as the Reading and Finished filters); a book not started has none.
+   */
+  statusLine(book: Book): string {
+    if (book.status === 1 || book.status === 2 || book.status === 3) return '';
+    const { status, percent, finishedAt } = bookReadingStatusOf(book, book.otherEditions);
+    if (status === 'finished') {
+      return finishedAt ? `${READING_STATUS_LABEL.finished} ${formatNostosDate(finishedAt)}` : READING_STATUS_LABEL.finished;
+    }
+    if (status !== 'reading') return '';
+    const read = [book.lastReadAt, ...(book.otherEditions ?? []).map((e) => e.lastReadAt)]
+      .filter((at): at is string => !!at)
+      .sort()
+      .pop();
+    return [READING_STATUS_LABEL.reading, percent ? `${percent}%` : null, read ? `read ${formatNostosDate(read)}` : null]
+      .filter(Boolean)
+      .join(' · ');
+  }
+
   toggleFinished(book: Book, event: Event): void {
     event.stopPropagation();
     const isCurrentlyFinished = !!book.finishedAt;
@@ -1199,5 +1231,218 @@ export class Library implements OnInit, OnDestroy {
         this.toast.error('Could not update the rating');
       },
     });
+  }
+
+  // --- Select several books, drag books onto collections ------------------
+  // The Brain's Select mode, on the Library: tick books, then act on all of
+  // them from one bar. A drag onto a sidebar collection is the same "add to
+  // collection" with the pointer. Membership is the full set per book, so each
+  // book's new set is worked out here (PUT /api/books/{id} with collectionIds).
+
+  readonly selecting = signal(false);
+  readonly selected = signal<ReadonlySet<string>>(new Set());
+  readonly bulkDeleteOpen = signal(false);
+  readonly bulkDeleting = signal(false);
+
+  /** The ticked books that are still in the list. */
+  readonly selectedBooks = computed(() => this.rawBooks().filter((b) => this.selected().has(b.id)));
+
+  /** Every collection in tree order with its depth, for the "Add to collection" menu. */
+  readonly collectionChoices = computed(() => {
+    const all = this.collections();
+    return buildFlatTree(all, new Set(all.map((c) => c.id)), true);
+  });
+
+  readonly bulkDeleteHeading = computed(() => `Delete ${plural(this.selectedBooks().length, 'book')}?`);
+  readonly bulkDeleteDescription = computed(
+    () =>
+      'This action cannot be undone. The book files, annotations, and all reading progress will be permanently deleted from your library.' +
+      (this.cloudEntry.supportsExternalMediaLibraries()
+        ? ' Books linked from an external media folder are only removed from Nostos; their original files stay.'
+        : ''),
+  );
+
+  /** A book still being imported has nothing to act on yet. */
+  isSelectable(book: Book): boolean {
+    return book.status !== 1 && book.status !== 2;
+  }
+
+  toggleSelecting(): void {
+    if (this.selecting()) this.leaveSelection();
+    else this.selecting.set(true);
+  }
+
+  leaveSelection(): void {
+    this.selecting.set(false);
+    this.selected.set(new Set());
+  }
+
+  setSelected(bookId: string, on: boolean): void {
+    this.selected.update((current) => {
+      const next = new Set(current);
+      if (on) next.add(bookId);
+      else next.delete(bookId);
+      return next;
+    });
+  }
+
+  /** In Select mode a press on the card ticks it instead of opening the book. */
+  onBookPress(book: Book): void {
+    if (!this.selecting() || !this.isSelectable(book)) return;
+    this.setSelected(book.id, !this.selected().has(book.id));
+  }
+
+  /** The book's route, or none while Select mode owns the press. */
+  bookLink(book: Book): string[] | null {
+    return this.selecting() ? null : ['/library', this.getBookRouteId(book)];
+  }
+
+  onBookDragStart(book: Book, event: DragEvent): void {
+    if (!this.isSelectable(book) || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    // Dragging a ticked book carries every ticked book; any other carries itself.
+    const ids = this.selecting() && this.selected().has(book.id) ? this.selectedBooks().map((b) => b.id) : [book.id];
+    event.dataTransfer.setData(BOOKS_DRAG_TYPE, JSON.stringify(ids));
+    event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  onBooksDropped(event: { collectionId: string; bookIds: string[] }): void {
+    this.addToCollection(event.bookIds, event.collectionId);
+  }
+
+  addToCollection(bookIds: string[], collectionId: string): void {
+    const ids = new Set(bookIds);
+    const name = this.collections().find((c) => c.id === collectionId)?.name ?? 'the collection';
+    const books = this.rawBooks().filter((b) => ids.has(b.id));
+    const changes = books
+      .filter((b) => !(b.collectionIds ?? []).includes(collectionId))
+      .map((b) => ({ id: b.id, before: b.collectionIds ?? [], after: [...(b.collectionIds ?? []), collectionId] }));
+    if (!changes.length) {
+      this.toast.info(books.length === 1 ? `Already in “${name}”` : `All of them are already in “${name}”`);
+      return;
+    }
+    this.changeMemberships(changes, (n) => `Added ${plural(n, 'book')} to “${name}”`);
+  }
+
+  removeSelectionFromCollection(): void {
+    const collectionId = this.filters.collectionId();
+    if (!collectionId) return;
+    const name = this.collections().find((c) => c.id === collectionId)?.name ?? 'the collection';
+    const changes = this.selectedBooks()
+      .filter((b) => (b.collectionIds ?? []).includes(collectionId))
+      .map((b) => ({
+        id: b.id,
+        before: b.collectionIds ?? [],
+        after: (b.collectionIds ?? []).filter((id) => id !== collectionId),
+      }));
+    if (!changes.length) {
+      // The collection list also shows books that sit in a sub-collection.
+      this.toast.info(`These books are not directly in “${name}”`);
+      return;
+    }
+    this.changeMemberships(changes, (n) => `Removed ${plural(n, 'book')} from “${name}”`);
+  }
+
+  private changeMemberships(
+    changes: { id: string; before: string[]; after: string[] }[],
+    message: (count: number) => string,
+  ): void {
+    this.writeMemberships(changes, 'after').subscribe((done) => {
+      if (done.length < changes.length) this.toast.error(`Could not update ${plural(changes.length - done.length, 'book')}`);
+      if (!done.length) return;
+      this.selected.set(new Set());
+      this.toast.success(message(done.length), {
+        label: 'Undo',
+        run: () => this.writeMemberships(done, 'before').subscribe(),
+      });
+    });
+  }
+
+  /** Writes each book's whole membership set; resolves with the changes that were saved. */
+  private writeMemberships(
+    changes: { id: string; before: string[]; after: string[] }[],
+    which: 'before' | 'after',
+  ): Observable<{ id: string; before: string[]; after: string[] }[]> {
+    return from(changes).pipe(
+      mergeMap(
+        (change) =>
+          this.booksService.update(change.id, { collectionIds: change[which] }, HANDLED).pipe(
+            map(() => change),
+            catchError(() => of(null)),
+          ),
+        4,
+      ),
+      toArray(),
+      map((results) => results.filter((c): c is (typeof changes)[number] => c !== null)),
+      tap((done) => {
+        const next = new Map(done.map((c) => [c.id, c[which]]));
+        this.rawBooks.update((books) =>
+          books.map((b) => (next.has(b.id) ? { ...b, collectionIds: next.get(b.id)! } : b)),
+        );
+        this.sidebar?.loadCounts();
+        this.refreshStatusCounts();
+        // A collection or Unsorted view may now hold different books.
+        if (this.filters.collectionId() || this.filters.status() === 'unsorted') this.refreshBooks(true, false);
+      }),
+    );
+  }
+
+  markSelectionFinished(): void {
+    const pending = this.selectedBooks().filter((b) => !b.finishedAt);
+    if (!pending.length) {
+      this.toast.info('They are all finished already');
+      return;
+    }
+    from(pending)
+      .pipe(
+        mergeMap(
+          (book) => this.booksService.update(book.id, { isFinished: true }, HANDLED).pipe(catchError(() => of(null))),
+          4,
+        ),
+        toArray(),
+      )
+      .subscribe((results) => {
+        const updated = results.filter((b): b is Book => b !== null);
+        updated.forEach((book) => this.syncToggledBook(book, false));
+        this.refreshStatusCounts();
+        if (updated.length < pending.length) {
+          this.toast.error(`Could not update ${plural(pending.length - updated.length, 'book')}`);
+        }
+        if (updated.length) this.toast.success(`Marked ${plural(updated.length, 'book')} as finished`);
+        this.selected.set(new Set());
+      });
+  }
+
+  askDeleteSelection(): void {
+    if (this.selectedBooks().length) this.bulkDeleteOpen.set(true);
+  }
+
+  cancelBulkDelete(): void {
+    if (!this.bulkDeleting()) this.bulkDeleteOpen.set(false);
+  }
+
+  confirmBulkDelete(): void {
+    const books = this.selectedBooks();
+    if (!books.length || this.bulkDeleting()) return;
+    this.bulkDeleting.set(true);
+    from(books)
+      .pipe(
+        mergeMap((book) => this.booksService.delete(book.id).pipe(map(() => book.id), catchError(() => of(null))), 4),
+        toArray(),
+      )
+      .subscribe((results) => {
+        const gone = new Set(results.filter((id): id is string => id !== null));
+        this.rawBooks.update((current) => current.filter((b) => !gone.has(b.id)));
+        this.totalItems.update((c) => Math.max(0, c - gone.size));
+        this.refreshStatusCounts();
+        this.sidebar?.loadCounts();
+        this.bulkDeleting.set(false);
+        this.bulkDeleteOpen.set(false);
+        this.selected.set(new Set());
+        if (gone.size < books.length) this.toast.error(`Could not delete ${plural(books.length - gone.size, 'book')}`);
+        if (gone.size) this.toast.success(`Deleted ${plural(gone.size, 'book')}`);
+      });
   }
 }

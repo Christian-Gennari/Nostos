@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Component, Injector, input, output, signal } from '@angular/core';
@@ -1148,6 +1149,20 @@ describe('ReaderShell shared save and load ownership (#479)', () => {
     fixture.destroy();
   });
 
+  it('says so when the book is gone, instead of a generic failure', async () => {
+    booksGetSpy.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
+    );
+    const fixture = await configureReaderShell();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const error = fixture.nativeElement.querySelector(
+      '[data-testid="reader-load-error"]',
+    ) as HTMLElement;
+    expect(error.textContent).toContain('not in your library any more');
+  });
+
   it('keeps an initial Book-load failure visible, actionable, and retryable', async () => {
     booksGetSpy.mockReturnValueOnce(throwError(() => new Error('offline')));
     const fixture = await configureReaderShell();
@@ -2253,6 +2268,19 @@ describe('ReaderShell immersive chrome (#759)', () => {
       .toContain('immersive');
     expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
       .toBe(true);
+  });
+
+  it('offers a keyboard way into the resting chrome: a reveal button that opens it', async () => {
+    const component = await openBook('book.epub');
+    const reveal = fixture.nativeElement.querySelector('[data-testid="reader-chrome-reveal"]') as HTMLButtonElement;
+    expect(reveal).not.toBeNull();
+    expect(reveal.classList).toContain('visually-hidden-until-focus');
+    reveal.click();
+    fixture.detectChanges();
+    expect(component.chromeVisible()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-reveal"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
+      .toBe(false);
   });
 
   it('opens PDF in the same chrome-free immersive resting state', async () => {

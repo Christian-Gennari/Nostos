@@ -1,6 +1,7 @@
 import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { InputDirective } from '../ui/form-control/form-control.directive';
 import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
@@ -45,6 +46,8 @@ interface PendingWorkAction {
   label: string;
   /** True when the action joins two multi-edition groups, not just two books. */
   merge: boolean;
+  /** True when the app offered this link after an edit; the person did not pick it. */
+  suggested?: boolean;
 }
 
 // UI Components
@@ -103,6 +106,7 @@ interface StatusConfirmCopy {
   standalone: true,
   selector: 'app-book-detail',
   imports: [
+    InputDirective,
     CommonModule,
     FormsModule,
     RouterLink,
@@ -383,12 +387,11 @@ export class BookDetail implements OnInit, OnDestroy {
   readonly newNoteReady = computed(() => !draftIsEmpty({ words: this.newNote(), topics: [...this.newNoteTopics()] }));
 
   /**
-   * The book's reading status, worked out from all its editions (the Library's
-   * filters work it out the same way). Reading wins over Finished, so a reread
-   * shows as Reading; see `bookReadingStatusOf`.
+   * The status of the edition on this page, from its own progress alone. The
+   * Library lists a book by the status of all its editions together; this page
+   * says where this copy stands (see `bookReadingStatusOf`).
    */
-  private readonly bookStatus = computed(() =>
-    bookReadingStatusOf(this.store.book(), this.store.book()?.otherEditions));
+  private readonly bookStatus = computed(() => bookReadingStatusOf(this.store.book()));
 
   /** The status chip's label and colour. */
   readonly readingStatus = computed<{ label: string; modifier: string }>(() => {
@@ -532,15 +535,30 @@ export class BookDetail implements OnInit, OnDestroy {
    *  "Finished · 100%" would say the same thing twice. It is the edition on
    *  screen's when that one is being read, else the one read most recently. */
   readonly statusDetail = computed(() => {
-    const book = this.store.book();
-    const { status, percent, percentEditionId } = this.bookStatus();
-    // A paper book without a page count has a page, not a percentage: its 1%
-    // only exists so the Library counts it as Reading (issue #1091).
-    if (book?.type === 'physical' && !book.pageCount && this.paperPage() !== null && percentEditionId === book.id) {
-      return null;
-    }
+    const { status, percent } = this.bookStatus();
     return status === 'reading' && percent ? `${percent}%` : null;
   });
+
+  /** The day this edition was finished (yyyy-mm-dd, local), or null. */
+  readonly finishedDate = computed(() => {
+    const at = this.store.book()?.finishedAt;
+    if (!at) return null;
+    const d = new Date(at);
+    if (Number.isNaN(d.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+
+  /** Today (yyyy-mm-dd, local): the date picker's latest day. */
+  readonly today = (() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  })();
+
+  onFinishedDateChange(value: string): void {
+    this.store.setFinishedDate(value);
+  }
 
   // --- PAPER BOOK PAGE (issue #1091) ---
 
@@ -832,7 +850,7 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   /** A link always merges whole groups, so confirm what will actually happen. */
-  askLink(candidate: LinkableBookDto): void {
+  askLink(candidate: LinkableBookDto, suggested = false): void {
     const current = this.store.book();
     if (!current) return;
 
@@ -843,6 +861,7 @@ export class BookDetail implements OnInit, OnDestroy {
       bookId: candidate.id,
       label: candidate.title,
       merge,
+      suggested,
     });
   }
 
@@ -869,6 +888,7 @@ export class BookDetail implements OnInit, OnDestroy {
   workActionHeading = computed(() => {
     const action = this.pendingWorkAction();
     if (!action) return '';
+    if (action.suggested) return `Group with “${action.label}”?`;
     return action.kind === 'link'
       ? `Link “${action.label}” to this edition set?`
       : `Unlink “${action.label}”?`;
@@ -883,12 +903,14 @@ export class BookDetail implements OnInit, OnDestroy {
         "and gets a copy of this book's rating, favourite and review, unless it has a rating or review of its own."
       );
     }
+    const lead = action.suggested ? 'This looks like the same book. ' : '';
     const combined =
       "Their rating, favourite and review are combined into the book's; a rating or review that differs stays with its edition.";
     return action.merge
-      ? 'Both edition sets and everything already grouped with them become one book. ' +
+      ? lead +
+          'Both edition sets and everything already grouped with them become one book. ' +
           `Every edition keeps its file, progress, notes and collections. ${combined}`
-      : `Both books become editions of one book. Each keeps its file, progress, notes and collections. ${combined}`;
+      : `${lead}Both books become editions of one book. Each keeps its file, progress, notes and collections. ${combined}`;
   });
 
   // --- File Actions ---
@@ -1040,7 +1062,14 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   onBookUpdated(updatedBook: Book): void {
+    const before = this.store.book();
     this.store.book.set(updatedBook);
+
+    // Renaming never regroups by itself. When the new title and author now
+    // look like another book's, offer the link and let the person confirm.
+    if (before && (before.title !== updatedBook.title || before.author !== updatedBook.author)) {
+      this.store.loadWorkSuggestion(updatedBook.id, (candidate) => this.askLink(candidate, true));
+    }
   }
 
   /**
@@ -1089,6 +1118,16 @@ export class BookDetail implements OnInit, OnDestroy {
     return (book.collectionIds ?? [])
       .map((id) => byId.get(id))
       .filter((name): name is string => !!name);
+  }
+
+  /**
+   * TXT and MOBI files are accepted and kept for download, but the reader
+   * cannot open them, so the page says so instead of offering "Read book".
+   */
+  isDownloadOnly(book: Book | null): boolean {
+    if (!book || book.type === 'audiobook') return false;
+    const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
+    return extension === 'txt' || extension === 'mobi' || extension === 'azw3';
   }
 
   isAudioBook(book: Book | null): boolean {

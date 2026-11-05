@@ -210,7 +210,8 @@ public static class MappingExtensions
             Publisher: model.Metadata.Publisher,
             PublishedDate: model.Metadata.PublishedDate,
             Rating: model.Progress.Rating,
-            PersonalReview: model.Progress.PersonalReview);
+            PersonalReview: model.Progress.PersonalReview,
+            HasPlace: model.Progress.LastLocation != null);
     }
 
     public static NoteDto ToDto(this NoteModel model) =>
@@ -430,6 +431,7 @@ public static class MappingExtensions
                 // Mark as finished (Set to Now if not already set)
                 model.Progress.FinishedAt ??= DateTime.UtcNow;
                 model.Progress.ProgressPercent = 100;
+                model.Progress.LastReadAt ??= model.Progress.FinishedAt;
             }
             else
             {

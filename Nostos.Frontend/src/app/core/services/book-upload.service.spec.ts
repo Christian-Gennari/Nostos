@@ -242,6 +242,15 @@ describe('BookUploadService', () => {
 });
 
 describe('describeBookUploadFailure', () => {
+  it('shows the server reason when it rejected the file bytes', () => {
+    const copy = describeBookUploadFailure({
+      code: 'book_upload_invalid_file',
+      status: 400,
+      message: 'This file is empty.',
+    });
+    expect(copy).toBe('This file is empty. Choose a different file.');
+  });
+
   it.each([
     ['book_upload_expired', 410, 'expired', 'same file'],
     ['book_upload_file_hash_mismatch', 422, 'changed', 'same file'],

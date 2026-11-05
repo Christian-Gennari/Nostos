@@ -30,11 +30,10 @@ export function clampPaperPage(page: number, pageCount: number | null | undefine
 
 /**
  * The percentage for a page, by the PDF reader's rule: floor(page / pageCount * 100).
- * Without a page count there is no honest percentage, so the book counts as
- * 1%: enough to be "Reading" for the Library's filter, and the detail page
- * shows the page instead of the figure.
+ * Without a page count there is no honest percentage: 0 is stored beside the
+ * page, and a saved place alone makes the book Reading.
  */
 export function paperPagePercent(page: number, pageCount: number | null | undefined): number {
-  if (!pageCount || pageCount <= 0) return 1;
+  if (!pageCount || pageCount <= 0) return 0;
   return Math.min(100, Math.max(1, Math.floor((Math.min(page, pageCount) / pageCount) * 100)));
 }

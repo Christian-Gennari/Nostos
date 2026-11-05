@@ -21,6 +21,7 @@ public static class BookUploadHttpErrors
         [BookUploadException.BookNotFound] = "The book was not found.",
         [BookUploadException.InvalidRequest] = "The upload request is not valid.",
         [BookUploadException.UnsupportedType] = "This file type cannot be uploaded as a book.",
+        [BookUploadException.InvalidFile] = "This file could not be read as a book.",
         [BookUploadException.InvalidState] = "The upload session is not in a state that allows this operation.",
         [BookUploadException.InProgress] = "This book's current import or upload must finish first.",
         [BookUploadException.PartConflict] = "A different part was already accepted for this index.",
@@ -36,6 +37,10 @@ public static class BookUploadHttpErrors
 
     public static IResult From(BookUploadException exception) => exception.Code switch
     {
+        BookUploadException.InvalidFile =>
+            Results.Json(
+                new BookUploadErrorResponse(exception.Code, exception.Message),
+                statusCode: StatusCodes.Status400BadRequest),
         BookUploadException.NotFound or BookUploadException.BookNotFound =>
             Result(exception.Code, StatusCodes.Status404NotFound),
         BookUploadException.Expired => Result(exception.Code, StatusCodes.Status410Gone),

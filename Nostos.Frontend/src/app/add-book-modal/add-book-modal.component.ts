@@ -41,12 +41,14 @@ import { RadioDirective } from '../ui/check/check.directive';
 import { ProgressComponent } from '../ui/progress/progress.component';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
+import { BulkEbookAddComponent } from './bulk-ebook-add.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { planLimitMessage } from '../core/plan-limit-message';
 import {
   BookUploadService,
   BookUploadPhase,
   describeBookUploadFailure,
+  rejectedFileMessage,
 } from '../core/services/book-upload.service';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
@@ -58,6 +60,10 @@ export interface AddBookPrefill {
   isbn?: string | null;
   publishedDate?: string | null;
 }
+
+/** Larger files are not sent just to read their title; the file name stays. */
+const MAX_METADATA_READ_BYTES = 50 * 1024 * 1024;
+const DEFAULT_LANGUAGE = 'en';
 
 @Component({
   selector: 'app-add-book-modal',
@@ -85,6 +91,7 @@ export interface AddBookPrefill {
     BadgeComponent,
     SegmentedComponent,
     ConfirmModal,
+    BulkEbookAddComponent,
   ],
   templateUrl: './add-book-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -208,6 +215,8 @@ export class AddBookModal {
   };
 
   selectedFile = signal<File | null>(null);
+  /** Two or more audio files chosen together: the tracks of one audiobook. */
+  trackFiles = signal<File[]>([]);
   selectedCover = signal<File | null>(null);
 
   /**
@@ -228,8 +237,11 @@ export class AddBookModal {
   fileSummary = computed(() => {
     const file = this.selectedFile();
     if (!file) return null;
-    const size = this.formatBytes(file.size);
-    return size ? `${file.name} · ${size}` : file.name;
+    const tracks = this.trackFiles();
+    const bytes = tracks.length > 1 ? tracks.reduce((sum, t) => sum + t.size, 0) : file.size;
+    const name = tracks.length > 1 ? `${tracks.length} audio files` : file.name;
+    const size = this.formatBytes(bytes);
+    return size ? `${name} · ${size}` : name;
   });
   uploadProgress = signal<number | null>(null);
   /** Which visible stage the resumable path is in; null on the legacy path. */
@@ -256,7 +268,9 @@ export class AddBookModal {
   readonly uploadBookTitle = computed(
     () => this.pendingUploadBook()?.title || this.form.title || 'This book',
   );
-  readonly uploadFileName = computed(() => this.selectedFile()?.name ?? '');
+  readonly uploadFileName = computed(() =>
+    this.trackFiles().length > 1 ? `${this.trackFiles().length} audio files` : (this.selectedFile()?.name ?? ''),
+  );
   readonly uploadStatusText = computed(() => {
     const percent = this.uploadProgress() ?? 0;
     const bytes = this.uploadByteProgress();
@@ -363,9 +377,10 @@ export class AddBookModal {
     this.form.isbn = prefill.isbn ?? null;
     this.form.publishedDate = prefill.publishedDate ?? null;
 
-    // The same words open the catalogue search, so a book that is free
-    // somewhere is already on screen.
-    this.sourceQuery.set([prefill.title, prefill.author].filter(Boolean).join(' '));
+    // The title opens the catalogue search, so a book that is free somewhere is
+    // already on screen. The author stays out: catalogues match the query as one
+    // phrase, and "title author" found nothing.
+    this.sourceQuery.set(prefill.title);
     if (this.sourceMode()) this.searchSource();
   }
 
@@ -406,6 +421,7 @@ export class AddBookModal {
     // cannot be carried invisibly into a later submit.
     if (bookType === 'physical') {
       this.selectedFile.set(null);
+      this.trackFiles.set([]);
       this.fileDragActive.set(false);
     }
   }
@@ -447,6 +463,7 @@ export class AddBookModal {
   }
 
   resetForm(): void {
+    this.bulkFiles.set([]);
     this.form = {
       type: 'physical',
       title: '',
@@ -571,58 +588,94 @@ export class AddBookModal {
 
   onFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
-    this.selectedFile.set(file);
+    const chosen = Array.from(input.files ?? []);
     this.fileDragActive.set(false);
+    this.trackFiles.set([]);
+
+    // Several files at once are the parts of one audiobook; anything else
+    // stays a single-file choice.
+    if (chosen.length > 1) {
+      if (!chosen.every((f) => this.isAudioFile(f))) {
+        this.selectedFile.set(null);
+        input.value = '';
+        this.toast.info('Choose several audio files for one audiobook, or one ebook file.');
+        return;
+      }
+      this.trackFiles.set(chosen);
+      this.selectedFile.set(chosen[0]);
+      this.form.type = 'audiobook';
+      setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+      return;
+    }
+
+    const file = chosen[0] ?? null;
+    this.selectedFile.set(file);
 
     if (!file) return;
 
-    const lower = file.name.toLowerCase();
-    const audio =
-      file.type.startsWith('audio/') ||
-      ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension));
-    this.form.type = audio ? 'audiobook' : 'ebook';
+    this.form.type = this.isAudioFile(file) ? 'audiobook' : 'ebook';
 
-    let guessedTitle: string | null = null;
+    const nameTitle = file.name
+      .replace(/\.[^.]+$/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!this.form.title.trim()) {
-      guessedTitle = file.name
-        .replace(/\.[^.]+$/, '')
-        .replace(/[_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      this.form.title = guessedTitle;
+      this.form.title = nameTitle;
     }
 
-    if (lower.endsWith('.epub')) void this.fillFromEpub(file, guessedTitle);
+    this.prefillFromFile(file, nameTitle);
 
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
   }
 
   /**
-   * An EPUB names its own title and author (issue #1358). They replace a
-   * title guessed from the file name and fill an empty author, never what
-   * the owner typed. A file that will not open leaves the form as it is.
+   * An EPUB or PDF knows its own title, author and language. Fill them in once
+   * the server has read the file, but only where the person has not typed
+   * anything of their own: the title still being the one taken from the file
+   * name, an empty author, a language still on the default.
    */
-  private async fillFromEpub(file: File, guessedTitle: string | null): Promise<void> {
-    try {
-      const { default: ePub } = await import('epubjs');
-      const book = ePub(await file.arrayBuffer());
-      const metadata = await book.loaded.metadata;
-      // Closed only once every part has loaded: epubjs keeps loading the
-      // navigation and display options after the metadata, and fails on a
-      // closed book. A part that fails to load does not matter here.
-      await book.ready.catch(() => undefined);
-      book.destroy();
-      if (this.selectedFile() !== file) return;
+  private prefillFromFile(file: File, nameTitle: string): void {
+    if (!/\.(epub|pdf)$/i.test(file.name) || file.size > MAX_METADATA_READ_BYTES) return;
 
-      const title = metadata.title?.trim();
-      const author = metadata.creator?.trim();
-      if (title && (this.form.title.trim() === '' || this.form.title === guessedTitle)) this.form.title = title;
-      if (author && !this.form.author?.trim()) this.form.author = author;
-      this.changeDetector.markForCheck();
-    } catch {
-      // Not every file that ends in .epub is one; the upload decides.
-    }
+    this.booksService.readFileMetadata(file).subscribe({
+      next: (found) => {
+        if (this.selectedFile() !== file) return;
+
+        const title = this.form.title.trim();
+        if (found.title && (!title || title === nameTitle)) this.form.title = found.title;
+        if (found.author && !this.form.author?.trim()) this.form.author = found.author;
+        if (found.language && this.form.language === DEFAULT_LANGUAGE)
+          this.form.language = found.language;
+        this.changeDetector.markForCheck();
+      },
+      // The file name stays as the title; nothing for the person to do.
+      error: () => undefined,
+    });
+  }
+
+  /** Several EPUB/PDF files at once: the list view owns them from here (#1407). */
+  readonly bulkFiles = signal<File[]>([]);
+
+  onBulkFilesSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []).filter((f) => /\.(epub|pdf)$/i.test(f.name));
+    input.value = '';
+    if (files.length > 0) this.bulkFiles.set(files);
+  }
+
+  onBulkClosed(result: { changed: boolean }): void {
+    this.bulkFiles.set([]);
+    if (result.changed) this.finishAdd();
+    else this.closeModal.emit();
+  }
+
+  private isAudioFile(file: File): boolean {
+    const lower = file.name.toLowerCase();
+    return (
+      file.type.startsWith('audio/') ||
+      ['.mp3', '.m4a', '.m4b'].some((extension) => lower.endsWith(extension))
+    );
   }
 
   onCoverSelected(event: Event) {
@@ -641,6 +694,7 @@ export class AddBookModal {
   /** Both reset paths clear the chosen file, the cover, and the preview URL. */
   private clearChosenFiles(): void {
     this.selectedFile.set(null);
+    this.trackFiles.set([]);
     this.setCoverPreview(null);
     this.selectedCover.set(null);
   }
@@ -720,7 +774,7 @@ export class AddBookModal {
         // does not present it before /file succeeds. The resumable contract
         // keeps the book visible while its parts arrive: the upload session,
         // not the row's status, says a transfer is in progress.
-        fileUploadExpected: wantsUpload && !resumable,
+        fileUploadExpected: wantsUpload && (!resumable || this.trackFiles().length > 1),
         // Said on both paths: without it the resumable path looked like a
         // metadata-only add, matched an edition with its own file, and the
         // new file (another translation, say) could not be added at all.
@@ -803,15 +857,23 @@ export class AddBookModal {
     this.isSubmitting.set(true);
     this.uploadStartTime = performance.now();
     this.uploadProgress.set(0);
-    this.uploadByteProgress.set({ loaded: 0, total: file.size });
+    const tracks = this.trackFiles();
+    const several = tracks.length > 1;
+    const totalBytes = several ? tracks.reduce((sum, t) => sum + t.size, 0) : file.size;
+    this.uploadByteProgress.set({ loaded: 0, total: totalBytes });
     this.attachBeforeUnload();
 
-    if (this.bookUploads.supportsResumable()) {
+    // The resumable contract carries one file per session, so the parts of
+    // one audiobook always go in a single request.
+    if (!several && this.bookUploads.supportsResumable()) {
       this.uploadResumable(createdBook, file, generation);
       return;
     }
 
-    this.legacyUploadSub = this.booksService.uploadFile(createdBook.id, file).subscribe({
+    const upload$ = several
+      ? this.booksService.uploadTracks(createdBook.id, tracks)
+      : this.booksService.uploadFile(createdBook.id, file);
+    this.legacyUploadSub = upload$.subscribe({
       next: (event) => {
         if (this.isStaleUpload(generation)) return;
         if (event.type === HttpEventType.UploadProgress) {
@@ -819,7 +881,7 @@ export class AddBookModal {
           this.uploadProgress.set(percent);
           this.uploadByteProgress.set({
             loaded: event.loaded,
-            total: event.total ?? file.size,
+            total: event.total ?? totalBytes,
           });
         }
         if (event.type === HttpEventType.Response) {
@@ -833,6 +895,7 @@ export class AddBookModal {
         this.uploadByteProgress.set(null);
         this.isSubmitting.set(false);
         this.detachBeforeUnload();
+        if (this.discardRejectedBook(createdBook, error)) return;
         this.uploadError.set(this.describeUploadFailure(error));
       },
     });
@@ -873,10 +936,32 @@ export class AddBookModal {
         this.uploadByteProgress.set(null);
         this.isSubmitting.set(false);
         this.detachBeforeUnload();
+        if (this.discardRejectedBook(createdBook, error)) return;
         this.uploadError.set(
           describeBookUploadFailure(error, { bookSaved: true }),
         );
       });
+  }
+
+  /**
+   * The server read the file and refused it (empty, damaged, wrong kind). A
+   * book this form just made would be left without a file, so remove it and
+   * send the reader back to the form to choose another file. A book that
+   * already had a file is kept as it was.
+   */
+  private discardRejectedBook(createdBook: BookModel, error: unknown): boolean {
+    const message = rejectedFileMessage(error);
+    if (!message) return false;
+    if (!createdBook.hasFile) {
+      this.booksService.delete(createdBook.id).subscribe({
+        next: () => this.bookAdded.emit(),
+        error: () => undefined,
+      });
+    }
+    this.pendingUploadBook.set(null);
+    this.selectedFile.set(null);
+    this.uploadError.set(`${message} Choose a different file.`);
+    return true;
   }
 
   private onUploadComplete(createdBook: BookModel): void {

@@ -92,6 +92,38 @@ describe('NoteItemComponent', () => {
     document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
   });
 
+  it('moves focus into the words when Edit note opens, and back to the ⋯ button on Cancel', async () => {
+    document.body.appendChild(element);
+    render();
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(element.querySelector('app-topic-input textarea'));
+
+    fixture.componentInstance.cancelEdit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(element.querySelector('.note-item-more'));
+    element.remove();
+  });
+
+  it('returns focus to the ⋯ button once a saved edit settles', async () => {
+    document.body.appendChild(element);
+    render();
+    fixture.componentInstance.startEdit();
+    fixture.detectChanges();
+    fixture.componentInstance.editWords.set('New words.');
+    fixture.componentInstance.saveEdit();
+    fixture.componentRef.setInput('busy', true);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('note', { ...NOTE, content: 'New words.' });
+    fixture.componentRef.setInput('busy', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(element.querySelector('.note-item-more'));
+    element.remove();
+  });
+
   it('Escape in the edit form cancels the edit and goes no further (a drawer around it stays open)', () => {
     render();
     const outer = vi.fn();
@@ -146,6 +178,14 @@ describe('NoteItemComponent', () => {
 
     render({ bookFormat: null });
     expect(element.querySelector('[data-testid="note-edition-format"]')).toBeNull();
+  });
+
+  it('calls the link "Open book" for a physical book, which has no reader', () => {
+    render({ bookFormat: 'physical', sourceAnchorKind: undefined, sourceAnchorValue: undefined });
+
+    const link = element.querySelector('.note-item-source') as HTMLAnchorElement;
+    expect(link.textContent).toContain('Open book');
+    expect(link.textContent).not.toContain('Open in book');
   });
 
   it('opens a note from another edition in that edition', () => {
