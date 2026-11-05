@@ -367,7 +367,9 @@ export class AudioReader implements OnDestroy, IReader {
             duration: track.duration,
           }))
         : [{ url: `/api/books/${id}/file`, duration: 0 }];
-    this.player = this.createPlayer(playlist, callbacks);
+    // Load the track the listener is actually in, not track 1 first.
+    const startAt = this.resumeAt ?? this.pendingSourceTime ?? this.savedPosition();
+    this.player = this.createPlayer(playlist, callbacks, startAt);
   }
 
   /**
@@ -436,6 +438,12 @@ export class AudioReader implements OnDestroy, IReader {
     this.resumeAt = null;
     this.resumeAfterReload = false;
     this.reconnecting.set(false);
+  }
+
+  /** The saved position in seconds, or 0. */
+  private savedPosition(): number {
+    const saved = parseFloat(untracked(() => this.book())?.lastLocation ?? '');
+    return Number.isFinite(saved) && saved > 0 ? saved : 0;
   }
 
   restoreProgress() {

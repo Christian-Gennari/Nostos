@@ -34,11 +34,16 @@ export interface PlaylistCallbacks {
 }
 
 /** Builds the player for a book's audio; specs swap in a fake. */
-export type AudioPlayerFactory = (tracks: PlaylistTrack[], callbacks: PlaylistCallbacks) => AudioPlayer;
+export type AudioPlayerFactory = (
+  tracks: PlaylistTrack[],
+  callbacks: PlaylistCallbacks,
+  startAt?: number,
+) => AudioPlayer;
 
 export const AUDIO_PLAYER_FACTORY = new InjectionToken<AudioPlayerFactory>('AUDIO_PLAYER_FACTORY', {
   providedIn: 'root',
-  factory: () => (tracks, callbacks) => new TrackPlaylistPlayer(tracks, callbacks),
+  factory: () => (tracks, callbacks, startAt) =>
+    new TrackPlaylistPlayer(tracks, callbacks, undefined, startAt),
 });
 
 /**
@@ -95,6 +100,12 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     private readonly tracks: PlaylistTrack[],
     private readonly callbacks: PlaylistCallbacks,
     audioFactory: () => HTMLAudioElement = () => new Audio(),
+    /**
+     * Where in the book (seconds) the player first loads. The track holding
+     * that spot is requested first, so a resume in track 3 never fetches
+     * track 1 (issue #1391).
+     */
+    startAt = 0,
   ) {
     this.durations = tracks.map((track) => Math.max(0, track.duration || 0));
     let cursor = 0;
@@ -115,7 +126,9 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     if (tracks.length === 0) {
       queueMicrotask(() => !this.disposed && this.callbacks.onloaderror());
     } else {
-      this.load(0, 0);
+      const at = Number.isFinite(startAt) ? Math.max(0, startAt) : 0;
+      const index = this.indexAt(at);
+      this.load(index, Math.max(0, at - this.starts[index]));
     }
   }
 
