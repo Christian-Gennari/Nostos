@@ -115,6 +115,13 @@ public class ReadingProgress
 
     public DateTime? LastReadAt { get; set; }
     public DateTime? FinishedAt { get; set; }
+
+    /// <summary>
+    /// The speed an audiobook edition plays at, saved with its position so
+    /// another device opens at it. Null until a speed is chosen. A listening
+    /// preference, so it is not part of the portable archive.
+    /// </summary>
+    public double? PlaybackRate { get; set; }
 }
 
 [Owned]

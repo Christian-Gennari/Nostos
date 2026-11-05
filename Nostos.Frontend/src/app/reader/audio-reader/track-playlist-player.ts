@@ -42,6 +42,14 @@ export const AUDIO_PLAYER_FACTORY = new InjectionToken<AudioPlayerFactory>('AUDI
 });
 
 /**
+ * How long before a track ends the next one starts downloading, in seconds of
+ * playback. Long enough for a slow connection to have the start of the next
+ * file when the current one runs out, short enough not to fetch a file the
+ * listener may never reach.
+ */
+export const PRELOAD_LEAD_SECONDS = 30;
+
+/**
  * Plays an ordered list of audio files as one continuous book. A single-file
  * audiobook is a list of one.
  *
@@ -59,6 +67,12 @@ export const AUDIO_PLAYER_FACTORY = new InjectionToken<AudioPlayerFactory>('AUDI
  * recorded lengths. A recorded length that is a few milliseconds off therefore
  * costs a tiny step in the displayed time and can never cut a track short or
  * leave silence at its end.
+ *
+ * Shortly before a track ends, the next one is fetched on a second element
+ * that never plays (PRELOAD_LEAD_SECONDS), so the browser has its start
+ * when the playing element swaps to it and the hand-off is not a wait for the
+ * network. A second element is for fetching only: starting playback stays on
+ * the first.
  *
  * A stream that fails after it played is picked up again in place: the same
  * track is requested anew on the same element, at the same place, from inside
@@ -82,6 +96,9 @@ export class TrackPlaylistPlayer implements AudioPlayer {
   private loadedOnce = false;
   private disposed = false;
   private playbackRate = 1;
+  /** Fetches the next track ahead of time; created when first needed. */
+  private preloader: HTMLAudioElement | null = null;
+  private preloadedIndex = -1;
   /** Where the last in-place pickup resumed, so a spot that fails every time is reported. */
   private lastPickup: { index: number; offset: number } | null = null;
 
@@ -90,11 +107,12 @@ export class TrackPlaylistPlayer implements AudioPlayer {
   private readonly onPause = () => this.handlePause();
   private readonly onEnded = () => this.handleEnded();
   private readonly onError = () => this.handleError();
+  private readonly onTimeUpdate = () => this.preloadNextTrack();
 
   constructor(
     private readonly tracks: PlaylistTrack[],
     private readonly callbacks: PlaylistCallbacks,
-    audioFactory: () => HTMLAudioElement = () => new Audio(),
+    private readonly audioFactory: () => HTMLAudioElement = () => new Audio(),
   ) {
     this.durations = tracks.map((track) => Math.max(0, track.duration || 0));
     let cursor = 0;
@@ -111,6 +129,7 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     this.audio.addEventListener('pause', this.onPause);
     this.audio.addEventListener('ended', this.onEnded);
     this.audio.addEventListener('error', this.onError);
+    this.audio.addEventListener('timeupdate', this.onTimeUpdate);
 
     if (tracks.length === 0) {
       queueMicrotask(() => !this.disposed && this.callbacks.onloaderror());
@@ -180,9 +199,32 @@ export class TrackPlaylistPlayer implements AudioPlayer {
     this.audio.removeEventListener('pause', this.onPause);
     this.audio.removeEventListener('ended', this.onEnded);
     this.audio.removeEventListener('error', this.onError);
+    this.audio.removeEventListener('timeupdate', this.onTimeUpdate);
     this.audio.pause();
     this.audio.removeAttribute('src');
     this.audio.load();
+    if (this.preloader) {
+      this.preloader.removeAttribute('src');
+      this.preloader.load();
+      this.preloader = null;
+    }
+  }
+
+  /** Starts fetching the next track once the current one is within the lead of its end. */
+  private preloadNextTrack(): void {
+    const next = this.index + 1;
+    if (this.disposed || this.switching || next >= this.tracks.length || this.preloadedIndex === next) return;
+
+    const length = Number.isFinite(this.audio.duration) && this.audio.duration > 0
+      ? this.audio.duration
+      : this.durations[this.index];
+    if (!(length > 0) || length - (this.audio.currentTime || 0) > PRELOAD_LEAD_SECONDS) return;
+
+    this.preloadedIndex = next;
+    this.preloader ??= this.audioFactory();
+    this.preloader.preload = 'auto';
+    this.preloader.src = this.tracks[next].url;
+    this.preloader.load();
   }
 
   private position(): number {

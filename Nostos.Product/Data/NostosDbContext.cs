@@ -360,6 +360,7 @@ public class NostosDbContext : DbContext
         nameof(ReadingProgress.LastLocation),
         nameof(ReadingProgress.ProgressPercent),
         nameof(ReadingProgress.LastReadAt),
+        nameof(ReadingProgress.PlaybackRate),
     };
 
     /// <summary>

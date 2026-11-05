@@ -108,8 +108,8 @@ export class BooksService {
     return this.http.delete<void>(`/api/books/${id}`);
   }
 
-  updateProgress(id: string, location: string, percentage: number): Observable<any> {
-    const dto: UpdateProgressDto = { location, percentage };
+  updateProgress(id: string, location: string, percentage: number, playbackRate?: number): Observable<any> {
+    const dto: UpdateProgressDto = { location, percentage, ...(playbackRate != null ? { playbackRate } : {}) };
     return this.http.put(`/api/books/${id}/progress`, dto);
   }
 

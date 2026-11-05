@@ -30,6 +30,7 @@ internal static class LaterBookColumns
         await RestoreTopicNormalizedNameAsync(db);
         await RestoreWritingPageSetupAsync(db);
         await RestoreBookValuesAsync(db);
+        await RestorePlaybackRateAsync(db);
         await DropLegacyFavouriteAsync(db);
     }
 
@@ -63,6 +64,23 @@ internal static class LaterBookColumns
             "ALTER TABLE \"Works\" ADD COLUMN \"IsFavorite\" INTEGER NOT NULL DEFAULT 0");
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Works\" ADD COLUMN \"PersonalReview\" TEXT NULL");
+    }
+
+    /// <summary>
+    /// AddPlaybackRate (issue #1441): the audiobook speed the current model
+    /// reads and writes on every book.
+    /// </summary>
+    public static async Task RestorePlaybackRateAsync(NostosDbContext db)
+    {
+        // A table rebuild in an older migration (the SQLite way to drop a
+        // column) recreates Books from that migration's model, without this column.
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(db.Database.GetConnectionString()!);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Books') WHERE name = 'Progress_PlaybackRate'";
+        if (Convert.ToInt32(await command.ExecuteScalarAsync()) == 0)
+            await db.Database.ExecuteSqlRawAsync(
+                "ALTER TABLE \"Books\" ADD COLUMN \"Progress_PlaybackRate\" REAL NULL");
     }
 
     /// <summary>
