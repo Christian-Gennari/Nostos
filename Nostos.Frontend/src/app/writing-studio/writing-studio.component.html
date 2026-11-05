@@ -726,6 +726,19 @@
   >
   </app-confirm-modal>
 
+  <!-- Saved from another tab or device since this copy was loaded (issue #1363). -->
+  <app-confirm-modal
+    [isOpen]="!!saveConflict()"
+    heading="This writing changed somewhere else"
+    description="A newer version was saved from another tab or device. Your text stays on the page until you choose."
+    confirmLabel="Keep mine (overwrite)"
+    cancelLabel="Load the newer version"
+    tone="neutral"
+    (confirm)="keepMineAfterConflict()"
+    (cancel)="loadNewerAfterConflict()"
+  >
+  </app-confirm-modal>
+
   @if (pageSettingsOpen()) {
     <app-studio-page-settings
       [anchor]="pageSettingsButton?.nativeElement ?? null"

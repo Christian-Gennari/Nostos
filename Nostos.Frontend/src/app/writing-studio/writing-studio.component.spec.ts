@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
 import { Component, input, output, Input, signal } from '@angular/core';
@@ -2425,6 +2426,68 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(navigate).toHaveBeenCalledTimes(1);
   });
 
+  it('shows the conflict question when a save is refused because the writing changed elsewhere, and keeps the typed text', async () => {
+    const navigate = vi.fn(() => Promise.resolve(true));
+    (component as any).router = { navigate };
+    const newer: WritingContentDto = { ...sampleDoc1, content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' };
+    component.activeItem.set(sampleDoc1);
+    component.editorTitle.set(sampleDoc1.name);
+    component.editorText.set('Typed in this tab');
+    fixture.detectChanges();
+    writingsService.update.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 409, error: newer })),
+    );
+
+    await component.openSource(sourceBeta as any);
+
+    expect(writingsService.update).toHaveBeenCalledWith('doc-1', {
+      name: sampleDoc1.name,
+      content: 'Typed in this tab',
+      baseUpdatedAt: sampleDoc1.updatedAt,
+    });
+    expect(component.saveConflict()?.theirs).toEqual(newer);
+    expect(component.editorText()).toBe('Typed in this tab');
+    expect(navigate).not.toHaveBeenCalled();
+    fixture.detectChanges();
+    expect(document.body.textContent).toContain('This writing changed somewhere else');
+  });
+
+  it('"Keep mine" saves the typed text without the version check', async () => {
+    const newer: WritingContentDto = { ...sampleDoc1, content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' };
+    component.activeItem.set(sampleDoc1);
+    component.editorTitle.set(sampleDoc1.name);
+    component.editorText.set('Typed in this tab');
+    component.saveConflict.set({ theirs: newer, title: sampleDoc1.name, content: 'Typed in this tab' });
+    writingsService.update.mockClear();
+    writingsService.update.mockReturnValueOnce(of({ ...newer, content: 'Typed in this tab' }));
+
+    component.keepMineAfterConflict();
+    await settleSaveQueue();
+
+    expect(writingsService.update).toHaveBeenCalledWith('doc-1', {
+      name: sampleDoc1.name,
+      content: 'Typed in this tab',
+    });
+    expect(component.saveConflict()).toBeNull();
+    expect(component.activeItem()?.content).toBe('Typed in this tab');
+  });
+
+  it('"Load the newer version" shows the newer text and puts the typed text on the clipboard', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const newer: WritingContentDto = { ...sampleDoc1, content: 'From the other tab', updatedAt: '2026-09-09T00:00:00Z' };
+    component.activeItem.set(sampleDoc1);
+    component.editorText.set('Typed in this tab');
+    component.saveConflict.set({ theirs: newer, title: sampleDoc1.name, content: 'Typed in this tab' });
+
+    component.loadNewerAfterConflict();
+
+    expect(writeText).toHaveBeenCalledWith('Typed in this tab');
+    expect(component.editorText()).toBe('From the other tab');
+    expect(component.activeItem()).toEqual(newer);
+    expect(component.saveConflict()).toBeNull();
+  });
+
   it('flushes pending prose before source navigation and keeps the draft on save failure', async () => {
     const navigate = vi.fn(() => Promise.resolve(true));
     (component as any).router = { navigate };
@@ -2442,6 +2505,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(writingsService.update).toHaveBeenCalledWith('doc-1', {
       name: sampleDoc1.name,
       content: 'Newest unsaved paragraph',
+      baseUpdatedAt: sampleDoc1.updatedAt,
     });
     expect(navigate).not.toHaveBeenCalled();
     expect(component.editorText()).toBe('Newest unsaved paragraph');
@@ -2500,6 +2564,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(writingsService.update).toHaveBeenLastCalledWith('doc-1', {
       name: sampleDoc1.name,
       content: 'Typed while save was running',
+      baseUpdatedAt: sampleDoc1.updatedAt,
     });
     expect(navigate).not.toHaveBeenCalled();
 
@@ -2542,6 +2607,7 @@ describe('WritingStudio kept sources (#491)', () => {
       expect(writingsService.update).toHaveBeenLastCalledWith('doc-1', {
         name: sampleDoc1.name,
         content: 'Latest text before source',
+        baseUpdatedAt: sampleDoc1.updatedAt,
       });
 
       latestSave.next({ ...sampleDoc1, content: 'Latest text before source' });
