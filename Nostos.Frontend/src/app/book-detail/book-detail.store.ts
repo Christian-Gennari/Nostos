@@ -723,7 +723,7 @@ export class BookDetailStore {
     // again resumes it.
     if (this.bookUploads.supportsResumable()) {
       void this.bookUploads
-        .upload(b.id, file)
+        .upload(b.id, file, { replace: true })
         .then(() => this.loadBook(b.id, { background: true }))
         .catch((error: unknown) =>
           this.toast.error(describeBookUploadFailure(error)),
@@ -732,7 +732,7 @@ export class BookDetailStore {
       return;
     }
 
-    this.booksService.uploadFile(b.id, file).pipe(
+    this.booksService.uploadFile(b.id, file, true).pipe(
       finalize(() => this.uploadingFile.set(false)),
     ).subscribe({
       next: (event) => {

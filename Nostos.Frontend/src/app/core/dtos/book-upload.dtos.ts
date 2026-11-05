@@ -62,6 +62,7 @@ export const BOOK_UPLOAD_BASE_SEGMENT = '/file/uploads';
 export const BOOK_UPLOAD_SERVER_ERROR_CODES = [
   'book_upload_not_found',
   'book_upload_book_not_found',
+  'book_has_file',
   'book_upload_invalid_request',
   'book_upload_unsupported_type',
   'book_upload_invalid_state',

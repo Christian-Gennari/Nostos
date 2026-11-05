@@ -37,13 +37,18 @@ public sealed class BookUploadService(
     public async Task<(BookUploadStatus Status, bool Created)> CreateOrResumeAsync(
         Guid bookId,
         BookUploadCreateRequest request,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool replace = false)
     {
         ValidateRequest(request);
 
         var book = await repo.GetByIdAsync(bookId)
             ?? throw BookUploadException.Error(BookUploadException.BookNotFound);
         EnsureBookAcceptsUpload(book);
+
+        // Create-or-match can hand back a book that already holds a file;
+        // replacing it has to be asked for. A matching session still resumes.
+        var refuseReplace = book.FileDetails.HasFile && !replace;
 
         var sha256 = request.Sha256.Trim().ToLowerInvariant();
         var existing = await ActiveSessionAsync(bookId, ct, includeCompleting: true);
@@ -55,6 +60,9 @@ public sealed class BookUploadService(
                 return (await ToStatusAsync(existing, ct), false);
             }
 
+            if (refuseReplace)
+                throw BookUploadException.Error(BookUploadException.BookHasFile);
+
             // A different file replaces an interrupted attempt, but never a
             // session whose verified bytes are already being published.
             if (existing.StateValue == BookUploadState.Completing)
@@ -62,6 +70,9 @@ public sealed class BookUploadService(
 
             await DiscardSessionAsync(existing, BookUploadState.Discarded, ct);
         }
+
+        if (refuseReplace)
+            throw BookUploadException.Error(BookUploadException.BookHasFile);
 
         if (volume.AvailableFreeSpaceBytes < request.TotalBytes)
             throw BookUploadException.Error(BookUploadException.StorageExhausted);

@@ -59,9 +59,13 @@ public static class BooksEndpoints
                 Guid? collectionId,
                 bool? groupByWork,
                 string? format,
+                HttpResponse httpResponse,
                 CancellationToken ct
             ) =>
             {
+                // A larger pageSize is clamped, not rejected; the body reports
+                // the effective size and this header the ceiling.
+                httpResponse.Headers["X-Max-Page-Size"] = LibraryReadService.MaxPageSize.ToString();
                 Enum.TryParse<BookFilter>(filter, true, out var filterEnum);
                 Enum.TryParse<BookSort>(sort, true, out var sortEnum);
 
@@ -334,6 +338,7 @@ public static class BooksEndpoints
             async (
                 Guid id,
                 HttpRequest request,
+                bool? replace,
                 IBookRepository repo,
                 BookFileCommit commit,
                 BookFileMutationGate fileMutationGate,
@@ -362,6 +367,12 @@ public static class BooksEndpoints
                 if (book.Status is BookStatus.Downloading or BookStatus.Transcoding)
                     return Results.Conflict(new { code = "book_import_in_progress",
                         message = "This book is still importing. Wait until it finishes before uploading a file." });
+
+                // Create-or-match can hand back a book that already holds a
+                // file; replacing it must be asked for, never a side effect.
+                if (book.FileDetails.HasFile && replace != true)
+                    return Results.Conflict(new { code = "book_has_file",
+                        message = "This book already has a file. Pass ?replace=true to replace it." });
 
                 // Count what actually arrived so a truncated whole-request
                 // upload is diagnosable: the declared Content-Length alone

@@ -125,7 +125,7 @@ public sealed class BookFileVersionEndpointTests : IClassFixture<LibraryEndpoint
         using var bytes = new ByteArrayContent(Encoding.ASCII.GetBytes(content));
         bytes.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(bytes, "file", "copy.pdf");
-        using var response = await Client.PostAsync($"/api/books/{bookId}/file", form);
+        using var response = await Client.PostAsync($"/api/books/{bookId}/file?replace=true", form);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

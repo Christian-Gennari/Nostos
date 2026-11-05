@@ -546,7 +546,7 @@ public sealed class BookUploadEndpointTests
         string contentType = "text/plain")
     {
         using var created = await CreateSessionAsync(
-            client, bookId, bytes.Length, fileName, Sha256Hex(bytes), contentType);
+            client, bookId, bytes.Length, fileName, Sha256Hex(bytes), contentType, replace: true);
         var session = await ReadStatusAsync(created);
         using var part = await PutPartAsync(client, bookId, session.SessionId, 0, bytes);
         part.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -625,14 +625,42 @@ public sealed class BookUploadEndpointTests
         return bytes;
     }
 
+    [Fact]
+    public async Task Session_on_a_book_with_a_file_is_refused_unless_replace_is_asked_for()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+        var book = await CreateBookAsync(client);
+
+        await using (var db = OpenDb(factory.DatabasePath))
+        {
+            var row = await db.Books.SingleAsync(b => b.Id == book.Id);
+            row.FileDetails.HasFile = true;
+            row.FileDetails.FileName = "original.txt";
+            await db.SaveChangesAsync();
+        }
+
+        var bytes = new byte[] { 1, 2, 3, 4 };
+        var sha = Sha256Hex(bytes);
+
+        using var refused = await CreateSessionAsync(client, book.Id, bytes.Length, "new.txt", sha);
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("book_has_file");
+
+        using var allowed = await CreateSessionAsync(
+            client, book.Id, bytes.Length, "new.txt", sha, replace: true);
+        allowed.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     private static Task<HttpResponseMessage> CreateSessionAsync(
         HttpClient client,
         Guid bookId,
         long totalBytes,
         string fileName,
         string sha,
-        string contentType = "text/plain") =>
-        client.PostAsJsonAsync($"/api/books/{bookId}/file/uploads", new
+        string contentType = "text/plain",
+        bool replace = false) =>
+        client.PostAsJsonAsync($"/api/books/{bookId}/file/uploads{(replace ? "?replace=true" : "")}", new
         {
             totalBytes,
             fileName,
