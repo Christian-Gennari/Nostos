@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<entry xmlns="http://www.w3.org/2005/Atom"
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xmlns:dc="http://purl.org/dc/elements/1.1/"
+      xmlns:dcterms="http://purl.org/dc/terms/"
+      xml:lang="en">
+  <title>Ready for export</title>
+<entry
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:dc="http://purl.org/dc/elements/1.1/"
        xmlns:dcterms="http://purl.org/dc/terms/"
@@ -9,13 +15,10 @@
   <updated>2026-09-25T00:00:00+00:00</updated>
   <rights>CC-BY-SA 3.0</rights>
   <author><name>Jane Austen</name></author>
-  <category label="Fiction" term="Fiction" />
   <dc:language xsi:type="dcterms:RFC4646">en</dc:language>
   <dc:source xsi:type="dcterms:URI">https://en.wikisource.org/wiki/Pride_and_Prejudice</dc:source>
-  <dcterms:issued xsi:type="dcterms:W3CDTF">1813</dcterms:issued>
-  <dc:publisher>Wikisource</dc:publisher>
-  <link rel="alternate" type="application/atom+xml;type=entry;profile=opds-catalog" href="https://ws-export.wmcloud.org/?lang=en&amp;format=atom&amp;page=Pride+and+Prejudice" />
   <link rel="alternate" type="text/html" href="https://en.wikisource.org/wiki/Pride_and_Prejudice" />
   <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="https://ws-export.wmcloud.org/?lang=en&amp;format=epub&amp;page=Pride+and+Prejudice" />
-  <link rel="http://opds-spec.org/image" type="image/jpeg" href="https://thumb.wikimedia.org/example/pride.jpg" />
+  <link rel="http://opds-spec.org/acquisition" type="application/pdf" href="https://ws-export.wmcloud.org/?lang=en&amp;format=pdf-a4&amp;page=Pride+and+Prejudice" />
 </entry>
+</feed>
