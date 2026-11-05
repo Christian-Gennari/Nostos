@@ -598,6 +598,12 @@ describe('highlightParts', () => {
 });
 
 describe('noteExcerpt', () => {
+  it('keeps text that is not a valid reference as typed', () => {
+    expect(noteExcerpt(hit({ content: 'open [[ no close and [[a|b]] and [[]] and [[Real]]' }))).toBe(
+      'open [[ no close and [[a|b]] and [[]] and',
+    );
+  });
+
   const hit = (over: object) =>
     ({ id: 'n', bookId: 'b', bookTitle: null, content: '', selectedText: null, snippet: null, topicNames: [], createdAt: '', ...over }) as never;
 

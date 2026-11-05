@@ -1727,17 +1727,17 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(editor.insertMarkdown).not.toHaveBeenCalled();
   });
 
-  it('renders source previews as readable Markdown text with wikilinks resolved to their labels', () => {
+  it('renders source previews as readable Markdown text with wikilinks resolved to their names', () => {
     const preview = component.referencePreview({
       id: 'preview-note',
       bookId: 'book-1',
       content:
-        '## [[S2 Topic 01 — Attention and the Reader]]\n\n**A note without** _markup_ and [[Attention|the displayed text]].',
+        '## [[S2 Topic 01 — Attention and the Reader]]\n\n**A note without** _markup_ and [[Attention]].',
       createdAt: '2026-08-01T10:00:00Z',
     } as any);
 
     expect(preview).toBe(
-      'S2 Topic 01 — Attention and the Reader A note without markup and the displayed text.',
+      'S2 Topic 01 — Attention and the Reader A note without markup and Attention.',
     );
     expect(preview).not.toMatch(/[\[\]_*`#|]/);
   });

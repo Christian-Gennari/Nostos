@@ -35,6 +35,12 @@ characters on one line, without `[[`, `]]` or `|`, and does not start with `[`
 or end with `]` (`TopicReferences.IsValidName`), so it reads back as the same
 name inside brackets.
 
+Text that is not a valid `[[Name]]` is plain text, in the processor and in the
+note renderer alike: a `[[` with no `]]` after it on the same line, `[[]]`, a
+stray `]]`, and `[[a|b]]`. There is no alias syntax, so `|` never splits a
+reference. A topic that an older version made from such text stays until no
+note uses it; the orphan cleanup then removes it.
+
 ## Saving a note (`NoteProcessorService`)
 
 On every save the processor parses the text for references, creates topics

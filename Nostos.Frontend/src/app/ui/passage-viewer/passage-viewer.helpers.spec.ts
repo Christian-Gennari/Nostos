@@ -11,8 +11,8 @@ describe('passage viewer helpers (issue #1014)', () => {
   });
 
   it('shows a topic link in the note as its words, not its markup', () => {
-    expect(passageBodyHtml({ html: '<p>x</p>', text: 'x', content: 'About [[Freedom]] and [[Grace|grace]].' })).toBe(
-      '<aside class="pv-note">About Freedom and grace.</aside><p>x</p>',
+    expect(passageBodyHtml({ html: '<p>x</p>', text: 'x', content: 'About [[Freedom]] and [[Grace]].' })).toBe(
+      '<aside class="pv-note">About Freedom and Grace.</aside><p>x</p>',
     );
   });
 

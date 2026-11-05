@@ -1,20 +1,18 @@
 import { Pipe, PipeTransform } from '@angular/core';
+import { replaceTopicReferences } from '../note-item/note-item.helpers';
 import { TopicDto } from '../../core/services/topics.service';
 
 /**
  * Apply the app's wikilink grammar with a caller-chosen rendering. Rich notes
  * and text-only previews share this parser so their displayed labels agree.
+ * Only `[[Name]]` with a valid topic name is a link; there is no alias syntax,
+ * so `[[a|b]]` and an unclosed `[[` stay plain text.
  */
 export function replaceNoteWikilinks(
   content: string,
   render: (topicName: string, displayText: string) => string,
 ): string {
-  return content.replace(/\[\[(.*?)\]\]/g, (_match, rawLink: string) => {
-    const separator = rawLink.indexOf('|');
-    const topicName = (separator < 0 ? rawLink : rawLink.slice(0, separator)).trim();
-    const alias = separator < 0 ? '' : rawLink.slice(separator + 1).trim();
-    return render(topicName, alias || topicName);
-  });
+  return replaceTopicReferences(content, (name) => render(name, name));
 }
 
 /** Replace wikilinks with the text a reader sees in the rendered note. */
