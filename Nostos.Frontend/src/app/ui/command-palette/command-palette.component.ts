@@ -12,6 +12,7 @@ import {
   viewChild,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { isValidTopicName, replaceTopicReferences } from '../note-item/note-item.helpers';
 import { SearchFieldComponent } from '../search-field/search-field.component';
 import { InputDirective } from '../form-control/form-control.directive';
 import { lockScrollWhile } from '../scroll-lock/scroll-lock.service';
@@ -673,17 +674,27 @@ const EXCERPT_MAX = 120;
 /** How much of the note to keep before the match when the match sits deep in it. */
 const EXCERPT_LEAD = 32;
 
+/** `text` without the valid `[[Topic]]` references that end it. */
+function dropTrailingReferences(text: string): string {
+  const tail = /\s*\[\[((?:(?!\[\[)[^\]\r\n|])+)\]\]\s*$/;
+  for (let match = tail.exec(text); match && isValidTopicName(match[1]); match = tail.exec(text)) {
+    text = text.slice(0, match.index);
+  }
+  return text;
+}
+
 /**
  * One readable line of a note: the server's snippet, else its opening words.
  * When the matched word sits beyond the first line's worth of text, the line
  * starts shortly before it, so the row shows why the note matched.
  */
 export function noteExcerpt(hit: NoteSearchHit, term = ''): string {
-  let text = (hit.snippet || hit.content || hit.selectedText || '')
-    // Topic links at the end are tags, not prose: drop them. Links inside a
-    // sentence are words in it: keep the word, lose the brackets.
-    .replace(/(\s*\[\[[^\]]+\]\])+\s*$/, '')
-    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+  // Topic links at the end are tags, not prose: drop them. Links inside a
+  // sentence are words in it: keep the word, lose the brackets.
+  let text = replaceTopicReferences(
+    dropTrailingReferences(hit.snippet || hit.content || hit.selectedText || ''),
+    (name) => name,
+  )
     .replace(/\s+/g, ' ')
     .trim();
   if (!text) return 'Untitled note';

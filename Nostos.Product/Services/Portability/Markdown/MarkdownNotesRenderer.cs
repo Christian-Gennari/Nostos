@@ -69,9 +69,6 @@ public static partial class MarkdownNotesRenderer
 
     private const int ExcerptLength = 240;
 
-    [GeneratedRegex(@"\[\[(.*?)\]\]")]
-    private static partial Regex ReferenceRegex();
-
     [GeneratedRegex(@"\[[^\]]*\]")]
     private static partial Regex CfiAssertionRegex();
 
@@ -451,9 +448,7 @@ public static partial class MarkdownNotesRenderer
         return text.Length == 0 ? null : text;
     }
 
-    private static bool IsReferenceLine(string line) =>
-        ReferenceRegex().IsMatch(line)
-        && ReferenceRegex().Replace(line, string.Empty).All(c => char.IsWhiteSpace(c) || c is ',' or ';' or '·' or '|');
+    private static bool IsReferenceLine(string line) => TopicReferences.IsReferenceLine(line);
 
     private static string? Excerpt(string? text)
     {

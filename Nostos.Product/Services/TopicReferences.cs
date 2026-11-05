@@ -164,8 +164,9 @@ public static partial class TopicReferences
     /// A line made of references and separators only: what linking writes, or a
     /// hand-typed row of tags. Anything with words outside the brackets is prose.
     /// </summary>
-    private static bool IsReferenceLine(string line)
+    public static bool IsReferenceLine(string line)
     {
+        if (Matches(line).Count == 0) return false;
         var rest = ReplaceReferences(line, _ => string.Empty);
         return rest.All(c => char.IsWhiteSpace(c) || c is ',' or ';' or '·' or '|');
     }
