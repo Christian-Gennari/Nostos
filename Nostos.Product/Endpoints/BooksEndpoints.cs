@@ -242,10 +242,9 @@ public static class BooksEndpoints
                 if (book is null)
                     return Results.NotFound();
 
-                if (string.IsNullOrWhiteSpace(book.FileDetails.LocationsJson))
-                    return Results.NotFound();
-
-                return Results.Ok(new BookLocationsDto(book.FileDetails.LocationsJson));
+                // Not cached yet is a normal first open, not an error: answer 200
+                // with an empty value so the browser console stays clean.
+                return Results.Ok(new BookLocationsDto(book.FileDetails.LocationsJson ?? ""));
             }
         );
 
