@@ -624,6 +624,17 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('#assistant').hidden).toBe(false);
   });
 
+  it('sends ?section=backups to the Backups & data route', () => {
+    routerMock.navigate.mockClear();
+    routeParamMap.next(convertToParamMap({ section: 'backups' }));
+    fixture.detectChanges();
+
+    expect(routerMock.navigate).toHaveBeenCalledWith(
+      ['/settings/library'],
+      expect.objectContaining({ replaceUrl: true }),
+    );
+  });
+
   it('ignores a ?section= link to a section this deployment does not have', () => {
     routeParamMap.next(convertToParamMap({ section: 'account' }));
     fixture.detectChanges();
