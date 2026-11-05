@@ -58,6 +58,7 @@ public sealed class ProviderDownloadException(string code, string message, bool 
     public const string Empty = "download_empty";
     public const string Failed = "download_failed";
     public const string RedirectLimit = "download_redirect_limit";
+    public const string Timeout = "download_timeout";
 }
 
 public sealed class ProviderContentDownloader(
@@ -168,6 +169,26 @@ public sealed class ProviderContentDownloader(
             try
             {
                 return await attempt(candidate, deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                // The per-part deadline fired, not the caller. Some exports are
+                // generated on request (Wikisource PDF) and can stall, so say
+                // what happened instead of a generic "failed unexpectedly".
+                var timeout = new ProviderDownloadException(
+                    ProviderDownloadException.Timeout,
+                    $"The source did not finish sending {candidate.Host} within {_options.DownloadTimeoutSeconds} seconds.",
+                    retryable: true);
+
+                if (number >= attempts)
+                    throw timeout;
+
+                logger.LogWarning(
+                    "Download attempt {Attempt}/{Attempts} for {Url} timed out after {Seconds}s; retrying in {Delay}s",
+                    number, attempts, candidate, _options.DownloadTimeoutSeconds, delay.TotalSeconds);
+
+                await Task.Delay(delay, ct);
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
             }
             catch (ProviderDownloadException ex) when (ex.Retryable && number < attempts)
             {
