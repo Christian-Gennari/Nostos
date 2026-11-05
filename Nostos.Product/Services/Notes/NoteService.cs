@@ -1005,8 +1005,8 @@ public sealed class NoteService : INoteService
         n.Content,
         // A passage travels as its opening; the snippet still finds the match
         // anywhere in it.
-        n.IsPassage() ? PassageText.Opening(n.SelectedText) : n.SelectedText,
-        Snippet(n.Content, n.SelectedText, term),
+        TextLigatures.Expand(n.IsPassage() ? PassageText.Opening(n.SelectedText) : n.SelectedText),
+        Snippet(n.Content, TextLigatures.Expand(n.SelectedText), term),
         n.NoteTopics
             .Where(nc => nc.Topic != null)
             .Select(nc => nc.Topic!.Topic)

@@ -318,6 +318,31 @@ public class NoteRepository : INoteRepository
     {
         var typed = $"%{Escape(term)}%";
         var lower = $"%{Escape(term.ToLowerInvariant())}%";
+        // Quotes saved before ligatures were cleaned still hold "ﬁ" for "fi".
+        var ligatured = TextLigatures.LigatureForm(term);
+        if (ligatured is not null)
+        {
+            var ligTyped = $"%{Escape(ligatured)}%";
+            var ligLower = $"%{Escape(ligatured.ToLowerInvariant())}%";
+            return notes.Where(n =>
+                EF.Functions.Like(n.Content, typed, "\\")
+                || EF.Functions.Like(n.Content.ToLower(), lower, "\\")
+                || (n.SelectedText != null
+                    && (EF.Functions.Like(n.SelectedText, typed, "\\")
+                        || EF.Functions.Like(n.SelectedText.ToLower(), lower, "\\")
+                        || EF.Functions.Like(n.SelectedText, ligTyped, "\\")
+                        || EF.Functions.Like(n.SelectedText.ToLower(), ligLower, "\\")))
+                || (n.PassageTitle != null
+                    && (EF.Functions.Like(n.PassageTitle, typed, "\\")
+                        || EF.Functions.Like(n.PassageTitle.ToLower(), lower, "\\")))
+                || (n.Book != null && n.Book.Title != null
+                    && (EF.Functions.Like(n.Book.Title, typed, "\\")
+                        || EF.Functions.Like(n.Book.Title.ToLower(), lower, "\\")))
+                || (n.Book != null && n.Book.Author != null
+                    && (EF.Functions.Like(n.Book.Author, typed, "\\")
+                        || EF.Functions.Like(n.Book.Author.ToLower(), lower, "\\"))));
+        }
+
         return notes.Where(n =>
             EF.Functions.Like(n.Content, typed, "\\")
             || EF.Functions.Like(n.Content.ToLower(), lower, "\\")
