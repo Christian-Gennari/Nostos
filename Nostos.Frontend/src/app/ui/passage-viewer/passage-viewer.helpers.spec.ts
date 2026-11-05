@@ -1,4 +1,4 @@
-import { passageBodyHtml, passageSourceParams } from './passage-viewer.helpers';
+import { passageBodyHtml, passageSourceParams, pdfSelectionText } from './passage-viewer.helpers';
 
 describe('passage viewer helpers (issue #1014)', () => {
   it('uses the saved markup, with the reader note opening the first page', () => {
@@ -34,5 +34,13 @@ describe('passage viewer helpers (issue #1014)', () => {
     expect(passageSourceParams({ anchorKind: 'audio_timestamp', start: '3600.5' })).toEqual({ sourceTime: 3600.5 });
     expect(passageSourceParams({ anchorKind: 'pdf_page', start: '0' })).toBeNull();
     expect(passageSourceParams({ anchorKind: 'unknown', start: 'x' })).toBeNull();
+  });
+
+  it('turns text selected on a PDF page into a clean quote', () => {
+    expect(pdfSelectionText('o\uFB00 the \uFB01rst \uFB02oor, e\uFB03cient\nand  \uFB02uent')).toBe(
+      'off the first floor, efficient and fluent',
+    );
+    expect(pdfSelectionText('a hyphen-\nated word and a well-\nKnown one')).toBe('a hyphenated word and a well- Known one');
+    expect(pdfSelectionText('  \n ')).toBe('');
   });
 });

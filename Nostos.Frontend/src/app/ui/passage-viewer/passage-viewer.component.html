@@ -105,6 +105,8 @@
               [attr.aria-label]="'Page ' + (pdfFirst() + page())"
               data-testid="passage-viewer-pdf-page"
             ></canvas>
+            <!-- pdf.js's text layer: invisible text over the page, so it can be selected and quoted. -->
+            <div #pdfTextLayer class="pv-text-layer" data-testid="passage-viewer-text-layer"></div>
           </div>
           @if (pdfStatus() === 'loading') {
           <div class="pv-pdf-status">

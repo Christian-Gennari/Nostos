@@ -58,3 +58,17 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+/**
+ * Text selected on a PDF page, as a quote: ligature glyphs (ﬁ, ﬂ, …) spelled
+ * as their letters, line breaks and runs of space as one space. A line that
+ * ends in a hyphen is joined to the next, without the hyphen.
+ */
+export function pdfSelectionText(raw: string): string {
+  return raw
+    .replace(/[\uFB00-\uFB04]/g, (ligature) => ligature.normalize('NFKC'))
+    .replace(/\u00AD/g, '')
+    .replace(/(\p{L})-\s*\n\s*(\p{Ll})/gu, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
