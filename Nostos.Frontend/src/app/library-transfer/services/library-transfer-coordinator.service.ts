@@ -298,6 +298,27 @@ export class LibraryTransferCoordinator {
     }
   }
 
+  /**
+   * Read-only look at an import the server is running, for a tab that must not
+   * take over the transfer (another tab holds the lease). Changes no state and
+   * writes no resume record. Resolves to null when nothing runs or the host
+   * cannot say.
+   */
+  async peekRunningImport(signal?: AbortSignal): Promise<MigrationJobStatusResponseDto | null> {
+    try {
+      const jobId = this.resumeStore.load()?.jobId;
+      const status = jobId
+        ? await this.transport.getJob(jobId, signal)
+        : this.supportsActiveImportDiscovery
+          ? await this.transport.getActiveImport!(signal)
+          : null;
+      if (!status || status.job.direction !== 'Import') return null;
+      return isRunningOnServer(status.job.state) ? status : null;
+    } catch {
+      return null;
+    }
+  }
+
   // --------------------------------------------------------------- reattach --
 
   /** Reattaches to the persisted job after a reload or navigation. */
@@ -1311,4 +1332,12 @@ function newIdempotencyKey(): string {
   const uuid = globalThis.crypto?.randomUUID;
   if (typeof uuid === 'function') return uuid.call(globalThis.crypto);
   return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+const RUNNING_ON_SERVER_STATES: readonly MigrationJobState[] = [
+  'Pending', 'Preparing', 'Transferring', 'Validating', 'ReadyToActivate', 'Activating',
+];
+
+function isRunningOnServer(state: MigrationJobState): boolean {
+  return RUNNING_ON_SERVER_STATES.includes(state);
 }

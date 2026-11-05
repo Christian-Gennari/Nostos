@@ -677,6 +677,32 @@ describe('LibraryImportFlowComponent', () => {
     expect(testId(harness, 'import-choose-file')).toBeTruthy();
   });
 
+  it('says the import is running on the server, with progress, while another tab holds the lease', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const file = await portableFile();
+    const preflight = await mock.preflight(preflightRequest(file.size));
+    const created = await mock.createJob({ direction: 'Import', idempotencyKey: 'running-job',
+      reservationId: preflight.reservationId });
+    const transport = new DiscoveredImportTransport(mock, {
+      ...created, job: { ...created.job, state: 'Validating' },
+      progress: { phase: 'Validating', bytesProcessed: 50, totalBytes: 100 },
+    });
+    dispatchLease({ tabId: 'other-tab', updatedAt: Date.now(), fileName: 'elsewhere.nostos' });
+    const harness = configure(mock, transport);
+
+    await vi.waitFor(() => {
+      harness.fixture.detectChanges();
+      expect(testId(harness, 'import-running-on-server')).toBeTruthy();
+    });
+    expect(testId(harness, 'import-running-on-server')?.textContent).toContain(
+      'An import is running on the server.',
+    );
+    expect(testId(harness, 'import-running-on-server')?.textContent).not.toContain('another tab');
+    expect(testId(harness, 'transfer-other-tab')).toBeNull();
+    // Read-only: this tab neither claimed the lease nor wrote a resume record.
+    expect(harness.store.load()).toBeNull();
+  });
+
   it('does not clobber another tab’s resume record or auto-resume while its lease is live', async () => {
     const harness = setup();
     const record = stageRecord();
@@ -687,7 +713,8 @@ describe('LibraryImportFlowComponent', () => {
 
     expect(testId(second, 'transfer-other-tab')).toBeTruthy();
     expect(second.store.load()).toEqual(record);
-    expect(harness.mock.calls.getJob).toBe(0);
+    // Reading the job's status is allowed; resuming it is not.
+    expect(second.coordinator.state().kind).toBe('idle');
 
     // Attempting to pick a file in this tab must not start a competing import.
     const file = await portableFile();
@@ -723,7 +750,8 @@ describe('LibraryImportFlowComponent', () => {
     second.fixture.detectChanges();
     expect(testId(second, 'transfer-other-tab')).toBeTruthy();
     expect(second.coordinator.state().kind).toBe('idle');
-    expect(harness.mock.calls.getJob).toBe(resumedByFirst);
+    // The blocked tab only reads the job's status; it never resumes it.
+    expect(second.coordinator.state().kind).toBe('idle');
     expect(second.store.load()).toEqual(record);
   });
 

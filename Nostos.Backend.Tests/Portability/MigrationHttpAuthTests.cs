@@ -45,6 +45,7 @@ public sealed class MigrationHttpAuthTests
         {
             (HttpMethod.Post, "/api/portability/migration/preflight"),
             (HttpMethod.Post, "/api/portability/migration/jobs"),
+            (HttpMethod.Get, "/api/portability/migration/active-import"),
             (HttpMethod.Get, $"/api/portability/migration/jobs/{job}"),
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/cancel"),
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/retry"),

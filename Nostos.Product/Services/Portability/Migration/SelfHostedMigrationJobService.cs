@@ -172,6 +172,27 @@ public sealed class SelfHostedMigrationJobService(
             ReadPreparedImport(record));
     }
 
+    /// <summary>
+    /// The newest import still running on this host (one with an upload
+    /// session that has not reached a terminal state), or null when none is.
+    /// A browser that lost its resume record uses this to show the import the
+    /// server is working on.
+    /// </summary>
+    public async Task<MigrationJobStatusResponse?> GetActiveImportAsync(CancellationToken ct)
+    {
+        var jobId = await db.MigrationJobRecords.AsNoTracking()
+            .Where(j => j.Direction == (int)MigrationDirection.Import
+                && j.State != (int)MigrationJobState.Completed
+                && j.State != (int)MigrationJobState.Failed
+                && j.State != (int)MigrationJobState.Cancelled
+                && j.State != (int)MigrationJobState.Expired
+                && db.MigrationSessionRecords.Any(s => s.JobId == j.Id))
+            .OrderByDescending(j => j.CreatedAtUtc)
+            .Select(j => (Guid?)j.Id)
+            .FirstOrDefaultAsync(ct);
+        return jobId is { } id ? await GetStatusAsync(id, ct) : null;
+    }
+
     public async Task<MigrationJobStatusResponse> CancelAsync(
         Guid jobId,
         MigrationCancelRequest request,

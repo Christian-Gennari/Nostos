@@ -1069,6 +1069,16 @@ describe('BookDetail reset progress', () => {
     expect(band!.querySelector('.book-author')?.textContent).toContain('Marcus Aurelius');
   });
 
+  it('shows no author line for a linked external-media book without an author', async () => {
+    await setup(readableBook({ author: '' }));
+    expect(hero()!.querySelector('.book-author')?.textContent).toContain('Unknown author');
+
+    component.externalMedia.set({ linked: true, files: 1, unavailableFiles: 0 });
+    fixture.detectChanges();
+
+    expect(hero()!.querySelector('.book-author')).toBeNull();
+  });
+
   it('drives the hero art from the cover, as real img elements not a CSS url() binding', async () => {
     await setup(readableBook({ coverUrl: '/api/books/b1/cover' }));
 
