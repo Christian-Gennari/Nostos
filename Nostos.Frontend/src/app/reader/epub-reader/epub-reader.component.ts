@@ -547,6 +547,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   // RxJS Subjects
   private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
+  /**
+   * Whether this open has reported a position yet. A reader who has only opened
+   * the book has not moved it: the layout and locations settling later must
+   * refresh the progress pill, but must not write the page the reader landed on
+   * (the first page of a spread, which can be before the saved CFI) over the
+   * saved position (#1364).
+   */
+  private positionReported = false;
   private resizeSubject$ = new Subject<void>();
   private resizeObserver: ResizeObserver | null = null;
   private resizeAfterFirstPage = false;
@@ -1383,7 +1391,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     const finish = () => {
       cleanup();
-      void this.verifyGroundedNavigation(generation);
+      void this.afterSectionFonts().then(() => this.verifyGroundedNavigation(generation));
     };
 
     // Every re-layout restarts the quiet window: the settle is not one resize
@@ -1401,6 +1409,33 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     resizeSubscription = this.resizeSubject$.subscribe(restartQuietWindow);
     deadlineTimer = setTimeout(finish, GROUNDED_SETTLE_MAX_MS);
     restartQuietWindow();
+  }
+
+  /**
+   * Resolves once the rendered sections have stopped loading their web fonts,
+   * or after GROUNDED_SETTLE_MAX_MS. The book's typeface arrives after the
+   * first layout and moves the text without any resize: on a Gutenberg EPUB at
+   * 1920 px the saved passage was on the page at 400 ms and three pages later
+   * at 800 ms, while the display had already been confirmed (#1364). Verifying
+   * only after the fonts are in judges, and if need be re-asserts, the layout
+   * the reader will actually see.
+   */
+  private async afterSectionFonts(): Promise<void> {
+    const loading: Promise<unknown>[] = [];
+    for (const content of this.renderedContents()) {
+      const fonts = content?.document?.fonts;
+      if (fonts && fonts.status === 'loading') loading.push(fonts.ready);
+    }
+    if (loading.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, GROUNDED_SETTLE_MAX_MS);
+    });
+    try {
+      await Promise.race([Promise.all(loading).catch(() => undefined), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -1977,6 +2012,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.notesSeen.clear();
     this.locating = Promise.resolve();
     this.progressUnlocked = false;
+    this.positionReported = false;
     this.chapterRanges = [];
     this.chapterBounds = null;
     this.pageEndCfi = null;
@@ -2110,7 +2146,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
               epubBook.locations.load(dto.locations);
               this.chapterBounds = null;
               this.locationsReady.set(true);
-              if (this.currentCfi) this.updateProgressState(this.currentCfi);
+              if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
             }
           },
           error: () => {
@@ -2124,7 +2160,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
               void epubBook.locations.generate(1000).then(() => {
                 this.chapterBounds = null;
                 this.locationsReady.set(true);
-                if (this.currentCfi) this.updateProgressState(this.currentCfi);
+                if (this.currentCfi) this.updateProgressState(this.currentCfi, this.positionReported);
 
                 // Save them for next time
                 const json = epubBook.locations.save();
@@ -2273,6 +2309,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     // (#1270).
     if (this.groundedNavigation || this.selectionAnchor) return;
 
+    if (this.progressUnlocked) this.positionReported = true;
     this.progressUpdater$.next({ location: cfi, percentage: percent });
   }
 
