@@ -1054,7 +1054,10 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
   ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item',
     // The stat corner (#1040) is low-opacity text that cycles words, characters
     // and reading time on click: a readout, not an ordinary button.
-    'editor-desk-telemetry'])],
+    'editor-desk-telemetry',
+    // The title in the header is the control: it reads as a heading and opens
+    // the shared inline rename in place.
+    'header-doc-title-button'])],
   ['src/app/ui/confirm-modal/confirm-modal.component.html', new Set()],
 ]);
 

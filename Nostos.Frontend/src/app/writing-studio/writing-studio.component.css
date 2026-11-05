@@ -318,7 +318,9 @@
 }
 
 .header-doc-rename {
-  min-width: 12rem;
+  display: block;
+  width: min(24rem, 50vw);
+  flex: 0 1 auto;
 }
 
 .header-save-status {

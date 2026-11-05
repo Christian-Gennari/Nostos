@@ -622,7 +622,10 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // --- Acquisition, Brain and Studio product rows (also in check-design RULE 15).
   'src/app/add-book-modal/add-book-modal.component.html': ['source-result'],
   'src/app/brain/brain-topic-words.component.html': ['words-add'],
-  'src/app/writing-studio/writing-studio.component.html': ['editor-desk-telemetry', 'tab-btn', 'toggle-opt', 'list-item'],
+  'src/app/writing-studio/writing-studio.component.html': ['editor-desk-telemetry', 'tab-btn', 'toggle-opt', 'list-item',
+    // The open writing's title is the control: it reads as the heading and
+    // opens the shared inline rename (the same shape as the Brain's topic title).
+    'header-doc-title-button'],
   // Typeface and citation-style pickers are role="radio" rows set in their own face.
   'src/app/writing-studio/page-settings/studio-page-settings.component.html': ['ps-font', 'ps-typeface'],
   // The source palette is keyboard-driven: "Browse reference" is a link in its
