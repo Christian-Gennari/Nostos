@@ -218,17 +218,30 @@ public sealed class NoteService : INoteService
         string query,
         int limit,
         CancellationToken ct = default) =>
-        SearchAsync(query, limit, bookIds: null, ct);
+        SearchCoreAsync(query, limit, bookIds: null, forgiving: true, ct);
 
     // Above the planner's phrase weight (4): every word present beats the exact
     // phrase being absent, and the phrase is rare in a short "@" query anyway.
     private const int AllTermsWeight = 5;
 
-    public async Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,
         int limit,
         IReadOnlyList<Guid>? bookIds,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        SearchCoreAsync(query, limit, bookIds, forgiving: false, ct);
+
+    /// <summary>
+    /// <paramref name="forgiving"/> is for what a person types into a search box:
+    /// when no note holds the words as typed, accents are ignored and a small
+    /// typo is allowed (issue #1380). Retrieval for the assistant stays exact.
+    /// </summary>
+    private async Task<IReadOnlyList<NoteSearchHitDto>> SearchCoreAsync(
+        string query,
+        int limit,
+        IReadOnlyList<Guid>? bookIds,
+        bool forgiving,
+        CancellationToken ct)
     {
         var take = Clamp(limit);
         var variants = LexicalQueryPlanner.Build(query);
@@ -284,6 +297,14 @@ public sealed class NoteService : INoteService
                         : current.SnippetTerm,
                 };
             }
+        }
+
+        if (fused.Count == 0 && forgiving)
+        {
+            var forgiven = await _notes.SearchByAllTermsAsync(
+                [query.Trim()], candidateLimit, bookIds, forgiving: true);
+            foreach (var note in forgiven)
+                fused[note.Id] = new NoteFusionCandidate(note, 0, query.Trim(), MatchedVariants: 1);
         }
 
         // With several words: a note holding every word comes first, and among

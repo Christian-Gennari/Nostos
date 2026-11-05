@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, computed, Signal, signal, WritableSignal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
+import { LibraryFilterService } from './library-filter.service';
 import { of, Subject, throwError } from 'rxjs';
 
 import { Library } from './library.component';
@@ -1184,6 +1185,19 @@ describe('Library', () => {
     expect(component.deleteCopy().heading).toBe('Remove “Dune” from Nostos?');
     expect(component.deleteCopy().description).toContain('Your original files stay where they are');
     expect(component.deleteCopy().confirmLabel).toBe('Remove from Nostos');
+  });
+
+  it('takes ?q= from the command palette as the search over every book, then drops it', async () => {
+    const router = TestBed.inject(Router);
+    TestBed.inject(LibraryFilterService).status.set('finished');
+
+    await router.navigateByUrl('/library?q=the');
+    await fixture.whenStable();
+
+    expect(component.searchQuery()).toBe('the');
+    expect(TestBed.inject(LibraryFilterService).status()).toBe('all');
+    expect(listSpy).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'the' }));
+    expect(router.url).not.toContain('q=');
   });
 
   it('opens and closes Add Book without a separate acquisition chooser', () => {

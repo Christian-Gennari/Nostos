@@ -40,11 +40,14 @@ public interface INoteRepository
     /// Notes in which every term appears in at least one searchable field
     /// (text, quotation, passage title, book title or author), case-insensitively
     /// on every provider. Newest first; the caller caps the row count.
+    /// With <c>forgiving</c>, a search that finds nothing as typed is retried
+    /// ignoring accents and allowing a small typo (issue #1380).
     /// </summary>
     Task<List<NoteModel>> SearchByAllTermsAsync(
         IReadOnlyList<string> terms,
         int limit,
-        IReadOnlyCollection<Guid>? bookIds = null);
+        IReadOnlyCollection<Guid>? bookIds = null,
+        bool forgiving = false);
 
     /// <summary>
     /// The stored exactly-once receipt for a capture key pair, or null when the

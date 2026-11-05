@@ -46,6 +46,7 @@ import { coverImageUrl } from '../../core/cover-url';
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../book-cover/book-cover.component';
 import { UNKNOWN_AUTHOR } from '../../core/book-format';
 import { ButtonComponent } from '../button/button.component';
+import { foldKeepingLength, matchesSearch, searchRank, sortByRank } from '../../core/search-match';
 
 export type PaletteEntryKind =
   | 'book'
@@ -54,6 +55,7 @@ export type PaletteEntryKind =
   | 'document'
   | 'collection'
   | 'action'
+  | 'more-books'
   | 'ask';
 
 /** A run of a label, marked when it is the part the query matched. */
@@ -76,10 +78,11 @@ export function parseQuery(raw: string): { scope: PaletteScope; term: string } {
 
 /** Cuts a label into runs so every case-insensitive occurrence of the term can be marked. */
 export function highlightParts(text: string, term: string): LabelPart[] {
-  const needle = term.trim().toLowerCase();
+  // Accents are ignored, so "karlek" marks the "kärlek" it found.
+  const needle = foldKeepingLength(term.trim());
   if (!needle) return [{ text, hit: false }];
   const parts: LabelPart[] = [];
-  const haystack = text.toLowerCase();
+  const haystack = foldKeepingLength(text);
   let from = 0;
   for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, from)) {
     if (at > from) parts.push({ text: text.slice(from, at), hit: false });
@@ -121,11 +124,19 @@ interface IndexedSection extends PaletteSection {
   start: number;
 }
 
+/**
+ * The palette asks the server for this many books and ranks them here, so the
+ * five shown are the best fits and not the first five the server listed.
+ */
+const BOOK_CANDIDATES = 50;
+
 const LIMITS = { books: 5, topics: 4, notes: 4, documents: 4, collections: 4, scoped: 8 };
 
 interface ServerResults {
   books: Book[];
   notes: NoteSearchHit[];
+  /** How many books match in all, which can be more than the candidates read. */
+  bookTotal?: number;
   /** Books or notes could not be searched. */
   failed?: boolean;
 }
@@ -230,7 +241,7 @@ export class CommandPalette {
       .filter((section) => section.entries.length > 0)
       .map((section) => {
         const entries = section.entries.map((entry) =>
-          entry.kind === 'ask' ? entry : { ...entry, labelParts: highlightParts(entry.label, term) },
+          entry.kind === 'ask' || entry.kind === 'more-books' ? entry : { ...entry, labelParts: highlightParts(entry.label, term) },
         );
         const indexed = { ...section, entries, start };
         start += entries.length;
@@ -280,13 +291,23 @@ export class CommandPalette {
             books: wantsBooks
               ? this.booksService
                   // One row per book; its editions come with it.
-                  .list({ search: q, page: 1, pageSize: LIMITS.books, groupByWork: true })
-                  .pipe(map((res) => res.items ?? []), failedTo([] as Book[]))
-              : of([] as Book[]),
+                  .list({ search: q, page: 1, pageSize: BOOK_CANDIDATES, groupByWork: true })
+                  .pipe(
+                    map((res) => ({ items: res.items ?? [], total: res.totalCount ?? 0 })),
+                    failedTo({ items: [] as Book[], total: 0 }),
+                  )
+              : of({ items: [] as Book[], total: 0 }),
             notes: wantsNotes
               ? this.notesService.search(q, LIMITS.notes).pipe(failedTo([] as NoteSearchHit[]))
               : of([] as NoteSearchHit[]),
-          }).pipe(map((found) => ({ ...found, failed })));
+          }).pipe(
+            map((found) => ({
+              books: found.books.items,
+              bookTotal: found.books.total,
+              notes: found.notes,
+              failed,
+            })),
+          );
         }),
         takeUntilDestroyed(),
       )
@@ -448,6 +469,11 @@ export class CommandPalette {
         this.assistant.updateDraft(this.parsed().term);
         this.assistant.requestSurfaceOpen();
         return;
+      case 'more-books':
+        // The library applies the words as its own search, over every book.
+        this.filters.clearAll();
+        this.router.navigate(['/library'], { queryParams: { q: this.parsed().term } });
+        return;
       case 'action':
         this.runAction(entry.id);
         return;
@@ -566,15 +592,16 @@ export class CommandPalette {
           },
         ];
       case 'topics': {
-        const topics = this.topics()
-          .filter((t) => !q || t.name.toLowerCase().includes(q))
-          .sort((a, b) => b.usageCount - a.usageCount)
-          .slice(0, LIMITS.scoped);
+        const matching = this.topics().filter((t) => !q || matchesSearch(t.name, q));
+        const topics = (q
+          ? sortByRank(matching, (t) => searchRank(t.name, q))
+          : matching.sort((a, b) => b.usageCount - a.usageCount)
+        ).slice(0, LIMITS.scoped);
         return [{ id: 'topics', title: 'Topics', entries: topics.map(topicEntry) }];
       }
       case 'books':
         return q
-          ? [{ id: 'books', title: 'Books', entries: this.server().books.slice(0, LIMITS.books).map(bookEntry) }]
+          ? [{ id: 'books', title: 'Books', entries: this.bookEntries(q, LIMITS.books) }]
           : [
               {
                 id: 'recent-books',
@@ -587,19 +614,39 @@ export class CommandPalette {
     }
   }
 
+  /** The best-fitting books, then a row to open them all in the Library when more match. */
+  private bookEntries(q: string, limit: number): PaletteEntry[] {
+    const { books, bookTotal } = this.server();
+    const ranked = sortByRank(books, (b) => searchRank(b.title, q)).slice(0, limit);
+    const entries = ranked.map(bookEntry);
+    const total = bookTotal ?? books.length;
+    if (total > ranked.length) {
+      entries.push({
+        kind: 'more-books',
+        id: 'more-books',
+        label: `Show all ${total} books`,
+        sub: 'Open in the Library',
+        icon: 'books',
+      });
+    }
+    return entries;
+  }
+
   private searchSections(q: string): PaletteSection[] {
-    const { books, notes } = this.server();
+    const { notes } = this.server();
     const sections: PaletteSection[] = [
       {
         id: 'books',
         title: 'Books',
-        entries: books.slice(0, LIMITS.books).map(bookEntry),
+        entries: this.bookEntries(q, LIMITS.books),
       },
       {
         id: 'topics',
         title: 'Topics',
-        entries: this.topics()
-          .filter((t) => t.name.toLowerCase().includes(q))
+        entries: sortByRank(
+          this.topics().filter((t) => matchesSearch(t.name, q)),
+          (t) => searchRank(t.name, q),
+        )
           .slice(0, LIMITS.topics)
           .map(topicEntry),
       },
