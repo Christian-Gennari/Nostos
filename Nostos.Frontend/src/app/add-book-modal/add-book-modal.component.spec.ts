@@ -982,8 +982,8 @@ describe('AddBookModal', () => {
     expect(component.form.author).toBe('W. G. Sebald');
     expect(component.form.isbn).toBe('9780811214131');
     expect(component.form.publishedDate).toBe('1995');
-    // The same words are ready for the catalogue search.
-    expect(component.sourceQuery()).toBe('The Rings of Saturn W. G. Sebald');
+    // The title is ready for the catalogue search; the author would make it find nothing.
+    expect(component.sourceQuery()).toBe('The Rings of Saturn');
     expect(createSpy).not.toHaveBeenCalled();
   });
 

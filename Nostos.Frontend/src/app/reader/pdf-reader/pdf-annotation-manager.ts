@@ -270,7 +270,9 @@ export class PdfAnnotationManager {
       return { status: 'cross-page', selectedText };
     }
 
-    const rects = this.rangeRects(range, startTextLayer);
+    // getClientRects lists a box per text node and per element on the line:
+    // merge them so one line is one rectangle, not a stack of duplicates.
+    const rects = mergeLineRects(this.rangeRects(range, startTextLayer)).map(roundRect);
 
     if (!keepSelection) {
       selection.removeAllRanges();

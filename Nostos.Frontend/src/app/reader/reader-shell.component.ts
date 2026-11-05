@@ -3,6 +3,7 @@ import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indic
 import { PHONE_OR_TOUCH_QUERY } from '../ui/breakpoints';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 
 // Services
@@ -1381,11 +1382,16 @@ export class ReaderShell implements OnInit, OnDestroy {
           this.navigateGroundedSource(this.sourceNavigationGeneration);
         }, 100);
       },
-      error: () => {
+      error: (err: unknown) => {
         if (generation !== this.bookLoadGeneration) return;
         this.loading.set(false);
         this.ready.set(false);
-        this.loadError.set('Nostos could not open this book.');
+        // A deleted book (or a stale link) is not a network fault: say so.
+        this.loadError.set(
+          err instanceof HttpErrorResponse && err.status === 404
+            ? 'This book is not in your library any more.'
+            : 'Nostos could not open this book.',
+        );
       },
     });
   }

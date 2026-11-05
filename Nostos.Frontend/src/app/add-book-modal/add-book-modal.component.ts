@@ -377,9 +377,10 @@ export class AddBookModal {
     this.form.isbn = prefill.isbn ?? null;
     this.form.publishedDate = prefill.publishedDate ?? null;
 
-    // The same words open the catalogue search, so a book that is free
-    // somewhere is already on screen.
-    this.sourceQuery.set([prefill.title, prefill.author].filter(Boolean).join(' '));
+    // The title opens the catalogue search, so a book that is free somewhere is
+    // already on screen. The author stays out: catalogues match the query as one
+    // phrase, and "title author" found nothing.
+    this.sourceQuery.set(prefill.title);
     if (this.sourceMode()) this.searchSource();
   }
 
