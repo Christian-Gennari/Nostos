@@ -245,7 +245,7 @@ describe('BookDetail reset progress', () => {
     );
 
     httpMock
-      .expectOne('/api/books/b1/file')
+      .expectOne('/api/books/b1/file?replace=true')
       .flush('timeout', { status: 504, statusText: 'Gateway Timeout' });
 
     expect(errorToast).toHaveBeenCalledWith('The upload timed out. Try again.');
@@ -263,7 +263,7 @@ describe('BookDetail reset progress', () => {
 
     component.store.uploadFile(file);
 
-    expect(upload).toHaveBeenCalledWith('b1', file);
+    expect(upload).toHaveBeenCalledWith('b1', file, { replace: true });
     httpMock.expectNone('/api/books/b1/file');
     await vi.waitFor(() => expect(done).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(httpMock.match('/api/books/b1')).toHaveLength(1));

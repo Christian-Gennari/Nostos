@@ -75,6 +75,54 @@ public sealed class BookFileImportConflictTests
     }
 
     [Fact]
+    public async Task Upload_to_book_with_a_file_is_refused_unless_replace_is_asked_for()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+        var book = await CreateBookAsync(client);
+
+        await using (var db = OpenDb(factory.DatabasePath))
+        {
+            var row = await db.Books.SingleAsync(b => b.Id == book.Id);
+            row.FileDetails.HasFile = true;
+            row.FileDetails.FileName = "original.pdf";
+            await db.SaveChangesAsync();
+        }
+
+        using var refused = await UploadAsync(client, book.Id);
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("book_has_file");
+
+        await using (var db = OpenDb(factory.DatabasePath))
+        {
+            var saved = await db.Books.SingleAsync(b => b.Id == book.Id);
+            saved.FileDetails.FileName.Should().Be("original.pdf");
+        }
+
+        using var replaced = await UploadAsync(client, book.Id, "?replace=true");
+        replaced.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using (var db = OpenDb(factory.DatabasePath))
+        {
+            var saved = await db.Books.SingleAsync(b => b.Id == book.Id);
+            saved.FileDetails.FileName.Should().NotBe("original.pdf");
+        }
+    }
+
+    [Fact]
+    public async Task Book_list_reports_its_page_size_ceiling()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/api/books?pageSize=200");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("X-Max-Page-Size").Should().ContainSingle().Which.Should().Be("100");
+        var page = await response.Content.ReadFromJsonAsync<PaginatedResponse<BookDto>>();
+        page!.PageSize.Should().Be(100);
+    }
+
+    [Fact]
     public async Task Gate_is_per_book_and_a_waiter_can_take_over_after_release()
     {
         var gate = new BookFileMutationGate();
@@ -107,13 +155,13 @@ public sealed class BookFileImportConflictTests
         return (await response.Content.ReadFromJsonAsync<BookDto>())!;
     }
 
-    private static async Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid bookId)
+    private static async Task<HttpResponseMessage> UploadAsync(HttpClient client, Guid bookId, string query = "")
     {
         using var content = new MultipartFormDataContent();
         using var bytes = new ByteArrayContent(Encoding.ASCII.GetBytes("%PDF-1.7\\nnot a real PDF"));
         bytes.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         content.Add(bytes, "file", "conflicting.pdf");
-        return await client.PostAsync($"/api/books/{bookId}/file", content);
+        return await client.PostAsync($"/api/books/{bookId}/file{query}", content);
     }
 
     private static NostosDbContext OpenDb(string path) =>

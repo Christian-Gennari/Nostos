@@ -19,6 +19,9 @@ internal sealed class LibraryReadService(
     private readonly IDbContextFactory<NostosDbContext> _contexts = contexts;
     private readonly BookLookupService _lookup = lookup;
 
+    /// <summary>Largest page <see cref="ListBooksAsync"/> returns; larger requests are clamped.</summary>
+    public const int MaxPageSize = 100;
+
     public async Task<LibraryCommandResultDto> ListBooksAsync(
         BookFilter filter,
         BookSort sort,
@@ -35,7 +38,7 @@ internal sealed class LibraryReadService(
         var version = state?.StateVersion ?? "0";
 
         var safePage = Math.Max(1, page);
-        var safePageSize = Math.Clamp(pageSize, 1, 100);
+        var safePageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
         // The default Library is a grouped-work read model. Rows explicitly
         // waiting for a required local upload are not library items yet; a

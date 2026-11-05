@@ -67,7 +67,7 @@
 - **Readers for every format:** an EPUB reader with adjustable typography, a PDF reader, and an audiobook player with chapters, speed control and a sleep timer.
 - **Highlights and notes on the page:** select text to highlight it, and click a highlight to open its note.
 - **Passages:** save a long stretch of a book, a range of PDF pages or a clip of an audiobook, and read or play it again on its own.
-- **Switch between ebook and audiobook:** if you have both editions, continue in the other one near where you are.
+- **Switch between ebook and audiobook:** if you have both editions, continue in the other one near where you are (needs a speech-to-text provider; otherwise each edition opens where you left it).
 - **Read aloud:** listen to any EPUB or PDF with your device's voice or a natural voice from a speech server.
 - **Bring your highlights:** import highlights and notes from Kobo, KOReader, a Kindle's `My Clippings.txt` or a Readwise CSV export, review them, then add them to the right books.
 

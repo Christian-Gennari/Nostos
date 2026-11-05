@@ -105,7 +105,9 @@ internal sealed record ImportAnnotation(
     string? Text,
     string Note,
     // Shapes an earlier version of the import could have stored this in.
-    IReadOnlyList<ImportedNoteShape>? EarlierShapes = null);
+    IReadOnlyList<ImportedNoteShape>? EarlierShapes = null,
+    // When the source recorded the highlight (UTC); null => the note gets the import time.
+    DateTime? CreatedAt = null);
 
 internal sealed record ImportLibraryBook(
     Guid Id,

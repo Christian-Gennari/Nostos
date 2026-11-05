@@ -45,7 +45,8 @@ internal static class KoboDatabaseReader
                        {Optional(bookmarkColumns, "Text")},
                        {Optional(bookmarkColumns, "Annotation")},
                        {Optional(bookmarkColumns, "Hidden")},
-                       {Optional(bookmarkColumns, "Type")}
+                       {Optional(bookmarkColumns, "Type")},
+                       {Optional(bookmarkColumns, "DateCreated")}
                 FROM Bookmark
                 ORDER BY VolumeID, {(bookmarkColumns.Contains("DateCreated") ? "DateCreated," : string.Empty)} BookmarkID
                 """;
@@ -83,7 +84,7 @@ internal static class KoboDatabaseReader
                     order.Add(volumeId);
                 }
 
-                bookmarks.Add(new KoboBookmark(bookmarkId, text, Text(reader, 3)));
+                bookmarks.Add(new KoboBookmark(bookmarkId, text, Text(reader, 3), ImportDates.Iso(Text(reader, 6))));
             }
 
             return order

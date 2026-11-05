@@ -121,33 +121,52 @@ public sealed class WikisourceProviderTests
     }
 
     [Fact]
-    public async Task Detail_PreservesAtomRightsVerbatim_AndUsesSingleItemEndpoint()
+    public async Task Detail_PreservesRightsVerbatim_AndReadsTheCatalogue_NotAnAtomItemEndpoint()
     {
         var (provider, handler) = CreateProvider();
-        handler.RegisterXml(
-            "/?lang=en&format=atom&page=Pride%20and%20Prejudice",
-            LoadFixture("item-pride-and-prejudice.atom"));
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
 
         var item = await provider.GetItemAsync("Pride and Prejudice", CancellationToken.None);
 
         item.Should().NotBeNull();
-        item!.Source!.RightsStatement.Should().Be("CC-BY-SA 3.0");
+        item!.Source!.RightsStatement.Should().Be("Public Domain");
+        item.Metadata.Author.Should().Be("Jane Austen");
+        item.Cover.Should().NotBeNull();
         item.MediaKind.Should().Be(ProviderMediaKind.Ebook);
         item.Assets.Select(asset => asset.Id).Should().Equal("epub", "pdf");
         item.Assets.Single(asset => asset.Id == "epub").IsPreferred.Should().BeTrue();
         item.Assets.Single(asset => asset.Id == "epub").SourceFormat.Should().Be("application/epub+zip");
         item.Assets.Single(asset => asset.Id == "pdf").SourceFormat.Should().Be("application/pdf");
-        handler.RecordedRequestPaths.Should().ContainSingle(
-            "/?lang=en&format=atom&page=Pride%20and%20Prejudice");
+        handler.RecordedRequestPaths.Should().Equal(CatalogPath);
+    }
+
+    [Fact]
+    public async Task Detail_AgainstRecordedLiveCatalogue_FindsItemsByUnderscoredPage_WithoutAtomRequest()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export-live-sample.xml"));
+
+        var item = await provider.GetItemAsync("Frankenstein,_or_the_Modern_Prometheus_(Revised_Edition,_1831)", CancellationToken.None);
+
+        item.Should().NotBeNull();
+        item!.Metadata.Title.Should().Be("Frankenstein, or the Modern Prometheus");
+        item.Metadata.Author.Should().NotBeNullOrWhiteSpace();
+        item.Assets.Select(asset => asset.Id).Should().Contain("epub");
+        handler.RecordedRequestPaths.Should().NotContain(path => path.Contains("format=atom"));
+
+        var plan = await provider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("Frankenstein,_or_the_Modern_Prometheus_(Revised_Edition,_1831)", AssetId: null),
+            CancellationToken.None);
+        plan!.Parts[0].Url.Query.Should().Contain("format=epub");
+
+        (await provider.GetItemAsync("No such work", CancellationToken.None)).Should().BeNull();
     }
 
     [Fact]
     public async Task PlanAcquisition_ResolvesPublishedEpubLink_WithoutLeakingProviderShape()
     {
         var (provider, handler) = CreateProvider();
-        handler.RegisterXml(
-            "/?lang=en&format=atom&page=Pride%20and%20Prejudice",
-            LoadFixture("item-pride-and-prejudice.atom"));
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
 
         var plan = await provider.PlanAcquisitionAsync(
             new ProviderAcquisitionRequest("Pride and Prejudice", AssetId: null),
@@ -163,16 +182,14 @@ public sealed class WikisourceProviderTests
             new Uri("https://ws-export.wmcloud.org/?lang=en&format=epub&page=Pride+and+Prejudice"));
         plan.Parts[0].FileExtension.Should().Be(".epub");
         plan.Output.Should().Be(new ProviderOutput(".epub", "application/epub+zip", "EPUB"));
-        plan.Source!.RightsStatement.Should().Be("CC-BY-SA 3.0");
+        plan.Source!.RightsStatement.Should().Be("Public Domain");
     }
 
     [Fact]
-    public async Task Detail_WhenAtomAdvertisesPdf_UsesPublishedPdfLink()
+    public async Task Detail_WhenCatalogueAdvertisesPdf_UsesPublishedPdfLink()
     {
         var (provider, handler) = CreateProvider();
-        handler.RegisterXml(
-            "/?lang=en&format=atom&page=Pride%20and%20Prejudice",
-            LoadFixture("item-pride-and-prejudice-epub-pdf.atom"));
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export-epub-pdf.xml"));
 
         var item = await provider.GetItemAsync("Pride and Prejudice", CancellationToken.None);
 
@@ -195,9 +212,7 @@ public sealed class WikisourceProviderTests
     public async Task PlanAcquisition_Pdf_UsesIndependentWsExportRoute()
     {
         var (provider, handler) = CreateProvider();
-        handler.RegisterXml(
-            "/?lang=en&format=atom&page=Pride%20and%20Prejudice",
-            LoadFixture("item-pride-and-prejudice.atom"));
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
 
         var plan = await provider.PlanAcquisitionAsync(
             new ProviderAcquisitionRequest("Pride and Prejudice", AssetId: "pdf"),
@@ -218,9 +233,7 @@ public sealed class WikisourceProviderTests
     public async Task PlanAcquisition_UnknownAsset_ThrowsStableProviderError()
     {
         var (provider, handler) = CreateProvider();
-        handler.RegisterXml(
-            "/?lang=en&format=atom&page=Pride%20and%20Prejudice",
-            LoadFixture("item-pride-and-prejudice.atom"));
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
 
         var act = async () => await provider.PlanAcquisitionAsync(
             new ProviderAcquisitionRequest("Pride and Prejudice", AssetId: "mobi"),

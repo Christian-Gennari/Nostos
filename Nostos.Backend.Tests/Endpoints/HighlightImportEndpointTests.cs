@@ -1,3 +1,4 @@
+using System.Text;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -156,6 +157,8 @@ public sealed class HighlightImportEndpointTests : IDisposable
             && note.SourceAnchorValue == "bm-1");
         notes.Select(note => note.SourceAnchorValue).Should().NotContain(
             ["bm-hidden", "bm-hidden-int", "bm-dogear", "bm-markup", "bm-markup-old"]);
+        // Kobo's DateCreated is the note's date, not the time of import (#1367).
+        notes.Should().OnlyContain(note => note.CreatedAt == new DateTime(2026, 9, 28, 12, 0, 0, DateTimeKind.Utc));
     }
 
     [Fact]
@@ -569,6 +572,36 @@ public sealed class HighlightImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_windows_1252_clippings_file_reads_cleanly_and_adds_no_duplicates_after_a_utf8_import()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Sommarboken", "Tove Jansson", type: "ebook");
+        const string quote = "Det var \u201Csommar\u201D \u2014 \u00E5\u00E4\u00F6 och \u00C5\u00C4\u00D6, s\u00E5 klart.";
+        var text = "Sommarboken (Jansson, Tove)\r\n- Your Highlight on page 1 | Location 5-6 | Added on Monday, January 1, 2024 10:00:00 AM\r\n\r\n"
+            + quote + "\r\n==========\r\n";
+        var directory = Directory.CreateTempSubdirectory().FullName;
+        var utf8 = Path.Combine(directory, "utf8.txt");
+        var cp1252 = Path.Combine(directory, "My Clippings.txt");
+        await File.WriteAllTextAsync(utf8, text, new UTF8Encoding(false));
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        await File.WriteAllBytesAsync(cp1252, Encoding.GetEncoding(1252).GetBytes(text));
+
+        var first = await PreviewAsync(client, utf8);
+        await CommitAsync(client, utf8, new HighlightImportDecision(first.Books.Single().SourceKey, book.Id));
+
+        var again = await PreviewAsync(client, cp1252);
+        again.Books.Single().NewCount.Should().Be(0);
+        var repeat = await CommitAsync(client, cp1252, new HighlightImportDecision(again.Books.Single().SourceKey, book.Id));
+        repeat.BatchId.Should().BeNull();
+
+        await using var db = CreateContext(factory.DatabasePath);
+        var note = await db.Notes.AsNoTracking().SingleAsync(candidate => candidate.BookId == book.Id);
+        note.SelectedText.Should().Be(quote);
+        Directory.Delete(directory, true);
+    }
+
+    [Fact]
     public async Task A_starter_draft_offers_the_passages_an_import_just_brought_in()
     {
         using var factory = new LibraryEndpointFactory();
@@ -647,6 +680,57 @@ public sealed class HighlightImportEndpointTests : IDisposable
         });
         notes.Should().Contain(note => note.SelectedText == null && note.Content == "A note with no highlight.");
         (await db.NoteImportBatches.SingleAsync()).Source.Should().Be("readwise");
+    }
+
+    [Fact]
+    public async Task The_same_highlight_from_another_source_is_already_in_nostos()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
+        var other = await CreateBookAsync(client, "Emma", "Jane Austen", type: "ebook");
+
+        var kindle = Path.Combine(_directory, "My Clippings.txt");
+        await File.WriteAllTextAsync(kindle,
+            "Pride and Prejudice (Austen, Jane)\n"
+            + "- Your Highlight on page 1 | Location 5-7 | Added on Monday, January 1, 2024 10:01:00 AM\n\n"
+            + "\u201CIt is a truth\u201D \u2014 the \uFB01rst \uFB02ourish   of the book.\n"
+            + "==========\n"
+            + "Pride and Prejudice (Austen, Jane)\n"
+            + "- Your Highlight on page 2 | Location 9-10 | Added on Monday, January 1, 2024 10:02:00 AM\n\n"
+            + "Only Kindle has this one.\n"
+            + "==========\n");
+        var readwise = Path.Combine(_directory, "readwise.csv");
+        await File.WriteAllTextAsync(readwise,
+            "Highlight,Book Title,Book Author,Amazon Book ID,Note,Color,Tags,Location Type,Location,Highlighted at,Document tags\n"
+            + "\"\"\"It is a truth\"\" - The FIRST flourish of the\nbook.\",Pride and Prejudice,Jane Austen,B00SYNTH01,A thought.,yellow,,location,5,2024-01-01 10:00:00+00:00,\n"
+            + "A passage only Readwise has.,Pride and Prejudice,Jane Austen,B00SYNTH01,,blue,,location,120,2024-01-01 10:05:00+00:00,\n");
+
+        var kindlePreview = await PreviewAsync(client, kindle);
+        var kindleBook = kindlePreview.Books.Single();
+        (await CommitAsync(client, kindle, new HighlightImportDecision(kindleBook.SourceKey, austen.Id)))
+            .Books.Single().ImportedCount.Should().Be(2);
+
+        var preview = await PreviewAsync(client, readwise);
+        var readwiseBook = preview.Books.Single();
+        readwiseBook.AnnotationCount.Should().Be(2);
+        readwiseBook.NewCount.Should().Be(1, "the first highlight is already there from Kindle");
+
+        var result = await CommitAsync(client, readwise, new HighlightImportDecision(readwiseBook.SourceKey, austen.Id));
+        var committed = result.Books.Single();
+        committed.ImportedCount.Should().Be(1);
+        committed.DuplicateCount.Should().Be(1);
+
+        await using var db = CreateContext(factory.DatabasePath);
+        var notes = await db.Notes.AsNoTracking().Where(note => note.BookId == austen.Id).ToListAsync();
+        notes.Should().HaveCount(3);
+        notes.Should().ContainSingle(note => note.SelectedText!.Contains("flourish", StringComparison.OrdinalIgnoreCase)
+            || note.SelectedText.Contains("\uFB02"));
+        notes.Should().NotContain(note => note.Content == "A thought.", "notes are never merged or copied");
+
+        // The same sentence in another book is a different highlight.
+        var elsewhere = await CommitAsync(client, readwise, new HighlightImportDecision(readwiseBook.SourceKey, other.Id));
+        elsewhere.Books.Single().ImportedCount.Should().Be(2);
     }
 
     private const string Schema =

@@ -130,13 +130,15 @@ internal static class WikisourceCatalog
         return books;
     }
 
-    public static WikisourceBook? ParseItem(XDocument document, string page)
+    public static WikisourceBook? FindByPage(IReadOnlyList<WikisourceBook> books, string page)
     {
-        var books = Parse(document);
-        return books.FirstOrDefault(book =>
-                   string.Equals(book.Page, page, StringComparison.OrdinalIgnoreCase))
-               ?? books.FirstOrDefault();
+        var wanted = PageKey(page);
+        return books.FirstOrDefault(book => PageKey(book.Page) == wanted);
     }
+
+    // The catalogue spells pages with underscores, older ids with spaces.
+    private static string PageKey(string page) =>
+        page.Trim().Replace('_', ' ').ToUpperInvariant();
 
     private static IReadOnlyList<WikisourceAsset> BuildAssets(Uri? epub, Uri pdf)
     {

@@ -48,8 +48,10 @@ export class BookUploadClient {
     bookId: string,
     request: BookUploadCreateRequestDto,
     signal?: AbortSignal,
+    replace = false,
   ): Promise<BookUploadStatusDto> {
-    return this.request(this.http.post<BookUploadStatusDto>(this.base(bookId), request), signal);
+    const url = replace ? `${this.base(bookId)}?replace=true` : this.base(bookId);
+    return this.request(this.http.post<BookUploadStatusDto>(url, request), signal);
   }
 
   async uploadPart(

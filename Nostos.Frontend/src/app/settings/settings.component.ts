@@ -35,6 +35,7 @@ import {
   BackupProgress,
   backupStatusLabel,
   backupStatusTone,
+  backupWarning,
 } from '../core/dtos/backup.dtos';
 import { ManagedOpdsAccess, OpdsInfo } from '../core/dtos/opds.dtos';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -894,6 +895,37 @@ export class SettingsComponent implements OnInit, OnDestroy {
   progress = signal<BackupProgress>(defaultProgress);
   readonly backupStatusLabel = backupStatusLabel;
   readonly backupStatusTone = backupStatusTone;
+
+  /** Newest completed backup: the status line, else the history. */
+  private readonly lastCompletedBackupAt = computed(() => {
+    const s = this.status();
+    if (s.lastBackupAt && s.lastBackupStatus === 'Completed') return s.lastBackupAt;
+    return (
+      this.history()
+        .filter((h) => h.status === 'Completed')
+        .map((h) => h.createdAt)
+        .sort()
+        .at(-1) ?? null
+    );
+  });
+  readonly backupWarning = computed(() =>
+    backupWarning(
+      this.settings().isEnabled,
+      this.settings().intervalHours,
+      this.lastCompletedBackupAt(),
+    ),
+  );
+
+  /** The warning's "Turn on": the same call as the switch below it. */
+  enableAutomaticBackup(): void {
+    this.backupService.updateSettings({ isEnabled: true }).subscribe({
+      next: (s) => {
+        this.settings.set(s);
+        this.refreshStatus();
+      },
+      error: () => this.toast.error('Could not update the settings'),
+    });
+  }
   showSlowNotice = signal(false);
   private stepChangedAt = 0;
   private slowNoticeInterval: ReturnType<typeof setInterval> | null = null;

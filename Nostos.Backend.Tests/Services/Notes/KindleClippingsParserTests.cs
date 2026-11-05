@@ -29,8 +29,8 @@ public sealed class KindleClippingsParserTests
 
         // A note with no highlight under it stands alone; its edit replaces it.
         books[1].Annotations.Should().HaveCount(2);
-        books[1].Annotations[0].Should().Be(new ImportAnnotation("kindle_location", "120-121", "I went to the woods because I wished to live deliberately", ""));
-        books[1].Annotations[1].Should().Be(new ImportAnnotation("kindle_location", "300", null, "A thought of my own, revised."));
+        books[1].Annotations[0].Should().Be(new ImportAnnotation("kindle_location", "120-121", "I went to the woods because I wished to live deliberately", "", CreatedAt: Utc(2024, 1, 2, 21, 0)));
+        books[1].Annotations[1].Should().Be(new ImportAnnotation("kindle_location", "300", null, "A thought of my own, revised.", CreatedAt: Utc(2024, 1, 2, 21, 6)));
 
         // A PDF has pages and no locations; line breaks inside a highlight stay.
         var meditations = books[2].Annotations.Should().ContainSingle().Subject;
@@ -60,6 +60,7 @@ public sealed class KindleClippingsParserTests
         byTitle.Keys.Should().BeEquivalentTo("Der Process", "Candide", "Don Quijote", "吾輩は猫である", "论语", "Truncated Book");
 
         var kafka = byTitle["Der Process"].Annotations.Should().ContainSingle().Subject;
+        // "Hinzugefügt am …" is not read: no date, so the import time is used.
         kafka.Should().Be(new ImportAnnotation("kindle_location", "95-96", "Jemand mußte Josef K. verleumdet haben", "Der Anfang."));
         byTitle["Der Process"].Author.Should().Be("Franz Kafka");
 
@@ -68,7 +69,7 @@ public sealed class KindleClippingsParserTests
         byTitle["Don Quijote"].Annotations.Single().AnchorValue.Should().Be("10-11");
         byTitle["吾輩は猫である"].Annotations.Single().AnchorValue.Should().Be("12-13");
         // Page and location in one bracketed phrase: the location wins.
-        byTitle["论语"].Annotations.Single().Should().Be(new ImportAnnotation("kindle_location", "30-31", "学而时习之", ""));
+        byTitle["论语"].Annotations.Single().Should().Be(new ImportAnnotation("kindle_location", "30-31", "学而时习之", "", CreatedAt: byTitle["论语"].Annotations.Single().CreatedAt));
         // The last entry lost its separator; it is still an entry.
         byTitle["Truncated Book"].Annotations.Single().Text.Should().Be("A last entry the device never closed.");
 
@@ -130,6 +131,44 @@ public sealed class KindleClippingsParserTests
         books.Single().Annotations.Select(annotation => annotation.Text)
             .Should().Equal("Second wording.", "Unrelated passage.");
     }
+
+    [Fact]
+    public void Added_on_is_kept_as_the_highlight_date_in_utc()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+        try
+        {
+            var (books, _) = KindleClippingsParser.Parse(Fixture("My Clippings.txt"));
+
+            // Extended on the device a minute later: the date of the first entry.
+            books[0].Annotations.Single().CreatedAt.Should().Be(Utc(2024, 1, 1, 10, 0));
+            // Older firmware: "Friday, March 4, 2011, 07:30 PM".
+            books[3].Annotations.Single().CreatedAt.Should().Be(Utc(2011, 3, 4, 19, 30));
+            // A page-only PDF highlight, 12-hour clock.
+            books[2].Annotations.Single().CreatedAt.Should().Be(Utc(2024, 1, 3, 8, 0));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    [Theory]
+    [InlineData("Monday, January 1, 2024", 2024, 1, 1, 0, 0)]
+    [InlineData("Monday, 1 January 2024 22:15:00", 2024, 1, 1, 22, 15)]
+    [InlineData("Montag, 1. Januar 2024 10:00:00", 0, 0, 0, 0, 0)]
+    public void Kindle_dates_read_english_wording_only(string value, int year, int month, int day, int hour, int minute)
+    {
+        var parsed = ImportDates.Kindle(value);
+        if (year == 0)
+            parsed.Should().BeNull();
+        else
+            parsed.Should().Be(Utc(year, month, day, hour, minute));
+    }
+
+    private static DateTime Utc(int year, int month, int day, int hour, int minute) =>
+        new(year, month, day, hour, minute, 0, DateTimeKind.Utc);
 
     private static string Fixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", name));

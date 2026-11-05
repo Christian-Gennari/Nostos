@@ -28,6 +28,7 @@ public static class BookUploadHttpErrors
         [BookUploadException.PartRangeInvalid] = "The part range does not match this upload session.",
         [BookUploadException.FileHashMismatch] = "The finished file did not match its checksum.",
         [BookUploadException.Expired] = "This upload session expired. Choose the file again to resume.",
+        [BookUploadException.BookHasFile] = "This book already has a file. Ask to replace it to upload a new one.",
         [BookUploadException.StorageExhausted] = "There is not enough free storage for this file.",
     };
 
@@ -39,6 +40,7 @@ public static class BookUploadHttpErrors
             Result(exception.Code, StatusCodes.Status404NotFound),
         BookUploadException.Expired => Result(exception.Code, StatusCodes.Status410Gone),
         BookUploadException.InvalidState
+            or BookUploadException.BookHasFile
             or BookUploadException.InProgress
             or BookUploadException.PartConflict =>
             Result(exception.Code, StatusCodes.Status409Conflict),

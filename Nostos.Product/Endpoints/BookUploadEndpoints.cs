@@ -35,6 +35,7 @@ public static class BookUploadEndpoints
             async (
                 Guid bookId,
                 BookUploadCreateHttpRequest? body,
+                bool? replace,
                 BookUploadService service,
                 CancellationToken ct) =>
             {
@@ -51,7 +52,8 @@ public static class BookUploadEndpoints
                             body.ContentType,
                             body.Sha256,
                             body.ClientFingerprint),
-                        ct);
+                        ct,
+                        replace == true);
                     return created
                         ? Results.Created($"{BasePath}/{bookId}/file/uploads/{status.SessionId}", status)
                         : Results.Ok(status);

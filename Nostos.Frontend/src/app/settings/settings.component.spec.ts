@@ -14,6 +14,7 @@ import {
 
 import { SettingsComponent } from './settings.component';
 import { BackupService } from '../core/services/backup.service';
+import { BackupStatus } from '../core/dtos/backup.dtos';
 import { OpdsService } from '../core/services/opds.service';
 import { ToastService } from '../core/services/toast.service';
 import { ManagedOpdsAccess, OpdsInfo } from '../core/dtos/opds.dtos';
@@ -352,7 +353,7 @@ const providerSettingsServiceMock = {
 };
 
 const backupServiceMock = {
-  getStatus: vi.fn(() =>
+  getStatus: vi.fn((): Observable<BackupStatus> =>
     of({
       isEnabled: false,
       provider: 'Local',
@@ -810,6 +811,51 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('#manage-library-protect-heading')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="managed-backups-card"]')).toBeNull();
     expect(managedBackupsServiceMock.getBackups).not.toHaveBeenCalled();
+  });
+
+  it('warns when automatic backup is off and the last backup is old, and Turn on enables it', () => {
+    const old = new Date(Date.now() - 70 * 86_400_000).toISOString();
+    backupServiceMock.getStatus.mockReturnValueOnce(
+      of({
+        isEnabled: false,
+        provider: 'Local',
+        lastBackupAt: old,
+        lastBackupStatus: 'Completed',
+        includeBookFiles: true,
+        intervalHours: 168,
+        maxBackups: 3,
+      }),
+    );
+    backupServiceMock.getStatus.mockReturnValueOnce(
+      of({
+        isEnabled: false,
+        provider: 'Local',
+        lastBackupAt: old,
+        lastBackupStatus: 'Completed',
+        includeBookFiles: true,
+        intervalHours: 168,
+        maxBackups: 3,
+      }),
+    );
+    backupServiceMock.updateSettings.mockClear();
+    backupServiceMock.updateSettings.mockReturnValueOnce(
+      of({ isEnabled: true, provider: 'Local', includeBookFiles: true, intervalHours: 168, maxBackups: 3 }),
+    );
+    openManageLibraryPage(selfHostedCapabilities);
+    const warning = fixture.nativeElement.querySelector('[data-testid="backup-warning"]') as HTMLElement;
+    expect(warning.textContent).toContain('Automatic backup is off. The last backup was 70 days ago.');
+    (warning.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(backupServiceMock.updateSettings).toHaveBeenCalledWith({ isEnabled: true });
+    expect(fixture.nativeElement.querySelector('[data-testid="backup-warning"]')?.textContent).toContain(
+      'older than your schedule allows',
+    );
+  });
+
+  it('shows no backup warning on a fresh SelfHosted install', () => {
+    openManageLibraryPage(selfHostedCapabilities);
+    expect(fixture.nativeElement.querySelector('[data-testid="backup-warning"]')).toBeNull();
   });
 
   it('summarises Cloud nightly backups and keeps the restore list collapsed until asked', () => {

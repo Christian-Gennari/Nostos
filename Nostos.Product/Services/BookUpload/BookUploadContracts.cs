@@ -62,6 +62,7 @@ public sealed class BookUploadException : Exception
     public const string Expired = "book_upload_expired";
     public const string StorageExhausted = "book_upload_storage_exhausted";
     public const string BookNotFound = "book_upload_book_not_found";
+    public const string BookHasFile = "book_has_file";
 
     public BookUploadException(string code, string? message = null)
         : base(message ?? code) => Code = code;

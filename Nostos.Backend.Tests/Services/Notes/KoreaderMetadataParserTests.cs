@@ -35,6 +35,19 @@ public sealed class KoreaderMetadataParserTests
     }
 
     [Fact]
+    public void Datetime_is_kept_for_the_import_to_use_as_the_note_date()
+    {
+        var document = KoreaderMetadataParser.Parse(Fixture("metadata.pdf.lua"));
+
+        document.Annotations[0].DateTime.Should().Be("2026-09-28 12:00:00");
+        ImportDates.Iso(document.Annotations[0].DateTime)
+            .Should().Be(new DateTime(2026, 9, 28, 12, 0, 0, DateTimeKind.Utc));
+        ImportDates.Iso("not a date").Should().BeNull();
+        ImportDates.Iso(null).Should().BeNull();
+        ImportDates.Iso("2999-01-01 00:00:00").Should().BeNull("a date in the future is not a real highlight date");
+    }
+
+    [Fact]
     public void Pdf_without_embedded_metadata_is_named_by_what_the_device_shows()
     {
         var document = KoreaderMetadataParser.Parse(Fixture("metadata.pdf-untitled.lua"));

@@ -145,11 +145,12 @@ export class BooksService {
     return this.http.get<BookFileVersionDto>(`/api/books/${id}/file/version`);
   }
 
-  uploadFile(bookId: string, file: File): Observable<any> {
+  /** `replace` must be true to overwrite a file the book already has (409 `book_has_file` otherwise). */
+  uploadFile(bookId: string, file: File, replace = false): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.http.post(`/api/books/${bookId}/file`, formData, {
+    return this.http.post(`/api/books/${bookId}/file${replace ? '?replace=true' : ''}`, formData, {
       reportProgress: true,
       observe: 'events',
     });
