@@ -1464,9 +1464,9 @@
             <div class="setting-label">
               <span class="label-text">Automatic backup</span>
               @if (settings().isEnabled) {
-                <span class="label-desc">Backups are created automatically every {{ formatInterval(settings().intervalHours) }}.</span>
+                <span class="label-desc">Backups are created automatically every {{ formatInterval(settings().intervalHours) }}. The first one runs within 5 minutes of turning this on.</span>
               } @else {
-                <span class="label-desc">When turned on, the first backup will run within 5 minutes, then every {{ formatInterval(settings().intervalHours) }} thereafter.</span>
+                <span class="label-desc">Turn on to create backups automatically.</span>
               }
             </div>
             <label appSwitch>
@@ -1483,7 +1483,7 @@
           <div class="setting-row">
             <div class="setting-label">
               <span class="label-text">Include book files</span>
-              <span class="label-desc">Include EPUB, PDF, and audio files in backups. Makes archives much larger but ensures full recovery.</span>
+              <span class="label-desc">Include EPUB, PDF, and audio files in backups. Makes archives much larger. Files linked from External media are not included; they stay in your folder.</span>
             </div>
             <label appSwitch>
               <input
@@ -1545,7 +1545,7 @@
           <div class="setting-row">
             <div class="setting-label">
               <span class="label-text">Import from disk</span>
-              <span class="label-desc">Copy .nostos files to the Storage/backups/ folder on the server, then scan to add them to your history.</span>
+              <span class="label-desc">Copy .nostos files to the backups folder on the server (/data/backups in Docker, Storage/backups/ otherwise), then scan to add them to your history.</span>
             </div>
             <button
               appButton variant="secondary"
