@@ -41,8 +41,8 @@ public sealed record MarkdownNote(
 
 public sealed record MarkdownTopic(Guid Id, string Name, string? Description);
 
-/// <summary>Where a note sits, in words, and the raw position kept beside them.</summary>
-public sealed record MarkdownLocation(string? Words, string? Position);
+/// <summary>Where a note sits, in words.</summary>
+public sealed record MarkdownLocation(string? Words);
 
 /// <summary>One line of a topic's file: a note that carries the topic.</summary>
 public sealed record MarkdownTopicEntry(
@@ -132,7 +132,7 @@ public static partial class MarkdownNotesRenderer
         };
     }
 
-    public static string Book(MarkdownBook book, IReadOnlyList<MarkdownNote> notesInOrder)
+    public static string Book(MarkdownBook book, IReadOnlyList<MarkdownNote> notesInOrder, IReadOnlyList<string?>? sections = null)
     {
         var authors = Authors(book.Author);
         var yaml = new StringBuilder("---\n");
@@ -162,14 +162,14 @@ public static partial class MarkdownNotesRenderer
 
         var chapters = AudioChapters(book.ChaptersJson);
         foreach (var note in notesInOrder)
-            lines.Add(Entry(book, note, chapters));
+            lines.Add(Entry(book, note, chapters, sections));
 
         return string.Join("\n\n", lines) + "\n";
     }
 
-    private static string Entry(MarkdownBook book, MarkdownNote note, IReadOnlyList<AudioChapter> chapters)
+    private static string Entry(MarkdownBook book, MarkdownNote note, IReadOnlyList<AudioChapter> chapters, IReadOnlyList<string?>? sections)
     {
-        var location = Locate(note, chapters);
+        var location = Locate(note, chapters, sections);
         var passage = IsPassage(note);
         var kind = passage ? "Passage" : string.IsNullOrWhiteSpace(note.SelectedText) ? "Note" : "Highlight";
 
@@ -187,7 +187,6 @@ public static partial class MarkdownNotesRenderer
         var meta = new List<string> { kind };
         if (passage && location.Words is not null) meta.Add(EscapeText(location.Words));
         meta.Add(note.CreatedAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-        if (location.Position is { } position) meta.Add(Code(position));
         parts.Add($"*{string.Join(" · ", meta)}*");
 
         return string.Join("\n\n", parts);
@@ -203,59 +202,63 @@ public static partial class MarkdownNotesRenderer
     /// only when the reader verified it (the rule the app's own "Return to
     /// passage" follows); a page or time the reader typed for a paper book or
     /// another app is said as theirs. An EPUB position has no page, so it is
-    /// named by its section of the book and kept as its CFI beside the words.
+    /// named by the chapter the book's table of contents gives it, or else by
+    /// its section of the book; the raw CFI is never printed (issue #1382).
     /// </summary>
-    public static MarkdownLocation Locate(MarkdownNote note, IReadOnlyList<AudioChapter>? chapters = null)
+    public static MarkdownLocation Locate(
+        MarkdownNote note,
+        IReadOnlyList<AudioChapter>? chapters = null,
+        IReadOnlyList<string?>? sections = null)
     {
-        var kind = note.SourceAnchorKind?.Trim().ToLowerInvariant() ?? "unknown";
-        var value = note.SourceAnchorValue?.Trim() ?? string.Empty;
+        var (kind, value, verified) = Anchor(note);
         var end = note.PassageEnd?.Trim();
         var passage = IsPassage(note);
 
-        if (note.AnchorVerified && kind == "pdf_page" && PositivePage(value) is { } page)
+        if (verified && kind == "pdf_page" && PositivePage(value) is { } page)
         {
             var last = passage ? PositivePage(end) : null;
-            return new(last is { } to && to > page ? $"Pages {page}–{to}" : $"Page {page}", null);
+            return new(last is { } to && to > page ? $"Pages {page}–{to}" : $"Page {page}");
         }
 
-        if (note.AnchorVerified && kind == "audio_timestamp" && Seconds(value) is { } seconds)
+        if (verified && kind == "audio_timestamp" && Seconds(value) is { } seconds)
         {
             var words = $"At {Time(seconds)}";
             if (passage && Seconds(end) is { } until && until > seconds)
                 words = $"From {Time(seconds)} to {Time(until)}";
             if (ChapterAt(chapters, seconds) is { } chapter)
                 words += $", in “{chapter}”";
-            return new(words, null);
+            return new(words);
         }
 
-        var cfi = note.AnchorVerified && kind == "epub_cfi" && value.StartsWith("epubcfi(", StringComparison.Ordinal)
-            ? value
-            : note.CfiRange?.Trim() is { } range && range.StartsWith("epubcfi(", StringComparison.Ordinal) ? range : null;
+        var cfi = Cfi(note, kind, value);
         if (cfi is not null)
         {
             var section = EpubSection(cfi);
-            return new(section is { } n ? $"Section {n} of the book" : "In the book", cfi);
+            if (section is { } n && sections is not null && n <= sections.Count
+                && !string.IsNullOrWhiteSpace(sections[n - 1]))
+                return new($"In “{sections[n - 1]!.Trim()}”");
+            return new(section is { } m ? $"Section {m} of the book" : "In the book");
         }
 
         switch (kind)
         {
             case "physical_page" when PositivePage(value) is { } paperPage:
-                return new($"Page {paperPage} (as noted)", null);
+                return new($"Page {paperPage} (as noted)");
             case "external_audio_timestamp" when Seconds(value) is { } elsewhere:
-                return new($"At {Time(elsewhere)} (as noted)", null);
+                return new($"At {Time(elsewhere)} (as noted)");
             case "koreader_page" when PositivePage(value) is { } koreaderPage:
-                return new($"Page {koreaderPage} in KOReader", null);
+                return new($"Page {koreaderPage} in KOReader");
             case "koreader_xpointer":
                 var fragment = DocFragmentRegex().Match(value);
-                return new(fragment.Success ? $"Section {fragment.Groups[1].Value} of the book (from KOReader)" : "From KOReader", null);
+                return new(fragment.Success ? $"Section {fragment.Groups[1].Value} of the book (from KOReader)" : "From KOReader");
         }
-        if (kind.StartsWith("kobo_", StringComparison.Ordinal)) return new("From Kobo", null);
+        if (kind.StartsWith("kobo_", StringComparison.Ordinal)) return new("From Kobo");
         // Kindle and Readwise positions are theirs, never a verified page (#1219).
         if (kind.StartsWith("kindle_", StringComparison.Ordinal))
-            return new(ImportedPosition(kind["kindle_".Length..], value) is { } onKindle ? $"{onKindle} on Kindle" : "From Kindle", null);
+            return new(ImportedPosition(kind["kindle_".Length..], value) is { } onKindle ? $"{onKindle} on Kindle" : "From Kindle");
         if (kind.StartsWith("readwise_", StringComparison.Ordinal))
-            return new(ImportedPosition(kind["readwise_".Length..], value) is { } inReadwise ? $"{inReadwise} in Readwise" : "From Readwise", null);
-        return new(null, null);
+            return new(ImportedPosition(kind["readwise_".Length..], value) is { } inReadwise ? $"{inReadwise} in Readwise" : "From Readwise");
+        return new((string?)null);
     }
 
     // "location" + "5-7" → "Location 5–7"; "page" + "12" → "Page 12".
@@ -286,13 +289,29 @@ public static partial class MarkdownNotesRenderer
             .Select(x => x.note)
             .ToList();
 
-    private static (int Rank, IReadOnlyList<double> Steps) OrderKey(MarkdownNote note)
+    /// <summary>
+    /// The anchor a note stands on. A note saved before anchors were stored
+    /// still holds its place in the reader's location (a PDF page as JSON, an
+    /// EPUB CFI), so that place is used when no anchor was set (issue #1382).
+    /// </summary>
+    private static (string Kind, string Value, bool Verified) Anchor(MarkdownNote note)
     {
         var kind = note.SourceAnchorKind?.Trim().ToLowerInvariant() ?? "unknown";
         var value = note.SourceAnchorValue?.Trim() ?? string.Empty;
-        var cfi = kind == "epub_cfi" && value.StartsWith("epubcfi(", StringComparison.Ordinal)
+        if (kind == "unknown" && value.Length == 0 && LocationAnchor.FromLocation(note.CfiRange) is var (fromKind, fromValue))
+            return (fromKind, fromValue, true);
+        return (kind, value, note.AnchorVerified);
+    }
+
+    private static string? Cfi(MarkdownNote note, string kind, string value) =>
+        kind == "epub_cfi" && value.StartsWith("epubcfi(", StringComparison.Ordinal)
             ? value
             : note.CfiRange?.Trim() is { } range && range.StartsWith("epubcfi(", StringComparison.Ordinal) ? range : null;
+
+    private static (int Rank, IReadOnlyList<double> Steps) OrderKey(MarkdownNote note)
+    {
+        var (kind, value, _) = Anchor(note);
+        var cfi = Cfi(note, kind, value);
         if (cfi is not null) return (0, CfiSteps(cfi));
         if (kind is "pdf_page" or "physical_page" or "koreader_page" && PositivePage(value) is { } page) return (1, [page]);
         if (kind is "audio_timestamp" or "external_audio_timestamp" && Seconds(value) is { } seconds) return (2, [seconds]);
@@ -387,9 +406,9 @@ public static partial class MarkdownNotesRenderer
     /// What a topic file lists for one note: where it is, a little of the book's
     /// words and of the reader's, so the list reads without opening each book.
     /// </summary>
-    public static MarkdownTopicEntry TopicEntry(string bookFile, MarkdownBook book, MarkdownNote note, IReadOnlyList<AudioChapter>? chapters)
+    public static MarkdownTopicEntry TopicEntry(string bookFile, MarkdownBook book, MarkdownNote note, IReadOnlyList<AudioChapter>? chapters, IReadOnlyList<string?>? sections = null)
     {
-        var location = Locate(note, chapters).Words;
+        var location = Locate(note, chapters, sections).Words;
         if (IsPassage(note) && !string.IsNullOrWhiteSpace(note.PassageTitle))
             location = location is null ? $"Passage: {note.PassageTitle.Trim()}" : $"Passage: {note.PassageTitle.Trim()}, {location}";
         return new MarkdownTopicEntry(
@@ -506,7 +525,7 @@ public static partial class MarkdownNotesRenderer
             "## Links",
             "A `[[Topic]]` in a note is a link to that topic's file, as Nostos shows it. Obsidian and other wiki-style editors follow these links. Where a topic's name has a character a file name cannot hold, the file has a slightly different name and lists the original as an alias.",
             "## Locations",
-            "A page or a time is given when Nostos knows it: pages for PDFs, times for audiobooks (with the chapter when the recording has chapters). An EPUB has no fixed pages, so a note there names its section of the book and keeps its exact position (an EPUB CFI) beside it. A page you typed for a paper book is marked “as noted”.",
+            "A page or a time is given when Nostos knows it: pages for PDFs, times for audiobooks (with the chapter when the recording has chapters). An EPUB has no fixed pages, so a note there names its chapter from the book's table of contents, or its section of the book when the contents do not name it. A page you typed for a paper book is marked “as noted”.",
             "## What is not here",
             "Books without notes, and the book files and covers themselves. To move your whole library to another Nostos, use the portable .nostos archive in Settings.",
         };
@@ -522,20 +541,6 @@ public static partial class MarkdownNotesRenderer
         string.Join("\n", EscapeLineStart(EscapeText(text.Trim().Replace("\r\n", "\n")))
             .Split('\n')
             .Select(line => line.Trim().Length == 0 ? ">" : $"> {line.TrimEnd()}"));
-
-    private static string Code(string text)
-    {
-        var longest = 0;
-        var run = 0;
-        foreach (var c in text)
-        {
-            run = c == '`' ? run + 1 : 0;
-            longest = Math.Max(longest, run);
-        }
-        var ticks = new string('`', longest + 1);
-        var pad = text.StartsWith('`') || text.EndsWith('`') ? " " : string.Empty;
-        return $"{ticks}{pad}{text}{pad}{ticks}";
-    }
 
     /// <summary>Every character CommonMark could read as syntax, escaped (the Studio's <c>escapeText</c>).</summary>
     public static string EscapeText(string text)

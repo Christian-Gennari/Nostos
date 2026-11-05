@@ -24,6 +24,11 @@ export interface CitationRef {
   book: string;
   /** A page Nostos verified; never invented. */
   page: number | null;
+  /**
+   * A place that is not a page, when Nostos knows it: `c:<chapter title>` for
+   * an EPUB chapter, `t:<mm:ss>` for a time in a recording (issue #1382).
+   */
+  loc?: string | null;
   /** The kept source (note or passage) it was inserted from. */
   src: string | null;
   as: CitationRole | null;
@@ -42,6 +47,12 @@ function cleanId(value: string | null | undefined): string | null {
   return /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : null;
 }
 
+/** A locator as `c:Title` or `t:12:34`, or null. */
+export function cleanLoc(value: string | null | undefined): string | null {
+  const text = (value ?? '').replace(/\s+/g, ' ').trim();
+  return /^[ct]:\S/.test(text) && text.length <= 300 ? text : null;
+}
+
 /** `nostos:cite/<book>?p=42&as=quote&src=<id>` → its parts, or null for any other address. */
 export function parseCitationHref(href: string | null | undefined): CitationRef | null {
   const value = (href ?? '').trim();
@@ -55,6 +66,7 @@ export function parseCitationHref(href: string | null | undefined): CitationRef 
   return {
     book,
     page: Number.isInteger(page) && page > 0 ? page : null,
+    loc: cleanLoc(params.get('loc')),
     src: cleanId(params.get('src')),
     as: as && ROLES.includes(as) ? as : null,
   };
@@ -88,6 +100,8 @@ export function citedSourceIds(markdown: string | null | undefined): string[] {
 export function citationHref(ref: CitationRef): string {
   const params: string[] = [];
   if (ref.page) params.push(`p=${ref.page}`);
+  // Parentheses would end the Markdown link early, so they are escaped too.
+  if (ref.loc) params.push(`loc=${encodeURIComponent(ref.loc).replace(/[()'!*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`);
   if (ref.as) params.push(`as=${ref.as}`);
   if (ref.src) params.push(`src=${ref.src}`);
   return `${CITATION_SCHEME}${ref.book}${params.length ? `?${params.join('&')}` : ''}`;
@@ -149,6 +163,7 @@ export function citationTextSpec(markdown: string): (DOMOutputSpec | string)[] {
 const ATTR = {
   book: 'data-cite-book',
   page: 'data-cite-page',
+  loc: 'data-cite-loc',
   src: 'data-cite-src',
   as: 'data-cite-as',
   text: 'data-cite-text',
@@ -162,6 +177,7 @@ export function escapeAttribute(value: string): string {
 function citationAttributes(attrs: CitationAttrs): Record<string, string> {
   const out: Record<string, string> = { [ATTR.book]: attrs.book, [ATTR.text]: attrs.text, class: 'citation' };
   if (attrs.page) out[ATTR.page] = String(attrs.page);
+  if (attrs.loc) out[ATTR.loc] = attrs.loc;
   if (attrs.src) out[ATTR.src] = attrs.src;
   if (attrs.as) out[ATTR.as] = attrs.as;
   return out;
@@ -172,6 +188,7 @@ export function citationFromElement(element: HTMLElement): CitationAttrs | null 
   const ref = parseCitationHref(
     `${CITATION_SCHEME}${element.getAttribute(ATTR.book) ?? ''}?${new URLSearchParams({
       p: element.getAttribute(ATTR.page) ?? '',
+      loc: element.getAttribute(ATTR.loc) ?? '',
       as: element.getAttribute(ATTR.as) ?? '',
       src: element.getAttribute(ATTR.src) ?? '',
     }).toString()}`,
@@ -193,6 +210,7 @@ export const Citation = Node.create({
     return {
       book: { default: '', parseHTML: (element) => read(element)?.book ?? '', renderHTML: () => ({}) },
       page: { default: null, parseHTML: (element) => read(element)?.page ?? null, renderHTML: () => ({}) },
+      loc: { default: null, parseHTML: (element) => read(element)?.loc ?? null, renderHTML: () => ({}) },
       src: { default: null, parseHTML: (element) => read(element)?.src ?? null, renderHTML: () => ({}) },
       as: { default: null, parseHTML: (element) => read(element)?.as ?? null, renderHTML: () => ({}) },
       text: { default: '', parseHTML: (element) => read(element)?.text ?? '', renderHTML: () => ({}) },

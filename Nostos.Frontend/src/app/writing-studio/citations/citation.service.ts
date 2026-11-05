@@ -1,8 +1,9 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, Injector, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { Book } from '../../core/dtos/book.dtos';
 import { BooksService } from '../../core/services/books.service';
+import { NotesService } from '../../core/services/notes.service';
 import { citationMarkdown, type CitationRef } from '../../ui/markdown-editor/citation.extension';
 import type { CitationRenderer } from '../../ui/markdown-editor/live-citations';
 import { SourceInsertionSource } from '../source-insertion.helpers';
@@ -26,11 +27,56 @@ export interface KeptCitationSource {
   passageTitle?: string | null;
 }
 
-/** A page, only when Nostos verified it; EPUB positions and timestamps are not pages. */
+/**
+ * Where a source is, when Nostos knows it for certain (issues #1109, #1382):
+ * a page of a PDF only when verified, a page of a paper book as the reader
+ * typed it, a time in a recording when verified. An EPUB's chapter needs the
+ * book's contents, so it comes from `CitationService.locator`.
+ */
 export function citationLocator(source: CitableSource): CitationLocator | null {
-  if (source.anchorVerified !== true || source.sourceAnchorKind?.trim().toLowerCase() !== 'pdf_page') return null;
-  const page = Number((source.sourceAnchorValue ?? '').trim());
-  return Number.isInteger(page) && page > 0 ? { page } : null;
+  const kind = source.sourceAnchorKind?.trim().toLowerCase();
+  const value = (source.sourceAnchorValue ?? '').trim();
+  if (kind === 'pdf_page' || kind === 'physical_page') {
+    if (kind === 'pdf_page' && source.anchorVerified !== true) return null;
+    const page = Number(value);
+    return Number.isInteger(page) && page > 0 ? { page } : null;
+  }
+  if (kind === 'audio_timestamp' && source.anchorVerified === true) {
+    const seconds = Number(value);
+    return Number.isFinite(seconds) && seconds >= 0 ? { time: clock(seconds) } : null;
+  }
+  return null;
+}
+
+/** h:mm:ss, or m:ss under an hour: the player's own clock. */
+export function clock(seconds: number): string {
+  const whole = Math.floor(seconds);
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = whole % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** The section of an EPUB a CFI is in, counted from 1 (its second step is 2, 4, 6…). */
+export function epubSectionOf(cfi: string | null | undefined): number | null {
+  const match = /^epubcfi\(\/6\/(\d+)/.exec((cfi ?? '').trim());
+  const step = match ? Number(match[1]) : 0;
+  return step >= 2 ? Math.floor(step / 2) : null;
+}
+
+/** A locator as a citation stores it: a page, or `c:<chapter>` / `t:<time>`. */
+export function locatorToRef(locator: CitationLocator | null): { page: number | null; loc: string | null } {
+  if (!locator) return { page: null, loc: null };
+  if ('page' in locator) return { page: locator.page, loc: null };
+  return { page: null, loc: 'chapter' in locator ? `c:${locator.chapter}` : `t:${locator.time}` };
+}
+
+/** What a citation stored as its place, back as a locator. */
+export function locatorOfRef(ref: Pick<CitationRef, 'page' | 'loc'>): CitationLocator | null {
+  if (ref.page) return { page: ref.page };
+  if (ref.loc?.startsWith('c:')) return { chapter: ref.loc.slice(2) };
+  if (ref.loc?.startsWith('t:')) return { time: ref.loc.slice(2) };
+  return null;
 }
 
 /**
@@ -43,6 +89,8 @@ export function citationLocator(source: CitableSource): CitationLocator | null {
 @Injectable({ providedIn: 'root' })
 export class CitationService {
   private readonly books = inject(BooksService);
+  private readonly injector = inject(Injector);
+  private readonly sectionTitles = new Map<string, Promise<readonly (string | null)[]>>();
   private readonly engines = new Map<string, Promise<CitationEngine>>();
   private readonly loaded = new Map<string, Promise<Book | null>>();
 
@@ -78,6 +126,33 @@ export class CitationService {
     return book;
   }
 
+  /** The chapter titles of an EPUB in reading order; none when they cannot be read. */
+  private sections(bookId: string): Promise<readonly (string | null)[]> {
+    let titles = this.sectionTitles.get(bookId);
+    if (!titles) {
+      titles = firstValueFrom(this.injector.get(NotesService).sections(bookId)).then(
+        (result) => result.titles ?? [],
+        () => [],
+      );
+      this.sectionTitles.set(bookId, titles);
+    }
+    return titles;
+  }
+
+  /**
+   * Where the source is (issue #1382): its page or time, or else the chapter
+   * the book's table of contents gives an EPUB highlight. Null when Nostos
+   * does not know; a raw position is never cited.
+   */
+  async locator(source: CitableSource): Promise<CitationLocator | null> {
+    const known = citationLocator(source);
+    if (known || !source.bookId) return known;
+    if (source.sourceAnchorKind?.trim().toLowerCase() !== 'epub_cfi') return null;
+    const section = epubSectionOf(source.sourceAnchorValue);
+    const title = section ? (await this.sections(source.bookId))[section - 1]?.trim() : null;
+    return title ? { chapter: title } : null;
+  }
+
   /** The book as CSL-JSON, or null when it cannot be read. */
   async item(bookId: string | null | undefined): Promise<CslItem | null> {
     const book = await this.book(bookId);
@@ -100,9 +175,10 @@ export class CitationService {
   async cite(source: CitableSource, style: CitationStyle, subsequent = false, role: CitationRef['as'] = null): Promise<string | null> {
     const book = await this.book(source.bookId);
     if (!book) return null;
-    const ref: CitationRef = { book: book.id, page: citationLocator(source)?.page ?? null, src: null, as: role };
+    const locator = await this.locator(source);
+    const ref: CitationRef = { book: book.id, ...locatorToRef(locator), src: null, as: role };
     if (!style.file) return houseText(book, ref, (source.passageTitle ?? '').trim() || null);
-    return (await this.engine(style)).cite(bookToCslItem(book), citationLocator(source), subsequent);
+    return (await this.engine(style)).cite(bookToCslItem(book), locator, subsequent);
   }
 
   /**
@@ -130,7 +206,7 @@ export class CitationService {
     if (!text) return null;
     const citation = citationMarkdown(text, {
       book: source.bookId,
-      page: citationLocator(source)?.page ?? null,
+      ...locatorToRef(await this.locator(source)),
       src: source.id ?? null,
       as: mode,
     });
@@ -149,7 +225,8 @@ export class CitationService {
   /** The reference list with the book each entry is for. */
   async bibliographyEntries(bookIds: readonly string[], style: CitationStyle): Promise<{ book: string; text: string }[]> {
     const unique = [...new Set(bookIds.filter(Boolean))];
-    const books = (await Promise.all(unique.map((id) => this.book(id)))).filter((book): book is Book => !!book);
+    const loaded = (await Promise.all(unique.map((id) => this.book(id)))).filter((book): book is Book => !!book);
+    const books = oneEditionOfEachWork(loaded);
     if (!books.length) return [];
     if (!style.file) return houseBibliography(books);
     return (await this.engine(style)).bibliographyEntries(books.map(bookToCslItem)).map((entry) => ({ book: entry.id, text: entry.text }));
@@ -170,6 +247,7 @@ export class CitationService {
       }),
     );
     const engine = style.file ? await this.engine(style) : null;
+    const canonical = editionRepresentatives(books.values());
     const passages = new Map(kept.filter((source) => source.passageTitle?.trim()).map((source) => [source.id, source.passageTitle!.trim()]));
     const passageOf = (ref: CitationRef) => (ref.src ? (passages.get(ref.src) ?? null) : null);
     const safely = (format: () => string): string | null => {
@@ -184,24 +262,26 @@ export class CitationService {
       placement: style.kind === 'note' ? 'note' : style.kind === 'house' ? 'house' : 'in-text',
       bibliographyHeading: bibliographyHeading(style),
       bibliographyBooks: [...new Set(kept.map((source) => source.bookId ?? '').filter(Boolean))],
+      canonicalBook: (id) => canonical.get(id) ?? id,
       inText: (ref) => {
         const book = books.get(ref.book);
         if (!book) return null;
         if (!engine) return houseText(book, ref, passageOf(ref));
-        return safely(() => engine.cite(bookToCslItem(book), ref.page ? { page: ref.page } : null));
+        return safely(() => engine.cite(bookToCslItem(book), locatorOfRef(ref)));
       },
       note: (ref, subsequent) => {
         const book = books.get(ref.book);
         if (!book) return null;
         if (!engine) return houseText(book, { ...ref, as: null }, passageOf(ref), false);
-        return safely(() => engine.cite(bookToCslItem(book), ref.page ? { page: ref.page } : null, subsequent));
+        return safely(() => engine.cite(bookToCslItem(book), locatorOfRef(ref), subsequent));
       },
       bibliography: (ids) => {
         const listed = ids.map((id) => books.get(id));
         if (listed.some((book) => !book)) return null;
-        if (!engine) return houseBibliography(listed as Book[]);
+        const once = oneEditionOfEachWork(listed as Book[]);
+        if (!engine) return houseBibliography(once);
         try {
-          return engine.bibliographyEntries((listed as Book[]).map(bookToCslItem)).map((entry) => ({ book: entry.id, text: entry.text }));
+          return engine.bibliographyEntries(once.map(bookToCslItem)).map((entry) => ({ book: entry.id, text: entry.text }));
         } catch {
           return null;
         }
@@ -223,6 +303,30 @@ export class CitationService {
   }
 }
 
+/**
+ * One edition stands for a work in a reference list (issue #1382): the book
+ * that comes first among those loaded, so the list names a work once however
+ * many editions the library holds. Maps each edition to its representative.
+ */
+export function editionRepresentatives(books: Iterable<Book>): Map<string, string> {
+  const byWork = new Map<string, string>();
+  const result = new Map<string, string>();
+  for (const book of [...books].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+    const work = book.workId?.trim();
+    if (!work) continue;
+    const first = byWork.get(work) ?? book.id;
+    byWork.set(work, first);
+    result.set(book.id, first);
+  }
+  return result;
+}
+
+/** The books with each work once, in their order. */
+function oneEditionOfEachWork(books: readonly Book[]): Book[] {
+  const representative = editionRepresentatives(books);
+  return books.filter((book) => (representative.get(book.id) ?? book.id) === book.id);
+}
+
 function escape(text: string): string {
   return text.replace(/([\\*_`[\]])/g, '\\$1');
 }
@@ -239,7 +343,16 @@ function clean(text: string | null | undefined): string {
 export function houseText(book: Book, ref: CitationRef, passage: string | null, framed = true): string {
   const author = clean(book.author) || clean(book.editor);
   const title = escape(clean(book.title));
-  const locator = passage ? `“${escape(clean(passage))}”` : ref.page ? `p. ${ref.page}` : null;
+  const place = locatorOfRef(ref);
+  const locator = passage
+    ? `“${escape(clean(passage))}”`
+    : !place
+      ? null
+      : 'page' in place
+        ? `p. ${place.page}`
+        : 'chapter' in place
+          ? `“${escape(clean(place.chapter))}”`
+          : `at ${place.time}`;
   const parts = (shownTitle: string) => [author && escape(author), shownTitle, locator].filter(Boolean).join(', ');
   if (!framed) return parts(`*${title}*`);
   if (ref.as === 'quote') return `— ${parts(`*${title}*`)}`;

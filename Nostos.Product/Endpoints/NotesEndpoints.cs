@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Shared.Dtos;
@@ -17,6 +18,15 @@ public static class NotesEndpoints
             "/books/{bookId}/notes",
             async (Guid bookId, INoteService notes) =>
                 Results.Ok(await notes.GetByBookAsync(bookId))
+        );
+
+        // GET the chapter titles of an EPUB in reading order (issue #1382), so
+        // the Studio can name the chapter a highlight is in. Index 0 is the
+        // first section; a book with no contents, or another format, has none.
+        group.MapGet(
+            "/books/{bookId:guid}/sections",
+            async (Guid bookId, IBookAssetStorage storage, CancellationToken ct) =>
+                Results.Ok(new { titles = await EpubSections.ReadAsync(storage, bookId, ct) })
         );
 
         // GET one canonical note for exact note/evidence deep-links.

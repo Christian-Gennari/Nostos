@@ -26,6 +26,12 @@ export interface CitationRenderer {
   bibliographyHeading: string;
   /** Books the reference list names though no live citation does (kept with the writing). */
   bibliographyBooks: readonly string[];
+  /**
+   * The edition that stands for a book in the reference list (issue #1382):
+   * editions of one work are listed once, so each maps to the same book.
+   * Absent, every book is its own.
+   */
+  canonicalBook?(book: string): string;
 }
 
 /** The headings a bibliography the Studio wrote may stand under. */
@@ -41,8 +47,8 @@ function attrsOf(node: PMNode): CitationAttrs {
 }
 
 function refOf(node: PMNode): CitationRef {
-  const { book, page, src, as } = attrsOf(node);
-  return { book, page, src, as };
+  const { book, page, loc, src, as } = attrsOf(node);
+  return { book, page, loc: loc ?? null, src, as };
 }
 
 /** The top-level block a position is in. */
@@ -89,8 +95,8 @@ export function citationSignature(doc: PMNode): string {
   const parts: string[] = [];
   doc.descendants((node, pos) => {
     if (node.type.name === 'citation') {
-      const { book, page, as } = attrsOf(node);
-      parts.push(`${book}:${page ?? ''}:${as ?? ''}:${inDefinition(doc, pos) ? 'n' : 't'}`);
+      const { book, page, loc, as } = attrsOf(node);
+      parts.push(`${book}:${page ?? ''}|${loc ?? ''}:${as ?? ''}:${inDefinition(doc, pos) ? 'n' : 't'}`);
     } else if (node.type.name === 'footnoteRef') {
       parts.push(`^${node.attrs['number']}`);
     }
@@ -289,8 +295,12 @@ function rewriteBibliographies(tr: Transaction, renderer: CitationRenderer): voi
   });
   if (!runs.length) return;
 
+  const canonical = (book: string) => renderer.canonicalBook?.(book) ?? book;
   const books: string[] = [];
-  const add = (book: string) => book && !books.includes(book) && books.push(book);
+  const add = (book: string) => {
+    const one = book && canonical(book);
+    return one && !books.includes(one) && books.push(one);
+  };
   doc.descendants((node) => {
     if (node.type.name === 'citation' && attrsOf(node).as !== 'bib') add(attrsOf(node).book);
   });
@@ -298,7 +308,7 @@ function rewriteBibliographies(tr: Transaction, renderer: CitationRenderer): voi
 
   for (const each of [...runs].reverse()) {
     const own = [...books];
-    for (const entry of each.entries) if (!own.includes(entry.book)) own.push(entry.book);
+    for (const entry of each.entries) if (!own.includes(canonical(entry.book))) own.push(canonical(entry.book));
     const entries = renderer.bibliography(own);
     if (!entries?.length) continue;
     const same =
@@ -309,7 +319,7 @@ function rewriteBibliographies(tr: Transaction, renderer: CitationRenderer): voi
         each.from,
         each.to,
         entries.map((e) =>
-          schema.nodes['paragraph'].create(null, schema.nodes['citation'].create({ book: e.book, page: null, src: null, as: 'bib', text: e.text })),
+          schema.nodes['paragraph'].create(null, schema.nodes['citation'].create({ book: e.book, page: null, loc: null, src: null, as: 'bib', text: e.text })),
         ),
       );
     }
