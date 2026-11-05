@@ -15,6 +15,7 @@ import { ImportActivity } from '../core/dtos/import.dtos';
 import { PaginatedResponse } from '../core/dtos/book.dtos';
 import { Book } from '../core/dtos/book.dtos';
 import { BookSort } from '../core/dtos/book.enums';
+import { BOOKS_DRAG_TYPE } from './library-drag';
 import {
   LIBRARY_PREFERENCES_STORAGE_KEY,
   LibraryPreferencesService,
@@ -1533,6 +1534,133 @@ describe('Library', () => {
       hover = false;
       component.prefetchHeroCover(covered);
       expect(requested.length).toBe(1);
+    });
+  });
+
+  describe('select several books and add them to collections', () => {
+    function readyBook(id: string, collectionIds: string[] = [], overrides: Record<string, unknown> = {}): Book {
+      return importingBook({ id, title: `Book ${id}`, status: 0, collectionIds, ...overrides });
+    }
+
+    let update: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      update = (TestBed.inject(BooksService) as unknown as { update: ReturnType<typeof vi.fn> }).update;
+      update.mockImplementation((id: string, dto: { collectionIds?: string[] }) => of({ id, ...dto }));
+      component.collections.set([
+        { id: 'c1', name: 'Classics', parentId: null },
+        { id: 'c2', name: 'Poetry', parentId: 'c1' },
+      ]);
+      component.rawBooks.set([readyBook('a', ['c2']), readyBook('b'), readyBook('c', ['c1'])]);
+      fixture.detectChanges();
+    });
+
+    it('shows no checkboxes until Select is on, then one per ready book', () => {
+      const host = fixture.nativeElement as HTMLElement;
+      component.viewMode.set('grid');
+      fixture.detectChanges();
+      expect(host.querySelectorAll('.select-check').length).toBe(0);
+
+      (host.querySelector('.select-toggle') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(host.querySelectorAll('.book-card .select-check').length).toBe(3);
+      expect(host.querySelector('.selection-bar')).not.toBeNull();
+    });
+
+    it('ticks a book instead of opening it while selecting', () => {
+      component.toggleSelecting();
+      expect(component.bookLink(component.rawBooks()[0])).toBeNull();
+      component.onBookPress(component.rawBooks()[0]);
+      expect([...component.selected()]).toEqual(['a']);
+      component.onBookPress(component.rawBooks()[0]);
+      expect(component.selected().size).toBe(0);
+      component.leaveSelection();
+      expect(component.bookLink(component.rawBooks()[0])).toEqual(['/library', 'a']);
+    });
+
+    it('adds to a collection by sending each book its whole new set, and skips books already in it', () => {
+      component.addToCollection(['a', 'b', 'c'], 'c1');
+
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(update).toHaveBeenCalledWith('a', { collectionIds: ['c2', 'c1'] }, expect.anything());
+      expect(update).toHaveBeenCalledWith('b', { collectionIds: ['c1'] }, expect.anything());
+      expect(component.rawBooks().find((b) => b.id === 'b')!.collectionIds).toEqual(['c1']);
+    });
+
+    it('offers Undo that puts every book back to the set it had', () => {
+      const toast = TestBed.inject(ToastService);
+      component.addToCollection(['a', 'b'], 'c1');
+      update.mockClear();
+
+      toast.toasts()[toast.toasts().length - 1].action!.run();
+
+      expect(update).toHaveBeenCalledWith('a', { collectionIds: ['c2'] }, expect.anything());
+      expect(update).toHaveBeenCalledWith('b', { collectionIds: [] }, expect.anything());
+      expect(component.rawBooks().find((b) => b.id === 'b')!.collectionIds).toEqual([]);
+    });
+
+    it('removes only the open collection from the selected books', () => {
+      component.filters.collectionId.set('c1');
+      component.toggleSelecting();
+      component.setSelected('c', true);
+      component.setSelected('b', true);
+      update.mockClear();
+
+      component.removeSelectionFromCollection();
+
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update).toHaveBeenCalledWith('c', { collectionIds: [] }, expect.anything());
+    });
+
+    it('carries every ticked book when one of them is dragged, and only itself otherwise', () => {
+      const data: Record<string, string> = {};
+      const dragEvent = () => ({ dataTransfer: { setData: (t: string, v: string) => (data[t] = v) }, preventDefault: vi.fn() }) as unknown as DragEvent;
+
+      component.onBookDragStart(component.rawBooks()[1], dragEvent());
+      expect(JSON.parse(data[BOOKS_DRAG_TYPE])).toEqual(['b']);
+
+      component.toggleSelecting();
+      component.setSelected('a', true);
+      component.setSelected('b', true);
+      component.onBookDragStart(component.rawBooks()[1], dragEvent());
+      expect(JSON.parse(data[BOOKS_DRAG_TYPE])).toEqual(['a', 'b']);
+    });
+
+    it('does not let a book that is still importing be dragged', () => {
+      const event = { dataTransfer: { setData: vi.fn() }, preventDefault: vi.fn() } as unknown as DragEvent;
+      component.onBookDragStart(importingBook(), event);
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(component.isSelectable(importingBook())).toBe(false);
+    });
+
+    it('marks the unfinished selected books finished', () => {
+      component.toggleSelecting();
+      component.setSelected('a', true);
+      component.setSelected('b', true);
+      update.mockClear();
+
+      component.markSelectionFinished();
+
+      expect(update).toHaveBeenCalledWith('a', { isFinished: true }, expect.anything());
+      expect(update).toHaveBeenCalledWith('b', { isFinished: true }, expect.anything());
+    });
+
+    it('asks before deleting, then deletes every selected book', () => {
+      const booksService = TestBed.inject(BooksService) as unknown as { delete: ReturnType<typeof vi.fn> };
+      component.toggleSelecting();
+      component.setSelected('a', true);
+      component.setSelected('b', true);
+
+      component.askDeleteSelection();
+      expect(component.bulkDeleteOpen()).toBe(true);
+      expect(component.bulkDeleteHeading()).toBe('Delete 2 books?');
+      expect(booksService.delete).not.toHaveBeenCalled();
+
+      component.confirmBulkDelete();
+      expect(booksService.delete).toHaveBeenCalledTimes(2);
+      expect(component.rawBooks().map((b) => b.id)).toEqual(['c']);
+      expect(component.bulkDeleteOpen()).toBe(false);
+      expect(component.selected().size).toBe(0);
     });
   });
 });

@@ -6,9 +6,10 @@
     class="sidebar-panel"
     #sidebar
     [class.no-transition]="!sidebar.isLoaded()"
+    (booksDropped)="onBooksDropped($event)"
   ></app-sidebar-collections>
 
-  <div class="library-right-side" #resultsScroller>
+  <div class="library-right-side" [class.is-selecting]="selecting()" #resultsScroller>
     <header class="toolbar toolbar-edge">
       <!-- Static heading: the active-filter chips directly below (and the
            sidebar highlight) already name the current scope, so the heading
@@ -75,6 +76,11 @@
             (valueChange)="setSort($event)"
           />
         </div>
+
+        <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select books"
+          [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
+          <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
+        </button>
 
         <nostos-view-toggle
           class="control-group"
@@ -183,8 +189,13 @@
         </div>
 
         @for (book of books(); track book.id) {
-        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
+        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [class.is-selected]="selected().has(book.id)" [routerLink]="bookLink(book)" (click)="onBookPress(book)" [attr.draggable]="isSelectable(book)" (dragstart)="onBookDragStart(book, $event)" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
           <div class="col title">
+            @if (selecting() && isSelectable(book)) {
+            <input type="checkbox" appCheckbox class="select-check" [checked]="selected().has(book.id)"
+              [attr.aria-label]="'Select ' + book.title" (click)="$event.stopPropagation()"
+              (change)="setSelected(book.id, $any($event.target).checked)" />
+            }
             <nostos-book-cover
               class="list-cover-frame"
               size="sm"
@@ -351,8 +362,13 @@
       <div class="book-grid">
         @for (book of books(); track book.id) {
 
-        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [routerLink]="['/library', getBookRouteId(book)]" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
+        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [class.is-selected]="selected().has(book.id)" [routerLink]="bookLink(book)" (click)="onBookPress(book)" [attr.draggable]="isSelectable(book)" (dragstart)="onBookDragStart(book, $event)" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
           <div class="cover-wrapper">
+            @if (selecting() && isSelectable(book)) {
+            <input type="checkbox" appCheckbox class="select-check" [checked]="selected().has(book.id)"
+              [attr.aria-label]="'Select ' + book.title" (click)="$event.stopPropagation()"
+              (change)="setSelected(book.id, $any($event.target).checked)" />
+            }
             @if (book.status === 1 || book.status === 2) {
               <!-- In flight: the progress lives ON the card, at the top of the cover
                    so it never collides with the format badge (bottom-right) and so
@@ -522,6 +538,57 @@
     </div>
   </div>
 </main>
+
+@if (selecting()) {
+<div class="selection-bar" role="toolbar" aria-label="Selected books">
+  <span class="selection-count" role="status" aria-live="polite">
+    {{ selectedBooks().length === 1 ? '1 selected' : selectedBooks().length + ' selected' }}
+  </span>
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    [disabled]="selectedBooks().length === 0" aria-haspopup="menu" aria-label="Add to collection…"
+    [nostosMenuTriggerFor]="addToCollectionMenu">
+    <nostos-icon name="folder-plus" [size]="14" /><span class="selection-label">Add to collection…</span>
+  </button>
+  <ng-template #addToCollectionMenu>
+    <nostos-menu aria-label="Add the selected books to a collection">
+      @for (choice of collectionChoices(); track choice.id) {
+      <button nostosMenuItem icon="folder" [style.padding-left.rem]="0.65 + choice.level"
+        (triggered)="addToCollection(selectedBooks().map(b => b.id), choice.id)">{{ choice.name }}</button>
+      } @empty {
+      <button nostosMenuItem [disabled]="true">No collections yet</button>
+      }
+    </nostos-menu>
+  </ng-template>
+  @if (filters.collectionId()) {
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    [disabled]="selectedBooks().length === 0" aria-label="Remove from collection" (click)="removeSelectionFromCollection()">
+    <nostos-icon name="folder" [size]="14" /><span class="selection-label">Remove from collection</span>
+  </button>
+  }
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    [disabled]="selectedBooks().length === 0" aria-label="Mark finished" (click)="markSelectionFinished()">
+    <nostos-icon name="check-circle" [size]="14" /><span class="selection-label">Mark finished</span>
+  </button>
+  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+    [disabled]="selectedBooks().length === 0" aria-label="Delete" (click)="askDeleteSelection()">
+    <nostos-icon name="trash" [size]="14" /><span class="selection-label">Delete</span>
+  </button>
+  <button appIconButton type="button" icon="x" surface="overlay" class="selection-close" [glyphSize]="16"
+    aria-label="Stop selecting" (click)="leaveSelection()"></button>
+</div>
+}
+
+<app-confirm-modal
+  [isOpen]="bulkDeleteOpen()"
+  [heading]="bulkDeleteHeading()"
+  [description]="bulkDeleteDescription()"
+  confirmLabel="Delete permanently"
+  busyLabel="Deleting…"
+  [busy]="bulkDeleting()"
+  (confirm)="confirmBulkDelete()"
+  (cancel)="cancelBulkDelete()"
+>
+</app-confirm-modal>
 
 <!-- One empty state for both views (issue #1202). -->
 <ng-template #booksEmpty>

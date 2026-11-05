@@ -76,6 +76,39 @@ describe('SidebarCollections', () => {
     await fixture.whenStable();
   });
 
+  it('creates a collection inside another and opens the parent', () => {
+    fixture.detectChanges();
+    component.startAdd({ id: 'c1' });
+    expect(component.addParent()?.name).toBe('Philosophy');
+    component.newName.set('Stoics');
+
+    component.create();
+
+    expect(collectionsService.create).toHaveBeenCalledWith({ name: 'Stoics', parentId: 'c1' });
+    expect(component.addParent()).toBeNull();
+  });
+
+  it('still creates top-level collections from the section plus', () => {
+    fixture.detectChanges();
+    component.startAdd();
+    component.newName.set('Fiction');
+    component.create();
+    expect(collectionsService.create).toHaveBeenCalledWith({ name: 'Fiction' });
+  });
+
+  it('turns books dropped on a row into one event, and ignores a payload that is not a list of ids', () => {
+    fixture.detectChanges();
+    const dropped = vi.fn();
+    component.booksDropped.subscribe(dropped);
+
+    component.onBooksDropped({ item: { id: 'c1' }, data: '["b1","b2"]' });
+    component.onBooksDropped({ item: { id: 'c1' }, data: 'nonsense' });
+    component.onBooksDropped({ item: { id: 'c1' }, data: '{}' });
+
+    expect(dropped).toHaveBeenCalledTimes(1);
+    expect(dropped).toHaveBeenCalledWith({ collectionId: 'c1', bookIds: ['b1', 'b2'] });
+  });
+
   it('re-reads collections and counts when the library changes elsewhere', () => {
     fixture.detectChanges();
     collectionsService.list.mockClear();

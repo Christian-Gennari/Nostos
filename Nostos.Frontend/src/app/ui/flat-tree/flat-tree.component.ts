@@ -53,6 +53,13 @@ export class FlatTreeComponent {
    * tint, and counts are plain numbers rather than chips.
    */
   readonly appearance = input<'filled' | 'quiet'>('filled');
+  /**
+   * A MIME type of something the owner may drop onto a row (the Library drops
+   * books onto collections). Empty: rows take only their own drag.
+   */
+  readonly acceptDropType = input<string | null>(null);
+  /** Offer "New collection inside…" on each row. */
+  readonly allowAddChild = input(false);
 
   readonly nodeSelected = output<TreeItem>();
   readonly nodeMoved = output<{ item: TreeItem; newParentId: string | null }>();
@@ -60,6 +67,9 @@ export class FlatTreeComponent {
   readonly nodeDeleted = output<string>();
   readonly nodeRenameSaved = output<{ id: string; newName: string }>();
   readonly nodeRenameCancelled = output<void>();
+  readonly nodeAddChild = output<TreeItem>();
+  /** Something of `acceptDropType` was dropped on a row; `data` is its payload. */
+  readonly dropped = output<{ item: TreeItem; data: string }>();
   readonly expandedIds = signal<Set<string>>(new Set());
   readonly dropIndicator = signal<DropIndicator | null>(null);
   readonly isDragging = signal(false);
@@ -101,6 +111,11 @@ export class FlatTreeComponent {
     this.toggleExpandState(node.id);
   }
 
+  /** Open a row so a child just added to it is visible. */
+  expand(nodeId: string): void {
+    this.expandedIds.update((set) => new Set(set).add(nodeId));
+  }
+
   handleSelect(node: FlatTreeNode): void {
     this.nodeSelected.emit(node.originalData);
   }
@@ -111,6 +126,33 @@ export class FlatTreeComponent {
   }
 
   // ── Drag & Drop ──────────────────────────────────────────────
+
+  private carriesAccepted(event: DragEvent): boolean {
+    const type = this.acceptDropType();
+    return !!type && !!event.dataTransfer?.types.includes(type);
+  }
+
+  onExternalDragOver(event: DragEvent, node: FlatTreeNode): void {
+    if (!this.carriesAccepted(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    if (this.dropIndicator()?.nodeId !== node.id) this.dropIndicator.set({ nodeId: node.id, zone: 'inside' });
+  }
+
+  onExternalDragLeave(event: DragEvent, node: FlatTreeNode): void {
+    if (!this.carriesAccepted(event)) return;
+    const to = event.relatedTarget as Node | null;
+    if (to && (event.currentTarget as HTMLElement).contains(to)) return;
+    if (this.dropIndicator()?.nodeId === node.id) this.dropIndicator.set(null);
+  }
+
+  onExternalDrop(event: DragEvent, node: FlatTreeNode): void {
+    const type = this.acceptDropType();
+    if (!type || !this.carriesAccepted(event)) return;
+    event.preventDefault();
+    this.dropIndicator.set(null);
+    this.dropped.emit({ item: node.originalData, data: event.dataTransfer!.getData(type) });
+  }
 
   onDragStarted(node: FlatTreeNode): void {
     this.draggedNode = node;
