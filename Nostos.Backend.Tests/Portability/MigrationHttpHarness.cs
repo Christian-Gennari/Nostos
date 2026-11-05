@@ -102,7 +102,7 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
     {
         var payload = await response.Content.ReadAsStringAsync();
-        return JsonDocument.Parse(payload);
+        return JsonDocument.Parse(string.IsNullOrEmpty(payload) ? "null" : payload);
     }
 
     internal async Task<(HttpStatusCode Status, JsonDocument Body)> SendAsync(

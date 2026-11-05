@@ -15,7 +15,23 @@
     </p>
   }
 
-  @if (blockedByOtherTab()) {
+  @if (blockedByOtherTab() && serverImport(); as running) {
+    <div class="transfer-state" data-testid="import-running-on-server">
+      <p class="transfer-headline" role="status">An import is running on the server.</p>
+      <app-library-transfer-progress
+        [phase]="serverImportPhase()"
+        [bytesProcessed]="serverImportProgress()?.bytesProcessed ?? null"
+        [totalBytes]="serverImportProgress()?.totalBytes ?? null"
+      />
+      <p class="transfer-copy">
+        @if (running.job.state === 'Activating') {
+          Nostos is switching your library on the server. This page updates by itself.
+        } @else {
+          Nostos is working on it. You can leave this page; the import continues on the server.
+        }
+      </p>
+    </div>
+  } @else if (blockedByOtherTab()) {
     <div appNotice tone="info" class="transfer-other-tab" role="status" data-testid="transfer-other-tab">
       <nostos-icon name="warning-circle" [size]="16" />
       <div>
