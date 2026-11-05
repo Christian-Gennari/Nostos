@@ -62,6 +62,8 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./reading-list/reading-list.component').then((m) => m.ReadingList),
       },
+      // A book's address as the API spells it (`/api/books/:id`) opens its page.
+      { path: 'books/:id', pathMatch: 'full', redirectTo: 'library/:id' },
       {
         path: 'library/:id',
         loadComponent: () =>

@@ -169,8 +169,10 @@ describe('ImportService', () => {
 
     const patched: Book[] = [];
     service.bookPatched.subscribe((book) => patched.push(book));
+    const successSpy = vi.spyOn(TestBed.inject(ToastService), 'success');
 
     stream().emit('done', [activity({ state: 'succeeded', stage: 'done', percent: 100 })]);
+    expect(successSpy).toHaveBeenCalledTimes(1);
 
     // One book, by id — never the library list, whose remaining rows did not
     // change and would re-order the page under the reader.
@@ -180,7 +182,7 @@ describe('ImportService', () => {
     expect(patched).toHaveLength(1);
     expect(patched[0].id).toBe(BOOK_ID);
 
-    // A success needs no notice: the book is in the library now.
+    // A success leaves no card to dismiss: the book is in the library now.
     expect(service.hasImports()).toBe(false);
     expect(stream().closed).toBe(true);
     expect(service.connectionState()).toBe('idle');

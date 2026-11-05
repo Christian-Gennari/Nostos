@@ -145,7 +145,7 @@ describe('ExternalMediaSettingsComponent', () => {
 
     expect(api.startScan).toHaveBeenCalledTimes(1);
     expect(text('external-media-scan-summary')).toBe(
-      'Last scan found 4 books: 2 ready, 1 to check, 0 already in Nostos.',
+      'Last scan found 4 books: 2 ready, 1 to check, 0 already in Nostos, 1 cannot be imported.',
     );
     expect(text('external-media-scan')).toBe('Scan again');
     expect(text('external-media-review')).toBe('Review and import');

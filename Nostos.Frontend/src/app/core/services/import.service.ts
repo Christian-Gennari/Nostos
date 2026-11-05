@@ -316,8 +316,11 @@ export class ImportService {
 
     if (activity.state === 'succeeded') {
       // Done means the book is in the library and its row was just patched in, so
-      // a "Done" notice would only ask the user to dismiss a success.
+      // there is no card to dismiss. A long download can finish while the user is
+      // elsewhere, so a short toast says it is ready.
       this.entries.update((current) => current.filter((entry) => entry.id !== activity.id));
+      const title = activity.title?.trim();
+      this.toast.success(title ? `“${title}” is ready` : 'Your book is ready');
     } else {
       const existing = this.entries().find((entry) => entry.id === activity.id);
       // A terminal event is the authoritative outcome for that id, and it may
