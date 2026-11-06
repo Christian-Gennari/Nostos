@@ -185,10 +185,12 @@ test('phone: the keyboard overlays the reader, the bar rides above it, and leavi
     Object.defineProperty(vv, 'height', { configurable: true, get: () => visible });
     vv.dispatchEvent(new Event('resize'));
   }, height - 340);
-  await expect
-    .poll(async () => Math.round((await bar.boundingBox())!.y + (await bar.boundingBox())!.height))
-    .toBe(height - 340);
-  await expect(page.getByTestId('selection-note-input')).toBeInViewport();
+  // The bar is docked at the top (#1344), so the keyboard does not move it:
+  // it stays at the top edge, and the note field stays above the keyboard.
+  await page.waitForTimeout(300);
+  expect(Math.round((await bar.boundingBox())!.y)).toBeLessThanOrEqual(1);
+  const field = (await page.getByTestId('selection-note-input').boundingBox())!;
+  expect(field.y + field.height).toBeLessThanOrEqual(height - 340);
   await page.screenshot({
     path: `${__dirname}/visual-evidence/reader-selection-mobile-note-keyboard.png`,
   });
@@ -198,9 +200,8 @@ test('phone: the keyboard overlays the reader, the bar rides above it, and leavi
     delete (vv as any).height;
     vv.dispatchEvent(new Event('resize'));
   });
-  await expect
-    .poll(async () => Math.round((await bar.boundingBox())!.y + (await bar.boundingBox())!.height))
-    .toBe(height);
+  await page.waitForTimeout(300);
+  expect(Math.round((await bar.boundingBox())!.y)).toBeLessThanOrEqual(1);
 
   await page.getByTestId('selection-cancel').tap();
   // Leave inside the app, not by reloading: the reader must put the meta back.
