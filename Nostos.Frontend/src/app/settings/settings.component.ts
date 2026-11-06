@@ -625,10 +625,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.highlightImport.open(start);
   }
 
-  openAddBook(): void {
-    void this.router?.navigate(['/library'], { queryParams: { add: 'file' } });
-  }
-
   /** The .nostos import lives with the rest of Backups & data. */
   openLibraryArchiveImport(): void {
     void this.router?.navigate(['/settings/library'], { queryParams: { action: 'import' } });

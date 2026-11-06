@@ -563,23 +563,14 @@
               </div>
             </section>
 
-            <section class="settings-card" data-testid="import-books-card">
-              <div class="card-header">
-                <div class="card-header-copy">
-                  <h2>Books</h2>
-                </div>
-              </div>
-              <div class="card-body">
-                <div class="setting-row" data-testid="import-source-book-files">
-                  <div class="setting-label">
-                    <span class="label-text">Book files</span>
-                    <span class="label-desc">EPUB, PDF, MOBI, text and audiobooks, one book at a time.</span>
+            @if (supportsExternalMediaLibraries()) {
+              <section class="settings-card" data-testid="import-books-card">
+                <div class="card-header">
+                  <div class="card-header-copy">
+                    <h2>Books</h2>
                   </div>
-                  <button appButton variant="secondary" class="import-action" data-testid="import-action-book-files" (click)="openAddBook()">
-                    Choose a file…
-                  </button>
                 </div>
-                @if (supportsExternalMediaLibraries()) {
+                <div class="card-body">
                   <div class="setting-row" data-testid="import-source-folders">
                     <div class="setting-label">
                       <span class="label-text">Media folders</span>
@@ -589,9 +580,9 @@
                       Open…
                     </button>
                   </div>
-                }
-              </div>
-            </section>
+                </div>
+              </section>
+            }
 
             @if (supportsLibraryMigration() || supportsCloudPortableExport()) {
               <section class="settings-card" data-testid="import-library-card">
