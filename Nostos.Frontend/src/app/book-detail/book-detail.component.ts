@@ -13,6 +13,7 @@ import { BookDetailStore } from './book-detail.store';
 // DTOs
 import { Book, EditionSummaryDto, LinkableBookDto } from '../core/dtos/book.dtos';
 import { formatBytes } from '../library-transfer/library-transfer.copy';
+import { formatNostosDate } from '../core/date-formats';
 
 /**
  * How many RENDERED LINES a review may occupy before Book Details opens it as a
@@ -537,6 +538,13 @@ export class BookDetail implements OnInit, OnDestroy {
   readonly statusDetail = computed(() => {
     const { status, percent } = this.bookStatus();
     return status === 'reading' && percent ? `${percent}%` : null;
+  });
+
+  /** When this edition was last opened ("3 Nov 2026") while it is being read,
+   *  else null. The Library card leaves this out; this page carries it. */
+  readonly lastReadLabel = computed(() => {
+    if (this.bookStatus().status !== 'reading') return null;
+    return formatNostosDate(this.store.book()?.lastReadAt) || null;
   });
 
   /** The day this edition was finished (yyyy-mm-dd, local), or null. */

@@ -1253,6 +1253,28 @@ describe('Library', () => {
     expect(fixture.nativeElement.querySelectorAll('.filter-chip').length).toBe(0);
   });
 
+  it('keeps the card status line to the status alone: no percentage, no dates', () => {
+    const reading = {
+      id: 'r1',
+      title: 'Meditations',
+      type: 'ebook',
+      progressPercent: 45,
+      lastReadAt: '2026-11-03T10:00:00Z',
+    } as unknown as Book;
+    const finished = {
+      id: 'f1',
+      title: 'Ethics',
+      type: 'ebook',
+      progressPercent: 100,
+      finishedAt: '2026-10-31T10:00:00Z',
+    } as unknown as Book;
+    const unread = { id: 'u1', title: 'New', type: 'ebook', progressPercent: 0 } as unknown as Book;
+
+    expect(component.statusLine(reading)).toBe('Reading');
+    expect(component.statusLine(finished)).toBe('Finished');
+    expect(component.statusLine(unread)).toBe('');
+  });
+
   it('reflects a status filter in chips', () => {
     component.filters.toggleStatus('reading');
     fixture.detectChanges();

@@ -237,6 +237,10 @@
             <span class="page-stepper-hint">Add a page count in Book details to see how far.</span>
             }
             }
+            <!-- When this edition was last read; the Library card leaves it out. -->
+            @if (lastReadLabel(); as lastRead) {
+            <span class="finished-date last-read" data-testid="book-last-read">Last read {{ lastRead }}</span>
+            }
             <!-- When this edition was finished; the stored date is editable. -->
             @if (finishedDate(); as finished) {
             <label class="finished-date">

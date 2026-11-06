@@ -4,6 +4,7 @@
   [class.immersive]="immersiveReader()"
   [class.audio-immersive]="fileType() === 'audio'"
   [class.chrome-visible]="chromeShown()"
+  [class.ask-capsule]="askNostosAvailable()"
   [class.selection-docked]="immersiveReader() && chromeShown() && !headerShown()"
   data-testid="reader-layout"
 >

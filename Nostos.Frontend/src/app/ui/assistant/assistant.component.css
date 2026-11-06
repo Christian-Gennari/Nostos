@@ -78,6 +78,21 @@
     transform var(--motion-fast) var(--ease-plain);
 }
 
+/* In the reader the capsule shows with the reading chrome, in the right end of
+   the pager strip. That strip is an overlay one layer up (z-index 45), so the
+   capsule sits one layer above it; under it, it stayed clickable (the strip
+   passes taps through) but could not be seen. It is centred in the 64px strip
+   and wears the chrome's own surface, not the floating dock's. */
+.assistant-trigger.reader-surface {
+  z-index: var(--layer-navigation);
+  bottom: 16px;
+}
+
+.assistant-trigger.reader-surface .trigger-capsule {
+  border-color: var(--border-color);
+  background: var(--bg-surface);
+}
+
 .assistant-trigger:hover .trigger-capsule {
   color: var(--color-text-main);
   border-color: var(--color-accent);
@@ -1065,9 +1080,10 @@
     display: none;
   }
 
+  /* Centred in the phone's 60px pager strip. */
   .assistant-trigger.reader-surface {
     right: 12px;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 11px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
   .assistant-trigger.reader-surface .trigger-label {
@@ -1078,7 +1094,6 @@
     justify-content: center;
     width: var(--control-h-touch);
     padding: 0;
-    box-shadow: var(--dock-shadow);
   }
 
   .assistant-trigger:not(.reader-surface) {
