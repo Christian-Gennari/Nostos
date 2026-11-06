@@ -383,10 +383,13 @@ export class ReaderShell implements OnInit, OnDestroy {
    * horizontally to the viewport.
    */
   selectionMenuPlacement = computed<MenuPlacement | null>(() =>
-    this.menuPlacement(this.selectionAnchor()),
+    // 440px: Copy, Mark passage and Ask Nostos plus Cancel, Add note and
+    // Highlight need about 430px on one row; at 360px the icons were squeezed
+    // out of the menu's padding.
+    this.menuPlacement(this.selectionAnchor(), 440),
   );
 
-  private menuPlacement(anchor: SelectionAnchor | null): MenuPlacement | null {
+  private menuPlacement(anchor: SelectionAnchor | null, maxWidth = 360): MenuPlacement | null {
     if (!anchor || this.dockedLayout()) return null;
     if (typeof window === 'undefined') return null;
 
@@ -396,7 +399,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     const reserve = 240; // room for the note editor when it opens
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const width = Math.min(360, vw - edge * 2);
+    const width = Math.min(maxWidth, vw - edge * 2);
     const centre = (anchor.left + anchor.right) / 2;
     const left = Math.min(Math.max(centre - width / 2, edge), vw - width - edge);
 

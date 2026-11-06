@@ -560,14 +560,23 @@
 }
 
 .selection-menu .confirmation-actions {
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px 6px;
 }
 
-/* Copy is a utility, not a choice about the mark: in the anchored menu it sits
-   apart, leading. The docked bar groups it with Ask Nostos instead. */
-.selection-menu .selection-copy {
-  margin-right: auto;
+/* The icon utilities keep their full 32px square; squeezing them is what
+   pushed them out of the menu's padding. */
+.selection-menu .confirmation-actions > [appIconButton] {
+  flex-shrink: 0;
+}
+
+/* Copy, Mark passage and Ask Nostos are utilities, not choices about the mark:
+   in the anchored menu they lead as one group, and the decisions (Cancel,
+   Add note, Highlight) sit apart at the end. The docked bar groups them on
+   their own row instead. */
+.selection-menu .selection-cancel {
+  margin-left: auto;
 }
 
 .selection-note {
