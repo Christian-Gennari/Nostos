@@ -373,14 +373,29 @@
 }
 /* On a wide screen the pager (40rem, centred) leaves room beside it for the
    transport (about 23rem), so it sits in the same strip instead of over the
-   last lines of the page. Narrower, it rises above the pager. */
+   last lines of the page. Narrower, it rises above the pager. It takes the
+   left side: the right corner of the strip is Ask Nostos's. */
 @media (min-width: 1480px) {
   .reader-layout.immersive app-read-aloud-bar {
-    left: auto;
-    right: 1.5rem;
+    left: 1.5rem;
+    right: auto;
     bottom: 5px;
     transform: none;
-    align-items: flex-end;
+    align-items: flex-start;
+  }
+}
+/* Ask Nostos rests in the right end of the pager strip while the chrome shows
+   (assistant.component.css, `.reader-surface`). Where the centred pager would
+   reach under it, the pager gives up that corner: the full capsule on a
+   narrow desktop, the 44px icon on a phone. */
+@media (min-width: 769px) and (max-width: 1000px) {
+  .reader-layout.immersive.ask-capsule .reader-toolbar {
+    padding-inline-end: 188px;
+  }
+}
+@media (max-width: 768px) {
+  .reader-layout.immersive.ask-capsule .reader-toolbar {
+    padding-inline-end: calc(64px + env(safe-area-inset-right, 0px));
   }
 }
 .info-tooltip {
