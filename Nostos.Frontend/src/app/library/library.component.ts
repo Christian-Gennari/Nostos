@@ -56,7 +56,6 @@ import { SearchFieldComponent } from '../ui/search-field/search-field.component'
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
-import { formatNostosDate } from '../core/date-formats';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { CheckboxDirective } from '../ui/check/check.directive';
@@ -1163,24 +1162,15 @@ export class Library implements OnInit, OnDestroy {
   }
 
   /**
-   * The quiet status line under a book: "Reading · 40% · read 3 Nov 2026" or
-   * "Finished 4 Nov 2026". It is the book's status (all editions together, the
-   * same rule as the Reading and Finished filters); a book not started has none.
+   * The quiet status line under a book: "Reading" or "Finished". It is the
+   * book's status (all editions together, the same rule as the Reading and
+   * Finished filters); a book not started has none. The percentage and the
+   * dates live on the book page, so the shelf stays uncluttered.
    */
   statusLine(book: Book): string {
     if (book.status === 1 || book.status === 2 || book.status === 3) return '';
-    const { status, percent, finishedAt } = bookReadingStatusOf(book, book.otherEditions);
-    if (status === 'finished') {
-      return finishedAt ? `${READING_STATUS_LABEL.finished} ${formatNostosDate(finishedAt)}` : READING_STATUS_LABEL.finished;
-    }
-    if (status !== 'reading') return '';
-    const read = [book.lastReadAt, ...(book.otherEditions ?? []).map((e) => e.lastReadAt)]
-      .filter((at): at is string => !!at)
-      .sort()
-      .pop();
-    return [READING_STATUS_LABEL.reading, percent ? `${percent}%` : null, read ? `read ${formatNostosDate(read)}` : null]
-      .filter(Boolean)
-      .join(' · ');
+    const { status } = bookReadingStatusOf(book, book.otherEditions);
+    return status === 'reading' || status === 'finished' ? READING_STATUS_LABEL[status] : '';
   }
 
   toggleFinished(book: Book, event: Event): void {

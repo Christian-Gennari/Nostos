@@ -156,6 +156,17 @@ describe('BookDetail reset progress', () => {
     expect(chip.getAttribute('aria-label')).toBe('Reading status');
   });
 
+  it('says when a book being read was last read (the Library card leaves it out)', async () => {
+    await setup(readableBook({ progressPercent: 42, lastReadAt: '2026-11-03T10:00:00+01:00' }));
+    const lastRead = fixture.nativeElement.querySelector('[data-testid="book-last-read"]') as HTMLElement;
+    expect(lastRead?.textContent?.trim()).toBe('Last read 3 Nov 2026');
+  });
+
+  it('shows no last-read date on a finished book, which has its finished date', async () => {
+    await setup(readableBook({ progressPercent: 100, finishedAt: '2026-08-02T08:00:00+02:00' }));
+    expect(fixture.nativeElement.querySelector('[data-testid="book-last-read"]')).toBeNull();
+  });
+
   it('groups the hero strip into verdict, state and action rows', async () => {
     await setup(readableBook({ progressPercent: 42, otherEditions: multiEditionBook().otherEditions }));
     const strip = fixture.nativeElement.querySelector('.stage-strip') as HTMLElement;
