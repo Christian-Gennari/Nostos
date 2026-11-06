@@ -1657,8 +1657,8 @@ describe('SettingsComponent backup-only surface', () => {
       'import-source-kindle',
       'import-source-applebooks',
       'import-source-readwise',
-      'import-source-book-files',
     ]));
+    expect(section.querySelector('[data-testid="import-source-book-files"]')).toBeNull();
 
     const highlightImport = TestBed.inject(HighlightImportService);
     const open = vi.spyOn(highlightImport, 'open');
@@ -1666,10 +1666,6 @@ describe('SettingsComponent backup-only surface', () => {
     expect(open).toHaveBeenCalledWith('applebooks');
     (section.querySelector('[data-testid="highlight-import-action"]') as HTMLButtonElement).click();
     expect(open).toHaveBeenLastCalledWith('all');
-
-    routerMock.navigate.mockClear();
-    (section.querySelector('[data-testid="import-action-book-files"]') as HTMLButtonElement).click();
-    expect(routerMock.navigate).toHaveBeenCalledWith(['/library'], { queryParams: { add: 'file' } });
   });
 
   it('describes Backups & data for this deployment and marks it as the open section', () => {

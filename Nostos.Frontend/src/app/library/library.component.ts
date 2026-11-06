@@ -265,8 +265,6 @@ export class Library implements OnInit, OnDestroy {
   ] satisfies readonly ViewToggleOption[];
   readonly sidebarExpanded = this.preferences.sidebarExpanded;
   showAddModal = signal(false);
-  /** The Add Book dialog opens on choosing a file rather than on the catalogue search. */
-  readonly addStartsOnFile = signal(false);
 
   toggleSidebar(): void {
     this.preferences.setSidebarExpanded(!this.sidebarExpanded());
@@ -363,9 +361,8 @@ export class Library implements OnInit, OnDestroy {
     // The phone drawer owns the screen while open.
     lockScrollWhile(() => this.sidebarExpanded(), PHONE_QUERY);
     // "Add a book" from anywhere (the command palette) lands here as
-    // ?add=book; Settings › Import's "Book files" as ?add=file, which opens on
-    // the file instead of the catalogue search. Open the dialog, then drop the
-    // parameter so a reload or Back does not open it again.
+    // ?add=book. Open the dialog, then drop the parameter so a reload or Back
+    // does not open it again.
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       // "Show all books" in the command palette lands here as ?q=words: the
       // words become the search over the whole library, then the parameter goes.
@@ -384,8 +381,7 @@ export class Library implements OnInit, OnDestroy {
         return;
       }
       const add = params.get('add');
-      if (add !== 'book' && add !== 'file') return;
-      this.addStartsOnFile.set(add === 'file');
+      if (add !== 'book') return;
       this.openAddModal();
       this.router.navigate([], {
         relativeTo: this.route,
@@ -808,7 +804,6 @@ export class Library implements OnInit, OnDestroy {
 
   closeAddModal(): void {
     this.showAddModal.set(false);
-    this.addStartsOnFile.set(false);
   }
 
   openEditModal(book: Book): void {
