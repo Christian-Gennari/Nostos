@@ -25,6 +25,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 
 /** The existing server-side transcription seam. Do not change the backend. */
 export const TRANSCRIPTION_ENDPOINT = '/api/assistant/transcribe';
@@ -56,6 +57,7 @@ export interface TranscriptionResponse {
 @Injectable({ providedIn: 'root' })
 export class AssistantVoiceService {
   private readonly http = inject(HttpClient);
+  private readonly deployment = inject(DeploymentCapabilitiesService);
 
   readonly status = signal<AssistantVoiceStatus>('idle');
   readonly error = signal<AssistantVoiceError | null>(null);
@@ -234,7 +236,10 @@ export class AssistantVoiceService {
         if (session !== this.session) return;
         this.upload = null;
         this.revokeAudioUrl();
-        this.fail(errorFromTranscription(error));
+        // Where the host runs transcription (Cloud), the person has no
+        // provider to check: say it is unavailable instead (#1479).
+        const managed = this.deployment.peek()?.managedVoiceTranscription === true;
+        this.fail(errorFromTranscription(error, managed));
       },
     });
   }
@@ -308,8 +313,12 @@ export function recordingFileName(mimeType: string): string {
   }
 }
 
-/** Turn a backend ProblemDetails response into an actionable voice error. */
-export function errorFromTranscription(error: unknown): AssistantVoiceError {
+/**
+ * Turn a backend ProblemDetails response into an actionable voice error.
+ * `managed` is true where the host runs transcription and the person has no
+ * provider setting (Nostos Cloud): advice to check Settings is then wrong.
+ */
+export function errorFromTranscription(error: unknown, managed = false): AssistantVoiceError {
   if (!(error instanceof HttpErrorResponse)) {
     return { kind: 'failed', message: "Could not transcribe that recording. Try again." };
   }
@@ -326,6 +335,13 @@ export function errorFromTranscription(error: unknown): AssistantVoiceError {
       ? (error.error as { title?: unknown; detail?: unknown })
       : null;
   const code = typeof body?.title === 'string' ? body.title : '';
+
+  if (
+    managed &&
+    ['stt_disabled', 'stt_not_configured', 'stt_permission_denied'].includes(code)
+  ) {
+    return { kind: 'failed', message: 'Voice transcription is temporarily unavailable.' };
+  }
 
   switch (code) {
     case 'stt_disabled':
@@ -368,7 +384,9 @@ export function errorFromTranscription(error: unknown): AssistantVoiceError {
     case 'stt_response_invalid':
       return {
         kind: 'failed',
-        message: 'The transcription provider failed to process that recording. Try again or check its settings.',
+        message: managed
+          ? 'The transcription provider failed to process that recording. Try again.'
+          : 'The transcription provider failed to process that recording. Try again or check its settings.',
       };
     default:
       return { kind: 'failed', message: "Could not transcribe that recording. Try again." };

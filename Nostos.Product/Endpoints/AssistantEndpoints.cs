@@ -62,13 +62,15 @@ public static class AssistantEndpoints
     }
 
     private static async Task<IResult> TurnAsync(
+        HttpContext http,
         AssistantTurnRequest request,
         AssistantOrchestrator orchestrator,
         IAiProviderConfigResolver config,
         IAiAccessPolicy access,
         CancellationToken ct)
     {
-        var unavailable = await UnavailableAsync(config, access, ct);
+        var managed = ManagedAi(http);
+        var unavailable = await UnavailableAsync(config, access, managed, ct);
         if (unavailable is not null) return unavailable;
 
         try
@@ -84,7 +86,7 @@ public static class AssistantEndpoints
             // The same plain words as the stream: the exception's own message
             // can carry the upstream body (an HTML error page, a gateway's
             // text), which is for the log, not for an API client.
-            return Failure(ex.Code, StatusFor(ex.Code), LlmEventFailure(ex).Message);
+            return Failure(ex.Code, StatusFor(ex.Code), LlmEventFailure(ex, managed).Message);
         }
     }
 
@@ -134,7 +136,7 @@ public static class AssistantEndpoints
                 AssistantTurnEventKinds.Started,
                 requestAborted: http.RequestAborted);
 
-            var unavailable = await UnavailableFailureAsync(config, access, execution.Token);
+            var unavailable = await UnavailableFailureAsync(config, access, ManagedAi(http), execution.Token);
             if (unavailable is not null)
             {
                 await writer.WriteAsync(
@@ -194,7 +196,7 @@ public static class AssistantEndpoints
         {
             await writer.WriteAsync(
                 AssistantTurnEventKinds.Failed,
-                failure: LlmEventFailure(ex),
+                failure: LlmEventFailure(ex, ManagedAi(http)),
                 requestAborted: http.RequestAborted);
         }
         catch (OperationCanceledException) when (!http.RequestAborted.IsCancellationRequested)
@@ -248,6 +250,7 @@ public static class AssistantEndpoints
     private static async Task<AssistantTurnFailureDto?> UnavailableFailureAsync(
         IAiProviderConfigResolver config,
         IAiAccessPolicy access,
+        bool managed,
         CancellationToken ct)
     {
         if (!await access.IsAllowedAsync(ct))
@@ -264,7 +267,7 @@ public static class AssistantEndpoints
         return effective.Enabled
             ? new AssistantTurnFailureDto(
                 LlmErrorCodes.NotConfigured,
-                "Ask Nostos needs an AI provider configured in Settings.",
+                managed ? ManagedUnavailable : "Ask Nostos needs an AI provider configured in Settings.",
                 Retryable: false)
             : new AssistantTurnFailureDto(
                 LlmErrorCodes.Disabled,
@@ -275,6 +278,7 @@ public static class AssistantEndpoints
     private static async Task<IResult?> UnavailableAsync(
         IAiProviderConfigResolver config,
         IAiAccessPolicy access,
+        bool managed,
         CancellationToken ct)
     {
         if (!await access.IsAllowedAsync(ct))
@@ -292,7 +296,9 @@ public static class AssistantEndpoints
             ? Failure(
                 LlmErrorCodes.NotConfigured,
                 StatusCodes.Status503ServiceUnavailable,
-                LlmException.NotConfigured(effective.ApiKeyEnvironmentVariable).Message)
+                // The operator's variable name helps a SelfHosted owner and
+                // must never reach a managed deployment's users.
+                managed ? ManagedUnavailable : LlmException.NotConfigured(effective.ApiKeyEnvironmentVariable).Message)
             : Failure(
                 LlmErrorCodes.Disabled,
                 StatusCodes.Status503ServiceUnavailable,
@@ -314,9 +320,22 @@ public static class AssistantEndpoints
                 new("ai_temporarily_unavailable", "Ask Nostos is temporarily unavailable.", true),
         };
 
-    private static AssistantTurnFailureDto LlmEventFailure(LlmException exception) =>
+    /// <summary>
+    /// True where the host runs the AI and the user has no provider setting
+    /// (Nostos Cloud). Advice to "check Settings" is then wrong, and the
+    /// operator's configuration (a key's variable name) must not show (#1479).
+    /// </summary>
+    private static bool ManagedAi(HttpContext http) =>
+        http.RequestServices.GetService<DeploymentDescriptor>() is { } deployment
+        && !deployment.Capabilities.CanConfigureAiProvider;
+
+    private const string ManagedUnavailable = "Ask Nostos is temporarily unavailable.";
+
+    private static AssistantTurnFailureDto LlmEventFailure(LlmException exception, bool managed) =>
         exception.Code switch
         {
+            LlmErrorCodes.NotConfigured or LlmErrorCodes.Permission when managed =>
+                new(exception.Code, ManagedUnavailable, false),
             LlmErrorCodes.Timeout =>
                 new(exception.Code, "Ask Nostos took too long to answer. Try again.", true),
             LlmErrorCodes.RateLimited =>
