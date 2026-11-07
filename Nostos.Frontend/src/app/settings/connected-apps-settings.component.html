@@ -99,7 +99,7 @@
     detail="Nostos could not read the list of connected apps."
     (retry)="load()"
   />
-} @else if (tokens(); as list) {
+} @else if (active(); as list) {
   @if (canCreate()) {
     <div class="setting-row setting-row--stacked" data-testid="connected-apps-create">
       <div class="setting-label">
@@ -199,6 +199,30 @@
     </div>
   }
 
+  @if (blocked().length > 0) {
+    <div class="token-list token-list--blocked" data-testid="connected-apps-blocked">
+      @for (app of blocked(); track app.id) {
+        <div class="token-item" data-testid="connected-apps-blocked-item">
+          <div class="token-info">
+            <span class="token-name">{{ app.name }}</span>
+            <span class="token-meta">Blocked. It cannot connect until you allow it again.</span>
+          </div>
+          <button
+            type="button"
+            appButton
+            variant="secondary"
+            size="sm"
+            [disabled]="restoring() === app.id"
+            (click)="restore(app)"
+            data-testid="connected-apps-restore"
+          >
+            Allow again
+          </button>
+        </div>
+      }
+    </div>
+  }
+
   @if (canCreate()) {
     <div class="setting-row setting-row--stacked" data-testid="connected-apps-setup">
       <div class="setting-label">
@@ -280,7 +304,7 @@
   [heading]="'Revoke ' + (pendingRevoke()?.name ?? '') + '?'"
   [description]="pendingRevoke()?.kind === 'token'
     ? 'The app using this token loses access on its next request. Notes and drafts it already saved stay in your library.'
-    : 'The app loses access on its next request. To use it again, connect it again from the app. Notes and drafts it already saved stay in your library.'"
+    : 'The app loses access on its next request and stays blocked here until you allow it again. Notes and drafts it already saved stay in your library.'"
   confirmLabel="Revoke"
   busyLabel="Revoking…"
   [busy]="revoking()"

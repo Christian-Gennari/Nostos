@@ -58,6 +58,7 @@ describe('ConnectedAppsSettingsComponent', () => {
     oauthStatus: vi.fn(() => of(oauth)),
     approveRequest: vi.fn(() => of(undefined as void)),
     denyRequest: vi.fn(() => of(undefined as void)),
+    restore: vi.fn(() => of(undefined as void)),
   };
   const toast = { success: vi.fn(), error: vi.fn() };
 
@@ -226,6 +227,43 @@ describe('ConnectedAppsSettingsComponent', () => {
     component.confirmRevoke();
     await settle();
     expect(api.revoke).toHaveBeenCalledWith('client_abc');
+  });
+
+  it('keeps a revoked app blocked where the host keeps it, and allows it again (#1483)', async () => {
+    canCreate = false;
+    tokens = [
+      { id: 'client_abc', name: 'Claude', kind: 'oauth_app', scope: 'read_write', createdAt: '2026-11-07T10:00:00Z', lastUsedAt: null },
+      { id: 'client_old', name: 'ChatGPT', kind: 'oauth_app', scope: 'read', createdAt: '2026-11-01T10:00:00Z', lastUsedAt: null, revoked: true },
+    ];
+    component.load();
+    await settle();
+
+    expect(all('connected-apps-item').map((item) => item.textContent)).toEqual([expect.stringContaining('Claude')]);
+    expect(text('connected-apps-blocked')).toContain('ChatGPT');
+    expect(text('connected-apps-blocked')).toContain('Blocked');
+
+    el('connected-apps-revoke')!.click();
+    component.confirmRevoke();
+    await settle();
+    expect(all('connected-apps-blocked-item').map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Claude'),
+      expect.stringContaining('ChatGPT'),
+    ]);
+
+    all('connected-apps-restore')[1].click();
+    await settle();
+    expect(api.restore).toHaveBeenCalledWith('client_old');
+    expect(all('connected-apps-item').map((item) => item.textContent)).toEqual([expect.stringContaining('ChatGPT')]);
+    expect(toast.success).toHaveBeenCalledWith('ChatGPT can connect again');
+  });
+
+  it('removes a revoked token where tokens are made, with nothing to allow again', async () => {
+    el('connected-apps-revoke')!.click();
+    component.confirmRevoke();
+    await settle();
+
+    expect(el('connected-apps-blocked')).toBeNull();
+    expect(all('connected-apps-item')).toHaveLength(0);
   });
 
   it('says no app is connected yet where tokens cannot be made', async () => {

@@ -794,6 +794,7 @@ tokens; Cloud registers its record of OAuth clients (#557).
 | --- | --- | --- |
 | `GET` | `/api/mcp/apps` | `{ canCreate, apps: [{ id, name, kind: "token" \| "oauth_app", scope: "read" \| "read_write", createdAt, lastUsedAt }] }` |
 | `DELETE` | `/api/mcp/apps/{id}` | Revoke: `204`, or `404` when there is no such app. The app's next `/mcp` request is refused |
+| `POST` | `/api/mcp/apps/{id}/restore` | Allow a revoked app again (#1483): `204`, or `404`. Only a host that keeps revoked apps (Cloud: a revoke stays in force, because a refreshed OAuth token looks like a new sign-in) lists them, with `revoked: true`; SelfHosted deletes a revoked token, so it has nothing to restore |
 
 `canCreate` is true where the owner makes tokens (SelfHosted); where it is
 false, Settings shows the `/mcp` address to connect from instead. `id` is the

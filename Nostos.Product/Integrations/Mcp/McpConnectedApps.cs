@@ -26,6 +26,17 @@ public interface IMcpConnectedApps
     /// when there is no app with that id.
     /// </summary>
     Task<bool> RevokeAsync(string id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lets a revoked app connect again (#1483). Only a host whose revoke
+    /// must stay in force until the person says otherwise lists revoked apps
+    /// (<see cref="McpConnectedAppDto.Revoked"/>) and implements this: on
+    /// Cloud a refreshed OAuth token looks like a new sign-in, so a revoked
+    /// app is blocked until allowed again. Returns false when there is no
+    /// revoked app with that id; by default nothing is restorable.
+    /// </summary>
+    Task<bool> RestoreAsync(string id, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
 }
 
 /// <summary>What an app may do, as Settings shows it.</summary>
@@ -49,13 +60,18 @@ public static class McpConnectedAppKind
 /// <param name="Id">The host's own id, opaque to the client.</param>
 /// <param name="Kind"><see cref="McpConnectedAppKind"/>.</param>
 /// <param name="Scope"><see cref="McpConnectedAppScope"/>.</param>
+/// <param name="Revoked">
+/// True for an app the person revoked that stays blocked until they allow it
+/// again (<see cref="IMcpConnectedApps.RestoreAsync"/>).
+/// </param>
 public sealed record McpConnectedAppDto(
     string Id,
     string Name,
     string Kind,
     string Scope,
     DateTime CreatedAt,
-    DateTime? LastUsedAt);
+    DateTime? LastUsedAt,
+    bool Revoked = false);
 
 /// <summary>The Settings list: the apps, and whether a token can be made here.</summary>
 public sealed record McpConnectedAppsResponse(bool CanCreate, IReadOnlyList<McpConnectedAppDto> Apps);

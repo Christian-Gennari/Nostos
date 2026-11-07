@@ -126,6 +126,11 @@ export class ConnectedAppsSettingsComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly tokens = signal<McpConnectedApp[] | null>(null);
+  /** Apps that may connect. */
+  readonly active = computed(() => this.tokens()?.filter((app) => !app.revoked) ?? null);
+  /** Apps the person revoked that stay blocked until allowed again (#1483). */
+  readonly blocked = computed(() => this.tokens()?.filter((app) => app.revoked) ?? []);
+  readonly restoring = signal<string | null>(null);
   readonly loadFailed = signal(false);
   /** Whether this server makes tokens; false where apps sign in by themselves. */
   readonly canCreate = signal(false);
@@ -348,10 +353,32 @@ export class ConnectedAppsSettingsComponent implements OnInit {
     });
   }
 
+  /** Lets a blocked app connect again. */
+  restore(app: McpConnectedApp): void {
+    if (this.restoring()) return;
+    this.restoring.set(app.id);
+    this.api.restore(app.id).subscribe({
+      next: () => {
+        this.restoring.set(null);
+        this.tokens.update((tokens) => (tokens ?? []).map((t) => (t.id === app.id ? { ...t, revoked: false } : t)));
+        this.toast.success(`${app.name} can connect again`);
+      },
+      error: () => {
+        this.restoring.set(null);
+        this.toast.error(`Could not allow ${app.name} again`);
+      },
+    });
+  }
+
   private afterRevoke(token: McpConnectedApp): void {
     this.revoking.set(false);
     this.pendingRevoke.set(null);
-    this.tokens.update((tokens) => (tokens ?? []).filter((t) => t.id !== token.id));
+    // Where the host keeps revoked apps (Cloud), they move to the blocked list.
+    this.tokens.update((tokens) =>
+      (tokens ?? []).flatMap((t) =>
+        t.id !== token.id ? [t] : this.canCreate() ? [] : [{ ...t, revoked: true }],
+      ),
+    );
     if (this.created()?.details.id === token.id) this.dismissCreated();
     this.toast.success(`${token.name} can no longer connect`);
   }

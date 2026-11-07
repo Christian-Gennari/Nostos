@@ -28,6 +28,10 @@ public static class McpConnectedAppsEndpoints
         group.MapDelete("/{id}", async (string id, IMcpConnectedApps apps, CancellationToken ct) =>
             await apps.RevokeAsync(id, ct) ? Results.NoContent() : Results.NotFound());
 
+        // Allow a revoked app again (#1483), where the host keeps revoked apps.
+        group.MapPost("/{id}/restore", async (string id, IMcpConnectedApps apps, CancellationToken ct) =>
+            await apps.RestoreAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+
         return true;
     }
 }
