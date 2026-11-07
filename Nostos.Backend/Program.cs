@@ -11,6 +11,7 @@ using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Assistant;
+using Nostos.Backend.Integrations.Mcp;
 using Nostos.Backend.Health;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Acquisition;
@@ -71,6 +72,13 @@ builder.Services.AddHttpClient(OpenAiCompatibleEmbeddingProvider.HttpClientName,
 builder.Services.AddSingleton<IEmbeddingProvider, OpenAiCompatibleEmbeddingProvider>();
 
 var product = builder.Services.AddNostosProduct(builder.Configuration);
+
+// MCP (issue #1467) is registered, but /mcp is mapped only once a policy
+// decides who may call it. Authentication and authorization are wired but
+// empty: SelfHosted has no login, and nothing else here requires a user.
+builder.Services.AddNostosMcp();
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
 var assistantOptions = product.Assistant;
 var speechOptions = product.Speech;
 var opdsOptions = product.Opds;
@@ -466,6 +474,8 @@ app.UseStatusCodePages();
 // scopes and complete streaming responses drain through the same gate as workers.
 app.UseRouting();
 app.UseMiddleware<LibraryMaintenanceMiddleware>();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapOpenApi();
 
@@ -500,7 +510,7 @@ app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
 
 // --- HANDLE ANGULAR ROUTING ---
-// The SPA shell is served ONLY for client-side routes. The API and OPDS
+// The SPA shell is served ONLY for client-side routes. The API, OPDS and MCP
 // namespaces are never answered by index.html: unknown /api paths and wrong
 // methods on API routes resolve as ordinary 404/405 responses, so probes and
 // misdirected clients never receive the Angular application shell. The
@@ -521,7 +531,8 @@ RequestDelegate serveClientRoute = async context =>
     }
 
     var path = context.Request.Path;
-    if (path.StartsWithSegments("/api") || path.StartsWithSegments("/opds"))
+    if (path.StartsWithSegments("/api") || path.StartsWithSegments("/opds") ||
+        path.StartsWithSegments(NostosMcp.Path))
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return;

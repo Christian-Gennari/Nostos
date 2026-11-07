@@ -6,6 +6,7 @@ using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Integrations.Assistant;
+using Nostos.Backend.Integrations.Mcp;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Acquisition;
 using Nostos.Backend.Providers.Acquisition.Media;
@@ -57,6 +58,12 @@ public sealed record NostosProductDescriptor(
 /// must set this to <c>false</c>: the group's handlers require them, and
 /// mapping the group without them fails endpoint creation.
 /// </param>
+/// <param name="McpRateLimitPolicy">
+/// Optional host rate-limit policy for the MCP endpoint (<c>/mcp</c>). The
+/// endpoint itself is mapped only when the host called
+/// <see cref="Nostos.Backend.Integrations.Mcp.NostosMcp.AddNostosMcp"/> and registers
+/// <see cref="Nostos.Backend.Integrations.Mcp.NostosMcp.AuthorizationPolicy"/>.
+/// </param>
 /// <param name="ManagedBackupsAuthorizationPolicy">
 /// Optional host authorization policy for managed-backup history. Hosts with
 /// a default policy weaker than their product-access fallback should provide
@@ -71,7 +78,8 @@ public sealed record NostosProductEndpointPolicies(
     string? MigrationAuthorizationPolicy = null,
     bool MapMigrationTransferEndpoints = true,
     string? ManagedBackupsAuthorizationPolicy = null,
-    bool MapResumableBookUploadEndpoints = false)
+    bool MapResumableBookUploadEndpoints = false,
+    string? McpRateLimitPolicy = null)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -501,6 +509,10 @@ public static class NostosProductComposition
             opds,
             policies.OpdsAuthorizationPolicy,
             policies.LargeTransferRateLimitPolicy);
+
+        // Outside the revision filter: MCP is JSON-RPC, and its writes reach the
+        // open app through the library change feed, not a response header.
+        routes.MapNostosMcp(policies.McpRateLimitPolicy);
 
         return routes;
     }

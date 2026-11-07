@@ -122,8 +122,12 @@ Scheduled background workers (`BackupWorker`) create ZIP archives containing the
 The canonical service is the only domain entry point: `ILibraryService`
 (books and collections) receives every command — REST endpoints, the Angular
 UI, and Ask Nostos all forward to it, and the endpoint layer holds no domain
-rules (thin connector doctrine). External agents use the REST API; the
-`nostos-library` skill in `.agents/skills/` documents the calls.
+rules (thin connector doctrine). Agents on the same machine can use the REST
+API (the `nostos-library` skill in `.agents/skills/` documents the calls). The
+user's own AI apps connect over MCP (`/mcp`, `Nostos.Product/Integrations/Mcp`):
+its tools wrap Ask Nostos capabilities through `AssistantCapabilityRegistry`,
+so the registry is the one contract, and the endpoint is mapped only for a
+host that registers the `NostosMcp` authorization policy.
 
 The library domain is exact-once on `(clientId, idempotencyKey)` receipts and a
 state version: `LibraryCommandReceipt` keys on `(ClientId, IdempotencyKey)`
