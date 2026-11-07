@@ -194,6 +194,11 @@ public sealed class McpOAuthTests : IAsyncLifetime
                 ["thought"] = "Call me Ishmael.",
             });
             save.IsError.Should().NotBe(true, Text(save));
+
+            // The public address serves no app pages: no link may point there.
+            var book = await mcp.CallToolAsync("get_book", new Dictionary<string, object?> { ["bookId"] = bookId });
+            book.IsError.Should().NotBe(true, Text(book));
+            Text(book).Should().NotContain(McpOAuthFactory.PublicBase).And.Contain($"/library/{bookId:D}");
         }
 
         var apps = (await _local.GetFromJsonAsync<JsonElement>(McpConnectedAppsEndpoints.Route)).GetProperty("apps");

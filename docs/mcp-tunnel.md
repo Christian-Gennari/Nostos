@@ -60,6 +60,14 @@ with a copy button.
 Nostos answers only the paths above, so open the app as before (LAN address,
 Tailscale IP, or a different port).
 
+Links in what Nostos gives the app (to a book, a note, To read) cannot use the
+public address. To make them clickable, also set the address you open Nostos
+at; without it they are paths such as `/library/…`:
+
+```yaml
+      - Mcp__AppBaseUrl=https://nostos.example.ts.net:8443
+```
+
 ## 2. Make the address public
 
 The examples assume Nostos listens on `127.0.0.1:5099` (the port in

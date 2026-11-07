@@ -388,6 +388,7 @@ public static class McpOAuthRegistration
         services.AddSingleton<McpOAuthRequests>();
         services.AddSingleton<McpOAuthRateLimiter>();
         services.AddSingleton<IMcpClientMetadataFetcher>(_ => new McpClientMetadataFetcher());
+        services.AddSingleton<IMcpAppOrigin, SelfHostedMcpAppOrigin>();
         return services;
     }
 }
