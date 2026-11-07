@@ -1,7 +1,9 @@
 // Campaign runner for the #566 quality bed.
 //
-// One host per scenario (fresh temp database + seed): scenarios never see
-// each other's notes. Every turn goes through the streamed turn route
+// One database per scenario: scenarios never see each other's notes.
+// Deterministic mode builds one host per run and restores the seeded
+// database (and storage root) before every scenario (QualityBedSharedHost);
+// live mode still builds one host per scenario. Every turn goes through the streamed turn route
 // (POST /api/assistant/turn/stream) so time-to-first-activity and
 // time-to-first-answer are measurable from the NDJSON events in both modes.
 // Deterministic mode swaps ILlmProvider for the scripted provider; live mode
@@ -81,6 +83,7 @@ internal sealed record QualityModelOutcome(
 internal sealed class QualityBedHost : IDisposable
 {
     private readonly IDisposable _host;
+    private readonly bool _owned;
 
     public LibraryEndpointFactory Factory { get; }
 
@@ -101,8 +104,10 @@ internal sealed class QualityBedHost : IDisposable
         IServiceProvider services,
         QualityScriptedProvider? scripted,
         QualityMetricsSink sink,
-        string modelId)
+        string modelId,
+        bool owned = true)
     {
+        _owned = owned;
         Factory = factory;
         _host = host;
         Client = client;
@@ -112,8 +117,17 @@ internal sealed class QualityBedHost : IDisposable
         ModelId = modelId;
     }
 
+    /// <summary>
+    /// The same host for one scenario: disposing the lease leaves the host
+    /// running (QualityBedSharedHost owns it).
+    /// </summary>
+    public QualityBedHost Borrow() =>
+        new(Factory, _host, Client, Services, Scripted, Sink, ModelId, owned: false);
+
     public void Dispose()
     {
+        if (!_owned)
+            return;
         Client.Dispose();
         _host.Dispose();
         Factory.Dispose();
@@ -135,6 +149,11 @@ internal sealed class QualityBedHost : IDisposable
             {
                 services.RemoveAll<ILlmProvider>();
                 services.AddSingleton<ILlmProvider>(metered);
+                // One host serves the whole run, so a worker's timer would
+                // fire mid-scenario (the ingestion worker would claim the
+                // deliberately Pending B7 shell). A per-scenario host lived
+                // about a second and its workers never ran after the seed.
+                QualityBedSharedHost.RemoveAppWorkers(services);
             });
         });
         var client = host.CreateClient();
@@ -190,7 +209,7 @@ internal sealed class QualityBedHost : IDisposable
 
 internal static class QualityRunner
 {
-    private const string DeterministicKeyVariable = "NOSTOS_QB_DET_KEY";
+    internal const string DeterministicKeyVariable = "NOSTOS_QB_DET_KEY";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -212,13 +231,13 @@ internal static class QualityRunner
         Environment.SetEnvironmentVariable(DeterministicKeyVariable, "qb-dummy-not-a-secret");
         try
         {
-            var sink = new QualityMetricsSink();
             var outcomes = new List<QualityScenarioOutcome>();
+            using var shared = QualityBedSharedHost.CreateDeterministic(DeterministicKeyVariable);
             foreach (var scenario in scenarios)
                 for (var rep = 0; rep < config.Reps; rep++)
                     outcomes.Add(await RunScenarioAsync(
                         scenario, "quality-scripted", rep, QualityModes.Deterministic,
-                        () => CreateSeededDeterministicHost(new QualityMetricsSink()), ct));
+                        shared.Lease, ct));
 
             var model = new QualityModelOutcome(
                 "quality-scripted", null, outcomes,
@@ -352,14 +371,6 @@ internal static class QualityRunner
                 new QualitySessionTotals(0, 0, 0, 0, 0, 0, 0),
                 [$"scenario setup failed: {exception.GetType().Name}: {exception.Message}"]);
         }
-    }
-
-    private static QualityBedHost CreateSeededDeterministicHost(QualityMetricsSink sink)
-    {
-        var host = QualityBedHost.CreateDeterministic(sink, DeterministicKeyVariable);
-        using var scope = host.Services.CreateScope();
-        QualityLibrarySeeder.SeedAsync(scope.ServiceProvider).GetAwaiter().GetResult();
-        return host;
     }
 
     private static QualityBedHost CreateSeededLiveHost(
