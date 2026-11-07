@@ -257,7 +257,7 @@ internal static class QualityRunner
     public static async Task<IReadOnlyList<QualityModelOutcome>> RunLiveAsync(
         QualityBedConfig config,
         CancellationToken ct = default) =>
-        await RunLiveAsync(config, QualityBudget.FromEnvironment(), ct);
+        await RunLiveAsync(config, QualityBudget.Process, ct);
 
     public static async Task<IReadOnlyList<QualityModelOutcome>> RunLiveAsync(
         QualityBedConfig config,
