@@ -370,6 +370,12 @@ public sealed class PortableCompletenessInventoryTests
             ["McpAccessTokenModel"] = ExcludedEntity(
                 "Access tokens for connected AI apps (issue #1469): host credentials stored only as a hash. They must never be transferred as portable library data."),
 
+            ["McpOAuthGrantModel"] = ExcludedEntity(
+                "AI apps approved over OAuth (issue #1470): host credentials. They must never be transferred as portable library data."),
+
+            ["McpOAuthTokenModel"] = ExcludedEntity(
+                "Hashes of OAuth access and refresh tokens (issue #1470): host credentials. They must never be transferred as portable library data."),
+
             ["ProviderPreferenceModel"] = ExcludedEntity(
                 "Local provider enablement choices about which free sources this installation searches; host configuration rather than portable library content."),
 

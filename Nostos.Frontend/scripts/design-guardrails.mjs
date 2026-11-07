@@ -328,6 +328,8 @@ export const PROPER_NOUNS = new Set([
   'BibTeX', 'Chicago', 'Harvard', 'Vancouver', 'Turabian',
   // AI apps the Connected apps setup names (#1469).
   'Code', 'Desktop', 'Cursor', 'VS', 'ChatGPT',
+  // Tunnels the hosted-app setup names (#1470).
+  'Tailscale', 'Funnel', 'Cloudflare', 'Tunnel',
   // Days and months.
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
   'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Integrations.Mcp;
+using Nostos.Backend.Services.Mcp.OAuth;
 
 namespace Nostos.Backend.Services.Mcp;
 
@@ -106,6 +107,8 @@ public sealed class McpAccessTokenAuthenticationHandler(
     ILoggerFactory logger,
     UrlEncoder encoder,
     McpAccessTokenService tokens,
+    McpOAuthService oauth,
+    McpOAuthSettings oauthSettings,
     McpAccessTokenAttemptLimiter attemptLimiter,
     McpAccessTokenFailedAttemptThrottle failedThrottle)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
@@ -138,7 +141,11 @@ public sealed class McpAccessTokenAuthenticationHandler(
             return AuthenticateResult.Fail("Access token check rate limit exceeded.");
         }
 
-        var identity = await tokens.AuthenticateAsync(authorization.Parameter ?? string.Empty, Context.RequestAborted);
+        // nst_ is a token the owner made; nsa_ an OAuth access token (#1470).
+        var presented = authorization.Parameter ?? string.Empty;
+        var identity = presented.StartsWith(McpOAuthService.AccessPrefix, StringComparison.Ordinal)
+            ? await oauth.AuthenticateAsync(presented, Context.RequestAborted)
+            : await tokens.AuthenticateAsync(presented, Context.RequestAborted);
         if (identity is null)
         {
             failedThrottle.RecordFailure(ip);
@@ -170,10 +177,23 @@ public sealed class McpAccessTokenAuthenticationHandler(
         }
 
         Response.StatusCode = StatusCodes.Status401Unauthorized;
-        Response.Headers.WWWAuthenticate = Context.Items.ContainsKey(InvalidTokenItem)
-            ? "Bearer realm=\"Nostos\", error=\"invalid_token\""
-            : "Bearer realm=\"Nostos\"";
+        Response.Headers.WWWAuthenticate = Challenge(oauthSettings, Context.Items.ContainsKey(InvalidTokenItem));
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// The 401 challenge. With OAuth on (#1470) it points the app at the
+    /// protected resource metadata and the scopes to ask for (RFC 9728 §5.1),
+    /// which is how claude.ai and ChatGPT find the authorization server.
+    /// </summary>
+    public static string Challenge(McpOAuthSettings settings, bool invalidToken)
+    {
+        var challenge = "Bearer realm=\"Nostos\"";
+        if (invalidToken)
+            challenge += ", error=\"invalid_token\"";
+        if (settings.Enabled)
+            challenge += $", resource_metadata=\"{settings.ProtectedResourceMetadataUrl}\", scope=\"{NostosMcp.ReadScope} {NostosMcp.WriteScope}\"";
+        return challenge;
     }
 }
 
@@ -189,7 +209,10 @@ public static class McpAccessTokenRegistration
     public static IServiceCollection AddSelfHostedMcpAccessTokens(this IServiceCollection services)
     {
         services.AddSingleton<McpAccessTokenService>();
-        services.AddSingleton<IMcpConnectedApps>(sp => sp.GetRequiredService<McpAccessTokenService>());
+        // One list in Settings: tokens the owner made and apps approved over OAuth.
+        services.AddSelfHostedMcpOAuth();
+        services.AddSingleton<SelfHostedMcpConnectedApps>();
+        services.AddSingleton<IMcpConnectedApps>(sp => sp.GetRequiredService<SelfHostedMcpConnectedApps>());
         services.AddSingleton<McpAccessTokenAttemptLimiter>();
         services.AddSingleton<McpAccessTokenFailedAttemptThrottle>();
         services.AddAuthentication()

@@ -718,7 +718,10 @@ not the catalog is, so "turned off" is distinguishable from "broken".
 The catalog and the acquisition URLs it advertises are served **without
 authentication**, like the rest of the Nostos API. The supported deployment is
 therefore a private network (LAN or Tailscale), and Nostos must not be published
-to the public internet under this model. `Opds:Enabled=false` removes the route
+to the public internet under this model. The one exception is optional: with
+`Mcp:PublicBaseUrl` set, a tunnel may publish `/mcp`, `/oauth/*` and
+`/.well-known/oauth-*` for claude.ai and ChatGPT (#1470), and Nostos itself
+answers `404` to every other path on that address, `/opds/` included. `Opds:Enabled=false` removes the route
 entirely (requests then get an ordinary 404 — never the SPA shell). Nostos logs
 the effective access model once at startup.
 
@@ -760,8 +763,8 @@ quote and cite the library and keep notes in it, on the app's own plan.
 but maps `/mcp` only when the host registers the `NostosMcp` authorization
 policy (`NostosMcp.AuthorizationPolicy`). With no policy, `/mcp` is a plain 404
 and never the app shell. SelfHosted registers it with access tokens (#1469,
-below), and will add OAuth for hosted apps (#1470); Cloud with Clerk OAuth
-(Nostos-Cloud #557).
+below) and its own OAuth server for hosted apps (#1470, below); Cloud with
+Clerk OAuth (Nostos-Cloud #557).
 A host may also pass `NostosProductEndpointPolicies.McpRateLimitPolicy`.
 
 **Scopes.** What a caller may do comes from its `scope` claim
@@ -851,7 +854,80 @@ claude mcp add --transport http nostos https://nostos.example/mcp --header "Auth
 
 Any other client that speaks Streamable HTTP and can send a header (Hermes,
 for example) connects the same way. Hosted apps such as claude.ai and ChatGPT
-connect from their own servers and need a public address plus OAuth (#1470).
+connect from their own servers and need a public address plus OAuth (below).
+
+### SelfHosted OAuth for hosted apps (issue #1470)
+
+A small OAuth 2.1 authorization server for `/mcp` only, so claude.ai and
+ChatGPT can connect through a tunnel. Setup: [docs/mcp-tunnel.md](mcp-tunnel.md).
+
+**Off unless `Mcp:PublicBaseUrl` is set** (`Mcp__PublicBaseUrl`) to an absolute
+`https://` URL with no path. Anything else logs a warning and leaves it off.
+That URL is the issuer and the base of every URL below; the protected resource
+is exactly `{PublicBaseUrl}/mcp`. With it on, a `401` from `/mcp` carries
+`WWW-Authenticate: Bearer realm="Nostos", resource_metadata="{PublicBaseUrl}/.well-known/oauth-protected-resource/mcp", scope="nostos:read nostos:write"`.
+
+| Method | Path | Does |
+| --- | --- | --- |
+| `GET` | `/.well-known/oauth-protected-resource`, `…/mcp` | RFC 9728: `resource`, `authorization_servers: [issuer]`, `scopes_supported`, `bearer_methods_supported: ["header"]` |
+| `GET` | `/.well-known/oauth-authorization-server` | RFC 8414: endpoints, `response_types_supported: ["code"]`, `grant_types_supported: ["authorization_code", "refresh_token"]`, `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["none"]`, `client_id_metadata_document_supported: true` |
+| `GET` | `/oauth/authorize` | `response_type=code`, `client_id`, `redirect_uri`, `code_challenge` + `code_challenge_method=S256` (required), `state`, `scope`, `resource` (if given, must be the resource). Shows the approval page (below) |
+| `GET` | `/oauth/authorize/status?request=…` | What the approval page polls: `{ status: "pending" }`, `{ status: "done", redirect }` or `404 { status: "unknown" }` |
+| `POST` | `/oauth/token` | Form. `authorization_code` (`code`, `client_id`, `redirect_uri`, `code_verifier`) or `refresh_token` (`refresh_token`, `client_id`). `{ access_token, token_type: "Bearer", expires_in: 3600, refresh_token, scope }`, `Cache-Control: no-store`. Errors are RFC 6749 JSON (`{ error, error_description }`, `400`) |
+| `POST` | `/oauth/revoke` | RFC 7009, form `token`. A refresh token revokes its whole grant, an access token only itself. Always `200` |
+
+- **Clients are client metadata documents (CIMD) only**: `client_id` is an
+  https URL whose JSON names the same `client_id`, a `client_name` and its
+  `redirect_uris` (https, or `http://127.0.0.1` / `localhost` / `[::1]` for an
+  app on the owner's computer, any port). `token_endpoint_auth_method`, if
+  given, must be `none`. The fetch is https only (also after up to three
+  redirects), to public addresses only (checked before the request and again
+  when the socket connects, so loopback, private, link-local, CGNAT, multicast
+  and ULA addresses are refused after DNS too), no proxy, 5 seconds, 16 KiB. A
+  good document is cached 10 minutes. No dynamic client registration.
+- `redirect_uri` must match one listed exactly (loopback: any port). Until the
+  client and its redirect URI check out, errors are shown on a page and never
+  redirected; after that they go back as `error=…&state=…&iss=…`.
+- **Owner approval instead of a login.** Authorize creates a pending request
+  (10 minutes, at most 20 waiting) with a four-letter code and shows a
+  self-contained page: "Claude wants to connect to your Nostos… approve the
+  request with code KMRT" in Settings → Connected apps. The page polls the
+  status; approved, it redirects with `code`, `state` and `iss`; denied or
+  expired, with `error=access_denied`. Pending requests and codes live in
+  memory.
+- **Codes and tokens.** A code lasts 60 seconds and works once (PKCE S256,
+  `client_id` and `redirect_uri` must match); a second use revokes what the
+  first made. Access tokens are `nsa_…` (1 hour), refresh tokens `nsr_…`
+  (60 days unused); both are 256 random bits and only their SHA-256 is stored
+  (`McpOAuthGrants`, `McpOAuthTokens`, host-local like access tokens). Every
+  refresh replaces the refresh token; presenting a used one revokes the grant
+  (`invalid_grant`).
+- **Scopes.** `nostos:write` asked for (or no scope) is "read and write", only
+  `nostos:read` is "read only"; the owner picks either when approving. The
+  token answers with the granted `scope`, and the access token scheme puts it
+  in the same `scope` claim as access tokens, so `McpScopes.Enforce` applies.
+- **One grant is one connected app** (`kind: "oauth_app"`, the client's name).
+  Revoking it in Settings deletes its tokens: the next `/mcp` call and the
+  next refresh fail.
+- Authorize, status, token and revoke are rate-limited per address (20, 120,
+  60 and 60 a minute).
+
+**The owner's side** (`/api/mcp/oauth`, SelfHosted, always mapped, `404` on the
+public host):
+
+| Method | Path | Does |
+| --- | --- | --- |
+| `GET` | `/api/mcp/oauth` | `{ enabled, connectorUrl, requests: [{ id, code, clientName, clientId, clientHost, redirectHost, requestedScope, createdAt, expiresAt }] }` |
+| `POST` | `/api/mcp/oauth/requests/{id}/approve` | `{ scope: "read" \| "read_write" }`: `204`, or `404` when the request is gone or decided |
+| `POST` | `/api/mcp/oauth/requests/{id}/deny` | `204` or `404` |
+
+**The public host.** When a request's host and port (or a forwarded host from
+a trusted local proxy) are the `PublicBaseUrl` ones, or Tailscale marks it as
+a Funnel request (`Tailscale-Funnel-Request`, even with OAuth off), only `/mcp`,
+`/oauth/authorize`, `/oauth/authorize/status`, `/oauth/token`, `/oauth/revoke`
+and the three `/.well-known/oauth-*` documents answer; everything else,
+including the app shell, `/api`, `/opds` and the health checks, is `404`. The
+tunnel should restrict paths as well; this check is the backstop.
 
 **Tools.** Each wraps Ask Nostos capabilities through `AssistantCapabilityRegistry`,
 so validation and limits are the same; only the result shape differs.

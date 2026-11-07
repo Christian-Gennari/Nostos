@@ -11,6 +11,18 @@ receive fixes; older versions do not receive security backports.
 
 We also accept reports affecting the current official Nostos Cloud service.
 
+## SelfHosted network exposure
+
+A SelfHosted Nostos is built for a private network (LAN or Tailscale). Its app,
+API and OPDS catalogue have no login, so do not publish them to the internet.
+
+The one optional exception is for hosted AI apps (claude.ai, ChatGPT): with
+`Mcp__PublicBaseUrl` set, a tunnel or reverse proxy may publish `/mcp`,
+`/oauth/*` and `/.well-known/oauth-*`, and nothing else. `/mcp` needs a token,
+and each app is approved by the owner on the private network. Nostos answers
+`404` to every other path that arrives on the public address or through
+Tailscale Funnel. See [docs/mcp-tunnel.md](docs/mcp-tunnel.md).
+
 ## Reporting a vulnerability
 
 Please [report vulnerabilities privately through GitHub](https://github.com/Christian-Gennari/Nostos/security/advisories/new).

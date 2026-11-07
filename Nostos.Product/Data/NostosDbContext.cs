@@ -103,6 +103,11 @@ public class NostosDbContext : DbContext
     // part of a portable archive.
     public DbSet<McpAccessTokenModel> McpAccessTokens => Set<McpAccessTokenModel>();
 
+    // SelfHosted OAuth for claude.ai and ChatGPT (issue #1470): one grant per
+    // approved app, and its access and refresh tokens as hashes.
+    public DbSet<McpOAuthGrantModel> McpOAuthGrants => Set<McpOAuthGrantModel>();
+    public DbSet<McpOAuthTokenModel> McpOAuthTokens => Set<McpOAuthTokenModel>();
+
     // A few legacy import/repository paths still add a BookModel directly.
     // Keep those writes valid now that WorkId is a required foreign key. The
     // library service always assigns the work explicitly; this is only a
@@ -814,6 +819,39 @@ public class NostosDbContext : DbContext
                 t.HasCheckConstraint(
                     "CK_McpAccessTokens_Scope",
                     "\"Scope\" IN ('read', 'read_write')");
+            });
+        });
+
+        // --- MCP OAUTH GRANTS (issue #1470) ---
+        // Deleting a grant deletes its tokens: that is what revoking an app
+        // in Settings does, and what reusing a spent refresh token triggers.
+        modelBuilder.Entity<McpOAuthGrantModel>(e =>
+        {
+            e.HasKey(g => g.Id);
+            e.Property(g => g.ClientId).IsRequired().HasMaxLength(McpOAuthGrantModel.MaxClientIdLength);
+            e.Property(g => g.ClientName).IsRequired().HasMaxLength(McpOAuthGrantModel.MaxClientNameLength);
+            e.Property(g => g.Scope).IsRequired().HasMaxLength(16);
+            e.HasMany(g => g.Tokens).WithOne(t => t.Grant!).HasForeignKey(t => t.GrantId).OnDelete(DeleteBehavior.Cascade);
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_McpOAuthGrants_Scope",
+                "\"Scope\" IN ('read', 'read_write')"));
+        });
+
+        modelBuilder.Entity<McpOAuthTokenModel>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Kind).IsRequired().HasMaxLength(16);
+            e.Property(t => t.TokenHash).IsRequired().HasMaxLength(McpAccessTokenModel.HashLength);
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.HasIndex(t => t.GrantId);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_McpOAuthTokens_Kind",
+                    "\"Kind\" IN ('access', 'refresh')");
+                t.HasCheckConstraint(
+                    "CK_McpOAuthTokens_TokenHash",
+                    "length(\"TokenHash\") = 64");
             });
         });
 

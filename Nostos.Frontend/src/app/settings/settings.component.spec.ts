@@ -399,6 +399,9 @@ const mcpAccessTokensServiceMock = {
   list: vi.fn(() => of({ canCreate: true, apps: [] })),
   createToken: vi.fn(),
   revoke: vi.fn(),
+  oauthStatus: vi.fn(() => of({ enabled: false, connectorUrl: null, requests: [] })),
+  approveRequest: vi.fn(),
+  denyRequest: vi.fn(),
 };
 
 const externalMediaServiceMock = {
