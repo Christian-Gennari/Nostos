@@ -249,6 +249,10 @@ public static class AssistantTurnActivities
 
         if (capability.Trust == AssistantTrustClass.Act)
         {
+            if (string.Equals(capability.Name, "writings_create", StringComparison.Ordinal))
+                return new("creating_draft", "Creating the draft…");
+            if (string.Equals(capability.Name, "reading_list_add", StringComparison.Ordinal))
+                return new("adding_to_read", "Adding it to To read…");
             if (capability.Name.Contains("collection", StringComparison.Ordinal))
                 return new("updating_collection", "Updating the collection…");
             if (capability.Name.Contains("link", StringComparison.Ordinal))
@@ -261,6 +265,9 @@ public static class AssistantTurnActivities
 
         if (capability.Category == AssistantCapabilityCategory.KnowledgeRetrieval)
             return new("searching_notes", "Searching your notes…");
+
+        if (capability.Category == AssistantCapabilityCategory.Writing)
+            return new("reading_drafts", "Looking through your drafts…");
 
         if (capability.Category == AssistantCapabilityCategory.SourceNavigation)
             return new("opening_source", "Opening the matching source…");

@@ -424,3 +424,30 @@ Where the build differs from the plan above, and why:
 User-facing behaviour and the HTTP contract are documented in
 `docs/ask-nostos-library-changes.md`.
 
+
+### Drafts, topics and To read, and surfaces (#1468)
+
+The capability registry gained six capabilities. Ask Nostos lists them, and so
+does the MCP server (#1465):
+
+| Capability | Trust | Does |
+| --- | --- | --- |
+| `topics_get` | Suggest | A topic's own description and its linked notes, newest first. |
+| `writings_list` | Suggest | Studio folders and documents with their folder paths and links, most recently edited first. A query matches names only. |
+| `writings_read` | Suggest | One Studio document as Markdown, with its path and link. |
+| `writings_create` | Act | A new Studio document from Markdown. It never changes an existing one. It saves through the same repository call as the Studio, so `nostos:cite/…` citations are indexed as live citations. Returns the id and a `/studio?writingId=…` link. |
+| `reading_list_list` | Suggest | To read: Next up in order, then Someday. |
+| `reading_list_add` | Act | Puts a book on To read. The same book (same ISBN, or the same title by the same author) comes back as `duplicate: true` instead of a second entry. |
+
+`book_text_find_quote` now advertises an optional `bookId` for turns with no
+open book; an open book still wins. `notes_capture` keeps its Ask Nostos
+contract (the app decides the book, or asks), and its MCP form takes an
+explicit, required `bookId`.
+
+Each capability carries `Surfaces` (`AssistantSurface.AskNostos`,
+`AssistantSurface.Mcp`, or both). `AssistantCapabilities.McpExposed` names the
+MCP v1 set. `AssistantCapabilityRegistry.For(surface)` lists a surface's
+capabilities as that surface presents them, and
+`InvokeAsync(surface, name, …)` refuses a capability the surface does not
+offer as `assistant_unknown_capability`. Ask Nostos builds its tool list from
+`For(AssistantSurface.AskNostos)`.

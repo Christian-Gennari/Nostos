@@ -256,6 +256,29 @@ internal static class QualityExpectationEvaluator
                 || string.Equals(response.Changeset?.Status, "applied", StringComparison.Ordinal)
                 || turn.NoteCountAfter != turn.NoteCountBefore
                 || turn.CollectionCountAfter != turn.CollectionCountBefore;
+            // An act that found its target already there (a book already on To
+            // read: `"duplicate": true`) ran but changed nothing. Deterministic
+            // runs can tell, because they log the tool results the model read.
+            if (wrote
+                && string.IsNullOrWhiteSpace(response.CapturedNoteId)
+                && response.Changeset?.Status is not "applied"
+                && turn.NoteCountAfter == turn.NoteCountBefore
+                && turn.CollectionCountAfter == turn.CollectionCountBefore
+                && turn.ProviderRequests.LastOrDefault() is { } lastRequest)
+            {
+                var toolResults = lastRequest.Messages
+                    .Where(m => string.Equals(m.Role, "tool", StringComparison.Ordinal))
+                    .Select(m => m.Content ?? string.Empty)
+                    .TakeLast(response.ExecutedCapabilities?.Count ?? 0)
+                    .ToList();
+                if (toolResults.Count > 0 && toolResults.All(content =>
+                        content.Replace(" ", string.Empty, StringComparison.Ordinal)
+                            .Contains("\"duplicate\":true", StringComparison.Ordinal)))
+                {
+                    wrote = false;
+                }
+            }
+
             var moved = !string.Equals(revisionBefore, revisionAfter, StringComparison.Ordinal);
             if (!wrote && moved)
                 failures.Add($"the library revision moved ({revisionBefore} -> {revisionAfter}) on a turn that wrote nothing");

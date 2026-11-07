@@ -115,13 +115,13 @@ baseline time, before candidate runs.
 
 ### Deterministic bed
 
-All 22 scenarios (C1–C20 plus the C21 Swedish probe and the C22 paper-book quote, see below) run deterministically through the
+All 24 scenarios (C1–C20 plus the C21 Swedish probe, the C22 paper-book quote and the C23/C24 To read and draft scenarios, see below) run deterministically through the
 real orchestrator with a scripted provider — real SQLite stores, real retrieval services, real
 HTTP/streaming surface, real approval/continuation machinery; no paid model calls.
 
 - `Nostos.Backend.Tests/Assistant/QualityBed/` — 28 tests pass (`Quality_bed_deterministic_scenarios_pass`,
   fixture-shape/vocabulary guards, live wiring proof, scoring unit tests).
-- Scenarios and modes: C1–C12, C16–C22 run in **both** deterministic and live modes; C13/C14/C15
+- Scenarios and modes: C1–C12, C16–C24 run in **both** deterministic and live modes; C13/C14/C15
   (cancel semantics and typed operational failures) are **deterministic-only** — they inject
   cancellation/timeouts/failures, which cannot be produced deterministically against a paid provider.
 - Deterministic-mode assertions are path-exact (exact tools, exact evidence, exact note/collection
@@ -146,6 +146,14 @@ passages (asks, saves nothing) and a paper book with no digital edition (one lin
 photographing the page, saves nothing). Deterministic mode proves the exact EPUB text lands on the
 paper book at the named page without the "Quoted by hand" note; live mode scores tool choice and
 the replies.
+
+**Addition — C23 and C24 (To read and Studio drafts, #1468).** C23 asks "What's on my To read
+list?" and answers from `reading_list_list` (Next up before Someday, with the user's reasons), then
+adds a book with `reading_list_add` and asks for it again: the list keeps one entry. C24 asks "Open
+my draft about the lighthouse keeper": `writings_list` finds the document by name,
+`writings_read` reads it as Markdown, and the reply carries its Studio link; nothing is written.
+The drafts and To read entries are seeded from `QualityCatalogueG.cs`; neither store is searched by
+`knowledge_search`, so no other scenario's vocabulary changes.
 
 ### H1–H16 preservation map
 

@@ -154,6 +154,8 @@ public sealed class AssistantOrchestrator(
         "notes_list_unlinked",
         "notes_read_for_review",
         "library_get_book",
+        "topics_get",
+        "writings_read",
     };
 
     // ------------------------------------------------------------------
@@ -222,7 +224,8 @@ public sealed class AssistantOrchestrator(
         var toolLoopDetector = new AssistantToolLoopDetector();
         var stopReason = AssistantTurnStopReason.SafetyCeiling;
 
-        var capabilityByName = registry.All.ToDictionary(c => c.Name, StringComparer.Ordinal);
+        var capabilityByName = registry.For(AssistantSurface.AskNostos)
+            .ToDictionary(c => c.Name, StringComparer.Ordinal);
 
         var captureIntent = await _captureIntentGuard.EvaluateAsync(
             request.Message,

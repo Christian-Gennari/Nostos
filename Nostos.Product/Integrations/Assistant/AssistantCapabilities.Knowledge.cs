@@ -1,4 +1,5 @@
 using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Mapping;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Knowledge;
 
@@ -274,6 +275,71 @@ public static partial class AssistantCapabilities
 
                 var result = await topics.SearchByNoteTextAsync(term);
                 return AssistantToolResult.Ok(Element(result));
+            }),
+
+        new AssistantCapability(
+            "topics_get",
+            AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
+            "Reads one topic: the user's own description of it and the notes linked to it, newest first, each with its book. Find the topic's id with topics_list or topics_search first.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "topicId": { "type": "string", "format": "uuid", "description": "The id of the topic to read, from topics_list or topics_search. Required." },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "The maximum number of linked notes to return, newest first. Defaults to 30." }
+              },
+              "required": ["topicId"],
+              "additionalProperties": true
+            }
+            """,
+            async (context, args, ct) =>
+            {
+                if (Id(args, "topicId") is not { } topicId)
+                    return Invalid("'topicId' is required.");
+
+                var limit = Num(args, "limit");
+                if (limit is < 1 or > 100)
+                    return Invalid("'limit' must be between 1 and 100.");
+
+                // The same read the topic page uses (GET /api/topics/{id}).
+                var topic = await topics.GetByIdWithNotesAsync(topicId);
+                if (topic is null)
+                    return AssistantToolResult.Fail(
+                        AssistantErrorCodes.NotFound,
+                        $"Topic {topicId} not found.");
+
+                var linked = topic.NoteTopics
+                    .Select(link => link.Note)
+                    .Where(note => note is not null)
+                    .OrderByDescending(note => note.CreatedAt)
+                    .ThenBy(note => note.Id)
+                    .ToList();
+
+                return AssistantToolResult.Ok(Element(new
+                {
+                    id = topic.Id,
+                    name = topic.Topic,
+                    description = topic.Description,
+                    noteCount = linked.Count,
+                    notes = linked.Take(limit ?? 30).Select(note => new
+                    {
+                        noteId = note.Id,
+                        bookId = note.BookId,
+                        bookTitle = note.Book?.Title,
+                        bookAuthor = note.Book?.Author,
+                        kind = note.Kind,
+                        content = note.Content,
+                        // A passage's text is long; its opening is enough to
+                        // recognise it, and knowledge_read_evidence reads it whole.
+                        selectedText = TextLigatures.Expand(note.IsPassage()
+                            ? PassageText.Opening(note.SelectedText)
+                            : note.SelectedText),
+                        location = note.SourceAnchorValue,
+                        locationKind = note.SourceAnchorKind,
+                        createdAt = note.CreatedAt,
+                    }),
+                }));
             }),
 
         new AssistantCapability(

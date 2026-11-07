@@ -12,6 +12,7 @@ using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
+using Nostos.Backend.Services.ReadingList;
 using Nostos.Backend.Tests.Services.Ai;
 using Nostos.Backend.Tests.Support;
 using Nostos.Product.BookText;
@@ -45,12 +46,18 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "notes_read_for_review",
         "topics_list",
         "topics_search",
+        "topics_get",
         "topics_propose_links",
         "library_list_collections",
         "library_get_collection",
         "notes_capture",
         "notes_rewrite_capture",
         "notes_link_existing_topic",
+        "writings_list",
+        "writings_read",
+        "writings_create",
+        "reading_list_list",
+        "reading_list_add",
         "library_create_collection",
         "library_rename_collection",
         "library_move_collection",
@@ -109,6 +116,124 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
 
         result.Success.Should().BeFalse();
         result.ErrorCode.Should().Be(AssistantErrorCodes.UnknownCapability);
+    }
+
+    // ------------------------------------------------------------------
+    // Surfaces (issue #1468)
+    // ------------------------------------------------------------------
+
+    // The MCP v1 set of epic #1465, in build order. Pinned like the whole
+    // surface: exposing a tool to connected chat apps is a deliberate change.
+    private static readonly string[] ExpectedMcpSurface =
+    [
+        "library_resolve_book",
+        "library_list_books",
+        "library_get_book",
+        "library_overview",
+        "knowledge_search",
+        "knowledge_overview",
+        "knowledge_read_evidence",
+        "notes_list_for_book",
+        "topics_list",
+        "topics_search",
+        "topics_get",
+        "notes_capture",
+        "writings_list",
+        "writings_read",
+        "writings_create",
+        "reading_list_list",
+        "reading_list_add",
+    ];
+
+    [Fact]
+    public void Ask_Nostos_is_offered_every_capability_and_MCP_only_the_curated_set()
+    {
+        var h = CreateHarness();
+
+        h.Registry.For(AssistantSurface.AskNostos).Select(c => c.Name).Should().Equal(ExpectedSurface);
+        h.Registry.For(AssistantSurface.Mcp).Select(c => c.Name).Should().Equal(ExpectedMcpSurface);
+
+        // MCP never reaches a staged library change or a rewrite of an
+        // existing note: reads, capture and the two creates only.
+        h.Registry.For(AssistantSurface.Mcp).Should().OnlyContain(c =>
+            c.Trust == AssistantTrustClass.Suggest
+            || c.Trust == AssistantTrustClass.Capture
+            || c.Name == "writings_create"
+            || c.Name == "reading_list_add");
+        h.Registry.For(AssistantSurface.None).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_MCP_capture_names_its_book_while_Ask_Nostos_never_advertises_one()
+    {
+        var h = CreateHarness();
+
+        var ask = h.Registry.For(AssistantSurface.AskNostos).Single(c => c.Name == "notes_capture");
+        var mcp = h.Registry.For(AssistantSurface.Mcp).Single(c => c.Name == "notes_capture");
+
+        Properties(ask).Should().NotContain("bookId");
+        Properties(mcp).Should().Contain(["bookId", "content", "quoteRef"]);
+        JsonDocument.Parse(mcp.ParametersJsonSchema).RootElement.GetProperty("required")
+            .EnumerateArray().Select(e => e.GetString()).Should().Equal("bookId");
+        mcp.Summary.Should().NotBe(ask.Summary);
+        mcp.Trust.Should().Be(AssistantTrustClass.Capture);
+
+        // One delegate: the surface changes what is said, never what runs.
+        mcp.Execute.Should().BeSameAs(ask.Execute);
+
+        static IEnumerable<string> Properties(AssistantCapability capability) =>
+            JsonDocument.Parse(capability.ParametersJsonSchema).RootElement
+                .GetProperty("properties").EnumerateObject().Select(p => p.Name);
+    }
+
+    [Fact]
+    public async Task A_surface_cannot_invoke_a_capability_it_does_not_offer()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h);
+        var before = await StoreSnapshotAsync(h);
+
+        var refused = await h.Registry.InvokeAsync(
+            AssistantSurface.Mcp,
+            "notes_link_existing_topic",
+            Args($$"""{"noteId":"{{Guid.NewGuid()}}","topicId":"{{Guid.NewGuid()}}"}"""),
+            new AssistantToolContext("mcp", "k1"));
+
+        refused.Success.Should().BeFalse();
+        refused.ErrorCode.Should().Be(AssistantErrorCodes.UnknownCapability);
+        (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
+
+        var allowed = await h.Registry.InvokeAsync(
+            AssistantSurface.Mcp,
+            "notes_capture",
+            Args($$"""{"bookId":"{{book.Id}}","content":"Kept over MCP"}"""),
+            new AssistantToolContext("mcp", "k2"));
+
+        allowed.Success.Should().BeTrue(allowed.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task An_explicit_book_id_captures_exactly_once_with_no_open_book()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h);
+        var context = new AssistantToolContext("mcp:claude", "retry-1");
+        var args = Args($$"""{"bookId":"{{book.Id}}","content":"A thought with no reader open"}""");
+
+        var first = await h.Registry.InvokeAsync(AssistantSurface.Mcp, "notes_capture", args, context);
+        var retry = await h.Registry.InvokeAsync(AssistantSurface.Mcp, "notes_capture", args, context);
+
+        first.Success.Should().BeTrue(first.ErrorMessage);
+        retry.Success.Should().BeTrue(retry.ErrorMessage);
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).BookId.Should().Be(book.Id);
+
+        var missing = await h.Registry.InvokeAsync(
+            AssistantSurface.Mcp,
+            "notes_capture",
+            Args("""{"content":"No book"}"""),
+            new AssistantToolContext("mcp:claude", "retry-2"));
+        missing.ErrorCode.Should().Be(AssistantErrorCodes.InvalidArguments);
     }
 
     // ------------------------------------------------------------------
@@ -221,6 +346,9 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             ("topics_search", """{"term":"seeded"}"""),
             ("library_list_collections", "{}"),
             ("library_get_collection", $$"""{"collectionId":"{{collection.Id}}"}"""),
+            ("topics_get", $$"""{"topicId":"{{topic.Id}}"}"""),
+            ("writings_list", "{}"),
+            ("reading_list_list", "{}"),
         };
 
         foreach (var (name, args) in calls)
@@ -532,7 +660,13 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             []);
 
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, libraryService, topics, knowledge));
+            AssistantCapabilities.Build(
+                noteService,
+                libraryService,
+                topics,
+                knowledge,
+                writings: new WritingRepository(db),
+                readingList: new ReadingListService(db, noteService)));
 
         return new Harness(db, factory, registry, libraryService);
     }
@@ -585,7 +719,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         return await db.Collections.CountAsync();
     }
 
-    /// <summary>Count plus content for every row in the three stores the assistant can reach.</summary>
+    /// <summary>Count plus content for every row in the stores the assistant can reach.</summary>
     private static async Task<StoreSnapshot> StoreSnapshotAsync(Harness h)
     {
         await using var db = await h.Factory.CreateDbContextAsync();
@@ -603,16 +737,29 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             .Select(c => new { c.Id, c.Name, c.ParentId })
             .ToListAsync();
 
+        var writings = await db.Writings.AsNoTracking()
+            .OrderBy(w => w.Id)
+            .Select(w => new { w.Id, w.Name, w.Content })
+            .ToListAsync();
+        var toRead = await db.ReadingListEntries.AsNoTracking()
+            .OrderBy(e => e.Id)
+            .Select(e => new { e.Id, e.Title })
+            .ToListAsync();
+
         return new StoreSnapshot(
             notes.Select(n => $"{n.Id}:{n.Content}").ToList(),
             topics.Select(c => $"{c.Id}:{c.Topic}").ToList(),
-            collections.Select(c => $"{c.Id}:{c.Name}:{c.ParentId}").ToList());
+            collections.Select(c => $"{c.Id}:{c.Name}:{c.ParentId}").ToList(),
+            writings.Select(w => $"{w.Id}:{w.Name}:{w.Content}").ToList(),
+            toRead.Select(e => $"{e.Id}:{e.Title}").ToList());
     }
 
     private sealed record StoreSnapshot(
         IReadOnlyList<string> Notes,
         IReadOnlyList<string> Topics,
-        IReadOnlyList<string> Collections);
+        IReadOnlyList<string> Collections,
+        IReadOnlyList<string> Writings,
+        IReadOnlyList<string> ReadingList);
 
     private sealed class Harness(
         NostosDbContext db,

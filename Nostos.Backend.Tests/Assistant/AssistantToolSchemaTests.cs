@@ -123,6 +123,33 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         ["topics_search"] = new(
             Properties: new() { ["term"] = "string" },
             Required: ["term"]),
+        ["topics_get"] = new(
+            Properties: new() { ["topicId"] = "string", ["limit"] = "integer" },
+            Required: ["topicId"]),
+        ["writings_list"] = new(
+            Properties: new() { ["query"] = "string", ["type"] = "string", ["limit"] = "integer" },
+            Required: []),
+        ["writings_read"] = new(
+            Properties: new() { ["writingId"] = "string" },
+            Required: ["writingId"]),
+        ["writings_create"] = new(
+            Properties: new() { ["name"] = "string", ["content"] = "string", ["folderId"] = "string" },
+            Required: ["name"]),
+        ["reading_list_list"] = new(
+            Properties: new() { ["shelf"] = "string", ["limit"] = "integer" },
+            Required: []),
+        ["reading_list_add"] = new(
+            Properties: new()
+            {
+                ["title"] = "string",
+                ["author"] = "string",
+                ["isbn"] = "string",
+                ["publishedDate"] = "string",
+                ["why"] = "string",
+                ["recommendedBy"] = "string",
+                ["readNext"] = "boolean",
+            },
+            Required: ["title"]),
         ["topics_propose_links"] = new(
             Properties: new() { ["noteId"] = "string", ["candidates"] = "array" },
             Required: ["noteId", "candidates"]),
@@ -145,6 +172,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         ["book_text_find_quote"] = new(
             Properties: new()
             {
+                ["bookId"] = "string",
                 ["startsWith"] = "string",
                 ["endsWith"] = "string",
                 ["page"] = "integer",
@@ -332,12 +360,13 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             .ToDictionary(group => group.Key, group => group.Count())
             .Should().BeEquivalentTo(new Dictionary<AssistantCapabilityCategory, int>
             {
-                [AssistantCapabilityCategory.KnowledgeRetrieval] = 8,
+                [AssistantCapabilityCategory.KnowledgeRetrieval] = 9,
                 [AssistantCapabilityCategory.SourceNavigation] = 2,
-                [AssistantCapabilityCategory.LibraryRead] = 4,
+                [AssistantCapabilityCategory.LibraryRead] = 5,
                 [AssistantCapabilityCategory.Capture] = 2,
                 [AssistantCapabilityCategory.Organization] = 12,
-                [AssistantCapabilityCategory.OrdinaryAction] = 1,
+                [AssistantCapabilityCategory.OrdinaryAction] = 2,
+                [AssistantCapabilityCategory.Writing] = 3,
             });
 
         capabilities
@@ -357,7 +386,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(29);
+        measurement.CapabilityCount.Should().Be(35);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(
@@ -479,7 +508,9 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 topics,
                 Nostos.Backend.Services.Knowledge.NoOpKnowledgeRetrievalService.Instance,
                 bookText: null,
-                quotes: new BookTextQuoteFinder(new SqliteBookTextIndex(factory), libraryService)));
+                quotes: new BookTextQuoteFinder(new SqliteBookTextIndex(factory), libraryService),
+                writings: new WritingRepository(db),
+                readingList: new Nostos.Backend.Services.ReadingList.ReadingListService(db, noteService)));
 
         var llm = new FakeLlmProvider();
         var orchestrator = new AssistantOrchestrator(
