@@ -57,6 +57,7 @@ public sealed class SelfHostedHostStateCarryOverTests
         [
             nameof(Nostos.Backend.Data.Models.AiProviderSettingsModel),
             nameof(Nostos.Backend.Data.Models.ProviderPreferenceModel),
+            nameof(Nostos.Backend.Data.Models.McpAccessTokenModel),
             nameof(Nostos.Backend.Data.Models.BackupRecord),
             nameof(Nostos.Backend.Data.Models.LibraryCommandReceipt),
             nameof(Nostos.Backend.Data.Models.NoteCommandReceipt),

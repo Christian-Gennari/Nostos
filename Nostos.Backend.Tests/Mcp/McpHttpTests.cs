@@ -7,6 +7,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -38,10 +39,20 @@ public sealed class McpEndpointFactory : LibraryEndpointFactory
         {
             services.AddAuthentication()
                 .AddScheme<AuthenticationSchemeOptions, TokenHandler>(SchemeName, _ => { });
+            services.AddSingleton<IMcpRequestGate, RefuseOnHeaderGate>();
             services.AddAuthorization(options => options.AddPolicy(
                 NostosMcp.AuthorizationPolicy,
                 policy => policy.AddAuthenticationSchemes(SchemeName).RequireAuthenticatedUser()));
         });
+    }
+
+    /// <summary>Stands in for a host gate (Cloud's revoked OAuth clients): refuses a marked request.</summary>
+    public const string RefuseHeader = "X-Test-Refuse";
+
+    private sealed class RefuseOnHeaderGate : IMcpRequestGate
+    {
+        public ValueTask<bool> AllowAsync(ClaimsPrincipal user, HttpContext http, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(user.Identity?.IsAuthenticated == true && !http.Request.Headers.ContainsKey(RefuseHeader));
     }
 
     private sealed class TokenHandler(
@@ -54,7 +65,12 @@ public sealed class McpEndpointFactory : LibraryEndpointFactory
             var header = Request.Headers.Authorization.ToString();
             if (header != $"Bearer {Token}")
                 return Task.FromResult(AuthenticateResult.NoResult());
-            var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "agent")], SchemeName);
+            var identity = new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.Name, "agent"),
+                    new Claim(NostosMcp.ScopeClaimType, $"{NostosMcp.ReadScope} {NostosMcp.WriteScope}"),
+                ],
+                SchemeName);
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
         }
     }
@@ -105,16 +121,42 @@ public sealed class McpHttpTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_host_that_registers_no_policy_never_maps_mcp_and_never_serves_the_app_shell_there()
+    public void A_host_that_registers_no_policy_never_maps_mcp()
     {
-        await using var plain = new LibraryEndpointFactory();
-        var client = plain.CreateClient();
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateSlimBuilder();
+        builder.Services.AddNostosMcp();
+        builder.Services.AddAuthorization();
+        using var app = builder.Build();
 
-        var post = await client.PostAsJsonAsync(NostosMcp.Path, new { jsonrpc = "2.0", id = 1, method = "tools/list" });
-        var get = await client.GetAsync(NostosMcp.Path);
+        app.MapNostosMcp().Should().BeFalse();
+    }
 
-        post.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
-        get.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    [Fact]
+    public async Task A_host_gate_refuses_an_authenticated_request_before_the_server_sees_it()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, NostosMcp.Path)
+        {
+            Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method = "tools/list" }),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", McpEndpointFactory.Token);
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        request.Headers.Add(McpEndpointFactory.RefuseHeader, "1");
+
+        var refused = await _http.SendAsync(request);
+        var tools = await _mcp.ListToolsAsync();
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        refused.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_token");
+        tools.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_app_shell_is_never_served_on_mcp()
+    {
+        var get = await _http.GetAsync(NostosMcp.Path);
+
+        get.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
         (await get.Content.ReadAsStringAsync()).Should().NotContain("<app-root");
     }
 

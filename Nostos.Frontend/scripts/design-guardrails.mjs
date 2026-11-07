@@ -326,6 +326,8 @@ export const PROPER_NOUNS = new Set([
   'Microsoft', 'Unraid', 'CasaOS', 'Umbrel', 'Runtipi', 'Docker', 'Paddle', 'Neon',
   'Chrome', 'Safari', 'Firefox', 'Edge', 'Android', 'iOS', 'Windows', 'Linux', 'Mac',
   'BibTeX', 'Chicago', 'Harvard', 'Vancouver', 'Turabian',
+  // AI apps the Connected apps setup names (#1469).
+  'Code', 'Desktop', 'Cursor', 'VS', 'ChatGPT',
   // Days and months.
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
   'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',

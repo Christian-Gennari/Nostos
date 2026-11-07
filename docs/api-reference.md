@@ -759,9 +759,99 @@ quote and cite the library and keep notes in it, on the app's own plan.
 **Off until a host turns it on.** The product registers the server everywhere
 but maps `/mcp` only when the host registers the `NostosMcp` authorization
 policy (`NostosMcp.AuthorizationPolicy`). With no policy, `/mcp` is a plain 404
-and never the app shell. SelfHosted gets the policy with access tokens (#1469)
-and OAuth for hosted apps (#1470); Cloud with Clerk OAuth (Nostos-Cloud #557).
+and never the app shell. SelfHosted registers it with access tokens (#1469,
+below), and will add OAuth for hosted apps (#1470); Cloud with Clerk OAuth
+(Nostos-Cloud #557).
 A host may also pass `NostosProductEndpointPolicies.McpRateLimitPolicy`.
+
+**Scopes.** What a caller may do comes from its `scope` claim
+(`NostosMcp.ScopeClaimType`): space-separated OAuth scopes, matched ordinally,
+read across every `scope` claim (and the type ASP.NET's JWT handler maps it to).
+`nostos:read` (`NostosMcp.ReadScope`) is needed for every tool;
+`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `create_draft`
+and `add_to_reading_list`. A caller with no scope claim at all counts as
+read-only. A tool the scopes do not cover answers with a tool error
+(`isError: true`, e.g. "This connection to Nostos is read-only, so nothing was
+saved…") and never runs; a tool without a `readOnlyHint` counts as a write.
+The check is the call-tool filter `McpScopes.Enforce`
+(`Nostos.Product/Integrations/Mcp/McpScopes.cs`), installed by
+`AddNostosMcp`, so a host only fills the claim: SelfHosted from the token's
+scope, Cloud straight from the Clerk OAuth access token's `scope`
+(e.g. `"openid profile email offline_access nostos:read nostos:write"`).
+
+### Connected apps — `/api/mcp/apps` (issue #1469)
+
+Settings → Connected apps on any host that registers `IMcpConnectedApps`
+(`Nostos.Product/Integrations/Mcp/McpConnectedApps.cs`). The product maps these
+routes, and `GET /api/runtime/capabilities` reports
+`supportsMcpConnectedApps: true`, only then. SelfHosted registers its access
+tokens; Cloud registers its record of OAuth clients (#557).
+
+| Method | Path | Does |
+| --- | --- | --- |
+| `GET` | `/api/mcp/apps` | `{ canCreate, apps: [{ id, name, kind: "token" \| "oauth_app", scope: "read" \| "read_write", createdAt, lastUsedAt }] }` |
+| `DELETE` | `/api/mcp/apps/{id}` | Revoke: `204`, or `404` when there is no such app. The app's next `/mcp` request is refused |
+
+`canCreate` is true where the owner makes tokens (SelfHosted); where it is
+false, Settings shows the `/mcp` address to connect from instead. `id` is the
+host's own string.
+
+**Request gates.** Every authenticated `/mcp` request runs each registered
+`IMcpRequestGate` (`AllowAsync(user, http, ct)`) after authorization and
+before the MCP server. One `false` answers `401` with
+`WWW-Authenticate: Bearer realm="Nostos", error="invalid_token"`. A host whose
+credential outlives a revoke (a signed OAuth access token) refuses revoked
+clients there and may note "last used"; SelfHosted needs none, because its
+token scheme looks the token up on every request.
+
+### SelfHosted access tokens (issue #1469)
+
+SelfHosted turns `/mcp` on with access tokens made in **Settings → Connected
+apps**. Send one as `Authorization: Bearer nst_…`. The rest of the API keeps its
+access model (no login); the token scheme is used by `/mcp` only.
+
+- A token is `nst_` plus 256 random bits in base64url (47 characters). Only its
+  SHA-256 is stored (`McpAccessTokens`, host-local, carried across a library
+  replacement, never in a portable archive). It is returned once, by the request
+  that makes it, and is never logged.
+- Scope `read` gives `nostos:read`; `read_write` gives `nostos:read nostos:write`.
+- Every request looks the token up again, so a revoked token gets `401` on its
+  next call. "Last used" is written at most once a minute.
+- No token, a malformed one or an unknown one: `401` with
+  `WWW-Authenticate: Bearer realm="Nostos"` (`error="invalid_token"` for a wrong
+  one). After 10 failed attempts from one address in 10 minutes, that address
+  gets `429` with `Retry-After` until the window ends, the same rule as the
+  Cloud OPDS credentials; checks are also capped at 600 a minute in total.
+
+| Method | Path | Does |
+| --- | --- | --- |
+| `POST` | `/api/mcp/tokens` | Make one from `{ name, scope: "read" \| "read_write" }` (name 1–80 characters, at most 100 tokens). `201` with `{ details, token }` and `Cache-Control: no-store`; `details` is a connected app (below) |
+
+Listing and revoking go through the connected-apps routes below; each token
+is one app of kind `token`.
+
+Client setup (Settings shows these with the server's own address):
+
+```bash
+# Claude Code
+claude mcp add --transport http nostos https://nostos.example/mcp --header "Authorization: Bearer nst_…"
+```
+
+```jsonc
+// Cursor: ~/.cursor/mcp.json
+{ "mcpServers": { "nostos": { "url": "https://nostos.example/mcp", "headers": { "Authorization": "Bearer nst_…" } } } }
+// VS Code: .vscode/mcp.json
+{ "servers": { "nostos": { "type": "http", "url": "https://nostos.example/mcp", "headers": { "Authorization": "Bearer nst_…" } } } }
+// Claude Desktop: claude_desktop_config.json, through mcp-remote (needs Node.js;
+// add "--allow-http" to args for a plain-http address that is not localhost)
+{ "mcpServers": { "nostos": { "command": "npx",
+  "args": ["mcp-remote", "https://nostos.example/mcp", "--header", "Authorization:${AUTH_HEADER}"],
+  "env": { "AUTH_HEADER": "Bearer nst_…" } } } }
+```
+
+Any other client that speaks Streamable HTTP and can send a header (Hermes,
+for example) connects the same way. Hosted apps such as claude.ai and ChatGPT
+connect from their own servers and need a public address plus OAuth (#1470).
 
 **Tools.** Each wraps Ask Nostos capabilities through `AssistantCapabilityRegistry`,
 so validation and limits are the same; only the result shape differs.

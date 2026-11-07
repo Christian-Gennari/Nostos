@@ -76,6 +76,10 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Carry,
             "Host credentials and provider configuration are deployment-local, contain no foreign key, and must never be imported from a portable archive."),
         new(
+            typeof(McpAccessTokenModel),
+            HostStateCarryOverKind.Carry,
+            "Access tokens for connected AI apps (#1469) are host credentials with no foreign key; replacing the library must not disconnect the apps the owner set up, and a portable archive never carries them."),
+        new(
             typeof(ProviderPreferenceModel),
             HostStateCarryOverKind.Carry,
             "Provider enablement choices are deployment-local configuration with no foreign key; replacing the library must not reset which free sources the user turned on or off."),

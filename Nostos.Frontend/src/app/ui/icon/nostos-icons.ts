@@ -79,6 +79,7 @@ import mapTrifoldLight from '@phosphor-icons/core/light/map-trifold-light.svg';
 import paletteLight from '@phosphor-icons/core/light/palette-light.svg';
 import paperPlaneTiltLight from '@phosphor-icons/core/light/paper-plane-tilt-light.svg';
 import penNibLight from '@phosphor-icons/core/light/pen-nib-light.svg';
+import plugsConnectedLight from '@phosphor-icons/core/light/plugs-connected-light.svg';
 import plusLight from '@phosphor-icons/core/light/plus-light.svg';
 import sparkleLight from '@phosphor-icons/core/light/sparkle-light.svg';
 import squaresFourLight from '@phosphor-icons/core/light/squares-four-light.svg';
@@ -162,6 +163,7 @@ import pause from '@phosphor-icons/core/regular/pause.svg';
 import penNib from '@phosphor-icons/core/regular/pen-nib.svg';
 import pencilSimple from '@phosphor-icons/core/regular/pencil-simple.svg';
 import play from '@phosphor-icons/core/regular/play.svg';
+import plugsConnected from '@phosphor-icons/core/regular/plugs-connected.svg';
 import plus from '@phosphor-icons/core/regular/plus.svg';
 import quotes from '@phosphor-icons/core/regular/quotes.svg';
 import scroll from '@phosphor-icons/core/regular/scroll.svg';
@@ -292,6 +294,7 @@ export const NOSTOS_ICONS = {
   'pen-nib': { regular: penNib, light: penNibLight, fill: penNibFill, },
   'pencil-simple': { regular: pencilSimple, },
   'play': { regular: play, fill: playFill, },
+  'plugs-connected': { regular: plugsConnected, light: plugsConnectedLight, },
   'plus': { regular: plus, thin: plusThin, light: plusLight, },
   'quotes': { regular: quotes, },
   'scroll': { regular: scroll, light: scrollLight, },

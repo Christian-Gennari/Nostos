@@ -25,6 +25,7 @@ using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Mcp;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
@@ -73,12 +74,12 @@ builder.Services.AddSingleton<IEmbeddingProvider, OpenAiCompatibleEmbeddingProvi
 
 var product = builder.Services.AddNostosProduct(builder.Configuration);
 
-// MCP (issue #1467) is registered, but /mcp is mapped only once a policy
-// decides who may call it. Authentication and authorization are wired but
-// empty: SelfHosted has no login, and nothing else here requires a user.
+// MCP (issue #1467). /mcp is mapped because the access tokens below register
+// the policy that decides who may call it: a Bearer token made in Settings →
+// Connected apps (issue #1469). The token scheme is not the default, so the
+// rest of the API keeps its access model: SelfHosted has no login.
 builder.Services.AddNostosMcp();
-builder.Services.AddAuthentication();
-builder.Services.AddAuthorization();
+builder.Services.AddSelfHostedMcpAccessTokens();
 var assistantOptions = product.Assistant;
 var speechOptions = product.Speech;
 var opdsOptions = product.Opds;
@@ -508,6 +509,7 @@ app.MapNostosProductEndpoints(
     NostosProductEndpointPolicies.None with { MapResumableBookUploadEndpoints = true });
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
+app.MapMcpAccessTokenEndpoints();
 
 // --- HANDLE ANGULAR ROUTING ---
 // The SPA shell is served ONLY for client-side routes. The API, OPDS and MCP

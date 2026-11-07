@@ -597,6 +597,48 @@ namespace Nostos.Backend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.McpAccessTokenModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastUsedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("McpAccessTokens", t =>
+                        {
+                            t.HasCheckConstraint("CK_McpAccessTokens_Name", "length(\"Name\") > 0 AND length(\"Name\") <= 80");
+
+                            t.HasCheckConstraint("CK_McpAccessTokens_Scope", "\"Scope\" IN ('read', 'read_write')");
+
+                            t.HasCheckConstraint("CK_McpAccessTokens_TokenHash", "length(\"TokenHash\") = 64");
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.MigrationChunkReceiptRecord", b =>
                 {
                     b.Property<Guid>("SessionId")
