@@ -214,15 +214,15 @@ export function isImportedAnchor(kind: string | undefined): boolean {
 }
 
 /**
- * True for a quote Ask Nostos saved: words from the book, which a reader may
- * look up and draw (issue #1338). Nothing else has this shape. A highlight made
+ * True for a quote Ask Nostos or a connected app (MCP, `mcp`) saved: words
+ * from the book, which a reader may look up and draw (issues #1338, #1467). Nothing else has this shape. A highlight made
  * in a reader has a location, a typed note has no quote, a photographed page is
  * `photo`. `FoundNoteLocation` on the server holds the same rule.
  */
 export function isAskNostosQuote(note: Note): boolean {
   return (
     (note.kind ?? 'note') === 'note' &&
-    (note.captureSource ?? 'text') === 'text' &&
+    ['text', 'mcp'].includes(note.captureSource ?? 'text') &&
     !!note.selectedText?.trim() &&
     ['unknown', 'epub_cfi', 'pdf_page'].includes(note.sourceAnchorKind ?? 'unknown')
   );
