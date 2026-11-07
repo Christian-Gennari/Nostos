@@ -143,6 +143,20 @@ public sealed class McpClientMetadataFetcherTests
     }
 
     [Fact]
+    public async Task A_name_that_does_not_resolve_is_an_error_not_a_crash()
+    {
+        var transport = new StubTransport(_ => Json(Document(ClientId)));
+        using var fetcher = new McpClientMetadataFetcher(transport,
+            (_, _) => throw new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.HostNotFound), null);
+
+        var result = await fetcher.FetchAsync(ClientId, CancellationToken.None);
+
+        result.Metadata.Should().BeNull();
+        result.Error.Should().Contain("could not be loaded");
+        transport.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task A_redirect_to_a_private_address_literal_is_refused()
     {
         var transport = new StubTransport(_ => Redirect("https://127.0.0.1:8443/metadata.json"));

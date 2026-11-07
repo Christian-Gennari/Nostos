@@ -141,10 +141,11 @@ public sealed class McpAccessTokenAuthenticationHandler(
             return AuthenticateResult.Fail("Access token check rate limit exceeded.");
         }
 
-        // nst_ is a token the owner made; nsa_ an OAuth access token (#1470).
+        // nst_ is a token the owner made; nsa_ an OAuth access token (#1470),
+        // honoured only while OAuth is on, so turning it off cuts apps off at once.
         var presented = authorization.Parameter ?? string.Empty;
         var identity = presented.StartsWith(McpOAuthService.AccessPrefix, StringComparison.Ordinal)
-            ? await oauth.AuthenticateAsync(presented, Context.RequestAborted)
+            ? oauthSettings.Enabled ? await oauth.AuthenticateAsync(presented, Context.RequestAborted) : null
             : await tokens.AuthenticateAsync(presented, Context.RequestAborted);
         if (identity is null)
         {

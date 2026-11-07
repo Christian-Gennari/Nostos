@@ -236,7 +236,7 @@ public sealed class McpOAuthTests : IAsyncLifetime
         var html = await (await AuthorizeAsync(Challenge(Verifier()), state: "s1")).Content.ReadAsStringAsync();
         var id = (await PendingAsync()).Single().GetProperty("id").GetString();
 
-        (await _local.PostAsync($"/api/mcp/oauth/requests/{id}/deny", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await _local.PostAsJsonAsync($"/api/mcp/oauth/requests/{id}/deny", new { })).StatusCode.Should().Be(HttpStatusCode.NoContent);
         var redirect = new Uri((await PollAsync(RequestId(html))).GetProperty("redirect").GetString()!);
 
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(redirect.Query);
@@ -301,7 +301,7 @@ public sealed class McpOAuthTests : IAsyncLifetime
     // --- token errors ---------------------------------------------------
 
     [Fact]
-    public async Task A_wrong_code_verifier_fails_and_spends_the_code()
+    public async Task A_wrong_code_verifier_fails_and_leaves_the_code_for_the_real_client()
     {
         var verifier = Verifier();
         var code = await ApprovedCodeAsync(Challenge(verifier), "read_write");
@@ -310,9 +310,9 @@ public sealed class McpOAuthTests : IAsyncLifetime
         var right = await RedeemAsync(code, verifier);
 
         await ExpectOAuthErrorAsync(wrong, "invalid_grant");
-        await ExpectOAuthErrorAsync(right, "invalid_grant");
+        right.StatusCode.Should().Be(HttpStatusCode.OK);
         await using var db = await Contexts().CreateDbContextAsync();
-        (await db.McpOAuthGrants.CountAsync()).Should().Be(0);
+        (await db.McpOAuthGrants.CountAsync()).Should().Be(1);
     }
 
     [Fact]
@@ -354,6 +354,7 @@ public sealed class McpOAuthTests : IAsyncLifetime
         refresh2.Should().NotBe(refresh1);
         body.GetProperty("scope").GetString().Should().Be("nostos:read nostos:write");
         (await ListToolsRawAsync(_public, access2)).StatusCode.Should().Be(HttpStatusCode.OK);
+        await AgeSpentRefreshTokensAsync(McpOAuthService.RefreshReuseGrace + TimeSpan.FromSeconds(1));
 
         var replay = await RefreshAsync(refresh1);
 
@@ -362,6 +363,72 @@ public sealed class McpOAuthTests : IAsyncLifetime
         (await ListToolsRawAsync(_public, access2)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await ListToolsRawAsync(_public, access1)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await _local.GetFromJsonAsync<JsonElement>(McpConnectedAppsEndpoints.Route)).GetProperty("apps").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_refresh_retried_within_the_grace_window_gets_a_fresh_pair_and_keeps_the_grant()
+    {
+        var (_, refresh1) = await ConnectClaudeAsync("read");
+
+        var first = await RefreshAsync(refresh1);
+        var retry = await RefreshAsync(refresh1);
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var a = await first.Content.ReadFromJsonAsync<JsonElement>();
+        var b = await retry.Content.ReadFromJsonAsync<JsonElement>();
+        b.GetProperty("access_token").GetString().Should().NotBe(a.GetProperty("access_token").GetString());
+        (await ListToolsRawAsync(_public, a.GetProperty("access_token").GetString())).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ListToolsRawAsync(_public, b.GetProperty("access_token").GetString())).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await RefreshAsync(b.GetProperty("refresh_token").GetString()!)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_grant_idle_past_the_refresh_lifetime_is_no_longer_listed()
+    {
+        var (access, _) = await ConnectClaudeAsync("read");
+        await using (var db = await Contexts().CreateDbContextAsync())
+        {
+            await db.McpOAuthTokens.ExecuteUpdateAsync(set => set.SetProperty(t => t.ExpiresAtUtc, DateTime.UtcNow.AddMinutes(-1)));
+        }
+
+        (await _local.GetFromJsonAsync<JsonElement>(McpConnectedAppsEndpoints.Route)).GetProperty("apps").GetArrayLength().Should().Be(0);
+        (await ListToolsRawAsync(_public, access)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await using var check = await Contexts().CreateDbContextAsync();
+        (await check.McpOAuthGrants.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task One_address_can_keep_only_a_few_requests_waiting()
+    {
+        for (var i = 0; i < McpOAuthRequests.MaxPendingPerAddress; i++)
+            (await AuthorizeAsync(Challenge(Verifier()))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var refused = await AuthorizeAsync(Challenge(Verifier()), state: "st");
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(refused.Headers.Location!.Query)["error"].ToString()
+            .Should().Be("temporarily_unavailable");
+        (await PendingAsync()).Should().HaveCount(McpOAuthRequests.MaxPendingPerAddress);
+    }
+
+    [Fact]
+    public void A_code_tried_again_while_its_grant_is_written_is_caught()
+    {
+        var requests = new McpOAuthRequests();
+        var client = new McpClientMetadata(McpOAuthFactory.ClaudeClientId, "Claude", [McpOAuthFactory.ClaudeRedirect]);
+        var (id, _) = requests.Create(client, McpOAuthFactory.ClaudeRedirect, null, Challenge(Verifier()), "read", McpOAuthFactory.PublicBase)!.Value;
+        requests.Approve(id, "read").Should().BeTrue();
+        var redirect = ((McpOAuthPollResult.Done)requests.Poll(id)).RedirectUrl;
+        var code = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(redirect).Query)["code"].ToString();
+
+        requests.Redeem(code, _ => false, out _, out var none).Should().BeNull();
+        none.Should().BeNull("a failed check leaves the code unspent");
+        requests.Redeem(code, _ => true, out var grantId, out _).Should().NotBeNull();
+        requests.Redeem(code, _ => true, out _, out var spent).Should().BeNull();
+
+        spent.Should().Be(grantId);
+        requests.FinishRedeem(code).Should().BeTrue();
     }
 
     [Fact]
@@ -504,6 +571,63 @@ public sealed class McpOAuthTests : IAsyncLifetime
         McpPublicHost.IsPublicRequest(Request("192.168.1.20:5214"), settings).Should().BeFalse();
         McpPublicHost.IsPublicRequest(Request("nostos.example.ts.net.evil.example"), settings).Should().BeFalse();
         McpPublicHost.IsPublicRequest(Request("nostos.example.ts.net"), McpOAuthSettings.Disabled).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Approve_and_deny_need_a_json_body_from_this_site()
+    {
+        await AuthorizeAsync(Challenge(Verifier()));
+        var id = (await PendingAsync()).Single().GetProperty("id").GetString();
+        var approve = $"/api/mcp/oauth/requests/{id}/approve";
+
+        // A cross-site page can send these without a CORS preflight.
+        (await _local.PostAsync(approve, null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // A form or text body fails JSON binding first (415): refused either way.
+        (await _local.PostAsync(approve, new FormUrlEncodedContent(new Dictionary<string, string> { ["scope"] = "read" })))
+            .StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.UnsupportedMediaType);
+        (await _local.PostAsync(approve, new StringContent("{\"scope\":\"read\"}", Encoding.UTF8, "text/plain")))
+            .StatusCode.Should().BeOneOf(HttpStatusCode.Forbidden, HttpStatusCode.UnsupportedMediaType);
+        (await _local.PostAsync($"/api/mcp/oauth/requests/{id}/deny", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var crossSite = new HttpRequestMessage(HttpMethod.Post, approve) { Content = JsonContent.Create(new { scope = "read" }) };
+        crossSite.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "cross-site");
+        (await _local.SendAsync(crossSite)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await PendingAsync()).Should().ContainSingle("nothing above approved the request");
+
+        var sameSite = new HttpRequestMessage(HttpMethod.Post, approve) { Content = JsonContent.Create(new { scope = "read" }) };
+        sameSite.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-origin");
+        (await _local.SendAsync(sameSite)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Theory]
+    [InlineData(null, null, null, null, true)]                                      // direct, any browser
+    [InlineData("same-origin", null, null, null, true)]
+    [InlineData("none", null, null, null, true)]
+    [InlineData("cross-site", null, null, null, false)]
+    [InlineData("same-site", null, null, null, false)]
+    [InlineData(null, "http://evil.example", null, null, false)]                     // no Sec-Fetch-Site: Origin decides
+    [InlineData(null, "http://nas.local:5214", null, null, true)]
+    [InlineData(null, null, "100.101.102.103", "127.0.0.1", true)]                  // Tailscale serve, applied
+    [InlineData(null, null, "203.0.113.9, 8.8.8.8", "127.0.0.1", false)]            // proxied from the internet
+    [InlineData(null, null, null, "8.8.8.8", true)]                                  // direct: address not checked
+    [InlineData(null, null, "192.168.1.4", "172.17.0.1", true)]                      // proxy Nostos does not trust, private
+    [InlineData(null, null, "8.8.4.4", "172.17.0.1", false)]                         // same, public caller
+    public void An_owner_decision_comes_from_this_site_and_the_owners_network(
+        string? fetchSite, string? origin, string? forwardedFor, string? remote, bool allowed)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.Host = new HostString("nas.local:5214");
+        context.Request.ContentType = "application/json";
+        if (fetchSite is not null)
+            context.Request.Headers["Sec-Fetch-Site"] = fetchSite;
+        if (origin is not null)
+            context.Request.Headers.Origin = origin;
+        if (forwardedFor is not null)
+            context.Request.Headers["X-Forwarded-For"] = forwardedFor;
+        if (remote is not null)
+            context.Connection.RemoteIpAddress = IPAddress.Parse(remote);
+
+        McpOAuthEndpoints.IsOwnerDecision(context).Should().Be(allowed);
     }
 
     [Fact]
@@ -689,6 +813,14 @@ public sealed class McpOAuthTests : IAsyncLifetime
     private IDbContextFactory<NostosDbContext> Contexts() =>
         _factory.Services.GetRequiredService<IDbContextFactory<NostosDbContext>>();
 
+    private async Task AgeSpentRefreshTokensAsync(TimeSpan by)
+    {
+        var at = DateTime.UtcNow - by;
+        await using var db = await Contexts().CreateDbContextAsync();
+        await db.McpOAuthTokens.Where(t => t.ConsumedAtUtc != null)
+            .ExecuteUpdateAsync(set => set.SetProperty(t => t.ConsumedAtUtc, at));
+    }
+
     private static string Text(CallToolResult result) =>
         string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
 }
@@ -726,5 +858,25 @@ public sealed class McpOAuthOffTests : IAsyncLifetime
         var mcp = await _http.PostAsync(NostosMcp.Path, new StringContent("{}", Encoding.UTF8, "application/json"));
         mcp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         mcp.Headers.WwwAuthenticate.ToString().Should().NotContain("resource_metadata");
+    }
+
+    [Fact]
+    public async Task An_oauth_access_token_made_while_oauth_was_on_stops_working_when_it_is_turned_off()
+    {
+        var oauth = _factory.Services.GetRequiredService<McpOAuthService>();
+        var tokens = await oauth.CreateGrantAsync(
+            new McpOAuthCodeGrant(McpOAuthFactory.ClaudeClientId, "Claude", McpOAuthFactory.ClaudeRedirect, "unused", "read"),
+            Guid.NewGuid());
+        (await oauth.AuthenticateAsync(tokens!.AccessToken)).Should().NotBeNull("the token itself is live");
+
+        var request = new HttpRequestMessage(HttpMethod.Post, NostosMcp.Path)
+        {
+            Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+
+        (await _http.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

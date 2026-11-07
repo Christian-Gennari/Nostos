@@ -45,22 +45,34 @@ public sealed class McpOAuthService(
     /// <summary>At most this many apps at once, so a script cannot fill the table.</summary>
     public const int MaxGrants = 100;
 
+    /// <summary>
+    /// A refresh token used again this soon after its first use is a retry
+    /// (the first answer was lost) or two refreshes in parallel, not theft:
+    /// it gets a fresh pair, and the grant stays.
+    /// </summary>
+    public static readonly TimeSpan RefreshReuseGrace = TimeSpan.FromSeconds(30);
+
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     public static string OAuthScope(string scope) =>
         scope == McpConnectedAppScope.ReadWrite ? $"{NostosMcp.ReadScope} {NostosMcp.WriteScope}" : NostosMcp.ReadScope;
 
-    /// <summary>Makes the grant an approved code stands for, and its first tokens. Null when there are too many apps.</summary>
-    public async Task<(Guid GrantId, McpOAuthIssuedTokens Tokens)?> CreateGrantAsync(
-        McpOAuthCodeGrant code, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Makes the grant an approved code stands for, with the id the code
+    /// reserved, and its first tokens. Null when there are too many apps.
+    /// </summary>
+    public async Task<McpOAuthIssuedTokens?> CreateGrantAsync(
+        McpOAuthCodeGrant code, Guid grantId, CancellationToken cancellationToken = default)
     {
+        var now = _clock.GetUtcNow().UtcDateTime;
         await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        await PruneDeadGrantsAsync(db, now, cancellationToken);
         if (await db.McpOAuthGrants.CountAsync(cancellationToken) >= MaxGrants)
             return null;
 
-        var now = _clock.GetUtcNow().UtcDateTime;
         var grant = new McpOAuthGrantModel
         {
+            Id = grantId,
             ClientId = code.ClientId,
             ClientName = code.ClientName,
             Scope = code.Scope,
@@ -69,7 +81,7 @@ public sealed class McpOAuthService(
         db.McpOAuthGrants.Add(grant);
         var tokens = AddTokens(db, grant.Id, grant.Scope, now);
         await db.SaveChangesAsync(cancellationToken);
-        return (grant.Id, tokens);
+        return tokens;
     }
 
     public async Task<(McpOAuthRefreshOutcome Outcome, McpOAuthIssuedTokens? Tokens)> RefreshAsync(
@@ -88,24 +100,24 @@ public sealed class McpOAuthService(
         if (!string.Equals(grant.ClientId, clientId, StringComparison.Ordinal))
             return (McpOAuthRefreshOutcome.WrongClient, null);
 
-        if (row.ConsumedAtUtc is not null)
-        {
-            await RevokeGrantAsync(db, grant.Id, cancellationToken);
-            return (McpOAuthRefreshOutcome.Reused, null);
-        }
-
         if (row.ExpiresAtUtc <= now)
             return (McpOAuthRefreshOutcome.Expired, null);
 
-        // Spend it first, and only if nobody else just did: two refreshes
-        // racing with one token is a reuse, too.
-        var spent = await db.McpOAuthTokens
-            .Where(t => t.Id == row.Id && t.ConsumedAtUtc == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(t => t.ConsumedAtUtc, now), cancellationToken);
-        if (spent == 0)
+        if (row.ConsumedAtUtc is { } consumed)
         {
-            await RevokeGrantAsync(db, grant.Id, cancellationToken);
-            return (McpOAuthRefreshOutcome.Reused, null);
+            if (now - consumed > RefreshReuseGrace)
+            {
+                await RevokeGrantAsync(db, grant.Id, cancellationToken);
+                return (McpOAuthRefreshOutcome.Reused, null);
+            }
+        }
+        else
+        {
+            // Spend it first. Losing the race to another refresh with the
+            // same token is the parallel case the grace window covers.
+            await db.McpOAuthTokens
+                .Where(t => t.Id == row.Id && t.ConsumedAtUtc == null)
+                .ExecuteUpdateAsync(set => set.SetProperty(t => t.ConsumedAtUtc, now), cancellationToken);
         }
 
         // Spent refresh tokens stay until they would have expired, so a
@@ -167,6 +179,7 @@ public sealed class McpOAuthService(
     public async Task<IReadOnlyList<McpConnectedAppDto>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        await PruneDeadGrantsAsync(db, _clock.GetUtcNow().UtcDateTime, cancellationToken);
         var rows = await db.McpOAuthGrants.AsNoTracking().ToListAsync(cancellationToken);
         return rows
             .Select(g => new McpConnectedAppDto(
@@ -186,6 +199,22 @@ public sealed class McpOAuthService(
     {
         await using var db = await contexts.CreateDbContextAsync(cancellationToken);
         await RevokeGrantAsync(db, grantId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes grants with no live refresh token: idle past
+    /// <see cref="RefreshLifetime"/>, so the app must be approved again anyway.
+    /// They would otherwise stay listed and count toward <see cref="MaxGrants"/>.
+    /// </summary>
+    private static async Task PruneDeadGrantsAsync(NostosDbContext db, DateTime now, CancellationToken cancellationToken)
+    {
+        var dead = await db.McpOAuthGrants
+            .Where(g => !db.McpOAuthTokens.Any(t =>
+                t.GrantId == g.Id && t.Kind == McpOAuthTokenModel.RefreshKind && t.ExpiresAtUtc > now))
+            .Select(g => g.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var id in dead)
+            await RevokeGrantAsync(db, id, cancellationToken);
     }
 
     private static async Task<bool> RevokeGrantAsync(NostosDbContext db, Guid grantId, CancellationToken cancellationToken)

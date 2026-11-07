@@ -391,6 +391,34 @@ describe('ConnectedAppsSettingsComponent', () => {
       }
     });
 
+    it('keeps the requests and keeps looking after one failed read', async () => {
+      vi.useFakeTimers();
+      try {
+        oauth = { enabled: true, connectorUrl: 'https://nostos.example.ts.net/mcp', requests: [claudeRequest] };
+        component.loadOAuth();
+        api.oauthStatus.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+
+        vi.advanceTimersByTime(OAUTH_POLL_MS);
+        expect(component.oauth()?.requests).toEqual([claudeRequest]);
+
+        const calls = api.oauthStatus.mock.calls.length;
+        vi.advanceTimersByTime(OAUTH_POLL_MS);
+        expect(api.oauthStatus.mock.calls.length).toBe(calls + 1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('says where to decide when the server refuses a decision from outside', async () => {
+      await enable();
+      api.approveRequest.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
+      el('connected-apps-approve')!.click();
+      await settle();
+
+      expect(el('connected-apps-request')).not.toBeNull();
+      expect(toast.error).toHaveBeenCalledWith('Approve and deny requests from Nostos on your own network.');
+    });
+
     it('does not ask about OAuth where apps sign in by themselves', async () => {
       api.oauthStatus.mockClear();
       canCreate = false;

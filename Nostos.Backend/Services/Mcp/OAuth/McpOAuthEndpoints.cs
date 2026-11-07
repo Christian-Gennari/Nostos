@@ -75,15 +75,25 @@ public static class McpOAuthEndpoints
             McpPublicHost.IsPublicRequest(context.HttpContext, settings)
                 ? Results.NotFound()
                 : await next(context));
+        // Approve and deny give an outside app access, so they must come from
+        // Settings itself: JSON (a cross-site form or bodiless fetch cannot
+        // send it without a CORS preflight, which Nostos never grants), from
+        // this site, and from the owner's own network.
+        owner.AddEndpointFilter(async (context, next) =>
+            HttpMethods.IsGet(context.HttpContext.Request.Method) || IsOwnerDecision(context.HttpContext)
+                ? await next(context)
+                : Results.Problem(
+                    "Approve and deny connection requests in Settings, on your own network.",
+                    statusCode: StatusCodes.Status403Forbidden));
 
         owner.MapGet("/", (McpOAuthRequests requests) => Results.Ok(new McpOAuthOwnerStatus(
             settings.Enabled,
             settings.Enabled ? settings.Resource : null,
             settings.Enabled ? requests.ListPending() : [])));
 
-        owner.MapPost("/requests/{id}/approve", (string id, McpOAuthApproveRequest? body, McpOAuthRequests requests) =>
+        owner.MapPost("/requests/{id}/approve", (string id, McpOAuthApproveRequest body, McpOAuthRequests requests) =>
         {
-            var scope = body?.Scope ?? McpConnectedAppScope.Read;
+            var scope = body.Scope ?? McpConnectedAppScope.Read;
             if (scope is not (McpConnectedAppScope.Read or McpConnectedAppScope.ReadWrite))
             {
                 return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -97,6 +107,56 @@ public static class McpOAuthEndpoints
 
         owner.MapPost("/requests/{id}/deny", (string id, McpOAuthRequests requests) =>
             settings.Enabled && requests.Deny(id) ? Results.NoContent() : Results.NotFound());
+    }
+
+    /// <summary>
+    /// An approve or deny the owner sent from Settings: a JSON body, no sign of
+    /// another site, and, when a proxy forwarded it, a caller on a private,
+    /// loopback or Tailscale address. The last rule holds even when the proxy
+    /// rewrites the host, so the public-host check cannot see the request came
+    /// from outside. A direct connection is not checked by address: a LAN can
+    /// use global IPv6 addresses, and an open Kestrel port exposes the whole
+    /// app anyway.
+    /// </summary>
+    public static bool IsOwnerDecision(HttpContext http)
+    {
+        var request = http.Request;
+        if (!request.HasJsonContentType())
+            return false;
+
+        var fetchSite = request.Headers["Sec-Fetch-Site"].ToString();
+        if (fetchSite.Length > 0)
+        {
+            if (fetchSite is not ("same-origin" or "none"))
+                return false;
+        }
+        else if (request.Headers.Origin.ToString() is { Length: > 0 } origin
+            && (!Uri.TryCreate(origin, UriKind.Absolute, out var originUri)
+                || !string.Equals(originUri.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        // UseForwardedHeaders moves the proxy's own address to X-Original-For
+        // when it applies X-Forwarded-For; a proxy it does not trust leaves
+        // X-Forwarded-For in place. Either way the request was forwarded.
+        var forwardedFor = request.Headers["X-Forwarded-For"];
+        var proxied = request.Headers.ContainsKey("X-Original-For") || forwardedFor.Count > 0;
+        if (!proxied)
+            return true;
+
+        if (http.Connection.RemoteIpAddress is not { } remote || McpNetworkAddressFilter.IsPublic(remote))
+            return false;
+        foreach (var value in forwardedFor)
+        {
+            foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!System.Net.IPEndPoint.TryParse(part, out var endpoint) || McpNetworkAddressFilter.IsPublic(endpoint.Address))
+                    return false;
+            }
+        }
+
+        return true;
     }
 
     // ------------------------------------------------------------------
@@ -143,7 +203,8 @@ public static class McpOAuthEndpoints
         if (ParseScope(Single("scope")) is not { } requestedScope)
             return Fail("invalid_scope", $"Ask for {NostosMcp.ReadScope} and, to save to the library, {NostosMcp.WriteScope}.");
 
-        var created = requests.Create(client, redirectUri, state, challenge, requestedScope, settings.Issuer);
+        var created = requests.Create(client, redirectUri, state, challenge, requestedScope, settings.Issuer,
+            http.Connection.RemoteIpAddress?.ToString() ?? "-");
         if (created is not { } pending)
             return Fail("temporarily_unavailable", "Too many connection requests are waiting. Try again in a few minutes.");
 
@@ -194,27 +255,36 @@ public static class McpOAuthEndpoints
                 var codeValue = Single("code");
                 if (codeValue is null)
                     return OAuthError("invalid_request", "code is required.");
-                var code = requests.Redeem(codeValue, out var spentGrant);
+                var clientId = Single("client_id");
+                var redirect = Single("redirect_uri");
+                var verifier = Single("code_verifier");
+                // Checked before the code is spent, so a wrong guess cannot
+                // burn it for the real client.
+                var code = requests.Redeem(codeValue, issued =>
+                        string.Equals(clientId, issued.ClientId, StringComparison.Ordinal)
+                        && string.Equals(redirect, issued.RedirectUri, StringComparison.Ordinal)
+                        && verifier is not null && VerifyPkce(verifier, issued.CodeChallenge),
+                    out var grantId, out var spentGrant);
                 if (code is null)
                 {
                     // A code used twice: revoke what the first use made.
-                    if (spentGrant is { } grantId)
-                        await oauth.RevokeGrantAsync(grantId, ct);
-                    return OAuthError("invalid_grant", "The authorization code is unknown, used or expired.");
+                    if (spentGrant is { } spent)
+                        await oauth.RevokeGrantAsync(spent, ct);
+                    return OAuthError("invalid_grant",
+                        "The authorization code is unknown, used or expired, or was issued for another client, redirect_uri or code_verifier.");
                 }
 
-                if (!string.Equals(Single("client_id"), code.ClientId, StringComparison.Ordinal))
-                    return OAuthError("invalid_grant", "The code was issued to another client.");
-                if (!string.Equals(Single("redirect_uri"), code.RedirectUri, StringComparison.Ordinal))
-                    return OAuthError("invalid_grant", "redirect_uri does not match the authorization request.");
-                if (Single("code_verifier") is not { } verifier || !VerifyPkce(verifier, code.CodeChallenge))
-                    return OAuthError("invalid_grant", "The code_verifier does not match the code_challenge.");
+                var tokens = await oauth.CreateGrantAsync(code, grantId, ct);
+                if (tokens is null)
+                    return OAuthError("invalid_grant", $"This server already has {McpOAuthService.MaxGrants} connected apps. Revoke one in Settings first.");
+                if (requests.FinishRedeem(codeValue))
+                {
+                    // Someone else tried the code while the grant was written.
+                    await oauth.RevokeGrantAsync(grantId, ct);
+                    return OAuthError("invalid_grant", "The authorization code was used twice, so the connection was revoked.");
+                }
 
-                var created = await oauth.CreateGrantAsync(code, ct);
-                if (created is not { } made)
-                    return OAuthError("access_denied", $"This server already has {McpOAuthService.MaxGrants} connected apps. Revoke one in Settings first.");
-                requests.RecordGrant(codeValue, made.GrantId);
-                return TokenResponse(made.Tokens);
+                return TokenResponse(tokens);
             }
 
             case "refresh_token":

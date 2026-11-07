@@ -217,9 +217,11 @@ export class ConnectedAppsSettingsComponent implements OnInit {
         if (status.enabled) this.startOAuthPolling();
         else this.stopOAuthPolling();
       },
+      // While polling, one failed read (a restart, a network blip) keeps the
+      // last answer and the timer, so a waiting request still shows up. Only
+      // a first read that fails means there is nothing to show.
       error: () => {
-        this.oauth.set(null);
-        this.stopOAuthPolling();
+        if (this.oauthTimer === null) this.oauth.set(null);
       },
     });
   }
@@ -272,6 +274,10 @@ export class ConnectedAppsSettingsComponent implements OnInit {
       return;
     }
     this.deciding.set(null);
+    if (error.status === 403) {
+      this.toast.error('Approve and deny requests from Nostos on your own network.');
+      return;
+    }
     this.toast.error(what === 'approve' ? `Could not approve ${request.clientName}` : `Could not deny ${request.clientName}`);
   }
 

@@ -126,8 +126,11 @@ public sealed class McpClientMetadataFetcher : IMcpClientMetadataFetcher, IDispo
         {
             result = McpClientMetadataResult.Fail("The app's details took longer than 5 seconds to load.");
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException or System.Net.Sockets.SocketException or IOException)
         {
+            // SocketException: the name does not resolve (the pre-request
+            // lookup calls DNS directly). IOException: the connection broke
+            // while the body was read.
             result = McpClientMetadataResult.Fail("The app's details could not be loaded from its address.");
         }
 

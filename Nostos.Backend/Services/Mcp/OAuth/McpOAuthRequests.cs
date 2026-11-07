@@ -57,6 +57,12 @@ public sealed class McpOAuthRequests(TimeProvider? clock = null)
     /// <summary>At most this many requests wait at once, so nobody can bury the real one.</summary>
     public const int MaxPending = 20;
 
+    /// <summary>
+    /// At most this many of them from one address, so one caller cannot take
+    /// every place (behind a proxy that hides addresses, all callers share it).
+    /// </summary>
+    public const int MaxPendingPerAddress = 3;
+
     /// <summary>Consonants only: no words, no 0/O or 1/I confusion.</summary>
     private const string CodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ";
 
@@ -65,8 +71,18 @@ public sealed class McpOAuthRequests(TimeProvider? clock = null)
     private readonly Dictionary<string, Entry> _requests = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (McpOAuthCodeGrant Grant, DateTimeOffset Until)> _codes = new(StringComparer.Ordinal);
 
-    /// <summary>Codes already redeemed, until they would have expired, with the grant they made.</summary>
-    private readonly Dictionary<string, (Guid GrantId, DateTimeOffset Until)> _spentCodes = new(StringComparer.Ordinal);
+    /// <summary>
+    /// Codes already redeemed, until they would have expired: the grant id
+    /// they reserved, and whether someone tried the code again.
+    /// </summary>
+    private readonly Dictionary<string, SpentCode> _spentCodes = new(StringComparer.Ordinal);
+
+    private sealed class SpentCode
+    {
+        public required Guid GrantId;
+        public required DateTimeOffset Until;
+        public bool Replayed;
+    }
 
     private sealed class Entry
     {
@@ -78,26 +94,32 @@ public sealed class McpOAuthRequests(TimeProvider? clock = null)
         public required string CodeChallenge;
         public required string RequestedScope;
         public required string Issuer;
+        public required string Address;
         public required DateTimeOffset CreatedAt;
         public required DateTimeOffset ExpiresAt;
         public string? ApprovedScope;
         public bool Denied;
     }
 
-    /// <summary>Creates a pending request; null when <see cref="MaxPending"/> already wait.</summary>
+    /// <summary>
+    /// Creates a pending request; null when <see cref="MaxPending"/> already
+    /// wait, or <see cref="MaxPendingPerAddress"/> from <paramref name="address"/>.
+    /// </summary>
     public (string Id, string UserCode)? Create(
         McpClientMetadata client,
         string redirectUri,
         string? state,
         string codeChallenge,
         string requestedScope,
-        string issuer)
+        string issuer,
+        string address = "-")
     {
         var now = _clock.GetUtcNow();
         lock (_gate)
         {
             Prune(now);
-            if (_requests.Count >= MaxPending)
+            if (_requests.Count >= MaxPending
+                || _requests.Values.Count(r => r.Address == address && r.ExpiresAt > now) >= MaxPendingPerAddress)
                 return null;
 
             string userCode;
@@ -121,6 +143,7 @@ public sealed class McpOAuthRequests(TimeProvider? clock = null)
                 CodeChallenge = codeChallenge,
                 RequestedScope = requestedScope,
                 Issuer = issuer,
+                Address = address,
                 CreatedAt = now,
                 ExpiresAt = now + RequestLifetime,
             };
@@ -213,36 +236,44 @@ public sealed class McpOAuthRequests(TimeProvider? clock = null)
     }
 
     /// <summary>
-    /// Takes a code: it works once. A second try returns null and, through
-    /// <paramref name="spentGrant"/>, the grant the first try made, so the
-    /// caller can revoke it (RFC 6749 §4.1.2).
+    /// Takes a code when <paramref name="matches"/> accepts what it was issued
+    /// for (client, redirect URI, PKCE): it works once, and a failed check
+    /// leaves it for the real client. On success, <paramref name="grantId"/>
+    /// is the id the grant must get. A second try returns null with
+    /// <paramref name="spentGrant"/> set, so the caller revokes what the first
+    /// made (RFC 6749 §4.1.2); <see cref="FinishRedeem"/> catches a second try
+    /// that comes while the grant is still being written.
     /// </summary>
-    public McpOAuthCodeGrant? Redeem(string code, out Guid? spentGrant)
+    public McpOAuthCodeGrant? Redeem(
+        string code, Func<McpOAuthCodeGrant, bool> matches, out Guid grantId, out Guid? spentGrant)
     {
         var now = _clock.GetUtcNow();
         lock (_gate)
         {
+            grantId = Guid.Empty;
             spentGrant = null;
             if (_spentCodes.TryGetValue(code, out var spent) && spent.Until > now)
             {
-                spentGrant = spent.GrantId == Guid.Empty ? null : spent.GrantId;
+                spent.Replayed = true;
+                spentGrant = spent.GrantId;
                 return null;
             }
 
-            if (!_codes.Remove(code, out var entry) || entry.Until <= now)
+            if (!_codes.TryGetValue(code, out var entry) || entry.Until <= now || !matches(entry.Grant))
                 return null;
-            _spentCodes[code] = (Guid.Empty, entry.Until);
+            _codes.Remove(code);
+            grantId = Guid.NewGuid();
+            _spentCodes[code] = new SpentCode { GrantId = grantId, Until = entry.Until };
             return entry.Grant;
         }
     }
 
-    /// <summary>Records which grant a redeemed code made.</summary>
-    public void RecordGrant(string code, Guid grantId)
+    /// <summary>True when the code was tried again while its grant was made: revoke it.</summary>
+    public bool FinishRedeem(string code)
     {
         lock (_gate)
         {
-            if (_spentCodes.TryGetValue(code, out var spent))
-                _spentCodes[code] = (grantId, spent.Until);
+            return _spentCodes.TryGetValue(code, out var spent) && spent.Replayed;
         }
     }
 

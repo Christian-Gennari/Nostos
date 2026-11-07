@@ -190,7 +190,12 @@ again to come back. Notes and drafts it already saved stay in your library.
 ## Security notes
 
 - Access tokens last one hour. Refresh tokens are used once and replaced; if
-  one is used twice, Nostos revokes the whole connection.
+  one is used again more than 30 seconds later, Nostos revokes the whole
+  connection. Within 30 seconds it is a retry or two refreshes at once, and the
+  app gets a fresh pair.
+- An app idle for 60 days drops off the list; connect it again to use it.
+- Turning OAuth off (removing `Mcp__PublicBaseUrl`) stops every approved app at
+  once. Access tokens you made in Settings keep working.
 - Nostos stores only SHA-256 fingerprints of tokens.
 - Apps identify themselves with a client metadata document (an https URL).
   Nostos fetches it with tight limits: https only, public addresses only
@@ -198,7 +203,12 @@ again to come back. Notes and drafts it already saved stay in your library.
   no dynamic client registration. An app that offers only dynamic registration
   cannot connect.
 - The approve, deny and list routes answer `404` on the public address.
-- Requests waiting for approval end after 10 minutes. At most 20 wait at once.
+  Approve and deny also take only a JSON request from Settings itself, so
+  another website cannot approve a request in your browser. When a proxy
+  forwards the request, the caller must be on a private, loopback or Tailscale
+  address, even if the proxy rewrites the host.
+- Requests waiting for approval end after 10 minutes. At most 20 wait at once,
+  and at most 3 from one address.
 - The public OAuth endpoints are rate-limited per address. Behind Docker's port
   mapping every request may come from the same bridge address; the limits then
   apply to all callers together.
