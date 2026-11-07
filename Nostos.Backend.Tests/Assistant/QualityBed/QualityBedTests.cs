@@ -19,9 +19,12 @@ using Xunit;
 /// stay under 90 s and touch no network.
 ///
 /// The 90 s budget is wall-clock time, so the campaign runs outside the
-/// parallel pool (<see cref="QualityBedTimingCollection"/>). Alone it takes
-/// about 27 s; sharing the host with the rest of the suite it measured
-/// 1 m 46 s and failed the budget although nothing in it had slowed down.
+/// parallel pool (<see cref="QualityBedTimingCollection"/>). Sharing the
+/// machine with the rest of the suite it once measured 1 m 46 s and failed the
+/// budget although nothing in it had slowed down. Since #1474 it builds one
+/// host per run and restores the seeded database per scenario
+/// (<see cref="QualityBedSharedHost"/>): 28 scenarios take about 16 s alone,
+/// where a host per scenario took about 64 s.
 /// </summary>
 [Collection(QualityBedTimingCollection.Name)]
 public sealed class QualityBedDeterministicTests
