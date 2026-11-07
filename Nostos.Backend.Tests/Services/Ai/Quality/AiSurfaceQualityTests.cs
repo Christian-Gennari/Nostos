@@ -58,8 +58,14 @@ public sealed class AiSurfaceQualityTests
     {
         // The questions are paraphrases. If a bag of words passed, the set
         // would not tell a semantic model from lexical search.
-        var passages = EmbeddingQuality.Passages.Select(BagOfWords).ToList();
-        var queries = EmbeddingQuality.Cases.Select(c => BagOfWords(c.Query)).ToList();
+        var vocabulary = EmbeddingQuality.Passages
+            .Concat(EmbeddingQuality.Cases.Select(c => c.Query))
+            .SelectMany(TranscriptQuality.Words)
+            .Distinct(StringComparer.Ordinal)
+            .Select((word, index) => (word, index))
+            .ToDictionary(pair => pair.word, pair => pair.index, StringComparer.Ordinal);
+        var passages = EmbeddingQuality.Passages.Select(p => BagOfWords(p, vocabulary)).ToList();
+        var queries = EmbeddingQuality.Cases.Select(c => BagOfWords(c.Query, vocabulary)).ToList();
 
         var score = EmbeddingQuality.Evaluate(passages, queries);
 
@@ -148,11 +154,11 @@ public sealed class AiSurfaceQualityTests
         return vector;
     }
 
-    private static float[] BagOfWords(string text)
+    private static float[] BagOfWords(string text, IReadOnlyDictionary<string, int> vocabulary)
     {
-        var vector = new float[512];
+        var vector = new float[vocabulary.Count];
         foreach (var word in TranscriptQuality.Words(text))
-            vector[(word.GetHashCode(StringComparison.Ordinal) & 0x7FFFFFFF) % vector.Length] += 1;
+            vector[vocabulary[word]] += 1;
         return vector;
     }
 

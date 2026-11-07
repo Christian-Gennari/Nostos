@@ -31,16 +31,18 @@ internal static class EmbeddingQuality
         "Salt whitened the rails by morning; the spray had found every seam in the dark rain.",
     ];
 
+    // No question shares a content word with its passage; several share
+    // words with another one (a bag of words scores recall@1 0.13, MRR 0.32).
     public static readonly EmbeddingGoldCase[] Cases =
     [
-        new("how should lines be stored so they don't tangle", 0),
-        new("staying focused through the night", 1),
-        new("where do I do my best thinking", 2),
-        new("what did the fees cost the boats", 3),
-        new("fixing wood means paying attention to it first", 4),
-        new("the river crossing changed place after high water", 5),
-        new("an early breakfast before dawn", 6),
-        new("sea spray dried white on the boat", 7),
+        new("how do I keep my lines from tangling", 0),
+        new("staying alert until dawn on duty", 1),
+        new("which stroll helps me think", 2),
+        new("what the harbour charges took from the boats", 3),
+        new("mending timber starts by paying attention", 4),
+        new("high water shifted where people cross the river", 5),
+        new("cooking oats while everyone is asleep", 6),
+        new("dried brine left the deck white", 7),
     ];
 
     /// <summary>Thresholds a configured embedding model must meet on <see cref="Cases"/>.</summary>
