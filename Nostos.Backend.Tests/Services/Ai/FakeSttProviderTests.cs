@@ -260,7 +260,7 @@ public sealed class OpenAiCompatibleSttProviderTests
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, SttErrorCodes.Permission)]
     [InlineData(HttpStatusCode.Forbidden, SttErrorCodes.Permission)]
-    [InlineData(HttpStatusCode.TooManyRequests, SttErrorCodes.Permission)]
+    [InlineData(HttpStatusCode.TooManyRequests, SttErrorCodes.RateLimited)]
     [InlineData(HttpStatusCode.RequestEntityTooLarge, SttErrorCodes.TooLarge)]
     [InlineData(HttpStatusCode.UnsupportedMediaType, SttErrorCodes.UnsupportedFormat)]
     [InlineData(HttpStatusCode.BadGateway, SttErrorCodes.Provider)]

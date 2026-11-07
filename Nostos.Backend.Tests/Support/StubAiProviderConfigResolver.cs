@@ -42,4 +42,15 @@ internal sealed class StubAiProviderConfigResolver : IAiProviderConfigResolver
 
     public Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
         Task.FromResult(Embedding);
+
+    public EffectiveAiProviderConfig Tts { get; set; } = new(
+        Enabled: false,
+        BaseUrl: string.Empty,
+        Model: string.Empty,
+        ApiKeyEnvironmentVariable: string.Empty,
+        ApiKey: null,
+        KeyFromServerEnv: false);
+
+    public Task<EffectiveAiProviderConfig> GetEffectiveTtsAsync(CancellationToken ct = default) =>
+        Task.FromResult(Tts);
 }

@@ -80,7 +80,7 @@ public sealed class SttException(string code, string message) : Exception(messag
 
     public static SttException PermissionDenied() => new(
         SttErrorCodes.Permission,
-        "The transcription provider rejected the configured credential or is rate limiting.");
+        "The transcription provider rejected the configured credential.");
 
     public static SttException RateLimited() => new(
         SttErrorCodes.RateLimited,
