@@ -213,9 +213,6 @@
               <!-- Phones hide the Author column, so the row names the author
                    under the title instead (desktop hides this line). -->
               <span class="list-book-author">{{ book.author || unknownAuthor }}</span>
-              @if (statusLine(book); as line) {
-              <span class="list-book-status">{{ line }}</span>
-              }
 
               <!-- Import state, in the row the book will keep. The bar sits inside
                    the existing row height (measured: 63px desktop / 79px mobile
@@ -484,20 +481,11 @@
           <!-- The title is the card's one real link; its ::after stretches over the
                whole card, so a click anywhere opens the book and Tab/Enter reach it. -->
           <div class="meta-title"><a class="card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="bookLink(book)">{{ book.title }}</a></div>
-          <!-- The book's own state rides on the author line, so the cover is
-               left to its art. The toggles on the cover appear on hover. -->
+          <!-- The shelf shows title and author only. Reading state lives on the
+               book page; the toggles on the cover appear on hover. -->
           <div class="meta-author">
             <span class="meta-author-name">{{ book.author || unknownAuthor }}</span>
-            @if (book.finishedAt) {
-            <nostos-icon name="check-circle" weight="fill" [size]="13" class="meta-mark meta-mark--finished" label="Finished"></nostos-icon>
-            }
-            @if (book.isFavorite) {
-            <nostos-icon name="heart" weight="fill" [size]="13" class="meta-mark meta-mark--favorite" label="Favourite"></nostos-icon>
-            }
           </div>
-          @if (statusLine(book); as line) {
-          <div class="meta-status">{{ line }}</div>
-          }
 
           <!-- A failed import explains itself on the card, not in a `title`
                tooltip: no phone can show a tooltip, and "Failed" alone says

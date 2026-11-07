@@ -55,7 +55,7 @@ import { coverImageUrl } from '../core/cover-url';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
-import { READING_STATUS_LABEL, bookReadingStatusOf } from '../core/reading-status';
+import { READING_STATUS_LABEL } from '../core/reading-status';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { CheckboxDirective } from '../ui/check/check.directive';
@@ -1154,18 +1154,6 @@ export class Library implements OnInit, OnDestroy {
         this.toast.error('Could not update the favourite');
       },
     });
-  }
-
-  /**
-   * The quiet status line under a book: "Reading" or "Finished". It is the
-   * book's status (all editions together, the same rule as the Reading and
-   * Finished filters); a book not started has none. The percentage and the
-   * dates live on the book page, so the shelf stays uncluttered.
-   */
-  statusLine(book: Book): string {
-    if (book.status === 1 || book.status === 2 || book.status === 3) return '';
-    const { status } = bookReadingStatusOf(book, book.otherEditions);
-    return status === 'reading' || status === 'finished' ? READING_STATUS_LABEL[status] : '';
   }
 
   toggleFinished(book: Book, event: Event): void {

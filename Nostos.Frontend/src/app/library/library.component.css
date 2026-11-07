@@ -408,15 +408,6 @@ app-sidebar-collections.no-transition {
   font-size: 0.88rem;
 }
 
-.list-book-status,
-.meta-status {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .list-book-author {
   /* Phones only: the Author column is hidden there (see the phone block). */
   display: none;
@@ -484,11 +475,11 @@ app-sidebar-collections.no-transition {
   color: var(--color-text-muted);
 }
 
-/* At rest only the active state is drawn; the inactive toggle waits for the
-   row's hover with the edit/delete pair, so forty barely-visible outlines do
-   not add noise to the list's left-hand rhythm. */
-.fav-btn-list:not(.active),
-.finished-btn-list:not(.active) {
+/* At rest no toggle is drawn, active or not: the shelf does not show reading
+   state (that lives on the book page). The pair waits for the row's hover
+   with the edit/delete pair. */
+.fav-btn-list,
+.finished-btn-list {
   opacity: 0;
 }
 
@@ -499,14 +490,16 @@ app-sidebar-collections.no-transition {
   opacity: 1;
 }
 
-.fav-btn-list.active,
+.table-row:hover .fav-btn-list.active,
+.table-row:focus-within .fav-btn-list.active,
 .table-row:hover .fav-btn-list:hover,
 .table-row:focus-within .fav-btn-list:focus-visible {
   color: var(--color-danger-vivid);
   opacity: 1;
 }
 
-.finished-btn-list.active,
+.table-row:hover .finished-btn-list.active,
+.table-row:focus-within .finished-btn-list.active,
 .table-row:hover .finished-btn-list:hover,
 .table-row:focus-within .finished-btn-list:focus-visible {
   color: var(--color-success);
@@ -817,8 +810,8 @@ app-sidebar-collections.no-transition {
   opacity: 0;
 }
 
-/* Hover or keyboard only, active or not: the card's state is drawn on its
-   author line (`.meta-mark`), so the cover is left to its art at rest. */
+/* Hover or keyboard only, active or not: the shelf does not show reading
+   state at rest (that lives on the book page), so the cover keeps its art. */
 .book-card:hover .fav-btn-grid,
 .book-card:hover .finished-btn-grid,
 .book-card:focus-within .fav-btn-grid,
@@ -943,20 +936,6 @@ app-sidebar-collections.no-transition {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* The book's own state, after its author: finished, then favourite. */
-.meta-mark {
-  display: inline-flex;
-  flex: none;
-}
-
-.meta-mark--finished {
-  color: var(--color-success);
-}
-
-.meta-mark--favorite {
-  color: var(--color-danger-vivid);
 }
 
 /* --- RESULTS STAGE: the cinematic filter/sort cross-fade ----------------
@@ -1319,24 +1298,10 @@ app-sidebar-collections.no-transition {
     display: none;
   }
 
-  /* The status pair follows the title, as on desktop. Only the active state
-     is drawn (a finished or favourite book must still read at a glance); the
-     inactive toggle behaves as the grid's does on touch: hidden, and changed
-     from the book page. */
+  /* A phone has no hover to reveal the toggles with, so the pair behaves as
+     the grid's does on touch: hidden, and changed from the book page. */
   .list-row-status {
-    padding: 0 0.5rem;
-  }
-
-  .fav-btn-list:not(.active),
-  .finished-btn-list:not(.active) {
     display: none;
-  }
-
-  /* On a phone there is no hover to reveal the inactive toggle with, so the
-     hover fill can never fire. Drop it rather than leave a dead rule. */
-  .fav-btn-list,
-  .finished-btn-list {
-    background: none;
   }
 
   /* Hide columns. `display: none` on the actions cluster is also what disables
