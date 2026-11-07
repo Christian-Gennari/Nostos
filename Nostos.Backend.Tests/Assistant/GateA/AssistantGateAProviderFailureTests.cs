@@ -3,6 +3,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Services.Ai;
@@ -106,6 +107,81 @@ public sealed class AssistantGateAProviderFailureTests
         finally
         {
             Environment.SetEnvironmentVariable(KeyVariable, previous);
+        }
+    }
+
+    [Fact]
+    public async Task The_owner_finds_the_upstream_detail_in_the_log_and_the_api_client_gets_plain_words()
+    {
+        // A SelfHosted base URL without /v1: the panel says "try again", so
+        // the HTTP status has to be somewhere the owner can find it.
+        await using var server = Server("404-html")!;
+        var logs = new CapturingLoggerProvider();
+
+        var previous = Environment.GetEnvironmentVariable(KeyVariable);
+        Environment.SetEnvironmentVariable(KeyVariable, KeyValue);
+        try
+        {
+            using var factory = new LibraryEndpointFactory();
+            using var host = factory.WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("Assistant:Enabled", "true");
+                builder.UseSetting("Assistant:BaseUrl", server.BaseUrl);
+                builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", KeyVariable);
+                builder.UseSetting("Assistant:Model", "failure-path-model");
+                builder.ConfigureLogging(logging => logging.AddProvider(logs));
+            });
+            using var client = host.CreateClient();
+
+            var response = await client.PostAsJsonAsync(
+                AssistantEndpoints.TurnRoute,
+                new AssistantTurnRequest(
+                    "conversation-rest", "turn-rest", "What did I note about ropes?",
+                    new AssistantContextDto("second-brain", "/second-brain")));
+
+            ((int)response.StatusCode).Should().Be(502);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            problem.GetProperty("title").GetString().Should().Be(LlmErrorCodes.Provider);
+            problem.GetProperty("detail").GetString()
+                .Should().Be("The AI service could not complete this turn. Try again.");
+
+            var warning = logs.Messages.Should()
+                .Contain(m => m.Contains("Ask Nostos provider call failed", StringComparison.Ordinal)).Which;
+            warning.Should().Contain("HTTP 404");
+            logs.Messages.Should().NotContain(m => m.Contains(KeyValue, StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(KeyVariable, previous);
+        }
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
+
+        public IReadOnlyList<string> Messages => _messages.ToArray();
+
+        public ILogger CreateLogger(string categoryName) => new Logger(_messages);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Logger(System.Collections.Concurrent.ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (IsEnabled(logLevel))
+                    messages.Enqueue(formatter(state, exception));
+            }
         }
     }
 

@@ -81,7 +81,10 @@ public static class AssistantEndpoints
         }
         catch (LlmException ex)
         {
-            return Failure(ex.Code, StatusFor(ex.Code), ex.Message);
+            // The same plain words as the stream: the exception's own message
+            // can carry the upstream body (an HTML error page, a gateway's
+            // text), which is for the log, not for an API client.
+            return Failure(ex.Code, StatusFor(ex.Code), LlmEventFailure(ex).Message);
         }
     }
 
