@@ -303,6 +303,9 @@ public sealed class McpHttpTests : IAsyncLifetime
         overview.GetProperty("brain").GetProperty("notes").GetInt32().Should().Be(2);
         overview.GetProperty("brain").GetProperty("booksWithMostNotes")[0].GetProperty("id").GetString().Should().Be(bookId.ToString("D"));
         overview.GetProperty("library").GetRawText().Should().Contain("Moby-Dick");
+        // Editions vs books once per work: say so, or a model reports a bug (#1486).
+        overview.GetProperty("library").GetProperty("countsNote").GetString()
+            .Should().Contain("every edition").And.Contain("each book once");
     }
 
     [Fact]

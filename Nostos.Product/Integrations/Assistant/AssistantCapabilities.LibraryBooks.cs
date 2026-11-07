@@ -7,6 +7,12 @@ namespace Nostos.Backend.Integrations.Assistant;
 
 public static partial class AssistantCapabilities
 {
+    /// <summary>What the two totals in <c>library_overview</c> count (#1486).</summary>
+    internal const string OverviewCountsNote =
+        "totalBooks and books list every edition. statusAndFormatCounts count each book once, " +
+        "however many editions it has, so its 'all' can be lower than totalBooks. " +
+        "Paper books have no format count, so the format counts do not add up to 'all'.";
+
     private static IReadOnlyList<AssistantCapability> BuildLibraryBookCapabilities(ILibraryService library) =>
     [
         // ------------------------------------------------------------------
@@ -173,6 +179,9 @@ public static partial class AssistantCapabilities
                     books,
                     collections = collections.Data,
                     statusAndFormatCounts = counts.Data,
+                    // Without this, a model compares the two totals and
+                    // reports a counting bug (#1486).
+                    countsNote = OverviewCountsNote,
                 }));
             }),
 
