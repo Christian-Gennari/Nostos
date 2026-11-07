@@ -1,6 +1,9 @@
 # Ask Nostos v3 — retrieval-first quality gate and model floor (#566)
 
 Status: **complete — measurements final; PR pending merge**  ·  Issue: Christian-Gennari/Nostos#566 (closed final gate for epic #557)
+
+> **Update 2026-11-07 (#1466):** the deterministic gate was audited and extended (C30–C33, provider failure paths, a per-turn live-update check) and a capped manual live workflow was added — see §10. The **live numbers in §3 (live results), §4, §5 and §6 are from September and are stale**: they predate changesets with undo, live updates, quotes by first and last words and topics on capture, and have not been re-measured on current `main` (#1473). §11 defines what good means for embeddings, STT and read aloud.
+
 Final validation/re-measurement base: `main` @ 38bc03bc (#605 + #609 + #610). Initial live baseline at `89f8a27` is retained explicitly in §4 for historical comparison.  ·  Harness: this repository (`Nostos.Backend.Tests/Assistant/…`)
 
 This report records, separately and without a blended score:
@@ -29,7 +32,7 @@ All 17 cases are covered by deterministic tests in `Nostos.Backend.Tests/Assista
 | 1 | lost HTTP response + retry reuses the same TurnId/idempotency identity | `AssistantGateAHttpIdempotencyTests::Lost_response_retry_reuses_the_same_TurnId_for_capture` / `…for_ordinary_act` (same ConversationId+TurnId, different delivery key, over real HTTP) |
 | 2 | successful capture is not duplicated | capture-retry test: same `CapturedNoteId`, note count 1 |
 | 3 | successful ordinary Act mutation is not duplicated | act-retry test: one collection created |
-| 4 | destructive approval result replayed after ambiguous delivery | `…::Lost_approval_response_replays_the_destructive_result_without_double_execution` |
+| 4 | destructive approval result replayed after ambiguous delivery | `…::Lost_apply_response_reports_the_applied_changeset_without_applying_twice` (since 99bf8dd8 the approval is a reviewed changeset; renamed from `Lost_approval_response_replays_the_destructive_result_without_double_execution`) |
 | 5 | physical-page continuation records the real answer as a user turn | `AssistantGateAContinuationTests::Physical_page_answer_wins_over_a_stale_context_anchor` (answer `Message` is authoritative; stored anchor cannot win; model never re-consulted) |
 | 6 | external-audio continuation | `…::External_audio_answer_replay_captures_exactly_once` |
 | 7 | missing-book continuation | `…::Missing_book_answer_replay_captures_exactly_once` |
@@ -37,10 +40,10 @@ All 17 cases are covered by deterministic tests in `Nostos.Backend.Tests/Assista
 | 9 | session refresh restores the active conversation | `AssistantGateAConversationTests::Session_refresh_restores_the_active_conversation_continuation` (server half) + existing frontend spec (`assistant.service.spec.ts` restore tests) |
 | 10 | New conversation resets it | `…::A_new_conversation_starts_clean_and_leaves_the_old_one_intact` + existing frontend spec |
 | 11 | exact evidence handle re-reads canonical data | `AssistantGateAEvidenceTests::Exact_pdf_handle_rereads_canonical_text_with_grounded_locators`, `…::Note_handle_reread_returns_canonical_note_through_the_tool` |
-| 12 | typed failures map to intended UI state | `AssistantGateAFailureContractTests` (7 facts pinning server codes: continuation not-found/answer-required, approval not-found/mismatch/required, indexing-pending, turn-cancelled, stale-evidence not-found) |
+| 12 | typed failures map to intended UI state | `AssistantGateAFailureContractTests` (7 facts pinning server codes: continuation not-found/answer-required, changeset refusals, indexing-pending, turn-cancelled, stale-evidence not-found) plus, since #1466, `AssistantGateAProviderFailureTests` (8 cases: real provider over a socket to the streamed and REST routes) |
 | 13 | cancel before a write produces no write | `…::Cancelled_continuation_answer_writes_nothing` |
 | 14 | cancel after committed write never claims rollback | existing `AssistantOrchestratorTests::Cancellation_after_capture_commit_preserves_and_reports_the_saved_note` (no new test; continuation-path variant judged timing-nondeterministic) |
-| 15 | stale/mismatched destructive approval non-executable | `…HttpIdempotencyTests::Stale_superseded_approval_is_refused_over_http_and_mutates_nothing` |
+| 15 | stale/mismatched destructive approval non-executable | `…HttpIdempotencyTests::A_superseded_review_is_refused_over_http_and_changes_nothing` (renamed with the changeset design from `Stale_superseded_approval_is_refused_over_http_and_mutates_nothing`) |
 | 16 | exact PDF/EPUB navigation preserves provenance | `AssistantGateAEvidenceTests::Exact_epub_handle_reread_preserves_cfi_provenance` |
 | 17 | stale source revisions fail closed | `…::Extractor_version_mismatch_fails_closed`, `::Ordinal_mismatch_fails_closed`, `::Replaced_revision_fails_closed_through_the_tool` |
 
@@ -584,3 +587,83 @@ Proposed as separate issues (this benchmark does not fix them):
 **Deliverable status:** report + harness committed on `agent/ask-nostos-566-benchmark` (PR #611); #566
 carries the measured evidence and is closed with the benchmark complete. The four product follow-ups
 surfaced by the gate/re-run are #612/#613/#614/#615. Parent #557 has been reassessed and intentionally remains open until those four are resolved or explicitly accepted as out of scope.
+
+---
+
+## 10. November 2026 audit (#1466)
+
+Base: `main` @ `f773a597`. Purpose: before MCP (#1465) builds on the same capability registry, check that the gates still describe what Ask Nostos does, and that the providers fail the way the panel claims.
+
+### 10.1 What changed since September, and whether the gate saw it
+
+| Product change | Covered before? | Now |
+| --- | --- | --- |
+| One changeset per request, applied with Undo or reviewed (99bf8dd8) | Orchestrator unit tests only; C16 was updated to the review reply, nothing applied or undid a changeset through the product route | **C30**: an everyday change applies with Undo; the check undoes it through `POST /changesets/{id}/undo`, expects no conflicts, the collection gone and the revision moved; the next turn must answer from current state |
+| Prompt-injection guard on library changes ("worked out from book text or notes") | Not at all; C18 only asks a question | **C31**: a change asked for on the strength of the notes that hold the C18 hijack must wait for review with that reason; Craft survives. Sabotage: dropping the reason from `AssistantChangePolicy` fails C31 (applied, collection delta 1) |
+| Live library feed (revision-driven, 8f1310de) | Not at all | Every turn records `LibraryState.StateVersion` before and after: a turn that wrote nothing must not move it (every open screen would re-read); a turn that wrote must (the open app would not update) |
+| Quote by first and last words (aaf501e2), highlighted in the reader (f12e288f) | C22, paper book only | **C33**: in the EPUB itself, the saved quote has the book's exact words and the shape `FoundNoteLocation.IsAskNostosQuote` lets the reader place |
+| Topics on capture (#1449) | Not at all | **C32**: a capture tagged "seamanship" joins the existing Seamanship topic with no near-duplicate; an untagged capture gets no topics (advisory live) |
+
+### 10.2 Findings
+
+Fixed in this change:
+
+1. **Providers hung on a stalled body and threw untyped on a dropped one.** Chat, embeddings, STT, read aloud and the Settings probe all sent with `ResponseHeadersRead` and read the body outside the client timeout. Against a loopback socket: a server that sent headers and stalled held the call past 20 s (chat, embeddings, STT, read aloud); a connection dropped mid-body escaped as `HttpRequestException` (a 500) for embeddings, STT and read aloud. Fixed by buffering the small responses under the client timeout; alignment STT keeps its bounded reader and bounds it in time.
+2. **STT let its own timeout escape untyped, and called a 429 a bad key.** Now `stt_provider_timeout` and `stt_rate_limited`, and the voice panel words each.
+3. **A refused AI key said "Try again" and was retryable.** Now "The AI service did not accept its key. Check the AI provider in Settings.", not retryable.
+4. **A misconfigured SelfHosted endpoint left no trace.** The panel says "Try again" and the HTTP status was logged only at Debug. The orchestrator now logs every provider failure at Warning with the provider's detail (never the key). The non-streaming `/api/assistant/turn` returned up to 300 characters of the upstream body (an HTML page) as its problem detail; it now returns the same plain words as the stream.
+5. **C15 passed for the wrong reason.** It injects already-typed `LlmException`s, so it proved the endpoint's mapping but never that the real provider produces those types. `AssistantGateAProviderFailureTests` now drives the real `OpenAiCompatibleLlmProvider` against a socket through the stream route for 401, 429, 500, a 404 page, a web UI answering 200 with HTML, nothing listening and a stalled body, and pins the code, the words, the retry advice and that no key, key name, upstream message or HTML reaches the stream.
+6. **C18's write-tool list was hand-kept** and already missed `notes_rewrite_capture`; every write tool added later (#1468) would be missed too. C18 now also checks requested tools against the registry's trust classes.
+7. **The live gate had no repeatable way to run.** §10.4.
+8. Duplicate fixture: the OpenAI-compatible provider's unit tests lived at the bottom of `FakeLlmProviderTests.cs`; they have their own file.
+9. **§1 named two Gate A tests that no longer exist** (renamed when changesets replaced the plan store in 99bf8dd8). The table now names the current tests.
+
+Filed:
+
+- #1472 — MCP scenarios in the gate (blocked by #1467): tool descriptions, citations, read-only vs write, changesets, injection and failure paths through `/mcp`.
+- #1473 — re-measure the live gate and the AI probes on current `main` (needs the two repository secrets in §10.4).
+- Christian-Gennari/Nostos-Cloud#558 — the same provider failure paths for Cloud's managed providers and usage gate.
+- #1474 — the deterministic bed is slow: 53 s alone for 26 scenarios on a shared host (September: about 27 s for 22), against a 90 s budget. Most of it is building a whole host per scenario; C30–C33 take 15 s for six short turns.
+
+Checked and left as they are: Gate A's 17 cases still hold against the changeset design, and C1–C22 still describe current behaviour (C16 had already moved to the changeset review reply).
+
+### 10.3 Deterministic results
+
+Commands run on this branch (real output):
+
+- `dotnet build Nostos.sln` → 0 errors.
+- `dotnet test --filter "FullyQualifiedName~QualityBed"` → 37/37 passed (26 deterministic scenarios: C1–C22, C30–C33; 4 new cap tests). The deterministic campaign alone: 53 s.
+- `dotnet test --filter "FullyQualifiedName~GateA"` → 31/31 passed (23 from September + 8 provider failure cases).
+- `dotnet test --filter "FullyQualifiedName~Services.Ai"` → 227/227 passed (includes 37 new failure-path cases and 19 quality-bar tests).
+- `dotnet test --filter "FullyQualifiedName~Assistant"` → 342/342 passed.
+- `dotnet test Nostos.Backend.Tests` (full) → 3967 passed, 12 skipped, 0 failed (13 m 48 s on a shared host).
+
+### 10.4 The live gate from now on
+
+`.github/workflows/quality-bed-live.yml` runs the live bed by hand only (`workflow_dispatch`): models, scenarios, reps, a spend cap (default $2) and the list prices it is charged at (default $0.10 / $0.50 per million tokens, the managed model's). The cap is enforced by the harness (`QualityBudget`), not the workflow, so it holds from a laptop too:
+
+| Variable | Meaning |
+| --- | --- |
+| `NOSTOS_QG_MAX_USD` | Required for any live campaign. No model call starts once it is spent; the scenario runs left are reported as "not run, cost cap reached" failures. Overshoot is at most one call. |
+| `NOSTOS_QG_PRICE_INPUT_PER_MTOK`, `NOSTOS_QG_PRICE_OUTPUT_PER_MTOK` | Required with a cap. A call with no reported usage is charged an estimate from its text. |
+| `NOSTOS_QG_MAX_SCENARIO_RUNS` | Optional. A larger campaign is refused before any call. |
+
+`budget.json` sits next to `results.json`; the job summary shows spend and pass counts; transcripts are kept 30 days. Repository secrets it needs (not added by this change): `NOSTOS_QG_BASE_URL` (the gateway, including `/v1`) and `NOSTOS_QG_KEY`.
+
+At September's measured $0.0015 per full 50-turn bed, one rep of the 26-scenario bed is about $0.10, so the default cap allows roughly 20 reps.
+
+**Live run in this audit: none.** No credentials for the managed model were available to the agent, and the repository has no Actions secrets for it yet. The September numbers stand, marked stale above, until #1473.
+
+---
+
+## 11. What good means for embeddings, STT and read aloud
+
+Ask Nostos is gated scenario by scenario; the other AI surfaces had transport tests but no notion of a good answer. These bars are in code (`Nostos.Backend.Tests/Services/Ai/Quality/AiSurfaceQuality.cs`). `AiSurfaceQualityTests` prove the scorers offline; `AiSurfaceLiveProbeTests` apply them to real endpoints when `NOSTOS_AI_PROBE_LIVE=1` and the `NOSTOS_PROBE_*` endpoint variables are set, and do nothing otherwise.
+
+| Surface | Good means | Why this bar | Offline check |
+| --- | --- | --- | --- |
+| Embeddings | On 8 paraphrased questions over 8 passages that share surface words: recall@1 ≥ 0.75 and MRR ≥ 0.85, ties counted against the gold passage. The same text embedded twice drifts by ≤ 0.001 cosine. Every vector finite, one per input, one dimension (already enforced by the provider). | Embeddings exist to find what word matching misses; a model that cannot place a paraphrase adds cost and no recall. Drift breaks stored vectors. | A perfect model passes; a constant vector (a proxy or cache answering everything alike) and zero vectors fail; a bag-of-words model does **not** pass the gold set, so the set measures meaning, not overlap. |
+| Speech-to-text | Word error rate ≤ 0.15 on clean English dictation, after case and punctuation. Self-corrections ("no wait") are kept: dropping them is an error, as C17 already holds for capture. Timeouts and rate limits are typed (§10.2). | Voice capture saves the user's own words; above ~15% a note needs editing before it is worth keeping. | WER ignores only case and punctuation; Swedish letters survive; a dropped self-correction scores above the bar. |
+| Read aloud | At least two MPEG Layer III frames after any ID3 tag, and 8–30 characters of text per second of audio. Through STT, the spoken sentence comes back within the STT bar. | The player plays MP3; an error page served as `audio/mpeg`, a WAV or a single frame plays as silence or fails without a word. Speech runs at about 10–25 characters a second, so a clip far outside that is truncated or padded. | MP3 frames are counted and timed; HTML, WAV and one frame are refused; a clip far too short or long for its text is flagged. |
+
+Not measured yet: the live numbers for each surface on the endpoints the two deployments use (#1473), and recorded human dictation for STT (the round trip uses synthetic speech, which flatters STT).
