@@ -230,6 +230,11 @@ describe('isAskNostosQuote (#1338)', () => {
     expect(isAskNostosQuote({ ...quote, sourceAnchorKind: 'epub_cfi' })).toBe(true);
   });
 
+  it('is also a quote a connected app saved over MCP (#1467)', () => {
+    expect(isAskNostosQuote({ ...quote, captureSource: 'mcp' })).toBe(true);
+    expect(isAskNostosQuote({ ...quote, captureSource: 'mcp', kind: 'passage' })).toBe(false);
+  });
+
   it('is not a typed note, however it is punctuated', () => {
     expect(isAskNostosQuote(note({ content: '"The words"' }))).toBe(false);
     expect(isAskNostosQuote({ ...quote, selectedText: '   ' })).toBe(false);

@@ -166,6 +166,10 @@ mapped only when `Opds:Enabled` is true, which is the default.
 | `GET`  | `/`               | OPDS 1.2 acquisition feed, one page (`?page=N`)  | `IBookRepository` |
 | `GET`  | `/api/opds/info`  | Catalog state + address for Settings (always mapped) | —             |
 
+### MCP (`/mcp`)
+
+Model Context Protocol, Streamable HTTP, mapped by `MapNostosProductEndpoints` only when the host registers the `NostosMcp` authorization policy. Tools and citations: [`docs/api-reference.md`](../../docs/api-reference.md#mcp--mcp-issue-1467).
+
 ### BackupEndpoints (`/api/backup`)
 
 | Method     | Route            | Description                                | Dependencies                   |
@@ -183,7 +187,7 @@ mapped only when `Opds:Enabled` is true, which is the default.
 
 ## Maintenance Mode Middleware
 
-`LibraryMaintenanceMiddleware` takes shared operation leases for `/api`, `/opds`, and database readiness. It holds them through complete response streaming and request-scope disposal. New operations are refused while the single coordinator drains or holds exclusive maintenance. GET `/api/backup/progress`, process liveness and static UI remain available without opening the library. The backup restore endpoint delegates admission to `BackupService` for its shared-to-exclusive handoff.
+`LibraryMaintenanceMiddleware` takes shared operation leases for `/api`, `/opds`, `/mcp`, and database readiness. It holds them through complete response streaming and request-scope disposal. New operations are refused while the single coordinator drains or holds exclusive maintenance. GET `/api/backup/progress`, process liveness and static UI remain available without opening the library. The backup restore endpoint delegates admission to `BackupService` for its shared-to-exclusive handoff.
 
 - **Status Code:** 503 Service Unavailable
 - **Response:** `{"code": "migration_activation_busy", "error": "The library is in maintenance. Try again later."}`; `Retry-After: 5`.

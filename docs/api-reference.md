@@ -1,6 +1,7 @@
 # Nostos — API Reference
 
-All endpoints return JSON. Base path: `/api` (except OPDS at `/opds`).
+All endpoints return JSON. Base path: `/api` (except OPDS at `/opds` and MCP
+at `/mcp`).
 
 > **Coverage note (2026-08-12):** this reference predates several shipped
 > surfaces — Backup and the issue #34 canonical
@@ -744,8 +745,74 @@ the effective access model once at startup.
 | `POST`     | `/import`        | Scan `/backups` folder for untracked files |
 | `GET`      | `/progress`      | Real-time step-by-step progress tracking |
 
-During a restore the application enters maintenance mode: `/api` returns `503`
+During a restore the application enters maintenance mode: `/api` and `/mcp` return `503`
 `{ "error": "Application is in maintenance mode during restore." }`.
+
+---
+
+## MCP — `/mcp` (issue #1467)
+
+A Model Context Protocol server (Streamable HTTP, stateless) for the user's own
+AI app: Claude, ChatGPT, Gemini or a local agent. It lets that app search,
+quote and cite the library and keep notes in it, on the app's own plan.
+
+**Off until a host turns it on.** The product registers the server everywhere
+but maps `/mcp` only when the host registers the `NostosMcp` authorization
+policy (`NostosMcp.AuthorizationPolicy`). With no policy, `/mcp` is a plain 404
+and never the app shell. SelfHosted gets the policy with access tokens (#1469)
+and OAuth for hosted apps (#1470); Cloud with Clerk OAuth (Nostos-Cloud #557).
+A host may also pass `NostosProductEndpointPolicies.McpRateLimitPolicy`.
+
+**Tools.** Each wraps Ask Nostos capabilities through `AssistantCapabilityRegistry`,
+so validation and limits are the same; only the result shape differs.
+
+| Tool | Reads or writes | Wraps |
+| --- | --- | --- |
+| `search` | read | `knowledge_search` (notes, topics, book text in one list) |
+| `fetch` | read | `knowledge_read_evidence` |
+| `find_quote` | read | `book_text_find_quote` |
+| `overview` | read | `library_overview` + `knowledge_overview` |
+| `list_books` | read | `library_list_books`, or `library_resolve_book` for an ISBN |
+| `get_book` | read | `library_get_book` |
+| `list_notes` | read | `notes_list_for_book`, in page order |
+| `list_topics` | read | `topics_list` / `topics_search` |
+| `get_topic` | read | `topics_get`, with a citation on every linked note |
+| `list_drafts` | read | `writings_list` |
+| `read_draft` | read | `writings_read` |
+| `reading_list` | read | `reading_list_list` |
+| `save_note` | creates a note | `notes_capture` |
+| `create_draft` | creates a Studio document | `writings_create` |
+| `add_to_reading_list` | creates a To read entry | `reading_list_add` |
+
+Tools call the registry with `AssistantSurface.Mcp`, so a capability that is
+not marked for MCP cannot be reached from `/mcp` even by name. App links in
+results (`/studio?writingId=…`, `/library/to-read`) come back absolute.
+
+`search` and `fetch` keep the shape ChatGPT deep research expects (`results`
+with `id`, `title`, `text`, `url`; `fetch` by `id`). Result ids are
+`note:<id>`, `topic:<id>` and `text:<book>:<ordinal>:<sha256>:<extractor>`.
+
+**Citations.** Every note and book passage carries `citation`: `book`,
+`author`, `year`, `location` (when Nostos knows it: a verified PDF page, a
+paper book's page, a verified audio time, an EPUB chapter heading), `url` (an
+absolute link into this Nostos, from the request's origin), `link` (the
+Studio's own `nostos:cite/<book>?p=…&loc=…&as=quote|note|reference&src=<note>`)
+and `markdown` (`[words](link)`). A draft that uses `markdown` has live Studio
+citations that export as footnotes.
+
+**Writes.** `save_note` saves through the capture path with client id
+`nostos-mcp`, `CaptureSource = "mcp"`, and an idempotency key derived from
+the request (book, words, quote, topics), so a resent call keeps one note.
+`create_draft` never changes an existing document; a resend with the same
+name, folder and words within ten minutes returns the document it already
+made (`duplicate: true`). `add_to_reading_list` returns an existing entry
+for the same ISBN, or the same title and author. A
+quote saved this way is found and drawn in the reader like one Ask Nostos
+saved. Writes advance the library revision, so open tabs update through
+`/api/library/changes`.
+
+**Services** come from the HTTP request's scope, so a host that binds the
+library per account in that scope binds MCP calls the same way.
 
 ---
 

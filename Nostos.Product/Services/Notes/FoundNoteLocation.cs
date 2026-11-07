@@ -18,7 +18,8 @@ internal static class FoundNoteLocation
     private const int MaxPdfRects = 256;
 
     /// <summary>
-    /// The shape of a quote Ask Nostos saved and nothing else. Every other way
+    /// The shape of a quote Ask Nostos or a connected app (MCP, <c>mcp</c>)
+    /// saved and nothing else. Every other way
     /// to write this shape leaves a trace: a highlight made in a reader has a
     /// location, a typed note has no quote, a photographed page is
     /// <c>photo</c>, an import is <c>import</c>. No stamp is needed, and none
@@ -27,7 +28,7 @@ internal static class FoundNoteLocation
     /// </summary>
     public static bool IsAskNostosQuote(NoteModel note) =>
         !note.IsPassage()
-        && note.CaptureSource == "text"
+        && note.CaptureSource is "text" or "mcp"
         && !string.IsNullOrWhiteSpace(note.SelectedText)
         && note.SourceAnchorKind is "unknown" or "epub_cfi" or "pdf_page";
 

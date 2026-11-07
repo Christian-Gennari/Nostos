@@ -6,7 +6,7 @@ using Nostos.Backend.Services.Portability;
 namespace Nostos.Backend.Middleware;
 
 /// <summary>
-/// Covers REST, OPDS, DB readiness, and their complete response/stream lifetimes.
+/// Covers REST, OPDS, MCP, DB readiness, and their complete response/stream lifetimes.
 /// Its inner request scope disposes DbContexts before releasing the shared lease.
 /// Only liveness, static UI, and backup progress avoid the active library entirely.
 /// </summary>
@@ -18,6 +18,7 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
     {
         var path = context.Request.Path;
         var libraryPath = path.StartsWithSegments("/api") || path.StartsWithSegments("/opds")
+            || path.StartsWithSegments(Nostos.Backend.Integrations.Mcp.NostosMcp.Path)
             || path.StartsWithSegments("/health/ready");
         if (!libraryPath || (HttpMethods.IsGet(context.Request.Method) && path == "/api/backup/progress"))
         {
