@@ -500,6 +500,8 @@ public static class NostosProductComposition
         api.MapAssistantEndpoints();
         api.MapAiProviderSettingsEndpoints();
         api.MapDeploymentCapabilitiesEndpoints();
+        // Settings → Connected apps: only where the host keeps a record of them.
+        api.MapMcpConnectedAppsEndpoints();
         api.MapManagedBackupEndpoints(
             policies.ManagedBackupsAuthorizationPolicy,
             policies.LargeTransferRateLimitPolicy);

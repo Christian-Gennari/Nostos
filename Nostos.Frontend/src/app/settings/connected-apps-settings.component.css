@@ -1,0 +1,222 @@
+/* The card, its header and the section around it belong to the Settings page.
+   The rows repeat the page's `.setting-row`, `.catalog-url`, `.catalog-note` and
+   `.history-*` recipes (a child component cannot inherit them), so this card
+   reads like the e-reader and backup cards beside it. */
+
+:host {
+  display: contents;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+}
+
+.setting-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.setting-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.label-text {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+}
+
+.label-desc {
+  display: block;
+  max-width: 610px;
+  color: var(--color-text-light);
+  font-size: 0.78rem;
+  line-height: 1.48;
+}
+
+/* --- The token just made --- */
+
+.token-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.token-value,
+.snippet-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  color: var(--color-text-main);
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.token-value {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  /* Manual copy is the fallback when the clipboard is unavailable. */
+  user-select: all;
+}
+
+.token-note,
+.token-note-plain {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+
+.token-note {
+  color: var(--color-text-main);
+}
+
+.token-note nostos-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.token-done {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* --- Making a token --- */
+
+.create-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.name-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+/* --- The list (the backup history's rows) --- */
+
+.token-list {
+  padding: 0;
+}
+
+/* The setup row under the list gets the divider the list's last row drops. */
+.token-list + .setting-row {
+  border-top: 1px solid var(--border-light);
+}
+
+.token-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.token-item:last-child {
+  border-bottom: none;
+}
+
+.token-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.token-name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.token-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+
+.token-empty {
+  margin: 0;
+  padding: 15px 0;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.token-loading {
+  padding: 15px 0;
+}
+
+/* --- Setup snippets --- */
+
+.client-choice {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.snippet {
+  position: relative;
+}
+
+.snippet-code {
+  margin: 0;
+  padding: 10px 40px 10px 12px;
+  /* Wrapped rather than scrolled, so nothing hides under the copy button;
+     the button copies the exact text. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.snippet-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+@media (max-width: 600px) {
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .create-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .name-input {
+    flex: none;
+  }
+
+  .token-value {
+    flex-basis: 100%;
+  }
+
+  .token-row .nostos-button {
+    width: 100%;
+  }
+}

@@ -17,6 +17,26 @@ B=${NOSTOS_URL:-http://127.0.0.1:5214}
 This is the user's real library. Read before you write, change only what was
 asked, and tell the user what you did with the book title and its collections.
 
+## Use MCP when it is connected
+
+If your tools include the Nostos MCP server (tools named `search`, `fetch`,
+`find_quote`, `list_books`, `save_note`, `create_draft` and so on, usually as
+`mcp__nostos__…`), use them instead of this API to find books, search and quote
+notes and book text, save a note, write a draft or add a book to To read. They
+return citations and follow the same rules as Ask Nostos.
+
+To connect one, the user makes an access token in **Settings → Connected apps**
+on the Nostos server and adds the server with it, for Claude Code:
+
+```bash
+claude mcp add --transport http nostos "$B/mcp" --header "Authorization: Bearer <token>"
+```
+
+Never ask the user to paste a token into the conversation; they run that
+command themselves. A read-only token refuses `save_note`, `create_draft` and
+`add_to_reading_list` with a clear error: say so, do not retry. MCP does not
+change book details or collections; for those, use the endpoints below.
+
 ## Rules
 
 1. **Look before you add.** Search first (`GET /api/books?search=...`). If the

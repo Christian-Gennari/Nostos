@@ -98,6 +98,11 @@ public class NostosDbContext : DbContext
     public DbSet<BookUploadSessionRecord> BookUploadSessionRecords => Set<BookUploadSessionRecord>();
     public DbSet<BookUploadPartReceiptRecord> BookUploadPartReceiptRecords => Set<BookUploadPartReceiptRecord>();
 
+    // SelfHosted access tokens for the MCP endpoint (issue #1469). Host-local
+    // credentials: only a hash is stored, never the token, and they are never
+    // part of a portable archive.
+    public DbSet<McpAccessTokenModel> McpAccessTokens => Set<McpAccessTokenModel>();
+
     // A few legacy import/repository paths still add a BookModel directly.
     // Keep those writes valid now that WorkId is a required foreign key. The
     // library service always assigns the work explicitly; this is only a
@@ -786,6 +791,30 @@ public class NostosDbContext : DbContext
             // (provider, item, asset). This index is what lets acquisition
             // recognise an item it has already imported and skip it entirely.
             e.HasIndex(a => new { a.ProviderId, a.ExternalId, a.AssetId }).IsUnique();
+        });
+
+        // --- MCP ACCESS TOKENS (issue #1469) ---
+        // A token is found by its hash, so the hash is unique. The CHECKs pin
+        // the bounds the service validates, in SQL both providers accept.
+        modelBuilder.Entity<McpAccessTokenModel>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Name).IsRequired().HasMaxLength(McpAccessTokenModel.MaxNameLength);
+            e.Property(t => t.TokenHash).IsRequired().HasMaxLength(McpAccessTokenModel.HashLength);
+            e.Property(t => t.Scope).IsRequired().HasMaxLength(16);
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_McpAccessTokens_Name",
+                    "length(\"Name\") > 0 AND length(\"Name\") <= 80");
+                t.HasCheckConstraint(
+                    "CK_McpAccessTokens_TokenHash",
+                    "length(\"TokenHash\") = 64");
+                t.HasCheckConstraint(
+                    "CK_McpAccessTokens_Scope",
+                    "\"Scope\" IN ('read', 'read_write')");
+            });
         });
 
         // --- EXTERNAL MEDIA REFERENCES (issue #843) ---

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -19,8 +20,12 @@ namespace Nostos.Backend.Integrations.Mcp;
 /// <see cref="AddNostosMcp"/>, and it registers the
 /// <see cref="AuthorizationPolicy"/> policy that decides who may call it.
 /// <c>MapNostosProductEndpoints</c> maps <see cref="Path"/> only when both are
-/// there, so a host that has not chosen an authentication — a SelfHosted
-/// server before access tokens exist — never answers on <c>/mcp</c>.
+/// there, so a host that has not chosen an authentication never answers on
+/// <c>/mcp</c>. SelfHosted uses access tokens made in Settings (issue #1469).
+///
+/// What a caller may do comes from <see cref="McpScopes"/>: the host puts
+/// <c>nostos:read</c> / <c>nostos:write</c> in a <c>scope</c> claim, and a
+/// write tool called without <c>nostos:write</c> answers with a tool error.
 /// </summary>
 public static class NostosMcp
 {
@@ -32,6 +37,18 @@ public static class NostosMcp
     /// who may call <c>/mcp</c>; the product never authenticates by itself.
     /// </summary>
     public const string AuthorizationPolicy = "NostosMcp";
+
+    /// <summary>
+    /// The claim a host puts the caller's OAuth scopes in: one or more
+    /// space-separated strings, as in an OAuth access token. See <see cref="McpScopes"/>.
+    /// </summary>
+    public const string ScopeClaimType = "scope";
+
+    /// <summary>Needed for every tool.</summary>
+    public const string ReadScope = "nostos:read";
+
+    /// <summary>Also needed for the tools that create something.</summary>
+    public const string WriteScope = "nostos:write";
 
     /// <summary>The client id MCP captures carry, so their receipts are their own.</summary>
     public const string ClientId = "nostos-mcp";
@@ -82,7 +99,9 @@ public static class NostosMcp
                 options.ServerInstructions = Instructions;
             })
             .WithHttpTransport()
-            .WithTools<NostosMcpTools>(Json);
+            .WithTools<NostosMcpTools>(Json)
+            // Writes need the nostos:write scope; see McpScopes.
+            .WithRequestFilters(filters => filters.AddCallToolFilter(McpScopes.Enforce));
         return services;
     }
 
@@ -107,6 +126,29 @@ public static class NostosMcp
             .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value.ToolCollection?.Count;
 
         var mcp = endpoints.MapMcp(Path).RequireAuthorization(AuthorizationPolicy);
+        // Every authenticated request passes the host's gates first (see
+        // IMcpRequestGate): authorization has run by the time the endpoint's
+        // delegate does, so the gates see the signed-in caller.
+        mcp.Add(endpoint =>
+        {
+            var inner = endpoint.RequestDelegate;
+            if (inner is null)
+                return;
+            endpoint.RequestDelegate = async context =>
+            {
+                foreach (var gate in context.RequestServices.GetServices<IMcpRequestGate>())
+                {
+                    if (!await gate.AllowAsync(context.User, context, context.RequestAborted))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.Headers.WWWAuthenticate = "Bearer realm=\"Nostos\", error=\"invalid_token\"";
+                        return;
+                    }
+                }
+
+                await inner(context);
+            };
+        });
         if (rateLimitPolicy is not null)
             mcp.RequireRateLimiting(rateLimitPolicy);
         return true;

@@ -28,6 +28,7 @@ import { ProviderSettingsService } from '../core/services/provider-settings.serv
 import { ProviderSettingsItem, ProviderSettingsResponse } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
+import { McpConnectedAppsService } from '../core/services/mcp-connected-apps.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
@@ -394,6 +395,12 @@ const assistantStatusMock = {
   refresh: vi.fn(),
 };
 
+const mcpAccessTokensServiceMock = {
+  list: vi.fn(() => of({ canCreate: true, apps: [] })),
+  createToken: vi.fn(),
+  revoke: vi.fn(),
+};
+
 const externalMediaServiceMock = {
   status: vi.fn(() =>
     of({
@@ -452,6 +459,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
         { provide: ExternalMediaService, useValue: externalMediaServiceMock },
+        { provide: McpConnectedAppsService, useValue: mcpAccessTokensServiceMock },
       ],
     }).compileComponents();
 
@@ -1414,6 +1422,48 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.destroy();
     }
     expect(externalMediaServiceMock.status).not.toHaveBeenCalled();
+  });
+
+  it('offers Connected apps when the server keeps a record of them', () => {
+    mcpAccessTokensServiceMock.list.mockClear();
+    capabilitiesServiceMock.get.mockReturnValueOnce(
+      of({ ...selfHostedCapabilities, supportsMcpConnectedApps: true }),
+    );
+
+    render();
+
+    const nav = fixture.nativeElement.querySelector('[data-testid="settings-nav-apps"]') as HTMLButtonElement;
+    expect(nav.textContent).toContain('Connected apps');
+    nav.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('apps');
+    expect(fixture.nativeElement.querySelector('[data-testid="connected-apps-card"]')).toBeTruthy();
+    expect(mcpAccessTokensServiceMock.list).toHaveBeenCalled();
+  });
+
+  it('offers Connected apps on Cloud too once Cloud advertises it', () => {
+    capabilitiesServiceMock.get.mockReturnValueOnce(
+      of({ ...cloudCapabilities, supportsMcpConnectedApps: true }),
+    );
+
+    render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-apps"]')).toBeTruthy();
+  });
+
+  it('hides Connected apps and asks for nothing without the capability', () => {
+    mcpAccessTokensServiceMock.list.mockClear();
+
+    for (const capabilities of [selfHostedCapabilities, cloudCapabilities, { ...cloudCapabilities, supportsMcpConnectedApps: false }]) {
+      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      render();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-apps"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="connected-apps-card"]')).toBeNull();
+      fixture.destroy();
+    }
+    expect(mcpAccessTokensServiceMock.list).not.toHaveBeenCalled();
   });
 
   it('keeps Cloud Backups & data available for portable export without e-reader access', () => {

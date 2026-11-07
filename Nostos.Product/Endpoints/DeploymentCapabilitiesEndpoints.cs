@@ -1,4 +1,5 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Integrations.Mcp;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Portability;
@@ -26,7 +27,8 @@ public static class DeploymentCapabilitiesEndpoints
                 deployment,
                 services.GetService<IMigrationPhaseAvailability>(),
                 services.GetService<IExternalMediaAvailability>(),
-                services.GetService<IBookFileUploadStore>())))
+                services.GetService<IBookFileUploadStore>(),
+                services.GetService<IServiceProviderIsService>()?.IsService(typeof(IMcpConnectedApps)) == true)))
             .AllowAnonymous();
         return routes;
     }
@@ -35,7 +37,8 @@ public static class DeploymentCapabilitiesEndpoints
         DeploymentDescriptor deployment,
         IMigrationPhaseAvailability? migrationAvailability = null,
         IExternalMediaAvailability? externalMedia = null,
-        IBookFileUploadStore? bookFileUploadStore = null) =>
+        IBookFileUploadStore? bookFileUploadStore = null,
+        bool mcpConnectedApps = false) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -81,7 +84,11 @@ public static class DeploymentCapabilitiesEndpoints
             // Same registration the upload routes require: a host that maps the
             // resumable contract registers this store, and a host that does not
             // stays on the legacy whole-request upload.
-            SupportsResumableBookUploads: bookFileUploadStore is not null);
+            SupportsResumableBookUploads: bookFileUploadStore is not null,
+            // Settings → Connected apps (#1469): any host that keeps a record
+            // of the apps connected over MCP (SelfHosted tokens, Cloud OAuth
+            // clients). The same registration maps the list/revoke routes.
+            SupportsMcpConnectedApps: mcpConnectedApps);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -104,4 +111,5 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsAccountDeletion = false,
     bool SupportsManagedBackupRestore = false,
     bool SupportsExternalMediaLibraries = false,
-    bool SupportsResumableBookUploads = false);
+    bool SupportsResumableBookUploads = false,
+    bool SupportsMcpConnectedApps = false);
