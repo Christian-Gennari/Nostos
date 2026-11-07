@@ -47,6 +47,14 @@ internal sealed class QualityBudget
 
     public int? MaxScenarioRuns { get; }
 
+    private static readonly Lazy<QualityBudget> ProcessBudget = new(FromEnvironment);
+
+    /// <summary>
+    /// The one cap for every live campaign in this test process, so a run of
+    /// Ask Nostos and MCP together spends one NOSTOS_QG_MAX_USD, not one each.
+    /// </summary>
+    public static QualityBudget Process => ProcessBudget.Value;
+
     /// <summary>No cap: deterministic runs and the offline wiring proof.</summary>
     public static QualityBudget Unlimited { get; } = new(null, 0, 0, null);
 

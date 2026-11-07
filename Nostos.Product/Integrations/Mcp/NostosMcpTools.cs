@@ -223,7 +223,28 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
             ["chapter"] = chapter,
             ["choice"] = choice,
         };
-        return await RunAsync<JsonElement>("book_text_find_quote", args, cancellationToken);
+        var found = JsonNode.Parse((await RunAsync<JsonElement>("book_text_find_quote", args, cancellationToken)).GetRawText())!.AsObject();
+
+        // The guidance is written for Ask Nostos; name the tools this client has.
+        if (found["message"] is JsonValue message && message.TryGetValue<string>(out var words))
+            found["message"] = McpToolNames.Rename(words);
+
+        // Every passage it shows is citable before anything is saved: the book
+        // the user named (a paper book is cited as itself), at its chapter.
+        if (found["candidates"] is JsonArray candidates && candidates.Count > 0
+            && await Citations.BookAsync(bookId, null, cancellationToken) is { } book)
+        {
+            foreach (var candidate in candidates.OfType<JsonObject>())
+            {
+                var citation = Citations.ForQuote(
+                    book,
+                    candidate["chapter"]?.GetValue<string>(),
+                    candidate["text"]?.GetValue<string>());
+                candidate["citation"] = JsonSerializer.SerializeToNode(citation, NostosMcp.Json);
+            }
+        }
+
+        return JsonSerializer.SerializeToElement(found, NostosMcp.Json);
     }
 
     [McpServerTool(Name = "overview", Title = "Library and Brain at a glance", ReadOnly = true, Idempotent = true, OpenWorld = false)]
@@ -575,7 +596,7 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
         var element = JsonSerializer.SerializeToElement(args, NostosMcp.Json);
         var result = await registry.InvokeAsync(AssistantSurface.Mcp, capability, element, context ?? new AssistantToolContext(), ct);
         if (!result.Success)
-            throw new McpException(result.ErrorMessage ?? result.ErrorCode ?? "Nostos could not do that.");
+            throw new McpException(McpToolNames.Rename(result.ErrorMessage ?? result.ErrorCode ?? "Nostos could not do that."));
 
         if (typeof(T) == typeof(JsonElement))
             return (T)(object)(result.Data ?? JsonSerializer.SerializeToElement(new { }));
@@ -651,6 +672,44 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
 
     private static string? Blank(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
+
+/// <summary>
+/// The MCP tool a client calls for each Ask Nostos capability. Capability
+/// messages (refusals, find-quote guidance) are written for Ask Nostos and name
+/// its capabilities; a connected app knows only the MCP tools.
+/// </summary>
+internal static partial class McpToolNames
+{
+    private static readonly Dictionary<string, string> ToolFor = new(StringComparer.Ordinal)
+    {
+        ["knowledge_search"] = "search",
+        ["notes_search"] = "search",
+        ["knowledge_read_evidence"] = "fetch",
+        ["book_text_find_quote"] = "find_quote",
+        ["library_overview"] = "overview",
+        ["knowledge_overview"] = "overview",
+        ["library_list_books"] = "list_books",
+        ["library_resolve_book"] = "list_books",
+        ["library_get_book"] = "get_book",
+        ["notes_list_for_book"] = "list_notes",
+        ["notes_capture"] = "save_note",
+        ["topics_list"] = "list_topics",
+        ["topics_search"] = "list_topics",
+        ["topics_get"] = "get_topic",
+        ["writings_list"] = "list_drafts",
+        ["writings_read"] = "read_draft",
+        ["writings_create"] = "create_draft",
+        ["reading_list_list"] = "reading_list",
+        ["reading_list_add"] = "add_to_reading_list",
+    };
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b(?:knowledge|library|notes|topics|writings|reading_list|book_text)_[a-z_]+\b")]
+    private static partial System.Text.RegularExpressions.Regex CapabilityName();
+
+    /// <summary>Ask Nostos capability names in <paramref name="text"/> as MCP tool names.</summary>
+    public static string Rename(string text) =>
+        CapabilityName().Replace(text, m => ToolFor.TryGetValue(m.Value, out var tool) ? tool : m.Value);
 }
 
 /// <summary>

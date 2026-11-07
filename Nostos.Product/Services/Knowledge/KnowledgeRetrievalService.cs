@@ -187,8 +187,12 @@ public sealed class KnowledgeRetrievalService(
     public const int HybridCandidatesPerChannel = 30;
 
     // A search turn must not wait out the provider's own (ingestion-sized)
-    // request timeout for a single query vector.
-    private static readonly TimeSpan QueryEmbeddingTimeout = TimeSpan.FromSeconds(10);
+    // request timeout for a single query vector. One short query embeds in well
+    // under a second; past this the answer comes from words alone. It is also
+    // the MCP `search` tool's budget: Claude gives a tool call about 10 s, and
+    // notes, topics and book text still have to be read after this (QualityBed
+    // M7 measured a stalled provider holding search for 10.1 s at 10 s here).
+    private static readonly TimeSpan QueryEmbeddingTimeout = TimeSpan.FromSeconds(4);
 
     private const int DefaultMaxPerSource = 6;
     private const int MaximumMaxPerSource = 8;

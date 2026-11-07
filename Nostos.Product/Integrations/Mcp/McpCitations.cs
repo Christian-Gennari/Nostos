@@ -128,6 +128,25 @@ internal sealed partial class McpCitations(ILibraryService library, IHttpContext
         return new McpCitation(book.Title, book.Author, book.Year, label, url, link, $"[{EscapeText(passage.Text)}]({link})");
     }
 
+    /// <summary>
+    /// A passage <c>find_quote</c> found by its first and last words, before it
+    /// is saved: the book the user named, at the chapter it is in when known.
+    /// </summary>
+    public McpCitation ForQuote(McpBookInfo book, string? chapter, string? text)
+    {
+        var loc = Blank(chapter) is { } title ? CleanLoc($"c:{title}") : null;
+        var link = CiteHref(book.Id, null, loc, "quote", src: null);
+        var words = Blank(text);
+        return new McpCitation(
+            book.Title,
+            book.Author,
+            book.Year,
+            loc is null ? null : chapter!.Trim(),
+            AppUrl($"/library/{book.Id:D}"),
+            link,
+            words is null ? null : $"[{EscapeText(words)}]({link})");
+    }
+
     /// <summary>A bare reference to a whole book, for a book with no location.</summary>
     public McpCitation ForBook(McpBookInfo book)
     {

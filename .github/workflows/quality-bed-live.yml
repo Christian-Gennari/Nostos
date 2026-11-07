@@ -1,9 +1,14 @@
 name: Ask Nostos live quality bed
 
 # The live quality bed (docs/ask-nostos-v3-quality-gate.md) runs the C-series
-# scenarios against a paid model, so it never runs on a pull request or a
-# push. Start it by hand from the Actions tab, or with
-#   gh workflow run quality-bed-live.yml -f models=openai/gpt-6-luna
+# scenarios (Ask Nostos) and the M21–M24 scenarios (MCP: the model is the
+# client and calls /mcp the way Claude.ai or ChatGPT do) against a paid model,
+# so it never runs on a pull request or a push. Start it by hand from the
+# Actions tab, or with
+#   gh workflow run quality-bed-live.yml -f models=openai/gpt-6-luna -f surface=both
+#
+# With surface=both the two campaigns run in one test process and share one
+# max_usd cap.
 #
 # The spend cap is enforced by the harness itself (QualityBudget): no model
 # call starts once max_usd is spent, the run fails, and it lists what it did
@@ -21,6 +26,12 @@ on:
         description: Comma-separated model ids
         required: true
         default: openai/gpt-6-luna
+      surface:
+        description: Which live bed to run
+        required: true
+        type: choice
+        options: [ask, mcp, both]
+        default: ask
       scenarios:
         description: Comma-separated scenario ids (empty runs every live scenario)
         required: false
@@ -64,6 +75,7 @@ jobs:
       NOSTOS_QG_KEY: ${{ secrets.NOSTOS_QG_KEY }}
       NOSTOS_QG_KEY_ENV: NOSTOS_QG_KEY
       NOSTOS_QG_MODELS: ${{ inputs.models }}
+      NOSTOS_QG_SURFACE: ${{ inputs.surface }}
       NOSTOS_QG_SCENARIOS: ${{ inputs.scenarios }}
       NOSTOS_QG_REPS: ${{ inputs.reps }}
       NOSTOS_QG_MAX_USD: ${{ inputs.max_usd }}
@@ -91,12 +103,18 @@ jobs:
         run: dotnet build Nostos.Backend.Tests/Nostos.Backend.Tests.csproj --configuration Debug
 
       - name: Run the live campaign
-        run: >-
-          dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj
-          --configuration Debug
-          --no-build
-          --filter "FullyQualifiedName~QualityBedLiveTests"
-          --logger "console;verbosity=normal"
+        run: |
+          case "$NOSTOS_QG_SURFACE" in
+            ask)  filter="FullyQualifiedName~QualityBedLiveTests" ;;
+            mcp)  filter="FullyQualifiedName~QualityBedMcpLiveTests" ;;
+            both) filter="FullyQualifiedName~QualityBedLiveTests|FullyQualifiedName~QualityBedMcpLiveTests" ;;
+            *)    echo "::error::Unknown surface '$NOSTOS_QG_SURFACE'"; exit 1 ;;
+          esac
+          dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj \
+            --configuration Debug \
+            --no-build \
+            --filter "$filter" \
+            --logger "console;verbosity=normal"
 
       - name: Summarise spend and results
         if: always()
@@ -104,19 +122,25 @@ jobs:
           {
             echo "## Live quality bed"
             echo
-            echo "Models: \`$NOSTOS_QG_MODELS\` · reps: $NOSTOS_QG_REPS · cap: \$$NOSTOS_QG_MAX_USD"
+            echo "Surface: $NOSTOS_QG_SURFACE · models: \`$NOSTOS_QG_MODELS\` · reps: $NOSTOS_QG_REPS · cap: \$$NOSTOS_QG_MAX_USD"
             echo
-            if [ -f "$NOSTOS_QG_OUT/budget.json" ]; then
+            for budget in "$NOSTOS_QG_OUT/budget.json" "$NOSTOS_QG_OUT/mcp/budget.json"; do
+              [ -f "$budget" ] || continue
               echo '```json'
-              cat "$NOSTOS_QG_OUT/budget.json"
+              cat "$budget"
               echo '```'
-            fi
-            for results in "$NOSTOS_QG_OUT"/*/results.json; do
+            done
+            for results in "$NOSTOS_QG_OUT"/*/results.json "$NOSTOS_QG_OUT"/mcp/*/results.json; do
               [ -f "$results" ] || continue
               python3 - "$results" <<'PY'
           import json, sys
           data = json.load(open(sys.argv[1]))
           scenarios = data.get("scenarios", [])
+          if data.get("surface") == "mcp":
+              answered = sum(1 for s in scenarios if s.get("answer"))
+              print(f"- MCP `{data.get('model')}`: {len(scenarios)} scenario runs, {answered} answered, "
+                    f"{len(data.get('failures', []))} failures, {len(data.get('advisories', []) or [])} advisories")
+              sys.exit(0)
           turns = [t for s in scenarios for t in s.get("turns", [])]
           completed = sum(1 for t in turns if t.get("terminalKind") == "completed")
           print(f"- `{data.get('model')}`: {len(scenarios)} scenario runs, {completed}/{len(turns)} turns completed, "
