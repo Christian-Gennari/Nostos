@@ -324,6 +324,10 @@ public static class AssistantEndpoints
                 new(exception.Code, "Ask Nostos is disabled by this Nostos host.", false),
             LlmErrorCodes.AccessDenied =>
                 new(exception.Code, "Ask Nostos is not available for this account.", false),
+            // A refused key does not fix itself: trying again cannot help,
+            // checking the provider can (#1466).
+            LlmErrorCodes.Permission =>
+                new(exception.Code, "The AI service did not accept its key. Check the AI provider in Settings.", false),
             _ =>
                 new(exception.Code, "The AI service could not complete this turn. Try again.", true),
         };
