@@ -88,9 +88,10 @@ Set `Mcp__PublicBaseUrl=https://<machine>.<tailnet>.ts.net`.
   and open the app at `https://<machine>.<tailnet>.ts.net:8443`.
 - Tailscale marks every Funnel request (`Tailscale-Funnel-Request`), and Nostos
   answers only the allowed paths for those, even if a Funnel forwards `/`.
-- Funnel can use port 443, 8443 or 10000. If 443 already serves something
-  else, add `--https=10000` to each command above and set
-  `Mcp__PublicBaseUrl=https://<machine>.<tailnet>.ts.net:10000`.
+- Use port 443. Funnel also offers 8443 and 10000, but in a test in November
+  2026 claude.ai's connector check could not reach a Funnel on port 10000
+  (no request arrived), while the same address answered from elsewhere. If
+  443 already serves something else, move that instead.
 - To stop: `tailscale funnel --https=443 off` (or the port you used).
   `tailscale funnel reset` also removes every other serve and Funnel setting
   on the machine.
