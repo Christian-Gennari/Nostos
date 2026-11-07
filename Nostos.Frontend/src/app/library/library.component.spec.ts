@@ -828,7 +828,7 @@ describe('Library', () => {
     expect(row.querySelectorAll('.list-row-status button')).toHaveLength(2);
   });
 
-  it('draws a grid card as cover, title and author, with its state after the author', () => {
+  it('draws a grid card as cover, title and author only: no reading state on the shelf', () => {
     component.viewMode.set('grid');
     component.rawBooks.set([
       {
@@ -852,8 +852,35 @@ describe('Library', () => {
     expect(card.querySelector('app-star-rating')).toBeNull();
     const author = card.querySelector('.meta-author') as HTMLElement;
     expect(author.querySelector('.meta-author-name')?.textContent?.trim()).toBe('An Author');
-    const marks = Array.from(author.querySelectorAll('.meta-mark')).map((el) => el.getAttribute('aria-label'));
-    expect(marks).toEqual(['Finished', 'Favourite']);
+    // Reading state (finished, favourite, "Reading") lives on the book page.
+    expect(author.querySelectorAll('nostos-icon')).toHaveLength(0);
+    expect(card.querySelector('.meta-status')).toBeNull();
+    expect(author.textContent?.trim()).toBe('An Author');
+  });
+
+  it('keeps reading state out of a list row', () => {
+    component.viewMode.set('list');
+    component.rawBooks.set([
+      {
+        id: 'book-1',
+        title: 'A Title',
+        author: 'An Author',
+        type: 'ebook',
+        coverUrl: null,
+        rating: 0,
+        isFavorite: false,
+        finishedAt: null,
+        progressPercent: 40,
+        lastReadAt: '2026-11-03T10:00:00Z',
+        createdAt: '2026-01-01T00:00:00Z',
+        otherEditions: [],
+      } as unknown as Book,
+    ]);
+    fixture.detectChanges();
+
+    const title = fixture.nativeElement.querySelector('.list-title-text') as HTMLElement;
+    expect(title.querySelector('.list-book-status')).toBeNull();
+    expect(title.textContent).not.toMatch(/Reading|Finished/);
   });
 
   it('gives each card one real link named by the title, so Tab and Enter open the book', () => {
@@ -880,28 +907,6 @@ describe('Library', () => {
     const link = card.querySelector('a.card-link') as HTMLAnchorElement;
     expect(link.textContent?.trim()).toBe('A Title');
     expect(link.getAttribute('href')).toBe('/library/book-1');
-  });
-
-  it('leaves the author line bare for a book that is neither finished nor a favourite', () => {
-    component.viewMode.set('grid');
-    component.rawBooks.set([
-      {
-        id: 'book-1',
-        title: 'A Title',
-        author: 'An Author',
-        type: 'ebook',
-        coverUrl: null,
-        rating: 0,
-        isFavorite: false,
-        finishedAt: null,
-        progressPercent: 0,
-        createdAt: '2026-01-01T00:00:00Z',
-        otherEditions: [],
-      } as unknown as Book,
-    ]);
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelectorAll('.book-card .meta-mark')).toHaveLength(0);
   });
 
   it('names list formats in words, keeping file types as acronyms', () => {
@@ -1251,28 +1256,6 @@ describe('Library', () => {
     // with no chips it is collapsed and renders nothing to announce.
     expect(fixture.nativeElement.querySelector('.filter-bar.is-empty')).not.toBeNull();
     expect(fixture.nativeElement.querySelectorAll('.filter-chip').length).toBe(0);
-  });
-
-  it('keeps the card status line to the status alone: no percentage, no dates', () => {
-    const reading = {
-      id: 'r1',
-      title: 'Meditations',
-      type: 'ebook',
-      progressPercent: 45,
-      lastReadAt: '2026-11-03T10:00:00Z',
-    } as unknown as Book;
-    const finished = {
-      id: 'f1',
-      title: 'Ethics',
-      type: 'ebook',
-      progressPercent: 100,
-      finishedAt: '2026-10-31T10:00:00Z',
-    } as unknown as Book;
-    const unread = { id: 'u1', title: 'New', type: 'ebook', progressPercent: 0 } as unknown as Book;
-
-    expect(component.statusLine(reading)).toBe('Reading');
-    expect(component.statusLine(finished)).toBe('Finished');
-    expect(component.statusLine(unread)).toBe('');
   });
 
   it('reflects a status filter in chips', () => {
