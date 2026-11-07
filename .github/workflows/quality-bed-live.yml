@@ -1,0 +1,135 @@
+name: Ask Nostos live quality bed
+
+# The live quality bed (docs/ask-nostos-v3-quality-gate.md) runs the C-series
+# scenarios against a paid model, so it never runs on a pull request or a
+# push. Start it by hand from the Actions tab, or with
+#   gh workflow run quality-bed-live.yml -f models=openai/gpt-6-luna
+#
+# The spend cap is enforced by the harness itself (QualityBudget): no model
+# call starts once max_usd is spent, the run fails, and it lists what it did
+# not measure. Prices are the gateway's list prices in USD per million tokens.
+#
+# Repository secrets it needs (Settings > Secrets and variables > Actions):
+#   NOSTOS_QG_BASE_URL  OpenAI-compatible base URL, including /v1
+#                       (the managed gateway: https://ai-gateway.vercel.sh/v1)
+#   NOSTOS_QG_KEY       the gateway key; read at call time, never written out
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Comma-separated model ids
+        required: true
+        default: openai/gpt-6-luna
+      scenarios:
+        description: Comma-separated scenario ids (empty runs every live scenario)
+        required: false
+        default: ""
+      reps:
+        description: Repetitions per scenario
+        required: true
+        default: "1"
+      max_usd:
+        description: Spend cap in USD for the whole run
+        required: true
+        default: "2"
+      price_input_per_mtok:
+        description: USD per million prompt tokens
+        required: true
+        default: "0.10"
+      price_output_per_mtok:
+        description: USD per million completion tokens
+        required: true
+        default: "0.50"
+      reasoning_effort:
+        description: reasoning_effort sent with every call (production sends none)
+        required: false
+        default: none
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-bed-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live quality bed
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NOSTOS_QG_LIVE: "1"
+      NOSTOS_QG_BASE_URL: ${{ secrets.NOSTOS_QG_BASE_URL }}
+      NOSTOS_QG_KEY: ${{ secrets.NOSTOS_QG_KEY }}
+      NOSTOS_QG_KEY_ENV: NOSTOS_QG_KEY
+      NOSTOS_QG_MODELS: ${{ inputs.models }}
+      NOSTOS_QG_SCENARIOS: ${{ inputs.scenarios }}
+      NOSTOS_QG_REPS: ${{ inputs.reps }}
+      NOSTOS_QG_MAX_USD: ${{ inputs.max_usd }}
+      NOSTOS_QG_PRICE_INPUT_PER_MTOK: ${{ inputs.price_input_per_mtok }}
+      NOSTOS_QG_PRICE_OUTPUT_PER_MTOK: ${{ inputs.price_output_per_mtok }}
+      NOSTOS_QG_REASONING_EFFORT: ${{ inputs.reasoning_effort }}
+      NOSTOS_QG_OUT: ${{ github.workspace }}/quality-bed-out
+    steps:
+      - name: Check the secrets are set
+        run: |
+          if [ -z "$NOSTOS_QG_BASE_URL" ] || [ -z "$NOSTOS_QG_KEY" ]; then
+            echo "::error::Set the NOSTOS_QG_BASE_URL and NOSTOS_QG_KEY repository secrets first."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build Nostos.Backend.Tests/Nostos.Backend.Tests.csproj --configuration Debug
+
+      - name: Run the live campaign
+        run: >-
+          dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj
+          --configuration Debug
+          --no-build
+          --filter "FullyQualifiedName~QualityBedLiveTests"
+          --logger "console;verbosity=normal"
+
+      - name: Summarise spend and results
+        if: always()
+        run: |
+          {
+            echo "## Live quality bed"
+            echo
+            echo "Models: \`$NOSTOS_QG_MODELS\` · reps: $NOSTOS_QG_REPS · cap: \$$NOSTOS_QG_MAX_USD"
+            echo
+            if [ -f "$NOSTOS_QG_OUT/budget.json" ]; then
+              echo '```json'
+              cat "$NOSTOS_QG_OUT/budget.json"
+              echo '```'
+            fi
+            for results in "$NOSTOS_QG_OUT"/*/results.json; do
+              [ -f "$results" ] || continue
+              python3 - "$results" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1]))
+          scenarios = data.get("scenarios", [])
+          turns = [t for s in scenarios for t in s.get("turns", [])]
+          completed = sum(1 for t in turns if t.get("terminalKind") == "completed")
+          print(f"- `{data.get('model')}`: {len(scenarios)} scenario runs, {completed}/{len(turns)} turns completed, "
+                f"{len(data.get('failures', []))} failures, {len(data.get('advisories', []) or [])} advisories")
+          PY
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload transcripts and results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-bed-live-${{ github.run_id }}
+          path: quality-bed-out
+          if-no-files-found: ignore
+          retention-days: 30

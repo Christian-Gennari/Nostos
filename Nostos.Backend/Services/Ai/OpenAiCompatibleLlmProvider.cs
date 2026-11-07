@@ -56,10 +56,11 @@ public sealed class OpenAiCompatibleLlmProvider(
         HttpResponseMessage response;
         try
         {
-            response = await client.SendAsync(
-                httpRequest,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
+            // Buffered on purpose: the client's timeout then covers the body
+            // as well as the headers, and a connection that drops mid-body
+            // fails here as a provider failure instead of escaping untyped
+            // from the read below. A completion is small.
+            response = await client.SendAsync(httpRequest, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

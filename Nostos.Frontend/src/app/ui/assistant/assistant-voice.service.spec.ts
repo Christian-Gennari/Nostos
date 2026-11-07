@@ -320,6 +320,25 @@ describe('AssistantVoiceService', () => {
     );
   });
 
+  it.each([
+    ['stt_permission_denied', 502, 'The transcription provider rejected its key. Check the STT provider in Settings.'],
+    ['stt_rate_limited', 429, 'Voice transcription is busy right now. Try again in a moment.'],
+    ['stt_provider_timeout', 504, 'The transcription provider took too long to answer. Try again.'],
+  ])('tells a bad key, rate limiting and a timeout apart (%s)', async (code, status, message) => {
+    getUserMedia.mockResolvedValue(new FakeStream() as unknown as MediaStream);
+
+    service.start();
+    await tick();
+    service.stop();
+
+    http.expectOne(TRANSCRIPTION_ENDPOINT).flush(
+      { title: code, detail: 'provider detail' },
+      { status, statusText: 'Error' },
+    );
+
+    expect(service.error()?.message).toBe(message);
+  });
+
   it('leaves no track live after stop', async () => {
     const stream = new FakeStream(2);
     getUserMedia.mockResolvedValue(stream as unknown as MediaStream);

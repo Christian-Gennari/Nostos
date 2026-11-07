@@ -122,13 +122,12 @@ public sealed class OpenAiCompatibleSttProvider(
         HttpResponseMessage response;
         try
         {
-            // Read the body yourself, after the headers, so a large error body is
-            // never an implicit download. A single send: no retry handler, no
-            // loop.
-            response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
+            // A single send: no retry handler, no loop. Buffered so the client
+            // timeout covers the body as well as the headers, and a connection
+            // that drops mid-body is a provider failure rather than an
+            // untyped exception from the read below (#1466). A transcript is
+            // small, and an error body is cut to a short detail.
+            response = await client.SendAsync(request, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -140,6 +139,11 @@ public sealed class OpenAiCompatibleSttProvider(
             throw SttException.ProviderFailure(
                 $"the gateway could not be reached ({ex.Message})");
         }
+        catch (TaskCanceledException)
+        {
+            // The client's own timeout, not the caller's cancellation.
+            throw SttException.TimedOut();
+        }
 
         using (response)
         {
@@ -150,7 +154,7 @@ public sealed class OpenAiCompatibleSttProvider(
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                throw SttException.PermissionDenied();
+                throw SttException.RateLimited();
             }
 
             if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)

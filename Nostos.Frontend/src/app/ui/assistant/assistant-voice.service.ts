@@ -346,7 +346,17 @@ export function errorFromTranscription(error: unknown): AssistantVoiceError {
     case 'stt_permission_denied':
       return {
         kind: 'failed',
-        message: 'The transcription provider rejected the request or is rate limited. Check its settings and try again.',
+        message: 'The transcription provider rejected its key. Check the STT provider in Settings.',
+      };
+    case 'stt_rate_limited':
+      return {
+        kind: 'failed',
+        message: 'Voice transcription is busy right now. Try again in a moment.',
+      };
+    case 'stt_provider_timeout':
+      return {
+        kind: 'failed',
+        message: 'The transcription provider took too long to answer. Try again.',
       };
     case 'stt_audio_too_large':
     case 'stt_audio_too_long':

@@ -1128,10 +1128,11 @@ public sealed class AiProviderSettingsService(
         HttpResponseMessage response;
         try
         {
-            response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
+            // Buffered so the probe's timeout covers the body too: a "Test"
+            // against a server that stalls after the headers, or drops the
+            // connection mid-body, reports it instead of hanging or failing
+            // with an untyped error (#1466).
+            response = await client.SendAsync(request, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

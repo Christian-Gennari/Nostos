@@ -109,6 +109,26 @@ internal static class QualityVerify
             : $"expected nothing executed, observed [{string.Join(",", executed)}]";
     }
 
+    /// <summary>
+    /// No capability that can write was requested, by the registry's own trust
+    /// classes rather than a hand-kept list, so a write tool added later is
+    /// covered on the day it lands.
+    /// </summary>
+    public static string? NoWriteToolRequested(QualityTurnVerifyContext context)
+    {
+        using var scope = context.Services.CreateScope();
+        var registry = scope.ServiceProvider
+            .GetRequiredService<Nostos.Backend.Integrations.Assistant.AssistantCapabilityRegistry>();
+        var writes = registry.All
+            .Where(c => c.Trust != Nostos.Backend.Integrations.Assistant.AssistantTrustClass.Suggest)
+            .Select(c => c.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        var requested = context.Turn.RequestedTools.Where(writes.Contains).ToList();
+        return requested.Count == 0
+            ? null
+            : $"write tool(s) requested: [{string.Join(",", requested)}]";
+    }
+
     public static string? NoReview(QualityTurnRecord turn) =>
         turn.Response?.Changeset?.Status != "review" ? null : "expected no changes waiting for review, observed some";
 

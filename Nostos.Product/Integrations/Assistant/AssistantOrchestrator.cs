@@ -355,8 +355,16 @@ public sealed class AssistantOrchestrator(
                 stopReason = AssistantTurnStopReason.SafetyCeiling;
                 break;
             }
-            catch (LlmException)
+            catch (LlmException exception)
             {
+                // The panel shows plain words; the provider's own detail (the
+                // HTTP status, the gateway's message, an unreachable host) is
+                // what an owner needs to fix a misconfigured endpoint, so it
+                // goes to the log. It never carries the key.
+                logger.LogWarning(
+                    "Ask Nostos provider call failed ({Code}): {Detail}",
+                    exception.Code,
+                    exception.Message);
                 var metrics = executionMeter.Finish(AssistantTurnStopReason.ProviderError);
                 LogExecutionMetrics(metrics);
                 await CompleteUsageAsync(usageLease, metrics);

@@ -66,10 +66,9 @@ public sealed class OpenAiCompatibleEmbeddingProvider(
         HttpResponseMessage response;
         try
         {
-            response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
+            // Buffered so the client timeout covers the body too, and a
+            // dropped connection mid-body is a provider failure (#1466).
+            response = await client.SendAsync(request, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

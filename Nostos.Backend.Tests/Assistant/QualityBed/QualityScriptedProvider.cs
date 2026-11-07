@@ -139,17 +139,21 @@ internal sealed class QualityMetricsSink
 internal sealed class MeteredLlmProvider(
     ILlmProvider inner,
     QualityMetricsSink sink,
-    string modelId) : ILlmProvider
+    string modelId,
+    QualityBudget? budget = null) : ILlmProvider
 {
     public async Task<LlmCompletion> CompleteAsync(
         LlmCompletionRequest request,
         CancellationToken ct = default)
     {
+        // The spend cap: no paid call starts once it is reached.
+        budget?.ThrowIfExhausted();
         var started = DateTimeOffset.UtcNow;
         var elapsed = Stopwatch.StartNew();
         try
         {
             var completion = await inner.CompleteAsync(request, ct);
+            budget?.Record(request, completion);
             sink.Add(new QualityUpstreamCall(
                 modelId, started, DateTimeOffset.UtcNow, elapsed.Elapsed.TotalMilliseconds,
                 completion.PromptTokens, completion.CompletionTokens, completion.ThinkingTokens,
