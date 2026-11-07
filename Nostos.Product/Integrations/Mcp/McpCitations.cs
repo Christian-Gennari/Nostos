@@ -25,6 +25,17 @@ public sealed record McpCitation(
     string Link,
     string? Markdown);
 
+/// <summary>
+/// Optional, from the host: the origin that serves the app for an MCP
+/// request, for the links tools return. Null means "not the request's own
+/// origin, and none known": links then stay paths. Without it, links use the
+/// request's origin.
+/// </summary>
+public interface IMcpAppOrigin
+{
+    string? AppOrigin(HttpContext context);
+}
+
 /// <summary>One book's citation details, looked up once per request.</summary>
 internal sealed record McpBookInfo(Guid Id, string Title, string? Author, string? Year);
 
@@ -33,7 +44,7 @@ internal sealed record McpBookInfo(Guid Id, string Title, string? Author, string
 /// caches the books it looks up and reads the public origin from the request,
 /// so every link points at the Nostos the app connected to.
 /// </summary>
-internal sealed partial class McpCitations(ILibraryService library, IHttpContextAccessor http)
+internal sealed partial class McpCitations(ILibraryService library, IHttpContextAccessor http, IMcpAppOrigin? appOrigin = null)
 {
     private const string Scheme = "nostos:cite/";
     private readonly Dictionary<Guid, McpBookInfo?> _books = [];
@@ -160,12 +171,24 @@ internal sealed partial class McpCitations(ILibraryService library, IHttpContext
 
     public string NoteUrl(Guid noteId) => AppUrl($"/brain/notes/{noteId:D}");
 
-    /// <summary>An absolute link into this Nostos, from the request's own origin.</summary>
+    /// <summary>
+    /// An absolute link into this Nostos: where the host says the app is
+    /// (<see cref="IMcpAppOrigin"/>), else the request's own origin. When the
+    /// host says the request's origin does not serve the app and it knows no
+    /// other, the link stays a path rather than one that answers 404.
+    /// </summary>
     public string AppUrl(string path)
     {
-        var request = http.HttpContext?.Request;
+        var context = http.HttpContext;
+        var request = context?.Request;
         if (request is null || !request.Host.HasValue)
             return path;
+        if (appOrigin is not null)
+        {
+            var origin = appOrigin.AppOrigin(context!);
+            return origin is null ? path : origin.TrimEnd('/') + path;
+        }
+
         return $"{request.Scheme}://{request.Host}{request.PathBase}{path}";
     }
 

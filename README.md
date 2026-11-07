@@ -130,7 +130,7 @@ On SelfHosted, you connect your own AI provider in **Settings → AI connections
 
 ### Connect your own AI (SelfHosted)
 
-Use the AI app you already pay for with your library. Make an access token in **Settings → Connected apps**, paste the setup it gives you, and Claude Code, Cursor, VS Code or Claude Desktop can search your books and notes, quote them with citations, and save notes and drafts. Each token is read only or read and write, and you can revoke it at any time. Apps that run on the web, like claude.ai and ChatGPT, need a public address for your server; that setup comes later.
+Use the AI app you already pay for with your library. Make an access token in **Settings → Connected apps**, paste the setup it gives you, and Claude Code, Cursor, VS Code or Claude Desktop can search your books and notes, quote them with citations, and save notes and drafts. Each token is read only or read and write, and you can revoke it at any time. Apps that run on the web, like claude.ai and ChatGPT, connect through a public address for just the MCP and sign-in paths (Tailscale Funnel, Cloudflare Tunnel or a reverse proxy), and you approve each one in Settings: see [Connect claude.ai and ChatGPT](docs/mcp-tunnel.md).
 
 ### Your library stays yours
 

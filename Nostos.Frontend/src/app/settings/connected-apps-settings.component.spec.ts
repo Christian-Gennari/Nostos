@@ -6,11 +6,15 @@ import {
   McpAccessTokenCreated,
   McpConnectedApp,
   McpConnectedAppsService,
+  McpOAuthPendingRequest,
+  McpOAuthStatus,
 } from '../core/services/mcp-connected-apps.service';
 import { ToastService } from '../core/services/toast.service';
 import {
   ConnectedAppsSettingsComponent,
+  OAUTH_POLL_MS,
   TOKEN_PLACEHOLDER,
+  TUNNEL_GUIDE_URL,
   mcpClientSnippet,
 } from './connected-apps-settings.component';
 
@@ -19,6 +23,19 @@ describe('ConnectedAppsSettingsComponent', () => {
   let component: ConnectedAppsSettingsComponent;
   let tokens: McpConnectedApp[];
   let canCreate: boolean;
+  let oauth: McpOAuthStatus;
+
+  const claudeRequest: McpOAuthPendingRequest = {
+    id: 'r1',
+    code: 'KMRT',
+    clientName: 'Claude',
+    clientId: 'https://claude.ai/oauth/mcp-oauth-client-metadata',
+    clientHost: 'claude.ai',
+    redirectHost: 'claude.ai',
+    requestedScope: 'read_write',
+    createdAt: '2026-11-07T10:00:00Z',
+    expiresAt: '2026-11-07T10:10:00Z',
+  };
 
   const existing: McpConnectedApp = {
     id: 'a1',
@@ -38,6 +55,9 @@ describe('ConnectedAppsSettingsComponent', () => {
     list: vi.fn(() => of({ canCreate, apps: tokens })),
     createToken: vi.fn(() => of(made)),
     revoke: vi.fn(() => of(undefined as void)),
+    oauthStatus: vi.fn(() => of(oauth)),
+    approveRequest: vi.fn(() => of(undefined as void)),
+    denyRequest: vi.fn(() => of(undefined as void)),
     restore: vi.fn(() => of(undefined as void)),
   };
   const toast = { success: vi.fn(), error: vi.fn() };
@@ -62,6 +82,7 @@ describe('ConnectedAppsSettingsComponent', () => {
     vi.clearAllMocks();
     tokens = [existing];
     canCreate = true;
+    oauth = { enabled: false, connectorUrl: null, requests: [] };
 
     await TestBed.configureTestingModule({
       imports: [ConnectedAppsSettingsComponent],
@@ -259,6 +280,154 @@ describe('ConnectedAppsSettingsComponent', () => {
     await settle();
     expect(JSON.parse(text('connected-apps-snippet')!)).toEqual({
       mcpServers: { nostos: { url: component.endpoint, headers: { Authorization: `Bearer ${TOKEN_PLACEHOLDER}` } } },
+    });
+  });
+
+  describe('hosted apps over OAuth (SelfHosted, #1470)', () => {
+    const enable = async (requests: McpOAuthPendingRequest[] = [claudeRequest]) => {
+      oauth = { enabled: true, connectorUrl: 'https://nostos.example.ts.net/mcp', requests };
+      component.loadOAuth();
+      await settle();
+    };
+
+    it('points to the tunnel guide while the server has no public address', () => {
+      expect(el('connected-apps-requests')).toBeNull();
+      expect(el('connected-apps-connector-url')).toBeNull();
+      const web = el('connected-apps-web')!;
+      expect(web.textContent).toContain('Mcp__PublicBaseUrl');
+      expect(web.querySelector('a')!.getAttribute('href')).toBe(TUNNEL_GUIDE_URL);
+    });
+
+    it('gives the connector address once OAuth is on', async () => {
+      await enable([]);
+
+      expect(text('connected-apps-connector-url')).toBe('https://nostos.example.ts.net/mcp');
+      expect(el('connected-apps-requests')).toBeNull();
+    });
+
+    it('shows a waiting request with its code, the app and what it asks for', async () => {
+      await enable();
+
+      const request = text('connected-apps-request')!;
+      expect(request).toContain('Claude wants to connect');
+      expect(request).toContain('From claude.ai');
+      expect(request).not.toContain('returns to');
+      expect(request).toContain('asks to read and write');
+      expect(text('connected-apps-request-code')).toBe('KMRT');
+      expect(component.scopeFor(claudeRequest)).toBe('read_write');
+    });
+
+    it('names the return host when it differs from the app', async () => {
+      await enable([{ ...claudeRequest, clientHost: 'apps.example', redirectHost: 'callback.example' }]);
+
+      expect(text('connected-apps-request')).toContain('returns to callback.example');
+    });
+
+    it('approves with the access chosen, not only the one asked for', async () => {
+      await enable();
+      component.setRequestScope(claudeRequest, 'read');
+      el('connected-apps-approve')!.click();
+      await settle();
+
+      expect(api.approveRequest).toHaveBeenCalledWith('r1', 'read');
+      expect(el('connected-apps-request')).toBeNull();
+      expect(toast.success).toHaveBeenCalledWith('Claude can connect. Go back to the app.');
+    });
+
+    it('approves with the requested access by default', async () => {
+      await enable([{ ...claudeRequest, requestedScope: 'read' }]);
+      el('connected-apps-approve')!.click();
+      await settle();
+
+      expect(api.approveRequest).toHaveBeenCalledWith('r1', 'read');
+    });
+
+    it('denies a request', async () => {
+      await enable();
+      el('connected-apps-deny')!.click();
+      await settle();
+
+      expect(api.denyRequest).toHaveBeenCalledWith('r1');
+      expect(api.approveRequest).not.toHaveBeenCalled();
+      expect(el('connected-apps-request')).toBeNull();
+    });
+
+    it('drops a request that ended before it was approved', async () => {
+      await enable();
+      api.approveRequest.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      el('connected-apps-approve')!.click();
+      await settle();
+
+      expect(el('connected-apps-request')).toBeNull();
+      expect(toast.error).toHaveBeenCalledWith('That request has ended. Start again from the app.');
+    });
+
+    it('keeps a request whose approval failed', async () => {
+      await enable();
+      api.approveRequest.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+      el('connected-apps-approve')!.click();
+      await settle();
+
+      expect(el('connected-apps-request')).not.toBeNull();
+      expect(component.deciding()).toBeNull();
+      expect(toast.error).toHaveBeenCalledWith('Could not approve Claude');
+    });
+
+    it('looks for new requests while it is open, and stops when it closes', async () => {
+      vi.useFakeTimers();
+      try {
+        oauth = { enabled: true, connectorUrl: 'https://nostos.example.ts.net/mcp', requests: [] };
+        component.loadOAuth();
+        const calls = api.oauthStatus.mock.calls.length;
+
+        vi.advanceTimersByTime(OAUTH_POLL_MS);
+        expect(api.oauthStatus.mock.calls.length).toBe(calls + 1);
+
+        fixture.destroy();
+        vi.advanceTimersByTime(OAUTH_POLL_MS * 3);
+        expect(api.oauthStatus.mock.calls.length).toBe(calls + 1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps the requests and keeps looking after one failed read', async () => {
+      vi.useFakeTimers();
+      try {
+        oauth = { enabled: true, connectorUrl: 'https://nostos.example.ts.net/mcp', requests: [claudeRequest] };
+        component.loadOAuth();
+        api.oauthStatus.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+
+        vi.advanceTimersByTime(OAUTH_POLL_MS);
+        expect(component.oauth()?.requests).toEqual([claudeRequest]);
+
+        const calls = api.oauthStatus.mock.calls.length;
+        vi.advanceTimersByTime(OAUTH_POLL_MS);
+        expect(api.oauthStatus.mock.calls.length).toBe(calls + 1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('says where to decide when the server refuses a decision from outside', async () => {
+      await enable();
+      api.approveRequest.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
+      el('connected-apps-approve')!.click();
+      await settle();
+
+      expect(el('connected-apps-request')).not.toBeNull();
+      expect(toast.error).toHaveBeenCalledWith('Approve and deny requests from Nostos on your own network.');
+    });
+
+    it('does not ask about OAuth where apps sign in by themselves', async () => {
+      api.oauthStatus.mockClear();
+      canCreate = false;
+      tokens = [];
+      component.load();
+      await settle();
+
+      expect(api.oauthStatus).not.toHaveBeenCalled();
+      expect(el('connected-apps-web')).toBeNull();
     });
   });
 });

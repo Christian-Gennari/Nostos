@@ -26,6 +26,7 @@ using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Mcp;
+using Nostos.Backend.Services.Mcp.OAuth;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
@@ -77,7 +78,9 @@ var product = builder.Services.AddNostosProduct(builder.Configuration);
 // MCP (issue #1467). /mcp is mapped because the access tokens below register
 // the policy that decides who may call it: a Bearer token made in Settings →
 // Connected apps (issue #1469). The token scheme is not the default, so the
-// rest of the API keeps its access model: SelfHosted has no login.
+// rest of the API keeps its access model: SelfHosted has no login. With
+// Mcp:PublicBaseUrl set, the same scheme also takes OAuth access tokens from
+// claude.ai and ChatGPT, approved by the owner in Settings (issue #1470).
 builder.Services.AddNostosMcp();
 builder.Services.AddSelfHostedMcpAccessTokens();
 var assistantOptions = product.Assistant;
@@ -414,6 +417,20 @@ using (var scope = app.Services.CreateScope())
 // registration above for why.
 app.UseForwardedHeaders();
 
+// --- PUBLIC HOST ALLOWLIST (issue #1470) ---
+// Right after the forwarded headers, before anything can answer: a request
+// that came through the public address (Mcp:PublicBaseUrl, or Tailscale
+// Funnel) reaches only /mcp, the OAuth endpoints and their metadata. The
+// tunnel should restrict paths too; this is the backstop if it does not.
+app.UseMcpPublicHostAllowlist();
+var mcpOAuth = app.Services.GetRequiredService<McpOAuthSettings>();
+if (mcpOAuth.Problem is not null)
+    app.Logger.LogWarning("{Problem}", mcpOAuth.Problem);
+else if (mcpOAuth.Enabled)
+    app.Logger.LogInformation(
+        "MCP OAuth enabled for hosted AI apps at {Resource}. Requests on {Host} reach only /mcp, /oauth/* and /.well-known/oauth-*.",
+        mcpOAuth.Resource, mcpOAuth.Host);
+
 // Forwarded headers first: behind a TLS proxy it needs the real scheme. Ahead of
 // the exception handler so an error's problem+json is compressed like the rest.
 app.UseResponseCompression();
@@ -510,6 +527,7 @@ app.MapNostosProductEndpoints(
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
 app.MapMcpAccessTokenEndpoints();
+app.MapMcpOAuthEndpoints();
 
 // --- HANDLE ANGULAR ROUTING ---
 // The SPA shell is served ONLY for client-side routes. The API, OPDS and MCP
@@ -534,7 +552,8 @@ RequestDelegate serveClientRoute = async context =>
 
     var path = context.Request.Path;
     if (path.StartsWithSegments("/api") || path.StartsWithSegments("/opds") ||
-        path.StartsWithSegments(NostosMcp.Path))
+        path.StartsWithSegments(NostosMcp.Path) || path.StartsWithSegments("/oauth") ||
+        path.StartsWithSegments("/.well-known"))
     {
         context.Response.StatusCode = StatusCodes.Status404NotFound;
         return;

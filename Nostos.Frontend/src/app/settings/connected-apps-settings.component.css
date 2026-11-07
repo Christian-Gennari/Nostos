@@ -169,6 +169,57 @@
   padding: 15px 0;
 }
 
+/* --- Requests from hosted apps waiting for the owner --- */
+
+.request {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.request-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.request-code {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.25rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.2em;
+  color: var(--color-text-main);
+}
+
+.request-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.request-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.label-desc code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
+}
+
+.label-desc a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* --- Setup snippets --- */
 
 .client-choice {
@@ -218,5 +269,14 @@
 
   .token-row .nostos-button {
     width: 100%;
+  }
+
+  .request-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .request-buttons > * {
+    flex: 1;
   }
 }

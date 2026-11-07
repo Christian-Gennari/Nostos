@@ -639,6 +639,81 @@ namespace Nostos.Backend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.McpOAuthGrantModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClientName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastUsedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("McpOAuthGrants", t =>
+                        {
+                            t.HasCheckConstraint("CK_McpOAuthGrants_Scope", "\"Scope\" IN ('read', 'read_write')");
+                        });
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.McpOAuthTokenModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ConsumedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("GrantId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GrantId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("McpOAuthTokens", t =>
+                        {
+                            t.HasCheckConstraint("CK_McpOAuthTokens_Kind", "\"Kind\" IN ('access', 'refresh')");
+
+                            t.HasCheckConstraint("CK_McpOAuthTokens_TokenHash", "length(\"TokenHash\") = 64");
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.MigrationChunkReceiptRecord", b =>
                 {
                     b.Property<Guid>("SessionId")
@@ -1681,6 +1756,17 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Book");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.McpOAuthTokenModel", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.McpOAuthGrantModel", "Grant")
+                        .WithMany("Tokens")
+                        .HasForeignKey("GrantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Grant");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.MigrationChunkReceiptRecord", b =>
                 {
                     b.HasOne("Nostos.Backend.Data.Models.MigrationSessionRecord", null)
@@ -1826,6 +1912,11 @@ namespace Nostos.Backend.Migrations
             modelBuilder.Entity("Nostos.Backend.Data.Models.CollectionModel", b =>
                 {
                     b.Navigation("Children");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.McpOAuthGrantModel", b =>
+                {
+                    b.Navigation("Tokens");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.NoteImportBatch", b =>

@@ -1,3 +1,61 @@
+@if (oauth()?.requests; as requests) {
+  @if (requests.length > 0) {
+    <div class="setting-row setting-row--stacked request-block" data-testid="connected-apps-requests">
+      <div class="setting-label">
+        <span class="label-text">Waiting for you</span>
+        <span class="label-desc">Approve a request only if you started it, and only if the app shows the same code.</span>
+      </div>
+      @for (request of requests; track request.id) {
+        <div class="request" data-testid="connected-apps-request">
+          <div class="request-head">
+            <div class="token-info">
+              <span class="token-name">{{ request.clientName }} wants to connect</span>
+              <span class="token-meta">
+                From {{ request.clientHost }}
+                @if (request.redirectHost !== request.clientHost) {
+                  &middot; returns to {{ request.redirectHost }}
+                }
+                &middot; asks to {{ request.requestedScope === 'read_write' ? 'read and write' : 'read' }}
+              </span>
+            </div>
+            <span class="request-code" data-testid="connected-apps-request-code" [attr.aria-label]="'Code ' + request.code">{{ request.code }}</span>
+          </div>
+          <div class="request-actions">
+            <nostos-segmented
+              aria-label="What the app may do"
+              data-testid="connected-apps-request-scope"
+              [options]="scopeOptions"
+              [value]="scopeFor(request)"
+              (valueChange)="setRequestScope(request, $event)"
+            />
+            <div class="request-buttons">
+              <button
+                type="button"
+                appButton variant="secondary" size="sm"
+                [disabled]="!!deciding()"
+                (click)="deny(request)"
+                data-testid="connected-apps-deny"
+              >
+                Deny
+              </button>
+              <button
+                type="button"
+                appButton variant="primary" size="sm"
+                [disabled]="!!deciding() && deciding() !== request.id"
+                [busy]="deciding() === request.id"
+                (click)="approve(request)"
+                data-testid="connected-apps-approve"
+              >
+                Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+}
+
 @if (created(); as fresh) {
   <div class="setting-row setting-row--stacked" data-testid="connected-apps-new-token">
     <div class="setting-label">
@@ -200,9 +258,39 @@
           data-testid="connected-apps-copy-snippet"
         ></button>
       </div>
-      <p class="token-note-plain">
-        Apps that run on the web, like claude.ai and ChatGPT, connect from their own servers and need a public address for this server. That setup is coming in a later version.
-      </p>
+    </div>
+
+    <div class="setting-row setting-row--stacked" data-testid="connected-apps-web">
+      <div class="setting-label">
+        <span class="label-text">claude.ai and ChatGPT</span>
+        @if (oauth()?.enabled && oauth()?.connectorUrl) {
+          <span class="label-desc">Add a custom connector in the app with this address. The app then shows a code, and the request waits above for you to approve it. Each app you approve appears in the list.</span>
+        } @else {
+          <span class="label-desc">
+            Apps that run on the web connect from their own servers, so they need a public address for this server: a tunnel such as Tailscale Funnel or Cloudflare Tunnel, with <code>Mcp__PublicBaseUrl</code> set to it.
+            <a [href]="tunnelGuideUrl" target="_blank" rel="noopener">Read the tunnel guide</a>.
+          </span>
+        }
+      </div>
+      @if (oauth()?.enabled && oauth()?.connectorUrl; as url) {
+        <div class="token-row">
+          <code class="token-value" data-testid="connected-apps-connector-url">{{ oauth()!.connectorUrl }}</code>
+          <button
+            type="button"
+            appButton variant="secondary" size="sm"
+            (click)="copyConnectorUrl()"
+            data-testid="connected-apps-copy-connector"
+          >
+            @if (copied() === 'connector') {
+              <nostos-icon name="check" [size]="14"></nostos-icon>
+              Copied
+            } @else {
+              <nostos-icon name="copy" [size]="14"></nostos-icon>
+              Copy address
+            }
+          </button>
+        </div>
+      }
     </div>
   }
 } @else {

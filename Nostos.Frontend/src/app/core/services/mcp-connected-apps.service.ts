@@ -33,6 +33,30 @@ export interface McpAccessTokenCreated {
 }
 
 /**
+ * A hosted AI app (claude.ai, ChatGPT) asking to connect through the public
+ * address, waiting for the owner (issue #1470). `code` is the one the app's
+ * sign-in page shows, so the owner approves the request they started.
+ */
+export interface McpOAuthPendingRequest {
+  id: string;
+  code: string;
+  clientName: string;
+  clientId: string;
+  clientHost: string;
+  redirectHost: string;
+  requestedScope: McpAppScope;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** SelfHosted OAuth: on only with a public address; the connector URL to paste into the app. */
+export interface McpOAuthStatus {
+  enabled: boolean;
+  connectorUrl: string | null;
+  requests: McpOAuthPendingRequest[];
+}
+
+/**
  * The apps connected to this library over MCP (issue #1469). Callers check
  * `supportsMcpConnectedApps` first. Listing and revoking work on every host
  * that has the feature; making a token only where `canCreate` is true
@@ -42,6 +66,7 @@ export interface McpAccessTokenCreated {
 export class McpConnectedAppsService {
   private readonly http = inject(HttpClient);
   private readonly base = '/api/mcp/apps';
+  private readonly oauthBase = '/api/mcp/oauth';
 
   list(): Observable<McpConnectedApps> {
     return this.http.get<McpConnectedApps>(this.base);
@@ -53,6 +78,19 @@ export class McpConnectedAppsService {
 
   revoke(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/${encodeURIComponent(id)}`);
+  }
+
+  /** SelfHosted only, and only on the private network: the server answers 404 on its public address. */
+  oauthStatus(): Observable<McpOAuthStatus> {
+    return this.http.get<McpOAuthStatus>(this.oauthBase);
+  }
+
+  approveRequest(id: string, scope: McpAppScope): Observable<void> {
+    return this.http.post<void>(`${this.oauthBase}/requests/${encodeURIComponent(id)}/approve`, { scope });
+  }
+
+  denyRequest(id: string): Observable<void> {
+    return this.http.post<void>(`${this.oauthBase}/requests/${encodeURIComponent(id)}/deny`, {});
   }
 
   /** Lets a revoked app connect again (#1483). */

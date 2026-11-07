@@ -80,6 +80,14 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Carry,
             "Access tokens for connected AI apps (#1469) are host credentials with no foreign key; replacing the library must not disconnect the apps the owner set up, and a portable archive never carries them."),
         new(
+            typeof(McpOAuthGrantModel),
+            HostStateCarryOverKind.Carry,
+            "AI apps the owner approved over OAuth (#1470) are host credentials with no foreign key; replacing the library must not disconnect them, and a portable archive never carries them."),
+        new(
+            typeof(McpOAuthTokenModel),
+            HostStateCarryOverKind.Carry,
+            "Hashes of those apps' access and refresh tokens; the only foreign key targets McpOAuthGrantModel, which is also carried (listed first)."),
+        new(
             typeof(ProviderPreferenceModel),
             HostStateCarryOverKind.Carry,
             "Provider enablement choices are deployment-local configuration with no foreign key; replacing the library must not reset which free sources the user turned on or off."),

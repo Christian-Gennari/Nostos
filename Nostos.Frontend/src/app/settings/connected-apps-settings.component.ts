@@ -7,6 +7,8 @@ import {
   McpAppScope,
   McpConnectedApp,
   McpConnectedAppsService,
+  McpOAuthPendingRequest,
+  McpOAuthStatus,
 } from '../core/services/mcp-connected-apps.service';
 import { ToastService } from '../core/services/toast.service';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -27,6 +29,12 @@ export type McpClientId = 'claude-code' | 'cursor' | 'vscode' | 'claude-desktop'
 export const TOKEN_PLACEHOLDER = '<your-token>';
 
 const COPIED_FEEDBACK_MS = 2000;
+
+/** How often Settings looks for new connection requests while it is open. */
+export const OAUTH_POLL_MS = 5000;
+
+/** Where the tunnel guide lives, for a server without a public address yet. */
+export const TUNNEL_GUIDE_URL = 'https://github.com/Christian-Gennari/Nostos/blob/main/docs/mcp-tunnel.md';
 
 /**
  * The setup for one app, ready to paste. `endpoint` is this server's `/mcp`
@@ -86,6 +94,11 @@ const CLIENT_HINTS: Record<McpClientId, string> = {
  * stored in the browser and the server cannot show it again. Where apps sign
  * in by themselves (Cloud), the section lists them, can revoke them, and
  * gives the address to connect from.
+ *
+ * SelfHosted with a public address (issue #1470): claude.ai and ChatGPT ask
+ * to connect through it, and their requests wait here with the code the
+ * app shows. The owner approves one (read only, or read and write) or denies
+ * it. The list is looked at again every few seconds while this is open.
  */
 @Component({
   selector: 'app-connected-apps-settings',
@@ -131,8 +144,18 @@ export class ConnectedAppsSettingsComponent implements OnInit {
   readonly pendingRevoke = signal<McpConnectedApp | null>(null);
   readonly revoking = signal(false);
 
+  /** SelfHosted OAuth; null where the server has none (Cloud) or it could not be read. */
+  readonly oauth = signal<McpOAuthStatus | null>(null);
+  /** The access chosen for each waiting request; the requested one until changed. */
+  readonly requestScopes = signal<Record<string, McpAppScope>>({});
+  /** The request being approved or denied. */
+  readonly deciding = signal<string | null>(null);
+  readonly tunnelGuideUrl = TUNNEL_GUIDE_URL;
+  private oauthTimer: ReturnType<typeof setInterval> | null = null;
+  private lastApprovalAt: number | null = null;
+
   readonly client = signal<McpClientId>('claude-code');
-  readonly copied = signal<'token' | 'snippet' | 'address' | null>(null);
+  readonly copied = signal<'token' | 'snippet' | 'address' | 'connector' | null>(null);
   private copiedTimeout: ReturnType<typeof setTimeout> | null = null;
 
   readonly scopeOptions: readonly SegmentedOption<McpAppScope>[] = [
@@ -158,6 +181,7 @@ export class ConnectedAppsSettingsComponent implements OnInit {
   constructor() {
     this.destroyRef.onDestroy(() => {
       if (this.copiedTimeout !== null) clearTimeout(this.copiedTimeout);
+      this.stopOAuthPolling();
     });
   }
 
@@ -171,9 +195,110 @@ export class ConnectedAppsSettingsComponent implements OnInit {
       next: (page) => {
         this.canCreate.set(page.canCreate);
         this.tokens.set(page.apps);
+        if (page.canCreate) this.loadOAuth();
       },
       error: () => this.loadFailed.set(true),
     });
+  }
+
+  /** Reads the waiting requests; keeps looking every few seconds while OAuth is on. */
+  loadOAuth(): void {
+    this.api.oauthStatus().subscribe({
+      next: (status) => {
+        this.oauth.set(status);
+        this.requestScopes.update((chosen) => {
+          const next: Record<string, McpAppScope> = {};
+          for (const request of status.requests) next[request.id] = chosen[request.id] ?? request.requestedScope;
+          return next;
+        });
+        // An approved app shows up once it has fetched its token, seconds
+        // after the approval: look at the list again for a minute.
+        if (this.lastApprovalAt !== null && Date.now() - this.lastApprovalAt < 60_000) this.refreshApps();
+        if (status.enabled) this.startOAuthPolling();
+        else this.stopOAuthPolling();
+      },
+      // While polling, one failed read (a restart, a network blip) keeps the
+      // last answer and the timer, so a waiting request still shows up. Only
+      // a first read that fails means there is nothing to show.
+      error: () => {
+        if (this.oauthTimer === null) this.oauth.set(null);
+      },
+    });
+  }
+
+  scopeFor(request: McpOAuthPendingRequest): McpAppScope {
+    return this.requestScopes()[request.id] ?? request.requestedScope;
+  }
+
+  setRequestScope(request: McpOAuthPendingRequest, scope: McpAppScope): void {
+    this.requestScopes.update((chosen) => ({ ...chosen, [request.id]: scope }));
+  }
+
+  approve(request: McpOAuthPendingRequest): void {
+    if (this.deciding()) return;
+    this.deciding.set(request.id);
+    this.api.approveRequest(request.id, this.scopeFor(request)).subscribe({
+      next: () => {
+        this.afterDecision(request);
+        this.lastApprovalAt = Date.now();
+        this.toast.success(`${request.clientName} can connect. Go back to the app.`);
+      },
+      error: (error: HttpErrorResponse) => this.decisionFailed(request, error, 'approve'),
+    });
+  }
+
+  deny(request: McpOAuthPendingRequest): void {
+    if (this.deciding()) return;
+    this.deciding.set(request.id);
+    this.api.denyRequest(request.id).subscribe({
+      next: () => {
+        this.afterDecision(request);
+        this.toast.success(`${request.clientName} was not connected`);
+      },
+      error: (error: HttpErrorResponse) => this.decisionFailed(request, error, 'deny'),
+    });
+  }
+
+  private afterDecision(request: McpOAuthPendingRequest): void {
+    this.deciding.set(null);
+    this.oauth.update((status) =>
+      status ? { ...status, requests: status.requests.filter((r) => r.id !== request.id) } : status,
+    );
+  }
+
+  private decisionFailed(request: McpOAuthPendingRequest, error: HttpErrorResponse, what: 'approve' | 'deny'): void {
+    if (error.status === 404) {
+      // Expired, or decided in another window: the list catches up.
+      this.afterDecision(request);
+      this.toast.error('That request has ended. Start again from the app.');
+      return;
+    }
+    this.deciding.set(null);
+    if (error.status === 403) {
+      this.toast.error('Approve and deny requests from Nostos on your own network.');
+      return;
+    }
+    this.toast.error(what === 'approve' ? `Could not approve ${request.clientName}` : `Could not deny ${request.clientName}`);
+  }
+
+  private refreshApps(): void {
+    this.api.list().subscribe({ next: (page) => this.tokens.set(page.apps), error: () => undefined });
+  }
+
+  private startOAuthPolling(): void {
+    if (this.oauthTimer !== null) return;
+    this.oauthTimer = setInterval(() => this.loadOAuth(), OAUTH_POLL_MS);
+  }
+
+  private stopOAuthPolling(): void {
+    if (this.oauthTimer === null) return;
+    clearInterval(this.oauthTimer);
+    this.oauthTimer = null;
+  }
+
+  copyConnectorUrl(): void {
+    const url = this.oauth()?.connectorUrl;
+    if (url) this.copy(url, 'connector', 'Address copied');
   }
 
   setName(event: Event): void {
@@ -282,7 +407,7 @@ export class ConnectedAppsSettingsComponent implements OnInit {
   }
 
   /** The clipboard needs a secure context; the text on screen stays selectable either way. */
-  private copy(text: string, what: 'token' | 'snippet' | 'address', done: string): void {
+  private copy(text: string, what: 'token' | 'snippet' | 'address' | 'connector', done: string): void {
     const clipboard = this.document.defaultView?.navigator.clipboard;
     if (!clipboard) {
       this.toast.error('Copying is not available here — select the text and copy it.');
