@@ -51,4 +51,10 @@ export interface DeploymentCapabilities {
    * connection. Absent/false keeps the legacy whole-request upload.
    */
   supportsResumableBookUploads?: boolean;
+  /**
+   * The server keeps a record of the AI apps connected over MCP (#1469):
+   * SelfHosted access tokens, or Cloud's signed-in apps. Shown as Settings →
+   * Connected apps; absent/false keeps the section hidden.
+   */
+  supportsMcpConnectedApps?: boolean;
 }

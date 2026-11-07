@@ -128,6 +128,10 @@ Ask Nostos is an AI assistant for your own library. It can find what you have re
 
 On SelfHosted, you connect your own AI provider in **Settings → AI connections**. Nostos Cloud includes a managed allowance.
 
+### Connect your own AI (SelfHosted)
+
+Use the AI app you already pay for with your library. Make an access token in **Settings → Connected apps**, paste the setup it gives you, and Claude Code, Cursor, VS Code or Claude Desktop can search your books and notes, quote them with citations, and save notes and drafts. Each token is read only or read and write, and you can revoke it at any time. Apps that run on the web, like claude.ai and ChatGPT, need a public address for your server; that setup comes later.
+
 ### Your library stays yours
 
 - **Portable:** export your whole library as a `.nostos` archive and import it into any Nostos, Nostos Cloud or self-hosted.

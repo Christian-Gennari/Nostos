@@ -121,6 +121,23 @@
             <span class="settings-nav-copy">External media</span>
           </button>
           }
+          @if (supportsMcpConnectedApps()) {
+          <button
+            type="button"
+            class="nav-item settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'apps'"
+            [attr.aria-selected]="activeSettingsSection() === 'apps'"
+            aria-controls="apps"
+            data-testid="settings-nav-apps"
+            (click)="setSettingsSection('apps')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="plugs-connected" [size]="16" weight="light"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">Connected apps</span>
+          </button>
+          }
           @if (hasDataSection()) {
           <button
             type="button"
@@ -2116,6 +2133,35 @@
               </div>
               <div class="card-body">
                 <app-external-media-settings />
+              </div>
+            </section>
+          </section>
+          }
+
+          @if (supportsMcpConnectedApps()) {
+          <section
+            class="settings-section"
+            id="apps"
+            role="tabpanel"
+            aria-labelledby="apps-heading"
+            [hidden]="activeSettingsSection() !== 'apps'"
+            data-testid="settings-apps-section"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="apps-heading">Connected apps</h2>
+              <p class="settings-section-desc">
+                Let your own AI app, like Claude, Cursor or ChatGPT, search your books and notes, quote them with citations, and save to your library.
+              </p>
+            </header>
+
+            <section class="settings-card" data-testid="connected-apps-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>AI apps</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <app-connected-apps-settings />
               </div>
             </section>
           </section>

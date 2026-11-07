@@ -1,0 +1,201 @@
+@if (created(); as fresh) {
+  <div class="setting-row setting-row--stacked" data-testid="connected-apps-new-token">
+    <div class="setting-label">
+      <span class="label-text">Token for {{ fresh.details.name }}</span>
+      <span class="label-desc">Paste it into the app's setup below. Anyone with it can {{ fresh.details.scope === 'read_write' ? 'read and add to' : 'read' }} your library.</span>
+    </div>
+    <div class="token-row">
+      <code class="token-value" data-testid="connected-apps-token-value">{{ fresh.token }}</code>
+      <button
+        type="button"
+        appButton variant="primary" size="sm"
+        (click)="copyToken()"
+        data-testid="connected-apps-copy-token"
+      >
+        @if (copied() === 'token') {
+          <nostos-icon name="check" [size]="14"></nostos-icon>
+          Copied
+        } @else {
+          <nostos-icon name="copy" [size]="14"></nostos-icon>
+          Copy token
+        }
+      </button>
+    </div>
+    <p appNotice tone="caution" class="token-note">
+      <nostos-icon name="warning" [size]="14"></nostos-icon>
+      <span>Copy it now. Nostos keeps only a fingerprint of the token and cannot show it again.</span>
+    </p>
+    <div class="token-done">
+      <button type="button" appButton variant="secondary" size="sm" (click)="dismissCreated()" data-testid="connected-apps-done">
+        Done
+      </button>
+    </div>
+  </div>
+}
+
+@if (loadFailed()) {
+  <nostos-empty-state
+    compact
+    error
+    message="Could not load your connected apps"
+    detail="Nostos could not read the list of connected apps."
+    (retry)="load()"
+  />
+} @else if (tokens(); as list) {
+  @if (canCreate()) {
+    <div class="setting-row setting-row--stacked" data-testid="connected-apps-create">
+      <div class="setting-label">
+        <label class="label-text" for="connected-apps-name">New token</label>
+        <span class="label-desc">One token for each app, so you can revoke one without the others. Read only lets the app search and quote your books and notes. Read and write also lets it save notes, drafts and books to read. It never deletes anything.</span>
+      </div>
+      <form class="create-form" (submit)="$event.preventDefault(); create()">
+        <input
+          id="connected-apps-name"
+          appInput
+          controlSize="compact"
+          class="name-input"
+          type="text"
+          maxlength="80"
+          autocomplete="off"
+          placeholder="Claude Code on my laptop"
+          data-testid="connected-apps-name"
+          [value]="name()"
+          (input)="setName($event)"
+        />
+        <nostos-segmented
+          aria-label="What the app may do"
+          data-testid="connected-apps-scope"
+          [options]="scopeOptions"
+          [value]="scope()"
+          (valueChange)="scope.set($event)"
+        />
+        <button
+          type="submit"
+          appButton variant="primary" size="sm"
+          [disabled]="!canSubmit()"
+          [busy]="creating()"
+          data-testid="connected-apps-make"
+        >
+          Make token
+        </button>
+      </form>
+    </div>
+  } @else {
+    <div class="setting-row setting-row--stacked" data-testid="connected-apps-address">
+      <div class="setting-label">
+        <span class="label-text">Connect from your AI app</span>
+        <span class="label-desc">Add Nostos as a connector in your AI app with this address. The app asks you to sign in to Nostos and choose what it may do.</span>
+      </div>
+      <div class="token-row">
+        <code class="token-value" data-testid="connected-apps-endpoint">{{ endpoint }}</code>
+        <button
+          type="button"
+          appButton variant="secondary" size="sm"
+          (click)="copyAddress()"
+          data-testid="connected-apps-copy-address"
+        >
+          @if (copied() === 'address') {
+            <nostos-icon name="check" [size]="14"></nostos-icon>
+            Copied
+          } @else {
+            <nostos-icon name="copy" [size]="14"></nostos-icon>
+            Copy address
+          }
+        </button>
+      </div>
+    </div>
+  }
+
+  @if (list.length === 0) {
+    <p class="token-empty" data-testid="connected-apps-empty">
+      {{ canCreate() ? 'No tokens yet. Nothing can connect until you make one.' : 'No apps connected yet.' }}
+    </p>
+  } @else {
+    <div class="token-list" data-testid="connected-apps-list">
+      @for (app of list; track app.id) {
+        <div class="token-item" data-testid="connected-apps-item">
+          <div class="token-info">
+            <span class="token-name">{{ app.name }}</span>
+            <span class="token-meta">
+              {{ scopeLabel(app.scope) }} &middot; {{ app.kind === 'token' ? 'made' : 'connected' }} {{ app.createdAt | nostosDate }} &middot;
+              @if (app.lastUsedAt) {
+                last used {{ app.lastUsedAt | nostosDate: 'datetime' }}
+              } @else {
+                not used yet
+              }
+            </span>
+          </div>
+          <button
+            appIconButton
+            icon="trash"
+            size="xs"
+            tone="danger"
+            [glyphSize]="14"
+            (click)="requestRevoke(app)"
+            [attr.aria-label]="'Revoke ' + app.name"
+            title="Revoke"
+            data-testid="connected-apps-revoke"
+          ></button>
+        </div>
+      }
+    </div>
+  }
+
+  @if (canCreate()) {
+    <div class="setting-row setting-row--stacked" data-testid="connected-apps-setup">
+      <div class="setting-label">
+        <span class="label-text" id="connected-apps-client-label">Connect an app</span>
+        <span class="label-desc">
+          @if (created()) {
+            This setup has your new token in it.
+          } @else {
+            Replace {{ placeholder }} with a token you made above.
+          }
+          {{ clientHint() }}
+        </span>
+      </div>
+      <nostos-segmented
+        class="client-choice"
+        aria-labelledby="connected-apps-client-label"
+        data-testid="connected-apps-client"
+        [options]="clientOptions"
+        [value]="client()"
+        (valueChange)="client.set($event)"
+      />
+      <div class="snippet">
+        <pre class="snippet-code" data-testid="connected-apps-snippet"><code>{{ snippet() }}</code></pre>
+        <button
+          appIconButton
+          [icon]="copied() === 'snippet' ? 'check' : 'copy'"
+          size="xs"
+          [glyphSize]="14"
+          class="snippet-copy"
+          (click)="copySnippet()"
+          aria-label="Copy setup"
+          title="Copy setup"
+          data-testid="connected-apps-copy-snippet"
+        ></button>
+      </div>
+      <p class="token-note-plain">
+        Apps that run on the web, like claude.ai and ChatGPT, connect from their own servers and need a public address for this server. That setup is coming in a later version.
+      </p>
+    </div>
+  }
+} @else {
+  <div class="token-loading">
+    <nostos-loading-indicator label="Loading connected apps" />
+  </div>
+}
+
+<app-confirm-modal
+  [isOpen]="!!pendingRevoke()"
+  [heading]="'Revoke ' + (pendingRevoke()?.name ?? '') + '?'"
+  [description]="pendingRevoke()?.kind === 'token'
+    ? 'The app using this token loses access on its next request. Notes and drafts it already saved stay in your library.'
+    : 'The app loses access on its next request. To use it again, connect it again from the app. Notes and drafts it already saved stay in your library.'"
+  confirmLabel="Revoke"
+  busyLabel="Revoking…"
+  [busy]="revoking()"
+  (confirm)="confirmRevoke()"
+  (cancel)="cancelRevoke()"
+/>
