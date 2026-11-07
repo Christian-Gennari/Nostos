@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
+import type { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
 
 import {
   AssistantVoiceService,
@@ -337,6 +339,28 @@ describe('AssistantVoiceService', () => {
     );
 
     expect(service.error()?.message).toBe(message);
+  });
+
+  it.each([
+    ['stt_disabled', 503],
+    ['stt_not_configured', 503],
+    ['stt_permission_denied', 502],
+  ])('on a managed deployment, does not send people to settings they do not have (%s, #1479)', async (code, status) => {
+    TestBed.inject(DeploymentCapabilitiesService).peek = () =>
+      ({ managedVoiceTranscription: true, canConfigureAiProvider: false }) as DeploymentCapabilities;
+    getUserMedia.mockResolvedValue(new FakeStream() as unknown as MediaStream);
+
+    service.start();
+    await tick();
+    service.stop();
+
+    http.expectOne(TRANSCRIPTION_ENDPOINT).flush(
+      { title: code, detail: 'provider detail' },
+      { status, statusText: 'Error' },
+    );
+
+    expect(service.error()?.message).toBe('Voice transcription is temporarily unavailable.');
+    expect(service.error()?.message).not.toContain('Settings');
   });
 
   it('leaves no track live after stop', async () => {
