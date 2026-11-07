@@ -63,6 +63,7 @@ import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
 import { CloudAccountDeletionSettingsComponent } from './cloud-account-deletion-settings.component';
 import { ExternalMediaSettingsComponent } from './external-media-settings.component';
+import { ConnectedAppsSettingsComponent } from './connected-apps-settings.component';
 import { READ_ALOUD_GUIDE_URL } from './read-aloud-guide';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
@@ -192,6 +193,7 @@ type SettingsSection =
   | 'assistant'
   | 'connections'
   | 'external'
+  | 'apps'
   | 'data'
   | 'account';
 
@@ -203,12 +205,14 @@ const LINKABLE_SECTIONS: readonly SettingsSection[] = [
   'assistant',
   'connections',
   'external',
+  'apps',
   'account',
 ];
 
 /** Spellings people reasonably guess for a section key. */
 const SECTION_ALIASES: Readonly<Record<string, SettingsSection>> = {
   'external-media': 'external',
+  'connected-apps': 'apps',
   'backups': 'data',
   'backups-data': 'data',
 };
@@ -299,6 +303,7 @@ const defaultProgress: BackupProgress = {
     ConfirmModal,
     CloudAccountDeletionSettingsComponent,
     ExternalMediaSettingsComponent,
+    ConnectedAppsSettingsComponent,
     LibraryTransferHostComponent,
     SegmentedComponent,
     CheckboxDirective,
@@ -368,6 +373,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       // A link to a section this deployment does not have leaves the default open.
       if (requested === 'connections' && !this.canConfigureAiProvider()) return;
       if (requested === 'external' && !this.supportsExternalMediaLibraries()) return;
+      if (requested === 'apps' && !this.supportsMcpConnectedApps()) return;
       if (requested === 'account' && !this.isCloud()) return;
       untracked(() => this.showSection(requested));
     });
@@ -488,6 +494,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsExternalMediaLibraries = computed(
     () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
   );
+  /**
+   * Settings → Connected apps (#1469): a server that keeps a record of the AI
+   * apps connected over MCP (SelfHosted access tokens; Cloud sign-ins once it
+   * advertises them). Server-authoritative, never inferred from the mode.
+   */
+  readonly supportsMcpConnectedApps = computed(
+    () => this.deploymentCapabilities()?.supportsMcpConnectedApps === true,
+  );
   readonly hasManageLibraryActions = computed(
     () =>
       this.supportsLocalBackupConfiguration() ||
@@ -546,6 +560,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     () =>
       this.canConfigureAiProvider() ||
       this.supportsExternalMediaLibraries() ||
+      this.supportsMcpConnectedApps() ||
       this.hasDataSection() ||
       this.isCloud(),
   );

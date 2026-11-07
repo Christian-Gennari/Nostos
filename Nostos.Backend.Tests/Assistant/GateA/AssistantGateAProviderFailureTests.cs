@@ -156,6 +156,99 @@ public sealed class AssistantGateAProviderFailureTests
         }
     }
 
+    [Fact]
+    public async Task On_a_managed_deployment_a_refused_key_is_unavailable_not_advice_to_check_settings()
+    {
+        await using var server = Server("401")!;
+        var previous = Environment.GetEnvironmentVariable(KeyVariable);
+        Environment.SetEnvironmentVariable(KeyVariable, KeyValue);
+        try
+        {
+            using var factory = new LibraryEndpointFactory();
+            using var host = factory.WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("Assistant:Enabled", "true");
+                builder.UseSetting("Assistant:BaseUrl", server.BaseUrl);
+                builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", KeyVariable);
+                builder.UseSetting("Assistant:Model", "failure-path-model");
+                builder.ConfigureServices(Managed);
+            });
+            using var client = host.CreateClient();
+
+            var body = await (await client.PostAsJsonAsync(
+                AssistantEndpoints.StreamTurnRoute,
+                new AssistantTurnRequest(
+                    "conversation-managed", "turn-managed", "What did I note about ropes?",
+                    new AssistantContextDto("second-brain", "/second-brain")))).Content.ReadAsStringAsync();
+            var terminal = JsonSerializer.Deserialize<AssistantTurnEventDto>(
+                body.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1],
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+            terminal.Failure!.Code.Should().Be(LlmErrorCodes.Permission);
+            terminal.Failure.Message.Should().Be("Ask Nostos is temporarily unavailable.");
+            terminal.Failure.Retryable.Should().BeFalse();
+            body.Should().NotContain("Settings");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(KeyVariable, previous);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, "Ask Nostos needs an AI provider configured in Settings.")]
+    [InlineData(true, "Ask Nostos is temporarily unavailable.")]
+    public async Task Without_a_key_the_stream_says_what_this_deployment_can_do_about_it(bool managed, string message)
+    {
+        const string missing = "NOSTOS_GATEA_KEY_THAT_IS_NEVER_SET";
+        using var factory = new LibraryEndpointFactory();
+        using var host = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Assistant:Enabled", "true");
+            builder.UseSetting("Assistant:BaseUrl", "http://127.0.0.1:9/v1");
+            builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", missing);
+            builder.UseSetting("Assistant:Model", "failure-path-model");
+            if (managed)
+                builder.ConfigureServices(Managed);
+        });
+        using var client = host.CreateClient();
+
+        var stream = await (await client.PostAsJsonAsync(
+            AssistantEndpoints.StreamTurnRoute,
+            new AssistantTurnRequest(
+                "conversation-nokey", "turn-nokey", "Hello",
+                new AssistantContextDto("second-brain", "/second-brain")))).Content.ReadAsStringAsync();
+        var rest = await client.PostAsJsonAsync(
+            AssistantEndpoints.TurnRoute,
+            new AssistantTurnRequest(
+                "conversation-nokey-rest", "turn-nokey-rest", "Hello",
+                new AssistantContextDto("second-brain", "/second-brain")));
+        var problem = await rest.Content.ReadFromJsonAsync<JsonElement>();
+
+        var terminal = JsonSerializer.Deserialize<AssistantTurnEventDto>(
+            stream.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1],
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        terminal.Failure!.Code.Should().Be(LlmErrorCodes.NotConfigured);
+        terminal.Failure.Message.Should().Be(message);
+        problem.GetProperty("title").GetString().Should().Be(LlmErrorCodes.NotConfigured);
+        if (managed)
+        {
+            problem.GetProperty("detail").GetString().Should().Be(message);
+            (stream + problem.GetRawText()).Should().NotContain(missing, "an operator's variable name never reaches a managed user");
+        }
+    }
+
+    /// <summary>The host runs the AI; the user has no provider setting (Nostos Cloud).</summary>
+    private static void Managed(IServiceCollection services)
+    {
+        services.RemoveAll<Nostos.Backend.Configuration.DeploymentDescriptor>();
+        var selfHosted = Nostos.Backend.Configuration.DeploymentDescriptor.For(Nostos.Backend.Configuration.DeploymentMode.SelfHosted);
+        services.AddSingleton(selfHosted with
+        {
+            Capabilities = selfHosted.Capabilities with { CanConfigureAiProvider = false, ManagedAi = true },
+        });
+    }
+
     private sealed class CapturingLoggerProvider : ILoggerProvider
     {
         private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
