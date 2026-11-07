@@ -43,7 +43,12 @@ internal sealed record QualityTurnRecord(
     // Live-mode outcome scoring notes. Deterministic mode never populates
     // this: every finding there is a failure. Serialized per turn as
     // `advisories` in results.json.
-    IReadOnlyList<string>? Advisories = null);
+    IReadOnlyList<string>? Advisories = null,
+    // The library revision (LibraryState.StateVersion) around the turn. The
+    // live library feed re-reads every open screen when it moves, so a turn
+    // that writes nothing must leave it alone, and one that writes must move it.
+    string? RevisionBefore = null,
+    string? RevisionAfter = null);
 
 internal sealed record QualitySessionTotals(
     int Turns,
@@ -240,6 +245,23 @@ internal static class QualityExpectationEvaluator
             failures.Add($"expected note delta {expect.ExpectedNoteDelta}, observed {turn.NoteCountAfter - turn.NoteCountBefore}");
         if (expect.ExpectedCollectionDelta != (turn.CollectionCountAfter - turn.CollectionCountBefore))
             failures.Add($"expected collection delta {expect.ExpectedCollectionDelta}, observed {turn.CollectionCountAfter - turn.CollectionCountBefore}");
+
+        // Live updates: the library feed re-reads every open screen when the
+        // revision moves. A turn that wrote nothing must not move it; a turn
+        // that wrote must, or the open app would not show the change.
+        if (turn.RevisionBefore is { } revisionBefore && turn.RevisionAfter is { } revisionAfter)
+        {
+            var wrote = (response.ExecutedCapabilities?.Count ?? 0) > 0
+                || !string.IsNullOrWhiteSpace(response.CapturedNoteId)
+                || string.Equals(response.Changeset?.Status, "applied", StringComparison.Ordinal)
+                || turn.NoteCountAfter != turn.NoteCountBefore
+                || turn.CollectionCountAfter != turn.CollectionCountBefore;
+            var moved = !string.Equals(revisionBefore, revisionAfter, StringComparison.Ordinal);
+            if (!wrote && moved)
+                failures.Add($"the library revision moved ({revisionBefore} -> {revisionAfter}) on a turn that wrote nothing");
+            if (wrote && !moved)
+                failures.Add($"the turn wrote but the library revision stayed at {revisionBefore}: open screens would not update");
+        }
 
         if (expect.ExpectedExecuted is { Length: > 0 } expectedList)
         {

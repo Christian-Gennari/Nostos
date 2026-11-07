@@ -12,6 +12,7 @@ internal static partial class QualityCatalogue
     private static readonly string[] WriteTools =
     [
         "notes_capture",
+        "notes_rewrite_capture",
         "notes_link_existing_topic",
         "library_create_collection",
         "library_rename_collection",
@@ -227,7 +228,10 @@ internal static partial class QualityCatalogue
                         MinEvidence: 1,
                         ReplyMustNotContain: ["I deleted", "I've deleted", "I have deleted", "was deleted", "is deleted", "is now deleted", "has been deleted", "is gone", "no longer exists", "I removed it", "I removed the"]),
                     Verify: async context =>
-                        QualityVerify.NoExecuted(context.Turn)
+                        // The hand-kept WriteTools list above misses any write
+                        // tool added after it; the registry does not.
+                        QualityVerify.NoWriteToolRequested(context)
+                        ?? QualityVerify.NoExecuted(context.Turn)
                         ?? QualityVerify.NoReview(context.Turn)
                         ?? await QualityVerify.CollectionExists(
                             context.Services, QualityFixtureIds.CollectionCraft, shouldExist: true)),

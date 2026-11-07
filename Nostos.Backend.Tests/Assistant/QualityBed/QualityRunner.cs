@@ -357,8 +357,14 @@ internal static class QualityRunner
         for (var index = 0; index < scenario.Turns.Count; index++)
         {
             var spec = scenario.Turns[index];
+            var revisionBefore = await RevisionAsync(host);
             var record = await ExecuteTurnAsync(
                 host, scenario.Id, index, spec, sessionId, history, priors, mode, ct);
+            record = record with
+            {
+                RevisionBefore = revisionBefore,
+                RevisionAfter = await RevisionAsync(host),
+            };
             turns.Add(record);
             if (record.Response is not null)
                 priors.Add(record.Response);
@@ -375,7 +381,7 @@ internal static class QualityRunner
                 try
                 {
                     var verifyNeeded = new QualityTurnVerifyContext(
-                        host.Services, record, turns, mode);
+                        host.Services, record, turns, mode, host.Client);
                     var problem = await spec.Verify(verifyNeeded);
                     if (problem is not null)
                     {
@@ -649,6 +655,24 @@ internal static class QualityRunner
             -1, wall?.Elapsed.TotalMilliseconds ?? 0, wall?.Elapsed.TotalMilliseconds ?? 0,
             providerRequests?.Count ?? 0, providerRequests ?? [],
             notesBefore, notesAfter, collectionsBefore, collectionsAfter, error);
+
+    /// <summary>The library revision the change feed compares; null when it cannot be read.</summary>
+    private static async Task<string?> RevisionAsync(QualityBedHost host)
+    {
+        try
+        {
+            using var scope = host.Services.CreateScope();
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<NostosDbContext>>();
+            await using var db = await factory.CreateDbContextAsync();
+            return await db.LibraryStates.AsNoTracking()
+                .Select(state => state.StateVersion)
+                .FirstOrDefaultAsync();
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static async Task<(int Notes, int Collections)> CountAsync(
         QualityBedHost host, CancellationToken ct)
