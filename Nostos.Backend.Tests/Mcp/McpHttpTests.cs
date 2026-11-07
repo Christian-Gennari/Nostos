@@ -69,6 +69,9 @@ public sealed class McpHttpTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _http = _factory.CreateClient();
+        // Start the host before the handshake. In a full parallel test run the
+        // machine is busy, so the client also waits longer than a real one.
+        (await _http.GetAsync("/health/live")).EnsureSuccessStatusCode();
         var authed = _factory.CreateClient();
         authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", McpEndpointFactory.Token);
         _mcp = await McpClient.CreateAsync(new HttpClientTransport(
@@ -78,7 +81,12 @@ public sealed class McpHttpTests : IAsyncLifetime
                 TransportMode = HttpTransportMode.StreamableHttp,
             },
             authed,
-            ownsHttpClient: true));
+            ownsHttpClient: true),
+            new McpClientOptions
+            {
+                InitializationTimeout = TimeSpan.FromMinutes(3),
+                DiscoverProbeTimeout = TimeSpan.FromMinutes(1),
+            });
     }
 
     public async Task DisposeAsync()
@@ -116,12 +124,17 @@ public sealed class McpHttpTests : IAsyncLifetime
         var tools = await _mcp.ListToolsAsync();
 
         tools.Select(t => t.Name).Should().BeEquivalentTo(
-            "search", "fetch", "find_quote", "overview", "list_books", "get_book", "list_notes", "list_topics", "save_note");
-        foreach (var tool in tools.Where(t => t.Name != "save_note"))
+            "search", "fetch", "find_quote", "overview", "list_books", "get_book", "list_notes", "list_topics",
+            "get_topic", "list_drafts", "read_draft", "reading_list",
+            "save_note", "create_draft", "add_to_reading_list");
+        string[] writes = ["save_note", "create_draft", "add_to_reading_list"];
+        foreach (var tool in tools.Where(t => !writes.Contains(t.Name)))
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(tool.Name);
-        var save = tools.Single(t => t.Name == "save_note").ProtocolTool.Annotations!;
-        save.ReadOnlyHint.Should().BeFalse();
-        save.DestructiveHint.Should().BeFalse();
+        foreach (var tool in tools.Where(t => writes.Contains(t.Name)))
+        {
+            tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse(tool.Name);
+            tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeFalse(tool.Name);
+        }
         _mcp.ServerInstructions.Should().Contain("Quote only words a Nostos tool returned");
     }
 
@@ -259,6 +272,69 @@ public sealed class McpHttpTests : IAsyncLifetime
         await using var db = await Contexts().CreateDbContextAsync();
         var saved = await db.Notes.SingleAsync(n => n.BookId == bookId);
         Nostos.Backend.Services.Notes.FoundNoteLocation.IsAskNostosQuote(saved).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_topic_comes_with_its_own_words_and_cited_notes()
+    {
+        var bookId = await CreateBookAsync("Moby-Dick", "Herman Melville", "1851");
+        var noteId = await CreateNoteAsync(bookId, new CreateNoteDto(
+            "Ahab's obsession",
+            SelectedText: "He piled upon the whale's white hump the sum of all the general rage.",
+            SourceAnchorKind: "physical_page",
+            SourceAnchorValue: "184",
+            Topics: ["Obsession"]));
+        var topicId = (await CallAsync("list_topics", new())).GetProperty("topics")[0].GetProperty("id").GetString()!;
+
+        var topic = await CallAsync("get_topic", new() { ["topicId"] = topicId });
+
+        topic.GetProperty("name").GetString().Should().Be("Obsession");
+        var note = topic.GetProperty("linkedNotes").EnumerateArray().Single();
+        note.GetProperty("id").GetString().Should().Be($"note:{noteId:D}");
+        note.GetProperty("citation").GetProperty("link").GetString().Should().Be($"nostos:cite/{bookId:D}?p=184&as=quote&src={noteId:D}");
+    }
+
+    [Fact]
+    public async Task A_draft_written_with_citation_links_is_one_Studio_document_with_live_citations_and_a_resend_keeps_one()
+    {
+        var bookId = await CreateBookAsync("Walden", "Henry David Thoreau", "1854");
+        var noteId = await CreateNoteAsync(bookId, new CreateNoteDto("", SelectedText: "Simplify, simplify."));
+        var quote = (await CallAsync("fetch", new() { ["id"] = $"note:{noteId:D}" }))
+            .GetProperty("citation").GetProperty("markdown").GetString();
+        var args = new Dictionary<string, object?>
+        {
+            ["name"] = "On simplicity",
+            ["content"] = $"# On simplicity\n\nThoreau's advice is short: {quote}\n",
+        };
+
+        var first = await CallAsync("create_draft", args);
+        var again = await CallAsync("create_draft", args);
+        var drafts = await CallAsync("list_drafts", new() { ["query"] = "simplicity" });
+        var read = await CallAsync("read_draft", new() { ["writingId"] = first.GetProperty("id").GetGuid() });
+
+        again.GetProperty("id").GetGuid().Should().Be(first.GetProperty("id").GetGuid());
+        again.GetProperty("duplicate").GetBoolean().Should().BeTrue();
+        first.GetProperty("citations").GetInt32().Should().Be(1);
+        first.GetProperty("link").GetString().Should().StartWith("http").And.Contain("/studio");
+        drafts.GetProperty("items").EnumerateArray().Should().ContainSingle();
+        read.GetProperty("content").GetString().Should().Contain($"src={noteId:D}");
+        await using var db = await Contexts().CreateDbContextAsync();
+        (await db.Set<Nostos.Backend.Data.Models.WritingCitationModel>().CountAsync(c => c.NoteId == noteId)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_book_goes_on_To_read_once()
+    {
+        var args = new Dictionary<string, object?> { ["title"] = "Austerlitz", ["author"] = "W. G. Sebald", ["readNext"] = true };
+
+        var first = await CallAsync("add_to_reading_list", args);
+        var again = await CallAsync("add_to_reading_list", args);
+        var list = await CallAsync("reading_list", new());
+
+        first.GetProperty("duplicate").GetBoolean().Should().BeFalse();
+        again.GetProperty("duplicate").GetBoolean().Should().BeTrue();
+        list.GetProperty("total").GetInt32().Should().Be(1);
+        list.GetProperty("link").GetString().Should().StartWith("http").And.EndWith("/library/to-read");
     }
 
     [Fact]

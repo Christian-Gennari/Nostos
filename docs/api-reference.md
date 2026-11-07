@@ -776,7 +776,17 @@ so validation and limits are the same; only the result shape differs.
 | `get_book` | read | `library_get_book` |
 | `list_notes` | read | `notes_list_for_book`, in page order |
 | `list_topics` | read | `topics_list` / `topics_search` |
+| `get_topic` | read | `topics_get`, with a citation on every linked note |
+| `list_drafts` | read | `writings_list` |
+| `read_draft` | read | `writings_read` |
+| `reading_list` | read | `reading_list_list` |
 | `save_note` | creates a note | `notes_capture` |
+| `create_draft` | creates a Studio document | `writings_create` |
+| `add_to_reading_list` | creates a To read entry | `reading_list_add` |
+
+Tools call the registry with `AssistantSurface.Mcp`, so a capability that is
+not marked for MCP cannot be reached from `/mcp` even by name. App links in
+results (`/studio?writingId=…`, `/library/to-read`) come back absolute.
 
 `search` and `fetch` keep the shape ChatGPT deep research expects (`results`
 with `id`, `title`, `text`, `url`; `fetch` by `id`). Result ids are
@@ -792,7 +802,11 @@ citations that export as footnotes.
 
 **Writes.** `save_note` saves through the capture path with client id
 `nostos-mcp`, `CaptureSource = "mcp"`, and an idempotency key derived from
-the request (book, words, quote, topics), so a resent call keeps one note. A
+the request (book, words, quote, topics), so a resent call keeps one note.
+`create_draft` never changes an existing document; a resend with the same
+name, folder and words within ten minutes returns the document it already
+made (`duplicate: true`). `add_to_reading_list` returns an existing entry
+for the same ISBN, or the same title and author. A
 quote saved this way is found and drawn in the reader like one Ask Nostos
 saved. Writes advance the library revision, so open tabs update through
 `/api/library/changes`.

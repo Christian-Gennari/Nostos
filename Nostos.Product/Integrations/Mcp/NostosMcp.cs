@@ -100,6 +100,12 @@ public static class NostosMcp
         if (authorization?.GetPolicy(AuthorizationPolicy) is null)
             return false;
 
+        // Build the tools (reflection, JSON schemas) now rather than on the
+        // first call: clients give the opening server/discover probe only a
+        // few seconds, and a cold first request can take longer than that.
+        _ = endpoints.ServiceProvider
+            .GetRequiredService<IOptions<ModelContextProtocol.Server.McpServerOptions>>().Value.ToolCollection?.Count;
+
         var mcp = endpoints.MapMcp(Path).RequireAuthorization(AuthorizationPolicy);
         if (rateLimitPolicy is not null)
             mcp.RequireRateLimiting(rateLimitPolicy);

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
@@ -362,6 +363,87 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
         return new McpTopicList(list);
     }
 
+    [McpServerTool(Name = "get_topic", Title = "One topic", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("One topic: the user's own words about it and the notes linked to it across books, newest first, each with a citation. Pass a topic id from `list_topics` or `search`.")]
+    public async Task<McpTopicDetail> GetTopicAsync(
+        [Description("The topic's id (`topic:<id>` or the bare id).")] string topicId,
+        [Description("How many notes, 1 to 100. Defaults to 30.")] int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        var raw = topicId.StartsWith("topic:", StringComparison.Ordinal) ? topicId[6..] : topicId;
+        if (!Guid.TryParse(raw, out var id))
+            throw new McpException("That is not a topic id. Use an id from `list_topics`.");
+
+        var topic = await RunAsync<JsonElement>(
+            "topics_get",
+            new Dictionary<string, object?> { ["topicId"] = id, ["limit"] = limit is null ? null : Math.Clamp(limit.Value, 1, 100) },
+            cancellationToken);
+        var noteIds = topic.TryGetProperty("notes", out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(n => n.GetProperty("noteId").GetGuid()).ToList()
+            : [];
+        var citations = Citations;
+        var notes = new List<McpNote>();
+        if (noteIds.Count > 0)
+        {
+            var full = (await Services.GetRequiredService<INoteService>().GetManyAsync(noteIds, cancellationToken))
+                .ToDictionary(n => n.Id);
+            foreach (var noteId in noteIds)
+            {
+                if (!full.TryGetValue(noteId, out var n))
+                    continue;
+                var book = await citations.BookAsync(n.BookId, n.BookTitle, cancellationToken);
+                if (book is null)
+                    continue;
+                notes.Add(new McpNote(
+                    McpEvidenceId.ForNote(n.Id),
+                    "note",
+                    Blank(n.SelectedText),
+                    Blank(n.Content),
+                    null,
+                    n.CreatedAt,
+                    citations.ForNote(n.Id, book, n.Content, n.SelectedText, n.SourceAnchorKind, n.SourceAnchorValue, n.AnchorVerified)));
+            }
+        }
+
+        return new McpTopicDetail(
+            McpEvidenceId.ForTopic(id),
+            topic.TryGetProperty("name", out var name) ? name.GetString() ?? "Topic" : "Topic",
+            topic.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? Blank(d.GetString()) : null,
+            topic.TryGetProperty("noteCount", out var c) && c.TryGetInt32(out var count) ? count : notes.Count,
+            citations.TopicUrl(id),
+            notes);
+    }
+
+    [McpServerTool(Name = "list_drafts", Title = "Studio drafts", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("The user's documents and folders in the Writing Studio, with their paths. Finds them by name or folder, not by what they say.")]
+    public async Task<JsonElement> ListDraftsAsync(
+        [Description("Words in a document's name or folder path.")] string? query = null,
+        [Description("`Document` or `Folder`. Leave out for both.")] string? type = null,
+        [Description("How many, 1 to 200. Defaults to 50.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        AbsoluteLinks(await RunAsync<JsonElement>(
+            "writings_list",
+            new Dictionary<string, object?> { ["query"] = query, ["type"] = type, ["limit"] = limit },
+            cancellationToken));
+
+    [McpServerTool(Name = "read_draft", Title = "Read a draft", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("One Studio document as Markdown. Its `nostos:cite/` links are the Studio's live citations: keep them when you quote from the draft.")]
+    public async Task<JsonElement> ReadDraftAsync(
+        [Description("The document's id, from `list_drafts`.")] Guid writingId,
+        CancellationToken cancellationToken = default) =>
+        AbsoluteLinks(await RunAsync<JsonElement>("writings_read", new { writingId }, cancellationToken));
+
+    [McpServerTool(Name = "reading_list", Title = "To read", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("The books the user wants to read but does not have yet: Next up first, then the rest.")]
+    public async Task<JsonElement> ReadingListAsync(
+        [Description("`all`, `next` (Next up only) or `someday`. Defaults to all.")] string? shelf = null,
+        [Description("How many, at most 200. Defaults to 50.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        AbsoluteLinks(await RunAsync<JsonElement>(
+            "reading_list_list",
+            new Dictionary<string, object?> { ["shelf"] = shelf, ["limit"] = limit },
+            cancellationToken));
+
     // ------------------------------------------------------------------
     // Write
     // ------------------------------------------------------------------
@@ -409,6 +491,74 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
             citations.ForNote(note.Id, book, note.Content, note.SelectedText, note.SourceAnchorKind, note.SourceAnchorValue, note.AnchorVerified));
     }
 
+    [McpServerTool(Name = "create_draft", Title = "Write a new Studio draft", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Makes a new document in the Writing Studio from Markdown. It never changes an existing document. Put quotations in as their `citation.markdown` links so the Studio shows them as live citations. Sending the same draft again keeps one document.")]
+    public async Task<JsonElement> CreateDraftAsync(
+        [Description("The document's name.")] string name,
+        [Description("The document in Markdown.")] string? content = null,
+        [Description("A folder to put it in (a folder id from `list_drafts`). Leave out for the top level.")] Guid? folderId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new McpException("'name' is required.");
+
+        // Writings keep no receipts. A client that resends a call it never saw
+        // answered gets the document it already made: same name, same folder,
+        // same words, changed in the last ten minutes.
+        var same = await RunAsync<JsonElement>(
+            "writings_list",
+            new Dictionary<string, object?> { ["query"] = name.Trim(), ["type"] = "Document", ["limit"] = 20 },
+            cancellationToken);
+        if (same.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in items.EnumerateArray())
+            {
+                var parent = item.TryGetProperty("parentId", out var p) && p.ValueKind == JsonValueKind.String ? p.GetGuid() : (Guid?)null;
+                if (item.GetProperty("name").GetString() != name.Trim()
+                    || parent != folderId
+                    || !item.TryGetProperty("updatedAt", out var updated)
+                    || updated.GetDateTime().ToUniversalTime() < DateTime.UtcNow.AddMinutes(-10))
+                {
+                    continue;
+                }
+
+                var existing = await RunAsync<JsonElement>("writings_read", new { writingId = item.GetProperty("id").GetGuid() }, cancellationToken);
+                if (existing.GetProperty("content").GetString()?.Trim() == (content ?? string.Empty).Trim())
+                    return AbsoluteLinks(existing, duplicate: true);
+            }
+        }
+
+        return AbsoluteLinks(await RunAsync<JsonElement>(
+            "writings_create",
+            new Dictionary<string, object?> { ["name"] = name.Trim(), ["content"] = content, ["folderId"] = folderId },
+            cancellationToken));
+    }
+
+    [McpServerTool(Name = "add_to_reading_list", Title = "Put a book on To read", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Puts a book the user wants to read on their To read list. A book already there is not added twice. Check `list_books` first if they may own it.")]
+    public async Task<JsonElement> AddToReadingListAsync(
+        [Description("The book's title.")] string title,
+        [Description("The author.")] string? author = null,
+        [Description("The ISBN, if known.")] string? isbn = null,
+        [Description("The year or date it was published.")] string? publishedDate = null,
+        [Description("Why the user wants to read it, in their words.")] string? why = null,
+        [Description("Who recommended it.")] string? recommendedBy = null,
+        [Description("True to put it on Next up.")] bool readNext = false,
+        CancellationToken cancellationToken = default) =>
+        AbsoluteLinks(await RunAsync<JsonElement>(
+            "reading_list_add",
+            new Dictionary<string, object?>
+            {
+                ["title"] = title,
+                ["author"] = author,
+                ["isbn"] = isbn,
+                ["publishedDate"] = publishedDate,
+                ["why"] = why,
+                ["recommendedBy"] = recommendedBy,
+                ["readNext"] = readNext,
+            },
+            cancellationToken));
+
     // ------------------------------------------------------------------
     // Plumbing
     // ------------------------------------------------------------------
@@ -423,7 +573,7 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
     {
         var registry = Services.GetRequiredService<AssistantCapabilityRegistry>();
         var element = JsonSerializer.SerializeToElement(args, NostosMcp.Json);
-        var result = await registry.InvokeAsync(capability, element, context ?? new AssistantToolContext(), ct);
+        var result = await registry.InvokeAsync(AssistantSurface.Mcp, capability, element, context ?? new AssistantToolContext(), ct);
         if (!result.Success)
             throw new McpException(result.ErrorMessage ?? result.ErrorCode ?? "Nostos could not do that.");
 
@@ -435,6 +585,38 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
 
         return data.Deserialize<T>(NostosMcp.Json)
             ?? throw new McpException("Nostos returned nothing.");
+    }
+
+    /// <summary>The capability's app links (<c>/studio?…</c>) as absolute URLs into this Nostos.</summary>
+    private JsonElement AbsoluteLinks(JsonElement element, bool? duplicate = null)
+    {
+        var node = JsonNode.Parse(element.GetRawText());
+        var citations = Citations;
+        Rewrite(node);
+        if (duplicate is not null && node is JsonObject root)
+            root["duplicate"] = duplicate.Value;
+        return JsonSerializer.SerializeToElement(node, NostosMcp.Json);
+
+        void Rewrite(JsonNode? current)
+        {
+            switch (current)
+            {
+                case JsonObject obj:
+                    foreach (var key in obj.Select(pair => pair.Key).ToList())
+                    {
+                        if (key == "link" && obj[key] is JsonValue value
+                            && value.TryGetValue<string>(out var link) && link.StartsWith('/'))
+                            obj[key] = citations.AppUrl(link);
+                        else
+                            Rewrite(obj[key]);
+                    }
+                    break;
+                case JsonArray array:
+                    foreach (var item in array)
+                        Rewrite(item);
+                    break;
+            }
+        }
     }
 
     internal static string IdempotencyKey(Guid bookId, string? thought, string? quote, string? quoteRef, string[]? topics)
@@ -542,5 +724,7 @@ public sealed record McpNoteList(string Book, IReadOnlyList<McpNote> Notes, int 
 public sealed record McpTopic(string Id, string Name, int Notes, string Url);
 
 public sealed record McpTopicList(IReadOnlyList<McpTopic> Topics);
+
+public sealed record McpTopicDetail(string Id, string Name, string? Description, int Notes, string Url, IReadOnlyList<McpNote> LinkedNotes);
 
 public sealed record McpSavedNote(string Id, string Book, string Url, McpCitation Citation);
