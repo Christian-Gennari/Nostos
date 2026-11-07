@@ -92,7 +92,10 @@ public sealed class OpenAiCompatibleReadAloudProvider(
         HttpResponseMessage response;
         try
         {
-            response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
+            // Buffered so the client timeout covers the audio body too, and a
+            // dropped connection mid-body is a provider failure (#1466). One
+            // sentence of audio is small.
+            response = await client.SendAsync(message, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

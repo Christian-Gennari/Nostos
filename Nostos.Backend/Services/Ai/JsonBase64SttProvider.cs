@@ -268,9 +268,15 @@ public sealed class JsonBase64SttProvider(
             }
 
             string body;
+            // The client timeout only covers the headers here; the body is
+            // read by hand to bound its size, so bound its time as well, or a
+            // provider that stalls after the headers holds the job forever.
+            using var bodyDeadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            if (client.Timeout != Timeout.InfiniteTimeSpan)
+                bodyDeadline.CancelAfter(client.Timeout);
             try
             {
-                body = await ReadBoundedResponseAsync(response.Content, ct);
+                body = await ReadBoundedResponseAsync(response.Content, bodyDeadline.Token);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

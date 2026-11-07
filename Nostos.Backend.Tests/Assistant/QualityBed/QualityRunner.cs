@@ -145,7 +145,7 @@ internal sealed class QualityBedHost : IDisposable
 
     public static QualityBedHost CreateLive(
         QualityMetricsSink sink, string baseUrl, string keyVariable, string model,
-        string? reasoningEffort = null)
+        string? reasoningEffort = null, QualityBudget? budget = null)
     {
         var factory = new LibraryEndpointFactory();
         var host = factory.WithWebHostBuilder(builder =>
@@ -166,7 +166,8 @@ internal sealed class QualityBedHost : IDisposable
                         provider.GetRequiredService<IAiProviderConfigResolver>(),
                         provider.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>()),
                     sink,
-                    model));
+                    model,
+                    budget));
                 // Production-posture control, transport boundary only: every
                 // live chat-completion request through the product's named
                 // client gains reasoning_effort. Additive on top of the
@@ -236,8 +237,19 @@ internal static class QualityRunner
 
     public static async Task<IReadOnlyList<QualityModelOutcome>> RunLiveAsync(
         QualityBedConfig config,
+        CancellationToken ct = default) =>
+        await RunLiveAsync(config, QualityBudget.FromEnvironment(), ct);
+
+    public static async Task<IReadOnlyList<QualityModelOutcome>> RunLiveAsync(
+        QualityBedConfig config,
+        QualityBudget budget,
         CancellationToken ct = default)
     {
+        if (budget.MaxUsd is null)
+            throw new InvalidOperationException(
+                $"{QualityBudget.MaxUsdVariable} is required for a live campaign, with " +
+                $"{QualityBudget.InputPriceVariable} and {QualityBudget.OutputPriceVariable} " +
+                "(USD per million tokens at today's list price).");
         if (string.IsNullOrWhiteSpace(config.BaseUrl))
             throw new InvalidOperationException(
                 "NOSTOS_QG_BASE_URL is required for a live campaign (never commit its value).");
@@ -250,33 +262,68 @@ internal static class QualityRunner
                 "The key is read by the host at call time and never logged or written.");
 
         var scenarios = FilteredScenarios(config, QualityModes.Live);
+        budget.CheckCampaignSize(scenarios.Count * config.Reps * config.Models.Count);
         var models = new List<QualityModelOutcome>();
         var index = 0;
+        var capped = false;
         foreach (var model in config.Models)
         {
             index++;
             var blindId = config.Blind ? $"qb-model-{index:00}" : null;
             var outcomes = new List<QualityScenarioOutcome>();
+            var capFailures = new List<string>();
             foreach (var scenario in scenarios)
                 for (var rep = 0; rep < config.Reps; rep++)
+                {
+                    if (capped || budget.Exhausted)
+                    {
+                        // Fail fast: nothing more is called once the cap is
+                        // reached, and the run says what it did not measure.
+                        capped = true;
+                        capFailures.Add($"{scenario.Id} r{rep}: not run, cost cap reached ({budget.Describe()})");
+                        continue;
+                    }
+
                     // Provider errors are recorded per turn inside the
                     // outcome; a transport failure on one scenario must not
                     // abort the whole campaign.
                     outcomes.Add(await RunScenarioRobustAsync(
-                        scenario, model, rep, config, blindId, ct));
+                        scenario, model, rep, config, blindId, budget, ct));
+                    if (budget.Exhausted)
+                        capped = true;
+                }
 
             models.Add(new QualityModelOutcome(
                 model, blindId, outcomes,
                 Sum(outcomes.SelectMany(o => new[] { o.Totals })),
-                outcomes.SelectMany(o => o.Failures).ToList(),
+                outcomes.SelectMany(o => o.Failures).Concat(capFailures).ToList(),
                 outcomes.SelectMany(o => o.Advisories ?? []).ToList(),
                 config.ReasoningEffort));
             Console.WriteLine($"quality bed (live): {WriteModelOutputs(config, models[^1], blindId)}");
         }
 
+        WriteBudget(config, budget, capped);
+        Console.WriteLine($"quality bed (live) budget: {budget.Describe()}{(capped ? " — CAP REACHED" : string.Empty)}");
         if (config.Blind)
             WriteBlindPack(config, models);
         return models;
+    }
+
+    private static void WriteBudget(QualityBedConfig config, QualityBudget budget, bool capped)
+    {
+        Directory.CreateDirectory(config.OutDir);
+        File.WriteAllText(
+            Path.Combine(config.OutDir, "budget.json"),
+            JsonSerializer.Serialize(new
+            {
+                budget.MaxUsd,
+                SpentUsd = decimal.Round(budget.SpentUsd, 6),
+                budget.InputPerMTok,
+                budget.OutputPerMTok,
+                budget.Calls,
+                budget.EstimatedCalls,
+                CapReached = capped,
+            }, Json));
     }
 
     private static async Task<QualityScenarioOutcome> RunScenarioRobustAsync(
@@ -285,6 +332,7 @@ internal static class QualityRunner
         int rep,
         QualityBedConfig config,
         string? blindId,
+        QualityBudget budget,
         CancellationToken ct)
     {
         try
@@ -292,7 +340,7 @@ internal static class QualityRunner
             var sink = new QualityMetricsSink();
             return await RunScenarioAsync(
                 scenario, model, rep, QualityModes.Live,
-                () => CreateSeededLiveHost(sink, config, model), ct);
+                () => CreateSeededLiveHost(sink, config, model, budget), ct);
         }
         catch (Exception exception)
         {
@@ -315,10 +363,10 @@ internal static class QualityRunner
     }
 
     private static QualityBedHost CreateSeededLiveHost(
-        QualityMetricsSink sink, QualityBedConfig config, string model)
+        QualityMetricsSink sink, QualityBedConfig config, string model, QualityBudget budget)
     {
         var host = QualityBedHost.CreateLive(
-            sink, config.BaseUrl, config.KeyEnvName, model, config.ReasoningEffort);
+            sink, config.BaseUrl, config.KeyEnvName, model, config.ReasoningEffort, budget);
         using var scope = host.Services.CreateScope();
         QualityLibrarySeeder.SeedAsync(scope.ServiceProvider).GetAwaiter().GetResult();
         return host;
@@ -357,8 +405,14 @@ internal static class QualityRunner
         for (var index = 0; index < scenario.Turns.Count; index++)
         {
             var spec = scenario.Turns[index];
+            var revisionBefore = await RevisionAsync(host);
             var record = await ExecuteTurnAsync(
                 host, scenario.Id, index, spec, sessionId, history, priors, mode, ct);
+            record = record with
+            {
+                RevisionBefore = revisionBefore,
+                RevisionAfter = await RevisionAsync(host),
+            };
             turns.Add(record);
             if (record.Response is not null)
                 priors.Add(record.Response);
@@ -375,7 +429,7 @@ internal static class QualityRunner
                 try
                 {
                     var verifyNeeded = new QualityTurnVerifyContext(
-                        host.Services, record, turns, mode);
+                        host.Services, record, turns, mode, host.Client);
                     var problem = await spec.Verify(verifyNeeded);
                     if (problem is not null)
                     {
@@ -649,6 +703,24 @@ internal static class QualityRunner
             -1, wall?.Elapsed.TotalMilliseconds ?? 0, wall?.Elapsed.TotalMilliseconds ?? 0,
             providerRequests?.Count ?? 0, providerRequests ?? [],
             notesBefore, notesAfter, collectionsBefore, collectionsAfter, error);
+
+    /// <summary>The library revision the change feed compares; null when it cannot be read.</summary>
+    private static async Task<string?> RevisionAsync(QualityBedHost host)
+    {
+        try
+        {
+            using var scope = host.Services.CreateScope();
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<NostosDbContext>>();
+            await using var db = await factory.CreateDbContextAsync();
+            return await db.LibraryStates.AsNoTracking()
+                .Select(state => state.StateVersion)
+                .FirstOrDefaultAsync();
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static async Task<(int Notes, int Collections)> CountAsync(
         QualityBedHost host, CancellationToken ct)

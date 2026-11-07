@@ -80,7 +80,10 @@ internal sealed record QualityTurnVerifyContext(
     IServiceProvider Services,
     QualityTurnRecord Turn,
     IReadOnlyList<QualityTurnRecord> PriorTurns,
-    QualityModes Mode);
+    QualityModes Mode,
+    // The host's client, for checks that act as the user would after the
+    // turn (apply or undo a changeset through its route).
+    HttpClient? Client = null);
 
 internal sealed record QualityTurnSpec(
     string Message,
