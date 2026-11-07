@@ -29,6 +29,37 @@ public sealed class AssistantCapabilityRegistry
     public IReadOnlyList<AssistantCapability> All => _all;
 
     /// <summary>
+    /// The capabilities offered on one surface, in build order, each as that
+    /// surface presents it (<see cref="AssistantCapability.For"/>). Ask Nostos
+    /// builds its tool list from <c>For(AssistantSurface.AskNostos)</c>; the MCP
+    /// server lists <c>For(AssistantSurface.Mcp)</c>.
+    /// </summary>
+    public IReadOnlyList<AssistantCapability> For(AssistantSurface surface) =>
+        _all.Where(c => c.IsOn(surface)).Select(c => c.For(surface)).ToList();
+
+    /// <summary>
+    /// Invokes one capability by name for a caller on <paramref name="surface"/>.
+    /// A capability that is not offered there is refused exactly like an
+    /// unknown name, so a surface can never reach a tool it does not list.
+    /// </summary>
+    public Task<AssistantToolResult> InvokeAsync(
+        AssistantSurface surface,
+        string name,
+        JsonElement argsJson,
+        AssistantToolContext context,
+        CancellationToken ct = default)
+    {
+        if (!_byName.TryGetValue(name, out var capability) || !capability.IsOn(surface))
+        {
+            return Task.FromResult(AssistantToolResult.Fail(
+                AssistantErrorCodes.UnknownCapability,
+                $"No assistant capability named '{name}' is offered here."));
+        }
+
+        return InvokeAsync(name, argsJson, context, ct);
+    }
+
+    /// <summary>
     /// Invokes one capability by name. Returns a typed failure for an unknown
     /// name or a Stage call without a changeset; never throws for those cases.
     /// </summary>

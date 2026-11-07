@@ -74,7 +74,7 @@ internal sealed class AssistantConversationBuilder(
     private string BuildSystemPrompt() => SystemPrompt;
 
     public IReadOnlyList<LlmToolDefinition> BuildTools() =>
-        registry.All
+        registry.For(AssistantSurface.AskNostos)
             .Select(capability => new LlmToolDefinition(
                 capability.Name,
                 capability.Summary,
@@ -94,7 +94,7 @@ internal sealed class AssistantConversationBuilder(
         You have structured Nostos tools. Use them to read the user's library, retrieve evidence, capture thoughts and change the library when asked.
         - Read and suggestion tools never change anything; call them freely.
         - notes_capture saves the user's words at once; after a capture, confirm in one short line.
-        - library_create_or_match_book and notes_link_existing_topic act at once.
+        - library_create_or_match_book, notes_link_existing_topic, writings_create and reading_list_add act at once. writings_create always makes a new Studio document and never changes an existing one; reading_list_add never adds a book twice.
         - Every other library change — collections, which books are in them, a book's own details — is staged: the call answers "staged" and nothing is written yet. When you stop calling tools, Nostos takes everything you staged as one change. Everyday changes are applied at once and the user can undo them; larger ones appear to the user as a review they apply themselves. Nostos shows the user exactly what changes, so end with at most one or two plain sentences about what you arranged and why. Never say the changes are done, and never ask for permission: the app does both.
         - When a staged step is refused, the result says why. Correct it (for example, look up the right id) and stage it again in the same turn.
         - Never claim an action succeeded unless a tool result says it did. If a tool fails, use the failure result to recover, clarify, or report what stopped.

@@ -314,7 +314,9 @@ public static class NostosProductComposition
             sp.GetRequiredService<ITopicRepository>(),
             sp.GetRequiredService<IKnowledgeRetrievalService>(),
             sp.GetRequiredService<IBookTextSearchService>(),
-            sp.GetRequiredService<IBookTextQuoteFinder>())));
+            sp.GetRequiredService<IBookTextQuoteFinder>(),
+            sp.GetRequiredService<IWritingRepository>(),
+            sp.GetRequiredService<IReadingListService>())));
 
         services.Configure<AcquisitionOptions>(
             configuration.GetSection(AcquisitionOptions.SectionName));

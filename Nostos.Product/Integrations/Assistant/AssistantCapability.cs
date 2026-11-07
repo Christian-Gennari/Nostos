@@ -88,4 +88,39 @@ public sealed record AssistantCapability(
     AssistantCapabilityCategory Category,
     string Summary,
     string ParametersJsonSchema,
-    Func<AssistantToolContext, JsonElement, CancellationToken, Task<AssistantToolResult>> Execute);
+    Func<AssistantToolContext, JsonElement, CancellationToken, Task<AssistantToolResult>> Execute)
+{
+    /// <summary>
+    /// The surfaces this capability is offered on. Ask Nostos only unless the
+    /// capability is in the curated MCP set (<see cref="AssistantCapabilities.McpExposed"/>).
+    /// </summary>
+    public AssistantSurface Surfaces { get; init; } = AssistantSurface.AskNostos;
+
+    /// <summary>
+    /// The tool description an MCP client reads, when it must differ from Ask
+    /// Nostos's. Ask Nostos's text talks about "the open book" the app supplies;
+    /// an MCP client has no open book and must be told to pass one.
+    /// </summary>
+    public string? McpSummary { get; init; }
+
+    /// <summary>The argument schema an MCP client reads, when it must differ from Ask Nostos's.</summary>
+    public string? McpParametersJsonSchema { get; init; }
+
+    /// <summary>True when this capability is offered on <paramref name="surface"/>.</summary>
+    public bool IsOn(AssistantSurface surface) =>
+        surface != AssistantSurface.None && (Surfaces & surface) == surface;
+
+    /// <summary>
+    /// This capability as <paramref name="surface"/> presents it: the MCP
+    /// summary and schema replace Ask Nostos's when they are set. The name,
+    /// trust class and delegate never change between surfaces.
+    /// </summary>
+    public AssistantCapability For(AssistantSurface surface) =>
+        surface == AssistantSurface.Mcp
+            ? this with
+            {
+                Summary = McpSummary ?? Summary,
+                ParametersJsonSchema = McpParametersJsonSchema ?? ParametersJsonSchema,
+            }
+            : this;
+}

@@ -61,11 +61,12 @@ public static partial class AssistantCapabilities
             "book_text_find_quote",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.SourceNavigation,
-            "Finds a passage the user names by its first and last words (\"it starts with … and ends with …\") in the text of the open book, or, for a paper book, in the digital editions of the same work. Use it before saving a quote the user does not read out in full, then save it with notes_capture and the quoteRef it returns. The book is supplied by the app when one is open.",
+            "Finds a passage the user names by its first and last words (\"it starts with … and ends with …\") in the text of the open book, or, for a paper book, in the digital editions of the same work. Use it before saving a quote the user does not read out in full, then save it with notes_capture and the quoteRef it returns. The book is supplied by the app when one is open; otherwise pass the bookId of the book the user named.",
             """
             {
               "type": "object",
               "properties": {
+                "bookId": { "type": "string", "format": "uuid", "description": "The book to search, from library_resolve_book or another result. Needed only when no book is open; the open book always wins." },
                 "startsWith": { "type": "string", "description": "The words the user says the passage starts with, exactly as they said them. Required." },
                 "endsWith": { "type": "string", "description": "The words the user says the passage ends with, exactly as they said them. Required." },
                 "page": { "type": "integer", "minimum": 1, "description": "The page the user named for the passage, if any. Only narrows the search." },

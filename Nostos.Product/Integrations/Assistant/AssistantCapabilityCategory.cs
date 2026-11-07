@@ -13,4 +13,7 @@ public enum AssistantCapabilityCategory
     Capture,
     Organization,
     OrdinaryAction,
+
+    /// <summary>Studio drafts: listing, reading and creating documents.</summary>
+    Writing,
 }
