@@ -16,6 +16,8 @@ export interface McpConnectedApp {
   scope: McpAppScope;
   createdAt: string;
   lastUsedAt: string | null;
+  /** Revoked and blocked until allowed again (#1483). Only some hosts list these. */
+  revoked?: boolean;
 }
 
 /** Settings' list: the apps, and whether this server can make a token. */
@@ -51,5 +53,10 @@ export class McpConnectedAppsService {
 
   revoke(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/${encodeURIComponent(id)}`);
+  }
+
+  /** Lets a revoked app connect again (#1483). */
+  restore(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${encodeURIComponent(id)}/restore`, {});
   }
 }

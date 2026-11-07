@@ -124,6 +124,11 @@ public sealed class McpAccessTokenTests : IAsyncLifetime
         (await _http.DeleteAsync($"{McpConnectedAppsEndpoints.Route}/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await _http.DeleteAsync($"{McpConnectedAppsEndpoints.Route}/not-an-id")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await _http.GetFromJsonAsync<JsonElement>(McpConnectedAppsEndpoints.Route)).GetProperty("apps").GetArrayLength().Should().Be(0);
+
+        // A revoked SelfHosted token is gone, not blocked: there is nothing to
+        // allow again (#1483), so restore finds nothing and brings nothing back.
+        (await _http.PostAsync($"{McpConnectedAppsEndpoints.Route}/{id}/restore", null)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _http.GetFromJsonAsync<JsonElement>(McpConnectedAppsEndpoints.Route)).GetProperty("apps").GetArrayLength().Should().Be(0);
     }
 
     [Theory]
