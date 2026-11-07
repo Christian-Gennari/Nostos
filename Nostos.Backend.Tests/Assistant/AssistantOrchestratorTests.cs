@@ -4071,6 +4071,26 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         ToolResultFor(h, "book_text_find_quote").GetProperty("status").GetString().Should().Be("found");
     }
 
+    [Fact]
+    public async Task Find_quote_searches_the_book_the_model_names_when_no_book_is_open()
+    {
+        // Issue #1468: with no book open there is no app book to win, so the
+        // explicit bookId (found with library_resolve_book) is the one searched.
+        var h = CreateHarness();
+        var (paper, epub) = await SeedPaperWithEpubAsync(h, "The Valley");
+        await SeedBookTextChunksAsync(h, epub.Id, ValleyPassage);
+
+        h.Llm
+            .CallsTool("book_text_find_quote", $$"""{"bookId":"{{paper.Id}}","startsWith":"the time of the","endsWith":"never came back"}""")
+            .Returns("Found it.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "in The Valley, find the passage that starts with the time of the and ends with never came back",
+            Context(surface: "library", route: "/library")));
+
+        ToolResultFor(h, "book_text_find_quote").GetProperty("status").GetString().Should().Be("found");
+    }
+
     private static async Task<(PhysicalBookModel Paper, EBookModel Epub)> SeedPaperWithEpubAsync(Harness h, string title)
     {
         var work = new WorkModel { Title = title, NormalizedTitle = title.ToLowerInvariant() };

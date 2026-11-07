@@ -203,6 +203,9 @@ internal static class QualityLibrarySeeder
         // All 7 topics linked (Seamanship x2, Attention, GalleryWatch, MorningHours x2,
         // RiverMaps x3, HarborRules, BoatRepair x2).
 
+        // Studio drafts and the To read list (C23, C24; issue #1468).
+        QualityCatalogue.SeedDraftsAndReadingList(db);
+
         await db.SaveChangesAsync(ct);
 
         // --- Book text through the real product index ---

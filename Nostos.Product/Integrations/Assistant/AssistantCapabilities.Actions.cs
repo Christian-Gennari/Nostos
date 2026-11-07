@@ -145,7 +145,29 @@ public static partial class AssistantCapabilities
                 }
 
                 return NoteResult(result);
-            }),
+            })
+        {
+            // Ask Nostos never advertises the book: the app knows the open book
+            // or asks the user (AssistantCapturePolicy), and a model told it may
+            // pass one went and found a book of its own. An MCP client has no
+            // open book, so there the book is an explicit, required argument.
+            McpSummary = "Saves the user's own thought, observation or quote as a note on one book in their Nostos library. Use it only when the user asks you to keep something. Pass the book's id from a Nostos result; never guess one. To save a quote the user names by its first and last words, find it with book_text_find_quote first and pass its quoteRef instead of the words.",
+            McpParametersJsonSchema = """
+            {
+              "type": "object",
+              "properties": {
+                "bookId": { "type": "string", "format": "uuid", "description": "The id of the book the note belongs to, from a Nostos tool result. Required." },
+                "content": { "type": "string", "description": "The user's own words for the note, exactly as they said or wrote them, without your instructions or paraphrase." },
+                "selectedText": { "type": "string", "description": "A passage quoted from the book itself, stored as the quotation exactly as given. Only text the user or a Nostos result gave you." },
+                "quoteRef": { "type": "string", "description": "The quoteRef book_text_find_quote returned for the passage. Nostos stores that passage exactly as the book has it; do not pass selectedText with it." },
+                "wholeBook": { "type": "boolean", "description": "True when the thought is about the book as a whole rather than one place in it." },
+                "topics": { "type": "array", "items": { "type": "string" }, "description": "Up to five topic names the thought is plainly about. Prefer the exact names of topics that already exist." }
+              },
+              "required": ["bookId"],
+              "additionalProperties": true
+            }
+            """,
+        },
 
         new AssistantCapability(
             "notes_rewrite_capture",

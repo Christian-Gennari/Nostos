@@ -4,6 +4,7 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Knowledge;
+using Nostos.Backend.Services.ReadingList;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 using Nostos.Product.BookText;
@@ -61,13 +62,22 @@ public static partial class AssistantCapabilities
         ITopicRepository topics,
         IKnowledgeRetrievalService knowledge,
         IBookTextSearchService? bookText = null,
-        IBookTextQuoteFinder? quotes = null)
+        IBookTextQuoteFinder? quotes = null,
+        IWritingRepository? writings = null,
+        IReadingListService? readingList = null)
     {
         var capabilities = BuildLibraryBookCapabilities(library)
             .Concat(BuildKnowledgeCapabilities(notes, topics, knowledge))
             .Concat(BuildCollectionAndCaptureCapabilities(notes, library, quotes))
-            .Concat(BuildChangeCapabilities())
             .ToList();
+
+        if (writings is not null)
+            capabilities.AddRange(BuildWritingCapabilities(writings));
+
+        if (readingList is not null)
+            capabilities.AddRange(BuildReadingListCapabilities(readingList));
+
+        capabilities.AddRange(BuildChangeCapabilities());
 
         if (bookText is not null)
             capabilities.AddRange(BuildBookTextCapabilities(bookText));
@@ -75,8 +85,40 @@ public static partial class AssistantCapabilities
         if (quotes is not null)
             capabilities.Add(BuildFindQuoteCapability(quotes));
 
-        return capabilities;
+        return capabilities
+            .Select(capability => McpExposed.Contains(capability.Name)
+                ? capability with { Surfaces = AssistantSurface.AskNostos | AssistantSurface.Mcp }
+                : capability)
+            .ToList();
     }
+
+    /// <summary>
+    /// The capabilities an MCP client may list and call (the v1 set of epic
+    /// #1465), in addition to Ask Nostos. Everything else is Ask Nostos only.
+    /// Nothing here deletes, overwrites or stages a library change: reads,
+    /// capture, and the two creates.
+    /// </summary>
+    public static readonly IReadOnlySet<string> McpExposed = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "knowledge_search",
+        "knowledge_read_evidence",
+        "knowledge_overview",
+        "book_text_find_quote",
+        "library_overview",
+        "library_list_books",
+        "library_resolve_book",
+        "library_get_book",
+        "notes_list_for_book",
+        "notes_capture",
+        "topics_list",
+        "topics_search",
+        "topics_get",
+        "writings_list",
+        "writings_read",
+        "writings_create",
+        "reading_list_list",
+        "reading_list_add",
+    };
 
     // ------------------------------------------------------------------
     // Argument readers. The tool args are JSON objects keyed by the canonical
