@@ -14,11 +14,11 @@ The backend uses Entity Framework Core 10 with SQLite. All models live in `Nosto
       │ self-ref                                       │ M:M
       │ ParentId                                       │
       ↓                                          ┌─────┴──────┐
-┌──────────────┐                                │NoteConceptModel│
+┌──────────────┐                                │NoteTopicModel  │
 │  Collection   │                                └─────┬──────┘
 │  (children)   │                                       │ M:M
 └──────────────┘                                 ┌─────┴──────┐
-                                                  │ConceptModel │
+                                                  │TopicModel   │
 ┌──────────────┐                                 └────────────┘
 │ WritingModel  │ self-referencing
 │  (tree)       │ ParentId → WritingModel
@@ -102,42 +102,44 @@ Hierarchical folders for organizing books. Self-referencing parent-child.
 
 ## NoteModel
 
-User annotations with wiki-link concept support.
+User annotations with wiki-link topic support.
 
 | Property       | Type                            | Description                                           |
 | -------------- | ------------------------------- | ----------------------------------------------------- |
 | `Id`           | `Guid`                          | Primary key                                           |
-| `Content`      | `string`                        | **Required** — Note text (may contain `[[concepts]]`) |
+| `Content`      | `string`                        | **Required** — Note text (may contain `[[topics]]`)   |
 | `CfiRange`     | `string?`                       | Epub CFI range (for highlight positioning)            |
 | `SelectedText` | `string?`                       | Highlighted text from the book                        |
 | `HighlightColour` | `string?`                     | Highlighter pen by name (`amber`, `sage`, `blue`, `rose`); `null` = none recorded, drawn amber |
 | `CreatedAt`    | `DateTime`                      | UTC creation timestamp                                |
 | `BookId`       | `Guid`                          | FK to Book                                            |
 | `Book`         | `BookModel?`                    | Navigation property                                   |
-| `NoteConcepts` | `ICollection<NoteConceptModel>` | Linked concepts                                       |
+| `NoteTopics`   | `ICollection<NoteTopicModel>`   | Linked topics                                         |
 
 **Index:** `BookId`
 
-## ConceptModel
+## TopicModel
 
 Auto-created from `[[brackets]]` in notes.
 
-| Property       | Type                            | Description           |
-| -------------- | ------------------------------- | --------------------- |
-| `Id`           | `Guid`                          | Primary key           |
-| `Concept`      | `string`                        | Concept name (unique) |
-| `NoteConcepts` | `ICollection<NoteConceptModel>` | Linked notes          |
+| Property         | Type                          | Description                                  |
+| ---------------- | ----------------------------- | -------------------------------------------- |
+| `Id`             | `Guid`                        | Primary key                                  |
+| `Topic`          | `string`                      | Topic name as the reader wrote it            |
+| `NormalizedName` | `string`                      | Name folded to its identity key; unique      |
+| `Description`    | `string?`                     | The reader's own words (max 4000 characters) |
+| `NoteTopics`     | `ICollection<NoteTopicModel>` | Linked notes                                 |
 
-**Index:** `Concept` (unique)
+**Index:** `NormalizedName` (unique) — one topic per name in any case.
 
-## NoteConceptModel (Join Table)
+## NoteTopicModel (Join Table)
 
-Many-to-many between Notes and Concepts.
+Many-to-many between Notes and Topics. Composite key `{ NoteId, TopicId }`.
 
-| Property    | Type   | Description                  |
-| ----------- | ------ | ---------------------------- |
-| `NoteId`    | `Guid` | FK to Note (composite PK)    |
-| `ConceptId` | `Guid` | FK to Concept (composite PK) |
+| Property  | Type   | Description                |
+| --------- | ------ | -------------------------- |
+| `NoteId`  | `Guid` | FK to Note (composite PK)  |
+| `TopicId` | `Guid` | FK to Topic (composite PK) |
 
 ## BookCollectionModel (Join Table)
 
@@ -178,12 +180,12 @@ Hierarchical file system for the writing studio.
 
 ## Database Indexes
 
-| Table         | Column(s)      | Type       |
-| ------------- | -------------- | ---------- |
-| `Books`       | `Title`        | Non-unique |
-| `Books`       | `Author`       | Non-unique |
-| `BookCollections` | `CollectionId` | Non-unique |
-| `Notes`       | `BookId`       | Non-unique |
-| `Collections` | `ParentId`     | Non-unique |
-| `Writings`    | `ParentId`     | Non-unique |
-| `Concepts`    | `Concept`      | **Unique** |
+| Table             | Column(s)        | Type       |
+| ----------------- | ---------------- | ---------- |
+| `Books`           | `Title`          | Non-unique |
+| `Books`           | `Author`         | Non-unique |
+| `BookCollections` | `CollectionId`   | Non-unique |
+| `Notes`           | `BookId`         | Non-unique |
+| `Collections`     | `ParentId`       | Non-unique |
+| `Writings`        | `ParentId`       | Non-unique |
+| `Topics`          | `NormalizedName` | **Unique** |
