@@ -106,36 +106,36 @@ Called after a book file upload. For audio files:
 ## NoteProcessorService
 
 **Registration:** `builder.Services.AddScoped<NoteProcessorService>()`  
-**Dependencies:** `IConceptRepository`
+**Dependencies:** `ITopicRepository`
 
 Processes wiki-link syntax in note content.
 
 ### `ProcessNoteAsync(note: NoteModel)`
 
-1. Extracts all `[[Concept Name]]` patterns via regex `\[\[(.*?)\]\]`
+1. Extracts all `[[Topic Name]]` patterns via regex `\[\[(.*?)\]\]`
 2. Deduplicates names (case-insensitive)
-3. Clears existing concept links for the note
-4. Looks up existing concepts by name
-5. Creates new `ConceptModel` entries for any unrecognized names
-6. Creates `NoteConceptModel` links for all matched concepts
+3. Clears existing topic links for the note
+4. Looks up existing topics by name
+5. Creates new `TopicModel` entries for any unrecognized names
+6. Creates `NoteTopicModel` links for all matched topics
 
 This method modifies the DbContext but does **not** call `SaveChangesAsync()` — the caller is responsible for saving (to allow batching with the note itself).
 
 ---
 
-## ConceptCleanupWorker
+## TopicCleanupWorker
 
-**Registration:** `builder.Services.AddHostedService<ConceptCleanupWorker>()`  
+**Registration:** `builder.Services.AddHostedService<TopicCleanupWorker>()`  
 **Type:** `BackgroundService`
 
-A background worker that runs every **1 hour** and removes orphaned concepts (concepts with zero linked notes).
+A background worker that runs every **1 hour** and removes orphaned topics (topics with zero linked notes).
 
 ### Behavior
 
 1. Starts when the application starts
 2. Waits 1 hour between iterations via `PeriodicTimer`
-3. Each cycle: calls `IConceptRepository.DeleteOrphanedAsync()` (bulk `ExecuteDeleteAsync`)
-4. Logs the count of deleted concepts if any
+3. Each cycle: calls `ITopicRepository.DeleteOrphanedAsync()` (bulk `ExecuteDeleteAsync`)
+4. Logs the count of deleted topics if any
 5. Gracefully handles cancellation on shutdown
 6. Catches and logs individual cycle errors without crashing
 

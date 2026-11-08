@@ -2,16 +2,26 @@
 
 ## Overview
 
-The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized as static extension methods that register route groups. All endpoint groups are mapped in `Program.cs`:
+The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized as static extension methods that register route groups. The product endpoint groups are mapped by `MapNostosProductEndpoints` in `Nostos.Product/Composition/NostosProductComposition.cs`; `Nostos.Backend/Program.cs` maps that product surface and adds only the host-specific Backup, ExternalMedia and MCP groups:
 
 ```csharp
-app.MapBooksEndpoints();
-app.MapNotesEndpoints();
-app.MapCollectionsEndpoints();
-app.MapConceptsEndpoints();
-app.MapWritingsEndpoints();
-app.MapOpdsEndpoints();
+// Nostos.Product/Composition/NostosProductComposition.cs — MapNostosProductEndpoints
+api.MapBooksEndpoints(policies);
+api.MapNotesEndpoints();
+api.MapCollectionsEndpoints();
+api.MapTopicsEndpoints();
+api.MapWritingsEndpoints();
+api.MapOpdsEndpoints(opds, policies.OpdsAuthorizationPolicy,
+                     policies.LargeTransferRateLimitPolicy);
+
+// Nostos.Backend/Program.cs — host-specific groups
+app.MapNostosProductEndpoints(
+    opdsOptions,
+    NostosProductEndpointPolicies.None with { MapResumableBookUploadEndpoints = true });
 app.MapBackupEndpoints();
+app.MapExternalMediaEndpoints();
+app.MapMcpAccessTokenEndpoints();
+app.MapMcpOAuthEndpoints();
 ```
 
 ## Endpoint Groups
@@ -113,9 +123,9 @@ the response fields and retention semantics.
 | Method   | Route                   | Description                           | Dependencies                                                 |
 | -------- | ----------------------- | ------------------------------------- | ------------------------------------------------------------ |
 | `GET`    | `/books/{bookId}/notes` | List notes for a book                 | `INoteRepository`                                            |
-| `POST`   | `/books/{bookId}/notes` | Create note (+ concept processing)    | `IBookRepository`, `INoteRepository`, `NoteProcessorService` |
-| `PUT`    | `/notes/{id}`           | Update note (+ concept re-processing) | `INoteRepository`, `NoteProcessorService`                    |
-| `DELETE` | `/notes/{id}`           | Delete note + concept links           | `INoteRepository`                                            |
+| `POST`   | `/books/{bookId}/notes` | Create note (+ topic processing)      | `IBookRepository`, `INoteRepository`, `NoteProcessorService` |
+| `PUT`    | `/notes/{id}`           | Update note (+ topic re-processing)   | `INoteRepository`, `NoteProcessorService`                    |
+| `DELETE` | `/notes/{id}`           | Delete note + topic links             | `INoteRepository`                                            |
 
 ### CollectionsEndpoints (`/api/collections`)
 
@@ -138,12 +148,14 @@ name collision at the destination returns `409 collection_name_conflict`.
 returns `409 collection_has_children` while the collection still has child
 collections.
 
-### ConceptsEndpoints (`/api/concepts`)
+### TopicsEndpoints (`/api/topics`)
+
+`/api/topics` is the canonical route. `/api/concepts` is a transition alias: it is mapped to the same handlers and returns the same topic field names. It still works; do not remove it from clients without a migration.
 
 | Method | Route   | Description                                | Dependencies         |
 | ------ | ------- | ------------------------------------------ | -------------------- |
-| `GET`  | `/`     | List all concepts (with usage counts)      | `IConceptRepository` |
-| `GET`  | `/{id}` | Get concept detail (with all linked notes) | `IConceptRepository` |
+| `GET`  | `/`     | List all topics (with usage counts)        | `ITopicRepository`   |
+| `GET`  | `/{id}` | Get topic detail (with all linked notes)   | `ITopicRepository`   |
 
 ### WritingsEndpoints (`/api/writings`)
 

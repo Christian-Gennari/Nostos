@@ -83,10 +83,10 @@ Cascade delete ensures deleting a folder removes all descendants.
 
 **Collections:** Uses default EF Core conventions (no explicit cascade — books are unlinked manually before delete).
 
-### Many-to-Many (Notes ↔ Concepts)
+### Many-to-Many (Notes ↔ Topics)
 
 ```csharp
-modelBuilder.Entity<NoteConceptModel>().HasKey(nc => new { nc.NoteId, nc.ConceptId });
+modelBuilder.Entity<NoteTopicModel>().HasKey(nc => new { nc.NoteId, nc.TopicId });
 ```
 
 ## Database Sets
@@ -100,6 +100,6 @@ modelBuilder.Entity<NoteConceptModel>().HasKey(nc => new { nc.NoteId, nc.Concept
 | `Writings`      | `WritingModel`      | Writing studio files/folders |
 | `Notes`         | `NoteModel`         | Book annotations             |
 | `Collections`   | `CollectionModel`   | Book collections (folders)   |
-| `Concepts`      | `ConceptModel`      | Auto-extracted concepts      |
-| `NoteConcepts`  | `NoteConceptModel`  | Note ↔ Concept join table    |
+| `Topics`        | `TopicModel`        | Auto-extracted topics        |
+| `NoteTopics`    | `NoteTopicModel`    | Note ↔ Topic join table      |
 | `BackupRecords` | `BackupRecord`      | Backup archive history       |

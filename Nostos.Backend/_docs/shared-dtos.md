@@ -87,15 +87,17 @@ record UpdateCollectionDto(string Name, Guid? ParentId);
 
 ---
 
-## Concept DTOs (`Nostos.Shared.Dtos.ConceptDto`)
+## Topic DTOs (`Nostos.Shared.Dtos.TopicDto`)
 
 ```csharp
-record ConceptDto(Guid Id, string Name, int UsageCount);
-record ConceptDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
+record TopicDto(Guid Id, string Name, int UsageCount,
+                int NoteMatchCount = 0, string? NoteMatchSnippet = null,
+                string? Description = null);
+record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
 record NoteContextDto(Guid NoteId, string Content, string? SelectedText,
                       string? CfiRange, Guid BookId, string BookTitle);
-record CreateConceptDto(string Concept);
-record UpdateConceptDto(string Concept);
+record CreateTopicDto(string Topic);
+record UpdateTopicDto(string Topic);
 ```
 
 ---
