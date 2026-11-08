@@ -1,4 +1,4 @@
-// Scenarios M1–M8 (issue #1472): the quality bed through the MCP server.
+// Scenarios M1–M9 (issue #1472; M9 save_passage): the quality bed through the MCP server.
 //
 // Claude.ai, ChatGPT and local agents reach the library through /mcp, never
 // through Ask Nostos: they pick tools from our descriptions, never see our
@@ -10,7 +10,7 @@
 // Why not QualityRunner: its scenarios are chat turns through the Ask Nostos
 // stream route with a scripted LLM, and it builds one host per scenario. MCP
 // has no LLM on our side, so a turn-shaped runner would only wrap tool calls.
-// One seeded host serves all eight scenarios; each scenario reads the library
+// One seeded host serves all nine scenarios; each scenario reads the library
 // revision and row counts around its own calls, so they do not depend on
 // order. QualityCatalogueM.Live.cs runs a real client model over the same
 // host for the live workflow.
@@ -35,6 +35,7 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Integrations.Mcp;
+using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Tests.Mcp;
 using Nostos.Product.BookText;
 using Nostos.Product.Services.Ai;
@@ -181,7 +182,7 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
     private static readonly Guid DraftLighthouse = Guid.Parse("e2222222-2222-4222-8222-222222222222");
     private static readonly Guid FolderEssays = Guid.Parse("e1111111-1111-4111-8111-111111111111");
 
-    private static readonly string[] Writes = ["save_note", "create_draft", "add_to_reading_list"];
+    private static readonly string[] Writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list"];
 
     // ------------------------------------------------------------------
     // M1: the tool surface is what we wrote, and drift is a visible diff
@@ -266,7 +267,7 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
             .Should().BeEquivalentTo(AssistantCapabilities.McpExposed);
         registry.For(AssistantSurface.Mcp).Should().NotContain(c => c.Trust == AssistantTrustClass.Stage);
         registry.For(AssistantSurface.Mcp).Where(c => c.Trust != AssistantTrustClass.Suggest).Select(c => c.Name)
-            .Should().BeEquivalentTo("notes_capture", "writings_create", "reading_list_add");
+            .Should().BeEquivalentTo("notes_capture", "notes_save_passage", "writings_create", "reading_list_add");
 
         // The tool layer calls the registry as AssistantSurface.Mcp, so every
         // other capability is refused there like an unknown name, even with
@@ -625,6 +626,125 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
 
         (await bed.RevisionAsync()).Should().Be(before, "failed calls change nothing");
     }
+
+    // ------------------------------------------------------------------
+    // M9: a passage is kept from the book's own text, ends and all
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task M9_save_passage_keeps_the_books_words_and_both_ends_once_and_refuses_what_it_cannot_place()
+    {
+        var unchanged = await bed.RevisionAsync();
+
+        // A paper book's words come from its EPUB edition: that is not where
+        // the passage stands, so it is refused with the way forward, by MCP names.
+        var paperQuote = await CallAsync("find_quote", new()
+        {
+            ["bookId"] = QualityFixtureIds.BookValleyRoadPaper,
+            ["startsWith"] = "The time of the thaw",
+            ["endsWith"] = "never came back.",
+        });
+        var paper = await CallRawAsync("save_passage", new()
+        {
+            ["bookId"] = QualityFixtureIds.BookValleyRoadPaper,
+            ["quoteRef"] = paperQuote.GetProperty("candidates")[0].GetProperty("quoteRef").GetString(),
+            ["title"] = "M9 Thaw",
+        });
+        paper.Result!.IsError.Should().BeTrue();
+        Text(paper.Result).Should().Contain("another edition").And.Contain("save_note");
+        AskNostosOnlyNames(Text(paper.Result)).Should().BeEmpty();
+
+        var stale = await CallRawAsync("save_passage", new() { ["bookId"] = QualityFixtureIds.BookValleyRoadEpub, ["quoteRef"] = "q1-not-a-real-ref", ["title"] = "M9 Stale" });
+        stale.Result!.IsError.Should().BeTrue();
+        Text(stale.Result).Should().Contain("find_quote");
+
+        // The EPUB edition's words are indexed, but while its file is missing
+        // the ends cannot be placed in the book, so nothing is saved.
+        var found = await CallAsync("find_quote", new()
+        {
+            ["bookId"] = QualityFixtureIds.BookValleyRoadEpub,
+            ["startsWith"] = "The time of the thaw",
+            ["endsWith"] = "never came back.",
+        });
+        var candidate = found.GetProperty("candidates")[0];
+        var args = new Dictionary<string, object?>
+        {
+            ["bookId"] = QualityFixtureIds.BookValleyRoadEpub,
+            ["quoteRef"] = candidate.GetProperty("quoteRef").GetString(),
+            ["title"] = "M9 The ford",
+            ["thought"] = "M9: the waiting is the story.",
+        };
+        var unplaced = await CallRawAsync("save_passage", args);
+        unplaced.Result!.IsError.Should().BeTrue();
+        Text(unplaced.Result).Should().Contain("could not place").And.Contain("save_note");
+        (await bed.RevisionAsync()).Should().Be(unchanged, "refused passages change nothing");
+
+        // With the book's file in place, the passage is kept once: the book's
+        // words, a title, the user's note, and both ends as epub.js point CFIs.
+        var storage = bed.Host.Services.GetRequiredService<Nostos.Backend.Services.IBookAssetStorage>();
+        await using (var epub = new MemoryStream(ValleyRoadEpub()))
+            await storage.SaveBookFileAsync(QualityFixtureIds.BookValleyRoadEpub, epub, "valley-road.epub");
+        try
+        {
+            var first = await CallAsync("save_passage", args);
+            var afterFirst = await bed.RevisionAsync();
+            var again = await CallAsync("save_passage", args);
+
+            afterFirst.Should().Be(unchanged + 1, "a passage is one save");
+            (await bed.RevisionAsync()).Should().Be(afterFirst, "a resent save_passage must not move the revision");
+            IdOf(again).Should().Be(IdOf(first));
+            Route(first.GetProperty("url").GetString()).Should().Be(("note", Guid.Parse(first.GetProperty("id").GetString()!["note:".Length..])));
+
+            await using var db = await bed.Contexts().CreateDbContextAsync();
+            var passage = await db.Notes.SingleAsync(n => n.PassageTitle == "M9 The ford");
+            passage.Kind.Should().Be(NoteKinds.Passage);
+            passage.SelectedText.Should().Be(QualityLibrarySeeder.ValleyRoadQuote);
+            passage.Content.Should().StartWith("M9: the waiting is the story.");
+            passage.SourceAnchorKind.Should().Be("epub_cfi");
+            passage.SourceAnchorValue.Should().Be("epubcfi(/6/14!/4/2/1:0)");
+            passage.PassageEnd.Should().Be($"epubcfi(/6/14!/4/2/1:{QualityLibrarySeeder.ValleyRoadQuote.Length})");
+            passage.AnchorVerified.Should().BeTrue();
+            passage.CfiRange.Should().BeNull("a passage is never a highlight in the book");
+            passage.CaptureSource.Should().Be(NostosMcp.CaptureSource);
+        }
+        finally
+        {
+            await storage.DeleteBookFileAsync(QualityFixtureIds.BookValleyRoadEpub);
+        }
+    }
+
+    /// <summary>
+    /// The Valley Road EPUB as the index has it: chapter six (spine item 6,
+    /// <c>ch06.xhtml</c>) opens with the thaw passage.
+    /// </summary>
+    private static byte[] ValleyRoadEpub()
+    {
+        var manifest = string.Concat(Enumerable.Range(0, 10).Select(i => $"<item id=\"c{i}\" href=\"ch{i:00}.xhtml\" media-type=\"application/xhtml+xml\"/>"));
+        var spine = string.Concat(Enumerable.Range(0, 10).Select(i => $"<itemref idref=\"c{i}\"/>"));
+        var files = new Dictionary<string, string>
+        {
+            ["mimetype"] = "application/epub+zip",
+            ["META-INF/container.xml"] = """<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>""",
+            ["package.opf"] = $"""<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">valley-road</dc:identifier><dc:title>The Valley Road</dc:title><dc:language>en</dc:language></metadata><manifest>{manifest}</manifest><spine>{spine}</spine></package>""",
+        };
+        for (var i = 0; i < 10; i++)
+        {
+            var text = i == 6 ? QualityLibrarySeeder.ValleyRoadQuote + " The ford stayed empty all winter." : $"Chapter {i}.";
+            files[$"ch{i:00}.xhtml"] = $"<?xml version=\"1.0\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>{i}</title></head><body><p>{text}</p></body></html>";
+        }
+
+        using var output = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(output, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (name, content) in files)
+            {
+                using var writer = new StreamWriter(archive.CreateEntry(name).Open());
+                writer.Write(content);
+            }
+        }
+        return output.ToArray();
+    }
+
 
     // ------------------------------------------------------------------
     // Helpers

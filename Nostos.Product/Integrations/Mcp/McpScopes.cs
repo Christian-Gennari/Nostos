@@ -12,7 +12,7 @@ namespace Nostos.Backend.Integrations.Mcp;
 /// <see cref="NostosMcp.ScopeClaimType"/> claim holding space-separated scopes
 /// (several claims are read together). <see cref="NostosMcp.ReadScope"/> is
 /// needed for every tool; <see cref="NostosMcp.WriteScope"/> also for the
-/// tools that create something (<c>save_note</c>, <c>create_draft</c>,
+/// tools that create something (<c>save_note</c>, <c>save_passage</c>, <c>create_draft</c>,
 /// <c>add_to_reading_list</c>). Scopes match ordinally. A caller with no scope
 /// claim at all counts as read-only.
 ///

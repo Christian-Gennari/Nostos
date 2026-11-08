@@ -771,8 +771,8 @@ A host may also pass `NostosProductEndpointPolicies.McpRateLimitPolicy`.
 (`NostosMcp.ScopeClaimType`): space-separated OAuth scopes, matched ordinally,
 read across every `scope` claim (and the type ASP.NET's JWT handler maps it to).
 `nostos:read` (`NostosMcp.ReadScope`) is needed for every tool;
-`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `create_draft`
-and `add_to_reading_list`. A caller with no scope claim at all counts as
+`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `save_passage`,
+`create_draft` and `add_to_reading_list`. A caller with no scope claim at all counts as
 read-only. A tool the scopes do not cover answers with a tool error
 (`isError: true`, e.g. "This connection to Nostos is read-only, so nothing was
 saved…") and never runs; a tool without a `readOnlyHint` counts as a write.
@@ -948,6 +948,7 @@ so validation and limits are the same; only the result shape differs.
 | `read_draft` | read | `writings_read` |
 | `reading_list` | read | `reading_list_list` |
 | `save_note` | creates a note | `notes_capture` |
+| `save_passage` | creates a passage (a titled stretch of a book) | `notes_save_passage` (MCP only) |
 | `create_draft` | creates a Studio document | `writings_create` |
 | `add_to_reading_list` | creates a To read entry | `reading_list_add` |
 
@@ -970,6 +971,14 @@ citations that export as footnotes.
 **Writes.** `save_note` saves through the capture path with client id
 `nostos-mcp`, `CaptureSource = "mcp"`, and an idempotency key derived from
 the request (book, words, quote, topics), so a resent call keeps one note.
+`save_passage` keeps a passage (`Kind = "passage"`, as the reader's Passage
+mark does) from a `find_quote` `quoteRef` and a title: the words are the
+book's own, and both ends come from the book text index, as epub.js point
+CFIs for an EPUB (written on the server from the spine resource and the
+block's text offset, checked against the quote's words) or as the first and
+last PDF page. It needs the book's own file and text; a quote found in another
+edition (a paper book's) is refused, with `save_note` as the way to keep it.
+Same idempotency as `save_note`, with the title in the key.
 `create_draft` never changes an existing document; a resend with the same
 name, folder and words within ten minutes returns the document it already
 made (`duplicate: true`). `add_to_reading_list` returns an existing entry

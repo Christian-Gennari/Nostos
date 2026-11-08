@@ -168,8 +168,8 @@ public sealed class McpHttpTests : IAsyncLifetime
         tools.Select(t => t.Name).Should().BeEquivalentTo(
             "search", "fetch", "find_quote", "overview", "list_books", "get_book", "list_notes", "list_topics",
             "get_topic", "list_drafts", "read_draft", "reading_list",
-            "save_note", "create_draft", "add_to_reading_list");
-        string[] writes = ["save_note", "create_draft", "add_to_reading_list"];
+            "save_note", "save_passage", "create_draft", "add_to_reading_list");
+        string[] writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list"];
         foreach (var tool in tools.Where(t => !writes.Contains(t.Name)))
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(tool.Name);
         foreach (var tool in tools.Where(t => writes.Contains(t.Name)))

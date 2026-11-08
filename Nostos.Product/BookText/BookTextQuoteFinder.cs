@@ -63,7 +63,21 @@ public sealed record BookTextQuoteFindResult(
 /// The 1-based physical page of a PDF passage that stays on one page; null for
 /// any other passage.
 /// </param>
-public sealed record BookTextResolvedQuote(Guid SourceBookId, string Text, int? PdfPage = null);
+/// <param name="StartAt">Where the quote's first character sits in its source, when the index knows.</param>
+/// <param name="EndAt">Where the quote's last character sits in its source, when the index knows.</param>
+public sealed record BookTextResolvedQuote(
+    Guid SourceBookId,
+    string Text,
+    int? PdfPage = null,
+    BookTextQuoteEnd? StartAt = null,
+    BookTextQuoteEnd? EndAt = null);
+
+/// <summary>
+/// One end of a resolved quote in its source: the locator of the indexed
+/// segment it falls in, and the character's offset in that source's own text
+/// (an EPUB resource's normalized text, a PDF page's text).
+/// </summary>
+public sealed record BookTextQuoteEnd(BookTextSourceLocator Locator, int SourceOffset);
 
 public sealed class BookTextQuoteFinder(
     IBookTextIndex index,
@@ -160,7 +174,9 @@ public sealed class BookTextQuoteFinder(
         return new BookTextResolvedQuote(
             parsed.BookId,
             QuoteMatcher.Clean(window.Text[parsed.Start..parsed.End]),
-            window.PdfPageOf(chunks, parsed.Start, parsed.End));
+            window.PdfPageOf(chunks, parsed.Start, parsed.End),
+            window.EndAt(chunks, FirstVisible(window.Text, parsed.Start, parsed.End)),
+            window.EndAt(chunks, LastVisible(window.Text, parsed.Start, parsed.End)));
     }
 
     /// <summary>
@@ -187,6 +203,22 @@ public sealed class BookTextQuoteFinder(
         }
 
         return found.Values.OrderBy(chunk => chunk.Ordinal).ToList();
+    }
+
+    /// <summary>The first non-space character of start..end (the quote is stored trimmed).</summary>
+    private static int FirstVisible(string text, int start, int end)
+    {
+        var at = start;
+        while (at < end - 1 && char.IsWhiteSpace(text[at])) at++;
+        return at;
+    }
+
+    /// <summary>The last non-space character of start..end.</summary>
+    private static int LastVisible(string text, int start, int end)
+    {
+        var at = end - 1;
+        while (at > start && char.IsWhiteSpace(text[at])) at--;
+        return at;
     }
 
     private static BookTextQuoteFindResult Empty(BookTextQuoteFindStatus status) => new(status, [], 0);
@@ -479,6 +511,29 @@ internal sealed record QuoteWindow(string Text, IReadOnlyList<int> Starts, IRead
     {
         var first = PdfPageIndexAt(chunks, start);
         return first is { } page && page == PdfPageIndexAt(chunks, end - 1) ? page + 1 : null;
+    }
+
+    /// <summary>
+    /// The source position of the character at <paramref name="offset"/>: the
+    /// segment it falls in and its offset in that source's own text. Null when
+    /// no segment covers it (the blank line between two blocks).
+    /// </summary>
+    public BookTextQuoteEnd? EndAt(IReadOnlyList<BookTextIndexedChunk> chunks, int offset)
+    {
+        var index = ChunkAt(offset);
+        var within = offset - Starts[index];
+        var segment = chunks[index].SourceSegments.FirstOrDefault(
+            candidate => within >= candidate.TextStart && within < candidate.TextStart + candidate.TextLength);
+        if (segment is null)
+            return null;
+
+        var start = segment.Locator switch
+        {
+            EpubBookTextSourceLocator epub => epub.StartTextOffset,
+            PdfBookTextSourceLocator pdf => pdf.StartTextOffset,
+            _ => null,
+        };
+        return new BookTextQuoteEnd(segment.Locator, (start ?? 0) + within - segment.TextStart);
     }
 
     private int? PdfPageIndexAt(IReadOnlyList<BookTextIndexedChunk> chunks, int offset)

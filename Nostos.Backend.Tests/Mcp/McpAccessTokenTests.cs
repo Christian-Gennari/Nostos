@@ -203,6 +203,7 @@ public sealed class McpAccessTokenTests : IAsyncLifetime
 
     [Theory]
     [InlineData("save_note")]
+    [InlineData("save_passage")]
     [InlineData("create_draft")]
     [InlineData("add_to_reading_list")]
     public async Task A_read_only_token_is_refused_every_write_tool_and_nothing_is_written(string tool)
@@ -218,6 +219,7 @@ public sealed class McpAccessTokenTests : IAsyncLifetime
             ["thought"] = "Simplify.",
             ["title"] = "A draft",
             ["markdown"] = "Some words.",
+            ["quoteRef"] = "q1-00000000000000000000000000000000-abc-0-0-0-1",
         });
         var read = await mcp.CallToolAsync("list_books", new Dictionary<string, object?>());
 

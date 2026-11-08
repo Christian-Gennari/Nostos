@@ -64,7 +64,8 @@ public static partial class AssistantCapabilities
         IBookTextSearchService? bookText = null,
         IBookTextQuoteFinder? quotes = null,
         IWritingRepository? writings = null,
-        IReadingListService? readingList = null)
+        IReadingListService? readingList = null,
+        IBookPassageAnchors? passages = null)
     {
         var capabilities = BuildLibraryBookCapabilities(library)
             .Concat(BuildKnowledgeCapabilities(notes, topics, knowledge))
@@ -85,18 +86,23 @@ public static partial class AssistantCapabilities
         if (quotes is not null)
             capabilities.Add(BuildFindQuoteCapability(quotes));
 
+        if (quotes is not null && passages is not null)
+            capabilities.Add(BuildSavePassageCapability(notes, quotes, passages));
+
         return capabilities
             .Select(capability => McpExposed.Contains(capability.Name)
-                ? capability with { Surfaces = AssistantSurface.AskNostos | AssistantSurface.Mcp }
+                ? capability with { Surfaces = capability.Surfaces | AssistantSurface.Mcp }
                 : capability)
             .ToList();
     }
 
     /// <summary>
     /// The capabilities an MCP client may list and call (the v1 set of epic
-    /// #1465), in addition to Ask Nostos. Everything else is Ask Nostos only.
+    /// #1465), in addition to the surfaces they declare themselves (Ask Nostos
+    /// by default; <c>notes_save_passage</c> is MCP only, since in Ask Nostos
+    /// the reader marks a passage). Everything else is Ask Nostos only.
     /// Nothing here deletes, overwrites or stages a library change: reads,
-    /// capture, and the two creates.
+    /// capture, and the creates.
     /// </summary>
     public static readonly IReadOnlySet<string> McpExposed = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -110,6 +116,7 @@ public static partial class AssistantCapabilities
         "library_get_book",
         "notes_list_for_book",
         "notes_capture",
+        "notes_save_passage",
         "topics_list",
         "topics_search",
         "topics_get",

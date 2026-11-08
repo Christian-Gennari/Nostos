@@ -204,7 +204,7 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
     }
 
     [McpServerTool(Name = "find_quote", Title = "Find a passage in a book", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("Finds a passage in one book by its first and last words, and returns the book's exact words. For a paper book it looks in the digital editions of the same work. Use it before quoting a passage the user names, or before `save_note` with a `quoteRef`. When it asks the user to choose, call it again with `choice`.")]
+    [Description("Finds a passage in one book by its first and last words, and returns the book's exact words. For a paper book it looks in the digital editions of the same work. Use it before quoting a passage the user names, or before `save_note` or `save_passage` with a `quoteRef`. When it asks the user to choose, call it again with `choice`.")]
     public async Task<JsonElement> FindQuoteAsync(
         [Description("The book (id from `list_books`).")] Guid bookId,
         [Description("The words the passage starts with.")] string startsWith,
@@ -512,6 +512,46 @@ public sealed class NostosMcpTools(IHttpContextAccessor http)
             citations.ForNote(note.Id, book, note.Content, note.SelectedText, note.SourceAnchorKind, note.SourceAnchorValue, note.AnchorVerified));
     }
 
+    [McpServerTool(Name = "save_passage", Title = "Keep a passage of a book", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+    [Description("Keeps a passage: a longer stretch of a book with a title (such as a whole argument or a thought experiment), read in Nostos's passage viewer rather than shown as a highlight. Use it only when the user asks to keep a passage. Find the passage with `find_quote` first and pass its `quoteRef`; Nostos stores the book's exact words and where the passage starts and ends. Works for EPUB and PDF books; for a paper book, use `save_note` with the `quoteRef` instead. Saving the same passage twice keeps one.")]
+    public async Task<McpSavedNote> SavePassageAsync(
+        [Description("The book the passage belongs to (id from `list_books`).")] Guid bookId,
+        [Description("A `quoteRef` from `find_quote` for the whole passage.")] string quoteRef,
+        [Description("The passage's title, as the user named it (1 to 300 characters).")] string title,
+        [Description("The user's own note on the passage, as they gave it.")] string? thought = null,
+        [Description("Topic names to link the passage to, at most five. Existing names are reused.")] string[]? topics = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(quoteRef))
+            throw new McpException("Give the `quoteRef` `find_quote` returned for the passage.");
+        if (string.IsNullOrWhiteSpace(title))
+            throw new McpException("Give the passage a `title`.");
+
+        var topicNames = topics?.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Take(5).ToArray();
+        var args = new Dictionary<string, object?>
+        {
+            ["bookId"] = bookId,
+            ["quoteRef"] = quoteRef.Trim(),
+            ["title"] = title.Trim(),
+            ["content"] = thought?.Trim(),
+            ["topics"] = topicNames is { Length: > 0 } ? topicNames : null,
+            ["captureSource"] = NostosMcp.CaptureSource,
+        };
+
+        // The same passage under the same title on the same book is one passage.
+        var key = IdempotencyKey(bookId, thought, "passage\u001f" + title.Trim(), quoteRef, topicNames);
+        var saved = await RunAsync<NoteCommandResult<NoteDto>>("notes_save_passage", args, cancellationToken, new AssistantToolContext(NostosMcp.ClientId, key));
+        var note = saved.Value ?? throw new McpException("Nostos did not save the passage.");
+        var citations = Citations;
+        var book = await citations.BookAsync(note.BookId, note.BookTitle, cancellationToken)
+            ?? new McpBookInfo(note.BookId, note.BookTitle ?? "Book", note.BookAuthor, null);
+        return new McpSavedNote(
+            McpEvidenceId.ForNote(note.Id),
+            book.Title,
+            citations.NoteUrl(note.Id),
+            citations.ForNote(note.Id, book, note.Content, note.SelectedText, note.SourceAnchorKind, note.SourceAnchorValue, note.AnchorVerified));
+    }
+
     [McpServerTool(Name = "create_draft", Title = "Write a new Studio draft", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
     [Description("Makes a new document in the Writing Studio from Markdown. It never changes an existing document. Put quotations in as their `citation.markdown` links so the Studio shows them as live citations. Sending the same draft again keeps one document.")]
     public async Task<JsonElement> CreateDraftAsync(
@@ -694,6 +734,7 @@ internal static partial class McpToolNames
         ["library_get_book"] = "get_book",
         ["notes_list_for_book"] = "list_notes",
         ["notes_capture"] = "save_note",
+        ["notes_save_passage"] = "save_passage",
         ["topics_list"] = "list_topics",
         ["topics_search"] = "list_topics",
         ["topics_get"] = "get_topic",
