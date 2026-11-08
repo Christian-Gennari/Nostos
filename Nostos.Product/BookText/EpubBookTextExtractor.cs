@@ -28,13 +28,13 @@ public interface IBookTextReadingAidSource
 
 public sealed class EpubBookTextExtractor : IBookTextExtractor, IBookTextReadingAidSource
 {
-    private static readonly HashSet<string> BlockTags = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> BlockTags = new(StringComparer.OrdinalIgnoreCase)
     {
         "h1", "h2", "h3", "h4", "h5", "h6",
         "p", "li", "blockquote", "pre", "figcaption", "dt", "dd", "aside",
     };
 
-    private static readonly HashSet<string> IgnoredTags = new(StringComparer.OrdinalIgnoreCase)
+    internal static readonly HashSet<string> IgnoredTags = new(StringComparer.OrdinalIgnoreCase)
     {
         "script", "style", "nav", "svg", "math",
     };
@@ -215,7 +215,7 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor, IBookTextReading
             && level is >= 1 and <= 6;
     }
 
-    private static string ReadPackagePath(ZipArchive archive)
+    internal static string ReadPackagePath(ZipArchive archive)
     {
         var container = XDocument.Parse(ReadEntry(archive, "META-INF/container.xml"));
         var rootfile = container.Descendants()
@@ -228,7 +228,7 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor, IBookTextReading
         return NormalizeZipPath(path);
     }
 
-    private static string ReadEntry(ZipArchive archive, string path)
+    internal static string ReadEntry(ZipArchive archive, string path)
     {
         var entry = FindEntry(archive, NormalizeZipPath(path))
             ?? throw new BookTextUnsupportedException(
@@ -238,11 +238,11 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor, IBookTextReading
         return reader.ReadToEnd();
     }
 
-    private static ZipArchiveEntry? FindEntry(ZipArchive archive, string path) =>
+    internal static ZipArchiveEntry? FindEntry(ZipArchive archive, string path) =>
         archive.Entries.FirstOrDefault(entry =>
             string.Equals(NormalizeZipPath(entry.FullName), NormalizeZipPath(path), StringComparison.OrdinalIgnoreCase));
 
-    private static string ResolvePath(string directory, string href)
+    internal static string ResolvePath(string directory, string href)
     {
         var noFragment = href.Split('#')[0].Split('?')[0];
         var decoded = Uri.UnescapeDataString(noFragment);
@@ -251,7 +251,7 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor, IBookTextReading
             : $"{directory}/{decoded}");
     }
 
-    private static string ZipDirectory(string path)
+    internal static string ZipDirectory(string path)
     {
         var normalized = NormalizeZipPath(path);
         var slash = normalized.LastIndexOf('/');

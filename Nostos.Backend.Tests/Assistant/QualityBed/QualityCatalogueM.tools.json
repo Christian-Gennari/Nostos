@@ -135,7 +135,7 @@
     {
       "name": "find_quote",
       "title": "Find a passage in a book",
-      "description": "Finds a passage in one book by its first and last words, and returns the book's exact words. For a paper book it looks in the digital editions of the same work. Use it before quoting a passage the user names, or before `save_note` with a `quoteRef`. When it asks the user to choose, call it again with `choice`.",
+      "description": "Finds a passage in one book by its first and last words, and returns the book's exact words. For a paper book it looks in the digital editions of the same work. Use it before quoting a passage the user names, or before `save_note` or `save_passage` with a `quoteRef`. When it asks the user to choose, call it again with `choice`.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": null,
@@ -545,6 +545,62 @@
         },
         "required": [
           "bookId"
+        ]
+      }
+    },
+    {
+      "name": "save_passage",
+      "title": "Keep a passage of a book",
+      "description": "Keeps a passage: a longer stretch of a book with a title (such as a whole argument or a thought experiment), read in Nostos's passage viewer rather than shown as a highlight. Use it only when the user asks to keep a passage. Find the passage with `find_quote` first and pass its `quoteRef`; Nostos stores the book's exact words and where the passage starts and ends. Works for EPUB and PDF books; for a paper book, use `save_note` with the `quoteRef` instead. Saving the same passage twice keeps one.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book the passage belongs to (id from `list_books`).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "quoteRef": {
+            "description": "A `quoteRef` from `find_quote` for the whole passage.",
+            "type": "string"
+          },
+          "title": {
+            "description": "The passage's title, as the user named it (1 to 300 characters).",
+            "type": "string"
+          },
+          "thought": {
+            "description": "The user's own note on the passage, as they gave it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "topics": {
+            "description": "Topic names to link the passage to, at most five. Existing names are reused.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": null
+          }
+        },
+        "required": [
+          "bookId",
+          "quoteRef",
+          "title"
         ]
       }
     },
