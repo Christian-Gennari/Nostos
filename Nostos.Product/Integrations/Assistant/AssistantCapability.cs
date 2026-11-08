@@ -92,7 +92,9 @@ public sealed record AssistantCapability(
 {
     /// <summary>
     /// The surfaces this capability is offered on. Ask Nostos only unless the
-    /// capability is in the curated MCP set (<see cref="AssistantCapabilities.McpExposed"/>).
+    /// capability is in the curated MCP set (<see cref="AssistantCapabilities.McpExposed"/>),
+    /// which adds MCP. A capability that sets <see cref="AssistantSurface.Mcp"/>
+    /// alone here is offered to connected apps only.
     /// </summary>
     public AssistantSurface Surfaces { get; init; } = AssistantSurface.AskNostos;
 

@@ -1,4 +1,4 @@
-// Scenarios M1–M9 (issue #1472; M9 save_passage): the quality bed through the MCP server.
+// Scenarios M1–M12 (issues #1472, #1490, #1493): the quality bed through the MCP server.
 //
 // Claude.ai, ChatGPT and local agents reach the library through /mcp, never
 // through Ask Nostos: they pick tools from our descriptions, never see our
@@ -10,7 +10,7 @@
 // Why not QualityRunner: its scenarios are chat turns through the Ask Nostos
 // stream route with a scripted LLM, and it builds one host per scenario. MCP
 // has no LLM on our side, so a turn-shaped runner would only wrap tool calls.
-// One seeded host serves all nine scenarios; each scenario reads the library
+// One seeded host serves all twelve scenarios; each scenario reads the library
 // revision and row counts around its own calls, so they do not depend on
 // order. QualityCatalogueM.Live.cs runs a real client model over the same
 // host for the live workflow.
@@ -18,6 +18,7 @@ namespace Nostos.Backend.Tests.Assistant.QualityBed;
 
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -35,10 +36,12 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Integrations.Mcp;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Tests.Mcp;
 using Nostos.Product.BookText;
 using Nostos.Product.Services.Ai;
+using Nostos.Shared.Dtos;
 using Xunit;
 
 /// <summary>
@@ -99,10 +102,10 @@ public sealed class QualityMcpBed : IAsyncLifetime
     }
 
     /// <summary>A client the way a connected app makes one: Streamable HTTP with a bearer token.</summary>
-    internal static async Task<McpClient> ConnectAsync(WebApplicationFactory<Program> host)
+    internal static async Task<McpClient> ConnectAsync(WebApplicationFactory<Program> host, string token = McpEndpointFactory.Token)
     {
         var authed = host.CreateClient();
-        authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", McpEndpointFactory.Token);
+        authed.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         // Under a full parallel test run the machine is busy: wait longer than
         // a real client would for the handshake (see McpHttpTests).
         return await McpClient.CreateAsync(
@@ -182,7 +185,10 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
     private static readonly Guid DraftLighthouse = Guid.Parse("e2222222-2222-4222-8222-222222222222");
     private static readonly Guid FolderEssays = Guid.Parse("e1111111-1111-4111-8111-111111111111");
 
-    private static readonly string[] Writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list"];
+    private static readonly string[] Writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book"];
+
+    /// <summary>Write tools that may change something already there, and say so in their hints.</summary>
+    private static readonly string[] Overwrites = ["update_book"];
 
     // ------------------------------------------------------------------
     // M1: the tool surface is what we wrote, and drift is a visible diff
@@ -202,7 +208,7 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
             if (Writes.Contains(tool.Name))
             {
                 hints.ReadOnlyHint.Should().BeFalse(tool.Name);
-                hints.DestructiveHint.Should().BeFalse(tool.Name);
+                hints.DestructiveHint.Should().Be(Overwrites.Contains(tool.Name), tool.Name);
             }
             else
             {
@@ -267,7 +273,7 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
             .Should().BeEquivalentTo(AssistantCapabilities.McpExposed);
         registry.For(AssistantSurface.Mcp).Should().NotContain(c => c.Trust == AssistantTrustClass.Stage);
         registry.For(AssistantSurface.Mcp).Where(c => c.Trust != AssistantTrustClass.Suggest).Select(c => c.Name)
-            .Should().BeEquivalentTo("notes_capture", "notes_save_passage", "writings_create", "reading_list_add");
+            .Should().BeEquivalentTo("notes_capture", "notes_save_passage", "writings_create", "reading_list_add", "library_create_or_match_book", "library_edit_book_details");
 
         // The tool layer calls the registry as AssistantSurface.Mcp, so every
         // other capability is refused there like an unknown name, even with
@@ -745,6 +751,202 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
         return output.ToArray();
     }
 
+    // ------------------------------------------------------------------
+    // M10: add_book adds once, finds what is there, asks when unsure
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task M10_add_book_adds_a_paper_book_once_returns_a_book_already_there_and_asks_when_a_title_is_not_enough()
+    {
+        // A new paper book: one save, and a resend neither saves nor duplicates.
+        var args = new Dictionary<string, object?>
+        {
+            ["title"] = "M10 The Emigrants",
+            ["author"] = "W. G. Sebald",
+            ["isbn"] = "9780811213660",
+            ["publishedDate"] = "1992",
+            ["description"] = "Four long stories of exile.",
+        };
+        var before = await bed.RevisionAsync();
+        var first = await CallAsync("add_book", args);
+        var afterFirst = await bed.RevisionAsync();
+        var again = await CallAsync("add_book", args);
+
+        afterFirst.Should().Be(before + 1, "adding a book is one save, so open screens update once");
+        (await bed.RevisionAsync()).Should().Be(afterFirst, "a resent add_book must not move the revision");
+        first.GetProperty("outcome").GetString().Should().Be("created");
+        var id = first.GetProperty("book").GetProperty("id").GetGuid();
+        again.GetProperty("book").GetProperty("id").GetGuid().Should().Be(id);
+        first.GetProperty("book").GetProperty("type").GetString().Should().Be("physical");
+        first.GetProperty("book").GetProperty("year").GetString().Should().Be("1992");
+        await using (var db = await bed.Contexts().CreateDbContextAsync())
+            (await db.Books.CountAsync(b => b.Title == "M10 The Emigrants")).Should().Be(1);
+
+        // The app shows it, with the details the agent gave.
+        var shown = await bed.Http.GetFromJsonAsync<BookDto>($"/api/books/{id}");
+        shown!.Author.Should().Be("W. G. Sebald");
+        shown.Description.Should().Be("Four long stories of exile.");
+        shown.Isbn.Should().Be("9780811213660");
+
+        // A book already in the library comes back as itself, changing nothing.
+        var counts = await bed.CountsAsync();
+        var revision = await bed.RevisionAsync();
+        var owned = await CallAsync("add_book", new() { ["title"] = QualityFixtureIds.TitleWoodenBoats, ["author"] = "P. Strand" });
+        var byIsbn = await CallAsync("add_book", new() { ["title"] = "The Emigrants", ["isbn"] = "978-0-8112-1366-0" });
+        owned.GetProperty("duplicate").GetBoolean().Should().BeTrue();
+        owned.GetProperty("book").GetProperty("id").GetGuid().Should().Be(QualityFixtureIds.BookWoodenBoats);
+        byIsbn.GetProperty("duplicate").GetBoolean().Should().BeTrue();
+        byIsbn.GetProperty("book").GetProperty("id").GetGuid().Should().Be(id);
+
+        // A title alone that two editions carry: nothing is added, the
+        // candidates come back, and the guidance names MCP tools only.
+        var unsure = await CallAsync("add_book", new() { ["title"] = QualityFixtureIds.TitleValleyRoad });
+        unsure.GetProperty("outcome").GetString().Should().Be("choose");
+        unsure.GetProperty("candidates").EnumerateArray().Select(c => c.GetProperty("id").GetGuid())
+            .Should().BeEquivalentTo([QualityFixtureIds.BookValleyRoadPaper, QualityFixtureIds.BookValleyRoadEpub]);
+        AskNostosOnlyNames(unsure.GetRawText()).Should().BeEmpty();
+        (await bed.RevisionAsync()).Should().Be(revision);
+        (await bed.CountsAsync()).Should().Be(counts);
+
+        // A book on To read moves to the library with its reason.
+        await CallAsync("add_to_reading_list", new() { ["title"] = "M10 Vertigo", ["author"] = "W. G. Sebald", ["why"] = "M10: the strangest of the four." });
+        var moved = await CallAsync("add_book", new() { ["title"] = "M10 Vertigo", ["author"] = "W. G. Sebald" });
+        moved.GetProperty("movedFromToRead").EnumerateArray().Should().ContainSingle();
+        var movedId = moved.GetProperty("book").GetProperty("id").GetGuid();
+        await using (var db = await bed.Contexts().CreateDbContextAsync())
+        {
+            (await db.ReadingListEntries.AnyAsync(e => e.Title == "M10 Vertigo")).Should().BeFalse("the entry moved, it was not left in both");
+            (await db.Notes.SingleAsync(n => n.BookId == movedId)).Content.Should().Contain("M10: the strangest of the four.");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // M11: update_book fills, keeps, replaces on request, and undoes
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task M11_update_book_fills_empty_details_keeps_existing_ones_unless_asked_and_returns_what_undoes_it()
+    {
+        // A paper book, added once: a resend returns the same id.
+        var add = new Dictionary<string, object?> { ["title"] = "M11 Austerlitz", ["author"] = "W. G. Sebald" };
+        var added = await CallAsync("add_book", add);
+        var id = added.GetProperty("book").GetProperty("id").GetGuid();
+        added.GetProperty("book").GetProperty("type").GetString().Should().Be("physical");
+        (await CallAsync("add_book", add)).GetProperty("book").GetProperty("id").GetGuid()
+            .Should().Be(id, "a resend returns the book the first call made");
+
+        // Fill: the empty description is set; the title, which has a value,
+        // is kept and named. One save; a resend saves nothing.
+        var fill = new Dictionary<string, object?>
+        {
+            ["bookId"] = id,
+            ["title"] = "M11 Austerlitz (novel)",
+            ["description"] = "An architectural historian recovers his past.",
+            ["publishedDate"] = "2001",
+        };
+        var before = await bed.RevisionAsync();
+        var filled = await CallAsync("update_book", fill);
+        var afterFill = await bed.RevisionAsync();
+        var resent = await CallAsync("update_book", fill);
+        afterFill.Should().Be(before + 1);
+        (await bed.RevisionAsync()).Should().Be(afterFill, "a resent update_book must not move the revision");
+        filled.GetProperty("changed").EnumerateArray().Select(c => c.GetProperty("field").GetString())
+            .Should().Equal("description", "publishedDate");
+        filled.GetProperty("changed").EnumerateArray().Select(From).Should().OnlyContain(from => from == null, "both were empty");
+        filled.GetProperty("kept").EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("value").GetString().Should().Be("M11 Austerlitz");
+        filled.GetProperty("message").GetString().Should().Contain("replace");
+        resent.GetProperty("id").GetGuid().Should().Be(id);
+        resent.TryGetProperty("undo", out _).Should().BeFalse("nothing changed the second time");
+
+        // Replace on request: title, author and description, each old value returned.
+        var replaced = await CallAsync("update_book", new()
+        {
+            ["bookId"] = id,
+            ["title"] = "M11 Austerlitz: A Novel",
+            ["author"] = "Winfried Georg Sebald",
+            ["description"] = "Jacques Austerlitz recovers the childhood he lost.",
+            ["replace"] = true,
+        });
+        replaced.GetProperty("changed").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("field").GetString()!, c => c.GetProperty("from").GetString())
+            .Should().BeEquivalentTo(new Dictionary<string, string?>
+            {
+                ["title"] = "M11 Austerlitz",
+                ["author"] = "W. G. Sebald",
+                ["description"] = "An architectural historian recovers his past.",
+            });
+        var book = await CallAsync("get_book", new() { ["bookId"] = id });
+        book.GetProperty("title").GetString().Should().Be("M11 Austerlitz: A Novel");
+        book.GetProperty("author").GetString().Should().Be("Winfried Georg Sebald");
+        book.GetProperty("description").GetString().Should().Be("Jacques Austerlitz recovers the childhood he lost.");
+        var shown = await bed.Http.GetFromJsonAsync<BookDto>($"/api/books/{id}");
+        shown!.Title.Should().Be("M11 Austerlitz: A Novel");
+
+        // The same change is what the library service reads: the tool went
+        // through ILibraryService, not a path of its own.
+        using (var scope = bed.Host.Services.CreateScope())
+        {
+            var library = scope.ServiceProvider.GetRequiredService<ILibraryService>();
+            var read = await library.GetBookAsync(id);
+            var service = read.Data.Should().BeOfType<BookDto>().Subject;
+            service.Title.Should().Be("M11 Austerlitz: A Novel");
+            service.Author.Should().Be("Winfried Georg Sebald");
+            service.Description.Should().Be("Jacques Austerlitz recovers the childhood he lost.");
+        }
+
+        // undo, passed back as it came, restores every old value.
+        var undo = replaced.GetProperty("undo").EnumerateObject()
+            .ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
+        await CallAsync("update_book", undo);
+        var restored = await bed.Http.GetFromJsonAsync<BookDto>($"/api/books/{id}");
+        restored!.Title.Should().Be("M11 Austerlitz");
+        restored.Author.Should().Be("W. G. Sebald");
+        restored.Description.Should().Be("An architectural historian recovers his past.");
+        restored.PublishedDate.Should().Be("2001", "undo touches only what the call changed");
+
+        // A book that is not there is a plain tool error naming MCP tools only.
+        var missing = await CallRawAsync("update_book", new() { ["bookId"] = Guid.NewGuid(), ["description"] = "x" });
+        missing.Result!.IsError.Should().BeTrue();
+        AskNostosOnlyNames(Text(missing.Result)).Should().BeEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // M12: a read-only connection gets the refusal and nothing changes
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task M12_a_read_only_connection_is_refused_add_book_and_update_book_and_nothing_changes()
+    {
+        var before = await bed.RevisionAsync();
+        var counts = await bed.CountsAsync();
+        var title = (await bed.Http.GetFromJsonAsync<BookDto>($"/api/books/{QualityFixtureIds.BookWoodenBoats}"))!.Title;
+
+        await using var reader = await QualityMcpBed.ConnectAsync(bed.Host, McpEndpointFactory.ReadOnlyToken);
+        var add = await reader.CallToolAsync("add_book", new Dictionary<string, object?> { ["title"] = "M12 Rings", ["author"] = "W. G. Sebald" });
+        var update = await reader.CallToolAsync("update_book", new Dictionary<string, object?>
+        {
+            ["bookId"] = QualityFixtureIds.BookWoodenBoats,
+            ["title"] = "M12 hijacked",
+            ["replace"] = true,
+        });
+        var read = await reader.CallToolAsync("get_book", new Dictionary<string, object?> { ["bookId"] = QualityFixtureIds.BookWoodenBoats });
+
+        foreach (var refused in new[] { add, update })
+        {
+            refused.IsError.Should().BeTrue();
+            Text(refused).Should().Be(McpScopes.ReadOnlyRefusal);
+            Text(refused).Should().Contain("add books and edit book details");
+        }
+
+        read.IsError.Should().NotBe(true, "a read-only connection still reads");
+        (await bed.RevisionAsync()).Should().Be(before);
+        (await bed.CountsAsync()).Should().Be(counts);
+        (await bed.Http.GetFromJsonAsync<BookDto>($"/api/books/{QualityFixtureIds.BookWoodenBoats}"))!.Title.Should().Be(title);
+    }
+
+    private static string? From(JsonElement change) =>
+        change.TryGetProperty("from", out var from) && from.ValueKind == JsonValueKind.String ? from.GetString() : null;
 
     // ------------------------------------------------------------------
     // Helpers

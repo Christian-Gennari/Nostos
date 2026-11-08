@@ -1,6 +1,139 @@
 {
-  "instructions": "Nostos is the user's own library: the books they read (EPUB, PDF, audiobooks and paper books), the highlights, notes and passages they kept from them, the topics that connect those notes, their To read list, and their drafts in the Writing Studio.\n\nRules:\n- Quote only words a Nostos tool returned. Never quote a book from memory: use `search` or `find_quote` first, and say so when Nostos has no evidence.\n- Cite every quotation and every claim about what a book or note says. Each result carries a `citation` with the book, author, year, a location when Nostos knows it, and a `url` that opens it in Nostos.\n- When you write a draft for the Writing Studio, put quotations in as the `citation.markdown` link (a `nostos:cite/` link). The Studio shows it as a live citation and exports it as a footnote. Replace the link text only with the exact words you quote.\n- `search` looks across notes, highlights, passages, topics and the text of the user's books. `fetch` reads one result in full.\n- Save a note only when the user asks you to keep something. Keep their own words; do not rewrite them unless asked.\n- Books on paper have notes but no searchable text. A book that is still being indexed may return no passages yet.",
+  "instructions": "Nostos is the user's own library: the books they read (EPUB, PDF, audiobooks and paper books), the highlights, notes and passages they kept from them, the topics that connect those notes, their To read list, and their drafts in the Writing Studio.\n\nRules:\n- Quote only words a Nostos tool returned. Never quote a book from memory: use `search` or `find_quote` first, and say so when Nostos has no evidence.\n- Cite every quotation and every claim about what a book or note says. Each result carries a `citation` with the book, author, year, a location when Nostos knows it, and a `url` that opens it in Nostos.\n- When you write a draft for the Writing Studio, put quotations in as the `citation.markdown` link (a `nostos:cite/` link). The Studio shows it as a live citation and exports it as a footnote. Replace the link text only with the exact words you quote.\n- `search` looks across notes, highlights, passages, topics and the text of the user's books. `fetch` reads one result in full.\n- Save a note only when the user asks you to keep something. Keep their own words; do not rewrite them unless asked.\n- Add a book or change a book's details only when the user asks. `update_book` keeps a detail the book already has unless the user asked to change it (`replace: true`).\n- Books on paper have notes but no searchable text. A book that is still being indexed may return no passages yet.",
   "tools": [
+    {
+      "name": "add_book",
+      "title": "Add a book to the library",
+      "description": "Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A matching entry on To read moves to the library, and its reason stays as a note on the book.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The title.",
+            "type": "string"
+          },
+          "author": {
+            "description": "The author or authors.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "type": {
+            "description": "`physical` (a paper book, the default), `ebook` or `audiobook`. An ebook or audiobook is added without its file.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "isbn": {
+            "description": "The ISBN.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "asin": {
+            "description": "The ASIN, for an audiobook.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "subtitle": {
+            "description": "The subtitle.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "description": {
+            "description": "A description of the book.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publisher": {
+            "description": "The publisher.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publishedDate": {
+            "description": "The year or date it was published.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "language": {
+            "description": "The language.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "pageCount": {
+            "description": "The number of pages.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          },
+          "series": {
+            "description": "The series it belongs to.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "volumeNumber": {
+            "description": "Its number in the series.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "confirmedBookId": {
+            "description": "After `candidates`: the id of the book the user says it is. Nothing is added.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "default": null
+          },
+          "forceCreate": {
+            "description": "After `candidates`: true when the user wants it added as a separate book.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
     {
       "name": "add_to_reading_list",
       "title": "Put a book on To read",
@@ -652,6 +785,115 @@
         },
         "required": [
           "query"
+        ]
+      }
+    },
+    {
+      "name": "update_book",
+      "title": "Fill in or correct a book's details",
+      "description": "Fills in or corrects one book's details: title, subtitle, author, description, year, ISBN, publisher, language and series. Use it only when the user asks. Pass only the details to set. A detail the book already has is kept unless you pass `replace: true`, which only the user's request to change it allows. The result lists every changed detail with its old value, and `undo` holds the arguments that put them back.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book (id from `list_books` or `add_book`).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "description": "The title.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "subtitle": {
+            "description": "The subtitle.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "author": {
+            "description": "The author or authors.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "description": {
+            "description": "The description.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publishedDate": {
+            "description": "The year or date it was published.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "isbn": {
+            "description": "The ISBN.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publisher": {
+            "description": "The publisher.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "language": {
+            "description": "The language.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "series": {
+            "description": "The series it belongs to.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "volumeNumber": {
+            "description": "Its number in the series.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "replace": {
+            "description": "True to change details the book already has. With it, an empty string clears a detail.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "bookId"
         ]
       }
     }

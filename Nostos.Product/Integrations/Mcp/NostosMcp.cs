@@ -47,7 +47,7 @@ public static class NostosMcp
     /// <summary>Needed for every tool.</summary>
     public const string ReadScope = "nostos:read";
 
-    /// <summary>Also needed for the tools that create something.</summary>
+    /// <summary>Also needed for the tools that change something: save, create, add or edit.</summary>
     public const string WriteScope = "nostos:write";
 
     /// <summary>The client id MCP captures carry, so their receipts are their own.</summary>
@@ -76,6 +76,7 @@ public static class NostosMcp
         - When you write a draft for the Writing Studio, put quotations in as the `citation.markdown` link (a `nostos:cite/` link). The Studio shows it as a live citation and exports it as a footnote. Replace the link text only with the exact words you quote.
         - `search` looks across notes, highlights, passages, topics and the text of the user's books. `fetch` reads one result in full.
         - Save a note only when the user asks you to keep something. Keep their own words; do not rewrite them unless asked.
+        - Add a book or change a book's details only when the user asks. `update_book` keeps a detail the book already has unless the user asked to change it (`replace: true`).
         - Books on paper have notes but no searchable text. A book that is still being indexed may return no passages yet.
         """;
 

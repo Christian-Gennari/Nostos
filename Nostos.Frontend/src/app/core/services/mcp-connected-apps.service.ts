@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
-/** `read`: search and quote only. `read_write`: also save notes, drafts and books to read. */
+/** `read`: search and quote only. `read_write`: also save notes, drafts and books to read, add books and edit book details. */
 export type McpAppScope = 'read' | 'read_write';
 
 /** `token`: an access token the owner made. `oauth_app`: an app that signed in. */
