@@ -6,6 +6,7 @@ The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized a
 
 ```csharp
 // Nostos.Product/Composition/NostosProductComposition.cs — MapNostosProductEndpoints
+// (abridged: the groups this page documents; the method maps more)
 api.MapBooksEndpoints(policies);
 api.MapNotesEndpoints();
 api.MapCollectionsEndpoints();
