@@ -23,7 +23,8 @@ If your tools include the Nostos MCP server (tools named `search`, `fetch`,
 `find_quote`, `list_books`, `save_note`, `create_draft` and so on, usually as
 `mcp__nostos__…`), use them instead of this API to find books, search and quote
 notes and book text, save a note or a titled passage (`save_passage`), write a
-draft or add a book to To read. They
+draft, add a book to To read, add a book to the library (`add_book`) or fill in
+its details (`update_book`). They
 return citations and follow the same rules as Ask Nostos.
 
 To connect one, the user makes an access token in **Settings → Connected apps**
@@ -35,8 +36,10 @@ claude mcp add --transport http nostos "$B/mcp" --header "Authorization: Bearer 
 
 Never ask the user to paste a token into the conversation; they run that
 command themselves. A read-only token refuses `save_note`, `save_passage`,
-`create_draft` and `add_to_reading_list` with a clear error: say so, do not retry. MCP does not
-change book details or collections; for those, use the endpoints below.
+`create_draft`, `add_to_reading_list`, `add_book` and `update_book` with a clear
+error: say so, do not retry. `update_book` keeps a detail a book already has
+unless you pass `replace: true`, and returns the old values. MCP does not upload
+book files or change collections; for those, use the endpoints below.
 
 ## Rules
 

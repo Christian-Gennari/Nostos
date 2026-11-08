@@ -201,7 +201,7 @@ public static class McpOAuthEndpoints
         if (query["resource"].Count > 1 || (Single("resource") is { } resource && !SameResource(resource, settings)))
             return Fail("invalid_target", $"The only resource here is {settings.Resource}.");
         if (ParseScope(Single("scope")) is not { } requestedScope)
-            return Fail("invalid_scope", $"Ask for {NostosMcp.ReadScope} and, to save to the library, {NostosMcp.WriteScope}.");
+            return Fail("invalid_scope", $"Ask for {NostosMcp.ReadScope} and, to add to the library and edit book details, {NostosMcp.WriteScope}.");
 
         var created = requests.Create(client, redirectUri, state, challenge, requestedScope, settings.Issuer,
             http.Connection.RemoteIpAddress?.ToString() ?? "-");

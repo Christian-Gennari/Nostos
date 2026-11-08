@@ -99,10 +99,13 @@ public static partial class AssistantCapabilities
     /// <summary>
     /// The capabilities an MCP client may list and call (the v1 set of epic
     /// #1465), in addition to the surfaces they declare themselves (Ask Nostos
-    /// by default; <c>notes_save_passage</c> is MCP only, since in Ask Nostos
-    /// the reader marks a passage). Everything else is Ask Nostos only.
-    /// Nothing here deletes, overwrites or stages a library change: reads,
-    /// capture, and the creates.
+    /// by default). Two are MCP only: <c>notes_save_passage</c>, since in Ask
+    /// Nostos the reader marks a passage, and the book-details edit (issue
+    /// #1490), since Ask Nostos edits books through its reviewed changeset.
+    /// Everything else is Ask Nostos only. Nothing here deletes or stages a
+    /// library change: reads, capture, the creates, and the careful
+    /// book-details edit, which keeps a value the book already has unless the
+    /// caller says replace and reports every old value it changed.
     /// </summary>
     public static readonly IReadOnlySet<string> McpExposed = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -125,6 +128,8 @@ public static partial class AssistantCapabilities
         "writings_create",
         "reading_list_list",
         "reading_list_add",
+        "library_create_or_match_book",
+        EditBookDetailsName,
     };
 
     // ------------------------------------------------------------------

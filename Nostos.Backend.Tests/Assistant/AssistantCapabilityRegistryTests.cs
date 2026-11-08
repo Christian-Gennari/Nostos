@@ -81,7 +81,9 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     {
         var h = CreateHarness();
 
-        h.Registry.All.Select(c => c.Name).Should().Equal(ExpectedSurface);
+        // Everything is Ask Nostos's but the MCP-only book-details edit (issue #1490).
+        h.Registry.All.Select(c => c.Name).Where(name => name != "library_edit_book_details").Should().Equal(ExpectedSurface);
+        h.Registry.All.Single(c => c.Name == "library_edit_book_details").Surfaces.Should().Be(AssistantSurface.Mcp);
         h.Registry.All.Should().OnlyContain(c => Enum.IsDefined(c.Trust));
         h.Registry.All.Select(c => c.Trust).Should().Contain([
             AssistantTrustClass.Capture,
@@ -130,6 +132,8 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "library_list_books",
         "library_get_book",
         "library_overview",
+        "library_create_or_match_book",
+        "library_edit_book_details",
         "knowledge_search",
         "knowledge_overview",
         "knowledge_read_evidence",
@@ -154,12 +158,16 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         h.Registry.For(AssistantSurface.Mcp).Select(c => c.Name).Should().Equal(ExpectedMcpSurface);
 
         // MCP never reaches a staged library change or a rewrite of an
-        // existing note: reads, capture and the two creates only.
+        // existing note: reads, capture, the creates, and the careful
+        // book-details edit (issue #1490), which Ask Nostos is not offered.
         h.Registry.For(AssistantSurface.Mcp).Should().OnlyContain(c =>
             c.Trust == AssistantTrustClass.Suggest
             || c.Trust == AssistantTrustClass.Capture
             || c.Name == "writings_create"
-            || c.Name == "reading_list_add");
+            || c.Name == "reading_list_add"
+            || c.Name == "library_create_or_match_book"
+            || c.Name == "library_edit_book_details");
+        h.Registry.For(AssistantSurface.AskNostos).Should().NotContain(c => c.Name == "library_edit_book_details");
         h.Registry.For(AssistantSurface.None).Should().BeEmpty();
     }
 

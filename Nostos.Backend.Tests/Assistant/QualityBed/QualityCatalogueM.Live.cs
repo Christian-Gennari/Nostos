@@ -56,7 +56,7 @@ internal static class QualityMcpLive
     private const int MaxSteps = 8;
     private const int MaxToolResultChars = 16_000;
 
-    private static readonly string[] WriteTools = ["save_note", "save_passage", "create_draft", "add_to_reading_list"];
+    private static readonly string[] WriteTools = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book"];
 
     /// <summary>
     /// What a generic MCP host tells its model; the rest is the server's own

@@ -30,6 +30,9 @@ namespace Nostos.Backend.Tests.Mcp;
 public sealed class McpEndpointFactory : LibraryEndpointFactory
 {
     public const string Token = "test-mcp-token";
+
+    /// <summary>A token whose caller was granted <c>nostos:read</c> only.</summary>
+    public const string ReadOnlyToken = "test-mcp-read-only-token";
     private const string SchemeName = "TestMcp";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -63,12 +66,15 @@ public sealed class McpEndpointFactory : LibraryEndpointFactory
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             var header = Request.Headers.Authorization.ToString();
-            if (header != $"Bearer {Token}")
+            var scope = header == $"Bearer {Token}" ? $"{NostosMcp.ReadScope} {NostosMcp.WriteScope}"
+                : header == $"Bearer {ReadOnlyToken}" ? NostosMcp.ReadScope
+                : null;
+            if (scope is null)
                 return Task.FromResult(AuthenticateResult.NoResult());
             var identity = new ClaimsIdentity(
                 [
                     new Claim(ClaimTypes.Name, "agent"),
-                    new Claim(NostosMcp.ScopeClaimType, $"{NostosMcp.ReadScope} {NostosMcp.WriteScope}"),
+                    new Claim(NostosMcp.ScopeClaimType, scope),
                 ],
                 SchemeName);
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
@@ -168,14 +174,15 @@ public sealed class McpHttpTests : IAsyncLifetime
         tools.Select(t => t.Name).Should().BeEquivalentTo(
             "search", "fetch", "find_quote", "overview", "list_books", "get_book", "list_notes", "list_topics",
             "get_topic", "list_drafts", "read_draft", "reading_list",
-            "save_note", "save_passage", "create_draft", "add_to_reading_list");
-        string[] writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list"];
+            "save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book");
+        string[] writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book"];
         foreach (var tool in tools.Where(t => !writes.Contains(t.Name)))
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(tool.Name);
         foreach (var tool in tools.Where(t => writes.Contains(t.Name)))
         {
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse(tool.Name);
-            tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeFalse(tool.Name);
+            // update_book can replace a detail (with replace: true), so it says so.
+            tool.ProtocolTool.Annotations!.DestructiveHint.Should().Be(tool.Name == "update_book", tool.Name);
         }
         _mcp.ServerInstructions.Should().Contain("Quote only words a Nostos tool returned");
     }
@@ -380,6 +387,116 @@ public sealed class McpHttpTests : IAsyncLifetime
         again.GetProperty("duplicate").GetBoolean().Should().BeTrue();
         list.GetProperty("total").GetInt32().Should().Be(1);
         list.GetProperty("link").GetString().Should().StartWith("http").And.EndWith("/library/to-read");
+    }
+
+    [Fact]
+    public async Task An_app_adds_a_paper_book_and_edits_its_title_author_and_description_and_the_app_shows_it()
+    {
+        var added = await CallAsync("add_book", new()
+        {
+            ["title"] = "The Rings of Saturn",
+            ["author"] = "W. G. Sebald",
+            ["publishedDate"] = "1995",
+        });
+        added.GetProperty("outcome").GetString().Should().Be("created");
+        added.GetProperty("duplicate").GetBoolean().Should().BeFalse();
+        var book = added.GetProperty("book");
+        var bookId = book.GetProperty("id").GetGuid();
+        book.GetProperty("type").GetString().Should().Be("physical");
+        book.GetProperty("url").GetString().Should().StartWith("http").And.EndWith($"/library/{bookId:D}");
+
+        // Without replace, a detail the book has is kept; an empty one is filled.
+        var filled = await CallAsync("update_book", new()
+        {
+            ["bookId"] = bookId,
+            ["title"] = "Die Ringe des Saturn",
+            ["description"] = "A walk along the Suffolk coast.",
+        });
+        filled.GetProperty("changed").EnumerateArray().Select(c => c.GetProperty("field").GetString()).Should().Equal("description");
+        filled.GetProperty("kept")[0].GetProperty("field").GetString().Should().Be("title");
+        filled.GetProperty("kept")[0].GetProperty("value").GetString().Should().Be("The Rings of Saturn");
+
+        var replaced = await CallAsync("update_book", new()
+        {
+            ["bookId"] = bookId,
+            ["title"] = "The Rings of Saturn: An English Pilgrimage",
+            ["author"] = "W.G. Sebald",
+            ["description"] = "A walk along the Suffolk coast, and what it recalls.",
+            ["replace"] = true,
+        });
+        var changes = replaced.GetProperty("changed").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("field").GetString()!, c => c.GetProperty("from").GetString());
+        changes.Should().BeEquivalentTo(new Dictionary<string, string?>
+        {
+            ["title"] = "The Rings of Saturn",
+            ["author"] = "W. G. Sebald",
+            ["description"] = "A walk along the Suffolk coast.",
+        });
+        replaced.GetProperty("undo").GetProperty("replace").GetBoolean().Should().BeTrue();
+
+        // The app reads the same book through its own API.
+        var shown = await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        shown!.Title.Should().Be("The Rings of Saturn: An English Pilgrimage");
+        shown.Author.Should().Be("W.G. Sebald");
+        shown.Description.Should().Be("A walk along the Suffolk coast, and what it recalls.");
+        shown.PublishedDate.Should().Be("1995");
+
+        // undo puts every old value back.
+        var undo = replaced.GetProperty("undo").EnumerateObject().ToDictionary(p => p.Name, p => (object?)JsonSerializer.Deserialize<object>(p.Value.GetRawText()));
+        await CallAsync("update_book", undo);
+        var restored = await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        restored!.Title.Should().Be("The Rings of Saturn");
+        restored.Author.Should().Be("W. G. Sebald");
+        restored.Description.Should().Be("A walk along the Suffolk coast.");
+    }
+
+    [Fact]
+    public async Task Adding_a_book_that_is_on_To_read_moves_it_and_keeps_the_reason_on_the_book()
+    {
+        await CallAsync("add_to_reading_list", new()
+        {
+            ["title"] = "Vertigo",
+            ["author"] = "W. G. Sebald",
+            ["why"] = "Mara said it is the strangest of the four.",
+        });
+
+        var added = await CallAsync("add_book", new() { ["title"] = "Vertigo", ["author"] = "W. G. Sebald" });
+        var resent = await CallAsync("add_book", new() { ["title"] = "Vertigo", ["author"] = "W. G. Sebald" });
+        var again = await CallAsync("add_book", new() { ["title"] = "Vertigo", ["author"] = "W. G. Sebald", ["publishedDate"] = "1990" });
+
+        var bookId = added.GetProperty("book").GetProperty("id").GetGuid();
+        added.GetProperty("movedFromToRead").EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("reasonKeptAsNote").GetBoolean().Should().BeTrue();
+        resent.GetProperty("book").GetProperty("id").GetGuid().Should().Be(bookId, "a resend returns the first answer");
+        again.GetProperty("outcome").GetString().Should().Be("matched");
+        again.GetProperty("duplicate").GetBoolean().Should().BeTrue();
+        again.GetProperty("book").GetProperty("id").GetGuid().Should().Be(bookId);
+        again.TryGetProperty("movedFromToRead", out _).Should().BeFalse();
+        (await CallAsync("reading_list", new())).GetProperty("total").GetInt32().Should().Be(0);
+        await using var db = await Contexts().CreateDbContextAsync();
+        (await db.Books.CountAsync()).Should().Be(1);
+        (await db.Notes.SingleAsync(n => n.BookId == bookId)).Content.Should().Contain("Mara said it is the strangest of the four.");
+    }
+
+    [Fact]
+    public async Task A_title_alone_that_may_be_another_book_adds_nothing_and_offers_the_candidates()
+    {
+        var existing = await CreateBookAsync("Austerlitz", "W. G. Sebald", "2001");
+        var before = await StateVersionAsync();
+
+        var asked = await CallAsync("add_book", new() { ["title"] = "Austerlitz" });
+
+        asked.GetProperty("outcome").GetString().Should().Be("choose");
+        asked.GetProperty("candidates").EnumerateArray().Select(c => c.GetProperty("id").GetGuid()).Should().Equal(existing);
+        (await StateVersionAsync()).Should().Be(before);
+
+        var chosen = await CallAsync("add_book", new() { ["title"] = "Austerlitz", ["confirmedBookId"] = existing });
+        var separate = await CallAsync("add_book", new() { ["title"] = "Austerlitz", ["forceCreate"] = true });
+
+        chosen.GetProperty("duplicate").GetBoolean().Should().BeTrue();
+        chosen.GetProperty("book").GetProperty("id").GetGuid().Should().Be(existing);
+        separate.GetProperty("outcome").GetString().Should().Be("created");
+        separate.GetProperty("book").GetProperty("id").GetGuid().Should().NotBe(existing);
     }
 
     [Fact]

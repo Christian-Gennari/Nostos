@@ -771,9 +771,9 @@ A host may also pass `NostosProductEndpointPolicies.McpRateLimitPolicy`.
 (`NostosMcp.ScopeClaimType`): space-separated OAuth scopes, matched ordinally,
 read across every `scope` claim (and the type ASP.NET's JWT handler maps it to).
 `nostos:read` (`NostosMcp.ReadScope`) is needed for every tool;
-`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `save_passage`,
-`create_draft` and `add_to_reading_list`. A caller with no scope claim at all counts as
-read-only. A tool the scopes do not cover answers with a tool error
+`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `save_passage`, `create_draft`,
+`add_to_reading_list`, `add_book` and `update_book`. A caller with no scope
+claim at all counts as read-only. A tool the scopes do not cover answers with a tool error
 (`isError: true`, e.g. "This connection to Nostos is read-only, so nothing was
 saved…") and never runs; a tool without a `readOnlyHint` counts as a write.
 The check is the call-tool filter `McpScopes.Enforce`
@@ -951,6 +951,8 @@ so validation and limits are the same; only the result shape differs.
 | `save_passage` | creates a passage (a titled stretch of a book) | `notes_save_passage` (MCP only) |
 | `create_draft` | creates a Studio document | `writings_create` |
 | `add_to_reading_list` | creates a To read entry | `reading_list_add` |
+| `add_book` | creates a book (paper, or an ebook/audiobook without its file) | `library_create_or_match_book` |
+| `update_book` | edits a book's details | `library_edit_book_details` (MCP only) |
 
 Tools call the registry with `AssistantSurface.Mcp`, so a capability that is
 not marked for MCP cannot be reached from `/mcp` even by name. App links in
@@ -982,9 +984,25 @@ Same idempotency as `save_note`, with the title in the key.
 `create_draft` never changes an existing document; a resend with the same
 name, folder and words within ten minutes returns the document it already
 made (`duplicate: true`). `add_to_reading_list` returns an existing entry
-for the same ISBN, or the same title and author. A
-quote saved this way is found and drawn in the reader like one Ask Nostos
-saved. Writes advance the library revision, so open tabs update through
+for the same ISBN, or the same title and author. A quote saved this way is
+found and drawn in the reader like one Ask Nostos saved.
+`add_book` runs the strict create-or-match path with an idempotency key derived
+from the request and never looks metadata up elsewhere: a book with the same
+ISBN, or the same title and author, comes back as `outcome: "matched"` with
+`duplicate: true`; an ambiguous match adds nothing and returns `candidates`
+(`outcome: "choose"`), and the app calls again with `confirmedBookId` or
+`forceCreate: true`. When the book is in the library, a To read entry that
+matches it moves there the way **Got it** does (`POST
+/api/reading-list/{id}/acquired`: its reason becomes a note on the book).
+`update_book` sets title, subtitle, author, description, published date, ISBN,
+publisher, language, series and volume through `ILibraryService.UpdateBookAsync`
+(the `PUT /api/books/{id}` path). It only fills details that are empty unless
+the call passes `replace: true`, and returns `changed` (each field with `from`
+and `to`), `kept` (details it left because they had a value) and `undo` (the
+`update_book` arguments that put the old values back). It is annotated
+destructive because `replace` overwrites. There is no cover-by-URL: Nostos has
+no server-side cover download for an arbitrary URL with SSRF protection.
+Writes advance the library revision, so open tabs update through
 `/api/library/changes`.
 
 **Services** come from the HTTP request's scope, so a host that binds the

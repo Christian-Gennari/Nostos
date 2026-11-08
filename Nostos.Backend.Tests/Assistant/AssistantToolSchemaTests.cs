@@ -78,6 +78,14 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["author"] = "string",
                 ["isbn"] = "string",
                 ["asin"] = "string",
+                ["subtitle"] = "string",
+                ["description"] = "string",
+                ["publisher"] = "string",
+                ["publishedDate"] = "string",
+                ["language"] = "string",
+                ["pageCount"] = "integer",
+                ["series"] = "string",
+                ["volumeNumber"] = "string",
                 ["collectionIds"] = "array",
                 ["rating"] = "integer",
                 ["isFavorite"] = "boolean",
@@ -85,6 +93,23 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["forceCreate"] = "boolean",
             },
             Required: ["type", "title"]),
+        ["library_edit_book_details"] = new(
+            Properties: new()
+            {
+                ["bookId"] = "string",
+                ["title"] = "string",
+                ["subtitle"] = "string",
+                ["author"] = "string",
+                ["description"] = "string",
+                ["publishedDate"] = "string",
+                ["isbn"] = "string",
+                ["publisher"] = "string",
+                ["language"] = "string",
+                ["series"] = "string",
+                ["volumeNumber"] = "string",
+                ["replace"] = "boolean",
+            },
+            Required: ["bookId"]),
         ["knowledge_search"] = new(
             Properties: new()
             {
@@ -343,8 +368,11 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
 
         var tools = harness.Llm.LastRequest.Tools;
 
-        tools.Should().HaveCount(ExpectedSchemas.Count);
-        tools.Select(t => t.Name).Should().BeEquivalentTo(ExpectedSchemas.Keys);
+        // Every capability but the MCP-only book-details edit (issue #1490):
+        // Ask Nostos edits books through its reviewed changeset instead.
+        var askNostos = ExpectedSchemas.Keys.Where(name => name != "library_edit_book_details").ToList();
+        tools.Should().HaveCount(askNostos.Count);
+        tools.Select(t => t.Name).Should().BeEquivalentTo(askNostos);
         tools.Should().OnlyContain(t => !string.IsNullOrWhiteSpace(t.Description));
         tools.Should().OnlyContain(t => !string.IsNullOrWhiteSpace(t.ParametersJsonSchema));
     }
@@ -365,7 +393,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 [AssistantCapabilityCategory.LibraryRead] = 5,
                 [AssistantCapabilityCategory.Capture] = 2,
                 [AssistantCapabilityCategory.Organization] = 12,
-                [AssistantCapabilityCategory.OrdinaryAction] = 2,
+                [AssistantCapabilityCategory.OrdinaryAction] = 3,
                 [AssistantCapabilityCategory.Writing] = 3,
             });
 
@@ -386,7 +414,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(35);
+        measurement.CapabilityCount.Should().Be(36);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(

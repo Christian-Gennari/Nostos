@@ -206,6 +206,8 @@ public sealed class McpAccessTokenTests : IAsyncLifetime
     [InlineData("save_passage")]
     [InlineData("create_draft")]
     [InlineData("add_to_reading_list")]
+    [InlineData("add_book")]
+    [InlineData("update_book")]
     public async Task A_read_only_token_is_refused_every_write_tool_and_nothing_is_written(string tool)
     {
         var bookId = await CreateBookAsync("Walden");

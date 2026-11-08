@@ -60,7 +60,7 @@
   <div class="setting-row setting-row--stacked" data-testid="connected-apps-new-token">
     <div class="setting-label">
       <span class="label-text">Token for {{ fresh.details.name }}</span>
-      <span class="label-desc">Paste it into the app's setup below. Anyone with it can {{ fresh.details.scope === 'read_write' ? 'read and add to' : 'read' }} your library.</span>
+      <span class="label-desc">Paste it into the app's setup below. Anyone with it can {{ fresh.details.scope === 'read_write' ? 'read, add to and edit' : 'read' }} your library.</span>
     </div>
     <div class="token-row">
       <code class="token-value" data-testid="connected-apps-token-value">{{ fresh.token }}</code>
@@ -104,7 +104,7 @@
     <div class="setting-row setting-row--stacked" data-testid="connected-apps-create">
       <div class="setting-label">
         <label class="label-text" for="connected-apps-name">New token</label>
-        <span class="label-desc">One token for each app, so you can revoke one without the others. Read only lets the app search and quote your books and notes. Read and write also lets it save notes, drafts and books to read. It never deletes anything.</span>
+        <span class="label-desc">One token for each app, so you can revoke one without the others. Read only lets the app search and quote your books and notes. Read and write also lets it save notes, drafts and books to read, add books, and fill in or correct a book's details. It changes a detail a book already has only when you ask it to, and never deletes anything.</span>
       </div>
       <form class="create-form" (submit)="$event.preventDefault(); create()">
         <input
@@ -303,8 +303,8 @@
   [isOpen]="!!pendingRevoke()"
   [heading]="'Revoke ' + (pendingRevoke()?.name ?? '') + '?'"
   [description]="pendingRevoke()?.kind === 'token'
-    ? 'The app using this token loses access on its next request. Notes and drafts it already saved stay in your library.'
-    : 'The app loses access on its next request and stays blocked here until you allow it again. Notes and drafts it already saved stay in your library.'"
+    ? 'The app using this token loses access on its next request. Notes, drafts and books it already saved stay in your library.'
+    : 'The app loses access on its next request and stays blocked here until you allow it again. Notes, drafts and books it already saved stay in your library.'"
   confirmLabel="Revoke"
   busyLabel="Revoking…"
   [busy]="revoking()"
