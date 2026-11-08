@@ -1,0 +1,118 @@
+using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services;
+using Nostos.Backend.Services.BookUpload;
+using Nostos.Backend.Services.Portability.Transfers;
+using Nostos.Backend.Tests.Support;
+using Xunit;
+
+namespace Nostos.Backend.Tests.Services;
+
+public sealed class BookUploadCleanupServiceTests : IDisposable
+{
+    private readonly LibraryEndpointFactory _factory = new();
+
+    public void Dispose() => _factory.Dispose();
+
+    [Fact]
+    public async Task A_pass_waits_while_the_library_is_being_restored_or_switched()
+    {
+        using var client = _factory.CreateClient();
+        var maintenance = new LibraryMaintenanceCoordinator();
+        var worker = new BookUploadCleanupService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<BookUploadCleanupService>.Instance,
+            maintenance);
+        var paths = _factory.Services.GetRequiredService<TransferPathResolver>();
+
+        var staleId = Guid.NewGuid();
+        var finishedId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await using (var db = OpenDb())
+        {
+            var book = new EBookModel { Title = "Waiting for maintenance" };
+            db.Books.Add(book);
+            db.BookUploadSessionRecords.AddRange(
+                new BookUploadSessionRecord
+                {
+                    Id = staleId,
+                    BookId = book.Id,
+                    OwnerKey = "selfhosted",
+                    State = (int)BookUploadState.Receiving,
+                    ActiveSessionKey = "stale-active",
+                    TotalBytes = 4,
+                    ChunkSize = 4,
+                    TotalChunks = 1,
+                    FileName = "book.txt",
+                    FileSha256 = new string('a', 64),
+                    ExpiresAtUtc = now.AddHours(-2),
+                    UpdatedAtUtc = now.AddHours(-2),
+                },
+                new BookUploadSessionRecord
+                {
+                    Id = finishedId,
+                    BookId = book.Id,
+                    OwnerKey = "selfhosted",
+                    State = (int)BookUploadState.Complete,
+                    ActiveSessionKey = null,
+                    TotalBytes = 4,
+                    ChunkSize = 4,
+                    TotalChunks = 1,
+                    FileName = "book.txt",
+                    FileSha256 = new string('b', 64),
+                    ExpiresAtUtc = now.AddHours(-1),
+                    UpdatedAtUtc = now.AddDays(-2),
+                });
+            await db.SaveChangesAsync();
+        }
+
+        await StageAsync(paths, staleId);
+        await StageAsync(paths, finishedId);
+
+        await using var exclusive = await maintenance.EnterExclusiveAsync(
+            LibraryMaintenanceReason.BackupRestore);
+        var pass = worker.ScanOnceAsync(CancellationToken.None);
+
+        await Task.Delay(300);
+
+        pass.IsCompleted.Should().BeFalse();
+        await using (var db = OpenDb())
+        {
+            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
+            stale.StateValue.Should().Be(BookUploadState.Receiving);
+            stale.ActiveSessionKey.Should().Be("stale-active");
+            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeTrue();
+        }
+        File.Exists(paths.GetBookUploadPartPath(staleId)).Should().BeTrue();
+        File.Exists(paths.GetBookUploadPartPath(finishedId)).Should().BeTrue();
+
+        await exclusive.DisposeAsync();
+        await pass.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await using (var db = OpenDb())
+        {
+            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
+            stale.StateValue.Should().Be(BookUploadState.Expired);
+            stale.ActiveSessionKey.Should().BeNull();
+            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeFalse();
+        }
+        Directory.Exists(paths.GetBookUploadSessionDirectory(staleId)).Should().BeFalse();
+        Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId)).Should().BeFalse();
+    }
+
+    private static async Task StageAsync(TransferPathResolver paths, Guid sessionId)
+    {
+        Directory.CreateDirectory(paths.GetBookUploadSessionDirectory(sessionId));
+        await File.WriteAllBytesAsync(
+            paths.GetBookUploadPartPath(sessionId),
+            new byte[] { 1, 2, 3, 4 });
+    }
+
+    private NostosDbContext OpenDb() =>
+        new(new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={_factory.DatabasePath}").Options);
+}
