@@ -2,16 +2,22 @@
 
 ## Overview
 
-The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized as static extension methods that register route groups. All endpoint groups are mapped in `Program.cs`:
+The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized as static extension methods that register route groups. The product groups are mapped by `MapNostosProductEndpoints` in `Nostos.Product/Composition/NostosProductComposition.cs`; `Program.cs` adds only the host-specific groups:
 
 ```csharp
-app.MapBooksEndpoints();
-app.MapNotesEndpoints();
-app.MapCollectionsEndpoints();
-app.MapConceptsEndpoints();
-app.MapWritingsEndpoints();
-app.MapOpdsEndpoints();
+// NostosProductComposition.cs — the product API
+api.MapBooksEndpoints(policies);
+api.MapNotesEndpoints();
+api.MapCollectionsEndpoints();
+api.MapTopicsEndpoints();
+api.MapWritingsEndpoints();
+api.MapOpdsEndpoints(opds, policies.OpdsAuthorizationPolicy, policies.LargeTransferRateLimitPolicy);
+
+// Program.cs — SelfHosted host groups
 app.MapBackupEndpoints();
+app.MapExternalMediaEndpoints();
+app.MapMcpAccessTokenEndpoints();
+app.MapMcpOAuthEndpoints();
 ```
 
 ## Endpoint Groups
@@ -113,9 +119,9 @@ the response fields and retention semantics.
 | Method   | Route                   | Description                           | Dependencies                                                 |
 | -------- | ----------------------- | ------------------------------------- | ------------------------------------------------------------ |
 | `GET`    | `/books/{bookId}/notes` | List notes for a book                 | `INoteRepository`                                            |
-| `POST`   | `/books/{bookId}/notes` | Create note (+ concept processing)    | `IBookRepository`, `INoteRepository`, `NoteProcessorService` |
-| `PUT`    | `/notes/{id}`           | Update note (+ concept re-processing) | `INoteRepository`, `NoteProcessorService`                    |
-| `DELETE` | `/notes/{id}`           | Delete note + concept links           | `INoteRepository`                                            |
+| `POST`   | `/books/{bookId}/notes` | Create note (+ topic processing)      | `IBookRepository`, `INoteRepository`, `NoteProcessorService` |
+| `PUT`    | `/notes/{id}`           | Update note (+ topic re-processing)   | `INoteRepository`, `NoteProcessorService`                    |
+| `DELETE` | `/notes/{id}`           | Delete note + topic links             | `INoteRepository`                                            |
 
 ### CollectionsEndpoints (`/api/collections`)
 
@@ -138,12 +144,27 @@ name collision at the destination returns `409 collection_name_conflict`.
 returns `409 collection_has_children` while the collection still has child
 collections.
 
-### ConceptsEndpoints (`/api/concepts`)
+### TopicsEndpoints (`/api/topics`)
 
-| Method | Route   | Description                                | Dependencies         |
-| ------ | ------- | ------------------------------------------ | -------------------- |
-| `GET`  | `/`     | List all concepts (with usage counts)      | `IConceptRepository` |
-| `GET`  | `/{id}` | Get concept detail (with all linked notes) | `IConceptRepository` |
+Mapped by `MapTopicsEndpoints()` in `Nostos.Product/Endpoints/TopicsEndpoints.cs`.
+The same routes are also mapped under `/api/concepts` as a transition alias for
+clients built before the rename; request and response bodies use the topic field
+names on both prefixes.
+
+| Method   | Route               | Description                                                          | Dependencies       |
+| -------- | ------------------- | -------------------------------------------------------------------- | ------------------ |
+| `GET`    | `/`                 | List all topics (with usage counts); `?search=` searches their notes | `ITopicRepository` |
+| `GET`    | `/stats`            | Aggregate topic, reference and single-note counts, plus most used    | `ITopicRepository` |
+| `GET`    | `/{id}`             | Get topic detail (with all linked notes)                             | `ITopicRepository` |
+| `GET`    | `/{id}/related`     | Topics that share notes with this one                                | `ITopicRepository` |
+| `GET`    | `/{id}/writings`    | Writings citing the topic's notes (`?limit=`, default 5, max 500)    | `ITopicRepository` |
+| `GET`    | `/graph`            | Whole-brain topic co-occurrence graph                                | `ITopicRepository` |
+| `PUT`    | `/{id}`             | Rename (merges into an existing topic of that name)                  | `ITopicRepository` |
+| `PUT`    | `/{id}/description` | Set or clear the reader's description (max 4000 characters)          | `ITopicRepository` |
+| `POST`   | `/{id}/merge`       | Merge this topic into `targetId`                                     | `ITopicRepository` |
+| `DELETE` | `/{id}`             | Delete topic + note links (its `[[ ]]` references become plain text) | `ITopicRepository` |
+| `POST`   | `/link`             | Link named topics to notes (creates any new topic)                   | `INoteService`     |
+| `POST`   | `/unlink`           | Unlink named topics from notes                                       | `INoteService`     |
 
 ### WritingsEndpoints (`/api/writings`)
 

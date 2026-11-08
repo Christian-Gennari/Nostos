@@ -6,15 +6,16 @@ All data access is abstracted behind repository interfaces, injected as **scoped
 
 ## Registration
 
-All repositories are registered in `Program.cs`:
+All repositories are registered by `AddNostosProduct` in `Nostos.Product/Composition/NostosProductComposition.cs`:
 
 ```csharp
-builder.Services.AddScoped<IBookRepository, BookRepository>();
-builder.Services.AddScoped<ICollectionRepository, CollectionRepository>();
-builder.Services.AddScoped<INoteRepository, NoteRepository>();
-builder.Services.AddScoped<IConceptRepository, ConceptRepository>();
-builder.Services.AddScoped<IWritingRepository, WritingRepository>();
+services.AddScoped<IBookRepository, BookRepository>();
+services.AddScoped<INoteRepository, NoteRepository>();
+services.AddScoped<ITopicRepository, TopicRepository>();
+services.AddScoped<IWritingRepository, WritingRepository>();
 ```
+
+Collections have no repository of their own: `LibraryService` reads and writes `CollectionModel` and its book links through `NostosDbContext`.
 
 ---
 
@@ -53,54 +54,48 @@ Manages `BookModel` entities (all subtypes via TPH).
 
 ---
 
-## ICollectionRepository / CollectionRepository
-
-Manages hierarchical `CollectionModel` entities.
-
-| Method                           | Description                                                                      |
-| -------------------------------- | -------------------------------------------------------------------------------- |
-| `GetAllAsync()`                  | Flat list of all collections                                                     |
-| `GetByIdAsync(id)`               | Find by primary key                                                              |
-| `AddAsync(collection)`           | Insert + save                                                                    |
-| `UpdateAsync(collection)`        | Update + save                                                                    |
-| `DeleteAsync(collection)`        | Remove + save                                                                    |
-| `GetParentIdAsync(id)`           | Returns parent ID (for cycle detection during move)                              |
-| `UnlinkBooksAsync(collectionId)` | Removes the collection's membership rows (books are untouched). Called before delete; no callers in the running app — `LibraryService` does this inline. |
-
----
-
 ## INoteRepository / NoteRepository
 
 Manages `NoteModel` entities with eager loading support.
 
-| Method                            | Description                                                               |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `GetByBookIdAsync(bookId)`        | All notes for a book (includes `Book` nav property)                       |
-| `GetByIdAsync(id)`                | Simple find by PK                                                         |
-| `GetByIdWithConceptsAsync(id)`    | Includes `NoteConcepts` + `Book` (for update with concept re-processing)  |
-| `GetByIdWithBookAsync(id)`        | No-tracking query with `Book` (for read-only DTO mapping)                 |
-| `AddAsync(note)`                  | Add to context (no immediate save — allows batch with concept processing) |
-| `SaveChangesAsync()`              | Explicit save (called after `NoteProcessorService` finishes)              |
-| `DeleteAsync(note)`               | Remove + save                                                             |
-| `DeleteConceptLinksAsync(noteId)` | Bulk delete from `NoteConcepts` join table                                |
+| Method                          | Description                                                             |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `GetByBookIdAsync(bookId)`      | All notes for a book (includes `Book` nav property)                     |
+| `GetByIdAsync(id)`              | Simple find by PK                                                       |
+| `GetByIdWithTopicsAsync(id)`    | Includes `NoteTopics` for an edit (its `Book` is not loaded)            |
+| `GetByIdWithBookAsync(id)`      | No-tracking query with `Book` (for read-only DTO mapping)               |
+| `AddAsync(note)`                | Add to context (no immediate save — allows batch with topic processing) |
+| `SaveChangesAsync()`            | Explicit save (called after `NoteProcessorService` finishes)            |
+| `DeleteAsync(note)`             | Remove + save                                                           |
+| `DeleteTopicLinksAsync(noteId)` | Bulk delete from `NoteTopics` join table                                |
 
-**Note:** `AddAsync` does NOT call `SaveChangesAsync()` — this is intentional. The note and its concept links are saved together in one transaction after `NoteProcessorService.ProcessNoteAsync()` completes.
+**Note:** `AddAsync` does NOT call `SaveChangesAsync()` — this is intentional. The note and its topic links are saved together in one transaction after `NoteProcessorService.ProcessNoteAsync()` completes.
 
 ---
 
-## IConceptRepository / ConceptRepository
+## ITopicRepository / TopicRepository
 
-Manages `ConceptModel` entities and the `NoteConcepts` join table.
+Manages `TopicModel` entities and the `NoteTopics` join table.
 
-| Method                        | Description                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------- |
-| `GetAllWithUsageCountAsync()` | Returns `List<ConceptDto>` directly (projection query) — sorted by usage count DESC |
-| `GetByIdWithNotesAsync(id)`   | Deep include: `NoteConcepts → Note → Book`                                          |
-| `GetByNamesAsync(names)`      | Find concepts by name list (for matching `[[brackets]]`)                            |
-| `AddRange(concepts)`          | Batch add new concepts to context                                                   |
-| `ClearNoteLinksAsync(noteId)` | Remove all `NoteConcepts` rows for a note                                           |
-| `AddNoteLink(link)`           | Add single `NoteConceptModel` to context                                            |
-| `DeleteOrphanedAsync(ct)`     | `ExecuteDeleteAsync` — concepts with zero note links. Returns count deleted         |
+| Method                                 | Description                                                                                        |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `GetAllWithUsageCountAsync()`          | Returns `List<TopicDto>` directly (projection query) — sorted by usage count DESC, then name       |
+| `SearchByNoteTextAsync(term)`          | Topics whose linked notes match the term in content, selection or book title                       |
+| `GetStatsAsync()`                      | `TopicStatsDto`: aggregate topic/reference counts, single-note topics, most used topic             |
+| `GetRelatedAsync(id)`                  | `List<RelatedTopicDto>` — topics that share notes with this one                                    |
+| `GetGraphAsync()`                      | `TopicGraphDto` — all topics as nodes, one edge per co-occurring pair                              |
+| `GetWritingUsageAsync(id, limit, ct)`  | `TopicWritingUsageDto?` — writings citing the topic's notes, newest first                          |
+| `GetByIdWithNotesAsync(id)`            | Deep include: `NoteTopics → Note → Book`                                                           |
+| `RenameAsync(id, name)`                | Renames (and rewrites the notes' `[[ ]]` references); merges into an existing topic of that name   |
+| `MergeAsync(sourceId, targetId)`       | Merges the source into the target and returns the survivor                                         |
+| `SetDescriptionAsync(id, description)` | Sets or clears the topic's description                                                             |
+| `DeleteAsync(id)`                      | Deletes the topic and its note links, turning its `[[ ]]` references into plain text               |
+| `GetByNamesAsync(names)`               | Find topics by normalized name (for matching `[[brackets]]`)                                       |
+| `AddRange(topics)`                     | Batch add new topics to context                                                                    |
+| `ClearNoteLinksAsync(note)`            | Remove all `NoteTopics` rows for a note; returns link-only names the stored text never declared    |
+| `AddNoteLink(link)`                    | Add single `NoteTopicModel` to context                                                             |
+| `DeleteOrphanedAsync(ct)`              | `ExecuteDeleteAsync` — topics with zero note links and no description. Returns count deleted       |
+| `MergeCaseVariantsAsync(ct)`           | Merges topics whose key is not their name's folded form, then sets every key. Returns count merged |
 
 ---
 

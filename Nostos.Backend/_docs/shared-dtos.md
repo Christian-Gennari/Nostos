@@ -87,15 +87,46 @@ record UpdateCollectionDto(string Name, Guid? ParentId);
 
 ---
 
-## Concept DTOs (`Nostos.Shared.Dtos.ConceptDto`)
+## Topic DTOs (`Nostos.Shared.Dtos.TopicDto`)
 
 ```csharp
-record ConceptDto(Guid Id, string Name, int UsageCount);
-record ConceptDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
+// List and detail
+record TopicDto(Guid Id, string Name, int UsageCount, int NoteMatchCount = 0,
+                string? NoteMatchSnippet = null, string? Description = null);
+record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
+record TopicStatsDto(int TotalTopics, int TotalReferences, int SingleNoteTopics,
+                     string? MostUsedName, int MostUsedCount);
+record RelatedTopicDto(Guid Id, string Name, int SharedNotes, List<Guid> SharedNoteIds);
+
+// Whole-brain knowledge graph
+record TopicGraphNodeDto(Guid Id, string Name, int UsageCount);
+record TopicGraphEdgeDto(Guid SourceId, Guid TargetId, int SharedNotes);
+record TopicGraphDto(List<TopicGraphNodeDto> Nodes, List<TopicGraphEdgeDto> Edges);
+
+// Requests
+record CreateTopicDto(string Topic);
+record UpdateTopicDto(string Topic);
+record MergeTopicDto(Guid TargetId);
+record UpdateTopicDescriptionDto(string? Description);
+record TopicLinkRequestDto(IReadOnlyList<string> Topics, IReadOnlyList<Guid> NoteIds);
+record TopicLinkResultDto(IReadOnlyList<Guid> ChangedNoteIds, IReadOnlyList<NoteSearchHitDto> Notes);
+
+// Where a topic is used in writing (worked out at read time)
+record TopicWritingUsageDto(int Total, List<TopicWritingDto> Writings,
+                            List<NoteCitationCountDto> NoteCitations);
+record TopicWritingDto(Guid Id, string Name, DateTime UpdatedAt);
+record NoteCitationCountDto(Guid NoteId, int Writings, List<Guid>? WritingIds = null);
+```
+
+A topic detail's notes:
+
+```csharp
 record NoteContextDto(Guid NoteId, string Content, string? SelectedText,
-                      string? CfiRange, Guid BookId, string BookTitle);
-record CreateConceptDto(string Concept);
-record UpdateConceptDto(string Concept);
+                      string? CfiRange, Guid BookId, string BookTitle, DateTime CreatedAt,
+                      string SourceAnchorKind = "unknown", string? SourceAnchorValue = null,
+                      bool AnchorVerified = false, string? HighlightColour = null,
+                      string Kind = "note", string? PassageTitle = null, string? PassageEnd = null,
+                      int? PassageWordCount = null, string? BookAuthor = null);
 ```
 
 ---
