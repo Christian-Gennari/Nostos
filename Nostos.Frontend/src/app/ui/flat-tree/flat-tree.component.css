@@ -151,10 +151,14 @@
   transition: opacity 0.12s ease;
 }
 
-/* Collapsed: revealed by hover or keyboard focus on the row. */
-.tree-row:hover .toggle-btn,
-.tree-row:is(:focus-visible, :has(:focus-visible)) .toggle-btn {
-  opacity: 1;
+/* Collapsed: revealed by hover or keyboard focus on the row — only on a
+   pointer that can hover. A touch tap synthesizes a hover before its click,
+   which must never reveal a control under the finger (issue #1511). */
+@media (hover: hover) and (pointer: fine) {
+  .tree-row:hover .toggle-btn,
+  .tree-row:is(:focus-visible, :has(:focus-visible)) .toggle-btn {
+    opacity: 1;
+  }
 }
 
 /* Expanded: the state is always on screen, so the chevron must be too — a
@@ -171,7 +175,8 @@
 }
 
 /* No hover on touch: an expand control hidden until hover is unreachable there,
-   so every chevron stays visible. */
+   so every chevron stays visible. This is the one reveal that is right to keep
+   on touch: it is the only way to expand a nested collection. */
 @media (hover: none) {
   .toggle-btn {
     opacity: 1;
@@ -262,14 +267,17 @@
 
 /* Painted exactly when the actions overlay is on screen — never on its own, or
    the row's ground would be wiped across the name's tail with nothing drawn
-   over it. Keep this trigger list in step with `.node-actions`' own. */
-.tree-row:hover::after,
-.tree-row:is(:focus-visible, :has(:focus-visible))::after {
-  opacity: 1;
-  visibility: visible;
-  transition:
-    opacity 0.15s,
-    visibility 0s;
+   over it. Keep this trigger list in step with `.node-actions`' own, and keep
+   both pointer-only: on touch the name keeps its full width. */
+@media (hover: hover) and (pointer: fine) {
+  .tree-row:hover::after,
+  .tree-row:is(:focus-visible, :has(:focus-visible))::after {
+    opacity: 1;
+    visibility: visible;
+    transition:
+      opacity 0.15s,
+      visibility 0s;
+  }
 }
 
 .count-badge {
@@ -317,7 +325,11 @@
      ground over the name's tail (right up to the right edge), so without this
      it would erase the buttons too. */
   z-index: 2;
-  display: flex;
+  /* Desktop keeps its hover overlay; touch gets `.row-menu` instead. Hidden
+     outright rather than only transparent, because a touch tap synthesizes a
+     hover: an invisible button under the finger still steals the click
+     (issue #1511). */
+  display: none;
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
@@ -332,18 +344,26 @@
     visibility 0s linear 0.15s;
 }
 
-.tree-row:hover .node-actions,
-.tree-row:is(:focus-visible, :has(:focus-visible)) .node-actions {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition:
-    opacity 0.15s,
-    visibility 0s;
-}
+@media (hover: hover) and (pointer: fine) {
+  .node-actions {
+    display: flex;
+  }
 
-.tree-row:hover .count-badge {
-  opacity: 0;
+  .tree-row:hover .node-actions,
+  .tree-row:is(:focus-visible, :has(:focus-visible)) .node-actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity 0.15s,
+      visibility 0s;
+  }
+
+  /* The badge yields to the actions in the one state where they share the
+     slot. */
+  .tree-row:hover .count-badge {
+    opacity: 0;
+  }
 }
 
 .action-mini {
@@ -380,6 +400,47 @@
 .action-mini.danger:hover {
   color: var(--color-danger);
   background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+}
+
+/* ── TOUCH ROW MENU ──────────────────────────────────────
+   The one secondary-action surface where hover does not exist. It sits in flow
+   after the count, so the name ellipsizes instead of disappearing under an
+   overlay, and it is always visible: nothing action-shaped can be under a finger
+   that meant the row. Desktop hides it and keeps the three-icon overlay. */
+.row-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* Keeps the count legible rather than butting against the trigger. */
+  margin-left: 4px;
+}
+
+.row-menu-trigger {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
+
+/* No hover ground to leave behind: on touch the synthesized hover can stick
+   to the last-tapped trigger, painting a chip on a row that is no longer
+   being touched. */
+.row-menu-trigger:hover {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+/* On the filled active row the trigger sits ON the pill, so its ink derives
+   from the pill's foreground like `.action-mini`'s does. */
+.tree-row.active .row-menu-trigger {
+  color: color-mix(in srgb, var(--on-primary) 82%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .row-menu {
+    display: none;
+  }
 }
 
 .tree-row:focus-visible {
@@ -477,54 +538,22 @@
 }
 
 /* ── TOUCH ────────────────────────────────────────────────
-   `:hover` never fires on a touch screen, so a hover-revealed control is
-   unreachable there. But showing the row actions unconditionally — as this
-   block used to — puts three buttons on every row at once, and six collections
-   read as a wall of icons: measured, actions were on screen for 6 of 6 rows at
-   rest.
+   There is no hover on a touch screen. The old model revealed the three row
+   actions on the SELECTED row instead — but selection already opens the
+   collection, and the same reveal was also triggered by the synthesized hover
+   of a tap, so the buttons became the tap target (issue #1511: a tap 30px from
+   the row's right edge fired Delete). It also reserved 140px of a 300px drawer
+   for controls, leaving names like "Ancient & Me…".
 
-   On touch the row's SELECTION is the reveal instead of hover. A row that is
-   keyboard-focused (`:focus-visible`) or `.active` (the selected collection)
-   shows its actions; every other row stays clean like desktop. Selection
-   persists, so this is a stable state rather than a hover that a later tap
-   elsewhere steals.
-
-   The chevron is deliberately NOT part of this: it is the only affordance that
-   can expand a nested collection, so hiding it until selection would make
-   nesting unreachable on the rows that need it. */
-@media (hover: none) {
-  .tree-row.active .node-actions,
-  .tree-row:is(:focus-visible, :has(:focus-visible)) .node-actions {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transition:
-      opacity 0.15s,
-      visibility 0s;
-  }
-
-  /* Same pairing as the hover/focus triggers above: the fade paints only while
-     the actions that occlude the name are actually drawn. */
-  .tree-row.active::after,
-  .tree-row:is(:focus-visible, :has(:focus-visible))::after {
-    opacity: 1;
-    visibility: visible;
-    transition:
-      opacity 0.15s,
-      visibility 0s;
-  }
-
-  /* The badge yields to the actions in the one state where they share the
-     slot. Mirrors the `:hover` rule, which does the same on pointer devices. */
-  .tree-row.active .count-badge,
-  .tree-row:is(:focus-visible, :has(:focus-visible)) .count-badge {
-    opacity: 0;
-  }
-}
+   Touch now has exactly one secondary surface: `.row-menu` above, in flow,
+   always visible, 44px. Nothing here reveals or hides with hover, and the count
+   badge never yields, because it is not sharing a slot with an overlay any
+   more. */
 
 @media (prefers-reduced-motion: reduce) {
   .tree-row,
   .node-actions,
+  .row-menu,
   .count-badge,
   .action-mini {
     transition: none;
@@ -536,7 +565,8 @@
    app's dock and Brain rows use, and this tree is the only way to open a
    document in the Studio (and to reach a collection in the Library). The row
    itself stays 34px tall: the controls are out-of-flow overlays on the row, so
-   growing them costs no list height. */
+   growing them costs no list height. Touch gets its 44px target from
+   `.row-menu`; the rules below still cover a narrow window driven by a mouse. */
 @media (max-width: 768px) {
   .toggle-btn {
     /* --indent-base drives the row's own left gutter and the chevron's offset,
@@ -606,7 +636,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-:host(.flat-tree--quiet) .tree-row.active .action-mini {
+:host(.flat-tree--quiet) .tree-row.active .action-mini,
+:host(.flat-tree--quiet) .tree-row.active .row-menu-trigger {
   color: var(--color-text-muted);
 }
 

@@ -55,8 +55,10 @@
       <!-- The icon doubles as the drag handle, so drag-to-reparent survives
            without spending a permanent column on a grip that is invisible
            until you hover. Revealing it on hover looks identical to before;
-           the difference is that nothing is reserved for it at rest. -->
-      <div class="type-icon" cdkDragHandle (click)="$event.stopPropagation()" title="Drag to move">
+           the difference is that nothing is reserved for it at rest. The glyph
+           itself is NOT a click barrier: a tap on a folder is a tap on the row
+           (issue #1511). -->
+      <div class="type-icon" cdkDragHandle title="Drag to move">
         @if (node.type === 'Folder') {
           <!-- Two states now, not three. The closed-with-children glyph was the old
                family's folder plus a line across it; Phosphor's folder set has no
@@ -87,10 +89,10 @@
         />
       } @else {
         <span class="node-name">{{ node.name }}</span>
-        <!-- The count badge and the actions share one slot: showing both would
-             overflow a 300px rail. On hover/focus the badge yields to the
-             actions; on touch there is no hover, so the badge yields to them
-             permanently and the actions stay tappable.
+        <!-- The badge and the pointer-only actions share one slot: showing both
+             would overflow a 300px rail, so on hover/focus the badge yields to
+             the overlay. On touch the actions are not an overlay at all (they
+             live in the row menu above), so the count always stays legible.
              Only rendered when a count EXISTS and is non-zero, so the writing
              studio's documents (no count field) do not sprout a "0" chip. -->
         @if (node.originalData.count !== undefined && node.originalData.count > 0) {
@@ -98,6 +100,7 @@
         }
       }
 
+      <!-- Pointer-only overlay: three hover actions over the badge's slot. -->
       <div class="node-actions" (click)="$event.stopPropagation()">
         @if (allowAddChild()) {
           <button
@@ -150,6 +153,61 @@
           title="Delete"
           aria-label="Delete"
         ></button>
+      </div>
+
+      <!-- Touch-only single trigger, in flow. A hover cannot exist on a touch
+           screen, and a synthesized one used to put the three buttons above
+           under the finger, so a tap meant for the row fired Delete instead
+           (issue #1511). One explicit 44px menu is the only secondary action
+           surface there, and it is never invisible. -->
+      <div class="row-menu" (click)="$event.stopPropagation()">
+        <button
+          appIconButton
+          class="row-menu-trigger"
+          icon="dots-three"
+          [glyphSize]="18"
+          type="button"
+          [nostosMenuTriggerFor]="rowMenu"
+          [attr.aria-label]="'Actions for ' + node.name"
+          [attr.title]="'Actions for ' + node.name"
+        ></button>
+        <ng-template #rowMenu>
+          <nostos-menu>
+            @if (allowAddChild()) {
+              <button
+                nostosMenuItem
+                icon="plus"
+                (triggered)="nodeAddChild.emit(node.originalData)"
+              >
+                New collection inside
+              </button>
+            }
+            @if (node.parentId !== null) {
+              <button
+                nostosMenuItem
+                icon="arrow-u-up-left"
+                (triggered)="moveToRoot(node)"
+              >
+                Move to root
+              </button>
+            }
+            <button
+              nostosMenuItem
+              icon="pencil-simple"
+              (triggered)="nodeRenamed.emit(node.originalData)"
+            >
+              Rename
+            </button>
+            <button
+              nostosMenuItem
+              icon="trash"
+              tone="danger"
+              (triggered)="nodeDeleted.emit(node.id)"
+            >
+              Delete
+            </button>
+          </nostos-menu>
+        </ng-template>
       </div>
     </div>
   }
