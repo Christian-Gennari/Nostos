@@ -22,7 +22,7 @@ import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.component';
 import { PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
 import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
-import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
+import { WritingContentDto, WritingDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 import { StarterDraftService } from './starter-draft/starter-draft.service';
 
 /** No imported highlights unless a test says so (issue #1220). */
@@ -3040,6 +3040,25 @@ describe('WritingStudio export menu (issue #1164)', () => {
       return TestBed.inject(WritingsService) as unknown as { move: ReturnType<typeof vi.fn> };
     }
 
+    function toast(): { success: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> } {
+      return TestBed.inject(ToastService) as unknown as {
+        success: ReturnType<typeof vi.fn>;
+        error: ReturnType<typeof vi.fn>;
+      };
+    }
+
+    function moveRows(): HTMLButtonElement[] {
+      return Array.from(document.querySelectorAll<HTMLButtonElement>('[data-move-row]'));
+    }
+
+    function moveRow(name: string): HTMLButtonElement {
+      const found = moveRows().find(
+        (row) => row.querySelector('.move-row__name')?.textContent?.trim() === name,
+      );
+      expect(found, `row “${name}”`).toBeTruthy();
+      return found!;
+    }
+
     function openMoveDialog(): void {
       (fixture.nativeElement.querySelector('[data-testid="studio-more"]') as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -3047,17 +3066,47 @@ describe('WritingStudio export menu (issue #1164)', () => {
       fixture.detectChanges();
     }
 
-    it('lists Top level and the folders, and moves the writing into a folder', () => {
-      open('doc', 'Words.');
-      openMoveDialog();
-      expect(document.querySelector('[data-testid="studio-move-top"]')).toBeTruthy();
-      const folders = document.querySelectorAll('[data-testid="studio-move-folder"]');
-      expect(folders.length).toBe(1);
-      expect(folders[0].textContent).toContain('Folder');
-
-      (folders[0] as HTMLButtonElement).click();
+    /** A tree with a current folder, its child, and a sibling. */
+    function openNestedTree(): void {
+      const items: WritingDto[] = [
+        { id: 'folder', name: 'Essays', type: 'Folder', parentId: null, updatedAt: '' },
+        { id: 'drafts', name: 'Drafts', type: 'Folder', parentId: 'folder', updatedAt: '' },
+        { id: 'letters', name: 'Letters', type: 'Folder', parentId: null, updatedAt: '' },
+        { id: 'doc', name: 'On slow reading', type: 'Document', parentId: 'folder', updatedAt: '' },
+      ];
+      component.rootItems.set(items);
+      component.activeItem.set({
+        id: 'doc',
+        name: 'On slow reading',
+        content: 'Words.',
+        updatedAt: '',
+      });
+      component.editorText.set('Words.');
       fixture.detectChanges();
-      expect(moveService().move).toHaveBeenCalledWith('doc', 'folder');
+    }
+
+    it('lists Top level and the folders in file-tree order, and moves the writing into a folder', () => {
+      openNestedTree();
+      openMoveDialog();
+
+      expect(moveRows().map((row) => row.querySelector('.move-row__name')?.textContent?.trim())).toEqual([
+        'Top level',
+        'Essays',
+        'Drafts',
+        'Letters',
+      ]);
+      expect(moveRow('Drafts').style.getPropertyValue('--depth').trim()).toBe('1');
+      expect(moveRow('Letters').style.getPropertyValue('--depth').trim()).toBe('0');
+
+      // One folder icon for every destination, Top level included.
+      const topIcon = moveRow('Top level').querySelector('nostos-icon')?.innerHTML;
+      const folderIcon = moveRow('Essays').querySelector('nostos-icon')?.innerHTML;
+      expect(topIcon).toBe(folderIcon);
+
+      moveRow('Drafts').click();
+      fixture.detectChanges();
+      expect(moveService().move).toHaveBeenCalledWith('doc', 'drafts');
+      expect(toast().success).toHaveBeenCalledWith('Moved to “Drafts”');
       expect(component.moveOpen()).toBe(false);
     });
 
@@ -3068,12 +3117,114 @@ describe('WritingStudio export menu (issue #1164)', () => {
       expect(moveService().move).toHaveBeenCalledWith('doc', null);
     });
 
-    it('closes without a request when the writing is already there', () => {
-      moveService().move.mockClear();
-      open('doc', 'Words.', 'folder');
+    it('marks the current folder, and choosing it does nothing', () => {
+      openNestedTree();
       openMoveDialog();
-      (document.querySelector('[data-testid="studio-move-folder"]') as HTMLButtonElement).click();
+
+      const current = moveRow('Essays');
+      expect(current.getAttribute('aria-current')).toBe('true');
+      expect(current.getAttribute('aria-disabled')).toBe('true');
+      expect(current.getAttribute('aria-label')).toBe('Essays, current location');
+      expect(current.querySelector('.move-row__status--current')?.textContent).toContain('Current');
+
+      current.click();
+      fixture.detectChanges();
       expect(moveService().move).not.toHaveBeenCalled();
+      expect(component.moveOpen()).toBe(true);
+    });
+
+    it('marks the top level as current when the writing is not in a folder', () => {
+      open('doc', 'Words.');
+      openMoveDialog();
+      const top = document.querySelector('[data-testid="studio-move-top"]') as HTMLButtonElement;
+      expect(top.getAttribute('aria-current')).toBe('true');
+      expect(top.getAttribute('aria-disabled')).toBe('true');
+      expect(top.textContent).toContain('Current');
+    });
+
+    it('is a labelled dialog that names the writing and where it is now', () => {
+      openNestedTree();
+      openMoveDialog();
+
+      const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(dialog).toBeTruthy();
+      expect(dialog.getAttribute('aria-modal')).toBe('true');
+      expect(dialog.getAttribute('aria-labelledby')).toBe('move-sheet-title');
+      expect(dialog.getAttribute('aria-describedby')).toBe('move-sheet-subtitle');
+      expect(document.getElementById('move-sheet-title')?.textContent).toContain('Move to…');
+
+      const subtitle = document.getElementById('move-sheet-subtitle')?.textContent ?? '';
+      expect(subtitle).toContain('On slow reading');
+      expect(subtitle).toContain('in “Essays”');
+
+      const list = document.querySelector('[data-testid="studio-move-list"]');
+      expect(list?.getAttribute('aria-label')).toBe('Destination folders');
+      expect(
+        document.querySelector('[data-testid="modal-close"]')?.getAttribute('aria-label'),
+      ).toBe('Close move dialog');
+    });
+
+    it('moves focus with the arrow keys, skipping the current folder', () => {
+      openNestedTree();
+      openMoveDialog();
+
+      const top = moveRow('Top level');
+      top.focus();
+      expect(document.activeElement).toBe(top);
+
+      top.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      expect(document.activeElement?.getAttribute('data-move-row')).toBe('folder:drafts');
+
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      );
+      expect(document.activeElement?.getAttribute('data-move-row')).toBe('folder:letters');
+
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+      );
+      expect(document.activeElement?.getAttribute('data-move-row')).toBe('folder:drafts');
+
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Home', bubbles: true }),
+      );
+      expect(document.activeElement?.getAttribute('data-move-row')).toBe('top-level');
+
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'End', bubbles: true }),
+      );
+      expect(document.activeElement?.getAttribute('data-move-row')).toBe('folder:letters');
+    });
+
+    it('closes on Escape', () => {
+      open('doc', 'Words.');
+      openMoveDialog();
+      expect(component.moveOpen()).toBe(true);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+      expect(component.moveOpen()).toBe(false);
+    });
+
+    it('says Moving… in the chosen row until the move settles', () => {
+      const answer = new Subject<unknown>();
+      moveService().move.mockReturnValueOnce(answer);
+      openNestedTree();
+      openMoveDialog();
+
+      moveRow('Drafts').click();
+      fixture.detectChanges();
+
+      const pending = moveRow('Drafts');
+      expect(pending.getAttribute('aria-busy')).toBe('true');
+      expect(pending.getAttribute('aria-disabled')).toBe('true');
+      expect(pending.textContent).toContain('Moving…');
+      expect(component.moveBusy()).toBe(true);
+
+      answer.next({});
+      answer.complete();
+      fixture.detectChanges();
+      expect(component.moveBusy()).toBe(false);
       expect(component.moveOpen()).toBe(false);
     });
 
@@ -3084,6 +3235,22 @@ describe('WritingStudio export menu (issue #1164)', () => {
       component.moveTo('folder');
       expect(component.moveOpen()).toBe(true);
       expect(component.moveBusy()).toBe(false);
+      expect(component.movePendingKey()).toBeNull();
+      expect(toast().error).toHaveBeenCalledWith('Could not move it');
+    });
+
+    it('explains when there is nowhere else to move to', () => {
+      component.rootItems.set([
+        { id: 'doc', name: 'Doc', type: 'Document', parentId: null, updatedAt: '' },
+      ]);
+      component.activeItem.set({ id: 'doc', name: 'Doc', content: 'Words.', updatedAt: '' });
+      component.editorText.set('Words.');
+      fixture.detectChanges();
+      component.openMove();
+      fixture.detectChanges();
+
+      expect(component.moveHasDestination()).toBe(false);
+      expect(document.querySelector('.move-empty')?.textContent).toContain('No folders yet');
     });
   });
 
