@@ -100,7 +100,10 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
         }
 
         await worker.StopAsync(CancellationToken.None);
-        worker.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
+        // A stop during the timer wait ends the task as canceled, which the
+        // host treats as a clean stop; only a fault would be a failed loop.
+        worker.ExecuteTask!.IsCompleted.Should().BeTrue();
+        worker.ExecuteTask.IsFaulted.Should().BeFalse();
         await using (var db = OpenDb())
         {
             var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
