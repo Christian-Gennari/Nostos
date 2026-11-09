@@ -147,7 +147,9 @@ export type IconButtonSurface = 'plain' | 'overlay';
          frosted corners, 36px solid centre discs, each with its own hover), so a
          card showed two shapes and two inks. The disc owns its shape here, so the
          radius rule above does not apply to it. Selected inks (the favourite's
-         red, the finished tick's green) stay with the surface. */
+         red, the finished tick's green) stay with the surface. The base
+         .icon-btn is border-box, so the 1px border stays inside the 32px rung
+         rather than growing the disc to 34px. */
       :host(.icon-btn--overlay) {
         border-radius: var(--radius-round);
         background: var(--cover-disc-bg);

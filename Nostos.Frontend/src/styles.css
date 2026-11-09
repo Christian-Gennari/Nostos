@@ -1830,6 +1830,11 @@ button {
 
 .icon-btn {
   all: unset;
+  /* `all: unset` resets box-sizing to content-box. The overlay variant adds a
+     1px border, so without this the 32px `md` rung painted a 34px disc: 2px
+     larger than every 32px control beside it (measured on Book detail's
+     remove-cover disc against the Change cover pill). */
+  box-sizing: border-box;
 
   cursor: pointer;
   /* No ground of its own. It used to paint the surface colour, which showed as
