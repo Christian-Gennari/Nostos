@@ -38,6 +38,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, mergeMap, tap, toA
 import { EBOOK_CATEGORY_LABEL_PLURAL, BOOK_FORMAT_LABEL, UNKNOWN_AUTHOR, formatOf, type BookFormatConcept } from '../core/book-format';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
+import { SelectionBarComponent } from '../ui/selection-bar/selection-bar.component';
 import { BookSort } from '../core/dtos/book.enums';
 import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
@@ -166,6 +167,7 @@ interface WorkFormatGlyph {
     SidebarCollections,
     EmptyStateComponent,
     PagingStatusComponent,
+    SelectionBarComponent,
     BookCoverComponent,
     CheckboxDirective,
     ...NOSTOS_MENU,

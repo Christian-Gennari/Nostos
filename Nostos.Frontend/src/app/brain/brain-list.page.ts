@@ -35,6 +35,7 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
+import { SelectionBarComponent } from '../ui/selection-bar/selection-bar.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
@@ -110,6 +111,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     BrainTopicUsedInComponent,
     EmptyStateComponent,
     PagingStatusComponent,
+    SelectionBarComponent,
     TopicChipComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
