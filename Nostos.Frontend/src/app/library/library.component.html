@@ -536,42 +536,37 @@
 </main>
 
 @if (selecting()) {
-<div class="selection-bar" role="toolbar" aria-label="Selected books">
-  <span class="selection-count" role="status" aria-live="polite">
-    {{ selectedBooks().length === 1 ? '1 selected' : selectedBooks().length + ' selected' }}
-  </span>
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+<nostos-selection-bar [count]="selectedBooks().length" label="Selected books" (closed)="leaveSelection()">
+  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
     [disabled]="selectedBooks().length === 0" aria-haspopup="menu" aria-label="Add to collection…"
     [nostosMenuTriggerFor]="addToCollectionMenu">
     <nostos-icon name="folder-plus" [size]="14" /><span class="selection-label">Add to collection…</span>
   </button>
-  <ng-template #addToCollectionMenu>
-    <nostos-menu aria-label="Add the selected books to a collection">
-      @for (choice of collectionChoices(); track choice.id) {
-      <button nostosMenuItem icon="folder" [style.padding-left.rem]="0.65 + choice.level"
-        (triggered)="addToCollection(selectedBooks().map(b => b.id), choice.id)">{{ choice.name }}</button>
-      } @empty {
-      <button nostosMenuItem [disabled]="true">No collections yet</button>
-      }
-    </nostos-menu>
-  </ng-template>
   @if (filters.collectionId()) {
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
     [disabled]="selectedBooks().length === 0" aria-label="Remove from collection" (click)="removeSelectionFromCollection()">
     <nostos-icon name="folder" [size]="14" /><span class="selection-label">Remove from collection</span>
   </button>
   }
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
     [disabled]="selectedBooks().length === 0" aria-label="Mark finished" (click)="markSelectionFinished()">
     <nostos-icon name="check-circle" [size]="14" /><span class="selection-label">Mark finished</span>
   </button>
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+  <button appButton variant="danger" size="sm" type="button" class="selection-action"
     [disabled]="selectedBooks().length === 0" aria-label="Delete" (click)="askDeleteSelection()">
     <nostos-icon name="trash" [size]="14" /><span class="selection-label">Delete</span>
   </button>
-  <button appIconButton type="button" icon="x" surface="overlay" class="selection-close" [glyphSize]="16"
-    aria-label="Stop selecting" (click)="leaveSelection()"></button>
-</div>
+</nostos-selection-bar>
+<ng-template #addToCollectionMenu>
+  <nostos-menu aria-label="Add the selected books to a collection">
+    @for (choice of collectionChoices(); track choice.id) {
+    <button nostosMenuItem icon="folder" [style.padding-left.rem]="0.65 + choice.level"
+      (triggered)="addToCollection(selectedBooks().map(b => b.id), choice.id)">{{ choice.name }}</button>
+    } @empty {
+    <button nostosMenuItem [disabled]="true">No collections yet</button>
+    }
+  </nostos-menu>
+</ng-template>
 }
 
 <app-confirm-modal

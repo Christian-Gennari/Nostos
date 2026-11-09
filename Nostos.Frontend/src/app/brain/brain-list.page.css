@@ -217,31 +217,6 @@
   padding: 4rem 0;
 }
 
-/* --- Selection bar -------------------------------------------------------- */
-.selection-bar {
-  position: fixed;
-  left: 50%;
-  bottom: calc(24px + var(--dock-rail-h) + 16px);
-  z-index: var(--layer-system);
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: calc(100vw - 2rem);
-  padding: 0.45rem 0.5rem 0.45rem 1rem;
-  transform: translateX(-50%);
-  border-radius: var(--radius-surface);
-  background: var(--primary-fill);
-  color: var(--on-primary);
-  box-shadow: var(--shadow-md);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-}
-
-.selection-count {
-  margin-right: 0.5rem;
-  font-variant-numeric: tabular-nums;
-}
-
 /* --- Phone ---------------------------------------------------------------- */
 @media (max-width: 768px) {
   .toolbar {
@@ -350,23 +325,6 @@
   /* While selecting, the bar floats over the list's end: leave room for it. */
   .brain-list.is-selecting {
     padding-bottom: calc(var(--control-h-touch) + 2rem);
-  }
-
-  .selection-bar {
-    bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px) + 12px);
-    padding-left: 0.75rem;
-  }
-
-  /* On a phone the actions are icons (their names stay as labels), so the
-     bar fits the width with its close button. */
-  .selection-action {
-    min-width: var(--control-h-touch);
-    padding-inline: 0.5rem;
-    justify-content: center;
-  }
-
-  .selection-label {
-    display: none;
   }
 }
 

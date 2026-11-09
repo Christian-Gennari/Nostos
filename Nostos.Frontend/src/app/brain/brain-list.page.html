@@ -252,43 +252,38 @@
 </div>
 
 @if (selecting()) {
-<div class="selection-bar" role="toolbar" aria-label="Selected notes">
-  <span class="selection-count" role="status" aria-live="polite">
-    {{ selected().size === 1 ? '1 selected' : selected().size + ' selected' }}
-  </span>
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+<nostos-selection-bar [count]="selected().size" label="Selected notes" (closed)="leaveSelection()">
+  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
     cdkOverlayOrigin #selectionOrigin="cdkOverlayOrigin"
     [disabled]="selected().size === 0" [attr.aria-expanded]="selectionPickerOpen()" aria-haspopup="dialog"
     aria-label="Add topic…" (click)="selectionPickerOpen.set(!selectionPickerOpen())">
     <nostos-icon concept="topic" [size]="14" /><span class="selection-label">Add topic…</span>
   </button>
-  <ng-template
-    cdkConnectedOverlay
-    [cdkConnectedOverlayOrigin]="selectionOrigin"
-    [cdkConnectedOverlayOpen]="selectionPickerOpen()"
-    [cdkConnectedOverlayPositions]="selectionPickerPositions"
-    [cdkConnectedOverlayPush]="true"
-    (overlayOutsideClick)="selectionPickerOpen.set(false)"
-    (detach)="selectionPickerOpen.set(false)"
-  >
-    <app-topic-picker-popover
-      [topics]="state.topics()"
-      label="Add a topic to the selected notes"
-      (chosen)="addTopicToSelection($event)"
-      (closed)="selectionPickerOpen.set(false)"
-    />
-  </ng-template>
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
     [disabled]="selected().size === 0" aria-label="Keep in a document…" (click)="keepSelectionWithWriting()">
     <nostos-icon name="bookmark-simple" [size]="14" /><span class="selection-label">Keep in a document…</span>
   </button>
-  <button appButton variant="overlay" size="sm" type="button" class="selection-action"
+  <button appButton variant="danger" size="sm" type="button" class="selection-action"
     [disabled]="selected().size === 0" aria-label="Delete" (click)="deleteSelection()">
     <nostos-icon name="trash" [size]="14" /><span class="selection-label">Delete</span>
   </button>
-  <button appIconButton type="button" icon="x" surface="overlay" class="selection-close" [glyphSize]="16"
-    aria-label="Stop selecting" (click)="leaveSelection()"></button>
-</div>
+</nostos-selection-bar>
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="selectionOrigin"
+  [cdkConnectedOverlayOpen]="selectionPickerOpen()"
+  [cdkConnectedOverlayPositions]="selectionPickerPositions"
+  [cdkConnectedOverlayPush]="true"
+  (overlayOutsideClick)="selectionPickerOpen.set(false)"
+  (detach)="selectionPickerOpen.set(false)"
+>
+  <app-topic-picker-popover
+    [topics]="state.topics()"
+    label="Add a topic to the selected notes"
+    (chosen)="addTopicToSelection($event)"
+    (closed)="selectionPickerOpen.set(false)"
+  />
+</ng-template>
 }
 
 <app-brain-note-dialogs />
