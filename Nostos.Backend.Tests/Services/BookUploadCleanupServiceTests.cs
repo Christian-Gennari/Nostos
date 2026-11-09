@@ -29,6 +29,90 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
             maintenance);
         var paths = _factory.Services.GetRequiredService<TransferPathResolver>();
 
+        var (staleId, finishedId) = await SeedAsync(paths);
+
+        await using var exclusive = await maintenance.EnterExclusiveAsync(
+            LibraryMaintenanceReason.BackupRestore);
+        var pass = worker.ScanOnceAsync(CancellationToken.None);
+
+        await Task.Delay(300);
+
+        pass.IsCompleted.Should().BeFalse();
+        await using (var db = OpenDb())
+        {
+            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
+            stale.StateValue.Should().Be(BookUploadState.Receiving);
+            stale.ActiveSessionKey.Should().Be("stale-active");
+            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeTrue();
+        }
+        File.Exists(paths.GetBookUploadPartPath(staleId)).Should().BeTrue();
+        File.Exists(paths.GetBookUploadPartPath(finishedId)).Should().BeTrue();
+
+        await exclusive.DisposeAsync();
+        await pass.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await using (var db = OpenDb())
+        {
+            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
+            stale.StateValue.Should().Be(BookUploadState.Expired);
+            stale.ActiveSessionKey.Should().BeNull();
+            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeFalse();
+        }
+        Directory.Exists(paths.GetBookUploadSessionDirectory(staleId)).Should().BeFalse();
+        Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task The_running_worker_waits_for_maintenance_and_then_cleans_up()
+    {
+        using var client = _factory.CreateClient();
+        var maintenance = new LibraryMaintenanceCoordinator();
+        var paths = _factory.Services.GetRequiredService<TransferPathResolver>();
+        var (staleId, finishedId) = await SeedAsync(paths);
+        using var worker = new FastBookUploadCleanupService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            maintenance);
+
+        var exclusive = await maintenance.EnterExclusiveAsync(
+            LibraryMaintenanceReason.BackupRestore);
+        try
+        {
+            await worker.StartAsync(CancellationToken.None);
+
+            // Several 50 ms ticks pass while the library is held.
+            await Task.Delay(300);
+
+            await using var db = OpenDb();
+            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
+            stale.StateValue.Should().Be(BookUploadState.Receiving);
+            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeTrue();
+        }
+        finally
+        {
+            await exclusive.DisposeAsync();
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId))
+            && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50);
+        }
+
+        await worker.StopAsync(CancellationToken.None);
+        worker.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
+        await using (var db = OpenDb())
+        {
+            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
+            stale.StateValue.Should().Be(BookUploadState.Expired);
+            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeFalse();
+        }
+        Directory.Exists(paths.GetBookUploadSessionDirectory(staleId)).Should().BeFalse();
+        Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId)).Should().BeFalse();
+    }
+
+    private async Task<(Guid StaleId, Guid FinishedId)> SeedAsync(TransferPathResolver paths)
+    {
         var staleId = Guid.NewGuid();
         var finishedId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -72,36 +156,15 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
 
         await StageAsync(paths, staleId);
         await StageAsync(paths, finishedId);
+        return (staleId, finishedId);
+    }
 
-        await using var exclusive = await maintenance.EnterExclusiveAsync(
-            LibraryMaintenanceReason.BackupRestore);
-        var pass = worker.ScanOnceAsync(CancellationToken.None);
-
-        await Task.Delay(300);
-
-        pass.IsCompleted.Should().BeFalse();
-        await using (var db = OpenDb())
-        {
-            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
-            stale.StateValue.Should().Be(BookUploadState.Receiving);
-            stale.ActiveSessionKey.Should().Be("stale-active");
-            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeTrue();
-        }
-        File.Exists(paths.GetBookUploadPartPath(staleId)).Should().BeTrue();
-        File.Exists(paths.GetBookUploadPartPath(finishedId)).Should().BeTrue();
-
-        await exclusive.DisposeAsync();
-        await pass.WaitAsync(TimeSpan.FromSeconds(30));
-
-        await using (var db = OpenDb())
-        {
-            var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
-            stale.StateValue.Should().Be(BookUploadState.Expired);
-            stale.ActiveSessionKey.Should().BeNull();
-            (await db.BookUploadSessionRecords.AnyAsync(s => s.Id == finishedId)).Should().BeFalse();
-        }
-        Directory.Exists(paths.GetBookUploadSessionDirectory(staleId)).Should().BeFalse();
-        Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId)).Should().BeFalse();
+    private sealed class FastBookUploadCleanupService(
+        IServiceScopeFactory scopes,
+        ILibraryMaintenanceCoordinator maintenance)
+        : BookUploadCleanupService(scopes, NullLogger<BookUploadCleanupService>.Instance, maintenance)
+    {
+        protected override TimeSpan ScanInterval => TimeSpan.FromMilliseconds(50);
     }
 
     private static async Task StageAsync(TransferPathResolver paths, Guid sessionId)
