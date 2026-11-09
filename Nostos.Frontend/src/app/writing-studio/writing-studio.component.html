@@ -180,6 +180,9 @@
                 [hint]="exportBlockedReason()"
                 (triggered)="openExport()"
               >Export…</button>
+              <!-- Kept at every width, not just desktop: drag-and-drop in the
+                   file tree is a pointer-only path, so this is the only way a
+                   touch, keyboard or screen-reader user can file a writing. -->
               <button
                 nostosMenuItem
                 icon="folder"
@@ -781,38 +784,70 @@
       (closed)="exportOpen.set(false)" />
   }
 
-  @if (moveOpen() && activeItem()) {
+  @if (moveOpen() && activeItem(); as moveItem) {
     <app-modal-shell
-      closeLabel="Close"
+      closeLabel="Close move dialog"
       [isOpen]="true"
       variant="dialog"
-      [maxWidth]="'420px'"
+      [maxWidth]="'440px'"
+      [maxHeight]="'min(600px, calc(100dvh - 2rem))'"
+      [busy]="moveBusy()"
       ariaLabelledBy="move-sheet-title"
+      ariaDescribedBy="move-sheet-subtitle"
       (closed)="closeMove()"
     >
       <header class="move-sheet-header" shellHeader>
         <h2 id="move-sheet-title">Move to…</h2>
+        <p class="move-sheet-subtitle" id="move-sheet-subtitle">
+          <span class="move-sheet-title-name">{{ moveItem.name }}</span>
+          · currently {{ moveLocation() }}
+        </p>
       </header>
-      <ul class="move-list" data-testid="studio-move-list">
-        <li>
-          <button appChoiceRow type="button" data-testid="studio-move-top"
-            [selected]="moveCurrentParent() === null" [disabled]="moveBusy()"
-            (click)="moveTo(null)">
-            <nostos-icon name="folder-open" [size]="16"></nostos-icon>
-            <span class="nostos-choice-row__title">Top level</span>
-          </button>
-        </li>
-        @for (folder of moveFolders(); track folder.id) {
-          <li [style.padding-left.rem]="folder.level * 1.25">
-            <button appChoiceRow type="button" data-testid="studio-move-folder"
-              [selected]="moveCurrentParent() === folder.id" [disabled]="moveBusy()"
-              (click)="moveTo(folder.id)">
-              <nostos-icon name="folder" [size]="16"></nostos-icon>
-              <span class="nostos-choice-row__title">{{ folder.name }}</span>
+
+      <ul class="move-list" data-testid="studio-move-list" aria-label="Destination folders"
+          [class.is-busy]="moveBusy()">
+        @for (row of moveRows(); track row.key) {
+          <li>
+            <button
+              appButton
+              variant="ghost"
+              type="button"
+              class="move-row"
+              [class.is-current]="row.current"
+              [class.is-nested]="row.level > 0"
+              [class.is-pending]="movePendingKey() === row.key"
+              [style.--depth]="row.level"
+              [attr.data-testid]="row.parentId === null ? 'studio-move-top' : 'studio-move-folder'"
+              [attr.data-move-row]="row.key"
+              [attr.aria-current]="row.current ? 'true' : null"
+              [attr.aria-disabled]="row.current || moveBusy() ? 'true' : null"
+              [attr.aria-busy]="movePendingKey() === row.key ? 'true' : null"
+              [attr.aria-label]="row.current ? row.name + ', current location' : null"
+              [attr.cdkFocusInitial]="row.key === moveInitialFocusKey() ? '' : null"
+              (click)="chooseMove(row)"
+              (keydown)="onMoveRowKeydown($event, row)"
+            >
+              <nostos-icon class="move-row__icon" name="folder" [size]="16"></nostos-icon>
+              <span class="move-row__name">{{ row.name }}</span>
+              @if (movePendingKey() === row.key) {
+                <span class="move-row__status">
+                  <nostos-loading-indicator size="sm" label="Moving writing" decorative></nostos-loading-indicator>
+                  Moving…
+                </span>
+              } @else if (row.current) {
+                <span class="move-row__status move-row__status--current">
+                  <nostos-icon name="check" [size]="13"></nostos-icon>
+                  Current
+                </span>
+              }
             </button>
           </li>
         }
       </ul>
+
+      @if (!moveHasDestination()) {
+        <p class="move-empty">No folders yet. Create one in Files, then move this writing into it.</p>
+      }
     </app-modal-shell>
   }
 

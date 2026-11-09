@@ -108,6 +108,19 @@ function isStudioCompactViewport(): boolean {
   return window.innerWidth <= STUDIO_COMPACT_WIDTH || window.innerHeight <= STUDIO_COMPACT_HEIGHT;
 }
 
+/** One destination in the "Move to…" dialog: Top level or a folder. */
+interface MoveRow {
+  /** Stable row id for focus bookkeeping; a folder id, prefixed. */
+  key: string;
+  /** The parent id the move request takes; null for Top level. */
+  parentId: string | null;
+  name: string;
+  /** Nesting depth, for the row's indent. Top level and root folders are 0. */
+  level: number;
+  /** This is where the open writing already is, so choosing it is a no-op. */
+  current: boolean;
+}
+
 type ReferenceLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 type ReferenceScrollKey = 'writing' | 'topics' | 'topicNotes' | 'books' | 'bookNotes';
 
@@ -553,6 +566,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The "Move to…" dialog: Top level and the folders, to file the open writing in. */
   readonly moveOpen = signal(false);
   readonly moveBusy = signal(false);
+  /** The row whose move is in flight, so it can say "Moving…" in place. */
+  readonly movePendingKey = signal<string | null>(null);
 
   /** Where the open writing sits now: a folder id, or null at the top level. */
   readonly moveCurrentParent = computed(() => {
@@ -566,9 +581,57 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return buildFlatTree(folders, new Set(folders.map((folder) => folder.id)));
   });
 
+  /**
+   * The dialog's rows: Top level first, then every folder in file-tree order.
+   *
+   * A flat array rather than two template blocks: the keyboard handler walks
+   * the same order the screen reader does, and a row knows whether it is the
+   * current location without a second lookup in the template.
+   */
+  readonly moveRows = computed<MoveRow[]>(() => {
+    const currentParent = this.moveCurrentParent();
+    return [
+      {
+        key: 'top-level',
+        parentId: null,
+        name: 'Top level',
+        level: 0,
+        current: currentParent === null,
+      },
+      ...this.moveFolders().map((folder) => ({
+        key: `folder:${folder.id}`,
+        parentId: folder.id,
+        name: folder.name,
+        level: folder.level,
+        current: currentParent === folder.id,
+      })),
+    ];
+  });
+
+  /** Where the writing is now, as the header's second line says it. */
+  readonly moveLocation = computed(() => {
+    const parent = this.moveCurrentParent();
+    if (parent === null) return 'at the top level';
+    const folder = this.rootItems().find((item) => item.id === parent);
+    return folder ? `in “${folder.name}”` : 'in a folder';
+  });
+
+  /** False only when the writing is at the top level and there are no folders. */
+  readonly moveHasDestination = computed(() => this.moveRows().some((row) => !row.current));
+
+  /**
+   * The first row that is not the current location, for initial focus. Null
+   * when there is nowhere else to go, so the shell focuses its close button
+   * instead of an inert row.
+   */
+  readonly moveInitialFocusKey = computed(
+    () => this.moveRows().find((row) => !row.current)?.key ?? null,
+  );
+
   openMove(): void {
     if (!this.activeItem()) return;
     this.pageSettingsOpen.set(false);
+    this.movePendingKey.set(null);
     this.moveOpen.set(true);
   }
 
@@ -576,25 +639,74 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!this.moveBusy()) this.moveOpen.set(false);
   }
 
-  /** Moves the open writing; choosing where it already is just closes the dialog. */
+  /** A row's own key, matching the `key` on its MoveRow. */
+  private moveKey(parentId: string | null): string {
+    return parentId === null ? 'top-level' : `folder:${parentId}`;
+  }
+
+  /** Choose a row with the pointer or Enter/Space; the current row is inert. */
+  chooseMove(row: MoveRow): void {
+    if (this.moveBusy() || row.current) return;
+    this.moveTo(row.parentId);
+  }
+
+  /**
+   * Arrow keys walk the destinations without leaving the dialog; Home/End
+   * jump to the ends. The current row is skipped because it cannot be chosen.
+   * Tab still visits every row, and Enter/Space activate the focused one.
+   */
+  onMoveRowKeydown(event: KeyboardEvent, row: MoveRow): void {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const selectable = this.moveRows().filter((candidate) => !candidate.current);
+    if (selectable.length === 0) return;
+
+    let next: MoveRow;
+    if (event.key === 'Home') {
+      next = selectable[0];
+    } else if (event.key === 'End') {
+      next = selectable[selectable.length - 1];
+    } else {
+      const at = selectable.findIndex((candidate) => candidate.key === row.key);
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      let index: number;
+      if (at === -1) index = event.key === 'ArrowDown' ? 0 : selectable.length - 1;
+      else index = (at + step + selectable.length) % selectable.length;
+      next = selectable[index];
+    }
+
+    event.preventDefault();
+    const list = (event.currentTarget as HTMLElement).closest('.move-list');
+    const target = Array.from(
+      list?.querySelectorAll<HTMLButtonElement>('[data-move-row]') ?? [],
+    ).find((button) => button.dataset['moveRow'] === next.key);
+    target?.focus();
+  }
+
+  /**
+   * Moves the open writing. The location it is already in is inert: the row is
+   * marked "Current" and a click on it leaves the dialog open rather than
+   * pretending a move happened.
+   */
   moveTo(parentId: string | null): void {
     const item = this.activeItem();
     if (!item || this.moveBusy()) return;
-    if (parentId === this.moveCurrentParent()) {
-      this.moveOpen.set(false);
-      return;
-    }
+    if (parentId === this.moveCurrentParent()) return;
     this.moveBusy.set(true);
+    this.movePendingKey.set(this.moveKey(parentId));
     this.writingsService.move(item.id, parentId).subscribe({
       next: () => {
         this.moveBusy.set(false);
+        this.movePendingKey.set(null);
         this.moveOpen.set(false);
-        this.loadTree();
+        // Read the name before the tree reloads: the toast should not depend on
+        // the refreshed list still containing the folder it just moved into.
         const folder = parentId ? this.rootItems().find((candidate) => candidate.id === parentId) : null;
+        this.loadTree();
         this.toast.success(folder ? `Moved to “${folder.name}”` : 'Moved to the top level');
       },
       error: () => {
         this.moveBusy.set(false);
+        this.movePendingKey.set(null);
         this.toast.error('Could not move it');
       },
     });
