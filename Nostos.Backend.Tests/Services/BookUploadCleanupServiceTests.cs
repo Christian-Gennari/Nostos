@@ -114,6 +114,62 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
         Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task A_pass_removes_idle_staging_that_no_session_owns()
+    {
+        using var client = _factory.CreateClient();
+        var worker = new BookUploadCleanupService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<BookUploadCleanupService>.Instance,
+            new LibraryMaintenanceCoordinator());
+        var paths = _factory.Services.GetRequiredService<TransferPathResolver>();
+
+        // A live session whose folder has been quiet for two days stays.
+        var ownedId = Guid.NewGuid();
+        await using (var db = OpenDb())
+        {
+            var book = new EBookModel { Title = "Still uploading" };
+            db.Books.Add(book);
+            db.BookUploadSessionRecords.Add(new BookUploadSessionRecord
+            {
+                Id = ownedId,
+                BookId = book.Id,
+                OwnerKey = "selfhosted",
+                State = (int)BookUploadState.Receiving,
+                ActiveSessionKey = "owned-active",
+                TotalBytes = 4,
+                ChunkSize = 4,
+                TotalChunks = 1,
+                FileName = "book.txt",
+                FileSha256 = new string('c', 64),
+                ExpiresAtUtc = DateTime.UtcNow.AddHours(2),
+                UpdatedAtUtc = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var orphanId = Guid.NewGuid();
+        var freshOrphanId = Guid.NewGuid();
+        await StageAsync(paths, ownedId);
+        await StageAsync(paths, orphanId);
+        await StageAsync(paths, freshOrphanId);
+        Age(paths, ownedId, TimeSpan.FromDays(2));
+        Age(paths, orphanId, TimeSpan.FromDays(2));
+
+        await worker.ScanOnceAsync(CancellationToken.None);
+
+        Directory.Exists(paths.GetBookUploadSessionDirectory(orphanId)).Should().BeFalse();
+        File.Exists(paths.GetBookUploadPartPath(ownedId)).Should().BeTrue();
+        File.Exists(paths.GetBookUploadPartPath(freshOrphanId)).Should().BeTrue();
+    }
+
+    private static void Age(TransferPathResolver paths, Guid sessionId, TimeSpan age)
+    {
+        var then = DateTime.UtcNow - age;
+        File.SetLastWriteTimeUtc(paths.GetBookUploadPartPath(sessionId), then);
+        Directory.SetLastWriteTimeUtc(paths.GetBookUploadSessionDirectory(sessionId), then);
+    }
+
     private async Task<(Guid StaleId, Guid FinishedId)> SeedAsync(TransferPathResolver paths)
     {
         var staleId = Guid.NewGuid();
