@@ -207,11 +207,22 @@
   --focus-halo-danger: 0 0 0 3px color-mix(in srgb, var(--color-danger) 24%, transparent);
   /* The same frame under the pointer: cast + a halo (the "soft lamp"). The
      halo was clay and warm; the cool palette has no warm accent, so it is now
-     the same slate as the accent. Still replaced wholesale on dark. */
+     the same slate as the accent. Still replaced wholesale on dark.
+
+     The halo is cast DOWNWARD (`0 8px`), not centred. The Library's first row
+     starts 8px under the sticky glass toolbar and the card lifts another 4px
+     on hover, so only 4px of clear paper stands above it. A centred halo
+     reached 12px up into the toolbar's 85%-opaque glass, which covered that
+     part and left a hard horizontal cut along the card's top edge (invisible
+     on dark, where the glass and the shadow are the same near-black). Moving
+     the layer down by its own upward reach keeps the side aura unchanged,
+     puts the top fade inside the clearance, and reads a little deeper under
+     the card — the cast and contact terms still define the top edge, so a
+     measured 12-level step at the glass becomes 3. */
   --cover-shadow-hover:
     0 14px 28px -6px rgba(18, 19, 22, 0.15),
     0 4px 10px -2px rgba(0, 0, 0, 0.05),
-    0 0 16px -2px var(--color-accent-faint);
+    0 8px 16px -2px var(--color-accent-faint);
   /* The segmented control's selected option: the raised surface. On dark this is
      NOT `--bg-surface`, which is darker than the track it sits in. */
   --control-active-fill: var(--bg-surface);
