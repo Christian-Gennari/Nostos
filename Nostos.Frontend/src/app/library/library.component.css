@@ -162,9 +162,24 @@ app-sidebar-collections.no-transition {
 
 .filter-chip {
   /* appChip owns the capsule; Library keeps the asymmetric remove-icon gutter
-     and the existing entrance motion. */
+     and the existing entrance motion. The row is the chip's ceiling: a long
+     collection name ellipsizes inside it instead of pushing the bar wider. */
   padding-right: 0.4rem;
+  max-width: 100%;
   animation: chip-in 180ms var(--ease-out) both;
+}
+
+/* The label is the only part allowed to shrink; the X keeps its measured size
+   so the chip stays a full-height clear action however long the name is. */
+.filter-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip > nostos-icon {
+  flex: none;
 }
 
 /* <nostos-empty-state> owns the look; in the grid it spans every column. */
@@ -880,6 +895,9 @@ app-sidebar-collections.no-transition {
   color: var(--ink-lede);
   line-height: 1.3;
   margin-bottom: 0.2rem;
+  /* A title can be one long unbroken token (a URL, a transliteration). Let it
+     break inside the card at every width instead of widening the grid track. */
+  overflow-wrap: anywhere;
 }
 
 /* A real link whose ::after covers the card (z-index 0): the cover buttons
@@ -1124,16 +1142,19 @@ app-sidebar-collections.no-transition {
     margin: 0.25rem 0 0.75rem;
   }
 
+  /* The toolbar's opener is icon-only here, so the active-filter chip row
+     carries the shelf's name: the scope chip (status / format / collection)
+     is a full-width line that can ellipsize, and its X clears the filter.
+     "All books" has no scope chip at all, and the empty bar keeps zero
+     height (`.filter-bar.is-empty`). */
+  .filter-chip {
+    min-height: var(--control-h-touch);
+  }
+
   /* The phone gutter is the toolbar's, so the shelf lines up with the search
      field above it. */
   .library-right-side > .container {
     padding: 0.75rem 1rem 2rem;
-  }
-
-  /* The toolbar names the shelf here, so only a search earns a chip. */
-  .filter-bar.scope-only,
-  .filter-chip--scope {
-    display: none;
   }
 
   .search-bar-container {
@@ -1153,10 +1174,10 @@ app-sidebar-collections.no-transition {
     line-height: normal;
   }
 
-  /* Navigation on the left (the drawer opener, which names the shelf), the
-     page's actions on the right after a spacer: sort, view, add. The row used
-     to pack every control against the right edge with the opener among them,
-     which gave the row no reading order. */
+  /* Navigation on the left (the drawer opener), the page's actions on the
+     right after a spacer: sort, view, add. The row used to pack every control
+     against the right edge with the opener among them, which gave the row no
+     reading order. */
   .toolbar-right {
     display: flex;
     align-items: center;
@@ -1194,20 +1215,21 @@ app-sidebar-collections.no-transition {
      view toggle and the Add button are sized to it here. (They were 38px, and
      once the dropdown became 44px and the toggle 50px the row had four
      heights.) Match the desktop hide selector so this mobile rule overrides it. */
-  /* The opener is a ghost button carrying the shelf's name, on the touch
-     rung. It may shrink (the name ellipsizes) but never below its glyph, and
-     its own left inset is pulled into the gutter so the glyph — not the
-     button's padding — lines up with the search field below. */
+  /* The opener is a ghost button carrying only the drawer's icon, on the
+     touch rung: the shelf's name lives in the scope chip below, because this
+     44px row leaves no room for it (#1510). `aria-label` and `aria-expanded`
+     keep the action and its state for assistive tech. */
   .toolbar-right > button.floating-toggle {
     position: relative;
     box-sizing: border-box;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
-    flex: 0 1 auto;
-    min-width: var(--control-h-touch);
+    flex: none;
+    width: var(--control-h-touch);
     height: var(--control-h-touch);
-    padding: 0 10px 0 6px;
+    padding: 0;
     margin: 0 0 0 -6px;
     border: 0;
     background: none;
@@ -1221,16 +1243,10 @@ app-sidebar-collections.no-transition {
       transform var(--transition-fast);
   }
 
-  .scope-label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
+  /* The name is the chip row's job now; the toolbar keeps the icon alone. */
+  .scope-label,
   .scope-caret {
-    flex: none;
-    color: var(--color-text-light);
+    display: none;
   }
 
   .floating-toggle::after {
@@ -1320,9 +1336,13 @@ app-sidebar-collections.no-transition {
   }
 
   /* The container already holds the toolbar's 16px gutter, so the grid adds
-     none: covers line up with the search field and come out ~28px wider. */
+     none: covers line up with the search field and come out ~28px wider.
+     `minmax(0, 1fr)` is deliberate: a bare `1fr` track takes its minimum from
+     the card's content, so one unbroken title word widened its column and
+     pushed the second card off the screen (#1512). The title breaks instead
+     (`.meta-title`), and the two tracks stay equal. */
   .book-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 1.75rem 1rem !important;
     padding: 0 0 8rem !important;
   }

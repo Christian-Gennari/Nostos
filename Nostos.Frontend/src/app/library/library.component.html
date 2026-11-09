@@ -32,10 +32,10 @@
       </nostos-search-field>
 
       <div class="toolbar-right">
-        <!-- Phone only. Navigation anchors the row's left edge: the drawer opener
-             names the shelf on screen, and the page's actions group on the right
-             after the spacer. The name lives in the visible label; aria-label
-             keeps the action ("Open collections sidebar") for assistive tech. -->
+        <!-- Phone only. Navigation anchors the row's left edge: the drawer
+             opener is icon-only on the touch rung, and the active-filter chip
+             row below carries the shelf's name. aria-label keeps the action
+             ("Open collections sidebar") for assistive tech. -->
         <button
           type="button"
           appButton
@@ -97,8 +97,9 @@
       </div>
     </header>
 
-    <!-- On a phone the toolbar already names the shelf, so the bar there shows
-         only a search chip; `scope-only` lets the phone rule fold it away. -->
+    <!-- On a phone the scope chip here is the shelf's name: the toolbar's
+         drawer opener is icon-only. `scope-only` marks a bar with no search
+         chip, and `.is-empty` lets it keep zero height when nothing is set. -->
     <div
       class="filter-bar"
       [class.is-empty]="activeFilterChips().length === 0"
