@@ -616,6 +616,7 @@ public sealed class ReadingHistoryImportService
         var empty = await _db.Collections
             .Where(collection => created.Contains(collection.Id))
             .Where(collection => !_db.BookCollections.Any(membership => membership.CollectionId == collection.Id))
+            .Where(collection => !_db.Collections.Any(child => child.ParentId == collection.Id))
             .ToListAsync(ct);
         if (empty.Count > 0)
         {
