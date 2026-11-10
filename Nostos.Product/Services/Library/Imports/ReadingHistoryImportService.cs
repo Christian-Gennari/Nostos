@@ -140,6 +140,16 @@ public sealed class ReadingHistoryImportService
         var readingListKeys = readingList
             .Select(entry => ReadingListKey(entry.Title, entry.Author, entry.Isbn))
             .ToHashSet(StringComparer.Ordinal);
+        // One read for the whole import: when each work was last read decides
+        // whether a file's older value may displace what the library says.
+        var workLastRead = (await _db.Books
+                .AsNoTracking()
+                .Select(book => new { book.WorkId, book.Progress.LastReadAt, book.Progress.FinishedAt })
+                .ToListAsync(ct))
+            .GroupBy(book => book.WorkId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(book => book.LastReadAt ?? book.FinishedAt).Where(date => date.HasValue).Max());
 
         foreach (var row in sourceBooks)
         {
@@ -225,7 +235,7 @@ public sealed class ReadingHistoryImportService
                 ?? throw new InvalidOperationException("A library book must have a work.");
 
             // Change the values, keeping what was there so undo can restore it.
-            var existingLastRead = await LastReadAsync(work.Id, ct);
+            workLastRead.TryGetValue(work.Id, out var existingLastRead);
             var ratingBefore = work.Rating;
             var reviewBefore = work.PersonalReview;
             var editionRatingBefore = book.Progress.Rating;
@@ -233,6 +243,8 @@ public sealed class ReadingHistoryImportService
             var finishedBefore = book.Progress.FinishedAt;
 
             ApplyValues(book, work, row, existingLastRead);
+            if (row.FinishedAt is { } readAt && (existingLastRead is null || readAt > existingLastRead))
+                workLastRead[work.Id] = readAt;
 
             var addedCollections = new List<Guid>();
             var createdCollections = new List<Guid>();
@@ -687,19 +699,6 @@ public sealed class ReadingHistoryImportService
         return rows.ToDictionary(
             row => row.Id,
             row => new LibraryBookMeta(row.Title, row.Rating, row.BookReview, row.FinishedAt));
-    }
-
-    private async Task<DateTime?> LastReadAsync(Guid workId, CancellationToken ct)
-    {
-        var dates = await _db.Books
-            .AsNoTracking()
-            .Where(book => book.WorkId == workId)
-            .Select(book => new { book.Progress.LastReadAt, book.Progress.FinishedAt })
-            .ToListAsync(ct);
-        return dates
-            .Select(date => date.LastReadAt ?? date.FinishedAt)
-            .Where(date => date.HasValue)
-            .Max();
     }
 
     /// <summary>

@@ -11,8 +11,8 @@ namespace Nostos.Backend.Services.Library.Imports;
 internal static class ReadingHistoryImportSourceReader
 {
     // A full library export is a few megabytes at most; this only stops an
-    // obviously wrong file from being read whole.
-    private const long MaxTextBytes = 32 * 1024 * 1024;
+    // obviously wrong file from being read whole (the endpoint's ceiling).
+    private const long MaxTextBytes = 64 * 1024 * 1024;
 
     internal const string Unrecognised =
         "This file is not an export Nostos can read. Choose the CSV from Goodreads (My Books → Import and export) or StoryGraph (Manage Account → Export StoryGraph Library).";
