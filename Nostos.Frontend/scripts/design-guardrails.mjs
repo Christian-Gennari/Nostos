@@ -348,6 +348,8 @@ export const PROPER_PHRASES = ['Ask Nostos', 'Works Cited', 'Open Library', 'Goo
   "Anna's Archive", 'Writer’s Study', "Writer's Study", 'Nostos Cloud',
   // A Settings page named inside a label: "Open Backups & data".
   'Backups & data',
+  // StoryGraph's own menu, named when explaining where its export lives.
+  'Manage Account',
   // Kindle's own file name.
   'My Clippings',
   // Studio typefaces (writing-studio/page-settings/studio-preferences.service.ts).

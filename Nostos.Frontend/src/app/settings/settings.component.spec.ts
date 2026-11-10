@@ -1,4 +1,5 @@
 import { HighlightImportService } from '../core/services/highlight-import.service';
+import { ReadingHistoryImportService } from '../core/services/reading-history-import.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
@@ -1681,6 +1682,26 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="import-highlights-card"]')).toBeTruthy();
+  });
+
+  it('offers a reading history import from Goodreads and StoryGraph', () => {
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('[data-testid="reading-history-card"]') as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain('Reading history');
+    expect(card.querySelector('[data-testid="import-source-history-goodreads"]')?.textContent).toContain(
+      'My Books → Import and export',
+    );
+    expect(card.querySelector('[data-testid="import-source-history-storygraph"]')?.textContent).toContain(
+      'Manage Account → Export StoryGraph Library',
+    );
+
+    const importService = TestBed.inject(ReadingHistoryImportService);
+    const open = vi.spyOn(importService, 'open');
+    (card.querySelector('[data-testid="import-action-reading-history"]') as HTMLButtonElement).click();
+    expect(open).toHaveBeenCalled();
   });
 
   it('opens Apple Books steps from a link', () => {

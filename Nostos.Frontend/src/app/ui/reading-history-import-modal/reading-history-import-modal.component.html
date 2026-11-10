@@ -1,0 +1,539 @@
+@if (isOpen()) {
+<app-modal-shell
+  closeLabel="Close reading history import"
+  [isOpen]="true"
+  variant="sheet"
+  cardClass="reading-history-card"
+  [maxWidth]="'620px'"
+  [maxHeight]="'min(780px, calc(100dvh - 2.5rem))'"
+  [layer]="110"
+  [busy]="busy() || undoing()"
+  [dismissOnBackdrop]="stage() === 'pick'"
+  ariaLabelledBy="reading-history-title"
+  [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
+  (closed)="close()"
+>
+  <header class="history-head" shellHeader>
+    <h2 id="reading-history-title" class="history-title">
+      {{ stage() === 'review' ? 'Review before importing' : 'Import reading history' }}
+    </h2>
+  </header>
+
+  <div class="history-body">
+    @if (undoError()) {
+      <p class="history-failure" role="alert">{{ undoError() }}</p>
+    }
+
+    @switch (stage()) {
+      @case ('pick') {
+        <p class="history-hint">
+          Bring the books you have read, rated and reviewed on Goodreads or StoryGraph into Nostos. You see
+          where every book goes before anything is added, and importing the same file again never creates
+          duplicates.
+        </p>
+
+        <label
+          appDropZone
+          class="history-drop-zone"
+          (dragover)="onDragOver($event)"
+          (drop)="onDrop($event)"
+        >
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            class="history-file-input"
+            data-testid="reading-history-import-input"
+            (change)="onFileSelected($event)"
+          />
+          <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
+          <span class="nostos-drop-zone__title">Choose the CSV or drop it here</span>
+          <span class="nostos-drop-zone__hint">goodreads_library_export.csv or the StoryGraph export</span>
+        </label>
+
+        <dl class="history-sources">
+          <div class="history-source">
+            <dt>Goodreads</dt>
+            <dd>
+              Export your library from <strong>My Books → Import and export</strong>, then pick
+              <code>goodreads_library_export.csv</code>.
+            </dd>
+          </div>
+          <div class="history-source">
+            <dt>StoryGraph</dt>
+            <dd>
+              Export from <strong>Manage Account → Export StoryGraph Library</strong>, then pick the CSV it
+              gives you. Quarter stars are rounded to the nearest whole star.
+            </dd>
+          </div>
+        </dl>
+
+        @if (recent().length > 0) {
+          <section class="history-section history-recent" aria-labelledby="history-recent-title">
+            <div class="history-section-header">
+              <h3 class="history-section-title" id="history-recent-title">Recent imports</h3>
+            </div>
+            <ul class="history-rows">
+              @for (batch of recent(); track batch.id) {
+                <li class="history-row" data-testid="reading-history-recent-row">
+                  <span class="history-row-text">
+                    <span class="history-row-title">
+                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'value') }}
+                    </span>
+                    <span class="history-row-sub">
+                      {{ sourceNameFor(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }}
+                    </span>
+                  </span>
+                  <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="askUndoRecent(batch)">
+                    Undo
+                  </button>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      }
+
+      @case ('reading') {
+        <div class="history-progress" role="status" aria-live="polite">
+          <nostos-loading-indicator decorative size="xl" />
+          <p class="history-progress-title">Reading the export…</p>
+          <p class="history-progress-file">{{ file()?.name }}</p>
+          <p class="history-progress-note">A large library can take a moment. Keep this window open.</p>
+        </div>
+      }
+
+      @case ('importing') {
+        <div class="history-progress" role="status" aria-live="polite">
+          <nostos-loading-indicator decorative size="xl" />
+          <p class="history-progress-title">Importing into your library…</p>
+          <p class="history-progress-note">This can take a minute for a long reading history.</p>
+        </div>
+      }
+
+      @case ('review') {
+        <p class="history-hint">
+          Nothing has been added yet. Check where each book is going, then import.
+        </p>
+
+        <p class="history-counts" data-testid="reading-history-counts">
+          {{ countLabel(rows().length, 'book') }} ·
+          {{ matchedCount() }} matched ·
+          {{ newCount() }} new
+          @if (skippedCount() > 0) {
+            · {{ skippedCount() }} skipped
+          }
+        </p>
+
+        @if (failures().length > 0) {
+          <ul class="history-failures" role="alert">
+            @for (failure of failures(); track $index) {
+              <li class="history-failure">
+                <span class="history-row-title">{{ failure.fileName }}</span>
+                <span class="history-row-sub">{{ failure.message }}</span>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (hasShelves()) {
+          <label class="history-option" data-testid="reading-history-map-shelves">
+            <input
+              type="checkbox"
+              appCheckbox
+              [checked]="mapShelves()"
+              (change)="onMapShelves($event)"
+            />
+            <span>
+              <span class="history-option-title">Map shelves to collections</span>
+              <span class="history-option-hint">
+                Goodreads shelves and StoryGraph tags become collections. Missing collections are created;
+                nothing is mapped unless you tick this.
+              </span>
+            </span>
+          </label>
+        }
+
+        @if (toCheck().length > 0) {
+          <section class="history-section" aria-labelledby="history-check-title">
+            <div class="history-section-header">
+              <h3 class="history-section-title" id="history-check-title">Check these</h3>
+              <span class="history-count-badge">{{ toCheck().length }}</span>
+            </div>
+            <ul class="history-rows">
+              @for (row of toCheck(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (missing().length > 0) {
+          <section class="history-section" aria-labelledby="history-missing-title">
+            <div class="history-section-header">
+              <h3 class="history-section-title" id="history-missing-title">Not in your library</h3>
+              <span class="history-count-badge">{{ missing().length }}</span>
+            </div>
+            <ul class="history-rows">
+              @for (row of missing(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (ready().length > 0) {
+          <section class="history-section" aria-labelledby="history-ready-title">
+            <div class="history-section-header">
+              <h3 class="history-section-title" id="history-ready-title">Ready</h3>
+              <span class="history-count-badge">{{ ready().length }}</span>
+            </div>
+            <ul class="history-rows">
+              @for (row of ready(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (unimportable().length > 0) {
+          <details class="history-section history-unplaced" data-testid="reading-history-unimportable">
+            <summary class="history-section-header">
+              <nostos-icon name="caret-right" [size]="12" class="history-disclosure"></nostos-icon>
+              <h3 class="history-section-title">Not imported</h3>
+              <span class="history-count-badge">{{ skippedCount() }}</span>
+            </summary>
+            <ul class="history-rows">
+              @for (entry of unimportable(); track $index) {
+                <li class="history-row">
+                  <span class="history-row-text">
+                    <span class="history-row-title">{{ entry.title || 'Untitled' }}</span>
+                    <span class="history-row-sub">
+                      @if (entry.author) {
+                        {{ entry.author }} ·
+                      }
+                      @if (entry.count > 1) {
+                        {{ entry.count }} rows ·
+                      }
+                      {{ entry.reason }}
+                    </span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      }
+
+      @case ('result') {
+        <div class="history-result-summary" data-testid="reading-history-summary" aria-live="polite">
+          <nostos-icon
+            [name]="undone() === null && imported().length > 0 ? 'check-circle' : 'warning-circle'"
+            [size]="22"
+            weight="light"
+          ></nostos-icon>
+          <div>
+            <p class="history-result-headline">{{ headline() }}</p>
+            @if (summary()) {
+              <p class="history-result-sub">{{ summary() }}</p>
+            }
+          </div>
+        </div>
+
+        @if (failures().length > 0) {
+          <ul class="history-failures" role="alert">
+            @for (failure of failures(); track $index) {
+              <li class="history-failure">
+                <span class="history-row-title">{{ failure.fileName }}</span>
+                <span class="history-row-sub">{{ failure.message }}</span>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (imported().length > 0 && undone() === null) {
+          <section class="history-section" aria-labelledby="history-imported-title">
+            <div class="history-section-header">
+              <h3 class="history-section-title" id="history-imported-title">Imported</h3>
+              <span class="history-count-badge">{{ imported().length }}</span>
+            </div>
+            <ul class="history-rows">
+              @for (book of imported(); track $index) {
+                <li class="history-row">
+                  <span class="history-row-text">
+                    <span class="history-row-title">{{ book.bookTitle || book.sourceTitle || unknownBook }}</span>
+                    <span class="history-row-sub">{{ outcome(book) }}</span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (leftOut().length > 0 && undone() === null) {
+          <details class="history-section history-unplaced" [open]="imported().length === 0">
+            <summary class="history-section-header">
+              <nostos-icon name="caret-right" [size]="12" class="history-disclosure"></nostos-icon>
+              <h3 class="history-section-title">Left out</h3>
+              <span class="history-count-badge">{{ leftOut().length }}</span>
+            </summary>
+            <ul class="history-rows">
+              @for (book of leftOut(); track $index) {
+                <li class="history-row">
+                  <span class="history-row-text">
+                    <span class="history-row-title">{{ book.sourceTitle || unknownBook }}</span>
+                    <span class="history-row-sub">{{ book.message || 'Not imported.' }}</span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      }
+    }
+  </div>
+
+  @if (stage() === 'review') {
+    <app-dialog-actions shellActions>
+      <span dialogActionsStart class="history-footer-note" aria-live="polite">
+        @if (unanswered() > 0) {
+          {{ unanswered() }} still to check
+        }
+      </span>
+      <button appButton type="button" variant="secondary" (click)="backToPick()">Back</button>
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        data-testid="reading-history-commit"
+        [disabled]="included().length === 0"
+        (click)="importReviewed()"
+      >
+        @if (included().length === 0) {
+          Nothing selected
+        } @else {
+          Import {{ countLabel(included().length, 'book') }}
+        }
+      </button>
+    </app-dialog-actions>
+  }
+
+  @if (stage() === 'result') {
+    <app-dialog-actions shellActions>
+      @if (batchId()) {
+        <button
+          appButton
+          dialogActionsStart
+          type="button"
+          variant="ghost"
+          data-testid="reading-history-undo"
+          [disabled]="undoing()"
+          [busy]="undoing()"
+          (click)="askUndoImport()"
+        >
+          <nostos-icon name="arrow-counter-clockwise" [size]="14"></nostos-icon>
+          Undo import
+        </button>
+      }
+      <button appButton type="button" variant="secondary" [disabled]="undoing()" (click)="importAnother()">
+        Import another file
+      </button>
+      <button appButton type="button" variant="primary" [disabled]="undoing()" (click)="close()">Done</button>
+    </app-dialog-actions>
+  }
+</app-modal-shell>
+}
+
+<app-confirm-modal
+  [isOpen]="pendingUndo() !== null"
+  heading="Undo this import?"
+  [description]="undoDescription()"
+  confirmLabel="Undo import"
+  busyLabel="Undoing…"
+  icon="arrow-counter-clockwise"
+  [busy]="undoing()"
+  (confirm)="confirmUndo()"
+  (cancel)="cancelUndo()"
+></app-confirm-modal>
+
+<!-- One row of the export: what the service holds, then where it is going or
+     the question that decides it. -->
+<ng-template #reviewRow let-row>
+  <li
+    class="history-review"
+    data-testid="reading-history-review-row"
+    [class.is-included]="row.target"
+    [class.is-question]="!row.target && row.suggestion"
+  >
+    <div class="history-review-source">
+      <span class="history-row-title">{{ row.book.title || unknownBook }}</span>
+      <span class="history-row-sub">
+        @if (row.book.author) {
+          {{ row.book.author }} ·
+        }
+        @if (row.book.isbn) {
+          ISBN {{ row.book.isbn }} ·
+        }
+        {{ row.book.values.readStatus === 'read' ? 'Read' : statusLabel(row) || 'No status' }}
+        @if (row.book.values.readCount > 1) {
+          · reread {{ row.book.values.readCount }} times
+        }
+      </span>
+      <span class="history-chips">
+        @if (ratingLabel(row); as rating) {
+          <span class="history-chip">{{ rating }}</span>
+        }
+        @if (readLabel(row); as read) {
+          <span class="history-chip">{{ read }}</span>
+        }
+        @if (row.book.values.review) {
+          <span class="history-chip">Review</span>
+        }
+        @if (row.book.values.privateNotes) {
+          <span class="history-chip">Private note</span>
+        }
+        @if (row.book.values.toRead) {
+          <span class="history-chip">{{ toReadLabel }}</span>
+        }
+        @if (row.book.values.shelves.length > 0) {
+          <span class="history-chip">
+            {{ shelfLabel(row) }}
+            @if (mapShelves()) {
+              → collections
+            }
+          </span>
+        }
+        @if (!row.book.hasChanges) {
+          <span class="history-chip history-chip--quiet">Already in Nostos</span>
+        }
+      </span>
+      @if (row.book.values.ratingNotice || row.book.notice) {
+        <span class="history-review-reason" data-testid="reading-history-notice">
+          {{ row.book.values.ratingNotice || row.book.notice }}
+        </span>
+      }
+    </div>
+
+    @if (row.target; as target) {
+      <div class="history-review-target">
+        <nostos-icon name="arrow-right" [size]="13"></nostos-icon>
+        <span class="history-review-target-text">
+          @if (target.kind === 'create') {
+            @if (row.book.values.toRead) {
+              Will go on your reading list
+            } @else {
+              Will be added to your library as a new paper book
+            }
+          } @else {
+            <strong>{{ target.title }}</strong>
+            @if (target.author) {
+              · {{ target.author }}
+            }
+            @if (!row.book.hasChanges) {
+              · nothing new
+            }
+          }
+        </span>
+        <span class="history-review-actions">
+          <button type="button" appButton variant="link" class="history-link" (click)="openPicker(row)">Change</button>
+          <button type="button" appButton variant="link" class="history-link" (click)="skip(row)">Leave out</button>
+        </span>
+      </div>
+    } @else if (row.suggestion; as suggestion) {
+      <div class="history-review-target">
+        <span class="history-review-target-text">
+          Is this <strong>{{ suggestion.title }}</strong>
+          @if (suggestion.author) {
+            by {{ suggestion.author }}
+          }
+          ?
+          <span class="history-review-reason">{{ suggestion.reason }}</span>
+        </span>
+      </div>
+      <div class="history-review-buttons">
+        <button appButton type="button" variant="primary" size="sm" data-testid="reading-history-confirm" (click)="confirm(row)">
+          Yes, import here
+        </button>
+        <button appButton type="button" variant="secondary" size="sm" (click)="openPicker(row)">
+          Another book
+        </button>
+        <button appButton type="button" variant="ghost" size="sm" (click)="skip(row)">Leave out</button>
+      </div>
+    } @else {
+      <div class="history-review-buttons">
+        <span class="history-review-left-out">Left out</span>
+        @if (row.book.title) {
+          <button appButton type="button" variant="secondary" size="sm" data-testid="reading-history-add" (click)="add(row)">
+            <nostos-icon name="plus" [size]="13"></nostos-icon>
+            @if (row.book.values.toRead) {
+              Add to reading list
+            } @else {
+              Add as a paper book
+            }
+          </button>
+        }
+        <button appButton type="button" variant="ghost" size="sm" (click)="openPicker(row)">
+          Choose a book
+        </button>
+      </div>
+    }
+
+    @if (pickingRowId() === row.id) {
+      <div class="history-picker" data-testid="reading-history-picker">
+        <nostos-search-field class="history-picker-search" size="sm">
+          <input
+            appInput
+            controlSize="compact"
+            type="search"
+            placeholder="Search your library…"
+            aria-label="Search your library"
+            [value]="searchQuery()"
+            (input)="onSearch($any($event.target).value)"
+          />
+        </nostos-search-field>
+        <ul class="history-picker-list">
+          @for (candidate of searchQuery().trim() ? searchResults() : row.book.candidates; track candidate.bookId) {
+            <li>
+              <button type="button" appChoiceRow class="history-picker-option" (click)="choose(row, candidate)">
+                <span class="nostos-choice-row__text">
+                  <span class="nostos-choice-row__title">{{ candidate.title }}</span>
+                  <span class="nostos-choice-row__sub">{{ candidate.author || unknownAuthor }}</span>
+                  <span class="history-picker-format nostos-choice-row__meta">
+                    <nostos-icon [concept]="candidate.format" [size]="12" aria-hidden="true"></nostos-icon>
+                    {{ formatName(candidate.format) }}
+                    @if (candidate.reason) {
+                      · {{ candidate.reason }}
+                    }
+                  </span>
+                </span>
+              </button>
+            </li>
+          } @empty {
+            <li class="history-picker-empty">
+              @if (searching()) {
+                <nostos-loading-indicator label="Searching" />
+              } @else if (searchError()) {
+                <nostos-empty-state compact error [retryable]="false" message="Search could not finish. Try again." />
+              } @else if (searchQuery().trim()) {
+                <nostos-empty-state compact message="No book in your library matches." />
+              } @else {
+                <nostos-empty-state compact message="Type a title or an author." />
+              }
+            </li>
+          }
+        </ul>
+        <div class="history-picker-footer">
+          @if (row.book.title) {
+            <button type="button" appButton variant="link" class="history-link" (click)="add(row)">
+              @if (row.book.values.toRead) {
+                Add to reading list instead
+              } @else {
+                Add as a new paper book instead
+              }
+            </button>
+          }
+          <button type="button" appButton variant="link" class="history-link" (click)="closePicker()">Cancel</button>
+        </div>
+      </div>
+    }
+  </li>
+</ng-template>

@@ -12,6 +12,10 @@
   @defer (when highlightImport.isOpen(); prefetch on idle) {
     <app-highlight-import-modal />
   }
+  <!-- Loaded on first open; ReadingHistoryImportService holds the open state. -->
+  @defer (when readingHistoryImport.isOpen(); prefetch on idle) {
+    <app-reading-history-import-modal />
+  }
   <!-- The passage viewer (issue #1014), opened from any note list through
        PassageViewerService. Loaded on first open. -->
   @defer (when passageViewer.request(); prefetch on idle) {
