@@ -258,7 +258,7 @@ public static class NostosProductComposition
         {
             client.Timeout = TimeSpan.FromSeconds(15);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
@@ -335,7 +335,7 @@ public static class NostosProductComposition
         {
             client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -373,7 +373,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(GutenbergCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         });
         // The daily RDF snapshot is a 177 MB archive, so it gets its own client:
         // the 20 s search timeout must never apply to a bulk read. The download
@@ -383,7 +383,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(GutenbergCatalog.BaseUrl);
             client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
             ConnectTimeout = TimeSpan.FromSeconds(30),
@@ -425,7 +425,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(WikisourceCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         });
         services.AddSingleton<IContentProvider, WikisourceProvider>();
 
@@ -444,7 +444,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(LibriVoxCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         });
         // Bulk snapshot reads page through the whole catalogue, so they get
         // their own client with a longer timeout instead of the discovery
@@ -454,7 +454,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(LibriVoxCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromMinutes(2);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
         });
         services.AddSingleton<IContentProvider, LibriVoxProvider>();
 
