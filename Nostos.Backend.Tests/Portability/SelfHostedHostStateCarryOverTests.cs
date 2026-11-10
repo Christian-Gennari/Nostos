@@ -84,6 +84,8 @@ public sealed class SelfHostedHostStateCarryOverTests
         [
             nameof(Nostos.Backend.Data.Models.NoteImportBatch),
             nameof(Nostos.Backend.Data.Models.NoteImportBatchNote),
+            nameof(Nostos.Backend.Data.Models.BookImportBatch),
+            nameof(Nostos.Backend.Data.Models.BookImportBatchBook),
             nameof(Nostos.Backend.Data.Models.AlignmentAnchorModel),
             nameof(Nostos.Backend.Data.Models.ExternalMediaLinkModel),
             nameof(Nostos.Backend.Data.Models.WritingCitationModel),

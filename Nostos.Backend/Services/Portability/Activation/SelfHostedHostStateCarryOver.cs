@@ -60,6 +60,14 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Clear,
             "Undo batch-to-note links carry the old generation's note identity. A matching GUID is not provenance into the imported library, so all links are cleared with their batches."),
         new(
+            typeof(BookImportBatch),
+            HostStateCarryOverKind.Clear,
+            "Reading-history import batches describe what to take back out of the replaced library generation. A matching book GUID is not the same book after a whole-library replacement, so the batches and their rows are cleared."),
+        new(
+            typeof(BookImportBatchBook),
+            HostStateCarryOverKind.Clear,
+            "Reading-history batch rows hold book, reading-list and note ids of the replaced generation; they are cleared with their batches."),
+        new(
             typeof(AlignmentAnchorModel),
             HostStateCarryOverKind.Clear,
             "Derived audiobook/ebook anchors hold foreign keys to the old generation's books and are bound to its file revisions. They are rebuilt on demand, so none are carried into the imported library."),
