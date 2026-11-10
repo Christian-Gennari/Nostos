@@ -172,6 +172,20 @@ describe('ReadingHistoryImportModal', () => {
     expect(component.batchId()).toBe('batch-1');
   });
 
+  it('adds every left-out new book at once, and offers it only when there are several', async () => {
+    const second = { ...missing, sourceKey: 'goodreads:id:111', title: 'The Lantern Keepers' };
+    await review(previewBook(), missing, second);
+    const addAll = () => fixture.nativeElement.querySelector('[data-testid="reading-history-add-all"]') as HTMLButtonElement | null;
+
+    expect(addAll()?.textContent).toContain('Add all 2');
+    addAll()!.click();
+    fixture.detectChanges();
+
+    expect(component.missing().every((row) => row.target?.kind === 'create')).toBe(true);
+    expect(component.included()).toHaveLength(3);
+    expect(addAll()).toBeNull();
+  });
+
   it('maps shelves only after the owner ticks the option', async () => {
     await review(previewBook());
     const commit = vi

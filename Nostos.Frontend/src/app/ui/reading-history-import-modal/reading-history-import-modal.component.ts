@@ -117,6 +117,10 @@ export class ReadingHistoryImportModal {
   readonly missing = computed(() => this.rows().filter((row) => row.book.match === 'none'));
 
   readonly included = computed(() => this.rows().filter((row) => row.target !== null));
+  /** Books not in the library that are still left out: what "Add all" adds. */
+  readonly missingLeftOut = computed(() =>
+    this.missing().filter((row) => row.target === null && row.book.title !== null),
+  );
   readonly unanswered = computed(
     () => this.toCheck().filter((row) => row.target === null && row.suggestion !== null).length,
   );
@@ -269,6 +273,16 @@ export class ReadingHistoryImportModal {
 
   add(row: HistoryRow): void {
     this.setTarget(row, { kind: 'create' });
+  }
+
+  /**
+   * A whole export is hundreds of books the library has never seen; one by
+   * one is not a way to move in. Adds every left-out new book at once (a
+   * to-read row goes to the reading list, as its own Add does).
+   */
+  addAll(): void {
+    const ids = new Set(this.missingLeftOut().map((row) => row.id));
+    this.rows.update((rows) => rows.map((row) => (ids.has(row.id) ? { ...row, target: { kind: 'create' } } : row)));
   }
 
   skip(row: HistoryRow): void {

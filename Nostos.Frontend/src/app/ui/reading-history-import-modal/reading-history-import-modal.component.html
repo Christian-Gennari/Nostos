@@ -172,6 +172,12 @@
             <div class="history-section-header">
               <h3 class="history-section-title" id="history-missing-title">Not in your library</h3>
               <span class="history-count-badge">{{ missing().length }}</span>
+              @if (missingLeftOut().length > 1) {
+                <button appButton type="button" variant="ghost" size="sm" class="history-add-all"
+                  data-testid="reading-history-add-all" (click)="addAll()">
+                  Add all {{ missingLeftOut().length }}
+                </button>
+              }
             </div>
             <ul class="history-rows">
               @for (row of missing(); track row.id) {
