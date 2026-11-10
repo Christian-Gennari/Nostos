@@ -47,6 +47,21 @@ describe('FlatTreeComponent', () => {
     component.onDragStarted(component.treeNodes()[index]);
   }
 
+  function row(id: string): HTMLElement {
+    return fixture.nativeElement.querySelector(`[data-node-id="${id}"]`) as HTMLElement;
+  }
+
+  /** Opens a row's touch menu and returns the items now in the overlay. */
+  function rowMenuItems(id: string): HTMLButtonElement[] {
+    (row(id).querySelector('.row-menu-trigger') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    return Array.from(document.querySelectorAll<HTMLButtonElement>('.nostos-menu-item'));
+  }
+
+  function closeMenus(): void {
+    document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove());
+  }
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [FlatTreeComponent],
@@ -167,6 +182,77 @@ describe('FlatTreeComponent', () => {
     aRow.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
 
     expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }));
+  });
+
+  it('selects the row from a click on the folder glyph, not just the name', () => {
+    const selected = vi.fn();
+    component.nodeSelected.subscribe(selected);
+
+    (row('b').querySelector('.type-icon') as HTMLElement).click();
+
+    expect(selected).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+  });
+
+  describe('touch row menu', () => {
+    afterEach(closeMenus);
+
+    it('opens from its own trigger without selecting the row', () => {
+      const selected = vi.fn();
+      component.nodeSelected.subscribe(selected);
+
+      const items = rowMenuItems('b');
+
+      expect(selected).not.toHaveBeenCalled();
+      expect(items.map((item) => item.textContent?.trim())).toEqual(['Rename', 'Delete']);
+      expect(fixture.nativeElement.querySelector('[data-node-id="b"] .row-menu-trigger')).toBeTruthy();
+    });
+
+    it('wires Rename and Delete to the existing outputs', () => {
+      const renamed = vi.fn();
+      const deleted = vi.fn();
+      component.nodeRenamed.subscribe(renamed);
+      component.nodeDeleted.subscribe(deleted);
+
+      rowMenuItems('b').find((item) => item.textContent?.trim() === 'Rename')!.click();
+      expect(renamed).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+
+      rowMenuItems('b').find((item) => item.textContent?.trim() === 'Delete')!.click();
+      expect(deleted).toHaveBeenCalledWith('b');
+    });
+
+    it('offers "New collection inside" only when the owner allows children', () => {
+      fixture.componentRef.setInput('allowAddChild', true);
+      fixture.detectChanges();
+
+      const added = vi.fn();
+      component.nodeAddChild.subscribe(added);
+
+      const items = rowMenuItems('b');
+      expect(items.map((item) => item.textContent?.trim())).toEqual([
+        'New collection inside',
+        'Rename',
+        'Delete',
+      ]);
+
+      items[0].click();
+      expect(added).toHaveBeenCalledWith(expect.objectContaining({ id: 'b' }));
+    });
+
+    it('offers "Move to root" only for a nested row and moves it', () => {
+      expandAlpha(); // exposes Child
+
+      const moved = vi.fn();
+      component.nodeMoved.subscribe(moved);
+
+      const items = rowMenuItems('c');
+      expect(items.map((item) => item.textContent?.trim())).toEqual(['Move to root', 'Rename', 'Delete']);
+
+      items[0].click();
+      expect(moved).toHaveBeenCalledWith({
+        item: expect.objectContaining({ id: 'c' }),
+        newParentId: null,
+      });
+    });
   });
 
   describe('while a row is being renamed', () => {

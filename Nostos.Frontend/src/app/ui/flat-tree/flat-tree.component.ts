@@ -16,6 +16,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { InlineRenameComponent } from '../inline-rename/inline-rename.component';
 import { EmptyStateComponent } from '../empty-state/empty-state.component';
+import { NOSTOS_MENU } from '../menu/menu.component';
 
 export interface DropIndicator {
   nodeId: string;
@@ -24,7 +25,14 @@ export interface DropIndicator {
 
 @Component({
   selector: 'app-flat-tree',
-  imports: [IconButtonComponent, InlineRenameComponent, DragDropModule, NostosIconComponent, EmptyStateComponent],
+  imports: [
+    IconButtonComponent,
+    InlineRenameComponent,
+    DragDropModule,
+    NostosIconComponent,
+    EmptyStateComponent,
+    ...NOSTOS_MENU,
+  ],
   templateUrl: './flat-tree.component.html',
   styleUrls: ['./flat-tree.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -148,8 +156,13 @@ export class FlatTreeComponent {
     this.nodeSelected.emit(node.originalData);
   }
 
-  moveToRoot(node: FlatTreeNode, event: Event): void {
-    event.stopPropagation();
+  /**
+   * `event` is absent when the move comes from the touch row menu: that menu
+   * renders in the CDK overlay, outside the row, so there is no row click to
+   * keep it from.
+   */
+  moveToRoot(node: FlatTreeNode, event?: Event): void {
+    event?.stopPropagation();
     this.nodeMoved.emit({ item: node.originalData, newParentId: null });
   }
 

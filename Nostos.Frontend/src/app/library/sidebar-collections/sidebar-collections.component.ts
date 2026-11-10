@@ -194,7 +194,18 @@ export class SidebarCollections implements OnInit {
 
     // Mobile: Close sidebar if clicking outside
     if (isPhoneViewport() && this.expanded()) {
-      const clickedInside = this.elementRef.nativeElement.contains(target);
+      // A row menu renders in the CDK overlay, outside the drawer's own DOM,
+      // but it belongs to the drawer: choosing Delete was being read as a tap
+      // on the page behind it, which closed the drawer — and carried the
+      // confirmation dialog inside it off screen — before the question could
+      // be answered (issue #1511). Ask the event for the path it was
+      // dispatched along: by this point the menu's nodes may already be
+      // detached, so the target's current ancestry is not reliable.
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      const clickedInOverlay = path.some(
+        (node) => node instanceof HTMLElement && node.classList.contains('cdk-overlay-container'),
+      );
+      const clickedInside = this.elementRef.nativeElement.contains(target) || clickedInOverlay;
       if (!clickedInside) {
         this.setExpanded(false);
         // If the sidebar is closed via outside click, we can return early
@@ -282,8 +293,19 @@ export class SidebarCollections implements OnInit {
     this.closeDrawerOnMobile();
   }
 
+  /**
+   * Desktop keeps the toggle: clicking the open collection in the rail is a
+   * natural way to clear the filter and stay in the sidebar.
+   *
+   * On a phone the tap means "open this collection": the drawer closes onto the
+   * library, so tapping the already-open collection must not clear the filter
+   * and drop the reader back on All books (issue #1511). It stays selected and
+   * the drawer closes, exactly like tapping any other row.
+   */
   select(id: string | null): void {
-    this.filters.toggleCollection(id);
+    const alreadyOpenOnPhone =
+      id !== null && isPhoneViewport() && this.filters.collectionId() === id;
+    if (!alreadyOpenOnPhone) this.filters.toggleCollection(id);
     this.closeDrawerOnMobile();
   }
 

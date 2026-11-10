@@ -177,6 +177,28 @@ describe('SidebarCollections', () => {
     expect(component.filters.collectionId()).toBeNull();
   });
 
+  it('a phone tap on the already-open collection keeps it open instead of clearing the filter', () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', {
+      value: 390,
+      writable: true,
+      configurable: true,
+    });
+
+    try {
+      component.select('c1');
+      component.select('c1');
+
+      expect(component.filters.collectionId()).toBe('c1');
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {
+        value: originalWidth,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+
   it('rename sends both name and parentId', () => {
     component.saveRename('c1', 'Renamed');
     expect(collectionsService.update).toHaveBeenCalledWith('c1', {
@@ -639,6 +661,45 @@ describe('SidebarCollections', () => {
         expect(document.activeElement).toBe(opener);
         toolbar.remove();
       } finally {
+        Object.defineProperty(window, 'innerWidth', {
+          value: originalWidth,
+          writable: true,
+          configurable: true,
+        });
+      }
+    });
+
+    it('keeps the drawer open when a row menu item inside the CDK overlay is chosen', async () => {
+      const originalWidth = window.innerWidth;
+      Object.defineProperty(window, 'innerWidth', {
+        value: 390,
+        writable: true,
+        configurable: true,
+      });
+
+      const overlay = document.createElement('div');
+      overlay.className = 'cdk-overlay-container';
+      const item = document.createElement('button');
+      item.className = 'nostos-menu-item';
+      overlay.appendChild(item);
+      document.body.appendChild(overlay);
+
+      try {
+        fixture.destroy();
+        fixture = TestBed.createComponent(SidebarCollections);
+        component = fixture.componentInstance;
+        await fixture.whenStable();
+        component.toggle();
+        fixture.detectChanges();
+        expect(component.expanded()).toBe(true);
+
+        // A real click carries the composed path of the dispatched event, even
+        // if the menu's nodes have since been detached from the DOM.
+        item.click();
+
+        expect(component.expanded()).toBe(true);
+      } finally {
+        overlay.remove();
         Object.defineProperty(window, 'innerWidth', {
           value: originalWidth,
           writable: true,
