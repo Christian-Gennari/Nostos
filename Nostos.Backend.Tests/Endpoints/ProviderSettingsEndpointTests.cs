@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
@@ -20,10 +21,10 @@ namespace Nostos.Backend.Tests.Endpoints;
 public sealed class ProviderSettingsEndpointTests
 {
     private static readonly string[] GeneralProviders =
-        ["gutenberg", "standard-ebooks", "wikisource", "librivox", "litteraturbanken"];
+        ["gutenberg", "standard-ebooks", "wikisource", "librivox"];
 
     [Fact]
-    public async Task Get_lists_all_registered_providers_with_their_effective_choices()
+    public async Task Get_lists_all_available_providers_with_their_effective_choices()
     {
         using var factory = new LibraryEndpointFactory();
         using var client = factory.CreateClient();
@@ -42,10 +43,65 @@ public sealed class ProviderSettingsEndpointTests
         gutenberg.Description.Should().Be("Public-domain ebooks in many languages.");
         gutenberg.RightsNotice.Should().Be("Public domain in the USA (Project Gutenberg)");
         gutenberg.Capabilities.Should().Contain("search");
+    }
 
-        var litteraturbanken = body.Providers.Single(provider => provider.Id == "litteraturbanken");
-        litteraturbanken.Enabled.Should().BeFalse();
-        litteraturbanken.EnabledByDefault.Should().BeFalse();
+    [Fact]
+    public async Task Get_does_not_list_a_withdrawn_provider()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(ProviderSettingsEndpoints.Route);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<ProviderSettingsResponseDto>();
+        body!.Providers.Select(provider => provider.Id).Should().NotContain("litteraturbanken");
+    }
+
+    [Fact]
+    public async Task Put_a_withdrawn_provider_is_provider_unknown_and_stores_nothing()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var client = factory.CreateClient();
+
+        var put = await client.PutAsJsonAsync(
+            $"{ProviderSettingsEndpoints.Route}/litteraturbanken",
+            new ProviderPreferenceUpdateDto(true));
+
+        put.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ProblemTitleAsync(put)).Should().Be("provider_unknown");
+
+        using var db = OpenDb(factory.DatabasePath);
+        (await db.ProviderPreferences.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_stored_true_never_surfaces_a_withdrawn_provider()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using (var db = OpenDb(factory.DatabasePath))
+        {
+            db.ProviderPreferences.Add(new ProviderPreferenceModel
+            {
+                ProviderId = "litteraturbanken",
+                Enabled = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+
+        var settings = await client.GetFromJsonAsync<ProviderSettingsResponseDto>(
+            ProviderSettingsEndpoints.Route);
+        settings!.Providers.Select(provider => provider.Id).Should().NotContain("litteraturbanken");
+
+        var consumer = await client.GetFromJsonAsync<List<ProviderSummaryDto>>("/api/providers");
+        consumer!.Select(provider => provider.Id).Should().NotContain("litteraturbanken");
+
+        // Suspending the source never rewrites the user's stored choice, so
+        // restoring the provider restores their setting with it.
+        using var verify = OpenDb(factory.DatabasePath);
+        (await verify.ProviderPreferences.AsNoTracking().SingleAsync()).Enabled.Should().BeTrue();
     }
 
     [Fact]

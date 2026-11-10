@@ -31,6 +31,13 @@ public sealed record ProviderEnablementEntry(
 /// </para>
 ///
 /// <para>
+/// A withdrawn provider (<see cref="Contracts.IContentProvider.IsWithdrawn"/>)
+/// is never available: it is omitted from every list and lookup, and no stored
+/// choice can enable it. It stays registered so existing provenance still
+/// resolves.
+/// </para>
+///
+/// <para>
 /// No caching on purpose: the stored set is read per request, so a toggle is
 /// visible to the very next search or acquisition, and restart semantics are
 /// the database's.
@@ -38,27 +45,35 @@ public sealed record ProviderEnablementEntry(
 /// </summary>
 public interface IProviderEnablementService
 {
-    /// <summary>The registrations the user may currently discover and acquire from.</summary>
+    /// <summary>
+    /// The registrations the user may currently discover and acquire from.
+    /// A withdrawn provider is never included, whatever choice is stored.
+    /// </summary>
     Task<IReadOnlyList<ProviderRegistration>> GetEnabledAsync(CancellationToken ct = default);
 
     /// <summary>The same set as ids, for a discovery request's provider filter.</summary>
     Task<IReadOnlySet<string>> GetEnabledProviderIdsAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// The registration when it is both registered and enabled; null otherwise.
-    /// A disabled provider is deliberately indistinguishable from an unknown
-    /// one at the HTTP edge (both are the existing <c>provider_unknown</c> 404),
-    /// so this surface never leaks which sources the install knows about.
+    /// The registration when it is both registered, not withdrawn and enabled;
+    /// null otherwise. A disabled or withdrawn provider is deliberately
+    /// indistinguishable from an unknown one at the HTTP edge (all are the
+    /// existing <c>provider_unknown</c> 404), so this surface never leaks which
+    /// sources the install knows about.
     /// </summary>
     Task<ProviderRegistration?> FindEnabledAsync(string providerId, CancellationToken ct = default);
 
-    /// <summary>Every registered provider with its effective choice, for Settings.</summary>
+    /// <summary>
+    /// Every registered provider that is not withdrawn, with its effective
+    /// choice, for Settings.
+    /// </summary>
     Task<IReadOnlyList<ProviderEnablementEntry>> ListAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Stores an explicit choice and returns the resulting entry. Returns null
-    /// for an id the registry does not know, writing nothing: a preference row
-    /// for a provider that cannot resolve is dead state.
+    /// for an id the registry does not know or a withdrawn provider, writing
+    /// nothing: a preference row for a provider that cannot resolve is dead
+    /// state.
     /// </summary>
     Task<ProviderEnablementEntry?> SetAsync(
         string providerId,
@@ -75,7 +90,10 @@ public sealed class ProviderEnablementService(
         CancellationToken ct = default)
     {
         var stored = await LoadAsync(ct);
-        return registry.All.Where(registration => IsEnabled(registration, stored)).ToList();
+        return registry.All
+            .Where(registration =>
+                !registration.Provider.IsWithdrawn && IsEnabled(registration, stored))
+            .ToList();
     }
 
     public async Task<IReadOnlySet<string>> GetEnabledProviderIdsAsync(
@@ -83,7 +101,8 @@ public sealed class ProviderEnablementService(
     {
         var stored = await LoadAsync(ct);
         return registry.All
-            .Where(registration => IsEnabled(registration, stored))
+            .Where(registration =>
+                !registration.Provider.IsWithdrawn && IsEnabled(registration, stored))
             .Select(registration => registration.Id)
             .ToHashSet(StringComparer.Ordinal);
     }
@@ -93,7 +112,7 @@ public sealed class ProviderEnablementService(
         CancellationToken ct = default)
     {
         var registration = registry.Find(providerId);
-        if (registration is null)
+        if (registration is null || registration.Provider.IsWithdrawn)
             return null;
 
         var stored = await LoadAsync(ct);
@@ -105,6 +124,7 @@ public sealed class ProviderEnablementService(
     {
         var stored = await LoadAsync(ct);
         return registry.All
+            .Where(registration => !registration.Provider.IsWithdrawn)
             .Select(registration => ToEntry(registration, stored))
             .ToList();
     }
@@ -115,7 +135,7 @@ public sealed class ProviderEnablementService(
         CancellationToken ct = default)
     {
         var registration = registry.Find(providerId);
-        if (registration is null)
+        if (registration is null || registration.Provider.IsWithdrawn)
             return null;
 
         await StoreAsync(registration.Id, enabled, ct);
