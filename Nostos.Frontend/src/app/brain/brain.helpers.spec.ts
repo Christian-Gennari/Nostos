@@ -7,6 +7,7 @@ import {
   facetKey,
   isListedTopic,
   isOrder,
+  noteDateGroups,
   placeTitle,
   sidebarTopics,
   stillBelongs,
@@ -70,5 +71,67 @@ describe('brain helpers', () => {
     expect(bookKey({ bookId: 'audio', workId: 'w' })).toBe(bookKey({ bookId: 'epub', workId: 'w' }));
     expect(bookKey({ bookId: 'orphan', workId: null })).toBe('orphan');
     expect(facetKey({ bookId: 'epub', workId: 'w' })).toBe('w');
+  });
+});
+
+describe('date groups (Newest first / Oldest first)', () => {
+  /** A local time, so the tests read the same calendar day in any zone. */
+  const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m, d, h, min);
+  const iso = (y: number, m: number, d: number, h = 12, min = 0) => at(y, m, d, h, min).toISOString();
+  const dated = (createdAt: string): NoteSearchHit =>
+    ({ id: createdAt, bookId: 'b', bookTitle: 'Book', content: '', selectedText: null, snippet: null, topicNames: [], createdAt });
+  const groups = (dates: string[], now: Date) => noteDateGroups(dates.map(dated), now);
+
+  it('files a note by the reader’s own day, not by a 24-hour span', () => {
+    const now = at(2026, 10, 10, 0, 5); // 00:05 on 10 November 2026
+    const [today, yesterday] = groups([iso(2026, 10, 10, 0, 0), iso(2026, 10, 9, 23, 59)], now);
+
+    expect(today?.label).toBe('Today');
+    expect(yesterday?.label).toBe('Yesterday');
+  });
+
+  it('starts the week on Monday', () => {
+    const now = at(2026, 10, 11); // Wednesday 11 November 2026
+    const [monday, sunday] = groups([iso(2026, 10, 9), iso(2026, 10, 8)], now);
+
+    expect(monday?.label).toBe('This week');
+    expect(sunday?.label).toBe('Earlier this month');
+  });
+
+  it('opens a month header at the month change and a year header at twelve months', () => {
+    const now = at(2026, 10, 10); // 10 November 2026
+    const [thisMonth, lastMonth, elevenMonthsAgo, twelveMonthsAgo] = groups(
+      [iso(2026, 10, 1), iso(2026, 9, 31), iso(2025, 11, 20), iso(2025, 10, 20)],
+      now,
+    );
+
+    expect(thisMonth?.label).toBe('Earlier this month');
+    expect(lastMonth?.label).toBe('October 2026');
+    expect(elevenMonthsAgo?.label).toBe('December 2025');
+    expect(twelveMonthsAgo?.label).toBe('2025');
+  });
+
+  it('does not repeat a header when the next page continues the group', () => {
+    const now = at(2026, 10, 10); // Tuesday 10 November 2026
+    const pageOne = [iso(2026, 10, 10, 8), iso(2026, 10, 9, 20)];
+    const pageTwo = [iso(2026, 10, 9, 8), iso(2026, 10, 8, 18)];
+    const all = groups([...pageOne, ...pageTwo], now);
+
+    expect(all.map((group) => group?.label)).toEqual(['Today', 'Yesterday', 'Yesterday', 'Earlier this month']);
+    expect(all.map((group) => group?.starts)).toEqual([true, true, false, true]);
+    expect(all[1]?.count).toBe(2);
+  });
+
+  it('counts the notes each header stands over', () => {
+    const now = at(2026, 10, 10);
+    const all = groups([iso(2026, 10, 10), iso(2026, 10, 9), iso(2026, 9, 2), iso(2026, 9, 3)], now);
+
+    expect(all.map((group) => group?.count)).toEqual([1, 1, 2, 2]);
+  });
+
+  it('leaves an unreadable date without a header', () => {
+    const all = noteDateGroups([dated('not a date')], at(2026, 10, 10));
+
+    expect(all).toEqual([null]);
   });
 });

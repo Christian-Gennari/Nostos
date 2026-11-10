@@ -203,7 +203,11 @@
   padding: 0.5rem 3rem 8rem;
 }
 
-.book-group {
+/* A list group header: a book's, or a date's in the date orders. One style for
+   both, as the issue asks. It cannot stick under the toolbar cleanly: the
+   toolbar's height is not one value (it wraps to three rows on a phone and the
+   title can grow), so a fixed `top` would drift. */
+.note-group {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -212,14 +216,14 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.book-group-title {
+.note-group-title {
   margin: 0;
   color: var(--color-text-main);
   font-size: 1.3rem;
   font-weight: var(--fw-regular);
 }
 
-.book-group-meta {
+.note-group-meta {
   color: var(--color-text-light);
   font-size: var(--text-xs);
 }

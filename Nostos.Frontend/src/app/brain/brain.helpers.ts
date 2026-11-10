@@ -1,3 +1,4 @@
+import { formatNostosDate } from '../core/date-formats';
 import { plural } from '../core/format';
 import type { NoteBookFacet, NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
 import type { TopicDto } from '../core/services/topics.service';
@@ -119,6 +120,100 @@ export function stillBelongs(
   if (place === 'topic' && topic && !has(topic.name)) return false;
   if (withTopic && !has(withTopic.name)) return false;
   return true;
+}
+
+/**
+ * The date groups of a date-ordered list ("Newest first", "Oldest first").
+ *
+ * The buckets are Today, Yesterday, This week (from Monday), Earlier this
+ * month, then one per month for the last twelve calendar months ("October
+ * 2026"), then one per year ("2024"). Everything is read in the reader's own
+ * time zone: a note made at 23:59 local belongs to that local day, whatever the
+ * server's UTC timestamp says.
+ *
+ * The result has one entry per note, in the list's order, so a reader can put
+ * a header above every `starts`. Grouping over the whole loaded array — not a
+ * page — is what stops a page boundary from repeating a header (issue #1529).
+ */
+export interface NoteDateGroup {
+  /** Stable bucket identity: `today`, `month:2026-10`, `year:2024`. */
+  key: string;
+  /** What its header says. */
+  label: string;
+  /** Whether this note opens the group, so the header goes above it. */
+  starts: boolean;
+  /** How many loaded notes the group holds. */
+  count: number;
+}
+
+const MS_PER_DAY = 86_400_000;
+/** Month headers cover the current month and the eleven before it. */
+const MONTH_HEADERS_BACK = 12;
+
+/** The local calendar day as a count of days, so DST cannot shift a boundary. */
+function localDay(date: Date): number {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / MS_PER_DAY;
+}
+
+/** The local Monday that opens the week containing `date` (ISO 8601). */
+function weekStart(date: Date): number {
+  const weekday = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getDay();
+  return localDay(date) - ((weekday + 6) % 7);
+}
+
+type DateBucket = Pick<NoteDateGroup, 'key' | 'label'>;
+
+function bucketFor(createdAt: string, now: Date): DateBucket | null {
+  const time = Date.parse(createdAt);
+  if (Number.isNaN(time)) return null;
+  const date = new Date(time);
+  const daysAgo = localDay(now) - localDay(date);
+
+  // A few seconds of clock skew must not file a fresh note under this week.
+  if (daysAgo <= 0) return { key: 'today', label: 'Today' };
+  if (daysAgo === 1) return { key: 'yesterday', label: 'Yesterday' };
+  if (localDay(date) >= weekStart(now)) return { key: 'this-week', label: 'This week' };
+  if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+    return { key: 'earlier-this-month', label: 'Earlier this month' };
+  }
+
+  const monthsAgo = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
+  if (monthsAgo < MONTH_HEADERS_BACK) {
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return {
+      key: `month:${date.getFullYear()}-${month}`,
+      label: formatNostosDate(date, 'month'),
+    };
+  }
+  return { key: `year:${date.getFullYear()}`, label: formatNostosDate(date, 'year') };
+}
+
+/**
+ * One entry per loaded note: its group, whether the header starts there, and
+ * how many loaded notes share the group. A note whose date cannot be read gets
+ * `null`, so it stays in the list without inventing a header.
+ */
+export function noteDateGroups(
+  notes: readonly Pick<NoteSearchHit, 'id' | 'createdAt'>[],
+  now: Date = new Date(),
+): (NoteDateGroup | null)[] {
+  const buckets = notes.map((note) => bucketFor(note.createdAt, now));
+  const counts = new Map<string, number>();
+  for (const bucket of buckets) {
+    if (bucket) counts.set(bucket.key, (counts.get(bucket.key) ?? 0) + 1);
+  }
+
+  let previous: string | null = null;
+  return buckets.map((bucket) => {
+    if (!bucket) return null;
+    const group: NoteDateGroup = {
+      ...bucket,
+      starts: bucket.key !== previous,
+      count: counts.get(bucket.key) ?? 0,
+    };
+    previous = bucket.key;
+    return group;
+  });
 }
 
 /** Reads a stored choice, tolerating storage that is missing or refuses access. */

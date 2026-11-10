@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { Subject, of } from 'rxjs';
 
+import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { NotesService } from '../core/services/notes.service';
 import { ToastService } from '../core/services/toast.service';
@@ -14,9 +15,21 @@ import { BrainListPage } from './brain-list.page';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
 
+const note = (id: string, createdAt: string): NoteSearchHit => ({
+  id,
+  bookId: 'b',
+  bookTitle: 'Book',
+  content: 'A note',
+  selectedText: null,
+  snippet: null,
+  topicNames: [],
+  createdAt,
+});
+
 describe('BrainListPage', () => {
   let fixture: ComponentFixture<BrainListPage>;
   let preferences: { sidebarExpanded: ReturnType<typeof signal<boolean>>; setSidebarExpanded: (value: boolean) => void };
+  let browse: ReturnType<typeof vi.fn>;
 
   beforeAll(() => {
     // jsdom has no scrolling; the page resets the scroller when a list opens.
@@ -32,6 +45,19 @@ describe('BrainListPage', () => {
       sidebarExpanded: signal(true),
       setSidebarExpanded: (value: boolean) => preferences.sidebarExpanded.set(value),
     };
+    const now = Date.now();
+    browse = vi.fn().mockReturnValue(
+      of({
+        items: [
+          note('today-a', new Date(now).toISOString()),
+          note('today-b', new Date(now).toISOString()),
+          note('yesterday', new Date(now - 86_400_000).toISOString()),
+        ],
+        totalCount: 3,
+        offset: 0,
+        limit: 25,
+      }),
+    );
 
     await TestBed.configureTestingModule({
       imports: [BrainListPage],
@@ -50,13 +76,7 @@ describe('BrainListPage', () => {
             },
           },
         },
-        {
-          provide: NotesService,
-          useValue: {
-            browse: vi.fn(() => of({ items: [], totalCount: 0, offset: 0, limit: 25 })),
-            books: vi.fn(() => of([])),
-          },
-        },
+        { provide: NotesService, useValue: { browse, books: vi.fn(() => of([])) } },
         { provide: TopicsService, useValue: {} },
         { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
         { provide: BrainListCacheService, useValue: { restore: () => null, save: vi.fn() } },
@@ -98,8 +118,12 @@ describe('BrainListPage', () => {
     fixture.detectChanges();
   });
 
+  function el(): HTMLElement {
+    return fixture.nativeElement;
+  }
+
   it('offers the Library’s sidebar toggle and flips the one preference', () => {
-    const toggle = fixture.nativeElement.querySelector('button.sidebar-toggle') as HTMLButtonElement;
+    const toggle = el().querySelector('button.sidebar-toggle') as HTMLButtonElement;
 
     expect(toggle).toBeTruthy();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
@@ -111,5 +135,13 @@ describe('BrainListPage', () => {
     expect(preferences.sidebarExpanded()).toBe(false);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.getAttribute('aria-label')).toBe('Expand sidebar');
+  });
+
+  it('heads a date-ordered list with Today and Yesterday, each counting its notes', () => {
+    const titles = Array.from(el().querySelectorAll('.note-group-title')).map((title) => title.textContent?.trim());
+    const counts = Array.from(el().querySelectorAll('.note-group-meta')).map((meta) => meta.textContent?.trim());
+
+    expect(titles).toEqual(['Today', 'Yesterday']);
+    expect(counts).toEqual(['2 notes', '1 note']);
   });
 });
