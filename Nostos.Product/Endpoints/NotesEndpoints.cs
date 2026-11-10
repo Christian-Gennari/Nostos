@@ -155,7 +155,7 @@ public static class NotesEndpoints
         // identical to every other capture path.
         group.MapPost(
             "/notes/import/koreader",
-            async (HttpRequest request, KoreaderNoteImportService importer, CancellationToken ct) =>
+            async (HttpRequest request, KoreaderNoteImportService importer, ILoggerFactory loggers, CancellationToken ct) =>
             {
                 const long maxMetadataBytes = 2 * 1024 * 1024;
                 if (!request.HasFormContentType)
@@ -168,15 +168,21 @@ public static class NotesEndpoints
                 if (file.Length <= 0 || file.Length > maxMetadataBytes)
                     return Results.BadRequest(new { error = "KOReader metadata.lua must be between 1 byte and 2 MB." });
 
+                string source;
+                await using (var stream = file.OpenReadStream())
+                using (var reader = new StreamReader(stream))
+                    source = await reader.ReadToEndAsync(ct);
+
                 try
                 {
-                    await using var stream = file.OpenReadStream();
-                    using var reader = new StreamReader(stream);
-                    var source = await reader.ReadToEndAsync(ct);
                     return Results.Ok(await importer.ImportAsync(source, ct));
                 }
                 catch (FormatException ex)
                 {
+                    // Issue #1523: a sidecar the plugin sent that no longer
+                    // parses is a format change we want to see.
+                    HighlightImportShapeLog.WriteText(
+                        loggers.CreateLogger<KoreaderNoteImportService>(), source, HighlightImportShapeLog.ParseFailed);
                     return Results.BadRequest(new { error = ex.Message });
                 }
             }

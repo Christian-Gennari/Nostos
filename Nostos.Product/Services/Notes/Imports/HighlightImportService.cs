@@ -26,12 +26,18 @@ public sealed class HighlightImportService
     private readonly NostosDbContext _db;
     private readonly INoteService _notes;
     private readonly ILibraryService _library;
+    private readonly ILogger<HighlightImportService> _logger;
 
-    public HighlightImportService(NostosDbContext db, INoteService notes, ILibraryService library)
+    public HighlightImportService(
+        NostosDbContext db,
+        INoteService notes,
+        ILibraryService library,
+        ILogger<HighlightImportService> logger)
     {
         _db = db;
         _notes = notes;
         _library = library;
+        _logger = logger;
     }
 
     public Task<HighlightImportPreview> PreviewAsync(string path, CancellationToken ct = default) =>
@@ -40,7 +46,18 @@ public sealed class HighlightImportService
     /// <param name="companions">Files chosen together with the main one (Apple Books' library database).</param>
     public async Task<HighlightImportPreview> PreviewAsync(string path, IReadOnlyList<string> companions, CancellationToken ct = default)
     {
-        var (source, sourceBooks, skipped) = HighlightImportSourceReader.Read(path, companions);
+        var file = ReadSource(path, companions);
+        var (source, sourceBooks, skipped) = file;
+        if (file.MissingOptionalColumns.Count > 0)
+        {
+            HighlightImportShapeLog.Write(
+                _logger, path, HighlightImportShapeLog.MissingOptionalColumns, file.MissingOptionalColumns);
+        }
+        else if (skipped.Any(entry => entry.Reason == KindleClippingsParser.UnrecognisedReason))
+        {
+            HighlightImportShapeLog.Write(_logger, path, HighlightImportShapeLog.UnrecognisedEntries);
+        }
+
         var library = await LoadLibraryAsync(ct);
         var links = await LoadLinksAsync(source, sourceBooks, ct);
 
@@ -106,7 +123,10 @@ public sealed class HighlightImportService
         Guid? batchId = null,
         CancellationToken ct = default)
     {
-        var (source, sourceBooks, _) = HighlightImportSourceReader.Read(path, companions);
+        // The preview of this file already logged any missing columns; a
+        // commit logging them again would count every import twice.
+        var (source, sourceBooks, _) = ReadSource(path, companions);
+
         var bySourceKey = decisions
             .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
@@ -610,6 +630,24 @@ public sealed class HighlightImportService
             .AsNoTracking()
             .Where(link => link.Source == source && keys.Contains(link.SourceKey))
             .ToDictionaryAsync(link => link.SourceKey, link => link.BookId, StringComparer.Ordinal, ct);
+    }
+
+    /// <summary>
+    /// Reads the file, recording a structural description once when it is not
+    /// a source the import knows (issue #1523). The endpoint still turns the
+    /// same exception into the same 400; only the log gains the shape.
+    /// </summary>
+    private ImportSourceFile ReadSource(string path, IReadOnlyList<string> companions)
+    {
+        try
+        {
+            return HighlightImportSourceReader.Read(path, companions);
+        }
+        catch (FormatException)
+        {
+            HighlightImportShapeLog.Write(_logger, path, HighlightImportShapeLog.ParseFailed);
+            throw;
+        }
     }
 
     private static HighlightImportResultBook Skipped(ImportSourceBook sourceBook, string? message) =>

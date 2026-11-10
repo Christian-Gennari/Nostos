@@ -45,14 +45,34 @@ internal static class AppleBooksDatabaseReader
     }
 
     /// <summary>The annotation database, and the library database when one was chosen with it.</summary>
-    public static IReadOnlyList<ImportSourceBook> Read(string annotationsPath, string? libraryPath)
+    /// <param name="missingOptionalColumns">
+    /// Receives "table.column" for every optional column this file lacks. What
+    /// is imported does not change; the shape log records the change
+    /// (issue #1523).
+    /// </param>
+    public static IReadOnlyList<ImportSourceBook> Read(
+        string annotationsPath,
+        string? libraryPath,
+        ICollection<string>? missingOptionalColumns = null)
     {
-        var library = libraryPath is null ? new Dictionary<string, (string? Title, string? Author)>() : ReadLibrary(libraryPath);
+        var library = libraryPath is null
+            ? new Dictionary<string, (string? Title, string? Author)>()
+            : ReadLibrary(libraryPath, missingOptionalColumns);
 
         using var connection = Open(annotationsPath);
         var columns = Columns(connection, AnnotationTable);
         if (!columns.Contains("ZANNOTATIONASSETID"))
             throw new FormatException("This database has no Apple Books highlights. Choose the AEAnnotation file from the Books folder on your Mac.");
+
+        var hasDeleted = columns.Contains("ZANNOTATIONDELETED");
+        if (!hasDeleted)
+            missingOptionalColumns?.Add($"{AnnotationTable}.ZANNOTATIONDELETED");
+        var hasLocationStart = columns.Contains("ZPLLOCATIONRANGESTART");
+        if (!hasLocationStart)
+            missingOptionalColumns?.Add($"{AnnotationTable}.ZPLLOCATIONRANGESTART");
+        var hasCreationDate = columns.Contains("ZANNOTATIONCREATIONDATE");
+        if (!hasCreationDate)
+            missingOptionalColumns?.Add($"{AnnotationTable}.ZANNOTATIONCREATIONDATE");
 
         using var command = connection.CreateCommand();
         // Deleted highlights stay in the table with a flag. Bookmarks and
@@ -60,14 +80,14 @@ internal static class AppleBooksDatabaseReader
         command.CommandText =
             $"""
             SELECT ZANNOTATIONASSETID,
-                   {Optional(columns, "ZANNOTATIONSELECTEDTEXT")},
-                   {Optional(columns, "ZANNOTATIONNOTE")},
-                   {Optional(columns, "ZANNOTATIONLOCATION")}
+                   {Optional(columns, AnnotationTable, "ZANNOTATIONSELECTEDTEXT", missingOptionalColumns)},
+                   {Optional(columns, AnnotationTable, "ZANNOTATIONNOTE", missingOptionalColumns)},
+                   {Optional(columns, AnnotationTable, "ZANNOTATIONLOCATION", missingOptionalColumns)}
             FROM {AnnotationTable}
-            WHERE {(columns.Contains("ZANNOTATIONDELETED") ? "COALESCE(ZANNOTATIONDELETED, 0) = 0" : "1 = 1")}
+            WHERE {(hasDeleted ? "COALESCE(ZANNOTATIONDELETED, 0) = 0" : "1 = 1")}
             ORDER BY ZANNOTATIONASSETID,
-                     {(columns.Contains("ZPLLOCATIONRANGESTART") ? "ZPLLOCATIONRANGESTART," : string.Empty)}
-                     {(columns.Contains("ZANNOTATIONCREATIONDATE") ? "ZANNOTATIONCREATIONDATE," : string.Empty)}
+                     {(hasLocationStart ? "ZPLLOCATIONRANGESTART," : string.Empty)}
+                     {(hasCreationDate ? "ZANNOTATIONCREATIONDATE," : string.Empty)}
                      Z_PK
             """;
 
@@ -109,17 +129,22 @@ internal static class AppleBooksDatabaseReader
             .ToList();
     }
 
-    private static Dictionary<string, (string? Title, string? Author)> ReadLibrary(string path)
+    private static Dictionary<string, (string? Title, string? Author)> ReadLibrary(
+        string path,
+        ICollection<string>? missingOptionalColumns)
     {
         var result = new Dictionary<string, (string? Title, string? Author)>(StringComparer.Ordinal);
         using var connection = Open(path);
         var columns = Columns(connection, LibraryTable);
         if (!columns.Contains("ZASSETID"))
+        {
+            missingOptionalColumns?.Add($"{LibraryTable}.ZASSETID");
             return result;
+        }
 
         using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT ZASSETID, {Optional(columns, "ZTITLE")}, {Optional(columns, "ZAUTHOR")} FROM {LibraryTable}";
+            $"SELECT ZASSETID, {Optional(columns, LibraryTable, "ZTITLE", missingOptionalColumns)}, {Optional(columns, LibraryTable, "ZAUTHOR", missingOptionalColumns)} FROM {LibraryTable}";
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -156,8 +181,17 @@ internal static class AppleBooksDatabaseReader
         return columns;
     }
 
-    private static string Optional(HashSet<string> columns, string name) =>
-        columns.Contains(name) ? name : $"NULL AS {name}";
+    private static string Optional(
+        HashSet<string> columns,
+        string table,
+        string name,
+        ICollection<string>? missingOptionalColumns)
+    {
+        if (columns.Contains(name))
+            return name;
+        missingOptionalColumns?.Add($"{table}.{name}");
+        return $"NULL AS {name}";
+    }
 
     private static string? Text(SqliteDataReader reader, int ordinal)
     {

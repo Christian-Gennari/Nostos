@@ -67,6 +67,33 @@ internal static class KindleClippingsParser
     /// <summary>True when the text is laid out as a clippings file.</summary>
     public static bool Looks(string text) => SeparatorLine.IsMatch(text);
 
+    /// <summary>
+    /// The format line (<c>- Your Highlight on page 12 | Location 34</c>) of
+    /// each entry the parser leaves out as an unrecognised format, for the
+    /// import shape log (issue #1523). That line is why the entry is unknown,
+    /// and it holds no highlight. Entries with no such line contribute
+    /// nothing; the caller masks the lines before anything is logged.
+    /// </summary>
+    internal static IReadOnlyList<string> UnrecognisedFormatLines(string text)
+    {
+        var lines = new List<string>();
+        foreach (var block in Blocks(text))
+        {
+            var entry = ReadEntry(block, out _, out _, out var reason);
+            if (entry is not null || reason != UnrecognisedReason)
+                continue;
+
+            var start = block.FindIndex(line => line.Trim().Length > 0);
+            if (start >= 0 && start + 1 < block.Count
+                && block[start + 1].Trim() is { } meta && meta.StartsWith('-'))
+            {
+                lines.Add(meta);
+            }
+        }
+
+        return lines;
+    }
+
     public static (IReadOnlyList<ImportSourceBook> Books, IReadOnlyList<HighlightImportSkipped> Skipped) Parse(string text)
     {
         var books = new Dictionary<string, BookEntries>(StringComparer.Ordinal);

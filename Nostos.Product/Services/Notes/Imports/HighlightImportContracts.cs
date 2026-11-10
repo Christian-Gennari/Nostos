@@ -111,7 +111,15 @@ internal sealed record ImportSourceBook(
 internal sealed record ImportSourceFile(
     string Source,
     IReadOnlyList<ImportSourceBook> Books,
-    IReadOnlyList<HighlightImportSkipped> Skipped);
+    IReadOnlyList<HighlightImportSkipped> Skipped)
+{
+    /// <summary>
+    /// "table.column" for each optional column the file did not have, in the
+    /// order the reader asked for it. Empty when the file has everything the
+    /// readers know; the import behaves the same either way (issue #1523).
+    /// </summary>
+    public IReadOnlyList<string> MissingOptionalColumns { get; init; } = [];
+}
 
 internal sealed record ImportAnnotation(
     string AnchorKind,
