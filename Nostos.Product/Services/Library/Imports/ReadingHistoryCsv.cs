@@ -116,6 +116,31 @@ internal static class ReadingHistoryCsv
     /// StoryGraph's quarter stars are rounded to the nearest star; the preview
     /// says what happened so the owner is not surprised.
     /// </summary>
+    /// <summary>
+    /// The finish date for a row. A book on the read shelf often has no read
+    /// date (Goodreads leaves Date Read empty for books shelved before it asked),
+    /// and without a date Nostos would show it as not started. The date it was
+    /// added stands in, and the preview says so; with neither date the row
+    /// still says why it will not show as finished.
+    /// </summary>
+    public static (DateTime? FinishedAt, string? Notice) Finished(
+        DateTime? readDate, string status, string? dateAdded, string? notice)
+    {
+        if (readDate is not null || status != ReadingHistoryStatus.Read)
+            return (readDate, notice);
+
+        if (Date(dateAdded) is { } added)
+        {
+            return (added, Join(notice,
+                $"The file has no read date, so the date it was added ({added:yyyy-MM-dd}) is used as the finish date."));
+        }
+
+        return (null, Join(notice, "The file has no read date, so this book will not show as finished."));
+    }
+
+    private static string Join(string? first, string second) =>
+        string.IsNullOrEmpty(first) ? second : $"{first} {second}";
+
     public static (int Rating, string? Notice) Rating(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

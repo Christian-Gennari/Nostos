@@ -55,6 +55,23 @@ public sealed class ReadingHistoryCsvParserTests
 
         // Quotes and a comma inside the title are not delimiters.
         books.Should().Contain(book => book.Title == "Dune, or: \"The Spice\" Must Flow");
+
+        // On the read shelf with no Date Read: the date it was added stands in,
+        // or the book would show as not started, and the preview says so.
+        var glass = books.Single(book => book.Title == "The Glass Orchard");
+        glass.ReadStatus.Should().Be(ReadingHistoryStatus.Read);
+        glass.FinishedAt.Should().Be(new DateTime(2016, 2, 2, 0, 0, 0, DateTimeKind.Utc));
+        glass.Notice.Should().Contain("no read date").And.Contain("2016-02-02");
+    }
+
+    [Fact]
+    public void A_read_row_with_no_date_at_all_says_it_will_not_show_as_finished()
+    {
+        var (finished, notice) = ReadingHistoryCsv.Finished(null, ReadingHistoryStatus.Read, null, "4.75 stars is stored as 5.");
+
+        finished.Should().BeNull();
+        notice.Should().StartWith("4.75 stars is stored as 5.").And.Contain("will not show as finished");
+        ReadingHistoryCsv.Finished(null, ReadingHistoryStatus.ToRead, "2020/01/01", null).Should().Be((null, null));
     }
 
     [Fact]
@@ -72,7 +89,7 @@ public sealed class ReadingHistoryCsvParserTests
         var cartographer = books.Single(book => book.Title == "The Cartographer's Daughter");
         cartographer.Isbn13.Should().Be("9780000000019");
         cartographer.Rating.Should().Be(5);
-        cartographer.RatingNotice.Should().Be("4.75 stars is stored as 5.");
+        cartographer.Notice.Should().Be("4.75 stars is stored as 5.");
         cartographer.FinishedAt.Should().Be(new DateTime(2021, 3, 14, 0, 0, 0, DateTimeKind.Utc));
         cartographer.Shelves.Should().Equal("fantasy", "favourites");
         cartographer.Review.Should().Contain("\nand a mother");
@@ -83,7 +100,7 @@ public sealed class ReadingHistoryCsvParserTests
         silence.FinishedAt.Should().Be(new DateTime(2024, 2, 20, 0, 0, 0, DateTimeKind.Utc));
 
         var glass = books.Single(book => book.Title == "The Glass Orchard");
-        (glass.Rating, glass.RatingNotice, glass.ReadStatus).Should().Be(
+        (glass.Rating, glass.Notice, glass.ReadStatus).Should().Be(
             (2, "2.25 stars is stored as 2.", ReadingHistoryStatus.DidNotFinish));
 
         // The identifier is StoryGraph's own, not an ISBN, so it cannot match one.

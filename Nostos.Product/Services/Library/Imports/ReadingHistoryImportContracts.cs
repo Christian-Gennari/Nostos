@@ -113,7 +113,7 @@ internal sealed record ReadingHistorySourceBook(
     string ReadStatus,
     int ReadCount,
     IReadOnlyList<string> Shelves,
-    string? RatingNotice = null)
+    string? Notice = null)
 {
     public bool ToRead => ReadStatus == ReadingHistoryStatus.ToRead;
 

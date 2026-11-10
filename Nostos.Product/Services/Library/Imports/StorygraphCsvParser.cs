@@ -41,6 +41,7 @@ internal static class StorygraphCsvParser
         var rating = ReadingHistoryCsv.Column(header, "Star Rating");
         var review = ReadingHistoryCsv.Column(header, "Review");
         var lastDateRead = ReadingHistoryCsv.Column(header, "Last Date Read");
+        var dateAdded = ReadingHistoryCsv.Column(header, "Date Added");
         var datesRead = ReadingHistoryCsv.Column(header, "Dates Read");
         var readCount = ReadingHistoryCsv.Column(header, "Read Count");
         var tags = ReadingHistoryCsv.Column(header, "Tags");
@@ -63,12 +64,17 @@ internal static class StorygraphCsvParser
 
             var rawIdentifier = ReadingHistoryCsv.Cell(record, identifier);
             var isbn = BookIdentityNormalizer.NormalizeIsbn(rawIdentifier);
-            var (stars, notice) = ReadingHistoryCsv.Rating(ReadingHistoryCsv.Cell(record, rating));
+            var (stars, ratingNotice) = ReadingHistoryCsv.Rating(ReadingHistoryCsv.Cell(record, rating));
+            var readStatus = ReadingHistoryCsv.Status(ReadingHistoryCsv.Cell(record, status));
 
             // Last Date Read is the direct answer; Dates Read is the fallback
             // when it is empty, and its last end is the last read.
-            var finishedAt = ReadingHistoryCsv.Date(ReadingHistoryCsv.Cell(record, lastDateRead))
-                ?? ReadingHistoryCsv.LastRead([ReadingHistoryCsv.Cell(record, datesRead)]);
+            var (finishedAt, notice) = ReadingHistoryCsv.Finished(
+                ReadingHistoryCsv.Date(ReadingHistoryCsv.Cell(record, lastDateRead))
+                    ?? ReadingHistoryCsv.LastRead([ReadingHistoryCsv.Cell(record, datesRead)]),
+                readStatus,
+                ReadingHistoryCsv.Cell(record, dateAdded),
+                ratingNotice);
 
             books.Add(new ReadingHistorySourceBook(
                 // A StoryGraph id that is not an ISBN is not portable, so the
@@ -83,7 +89,7 @@ internal static class StorygraphCsvParser
                 // StoryGraph's export has no private-notes column.
                 null,
                 finishedAt,
-                ReadingHistoryCsv.Status(ReadingHistoryCsv.Cell(record, status)),
+                readStatus,
                 ReadingHistoryCsv.Count(ReadingHistoryCsv.Cell(record, readCount)),
                 ReadingHistoryCsv.Shelves(ReadingHistoryCsv.Cell(record, tags)),
                 notice));

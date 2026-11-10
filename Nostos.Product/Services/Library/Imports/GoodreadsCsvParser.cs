@@ -43,6 +43,7 @@ internal static class GoodreadsCsvParser
         var review = ReadingHistoryCsv.Column(header, "My Review");
         var notes = ReadingHistoryCsv.Column(header, "Private Notes");
         var dateRead = ReadingHistoryCsv.Column(header, "Date Read");
+        var dateAdded = ReadingHistoryCsv.Column(header, "Date Added");
         var bookshelves = ReadingHistoryCsv.Column(header, "Bookshelves");
         var exclusive = ReadingHistoryCsv.Column(header, "Exclusive Shelf");
         var readCount = ReadingHistoryCsv.Column(header, "Read Count");
@@ -68,7 +69,14 @@ internal static class GoodreadsCsvParser
             var (rowIsbn10, rowIsbn13) = Identifiers(
                 ReadingHistoryCsv.UnwrapIdentifier(ReadingHistoryCsv.Cell(record, isbn)),
                 ReadingHistoryCsv.UnwrapIdentifier(ReadingHistoryCsv.Cell(record, isbn13)));
-            var (stars, notice) = ReadingHistoryCsv.Rating(ReadingHistoryCsv.Cell(record, rating));
+            var (stars, ratingNotice) = ReadingHistoryCsv.Rating(ReadingHistoryCsv.Cell(record, rating));
+            // Goodreads keeps the last read in Date Read; Read Count says it
+            // was read more than once and has no further dates.
+            var (finishedAt, notice) = ReadingHistoryCsv.Finished(
+                ReadingHistoryCsv.Date(ReadingHistoryCsv.Cell(record, dateRead)),
+                status,
+                ReadingHistoryCsv.Cell(record, dateAdded),
+                ratingNotice);
 
             books.Add(new ReadingHistorySourceBook(
                 ReadingHistoryCsv.Key(Source, ReadingHistoryCsv.Cell(record, bookId), rowIsbn13 ?? rowIsbn10, rowTitle, rowAuthor),
@@ -79,9 +87,7 @@ internal static class GoodreadsCsvParser
                 stars,
                 ReadingHistoryCsv.Cell(record, review),
                 ReadingHistoryCsv.Cell(record, notes),
-                // Goodreads keeps the last read in Date Read; Read Count says
-                // it was read more than once and has no further dates.
-                ReadingHistoryCsv.Date(ReadingHistoryCsv.Cell(record, dateRead)),
+                finishedAt,
                 status,
                 ReadingHistoryCsv.Count(ReadingHistoryCsv.Cell(record, readCount)),
                 ReadingHistoryCsv.Shelves(ReadingHistoryCsv.Cell(record, bookshelves), rawShelf),

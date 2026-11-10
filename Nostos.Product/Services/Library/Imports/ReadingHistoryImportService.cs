@@ -73,7 +73,7 @@ public sealed class ReadingHistoryImportService
                 Values(row),
                 existing is null || WouldChange(row, existing, writtenNotes),
                 existing?.Title,
-                row.RatingNotice));
+                row.Notice));
         }
 
         return new ReadingHistoryImportPreview(source, books, skipped);
@@ -93,7 +93,7 @@ public sealed class ReadingHistoryImportService
             row.ReadStatus,
             row.ReadCount,
             row.Shelves,
-            row.RatingNotice);
+            row.Notice);
 
     /// <summary>
     /// Whether a commit would write anything for an existing book. A value the
