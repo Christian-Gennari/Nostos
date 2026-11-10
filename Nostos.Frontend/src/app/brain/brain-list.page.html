@@ -202,14 +202,24 @@
     </nostos-empty-state>
     } @else {
     @for (note of notes(); track note.id; let i = $index) {
-      @if (order() === 'book' && startsBook(i)) {
-      <header class="book-group">
-        <h2 class="book-group-title">{{ note.bookTitle || unknownBook }}</h2>
-        <span class="book-group-meta">
-          @if (note.bookAuthor) { {{ note.bookAuthor }} · }
-          @if (bookCounts().get(bookKey(note)); as count) { {{ plural(count, 'note') }} }
-        </span>
-      </header>
+      @if (order() === 'book') {
+        @if (startsBook(i)) {
+        <header class="note-group">
+          <h2 class="note-group-title">{{ note.bookTitle || unknownBook }}</h2>
+          <span class="note-group-meta">
+            @if (note.bookAuthor) { {{ note.bookAuthor }} · }
+            @if (bookCounts().get(bookKey(note)); as count) { {{ plural(count, 'note') }} }
+          </span>
+        </header>
+        }
+      } @else {
+        @let dateGroup = dateGroups()[i];
+        @if (dateGroup && dateGroup.starts) {
+        <header class="note-group">
+          <h2 class="note-group-title">{{ dateGroup.label }}</h2>
+          <span class="note-group-meta">{{ plural(dateGroup.count, 'note') }}</span>
+        </header>
+        }
       }
       <app-note-item
         [note]="note"

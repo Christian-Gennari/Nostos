@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 
 import type { TopicDto } from '../core/services/topics.service';
+import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -39,6 +40,13 @@ import { isTopicSort } from './brain.helpers';
 export class BrainSidebarComponent {
   readonly state = inject(BrainStateService);
   readonly actions = inject(BrainTopicActionsService);
+  private readonly preferences = inject(LibraryPreferencesService);
+
+  /**
+   * The Library's one sidebar preference: the shelf's toggle and this one move
+   * together, and the shell reads the same signal for the column's width.
+   */
+  readonly expanded = this.preferences.sidebarExpanded;
 
   readonly sortOptions = [
     { value: 'usage', label: 'Most used' },
@@ -47,6 +55,11 @@ export class BrainSidebarComponent {
 
   setSort(value: string): void {
     if (isTopicSort(value)) this.state.setTopicSort(value);
+  }
+
+  /** The Library's own toggle: one setting decides both sidebars. */
+  toggle(): void {
+    this.preferences.setSidebarExpanded(!this.expanded());
   }
 
   isRenaming(topic: TopicDto): boolean {

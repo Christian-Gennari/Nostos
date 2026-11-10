@@ -59,6 +59,7 @@ import {
   defaultOrder,
   facetKey,
   isOrder,
+  noteDateGroups,
   placeTitle,
   plural,
   readStored,
@@ -216,6 +217,8 @@ export class BrainListPage {
     return books ? `${plural(topic.usageCount, 'note')} from ${plural(books, 'book')}` : plural(topic.usageCount, 'note');
   });
   readonly bookCounts = computed(() => new Map(this.books().map((book) => [facetKey(book), book.noteCount])));
+  /** Date groups for Newest first / Oldest first, one entry per loaded note. */
+  readonly dateGroups = computed(() => noteDateGroups(this.notes()));
   readonly plural = plural;
   readonly bookKey = bookKey;
   /** The topic whose title is being renamed in place, if it is this page's. */

@@ -13,13 +13,17 @@ import { formatDate } from '@angular/common';
 export const DATE_FORMAT = 'd MMM y'; // 24 Oct 2026
 export const DATE_TIME_FORMAT = 'd MMM y, HH:mm'; // 24 Oct 2026, 14:05
 export const TIME_FORMAT = 'HH:mm'; // 14:05
+export const MONTH_YEAR_FORMAT = 'MMMM y'; // October 2026
+export const YEAR_FORMAT = 'y'; // 2026
 
-export type NostosDateMode = 'date' | 'datetime' | 'time';
+export type NostosDateMode = 'date' | 'datetime' | 'time' | 'month' | 'year';
 
 const FORMATS: Readonly<Record<NostosDateMode, string>> = {
   date: DATE_FORMAT,
   datetime: DATE_TIME_FORMAT,
   time: TIME_FORMAT,
+  month: MONTH_YEAR_FORMAT,
+  year: YEAR_FORMAT,
 };
 
 /** The app's locale for dates. The UI is English; the shapes above are fixed. */

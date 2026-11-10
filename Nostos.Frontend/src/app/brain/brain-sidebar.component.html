@@ -1,4 +1,4 @@
-<nav class="side-nav sidebar" aria-label="Brain">
+<nav class="side-nav sidebar" [class.collapsed]="!expanded()" aria-label="Brain">
   <div class="sidebar-header">
     <nostos-brand-lockup />
   </div>
@@ -6,96 +6,123 @@
   <div class="nav-scroll-area">
     <div class="nav-group" data-testid="brain-places">
       <a class="nav-item" routerLink="/brain" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"
-        ariaCurrentWhenActive="page">
+        ariaCurrentWhenActive="page" title="All notes" aria-label="All notes">
         <nostos-icon concept="note" [size]="16" weight="light" />
         <span class="label">All notes</span>
         @if (state.summary()?.total) { <span class="count-badge">{{ state.summary()?.total }}</span> }
       </a>
-      <a class="nav-item" routerLink="/brain/passages" routerLinkActive="active" ariaCurrentWhenActive="page">
+      <a class="nav-item" routerLink="/brain/passages" routerLinkActive="active" ariaCurrentWhenActive="page"
+        title="Passages" aria-label="Passages">
         <nostos-icon concept="passage" [size]="16" weight="light" />
         <span class="label">Passages</span>
         @if (state.summary()?.passages) { <span class="count-badge">{{ state.summary()?.passages }}</span> }
       </a>
-      <a class="nav-item" routerLink="/brain/unsorted" routerLinkActive="active" ariaCurrentWhenActive="page">
+      <a class="nav-item" routerLink="/brain/unsorted" routerLinkActive="active" ariaCurrentWhenActive="page"
+        title="Unsorted" aria-label="Unsorted">
         <nostos-icon concept="unsorted" [size]="16" weight="light" />
         <span class="label">Unsorted</span>
         @if (state.summary()?.unsorted) { <span class="count-badge">{{ state.summary()?.unsorted }}</span> }
       </a>
-      <a class="nav-item" routerLink="/brain/map" routerLinkActive="active" ariaCurrentWhenActive="page">
+      <a class="nav-item" routerLink="/brain/map" routerLinkActive="active" ariaCurrentWhenActive="page"
+        title="Map" aria-label="Map">
         <nostos-icon concept="topicMap" [size]="16" weight="light" />
         <span class="label">Map</span>
       </a>
     </div>
 
     <div class="nav-group" data-testid="brain-topics">
-      <div class="section-head">
-        <span class="section-label" id="brain-topics-label">Topics</span>
-        <app-dropdown
-          class="topic-sort"
-          appearance="subtle"
-          controlSize="compact"
-          align="end"
-          ariaLabel="Order topics"
-          [options]="sortOptions"
-          [value]="state.topicSort()"
-          (valueChange)="setSort($event)"
-        />
+      <div class="collapsible">
+        <div class="section-head">
+          <span class="section-label" id="brain-topics-label">Topics</span>
+          <app-dropdown
+            class="topic-sort"
+            appearance="subtle"
+            controlSize="compact"
+            align="end"
+            ariaLabel="Order topics"
+            [options]="sortOptions"
+            [value]="state.topicSort()"
+            (valueChange)="setSort($event)"
+          />
+        </div>
       </div>
 
-      <div class="topic-list" role="list" aria-labelledby="brain-topics-label">
-        @for (topic of state.sidebarTopics(); track topic.id) {
-        <div class="topic-row-shell" role="listitem" data-rename-row>
-          @if (isRenaming(topic)) {
-          <div class="topic-row topic-row--renaming">
-            <nostos-inline-rename
-              variant="row"
-              [name]="topic.name"
-              requiredMessage="A topic needs a name."
-              (valueChange)="actions.renameValue.set($event)"
-              [error]="actions.renameError()"
-              [busy]="actions.renaming()"
-              (committed)="actions.commitRename()"
-              (cancelled)="actions.cancelRename()"
-            />
+      <div class="collapsible">
+        <div class="topic-list" role="list" aria-labelledby="brain-topics-label">
+          @for (topic of state.sidebarTopics(); track topic.id) {
+          <div class="topic-row-shell" role="listitem" data-rename-row>
+            @if (isRenaming(topic)) {
+            <div class="topic-row topic-row--renaming">
+              <nostos-inline-rename
+                variant="row"
+                [name]="topic.name"
+                requiredMessage="A topic needs a name."
+                (valueChange)="actions.renameValue.set($event)"
+                [error]="actions.renameError()"
+                [busy]="actions.renaming()"
+                (committed)="actions.commitRename()"
+                (cancelled)="actions.cancelRename()"
+              />
+            </div>
+            } @else {
+            <a class="topic-row" [routerLink]="['/brain/topics', topic.id]" routerLinkActive="active"
+              ariaCurrentWhenActive="page" [title]="topic.name">
+              <nostos-icon class="topic-glyph" concept="topic" [size]="14" weight="light" />
+              <span class="name">{{ topic.name }}</span>
+              <span class="count">{{ topic.usageCount }}</span>
+            </a>
+            <div class="row-actions">
+              <button appIconButton type="button" size="xxs" icon="pencil-simple" [glyphSize]="13" class="row-action"
+                [attr.aria-label]="'Rename ' + topic.name" (click)="actions.startRename(topic, 'sidebar')"></button>
+              <button appIconButton type="button" size="xxs" tone="danger" icon="trash" [glyphSize]="13"
+                class="row-action danger" [attr.aria-label]="'Delete ' + topic.name"
+                (click)="actions.openDelete(topic)"></button>
+            </div>
+            <!-- Touch-only single trigger, in flow, the Library's collection row
+                 (#1514): the only secondary action surface where hover does not
+                 exist, so nothing action-shaped can sit under a finger. -->
+            <div class="row-menu">
+              <button appIconButton type="button" icon="dots-three" [glyphSize]="18" class="row-menu-trigger"
+                [nostosMenuTriggerFor]="topicRowMenu" [attr.aria-label]="'Actions for ' + topic.name"
+                [attr.title]="'Actions for ' + topic.name"></button>
+              <ng-template #topicRowMenu>
+                <nostos-menu [attr.aria-label]="'Actions for ' + topic.name">
+                  <button nostosMenuItem icon="pencil-simple" (triggered)="actions.startRename(topic, 'sidebar')">Rename</button>
+                  <button nostosMenuItem icon="trash" tone="danger" (triggered)="actions.openDelete(topic)">Delete</button>
+                </nostos-menu>
+              </ng-template>
+            </div>
+            }
           </div>
-          } @else {
-          <a class="topic-row" [routerLink]="['/brain/topics', topic.id]" routerLinkActive="active"
-            ariaCurrentWhenActive="page" [title]="topic.name">
-            <nostos-icon class="topic-glyph" concept="topic" [size]="14" weight="light" />
-            <span class="name">{{ topic.name }}</span>
-            <span class="count">{{ topic.usageCount }}</span>
-          </a>
-          <div class="row-actions">
-            <button appIconButton type="button" size="xxs" icon="pencil-simple" [glyphSize]="13" class="row-action"
-              [attr.aria-label]="'Rename ' + topic.name" (click)="actions.startRename(topic, 'sidebar')"></button>
-            <button appIconButton type="button" size="xxs" tone="danger" icon="trash" [glyphSize]="13"
-              class="row-action danger" [attr.aria-label]="'Delete ' + topic.name"
-              (click)="actions.openDelete(topic)"></button>
-          </div>
-          <!-- Touch-only single trigger, in flow, the Library's collection row
-               (#1514): the only secondary action surface where hover does not
-               exist, so nothing action-shaped can sit under a finger. -->
-          <div class="row-menu">
-            <button appIconButton type="button" icon="dots-three" [glyphSize]="18" class="row-menu-trigger"
-              [nostosMenuTriggerFor]="topicRowMenu" [attr.aria-label]="'Actions for ' + topic.name"
-              [attr.title]="'Actions for ' + topic.name"></button>
-            <ng-template #topicRowMenu>
-              <nostos-menu [attr.aria-label]="'Actions for ' + topic.name">
-                <button nostosMenuItem icon="pencil-simple" (triggered)="actions.startRename(topic, 'sidebar')">Rename</button>
-                <button nostosMenuItem icon="trash" tone="danger" (triggered)="actions.openDelete(topic)">Delete</button>
-              </nostos-menu>
-            </ng-template>
-          </div>
+          } @empty {
+            @if (state.topicsLoaded()) {
+            <nostos-empty-state compact message="Topics appear when you add one to a note." />
+            } @else if (state.topicsFailed()) {
+            <nostos-empty-state compact error message="Topics could not be loaded." (retry)="state.refresh()" />
+            }
           }
         </div>
-        } @empty {
-          @if (state.topicsLoaded()) {
-          <nostos-empty-state compact message="Topics appear when you add one to a note." />
-          } @else if (state.topicsFailed()) {
-          <nostos-empty-state compact error message="Topics could not be loaded." (retry)="state.refresh()" />
-          }
-        }
       </div>
+    </div>
+  </div>
+
+  <!-- The Library's collapse control, in the same footer: one preference hides
+       both sidebars, and on desktop the Brain's panel becomes the same 72px
+       rail. The phone drawer has no rail, so the phone rule below hides it. -->
+  <div class="sidebar-footer">
+    <div class="footer-slot">
+      <button
+        appIconButton
+        [icon]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
+        [glyphSize]="18"
+        weight="thin"
+        class="toggle-btn"
+        type="button"
+        (click)="toggle()"
+        [attr.aria-expanded]="expanded()"
+        [attr.title]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+        [attr.aria-label]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+      ></button>
     </div>
   </div>
 </nav>

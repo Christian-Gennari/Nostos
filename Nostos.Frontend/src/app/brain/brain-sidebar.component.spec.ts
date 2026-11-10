@@ -2,6 +2,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
+import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { BrainSidebarComponent } from './brain-sidebar.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
@@ -28,6 +29,7 @@ const topics: TopicDto[] = [
 
 describe('BrainSidebarComponent', () => {
   let fixture: ComponentFixture<BrainSidebarComponent>;
+  let preferences: { sidebarExpanded: ReturnType<typeof signal<boolean>>; setSidebarExpanded: (value: boolean) => void };
   let startRename: ReturnType<typeof vi.fn>;
   let openDelete: ReturnType<typeof vi.fn>;
 
@@ -48,11 +50,16 @@ describe('BrainSidebarComponent', () => {
   beforeEach(async () => {
     startRename = vi.fn();
     openDelete = vi.fn();
+    preferences = {
+      sidebarExpanded: signal(true),
+      setSidebarExpanded: (value: boolean) => preferences.sidebarExpanded.set(value),
+    };
 
     await TestBed.configureTestingModule({
       imports: [BrainSidebarComponent],
       providers: [
         provideRouter([]),
+        { provide: LibraryPreferencesService, useValue: preferences },
         {
           provide: BrainStateService,
           useValue: {
@@ -111,5 +118,48 @@ describe('BrainSidebarComponent', () => {
 
     expect(row.querySelector('.count')?.textContent?.trim()).toBe('3');
     expect(row.querySelector('.row-menu-trigger')).toBeTruthy();
+  });
+
+  it('offers the Library’s collapse control at the foot of the sidebar', () => {
+    const footer = fixture.nativeElement.querySelector('.sidebar-footer') as HTMLElement;
+    const toggle = footer.querySelector('button.toggle-btn') as HTMLButtonElement;
+
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toBe('Collapse sidebar');
+  });
+
+  it('flips the Library’s one preference and turns the panel into the rail', () => {
+    const sidebar = fixture.nativeElement.querySelector('.sidebar') as HTMLElement;
+    const toggle = fixture.nativeElement.querySelector('button.toggle-btn') as HTMLButtonElement;
+
+    expect(sidebar.classList).not.toContain('collapsed');
+
+    toggle.click();
+    fixture.detectChanges();
+
+    expect(preferences.sidebarExpanded()).toBe(false);
+    expect(sidebar.classList).toContain('collapsed');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.getAttribute('aria-label')).toBe('Expand sidebar');
+  });
+
+  it('names every place on its link, so the rail needs no visible label', () => {
+    const links = Array.from(
+      fixture.nativeElement.querySelectorAll('[data-testid="brain-places"] .nav-item'),
+    ) as HTMLAnchorElement[];
+
+    expect(links.map((link) => link.getAttribute('title'))).toEqual([
+      'All notes',
+      'Passages',
+      'Unsorted',
+      'Map',
+    ]);
+    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
+      'All notes',
+      'Passages',
+      'Unsorted',
+      'Map',
+    ]);
   });
 });
