@@ -59,11 +59,17 @@ describe('BrainShellComponent', () => {
     expect(layout().classList).not.toContain('sidebar-collapsed');
   });
 
-  it('collapses the sidebar column from the Library’s one preference', () => {
+  it('collapses the sidebar to the Library’s rail from the one preference', () => {
     preferences.sidebarExpanded.set(false);
     fixture.detectChanges();
 
+    const column = fixture.nativeElement.querySelector('.brain-sidebar-column') as HTMLElement;
+
     expect(layout().classList).toContain('sidebar-collapsed');
+    // The column stays in the layout: the 300px panel inside it is clipped to
+    // the 72px rail, not removed.
+    expect(column).toBeTruthy();
+    expect(column.querySelector('.sidebar')?.classList).toContain('collapsed');
   });
 
   it('keeps the phone drawer independent of the desktop preference', () => {

@@ -10,11 +10,23 @@
 }
 
 .sidebar {
+  /* The Library's collapse contract (sidebar-collections.component.css): this
+     panel keeps its full 300px geometry at all times. The shell's column is the
+     only thing that changes width, and it clips this box, so nothing inside
+     reflows and no fade has to disguise a layout shift. */
+  --panel-width: 300px;
+  --rail-motion: var(--motion-slow) var(--ease-standard);
+  --label-out: 140ms var(--ease-out);
+  --label-in: 200ms var(--ease-out) 120ms;
+
+  position: relative;
   display: flex;
   flex-direction: column;
-  width: 100%;
+  width: var(--panel-width);
   height: 100%;
   background: var(--bg-body);
+  --brand-lockup-word-opacity: 1;
+  --brand-lockup-word-transition: opacity var(--label-out);
 }
 
 /* Room under the last topic for the floating dock. */
@@ -207,10 +219,137 @@ app-dropdown.topic-sort {
   }
 }
 
+/* --- The collapse rail (the Library's sidebar-collections contract) ------ */
+/* The shell's column narrows to 72px and clips this 300px panel; the rail is
+   not a separate layout. Labels and counts fade, the Topics group folds, and
+   the selected place's tint narrows to the Library's 40px rail square. Every
+   horizontal element is centred on the rail axis (x = 36 of the 72px rail):
+   brand tile 16-56, place icons 28-44, their pill 16-56, footer button 20-52. */
+.sidebar .nav-item::before {
+  transition: width var(--rail-motion), height var(--rail-motion), background-color 0.12s ease;
+}
+
+.sidebar.collapsed .nav-item::before {
+  width: 40px;
+}
+
+.sidebar .label,
+.sidebar .nav-item .count-badge,
+.sidebar .section-label {
+  opacity: 1;
+  transition: opacity var(--label-out);
+}
+
+/* Opening: let the rail get wide enough to hold the text before it fades in. */
+.sidebar:not(.collapsed) .label,
+.sidebar:not(.collapsed) .nav-item .count-badge,
+.sidebar:not(.collapsed) .section-label {
+  transition: opacity var(--label-in);
+}
+
+.sidebar:not(.collapsed) {
+  --brand-lockup-word-transition: opacity var(--label-in);
+}
+
+.sidebar.collapsed .label,
+.sidebar.collapsed .nav-item .count-badge,
+.sidebar.collapsed .section-label {
+  opacity: 0;
+}
+
+.sidebar.collapsed {
+  --brand-lockup-word-opacity: 0;
+}
+
+/* The Topics head and list fold to zero height with animated grid tracks, as
+   the Library folds its section labels and collection tree: the rail never
+   grows a hole where the group was. */
+.collapsible {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  transition: grid-template-rows var(--rail-motion);
+}
+
+.collapsible > * {
+  overflow: hidden;
+}
+
+.sidebar.collapsed .collapsible {
+  grid-template-rows: minmax(0, 0fr);
+}
+
+.sidebar.collapsed .collapsible > * {
+  visibility: hidden;
+  transition: visibility 0s linear var(--motion-slow), opacity var(--label-out) linear var(--motion-slow);
+}
+
+/* --- Footer (the Library's) ---------------------------------------------- */
+/* 4px of left padding puts the 64px footer slot on the rail axis, so the
+   collapse button sits on the same centre line as the icons in both states
+   and never travels. */
+.sidebar-footer {
+  flex: none;
+  padding: 0.75rem 1rem 0.75rem 4px;
+  display: flex;
+  align-items: center;
+}
+
+.footer-slot {
+  width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* The collapse control is an appIconButton (32px); the sidebar's own radius. */
+.toggle-btn {
+  border-radius: var(--radius-lg);
+}
+
+/* --- Phone ---------------------------------------------------------------- */
+/* The shell's drawer is not the rail: the place name opens it and it is either
+   fully open or fully off screen, so the desktop preference must not hide a
+   label or the Topics group in it. */
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--drawer-width);
+  }
+
+  .sidebar.collapsed .label,
+  .sidebar.collapsed .nav-item .count-badge,
+  .sidebar.collapsed .section-label {
+    opacity: 1;
+  }
+
+  .sidebar.collapsed {
+    --brand-lockup-word-opacity: 1;
+  }
+
+  .sidebar.collapsed .collapsible {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .sidebar.collapsed .collapsible > * {
+    visibility: visible;
+  }
+
+  /* A rail control has no meaning in the drawer. */
+  .sidebar-footer {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .topic-row-shell,
   .topic-row,
   .row-actions {
     transition: none;
+  }
+
+  .sidebar,
+  .sidebar *,
+  .sidebar *::before {
+    transition: none !important;
   }
 }

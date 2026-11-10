@@ -4,7 +4,6 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { Subject, of } from 'rxjs';
 
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
-import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { NotesService } from '../core/services/notes.service';
 import { ToastService } from '../core/services/toast.service';
 import { TopicsService } from '../core/services/topics.service';
@@ -28,7 +27,6 @@ const note = (id: string, createdAt: string): NoteSearchHit => ({
 
 describe('BrainListPage', () => {
   let fixture: ComponentFixture<BrainListPage>;
-  let preferences: { sidebarExpanded: ReturnType<typeof signal<boolean>>; setSidebarExpanded: (value: boolean) => void };
   let browse: ReturnType<typeof vi.fn>;
 
   beforeAll(() => {
@@ -41,10 +39,6 @@ describe('BrainListPage', () => {
   });
 
   beforeEach(async () => {
-    preferences = {
-      sidebarExpanded: signal(true),
-      setSidebarExpanded: (value: boolean) => preferences.sidebarExpanded.set(value),
-    };
     const now = Date.now();
     browse = vi.fn().mockReturnValue(
       of({
@@ -80,7 +74,6 @@ describe('BrainListPage', () => {
         { provide: TopicsService, useValue: {} },
         { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
         { provide: BrainListCacheService, useValue: { restore: () => null, save: vi.fn() } },
-        { provide: LibraryPreferencesService, useValue: preferences },
         { provide: AssistantService, useValue: { turnFinished: new Subject() } },
         { provide: AssistantContextService, useValue: {} },
         {
@@ -121,21 +114,6 @@ describe('BrainListPage', () => {
   function el(): HTMLElement {
     return fixture.nativeElement;
   }
-
-  it('offers the Library’s sidebar toggle and flips the one preference', () => {
-    const toggle = el().querySelector('button.sidebar-toggle') as HTMLButtonElement;
-
-    expect(toggle).toBeTruthy();
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle.getAttribute('aria-label')).toBe('Collapse sidebar');
-
-    toggle.click();
-    fixture.detectChanges();
-
-    expect(preferences.sidebarExpanded()).toBe(false);
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle.getAttribute('aria-label')).toBe('Expand sidebar');
-  });
 
   it('heads a date-ordered list with Today and Yesterday, each counting its notes', () => {
     const titles = Array.from(el().querySelectorAll('.note-group-title')).map((title) => title.textContent?.trim());

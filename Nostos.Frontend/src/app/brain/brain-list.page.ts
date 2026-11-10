@@ -18,7 +18,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
 
 import type { NoteBookFacet, NoteOrder, NoteSearchHit } from '../core/dtos/note.dtos';
-import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { NotesService, type NoteBrowseFilter } from '../core/services/notes.service';
 import {
   TopicsService,
@@ -128,11 +127,7 @@ export class BrainListPage {
   private readonly notesService = inject(NotesService);
   private readonly topicsService = inject(TopicsService);
   private readonly cache = inject(BrainListCacheService);
-  private readonly preferences = inject(LibraryPreferencesService);
   private readonly injector = inject(Injector);
-
-  /** The Library's one sidebar preference; the shell reads the same signal. */
-  readonly sidebarExpanded = this.preferences.sidebarExpanded;
 
   readonly state = inject(BrainStateService);
   readonly topicActions = inject(BrainTopicActionsService);
@@ -630,11 +625,6 @@ export class BrainListPage {
 
   openDrawer(): void {
     this.state.drawerOpen.set(true);
-  }
-
-  /** The Library's toggle, on the same preference: it closes the shell's column. */
-  toggleSidebar(): void {
-    this.preferences.setSidebarExpanded(!this.sidebarExpanded());
   }
 
   showOnMap(topicId: string): void {
