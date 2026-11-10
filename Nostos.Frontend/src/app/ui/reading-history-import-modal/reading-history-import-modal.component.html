@@ -385,12 +385,6 @@
         @if (readLabel(row); as read) {
           <span class="history-chip">{{ read }}</span>
         }
-        @if (row.book.values.review) {
-          <span class="history-chip">Review</span>
-        }
-        @if (row.book.values.privateNotes) {
-          <span class="history-chip">Private note</span>
-        }
         @if (row.book.values.toRead) {
           <span class="history-chip">{{ toReadLabel }}</span>
         }
@@ -410,6 +404,24 @@
         <span class="history-review-reason" data-testid="reading-history-notice">
           {{ row.book.values.ratingNotice || row.book.notice }}
         </span>
+      }
+      @if (row.book.values.review) {
+        <details class="history-words" data-testid="reading-history-review-text">
+          <summary class="history-words-toggle">
+            <nostos-icon name="caret-right" [size]="11" class="history-disclosure"></nostos-icon>
+            Review
+          </summary>
+          <p class="history-words-text">{{ row.book.values.review }}</p>
+        </details>
+      }
+      @if (row.book.values.privateNotes) {
+        <details class="history-words" data-testid="reading-history-private-note">
+          <summary class="history-words-toggle">
+            <nostos-icon name="caret-right" [size]="11" class="history-disclosure"></nostos-icon>
+            Private note
+          </summary>
+          <p class="history-words-text">{{ row.book.values.privateNotes }}</p>
+        </details>
       }
     </div>
 

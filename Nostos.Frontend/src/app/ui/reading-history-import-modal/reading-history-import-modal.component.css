@@ -330,6 +330,43 @@ summary.history-section-header:focus-visible {
   color: var(--color-text-light);
 }
 
+.history-words {
+  margin-top: 0.2rem;
+}
+
+.history-words-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.history-words-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.history-words-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.history-words[open] .history-disclosure {
+  transform: rotate(90deg);
+}
+
+.history-words-text {
+  margin: 0.25rem 0 0;
+  padding-left: 1.05rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-text-main);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .history-review-target {
   display: flex;
   align-items: baseline;
