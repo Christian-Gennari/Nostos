@@ -616,32 +616,41 @@ describe('Library', () => {
     expect(toggles.every((toggle) => !toggle.classList.contains('nostos-button'))).toBe(true);
   });
 
-  it('names the shelf beside the phone drawer opener, ignoring the search', () => {
+  it('keeps the shelf name in the filter chips, ignoring the search', () => {
     fixture.detectChanges();
-    const label = () =>
-      (fixture.nativeElement.querySelector('[data-testid="library-scope-label"]') as HTMLElement)
-        .textContent?.trim();
+    const bars = () => fixture.nativeElement.querySelector('.filter-bar') as HTMLElement;
+    const chips = () =>
+      Array.from(
+        fixture.nativeElement.querySelectorAll('.filter-chip') as NodeListOf<HTMLElement>,
+      );
 
-    expect(label()).toBe('All books');
+    // "All books" is no scope, so the phone chip row stays empty and the bar
+    // keeps zero height.
+    expect(component.activeFilterChips()).toHaveLength(0);
+    expect(bars().classList.contains('is-empty')).toBe(true);
+
+    const opener = fixture.nativeElement.querySelector('.floating-toggle') as HTMLElement;
+    expect(opener.getAttribute('aria-label')).toContain('collections sidebar');
+    expect(opener.getAttribute('aria-expanded')).toBe('true');
 
     component.filters.toggleStatus('favorites');
     component.filters.toggleCollection('c1');
     component.searchQuery.set('stoic');
     fixture.detectChanges();
 
+    // The toolbar's opener is icon-only on a phone, so the scope chips here
+    // are the shelf's visible name. The search is a chip of its own and never
+    // joins the shelf label.
     expect(component.scopeLabel()).not.toContain('stoic');
-    expect(label()).toBe(component.scopeLabel());
-    expect(label()).toContain('Favourites');
-    expect(label()).toContain(' · ');
-    // Every chip but the search one is a shelf chip, which phones hide because
-    // the label above already names it.
-    const chips = Array.from(
-      fixture.nativeElement.querySelectorAll('.filter-chip') as NodeListOf<HTMLElement>,
-    );
-    expect(chips.filter((chip) => !chip.classList.contains('filter-chip--scope'))).toHaveLength(1);
-    expect(
-      (fixture.nativeElement.querySelector('.filter-bar') as HTMLElement).classList.contains('scope-only'),
-    ).toBe(false);
+    expect(component.scopeLabel()).toContain('Favourites');
+    expect(component.scopeLabel()).toContain(' · ');
+    const scopeChips = chips().filter((chip) => chip.classList.contains('filter-chip--scope'));
+    expect(scopeChips.map((chip) => chip.textContent?.trim())).toEqual([
+      'Favourites',
+      'Collection',
+    ]);
+    expect(chips().filter((chip) => !chip.classList.contains('filter-chip--scope'))).toHaveLength(1);
+    expect(bars().classList.contains('is-empty')).toBe(false);
   });
 
   it('offers the same sort on phones as an icon dropdown', () => {
