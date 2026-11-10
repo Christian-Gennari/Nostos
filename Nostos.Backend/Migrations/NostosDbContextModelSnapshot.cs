@@ -288,6 +288,77 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("BookCollections");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookImportBatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ChangeCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(260)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc");
+
+                    b.ToTable("BookImportBatches");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookImportBatchBook", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChangesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CreatedBookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("NoteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NoteIdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReadingListEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("BookId");
+
+                    b.ToTable("BookImportBatchBooks");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.BookModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1580,6 +1651,24 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Collection");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookImportBatchBook", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.BookImportBatch", "Batch")
+                        .WithMany("Books")
+                        .HasForeignKey("BatchId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nostos.Backend.Data.Models.BookModel", "Book")
+                        .WithMany()
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Batch");
+
+                    b.Navigation("Book");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.BookModel", b =>
                 {
                     b.HasOne("Nostos.Backend.Data.Models.WorkModel", "Work")
@@ -1900,6 +1989,11 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Note");
 
                     b.Navigation("Writing");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.BookImportBatch", b =>
+                {
+                    b.Navigation("Books");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.BookModel", b =>

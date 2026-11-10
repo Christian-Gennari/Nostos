@@ -57,6 +57,10 @@ import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService, type HighlightImportStart } from '../core/services/highlight-import.service';
+import {
+  READING_HISTORY_SOURCE_EXPORT_HINT,
+  ReadingHistoryImportService,
+} from '../core/services/reading-history-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -337,6 +341,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private cloudAuth = inject(CloudAuthService);
   readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
+  private readingHistoryImport = inject(ReadingHistoryImportService);
 
   @ViewChild('firstRunImportInput')
   private firstRunImportInput?: ElementRef<HTMLInputElement>;
@@ -638,6 +643,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   openHighlightImport(start: HighlightImportStart = 'all'): void {
     this.highlightImport.open(start);
+  }
+
+  /** Goodreads and StoryGraph exports; the server tells them apart by header. */
+  readonly readingHistoryImportSources: readonly ImportSourceRow[] = [
+    { id: 'goodreads', name: 'Goodreads', hint: `Export from ${READING_HISTORY_SOURCE_EXPORT_HINT.goodreads}, then pick the CSV.` },
+    { id: 'storygraph', name: 'StoryGraph', hint: `Export from ${READING_HISTORY_SOURCE_EXPORT_HINT.storygraph}, then pick the CSV.` },
+  ];
+
+  openReadingHistoryImport(): void {
+    this.readingHistoryImport.open();
   }
 
   /** The .nostos import lives with the rest of Backups & data. */

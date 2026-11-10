@@ -580,6 +580,39 @@
               </div>
             </section>
 
+            <section class="settings-card" data-testid="reading-history-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Reading history</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <p class="label-desc card-purpose">
+                  Bring in what you have read, when you read it, the rating, the review and your shelves. You
+                  see where every book is going before anything is added, and importing the same file again
+                  changes nothing.
+                </p>
+                @for (source of readingHistoryImportSources; track source.id) {
+                  <div class="setting-row" [attr.data-testid]="'import-source-history-' + source.id">
+                    <div class="setting-label">
+                      <span class="label-text">{{ source.name }}</span>
+                      <span class="label-desc">{{ source.hint }}</span>
+                    </div>
+                    <button
+                      appButton
+                      variant="secondary"
+                      class="import-action"
+                      data-testid="import-action-reading-history"
+                      [attr.aria-label]="'Import reading history from ' + source.name"
+                      (click)="openReadingHistoryImport()"
+                    >
+                      Import…
+                    </button>
+                  </div>
+                }
+              </div>
+            </section>
+
             @if (supportsExternalMediaLibraries()) {
               <section class="settings-card" data-testid="import-books-card">
                 <div class="card-header">

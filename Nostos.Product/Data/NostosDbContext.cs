@@ -68,6 +68,11 @@ public class NostosDbContext : DbContext
     public DbSet<NoteImportBatch> NoteImportBatches => Set<NoteImportBatch>();
     public DbSet<NoteImportBatchNote> NoteImportBatchNotes => Set<NoteImportBatchNote>();
 
+    // Reading-history import (issue #1521): one Goodreads or StoryGraph export
+    // per batch, with a row of what each import row changed so it can be undone.
+    public DbSet<BookImportBatch> BookImportBatches => Set<BookImportBatch>();
+    public DbSet<BookImportBatchBook> BookImportBatchBooks => Set<BookImportBatchBook>();
+
     // Server-wide AI provider overrides (assistant-milestone plan, "AI provider
     // settings"). One row; NULL columns fall back to appsettings/env.
     public DbSet<AiProviderSettingsModel> AiProviderSettings => Set<AiProviderSettingsModel>();
@@ -954,6 +959,23 @@ public class NostosDbContext : DbContext
                 .HasForeignKey(x => x.NoteId)
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.NoteId);
+        });
+
+        // --- READING-HISTORY IMPORT (issue #1521) ---
+        // A batch and its rows are bookkeeping; deleting the book it touched
+        // deletes the row, and deleting the batch never touches the book.
+        modelBuilder.Entity<BookImportBatch>().HasIndex(x => x.CreatedAtUtc);
+        modelBuilder.Entity<BookImportBatchBook>(e =>
+        {
+            e.HasOne(x => x.Batch)
+                .WithMany(b => b.Books)
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Book)
+                .WithMany()
+                .HasForeignKey(x => x.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.BookId);
         });
 
         // --- AI PROVIDER SETTINGS (assistant-milestone plan) ---

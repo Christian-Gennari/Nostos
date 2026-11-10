@@ -12,10 +12,12 @@ import { CommandPalette } from './ui/command-palette/command-palette.component';
 import { CommandPaletteService } from './ui/command-palette/command-palette.service';
 import { RecentItemsService } from './ui/command-palette/recent-items.service';
 import { HighlightImportModal } from './ui/highlight-import-modal/highlight-import-modal.component';
+import { ReadingHistoryImportModal } from './ui/reading-history-import-modal/reading-history-import-modal.component';
 import { AssistantComponent } from './ui/assistant/assistant.component';
 import { AssistantService } from './ui/assistant/assistant.service';
 import { AssistantLauncherService } from './ui/assistant/assistant-launcher.service';
 import { HighlightImportService } from './core/services/highlight-import.service';
+import { ReadingHistoryImportService } from './core/services/reading-history-import.service';
 import { PassageViewerComponent } from './ui/passage-viewer/passage-viewer.component';
 import { PassageViewerService } from './ui/passage-viewer/passage-viewer.service';
 import { SwUpdateService } from './core/services/sw-update.service';
@@ -35,6 +37,7 @@ import { LibraryActivationController } from './library-transfer/services/library
     ToastContainerComponent,
     CommandPalette,
     HighlightImportModal,
+    ReadingHistoryImportModal,
     PassageViewerComponent,
     AssistantComponent,
     CloudEntryComponent,
@@ -55,6 +58,7 @@ export class App {
   readonly palette = inject(CommandPaletteService);
   readonly passageViewer = inject(PassageViewerService);
   readonly highlightImport = inject(HighlightImportService);
+  readonly readingHistoryImport = inject(ReadingHistoryImportService);
   private readonly assistant = inject(AssistantService);
   private readonly assistantLauncher = inject(AssistantLauncherService);
   /** True once the first navigation has rendered, so the dock's presence is known. */

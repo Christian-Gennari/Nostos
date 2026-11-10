@@ -364,6 +364,12 @@ public sealed class PortableCompletenessInventoryTests
             ["NoteImportBatchNote"] = ExcludedEntity(
                 "Import Undo history/local batch undo receipt. Once imported, notes are durable library notes; batch tracking is local operational history."),
 
+            ["BookImportBatch"] = ExcludedEntity(
+                "Reading-history import Undo history/local batch receipt (issue #1521). Once imported, ratings, reviews, finish dates, memberships and reading-list entries are durable library content; the batch only records what to take back."),
+
+            ["BookImportBatchBook"] = ExcludedEntity(
+                "Reading-history import Undo history/local batch receipt (issue #1521). Once imported, ratings, reviews, finish dates, memberships and reading-list entries are durable library content; the batch only records what to take back."),
+
             ["AiProviderSettingsModel"] = ExcludedEntity(
                 "Host credentials, API keys, and host AI-provider configuration must never be transferred as portable library data."),
 
