@@ -110,6 +110,36 @@ public sealed class HighlightImportShapeLogTests : IDisposable
     }
 
     [Fact]
+    public async Task A_commit_does_not_log_the_missing_columns_its_preview_already_logged()
+    {
+        using var factory = new ShapeLogFactory();
+        var client = factory.CreateClient();
+        var path = CreateKoboDatabase();
+
+        (await UploadAsync(client, "preview", path)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var response = await UploadAsync(client, "commit", path, decisions: "[]");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        ShapeLines(factory).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_koreader_sidecar_the_plugin_sends_that_does_not_parse_logs_its_shape()
+    {
+        using var factory = new ShapeLogFactory();
+        var client = factory.CreateClient();
+        using var body = new MultipartFormDataContent();
+        body.Add(new StringContent("return { [\"doc_props\"] = { title = \"Secret Title\" "), "file", "metadata.lua");
+
+        var response = await client.PostAsync("/api/notes/import/koreader", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var line = ShapeLines(factory).Single();
+        line.Should().Contain("Outcome=parse-failed");
+        line.Should().NotContain("Secret Title");
+    }
+
+    [Fact]
     public void The_kindle_and_readwise_fixtures_never_put_their_titles_authors_or_text_in_the_event()
     {
         using var provider = new CapturingLoggerProvider();
@@ -149,10 +179,13 @@ public sealed class HighlightImportShapeLogTests : IDisposable
     private static IReadOnlyList<string> ShapeLines(ShapeLogFactory factory) =>
         factory.Logs.Lines.Where(line => line.Contains("HighlightImportShape", StringComparison.Ordinal)).ToList();
 
-    private static async Task<HttpResponseMessage> UploadAsync(HttpClient client, string step, string path)
+    private static async Task<HttpResponseMessage> UploadAsync(
+        HttpClient client, string step, string path, string? decisions = null)
     {
         using var body = new MultipartFormDataContent();
         body.Add(new ByteArrayContent(await File.ReadAllBytesAsync(path)), "file", Path.GetFileName(path));
+        if (decisions is not null)
+            body.Add(new StringContent(decisions), "decisions");
         return await client.PostAsync($"/api/notes/imports/{step}", body);
     }
 

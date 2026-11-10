@@ -88,7 +88,8 @@ internal static class ImportFileShape
         return (source, Cap(string.Join("; ", parts)));
     }
 
-    private static (string Source, string Shape) DescribeText(string text)
+    /// <summary>The same description for text that arrived as a string, not a file.</summary>
+    internal static (string Source, string Shape) DescribeText(string text)
     {
         if (ReadwiseCsvParser.Looks(text))
             return (HighlightImportSourceReader.Readwise, Cap($"header {Header(text)}"));

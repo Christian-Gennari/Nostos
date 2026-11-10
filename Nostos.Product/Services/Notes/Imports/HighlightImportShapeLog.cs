@@ -39,6 +39,25 @@ internal static class HighlightImportShapeLog
         logger.LogWarning(Event, "HighlightImportShape {Source} {Outcome} {Shape}", source, outcome, shape);
     }
 
+    /// <summary>
+    /// The event for a KOReader sidecar the plugin endpoint received as text
+    /// rather than as a file on disk.
+    /// </summary>
+    public static void WriteText(ILogger logger, string text, string outcome)
+    {
+        (string Source, string Shape) described;
+        try
+        {
+            described = ImportFileShape.DescribeText(text);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            described = ("unknown", "shape unavailable");
+        }
+
+        logger.LogWarning(Event, "HighlightImportShape {Source} {Outcome} {Shape}", described.Source, outcome, described.Shape);
+    }
+
     // Describing a user-supplied file is best effort: the import's own answer
     // must never change because a diagnostic could not be produced.
     private static (string Source, string Shape) Describe(string path)

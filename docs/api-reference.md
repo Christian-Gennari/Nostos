@@ -464,7 +464,9 @@ imported; notes arrive in the default pen.
 
 **Diagnostics.** A file that fails to parse, a Kobo or Apple Books database
 that lost a column the readers treat as optional, and a preview that skips
-Kindle entries as an unrecognised format each log one warning event, named
+Kindle entries as an unrecognised format each log one warning event (the
+KOReader plugin's `POST /api/notes/import/koreader` logs it too when its
+sidecar does not parse; a commit does not repeat its preview's event), named
 `HighlightImportShape` (event id 1523), with three structured properties:
 `Source` (`kobo`, `applebooks`, `kindle`, `readwise`, `koreader` or `unknown`),
 `Outcome` (`parse-failed`, `missing-optional-columns` or

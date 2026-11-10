@@ -123,13 +123,9 @@ public sealed class HighlightImportService
         Guid? batchId = null,
         CancellationToken ct = default)
     {
-        var file = ReadSource(path, companions);
-        var (source, sourceBooks, _) = file;
-        if (file.MissingOptionalColumns.Count > 0)
-        {
-            HighlightImportShapeLog.Write(
-                _logger, path, HighlightImportShapeLog.MissingOptionalColumns, file.MissingOptionalColumns);
-        }
+        // The preview of this file already logged any missing columns; a
+        // commit logging them again would count every import twice.
+        var (source, sourceBooks, _) = ReadSource(path, companions);
 
         var bySourceKey = decisions
             .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
