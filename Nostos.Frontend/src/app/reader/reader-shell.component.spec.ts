@@ -1895,7 +1895,7 @@ describe('ReaderShell toolbar contract', () => {
     expect(stub.goTo).toHaveBeenCalledWith(40);
   });
 
-  it('keeps the active ToC rail square instead of bending with the row radius', () => {
+  it('draws the active ToC rail with the shared rail, clear of the row radius', () => {
     const template = readSource('./reader-shell.component.html');
     const css = readSource('./reader-shell.component.css');
 
@@ -1903,12 +1903,31 @@ describe('ReaderShell toolbar contract', () => {
 
     const activeRule = css.slice(
       css.indexOf('.toc-item.active {'),
-      css.indexOf('.toc-subitems {'),
+      css.indexOf('.reader-toolbar {'),
     );
     expect(activeRule).toContain(
       '--nostos-accent-rail-color: var(--color-brand-accent)',
     );
     expect(activeRule).not.toContain('box-shadow: inset 3px 0 0');
+  });
+
+  it('separates ToC rows with space and type, never with rules', () => {
+    // The drawer used to read as a table: a hairline under every row and a
+    // vertical rule at every nesting level. Both are gone; hierarchy is the
+    // book's own parts (small tracked labels) over its chapters (plain rows).
+    const template = readSource('./reader-shell.component.html');
+    const css = readSource('./reader-shell.component.css');
+
+    const rowRule = css.slice(css.indexOf('.toc-item {'), css.indexOf('@media (pointer: coarse)'));
+    expect(rowRule).not.toContain('border-bottom');
+
+    const subitemsRule = css.slice(css.indexOf('.toc-subitems {'), css.indexOf('.toc-item {'));
+    expect(subitemsRule).not.toContain('border-left');
+
+    expect(template).toContain(
+      '[class.toc-item--group]="item.children && item.children.length > 0"',
+    );
+    expect(css).toContain('.toc-item--group {');
   });
 
   it('keeps the page indicator to a single bordered field', () => {
