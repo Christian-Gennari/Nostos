@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Library.Imports;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 using Nostos.Product.Composition;
@@ -784,7 +786,91 @@ public static class BooksEndpoints
             }
         );
 
+        // READING-HISTORY IMPORT (issue #1521), in two steps so nothing is
+        // written on a guess: `preview` reads a Goodreads or StoryGraph export
+        // and proposes a library book and the values it would set per row;
+        // `commit` takes the same file again with the owner's decisions. The
+        // source is told apart by its header row, never by the file name.
+        var historyImport = routes.MapGroup("/api/books/imports");
+        historyImport.MapPost(
+            "/preview",
+            (HttpRequest request, ReadingHistoryImportService importer, CancellationToken ct) =>
+                WithReadingHistoryFileAsync(request, (path, _, _) => importer.PreviewAsync(path, ct))
+        );
+
+        historyImport.MapPost(
+            "/commit",
+            (HttpRequest request, ReadingHistoryImportService importer, CancellationToken ct) =>
+                WithReadingHistoryFileAsync(request, (path, fileName, form) =>
+                {
+                    var decisions = JsonSerializer.Deserialize<List<ReadingHistoryImportDecision>>(
+                        form["decisions"].ToString() is { Length: > 0 } json ? json : "[]",
+                        ImportJson) ?? [];
+                    return importer.CommitAsync(path, fileName, decisions, ct);
+                })
+        );
+
+        historyImport.MapGet(
+            "/batches",
+            async (ReadingHistoryImportService importer, CancellationToken ct) =>
+                Results.Ok(await importer.ListBatchesAsync(5, ct))
+        );
+
+        // UNDO one import: restores the values it wrote and removes what it added.
+        historyImport.MapDelete(
+            "/batches/{id}",
+            async (Guid id, ReadingHistoryImportService importer, CancellationToken ct) =>
+                await importer.UndoAsync(id, ct) is { } removed
+                    ? Results.Ok(new { removed })
+                    : Results.NotFound()
+        );
+
         return routes;
     }
 
+    private static readonly JsonSerializerOptions ImportJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// One uploaded CSV, kept only for the length of the request. A library
+    /// export is a few megabytes; the ceiling is there to refuse a wrong file
+    /// early rather than to bound legitimate exports.
+    /// </summary>
+    private static async Task<IResult> WithReadingHistoryFileAsync<T>(
+        HttpRequest request,
+        Func<string, string, IFormCollection, Task<T>> run)
+    {
+        const long maxBytes = 64L * 1024 * 1024;
+        if (!request.HasFormContentType)
+            return Results.BadRequest(new { error = "Expected multipart/form-data with a Goodreads or StoryGraph CSV." });
+
+        var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null)
+            return Results.BadRequest(new { error = "Choose a Goodreads or StoryGraph export to import." });
+        if (file.Length <= 0 || file.Length > maxBytes)
+            return Results.BadRequest(new { error = "The file must be between 1 byte and 64 MB." });
+
+        var directory = Directory.CreateTempSubdirectory("nostos-reading-history-");
+        try
+        {
+            var name = string.IsNullOrWhiteSpace(file.FileName) ? "export.csv" : Path.GetFileName(file.FileName);
+            var target = Path.Combine(directory.FullName, name);
+            await using (var stream = File.Create(target))
+            await using (var source = file.OpenReadStream())
+            {
+                await source.CopyToAsync(stream, request.HttpContext.RequestAborted);
+            }
+
+            return Results.Ok(await run(target, name, form));
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        finally
+        {
+            try { directory.Delete(recursive: true); }
+            catch (IOException) { }
+        }
+    }
 }

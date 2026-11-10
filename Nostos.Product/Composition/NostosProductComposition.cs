@@ -21,6 +21,7 @@ using Nostos.Backend.Serialization;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Library.Imports;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
@@ -276,6 +277,7 @@ public static class NostosProductComposition
         services.AddScoped<IReadingListService, ReadingListService>();
         services.AddScoped<KoreaderNoteImportService>();
         services.AddScoped<HighlightImportService>();
+        services.AddScoped<ReadingHistoryImportService>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
