@@ -8,6 +8,7 @@ import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { BrandLockupComponent } from '../ui/brand-lockup/brand-lockup.component';
 import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
 import { isTopicSort } from './brain.helpers';
@@ -29,6 +30,7 @@ import { isTopicSort } from './brain.helpers';
     BrandLockupComponent,
     InlineRenameComponent,
     EmptyStateComponent,
+    ...NOSTOS_MENU,
   ],
   templateUrl: './brain-sidebar.component.html',
   styleUrls: ['./brain-sidebar.component.css'],

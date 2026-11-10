@@ -2,7 +2,8 @@
    brand header, scroll area, groups, section label and place rows, all from the
    shared `.side-nav` recipe in styles.css. Topic rows
    are the Library's collection-row geometry (docs/brain-library-parity.md):
-   34px, count at the right, hover rename/delete overlaid on the count. */
+   34px, count at the right, hover rename/delete overlaid on the count on a fine
+   pointer, and the Library's in-flow dots-three menu on touch. */
 :host {
   display: block;
   height: 100%;
@@ -21,13 +22,14 @@
   padding-bottom: 6rem;
 }
 
-/* The order dropdown is taller than the Library's "+", so the head starts a
-   little higher to keep the label on the same line. */
-.section-head {
-  padding-top: 0.35rem;
-}
-
-.topic-sort {
+/* The Library's section head carries a 24px "+" beside the label. Hold this
+   compact control to the same 24px rung (and tighten its vertical padding) so
+   the "Topics" head and the "Collections" head are the same height; the shared
+   `.section-head` padding then lines the labels up. */
+app-dropdown.topic-sort {
+  --dropdown-compact-height: 24px;
+  --dropdown-compact-padding: 0 0.6rem;
+  --control-h-touch: 24px;
   color: var(--color-text-light);
 }
 
@@ -40,9 +42,12 @@
 .topic-row-shell {
   position: relative;
   display: flex;
+  align-items: center;
   width: 100%;
   min-height: 34px;
   margin-bottom: 2px;
+  border-radius: var(--radius-row);
+  transition: background 0.12s ease;
   --actions-w: 64px;
 }
 
@@ -91,10 +96,18 @@
   transition: opacity 0.15s;
 }
 
+/* The fill belongs to the row, not the link: on touch the link stops before the
+   in-flow menu, so an active row must not leave the dots un-tinted. */
+.topic-row-shell:hover,
+.topic-row-shell:focus-within,
+.topic-row-shell:has(.topic-row.active) {
+  background: var(--bg-hover);
+  border-radius: var(--radius-row);
+}
+
 .topic-row-shell:hover .topic-row,
 .topic-row-shell:focus-within .topic-row,
 .topic-row.active {
-  background: var(--bg-hover);
   color: var(--color-text-main);
 }
 
@@ -103,14 +116,16 @@
   outline-offset: -2px;
 }
 
-/* The actions are an overlay on the count's slot, so the name never reflows. */
+/* Fine-pointer actions: an overlay on the count's slot, so the name never
+   reflows. Touch has no hover, so the reveal lives in the pointer query and
+   every touch row gets the in-flow menu below instead. */
 .row-actions {
   position: absolute;
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
@@ -120,23 +135,29 @@
   transition: opacity 0.15s, visibility 0s linear 0.15s;
 }
 
-.topic-row-shell:hover .row-actions,
-.topic-row-shell:focus-within .row-actions {
-  opacity: 1;
-  visibility: inherit;
-  pointer-events: auto;
-  transition: opacity 0.15s, visibility 0s;
-}
+@media (hover: hover) and (pointer: fine) {
+  .row-actions {
+    display: flex;
+  }
 
-.topic-row-shell:hover .topic-row .count,
-.topic-row-shell:focus-within .topic-row .count {
-  opacity: 0;
-}
+  .topic-row-shell:hover .row-actions,
+  .topic-row-shell:focus-within .row-actions {
+    opacity: 1;
+    visibility: inherit;
+    pointer-events: auto;
+    transition: opacity 0.15s, visibility 0s;
+  }
 
-.topic-row-shell:hover .topic-row .name,
-.topic-row-shell:focus-within .topic-row .name {
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - var(--actions-w)), transparent calc(100% - var(--actions-w) + 24px));
-  mask-image: linear-gradient(to right, black calc(100% - var(--actions-w)), transparent calc(100% - var(--actions-w) + 24px));
+  .topic-row-shell:hover .topic-row .count,
+  .topic-row-shell:focus-within .topic-row .count {
+    opacity: 0;
+  }
+
+  .topic-row-shell:hover .topic-row .name,
+  .topic-row-shell:focus-within .topic-row .name {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - var(--actions-w)), transparent calc(100% - var(--actions-w) + 24px));
+    mask-image: linear-gradient(to right, black calc(100% - var(--actions-w)), transparent calc(100% - var(--actions-w) + 24px));
+  }
 }
 
 .row-action {
@@ -154,39 +175,40 @@
   background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 }
 
-/* On touch there is no hover: the selected row shows its actions. */
-@media (hover: none) {
-  .topic-row-shell:has(.topic-row.active) .row-actions {
-    opacity: 1;
-    visibility: inherit;
-    pointer-events: auto;
-  }
-
-  .topic-row-shell:has(.topic-row.active) .topic-row .count {
-    opacity: 0;
-  }
+/* Touch: the Library's one explicit collection-row menu (#1514). It sits after
+   the row in flow, so it can never cover the name or the count, and its 44px
+   box overflows the 34px row instead of making the row taller. */
+.row-menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 34px;
+  margin-left: 4px;
 }
 
-/* Touch: rows and their actions on the 44px rung, as the old index had. */
-@media (pointer: coarse), (hover: none) {
-  .nav-item,
-  .topic-row-shell,
-  .topic-row {
-    min-height: 44px;
-  }
+.row-menu-trigger {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+}
 
-  .topic-row-shell {
-    --actions-w: 96px;
-  }
+/* No hover ground to leave behind: a synthesized hover can stick to the last
+   tapped trigger. */
+.row-menu-trigger:hover {
+  background: transparent;
+  color: var(--color-text-muted);
+}
 
-  /* `button.` out-weighs appIconButton's own xs rung. */
-  button.row-action {
-    width: 44px;
-    height: 44px;
+@media (hover: hover) and (pointer: fine) {
+  .row-menu {
+    display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .topic-row-shell,
   .topic-row,
   .row-actions {
     transition: none;

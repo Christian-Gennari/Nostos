@@ -30,22 +30,26 @@ The Brain has no view toggle: the map is a place in the sidebar, not a mode.
 | Sort / order dropdown | 36px tall | the same |
 | Sidebar row | 34px tall, radius 8px, padding `0 8px 0 12px`, 14.08px | the same |
 | Row count | 20px line box, 11.52px, no chip ground | the same |
-| Row actions | revealed on hover, ≥ 28px targets, the badge yields | the same |
+| Row actions | hover overlay on fine pointers; one 44px dots-three menu on touch | the same |
 
-On a touch screen the Brain's controls step up to the 44px rung
-(`--control-h-touch`), as the Library's do; see `docs/brain.md`.
+On a touch screen the Brain's toolbar controls step up to the 44px rung
+(`--control-h-touch`), as the Library's do. The sidebar keeps the Library's
+row geometry: the 44px target is the topic row's in-flow dots-three menu, not a
+taller row. See `docs/brain.md`.
 
 ## Sidebar rows — the row with actions
 
-A topic row carries a count and, on hover (or when selected on touch),
-Rename and Delete. That is the Library's collection row, so the Brain copies
-`.tree-row`, not `.nav-item`:
+A topic row carries a count and Rename/Delete. That is the Library's collection
+row, so the Brain copies `.tree-row`, not `.nav-item`:
 
 - the fill is painted on the row, not by a `::before` pill;
-- the actions overlay the count's slot, so the name never reflows;
-- the name's tail fades into the actions instead of hard-cutting;
+- with a fine pointer the actions overlay the count's slot, so the name never
+  reflows, and the name's tail fades into them;
 - at rest the actions are hidden and the count shows; on hover the count
-  yields to the actions.
+  yields to the actions;
+- on touch there is no hover, so each row carries one always-visible 44px
+  dots-three menu in flow, the Library's #1514 pattern. The count never yields
+  and the name ellipsizes; a tap on the row is never a hidden action.
 
 The selected row keeps one fill through rest, hover and focus, in both themes
 (`scripts/probe-selection.mjs` prints it).
