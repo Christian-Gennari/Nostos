@@ -418,8 +418,8 @@ public sealed class ReadingHistoryImportService
 
         var entry = new ReadingListEntryModel
         {
-            Title = row.Title,
-            Author = row.Author,
+            Title = Truncate(row.Title, ReadingListEntryModel.MaxTitleLength)!,
+            Author = Truncate(row.Author, ReadingListEntryModel.MaxAuthorLength),
             Isbn = isbn,
             CreatedAt = DateTime.UtcNow,
         };
