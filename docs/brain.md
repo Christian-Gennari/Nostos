@@ -28,8 +28,8 @@ topic, `?noteId` to the note, anything else to All notes. The dock reopens
 the last place you were in.
 
 The sidebar lists the places with their counts, then the topics, most used or
-A–Z. Hovering a topic (or selecting it, on a touch screen) shows Rename and
-Delete.
+A–Z. Hovering a topic with a mouse shows Rename and Delete; on touch each row
+carries a dots-three menu with the same actions, so the count stays visible.
 
 ## The list
 
@@ -113,8 +113,10 @@ centred on it.
 - The toolbar is one row: the place name ▾ (it opens the sidebar as a
   drawer), then order, book, Select and the topic's ⋯ as square buttons; the
   search takes the next row, and Unsorted's **Sort one by one** the row after.
-- Every control answers a 44px tap. Small ones (chips, the remove cross, the
-  source link) keep their look and grow an invisible hit area.
+- Every toolbar control answers a 44px tap. Small ones (chips, the remove
+  cross, the source link) keep their look and grow an invisible hit area. The
+  sidebar keeps the Library's 34px row rhythm; its dots-three row menu trigger
+  carries the 44px target.
 - The dock stays at the bottom; the map runs under it.
 
 ## Tests and evidence

@@ -72,6 +72,20 @@
               class="row-action danger" [attr.aria-label]="'Delete ' + topic.name"
               (click)="actions.openDelete(topic)"></button>
           </div>
+          <!-- Touch-only single trigger, in flow, the Library's collection row
+               (#1514): the only secondary action surface where hover does not
+               exist, so nothing action-shaped can sit under a finger. -->
+          <div class="row-menu">
+            <button appIconButton type="button" icon="dots-three" [glyphSize]="18" class="row-menu-trigger"
+              [nostosMenuTriggerFor]="topicRowMenu" [attr.aria-label]="'Actions for ' + topic.name"
+              [attr.title]="'Actions for ' + topic.name"></button>
+            <ng-template #topicRowMenu>
+              <nostos-menu [attr.aria-label]="'Actions for ' + topic.name">
+                <button nostosMenuItem icon="pencil-simple" (triggered)="actions.startRename(topic, 'sidebar')">Rename</button>
+                <button nostosMenuItem icon="trash" tone="danger" (triggered)="actions.openDelete(topic)">Delete</button>
+              </nostos-menu>
+            </ng-template>
+          </div>
           }
         </div>
         } @empty {
