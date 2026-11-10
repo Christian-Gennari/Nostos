@@ -1,120 +1,138 @@
 <div class="brain-scroller" #scroller (scroll)="onScroll($event)">
   <header class="toolbar toolbar-edge" [class.is-topic]="place() === 'topic'">
-    <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
-    <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
-      [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
-      @if (place() === 'topic') { <nostos-icon concept="topic" [size]="16" /> }
-      <span class="place-switch-label">{{ title() }}</span>
-      <nostos-icon name="caret-down" [size]="14" />
-    </button>
-
-    <div class="toolbar-title">
-      @if (place() === 'topic') {
-      <span class="eyebrow"><nostos-icon concept="topic" [size]="12" />Topic</span>
-      }
-      @if (renamingTitle(); as current) {
-      <nostos-inline-rename
-        variant="title"
-        [name]="current.name"
-        requiredMessage="A topic needs a name."
-        (valueChange)="topicActions.renameValue.set($event)"
-        [error]="topicActions.renameError()"
-        [busy]="topicActions.renaming()"
-        (committed)="topicActions.commitRename()"
-        (cancelled)="topicActions.cancelRename()"
-      />
-      } @else {
-      <h1 class="page-title">{{ title() }}</h1>
-      }
-      @if (loaded()) {
-      <span class="page-count" role="status" aria-live="polite">
-        {{ place() === 'topic' && !filtersActive() && !withTopic() ? topicSummary() : countText() }}
-      </span>
-      }
-    </div>
-
-    <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
-      <input
-        appInput
-        controlSize="compact"
-        type="search"
-        class="search-input"
-        id="brain-search"
-        [attr.aria-label]="'Search ' + (place() === 'topic' ? 'in ' + title() : title().toLocaleLowerCase())"
-        [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : 'Search notes, quotes, books, topics…'"
-        [value]="searchDraft()"
-        (input)="onSearchInput($any($event.target).value)"
-        (keydown.escape)="clearSearch()"
-      />
-    </nostos-search-field>
-
-    <div class="toolbar-right">
-      <!-- Phone: order and book as square buttons; the open list shows the choice. -->
-      <app-dropdown
-        class="order-select-phone"
-        appearance="icon"
-        triggerIcon="arrows-down-up"
-        align="end"
-        ariaLabel="Order"
-        [options]="orderOptions"
-        [value]="order()"
-        (valueChange)="setOrder($event)"
-      />
-      @if (bookOptions().length > 1) {
-      <app-dropdown
-        class="book-select-phone"
-        appearance="icon"
-        triggerIcon="books"
-        align="end"
-        ariaLabel="Book"
-        [options]="bookOptions()"
-        [value]="bookId() ?? ''"
-        (valueChange)="setBook($event || null)"
-      />
-      }
-      <app-dropdown
-        class="book-select"
-        appearance="subtle"
-        controlSize="compact"
-        align="end"
-        ariaLabel="Book"
-        [options]="bookOptions()"
-        [value]="bookId() ?? ''"
-        (valueChange)="setBook($event || null)"
-      />
-      <app-dropdown
-        class="order-select"
-        controlSize="compact"
-        align="end"
-        ariaLabel="Order"
-        [options]="orderOptions"
-        [value]="order()"
-        (valueChange)="setOrder($event)"
-      />
-      @if (place() === 'unsorted' && total() > 0) {
-      <a appButton variant="primary" size="sm" class="sort-start" routerLink="/brain/unsorted/sort"
-        [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
-        Sort one by one <nostos-icon name="arrow-right" [size]="14" />
-      </a>
-      }
-      <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select notes"
-        [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
-        <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
+    <div class="toolbar-inner">
+      <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
+      <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
+        [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
+        @if (place() === 'topic') { <nostos-icon concept="topic" [size]="16" /> }
+        <span class="place-switch-label">{{ title() }}</span>
+        <nostos-icon name="caret-down" [size]="14" />
       </button>
-      @if (place() === 'topic' && topic(); as current) {
-      <button appIconButton type="button" icon="dots-three" class="topic-more" [glyphSize]="18"
-        aria-label="Topic actions" [nostosMenuTriggerFor]="topicMenu"></button>
-      <ng-template #topicMenu>
-        <nostos-menu aria-label="Topic actions">
-          <button nostosMenuItem icon="graph" (triggered)="showOnMap(current.id)">Show on map</button>
-          <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
-          <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
-          <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes in a document…</button>
-          <hr nostosMenuSeparator />
-          <button nostosMenuItem icon="trash" tone="danger" (triggered)="topicActions.openDelete(current)">Delete topic</button>
-        </nostos-menu>
-      </ng-template>
-      }
+
+      <div class="toolbar-title">
+        @if (place() === 'topic') {
+        <span class="eyebrow"><nostos-icon concept="topic" [size]="12" />Topic</span>
+        }
+        @if (renamingTitle(); as current) {
+        <nostos-inline-rename
+          variant="title"
+          [name]="current.name"
+          requiredMessage="A topic needs a name."
+          (valueChange)="topicActions.renameValue.set($event)"
+          [error]="topicActions.renameError()"
+          [busy]="topicActions.renaming()"
+          (committed)="topicActions.commitRename()"
+          (cancelled)="topicActions.cancelRename()"
+        />
+        } @else {
+        <h1 class="page-title">{{ title() }}</h1>
+        }
+        @if (loaded()) {
+        <span class="page-count" role="status" aria-live="polite">
+          {{ place() === 'topic' && !filtersActive() && !withTopic() ? topicSummary() : countText() }}
+        </span>
+        }
+      </div>
+
+      <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
+        <input
+          appInput
+          controlSize="compact"
+          type="search"
+          class="search-input"
+          id="brain-search"
+          [attr.aria-label]="'Search ' + (place() === 'topic' ? 'in ' + title() : title().toLocaleLowerCase())"
+          [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : 'Search notes, quotes, books, topics…'"
+          [value]="searchDraft()"
+          (input)="onSearchInput($any($event.target).value)"
+          (keydown.escape)="clearSearch()"
+        />
+      </nostos-search-field>
+
+      <div class="toolbar-right">
+        <!-- The Library's sidebar toggle, the same control and preference: one
+             setting decides both sidebars. Desktop only — on a phone the drawer
+             is opened from the place name, as in the Library. -->
+        <button
+          appIconButton
+          type="button"
+          class="sidebar-toggle"
+          [icon]="sidebarExpanded() ? 'arrow-line-left' : 'arrow-line-right'"
+          [glyphSize]="18"
+          weight="thin"
+          [attr.aria-expanded]="sidebarExpanded()"
+          aria-controls="brain-sidebar"
+          [attr.title]="sidebarExpanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+          [attr.aria-label]="sidebarExpanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+          (click)="toggleSidebar()"
+        ></button>
+        <!-- Phone: order and book as square buttons; the open list shows the choice. -->
+        <app-dropdown
+          class="order-select-phone"
+          appearance="icon"
+          triggerIcon="arrows-down-up"
+          align="end"
+          ariaLabel="Order"
+          [options]="orderOptions"
+          [value]="order()"
+          (valueChange)="setOrder($event)"
+        />
+        @if (bookOptions().length > 1) {
+        <app-dropdown
+          class="book-select-phone"
+          appearance="icon"
+          triggerIcon="books"
+          align="end"
+          ariaLabel="Book"
+          [options]="bookOptions()"
+          [value]="bookId() ?? ''"
+          (valueChange)="setBook($event || null)"
+        />
+        }
+        <app-dropdown
+          class="book-select"
+          appearance="subtle"
+          controlSize="compact"
+          align="end"
+          ariaLabel="Book"
+          [options]="bookOptions()"
+          [value]="bookId() ?? ''"
+          (valueChange)="setBook($event || null)"
+        />
+        <app-dropdown
+          class="order-select"
+          controlSize="compact"
+          align="end"
+          ariaLabel="Order"
+          [options]="orderOptions"
+          [value]="order()"
+          (valueChange)="setOrder($event)"
+        />
+        @if (place() === 'unsorted' && total() > 0) {
+        <a appButton variant="primary" size="sm" class="sort-start" routerLink="/brain/unsorted/sort"
+          [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
+          Sort one by one <nostos-icon name="arrow-right" [size]="14" />
+        </a>
+        }
+        <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select notes"
+          [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
+          <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
+        </button>
+        @if (place() === 'topic' && topic(); as current) {
+        <button appIconButton type="button" icon="dots-three" class="topic-more" [glyphSize]="18"
+          aria-label="Topic actions" [nostosMenuTriggerFor]="topicMenu"></button>
+        <ng-template #topicMenu>
+          <nostos-menu aria-label="Topic actions">
+            <button nostosMenuItem icon="graph" (triggered)="showOnMap(current.id)">Show on map</button>
+            <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
+            <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
+            <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes in a document…</button>
+            <hr nostosMenuSeparator />
+            <button nostosMenuItem icon="trash" tone="danger" (triggered)="topicActions.openDelete(current)">Delete topic</button>
+          </nostos-menu>
+        </ng-template>
+        }
+      </div>
     </div>
   </header>
 

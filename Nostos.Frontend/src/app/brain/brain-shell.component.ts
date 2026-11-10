@@ -6,6 +6,7 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 
 import { DrawerFocusDirective } from '../core/directives/drawer-focus.directive';
+import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
@@ -32,6 +33,11 @@ import { BrainTopicActionsService } from './brain-topic-actions.service';
 export class BrainShellComponent {
   readonly state = inject(BrainStateService);
   readonly actions = inject(BrainTopicActionsService);
+  /**
+   * The Library's one sidebar preference: a reader who closed the Library's
+   * sidebar finds the Brain's closed too, and the toolbar's toggle moves both.
+   */
+  readonly sidebarExpanded = inject(LibraryPreferencesService).sidebarExpanded;
 
   constructor() {
     // The phone drawer owns the screen while open.

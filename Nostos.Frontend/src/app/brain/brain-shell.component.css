@@ -33,6 +33,17 @@
   height: 100%;
 }
 
+/* Desktop: the toolbar's toggle closes the column outright. The Brain has no
+   collapsed rail — its topic rows are names, counts and a row menu, not a row
+   of glyphs — so the page simply takes the width back. The phone is untouched:
+   there the same class rides along with the Library preference while the
+   sidebar is still the drawer the place name opens. */
+@media (min-width: 769px) {
+  .brain-layout.sidebar-collapsed .brain-sidebar-column {
+    display: none;
+  }
+}
+
 .brain-backdrop {
   display: none;
 }

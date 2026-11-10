@@ -13,20 +13,29 @@
 }
 
 /* --- Toolbar (the Library's) ---------------------------------------------- */
+/* The glass spans the page; the row inside it is the reading column's width,
+   so the title starts and the controls end on the same edges as the strips and
+   the notes below. */
 .toolbar {
   position: sticky;
   top: 0;
   z-index: 5;
+  padding: 1.5rem 0 1.25rem;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  /* The hairline is `.toolbar-edge` (styles.css), shared with the Library. */
+}
+
+.toolbar-inner {
   display: grid;
   grid-template-columns: minmax(max-content, 1fr) minmax(0, 420px) minmax(max-content, 1fr);
   grid-template-rows: minmax(2.4rem, auto);
   align-items: center;
   column-gap: 2rem;
-  padding: 1.5rem 3rem 1.25rem;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  /* The hairline is `.toolbar-edge` (styles.css), shared with the Library. */
+  max-width: calc(46rem + 6rem);
+  margin-inline: auto;
+  padding: 0 3rem;
 }
 
 .place-switch,
@@ -107,12 +116,15 @@
 }
 
 /* --- Topic strip and filters ---------------------------------------------- */
+/* The strips sit in the same column as the toolbar and the notes: the max
+   width is unchanged, and the auto margins centre it in whatever space the
+   sidebar leaves. */
 .topic-words,
 .often-with,
 .filter-bar,
 .narrow-notice {
   max-width: calc(46rem + 6rem);
-  margin: 0;
+  margin: 0 auto;
   padding: 0 3rem;
 }
 
@@ -187,6 +199,7 @@
 .brain-list {
   display: block;
   max-width: calc(46rem + 6rem);
+  margin-inline: auto;
   padding: 0.5rem 3rem 8rem;
 }
 
@@ -220,11 +233,21 @@
 /* --- Phone ---------------------------------------------------------------- */
 @media (max-width: 768px) {
   .toolbar {
+    padding: 0;
+  }
+
+  .toolbar-inner {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 10px 4px;
     padding: 10px 14px;
+  }
+
+  /* The collapse control is the desktop's; on a phone the drawer opens from
+     the place name, as in the Library. */
+  .toolbar-right > button.sidebar-toggle {
+    display: none;
   }
 
   .place-switch {
