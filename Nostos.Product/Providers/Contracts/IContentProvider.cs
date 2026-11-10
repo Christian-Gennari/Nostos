@@ -53,6 +53,15 @@ public interface IContentProvider
     bool EnabledByDefault => false;
 
     /// <summary>
+    /// Whether this source is withheld from every install regardless of the
+    /// user's stored choice. A withdrawn provider stays registered so existing
+    /// provenance still resolves, but it cannot be listed, enabled, discovered
+    /// or acquired. Defaults to false; set true to suspend a source without
+    /// deleting its code.
+    /// </summary>
+    bool IsWithdrawn => false;
+
+    /// <summary>
     /// One line of coverage copy for the Settings "Book providers" list, e.g.
     /// "Public-domain ebooks in many languages." Null when the source has
     /// nothing to add; a provider supplies its own wording.

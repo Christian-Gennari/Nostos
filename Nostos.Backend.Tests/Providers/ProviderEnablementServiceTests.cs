@@ -81,6 +81,50 @@ public sealed class ProviderEnablementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_withdrawn_provider_is_absent_from_every_read_and_cannot_be_enabled()
+    {
+        var withdrawn = new StubProvider("withdrawn", enabledByDefault: true, isWithdrawn: true);
+        var available = new StubProvider("available", enabledByDefault: true);
+        var path = _fixture.CreateDatabasePath();
+        using var db = _fixture.CreateContext(path);
+        var service = CreateService(path, withdrawn, available);
+
+        var listed = await service.ListAsync();
+        var enabled = await service.GetEnabledAsync();
+        var ids = await service.GetEnabledProviderIdsAsync();
+
+        listed.Select(entry => entry.Provider.Id).Should().Equal("available");
+        enabled.Select(registration => registration.Id).Should().Equal("available");
+        ids.Should().BeEquivalentTo(["available"]);
+        (await service.FindEnabledAsync("withdrawn")).Should().BeNull();
+
+        // Setting a withdrawn provider writes nothing, exactly like an
+        // unregistered id.
+        (await service.SetAsync("withdrawn", enabled: true)).Should().BeNull();
+        (await db.ProviderPreferences.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_stored_true_never_enables_a_withdrawn_provider()
+    {
+        var withdrawn = new StubProvider("withdrawn", enabledByDefault: false, isWithdrawn: true);
+        var path = _fixture.CreateDatabasePath();
+        using var db = _fixture.CreateContext(path);
+        db.ProviderPreferences.Add(new ProviderPreferenceModel
+        {
+            ProviderId = "withdrawn",
+            Enabled = true,
+        });
+        await db.SaveChangesAsync();
+        var service = CreateService(path, withdrawn);
+
+        (await service.ListAsync()).Should().BeEmpty();
+        (await service.GetEnabledAsync()).Should().BeEmpty();
+        (await service.GetEnabledProviderIdsAsync()).Should().BeEmpty();
+        (await service.FindEnabledAsync("withdrawn")).Should().BeNull();
+    }
+
+    [Fact]
     public async Task A_later_added_provider_follows_its_own_declaration_even_with_stored_choices()
     {
         var path = _fixture.CreateDatabasePath();
@@ -273,12 +317,16 @@ public sealed class ProviderEnablementServiceTests : IDisposable
         }
     }
 
-    private sealed class StubProvider(string id, bool enabledByDefault) : IContentProvider
+    private sealed class StubProvider(
+        string id,
+        bool enabledByDefault,
+        bool isWithdrawn = false) : IContentProvider
     {
         public string Id { get; } = id;
         public string DisplayName => id;
         public ProviderCapabilities Capabilities => ProviderCapabilities.None;
         public string? RightsNotice => null;
         public bool EnabledByDefault { get; } = enabledByDefault;
+        public bool IsWithdrawn { get; } = isWithdrawn;
     }
 }

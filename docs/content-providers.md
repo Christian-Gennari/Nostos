@@ -317,17 +317,24 @@ enforced on the server.
   deletes books, downloaded files, metadata or provenance. Re-enabling restores
   access.
 
-### Litteraturbanken
+### Litteraturbanken (withdrawn)
 
 Litteraturbanken has not confirmed third-party automated access. Its provider is
-therefore disabled by default and uses only the public search, license, and
-provenance data exposed by the site's own frontend. Search results are limited
-to exact per-work CC0, public-domain, or CC BY codes and original EPUB/PDF
-exports under the 128 MiB acquisition cap; other rights and formats are omitted.
-Hosts that maintain a discovery index can read the same rights-filtered catalog
-through the provider snapshot contract. Litteraturbanken has no incremental
-change feed, so each scheduled snapshot scans metadata in full with a one-second
-delay between pages; SelfHosted search remains live and on demand.
+therefore **withdrawn**: `LitteraturbankenProvider.IsWithdrawn` returns true, so
+the source is hidden from Settings and cannot be enabled, discovered or
+acquired, and a stored `ProviderPreferences` row cannot surface it. The provider
+stays registered so provenance on books acquired earlier still resolves, and
+all of its code remains; removing the `IsWithdrawn` override restores it with
+`EnabledByDefault` still false, so it returns as an opt-in source.
+
+It uses only the public search, license, and provenance data exposed by the
+site's own frontend. Search results are limited to exact per-work CC0,
+public-domain, or CC BY codes and original EPUB/PDF exports under the 128 MiB
+acquisition cap; other rights and formats are omitted. Hosts that maintain a
+discovery index can read the same rights-filtered catalog through the provider
+snapshot contract. Litteraturbanken has no incremental change feed, so each
+scheduled snapshot scans metadata in full with a one-second delay between
+pages; SelfHosted search remains live and on demand.
 
 ## Security and resource limits
 

@@ -90,13 +90,14 @@ public sealed class LitteraturbankenProviderTests
     }
 
     [Fact]
-    public void Identity_IsOptInAndUsesOnlyTheSourceHost()
+    public void Identity_IsWithdrawnAndUsesOnlyTheSourceHost()
     {
         var (provider, _) = CreateProvider();
 
         provider.Id.Should().Be("litteraturbanken");
         provider.DisplayName.Should().Be("Litteraturbanken");
         provider.EnabledByDefault.Should().BeFalse();
+        provider.IsWithdrawn.Should().BeTrue();
         provider.Capabilities.Should().HaveFlag(ProviderCapabilities.Search);
         provider.Capabilities.Should().HaveFlag(ProviderCapabilities.ItemRetrieval);
         provider.Capabilities.Should().HaveFlag(ProviderCapabilities.EbookAcquisition);
@@ -113,7 +114,7 @@ public sealed class LitteraturbankenProviderTests
     }
 
     [Fact]
-    public void ProductComposition_RegistersLitteraturbankenDisabledByDefault()
+    public void ProductComposition_RegistersLitteraturbankenButWithdrawsIt()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -124,8 +125,12 @@ public sealed class LitteraturbankenProviderTests
             .GetRequiredService<IProviderRegistry>()
             .Find(LitteraturbankenProvider.ProviderIdentifier);
 
+        // Registered, so provenance for existing books still resolves...
         registration.Should().NotBeNull();
         registration!.Provider.EnabledByDefault.Should().BeFalse();
+
+        // ...but withheld from every install until permission is confirmed.
+        registration.Provider.IsWithdrawn.Should().BeTrue();
     }
 
     [Fact]

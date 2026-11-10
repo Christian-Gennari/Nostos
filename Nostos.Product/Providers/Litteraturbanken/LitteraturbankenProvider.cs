@@ -70,6 +70,13 @@ public sealed class LitteraturbankenProvider : IContentProvider,
 
     public bool EnabledByDefault => false;
 
+    /// <summary>
+    /// Automated access has not been confirmed by Litteraturbanken, so the
+    /// source is withheld from every install. Removing this override restores
+    /// the provider.
+    /// </summary>
+    public bool IsWithdrawn => true;
+
     /// <summary>Delay between catalog pages to keep a full sync courteous.</summary>
     public static readonly TimeSpan SnapshotPageDelay = TimeSpan.FromSeconds(1);
 
