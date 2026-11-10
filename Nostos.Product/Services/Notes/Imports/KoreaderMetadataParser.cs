@@ -75,6 +75,25 @@ internal static class KoreaderMetadataParser
             Clean(root.Get("partial_md5_checksum") as string));
     }
 
+    /// <summary>
+    /// The root table's key names, for the import shape log (issue #1523), or
+    /// null when the source is not a Lua table this parser reads. Values are
+    /// parsed but never returned, so a key is all that can reach a log.
+    /// </summary>
+    internal static IReadOnlyList<string>? TopLevelKeys(string source)
+    {
+        try
+        {
+            return new LuaDataReader(source).ReadDocument() is LuaTable root
+                ? root.Entries.Select(entry => entry.Key).ToList()
+                : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
     // A reflowable book stores pos0/pos1 as xpointer strings. A PDF stores
     // them as tables of page coordinates, which `Scalar` drops: the page
     // number is the only part of a PDF position Nostos can use.

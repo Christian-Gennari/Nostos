@@ -21,7 +21,7 @@ internal static class HighlightImportSourceReader
     public const string AppleBooks = "applebooks";
     private const long MaxSidecarBytes = 2 * 1024 * 1024;
     // Years of Kindle clippings or a full Readwise export are a few MB.
-    private const long MaxTextBytes = 64 * 1024 * 1024;
+    internal const long MaxTextBytes = 64 * 1024 * 1024;
 
     internal const string Unrecognised =
         "This file is not one Nostos can import highlights from. Choose KoboReader.sqlite, a KOReader metadata.lua, a Kindle's My Clippings.txt, a Readwise CSV export or the Apple Books files from a Mac.";
@@ -36,11 +36,15 @@ internal static class HighlightImportSourceReader
     /// </param>
     public static ImportSourceFile Read(string path, IReadOnlyList<string> companions)
     {
+        var missingOptionalColumns = new List<string>();
         if (KoboDatabaseReader.HasSqliteHeader(path))
         {
-            if (ReadAppleBooks(path, companions) is { } apple)
+            if (ReadAppleBooks(path, companions, missingOptionalColumns) is { } apple)
                 return apple;
-            return new ImportSourceFile(Kobo, ReadKobo(path), []);
+            return new ImportSourceFile(Kobo, ReadKobo(path, missingOptionalColumns), [])
+            {
+                MissingOptionalColumns = missingOptionalColumns,
+            };
         }
 
         var length = new FileInfo(path).Length;
@@ -55,7 +59,7 @@ internal static class HighlightImportSourceReader
             return new ImportSourceFile(Readwise, books, skipped);
         }
 
-        if (!LuaTable.IsMatch(text) && KindleClippingsParser.Looks(text))
+        if (!IsLuaSidecar(text) && KindleClippingsParser.Looks(text))
         {
             var (books, skipped) = KindleClippingsParser.Parse(text);
             return new ImportSourceFile(Kindle, books, skipped);
@@ -75,11 +79,17 @@ internal static class HighlightImportSourceReader
         }
     }
 
+    /// <summary>True when the text opens like a KOReader sidecar's Lua table.</summary>
+    internal static bool IsLuaSidecar(string text) => LuaTable.IsMatch(text);
+
     /// <summary>
     /// Apple Books' two databases, whichever of them came as the main file;
     /// null when neither is Apple's.
     /// </summary>
-    private static ImportSourceFile? ReadAppleBooks(string path, IReadOnlyList<string> companions)
+    private static ImportSourceFile? ReadAppleBooks(
+        string path,
+        IReadOnlyList<string> companions,
+        List<string> missingOptionalColumns)
     {
         var databases = companions.Prepend(path)
             .Where(candidate => File.Exists(candidate) && KoboDatabaseReader.HasSqliteHeader(candidate))
@@ -91,7 +101,13 @@ internal static class HighlightImportSourceReader
             return library == path ? throw new FormatException(AppleBooksDatabaseReader.MissingAnnotationsMessage) : null;
         if (annotations != path && library != path)
             return null;
-        return new ImportSourceFile(AppleBooks, AppleBooksDatabaseReader.Read(annotations, library), []);
+        return new ImportSourceFile(
+            AppleBooks,
+            AppleBooksDatabaseReader.Read(annotations, library, missingOptionalColumns),
+            [])
+        {
+            MissingOptionalColumns = missingOptionalColumns,
+        };
     }
 
     /// <summary>
@@ -126,8 +142,8 @@ internal static class HighlightImportSourceReader
         }
     }
 
-    private static List<ImportSourceBook> ReadKobo(string path) =>
-        KoboDatabaseReader.Read(path)
+    private static List<ImportSourceBook> ReadKobo(string path, List<string> missingOptionalColumns) =>
+        KoboDatabaseReader.Read(path, missingOptionalColumns)
             .Select(volume => new ImportSourceBook(
                 volume.VolumeId,
                 volume.Title,

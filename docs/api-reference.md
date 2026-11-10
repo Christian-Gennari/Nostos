@@ -462,6 +462,20 @@ the highlighted text up in the book and saves a verified location once it is
 found, as it does for Kobo and KOReader highlights. Colours and tags are not
 imported; notes arrive in the default pen.
 
+**Diagnostics.** A file that fails to parse, a Kobo or Apple Books database
+that lost a column the readers treat as optional, and a preview that skips
+Kindle entries as an unrecognised format each log one warning event, named
+`HighlightImportShape` (event id 1523), with three structured properties:
+`Source` (`kobo`, `applebooks`, `kindle`, `readwise`, `koreader` or `unknown`),
+`Outcome` (`parse-failed`, `missing-optional-columns` or
+`unrecognised-entries`) and `Shape`. The shape is structure only: table and
+column names, a CSV header row, line and `==========` counts with the masked
+format line of each unrecognised clipping
+(`- Xxxx xxx xx Xxxx 12 | Xxxxx 34`), or a Lua sidecar's top-level keys, capped
+at 2 KB. It never contains highlight text, titles, authors, file names, paths
+or user identifiers. In Cloud logs, search for `HighlightImportShape` and
+group by `Outcome`; SelfHosted writes it to the app's normal warning log.
+
 ---
 
 ## Portable archives and library migration — /api/portability

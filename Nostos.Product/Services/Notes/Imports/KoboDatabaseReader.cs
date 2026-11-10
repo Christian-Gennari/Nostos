@@ -13,7 +13,14 @@ internal static class KoboDatabaseReader
     private static readonly byte[] SqliteMagic = "SQLite format 3\0"u8.ToArray();
     private const string MarkupSentinel = "###MARKUP###";
 
-    public static IReadOnlyList<KoboVolume> Read(string path)
+    public static IReadOnlyList<KoboVolume> Read(string path) => Read(path, null);
+
+    /// <param name="missingOptionalColumns">
+    /// Receives "table.column" for every optional column this file lacks. The
+    /// import reads the same as before; the shape log records the change
+    /// (issue #1523).
+    /// </param>
+    public static IReadOnlyList<KoboVolume> Read(string path, ICollection<string>? missingOptionalColumns)
     {
         if (!HasSqliteHeader(path))
             throw new FormatException("This file is not a Kobo database. Choose KoboReader.sqlite from the .kobo folder on the device.");
@@ -34,7 +41,7 @@ internal static class KoboDatabaseReader
             if (!bookmarkColumns.Contains("BookmarkID") || !bookmarkColumns.Contains("VolumeID"))
                 throw new FormatException("This database has no Kobo bookmarks table. Choose KoboReader.sqlite from the .kobo folder on the device.");
 
-            var metadata = ReadVolumeMetadata(connection);
+            var metadata = ReadVolumeMetadata(connection, missingOptionalColumns);
             var grouped = new Dictionary<string, List<KoboBookmark>>(StringComparer.Ordinal);
             var order = new List<string>();
 
@@ -42,11 +49,11 @@ internal static class KoboDatabaseReader
             command.CommandText =
                 $"""
                 SELECT BookmarkID, VolumeID,
-                       {Optional(bookmarkColumns, "Text")},
-                       {Optional(bookmarkColumns, "Annotation")},
-                       {Optional(bookmarkColumns, "Hidden")},
-                       {Optional(bookmarkColumns, "Type")},
-                       {Optional(bookmarkColumns, "DateCreated")}
+                       {Optional(bookmarkColumns, "Bookmark", "Text", missingOptionalColumns)},
+                       {Optional(bookmarkColumns, "Bookmark", "Annotation", missingOptionalColumns)},
+                       {Optional(bookmarkColumns, "Bookmark", "Hidden", missingOptionalColumns)},
+                       {Optional(bookmarkColumns, "Bookmark", "Type", missingOptionalColumns)},
+                       {Optional(bookmarkColumns, "Bookmark", "DateCreated", missingOptionalColumns)}
                 FROM Bookmark
                 ORDER BY VolumeID, {(bookmarkColumns.Contains("DateCreated") ? "DateCreated," : string.Empty)} BookmarkID
                 """;
@@ -106,24 +113,33 @@ internal static class KoboDatabaseReader
         }
     }
 
-    private static Dictionary<string, VolumeMetadata> ReadVolumeMetadata(SqliteConnection connection)
+    private static Dictionary<string, VolumeMetadata> ReadVolumeMetadata(
+        SqliteConnection connection,
+        ICollection<string>? missingOptionalColumns)
     {
         var result = new Dictionary<string, VolumeMetadata>(StringComparer.Ordinal);
         var columns = Columns(connection, "content");
         if (!columns.Contains("ContentID"))
+        {
+            missingOptionalColumns?.Add("content.ContentID");
             return result;
+        }
+
+        var hasContentType = columns.Contains("ContentType");
+        if (!hasContentType)
+            missingOptionalColumns?.Add("content.ContentType");
 
         using var command = connection.CreateCommand();
         // ContentType 6 is the book row; chapters share the table.
         command.CommandText =
             $"""
             SELECT ContentID,
-                   {Optional(columns, "Title")},
-                   {Optional(columns, "Attribution")},
-                   {Optional(columns, "ISBN")}
+                   {Optional(columns, "content", "Title", missingOptionalColumns)},
+                   {Optional(columns, "content", "Attribution", missingOptionalColumns)},
+                   {Optional(columns, "content", "ISBN", missingOptionalColumns)}
             FROM content
             WHERE ContentID IN (SELECT DISTINCT VolumeID FROM Bookmark)
-            {(columns.Contains("ContentType") ? "AND ContentType = 6" : string.Empty)}
+            {(hasContentType ? "AND ContentType = 6" : string.Empty)}
             """;
 
         using var reader = command.ExecuteReader();
@@ -150,8 +166,17 @@ internal static class KoboDatabaseReader
         return columns;
     }
 
-    private static string Optional(HashSet<string> columns, string name) =>
-        columns.Contains(name) ? name : $"NULL AS {name}";
+    private static string Optional(
+        HashSet<string> columns,
+        string table,
+        string name,
+        ICollection<string>? missingOptionalColumns)
+    {
+        if (columns.Contains(name))
+            return name;
+        missingOptionalColumns?.Add($"{table}.{name}");
+        return $"NULL AS {name}";
+    }
 
     private static string? Text(SqliteDataReader reader, int ordinal)
     {
