@@ -149,8 +149,17 @@ npm run preview -- serve --cloud --host <tailnet-ip>                       # a l
   and phone width, in light and dark. `shots` exits non-zero on a page error or
   a page that scrolls sideways.
 - Commit the ones that show the change under
-  `Nostos.Frontend/e2e/visual-evidence/`, name them in the PR body, and show
-  them in your report. Look at them at 1:1 yourself first.
+  `Nostos.Frontend/e2e/visual-evidence/` and show them in your report. Look at
+  them at 1:1 yourself first.
+- **Embed the before/after pair(s) in the PR body, not just a path.** Use a
+  `| Before | After |` table whose image URLs point at the committed files on
+  the PR head SHA
+  (`https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>`), so GitHub
+  renders them. The reviewer must be able to see the change without opening the
+  file tree or checking out the branch. Cover the widths and themes the change
+  can affect (phone and desktop, light and dark), and say which build each side
+  comes from: Before is `origin/main` (or the previous production build), After
+  is the PR head.
 - `serve` gives a link for a change that needs clicking through. It binds to
   localhost unless `--host` says otherwise.
 - The preview is read-only: every non-GET is refused, and reads go to a running
@@ -182,6 +191,9 @@ Verified: <exact checks run and their results>.
 
 Closes #<issue-number>
 ```
+
+For a UI change, add a `## Before / after` section with the images embedded (see
+§2). A link to the evidence folder is not a substitute.
 
 Keep it factual. `Closes #N` links the issue — include it when one exists.
 
