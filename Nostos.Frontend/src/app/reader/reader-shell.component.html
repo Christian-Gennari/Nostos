@@ -806,6 +806,7 @@
               variant="ghost"
               type="button"
               class="toc-item"
+              [class.toc-item--group]="item.children && item.children.length > 0"
               [class.active]="isActive(item)"
               [class.nostos-accent-rail]="isActive(item)"
               (click)="handleTocClick(item)"
