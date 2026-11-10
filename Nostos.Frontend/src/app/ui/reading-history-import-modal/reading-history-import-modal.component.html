@@ -402,7 +402,7 @@
             }
           </span>
         }
-        @if (!row.book.hasChanges) {
+        @if (!row.book.hasChanges && !(mapShelves() && row.book.values.shelves.length > 0)) {
           <span class="history-chip history-chip--quiet">Already in Nostos</span>
         }
       </span>
@@ -428,7 +428,7 @@
             @if (target.author) {
               · {{ target.author }}
             }
-            @if (!row.book.hasChanges) {
+            @if (!row.book.hasChanges && !(mapShelves() && row.book.values.shelves.length > 0)) {
               · nothing new
             }
           }
