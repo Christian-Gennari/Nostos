@@ -168,11 +168,23 @@ export class HighlightImportService {
   readonly isOpen = signal(false);
   /** Where the dialog opens: the list of every source, or straight on Apple Books' steps. */
   readonly startOn = signal<HighlightImportStart>('all');
+  /**
+   * Files a drop zone handed over (issue #1526). The dialog reads them once,
+   * as if they had been chosen in its own box.
+   */
+  readonly pendingFiles = signal<File[] | null>(null);
 
   constructor(private http: HttpClient) {}
 
   open(start: HighlightImportStart = 'all'): void {
     this.startOn.set(start);
+    this.isOpen.set(true);
+  }
+
+  /** Opens the dialog on files from the one drop zone; nothing is chosen first. */
+  openWithFiles(files: readonly File[]): void {
+    this.startOn.set('all');
+    this.pendingFiles.set([...files]);
     this.isOpen.set(true);
   }
 
