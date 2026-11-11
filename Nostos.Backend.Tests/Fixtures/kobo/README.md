@@ -16,6 +16,8 @@ database. One value is not: the sanitizer rewrote `content.ContentType` to
 the (anonymized) sideload path rather than from `content`. That is still a real
 schema; the fallback is covered by the in-code Kobo tests as well.
 
+The upstream licence and copyright notice ship next to the file in `fw-4.38.23552/LICENSE`, as the licence requires.
+
 ## How it was anonymized
 
 The upstream example still contained an account email, device id and live

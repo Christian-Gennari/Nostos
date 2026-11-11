@@ -16,6 +16,8 @@ The upstream databases had pending writes in `-wal` files. The anonymizer
 folded those into the main files and left one file per database, so the fixture
 does not need sidecars.
 
+The upstream licence and copyright notice ship next to the file in `macos-unknown-2022-09/LICENSE-MIT`, as the licence requires.
+
 ## How it was anonymized
 
 The raw files were processed with:
