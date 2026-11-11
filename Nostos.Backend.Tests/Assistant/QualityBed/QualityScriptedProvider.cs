@@ -103,6 +103,37 @@ internal static class QualityScript
         _ => Task.FromException<LlmCompletion>(exception);
 }
 
+/// <summary>
+/// Records the completion requests one live turn actually sent, so the live
+/// lane can read the tool results the model read exactly as deterministic
+/// mode does. Only the request's messages are kept, and only the last request
+/// after a turn boundary is read: chat history is cumulative, so that request
+/// already carries every tool result of the turn. The key never reaches a
+/// completion request, and this sink never sees an HTTP request.
+/// </summary>
+internal sealed class QualityProviderRequestCapture
+{
+    private readonly List<IReadOnlyList<LlmMessage>> _requests = new();
+    private readonly object _lock = new();
+
+    public int Count
+    {
+        get { lock (_lock) return _requests.Count; }
+    }
+
+    public void Record(LlmCompletionRequest request)
+    {
+        lock (_lock) _requests.Add(request.Messages);
+    }
+
+    public IReadOnlyList<QualityToolResultLog> ToolResultsSince(int count)
+    {
+        IReadOnlyList<LlmMessage>? last;
+        lock (_lock) last = _requests.Count > count ? _requests[^1] : null;
+        return last is null ? [] : QualityToolResultLog.From(last);
+    }
+}
+
 internal sealed record QualityUpstreamCall(
     string Model,
     DateTimeOffset StartedUtc,
@@ -140,7 +171,10 @@ internal sealed class MeteredLlmProvider(
     ILlmProvider inner,
     QualityMetricsSink sink,
     string modelId,
-    QualityBudget? budget = null) : ILlmProvider
+    QualityBudget? budget = null,
+    // Optional: the live lane records the requests it sent so the revision
+    // check can read the tool results the model read (#1573).
+    QualityProviderRequestCapture? capture = null) : ILlmProvider
 {
     public async Task<LlmCompletion> CompleteAsync(
         LlmCompletionRequest request,
@@ -148,6 +182,7 @@ internal sealed class MeteredLlmProvider(
     {
         // The spend cap: no paid call starts once it is reached.
         budget?.ThrowIfExhausted();
+        capture?.Record(request);
         var started = DateTimeOffset.UtcNow;
         var elapsed = Stopwatch.StartNew();
         try
