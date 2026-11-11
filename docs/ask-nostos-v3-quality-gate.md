@@ -4,7 +4,7 @@ Status: **complete — measurements final; PR pending merge**  ·  Issue: Christ
 
 > **Update 2026-11-07 (#1466):** the deterministic gate was audited and extended (C30–C33, provider failure paths, a per-turn live-update check) and a capped manual live workflow was added — see §10. §11 defines what good means for embeddings, STT and read aloud.
 >
-> **Update 2026-11-11 (#1473):** the live bed and the embedding probe were re-measured on `main` @ `752e7fdf` — see §10.5 and §11.1. The September tables in §3 (live results), §4, §5 and §6 are kept as the historical floor they were measured against; the current numbers are in §10.5. STT and read aloud are still unmeasured live (missing credentials, §11.1).
+> **Update 2026-11-11 (#1473):** the live bed and all three AI surface probes were re-measured on `main` @ `752e7fdf` — see §10.5 and §11.1. The September tables in §3 (live results), §4, §5 and §6 are kept as the historical floor they were measured against; the current numbers are in §10.5.
 
 Final validation/re-measurement base: `main` @ 38bc03bc (#605 + #609 + #610). Initial live baseline at `89f8a27` is retained explicitly in §4 for historical comparison.  ·  Harness: this repository (`Nostos.Backend.Tests/Assistant/…`)
 
@@ -769,16 +769,21 @@ same revision as the live bed (`main` @ `752e7fdf`):
 | Surface | Endpoint and model | Measured | Bar | Result |
 | --- | --- | --- | --- | --- |
 | Embeddings | Vercel AI Gateway, `https://ai-gateway.vercel.sh/v1`, `alibaba/qwen3-embedding-0.6b` (the Cloud managed config's embedding model), quality-bed gateway key | recall@1 **1.00**, MRR **1.00** (all 8 gold passages rank 1), repeat drift **1.59 × 10⁻⁴** cosine, 1024 dimensions | recall@1 ≥ 0.75, MRR ≥ 0.85, drift ≤ 0.001 | **pass** |
-| Speech-to-text | Cloud: Groq, `https://api.groq.com/openai`, `whisper-large-v3-turbo` | **not run** | WER ≤ 0.15 | blocked |
-| Read aloud | Cloud: DeepInfra, `https://api.deepinfra.com/v1/openai`, `hexgrad/Kokoro-82M` | **not run** | ≥ 2 MPEG Layer III frames, 8–30 chars/s, round-trip WER ≤ 0.15 | blocked |
+| Speech-to-text | Groq, `https://api.groq.com/openai/v1`, `whisper-large-v3-turbo` (hosted; the model Cloud uses), test-only key | WER **0.00 / 0.00 / 0.08** per sentence (mean **0.03**, max **0.08**) | WER ≤ 0.15 | **pass** |
+| Read aloud | Local Kokoro-82M CPU, `http://127.0.0.1:8880/v1`, model `kokoro`, voice `af_heart` — the SelfHosted path in `docs/read-aloud.md`; Cloud's DeepInfra endpoint not measured (no test key) | **≈17.0 / 18.6 / 16.3 chars/s** (75/65/65 chars in 4.4/3.5/4.0 s); MP3 with ≥ 2 Layer III frames for all three; round-trip WER **0.00 / 0.00 / 0.08** | ≥ 2 MPEG Layer III frames, 8–30 chars/s, round-trip WER ≤ 0.15 | **pass** |
 
-The two blocked probes need a credential the agent did not have and must not borrow from production:
-**`NOSTOS_CLOUD_GROQ_API_KEY`** (Groq STT) and **`NOSTOS_CLOUD_TTS_API_KEY`** (DeepInfra read aloud).
-No keyless SelfHosted speech server was listening either (`http://localhost:8880`, the Kokoro endpoint
-`docs/read-aloud.md` describes), and the STT probe transcribes read-aloud's own audio, so it cannot run
-without TTS. Their bars and offline scorers are unchanged (`AiSurfaceQualityTests`); only the live
-application is outstanding. Recorded human dictation for STT also remains future work — the round trip
-uses synthetic speech, which flatters STT.
+The STT probe transcribes read-aloud's own audio. It ran against the Groq hosted endpoint with a
+test-only key (three requests, well under the free tier's 20/minute), and the audio came from a local
+Kokoro-FastAPI CPU container (`ghcr.io/remsky/kokoro-fastapi-cpu`) started for the probe and stopped
+afterwards — the same model and voice SelfHosted uses. Cloud's DeepInfra read-aloud endpoint was **not**
+measured because no DeepInfra test key was available and the production key must not be borrowed. Its
+request shape, voice set and `hexgrad/Kokoro-82M` model are the same, so these numbers stand in for the
+model's output quality in §11; they are not a measurement of DeepInfra availability or latency.
+Characters per second measures rendered speech, not synthesis speed: rendering on this host's CPU is
+not comparable to DeepInfra's GPU latency, and no latency claim is made here.
+
+The read-aloud round trip still uses synthetic speech, which flatters STT; recorded human dictation
+remains future work. The probes' bars and offline scorers are unchanged (`AiSurfaceQualityTests`).
 
 The embedding probe's cost is not metered by the quality-bed harness (that cap covers model turns):
 one run embeds 8 passages, 8 questions and one repeated passage — 17 short inputs, negligible at list
