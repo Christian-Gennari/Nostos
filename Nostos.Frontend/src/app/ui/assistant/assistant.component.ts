@@ -42,52 +42,113 @@ import { AssistantChangesetCardComponent } from './changeset-card/assistant-chan
 import { CapturedNoteTopicsComponent } from './captured-note-topics.component';
 import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 
-/** A ready-made question offered while the conversation is empty. */
-export interface StarterPrompt {
+/**
+ * One ready-made request under a capability door. Clicking it places
+ * <see cref="fill"/> in the composer; the person still sends it themselves.
+ */
+export interface CapabilityExample {
   id: string;
   label: string;
+  /** Text placed in the composer. Defaults to the label. */
+  fill?: string;
 }
 
 /**
- * Starter questions for the page the reader is on. They are questions the
- * assistant can answer from the library (books, notes, topics), worded for the
- * surface: about this book in the reader, about connections in the Brain.
+ * One of the three jobs Ask Nostos does — ask, capture, organise — with
+ * examples that name a capability the registry really offers.
  */
-export function starterPrompts(context: AssistantContext): StarterPrompt[] {
+export interface CapabilityDoor {
+  id: 'ask' | 'capture' | 'organise';
+  label: string;
+  examples: CapabilityExample[];
+}
+
+/**
+ * Capability doors for the page the reader is on. They are grouped by job, and
+ * every example is worded for the surface: about this book in the reader,
+ * about connections in the Brain, about a draft in the Studio. Organising the
+ * library, the To read list and Studio drafts appear everywhere, because the
+ * app otherwise never mentions them.
+ */
+export function capabilityDoors(context: AssistantContext): CapabilityDoor[] {
   const book = context.bookTitle?.trim();
+
+  let ask: CapabilityExample[];
   switch (context.surface) {
     case 'reader':
-      return [
+      ask = [
         ...(context.selectedText?.trim()
           ? [{ id: 'explain-selection', label: 'Explain the passage I selected' }]
           : []),
-        { id: 'reader-summary', label: book ? `Summarise what I have read of ${book} so far` : 'Summarise what I have read so far' },
-        { id: 'reader-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
+        {
+          id: 'reader-summary',
+          label: book
+            ? `Summarise what I have read of ${book} so far`
+            : 'Summarise what I have read so far',
+        },
+        {
+          id: 'reader-notes',
+          label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?',
+        },
       ];
+      break;
     case 'book-detail':
-      return [
+      ask = [
         { id: 'book-about', label: book ? `What is ${book} about?` : 'What is this book about?' },
-        { id: 'book-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
+        {
+          id: 'book-notes',
+          label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?',
+        },
         { id: 'book-related', label: 'Which of my other books connect to this one?' },
       ];
+      break;
     case 'brain':
-      return [
+      ask = [
         { id: 'brain-connections', label: 'What connects my topics?' },
         { id: 'brain-recent', label: 'Summarise my most recent notes' },
         { id: 'brain-gaps', label: 'Which topics have only one or two notes?' },
       ];
+      break;
     case 'studio':
-      return [
+      ask = [
         { id: 'studio-sources', label: 'Which of my notes could support what I am writing?' },
-        { id: 'studio-recent', label: 'Summarise my most recent notes' },
+        { id: 'studio-drafts', label: 'Which Studio drafts am I working on?' },
       ];
+      break;
     default:
-      return [
+      ask = [
         { id: 'library-next', label: 'What should I read next from my library?' },
         { id: 'library-recent', label: 'What have I been reading lately?' },
         { id: 'library-topics', label: 'Which topics come up most in my notes?' },
       ];
   }
+
+  // A Brain review already has the note; proposing topics is the job there.
+  // Everywhere else, point at the Studio documents users never hear about.
+  const organiseExample: CapabilityExample = context.brainReviewNoteId
+    ? { id: 'organise-topics', label: 'Suggest topics for this note' }
+    : { id: 'organise-studio', label: 'Open my Studio draft about memory' };
+
+  return [
+    { id: 'ask', label: 'Ask', examples: ask },
+    {
+      id: 'capture',
+      label: 'Capture',
+      examples: [
+        { id: 'capture-thought', label: 'Save this thought:', fill: 'Save this thought: ' },
+        { id: 'capture-quote', label: 'Save this quote:', fill: 'Save this quote: ' },
+      ],
+    },
+    {
+      id: 'organise',
+      label: 'Organise',
+      examples: [
+        { id: 'organise-collection', label: 'Move my Le Guin books into a collection' },
+        { id: 'organise-to-read', label: 'Add Piranesi to To read' },
+        organiseExample,
+      ],
+    },
+  ];
 }
 
 /**
@@ -426,8 +487,8 @@ export class AssistantComponent {
    */
   readonly readingLabel = computed(() => (this.assistant.anchorChip() ? null : this.currentBookTitle()));
 
-  /** Ready-made questions for an empty conversation, worded for this page. */
-  readonly starters = computed(() => starterPrompts(this.assistant.context()));
+  /** Ready-made requests for an empty conversation, grouped by capability. */
+  readonly doors = computed(() => capabilityDoors(this.assistant.context()));
 
   /** Drives the quiet send affordance without making the template inspect text. */
   readonly hasDraft = computed(() => this.assistant.draft().trim().length > 0);
@@ -1007,12 +1068,21 @@ export class AssistantComponent {
     this.submitDraft();
   }
 
-  /** Asks a starter question as if it had been typed and sent. */
-  runStarter(prompt: StarterPrompt): void {
+  /**
+   * Puts a door's example in the composer and leaves it there. It never
+   * submits: a prefilled write is shown to the person before it can run.
+   */
+  prefillFromDoor(example: CapabilityExample): void {
     if (this.assistant.sending()) return;
-    this.assistant.updateDraft(prompt.label);
-    this.submitDraft();
-    if (!this.isPhoneViewport()) setTimeout(() => this.composer()?.nativeElement.focus(), 0);
+    this.assistant.updateDraft(example.fill ?? example.label);
+    setTimeout(() => {
+      const element = this.composer()?.nativeElement;
+      if (!element) return;
+      element.value = this.assistant.draft();
+      this.autoGrow(element);
+      element.focus();
+      element.setSelectionRange(element.value.length, element.value.length);
+    }, 0);
   }
 
   onSendClick(): void {

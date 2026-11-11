@@ -455,8 +455,10 @@
 
       <!-- Anchored desktop menu (#657): the quote, then one compact row. The
            capture replaced the native selection, so Copy lives here; the
-           actions stay icon-sized because a small pointer surface must not
-           read like a phone sheet. This is deliberately unchanged by #1255. -->
+           actions stay compact because a small pointer surface must not read
+           like a phone sheet. Ask Nostos carries its words anyway: an unlabelled
+           sparkle did not say what it would do with the passage. This is
+           deliberately unchanged by #1255. -->
       <ng-template #selectionMenuActions>
         @if (noteDraftOpen()) {
           <ng-container [ngTemplateOutlet]="selectionNoteField"></ng-container>
@@ -491,8 +493,9 @@
           }
           @if (askNostosAvailable()) {
             <button
-              appIconButton
-              icon="sparkle"
+              appButton
+              variant="ghost"
+              size="sm"
               type="button"
               class="selection-ask"
               (click)="askNostosAboutSelection()"
@@ -500,7 +503,10 @@
               aria-label="Ask Nostos about this"
               title="Ask Nostos about this"
               data-testid="selection-ask-nostos"
-            ></button>
+            >
+              <nostos-icon name="sparkle" [size]="14"></nostos-icon>
+              Ask Nostos
+            </button>
           }
           <ng-container [ngTemplateOutlet]="selectionCommit"></ng-container>
         </div>

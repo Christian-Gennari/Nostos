@@ -4,7 +4,7 @@ import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 
-import { AssistantComponent, starterPrompts } from './assistant.component';
+import { AssistantComponent, capabilityDoors } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
@@ -160,35 +160,63 @@ function reviewChangeset(overrides: Partial<AssistantChangesetDto> = {}): Assist
   };
 }
 
-describe('starterPrompts', () => {
+describe('capabilityDoors', () => {
   const ctx = (overrides: Partial<AssistantContext>): AssistantContext =>
     ({ surface: 'other', route: '/', bookId: null, bookTitle: null, selectedText: null, ...overrides }) as AssistantContext;
 
+  it('groups every example under Ask, Capture and Organise, two or three each', () => {
+    for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library'] as const) {
+      const doors = capabilityDoors(ctx({ surface, bookTitle: 'Dune' }));
+      expect(doors.map((door) => door.label)).toEqual(['Ask', 'Capture', 'Organise']);
+      for (const door of doors) {
+        expect(door.examples.length, `${surface}/${door.id}`).toBeGreaterThanOrEqual(2);
+        expect(door.examples.length, `${surface}/${door.id}`).toBeLessThanOrEqual(3);
+        expect(new Set(door.examples.map((example) => example.id)).size).toBe(door.examples.length);
+      }
+    }
+  });
+
+  it('names quotes, collections, the To read list and Studio drafts, which the app omitted', () => {
+    const text = capabilityDoors(ctx({ surface: 'library' }))
+      .flatMap((door) => door.examples.map((example) => example.fill ?? example.label))
+      .join(' ');
+
+    expect(text).toContain('Save this thought:');
+    expect(text).toContain('Save this quote:');
+    expect(text).toContain('collection');
+    expect(text).toContain('To read');
+    expect(text).toContain('Studio draft');
+  });
+
   it('asks about the open book in the reader, and about a selection when there is one', () => {
-    expect(starterPrompts(ctx({ surface: 'reader', bookTitle: 'Dune' })).map((p) => p.label)).toEqual([
+    expect(capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune' }))[0].examples.map((p) => p.label)).toEqual([
       'Summarise what I have read of Dune so far',
       'What have I noted from Dune?',
     ]);
-    expect(starterPrompts(ctx({ surface: 'reader', bookTitle: 'Dune', selectedText: 'Fear is the mind-killer' }))[0].label).toBe(
-      'Explain the passage I selected',
-    );
+    expect(
+      capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune', selectedText: 'Fear is the mind-killer' }))[0]
+        .examples[0].label,
+    ).toBe('Explain the passage I selected');
   });
 
   it('still reads naturally without a book title', () => {
-    expect(starterPrompts(ctx({ surface: 'book-detail' }))[0].label).toBe('What is this book about?');
+    expect(capabilityDoors(ctx({ surface: 'book-detail' }))[0].examples[0].label).toBe(
+      'What is this book about?',
+    );
+  });
+
+  it('suggests topics instead of a Studio draft when a Brain note is under review', () => {
+    const doors = capabilityDoors(ctx({ surface: 'brain', brainReviewNoteId: 'note-1' }));
+
+    expect(doors[2].examples.map((example) => example.label)).toContain('Suggest topics for this note');
+    expect(doors[2].examples.map((example) => example.label)).not.toContain(
+      'Open my Studio draft about memory',
+    );
   });
 
   it('falls back to library questions anywhere else', () => {
     for (const surface of ['library', 'settings', 'home', 'other'] as const) {
-      expect(starterPrompts(ctx({ surface }))[0].id).toBe('library-next');
-    }
-  });
-
-  it('gives every surface at least two questions with unique ids', () => {
-    for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library'] as const) {
-      const prompts = starterPrompts(ctx({ surface }));
-      expect(prompts.length).toBeGreaterThanOrEqual(2);
-      expect(new Set(prompts.map((p) => p.id)).size).toBe(prompts.length);
+      expect(capabilityDoors(ctx({ surface }))[0].examples[0].id).toBe('library-next');
     }
   });
 });
@@ -1218,34 +1246,59 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   });
 
   describe('empty conversation', () => {
-    it('offers starter questions worded for the page', () => {
+    it('regroups the empty state into Ask, Capture and Organise doors for the page', () => {
       fake.set({ surface: 'brain', route: '/brain' });
       assistant.open();
       fixture.detectChanges();
 
-      const starters = Array.from<HTMLElement>(
-        fixture.nativeElement.querySelectorAll('[data-testid="assistant-starter"]'),
-      ).map((b) => b.textContent?.trim());
-      expect(starters).toEqual([
-        'What connects my topics?',
-        'Summarise my most recent notes',
-        'Which topics have only one or two notes?',
-      ]);
+      const doors = Array.from<HTMLElement>(
+        fixture.nativeElement.querySelectorAll('[data-testid^="assistant-door-"]'),
+      );
+      expect(doors.map((door) => door.dataset['door'])).toEqual(['ask', 'capture', 'organise']);
+      expect(doors[0].textContent).toContain('What connects my topics?');
+      expect(doors[1].textContent).toContain('Save this thought:');
+      expect(doors[2].textContent).toContain('Move my Le Guin books into a collection');
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')?.textContent).toContain(
+        "It can't delete books or notes, or change settings.",
+      );
     });
 
-    it('sends a starter as the question, and the starters give way to the conversation', () => {
+    it('prefills the composer from a door and never sends', () => {
       fake.set({ surface: 'library', route: '/library' });
       assistant.open();
       fixture.detectChanges();
 
-      (fixture.nativeElement.querySelector('[data-testid="assistant-starter"]') as HTMLButtonElement).click();
+      (fixture.nativeElement.querySelector(
+        '[data-testid="assistant-example-organise-to-read"]',
+      ) as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      const request = http.expectOne('/api/assistant/turn/stream');
-      expect(request.request.body.message).toBe('What should I read next from my library?');
-      request.flush(turn({ reply: 'Try Middlemarch.' }));
+      const composer = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-composer"]',
+      ) as HTMLTextAreaElement;
+      expect(composer.value).toBe('Add Piranesi to To read');
+      expect(assistant.draft()).toBe('Add Piranesi to To read');
+      expect(assistant.entries()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')).not.toBeNull();
+      http.expectNone('/api/assistant/turn/stream');
+    });
+
+    it('prefills a capture as a shape to finish, not as a sent note', () => {
+      fake.set({ surface: 'reader', route: '/read/b1', bookId: 'b1', bookTitle: 'Dune' });
+      assistant.open();
       fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')).toBeNull();
+
+      (fixture.nativeElement.querySelector(
+        '[data-testid="assistant-example-capture-thought"]',
+      ) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const composer = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-composer"]',
+      ) as HTMLTextAreaElement;
+      expect(composer.value).toBe('Save this thought: ');
+      expect(assistant.entries()).toEqual([]);
+      http.expectNone('/api/assistant/turn/stream');
     });
   });
 

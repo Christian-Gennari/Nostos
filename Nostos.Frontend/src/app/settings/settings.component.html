@@ -665,7 +665,7 @@
           >
             <header class="settings-section-header">
               <h2 class="settings-section-title" id="assistant-heading">Assistant</h2>
-              <p class="settings-section-desc">How Ask Nostos appears while you read.</p>
+              <p class="settings-section-desc">Ask about your books and notes, capture a thought, or reorganise your library.</p>
             </header>
 
       <!-- Reading assistant (W1). Availability is the server's to decide; this
@@ -684,7 +684,7 @@
             <div class="setting-label">
               <span class="label-text">Show Ask Nostos</span>
               @if (assistantAvailable()) {
-                <span class="label-desc">Show the dock capsule for capturing thoughts while reading.</span>
+                <span class="label-desc">Read, capture and organise anywhere in Nostos. Changes are applied with Undo, or shown for review first.</span>
               } @else if (managedAi() || !canConfigureAiProvider()) {
                 <span class="label-desc">{{ assistantUnavailableCopy() }}</span>
               } @else {

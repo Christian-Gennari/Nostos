@@ -77,24 +77,29 @@
   >
     @if (assistant.entries().length === 0) {
     <div class="assistant-empty" data-testid="assistant-empty">
-      <p class="assistant-empty-title">What would you like to know?</p>
-      <p class="assistant-empty-copy">Ask about your books and notes, or capture a thought without leaving the page.</p>
-      <div class="starter-list" role="list" aria-label="Suggested questions">
-        @for (starter of starters(); track starter.id) {
-        <div role="listitem">
-          <button
-            type="button"
-            class="starter"
-            (click)="runStarter(starter)"
-            [disabled]="assistant.sending()"
-            data-testid="assistant-starter"
-          >
-            <span class="starter-label">{{ starter.label }}</span>
-            <nostos-icon class="starter-go" name="arrow-right" [size]="14"></nostos-icon>
-          </button>
+      <p class="assistant-empty-title">Ask, capture, or change your library.</p>
+      <div class="capability-doors" aria-label="What Ask Nostos can do">
+        @for (door of doors(); track door.id) {
+        <div class="capability-door" [attr.data-door]="door.id" [attr.data-testid]="'assistant-door-' + door.id">
+          <span class="capability-door-label">{{ door.label }}</span>
+          <div class="capability-door-examples">
+            @for (example of door.examples; track example.id) {
+            <button
+              appButton
+              variant="secondary"
+              size="sm"
+              type="button"
+              class="capability-example"
+              (click)="prefillFromDoor(example)"
+              [disabled]="assistant.sending()"
+              [attr.data-testid]="'assistant-example-' + example.id"
+            >{{ example.label }}</button>
+            }
+          </div>
         </div>
         }
       </div>
+      <p class="assistant-empty-boundary">It can't delete books or notes, or change settings.</p>
     </div>
     }
 

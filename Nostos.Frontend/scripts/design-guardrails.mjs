@@ -340,6 +340,8 @@ export const PROPER_NOUNS = new Set([
   // Keys, named the way the keyboard prints them ("Press Enter").
   'Enter', 'Return', 'Escape', 'Esc', 'Shift', 'Tab', 'Ctrl', 'Cmd', 'Alt', 'Option', 'Backspace',
   'Substack',
+  // Books and authors named in the assistant's capability examples (#1559).
+  'Piranesi',
 ]);
 
 /** Proper names of more than one word, cleared before the word check. */
@@ -353,7 +355,9 @@ export const PROPER_PHRASES = ['Ask Nostos', 'Works Cited', 'Open Library', 'Goo
   // Kindle's own file name.
   'My Clippings',
   // Studio typefaces (writing-studio/page-settings/studio-preferences.service.ts).
-  'Libre Baskerville', 'Crimson Pro', 'Source Serif', 'Hanken Grotesk', 'Special Elite'];
+  'Libre Baskerville', 'Crimson Pro', 'Source Serif', 'Hanken Grotesk', 'Special Elite',
+  // The author named in the assistant's collection example (#1559).
+  'Le Guin'];
 
 /** The few HTML entities copy uses, so `&amp;` reads as the `&` a reader sees. */
 const decodeEntities = (s) => s
