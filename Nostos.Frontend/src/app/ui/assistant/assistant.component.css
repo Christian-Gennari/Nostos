@@ -631,6 +631,62 @@
   line-height: 1.5;
 }
 
+/* One failure block (#1556): sentence, one next step, Details. */
+.entry-failure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry-failure-text {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.entry-failure-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.entry-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.entry-failure-details {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.entry-failure-details summary {
+  width: fit-content;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.entry-failure-details summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.entry-failure-code {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0.08em 0.3em;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.9em;
+}
+
 .entry-meta {
   display: flex;
   flex-wrap: wrap;

@@ -8,6 +8,7 @@ import { AssistantComponent, starterPrompts } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
+  ASSISTANT_TURN_WATCHDOG_MS,
   AssistantChangesetDto,
   AssistantEntry,
   AssistantEvidenceReferenceDto,
@@ -17,6 +18,8 @@ import {
   AssistantTurnResponse,
 } from './assistant.service';
 import { AssistantStatusService } from './assistant-status.service';
+import { AssistantAllowanceService } from './assistant-allowance.service';
+import type { CloudManagedAiUsage } from '../../core/dtos/cloud-ai-refill.dtos';
 import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import {
@@ -80,6 +83,25 @@ function fakeVoiceService() {
     setStatus: (value: AssistantVoiceStatus) => status.set(value),
     setError: (value: AssistantVoiceError | null) => error.set(value),
     setElapsed: (value: number) => elapsedSeconds.set(value),
+  };
+}
+
+/** The managed allowance, driven directly so no Cloud endpoint is called. */
+function fakeAllowanceService() {
+  const canConfigure = signal(true);
+  const accountUrl = signal<string | null>(null);
+  const usage = signal<CloudManagedAiUsage | null>(null);
+  return {
+    canConfigureAiProvider: canConfigure.asReadonly(),
+    accountManagementUrl: accountUrl.asReadonly(),
+    usage: usage.asReadonly(),
+    usageAvailable: computed(() => true),
+    usageFailed: signal(false).asReadonly(),
+    ensureCapabilities: vi.fn(),
+    ensureUsage: vi.fn(),
+    setCanConfigure: (value: boolean) => canConfigure.set(value),
+    setAccountUrl: (value: string | null) => accountUrl.set(value),
+    setUsage: (value: CloudManagedAiUsage | null) => usage.set(value),
   };
 }
 
@@ -178,6 +200,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   let fake: ReturnType<typeof fakeContextService>;
   let voice: ReturnType<typeof fakeVoiceService>;
   let status: ReturnType<typeof fakeStatusService>;
+  let allowance: ReturnType<typeof fakeAllowanceService>;
   let router: { navigate: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
@@ -191,6 +214,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fake = fakeContextService({ surface: 'reader', route: '/read/b1', bookId: 'b1' });
     voice = fakeVoiceService();
     status = fakeStatusService(true);
+    allowance = fakeAllowanceService();
     router = { navigate: vi.fn(() => Promise.resolve(true)) };
 
     await TestBed.configureTestingModule({
@@ -199,6 +223,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         { provide: AssistantContextService, useValue: fake },
         { provide: AssistantVoiceService, useValue: voice },
         { provide: AssistantStatusService, useValue: status },
+        { provide: AssistantAllowanceService, useValue: allowance },
         { provide: Router, useValue: router },
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -1506,7 +1531,341 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         error: { code: 'assistant_execution_budget_exhausted', message },
       }));
 
-      expect(transcript().textContent).toContain(`Failed · ${message}`);
+      const failures = transcript().querySelectorAll('[data-testid="assistant-failure"]');
+      expect(failures.length).toBe(1);
+      expect(failures[0].textContent).toContain("I reached this turn's execution limit");
+      expect(failures[0].querySelector('code')?.textContent)
+        .toBe('assistant_execution_budget_exhausted');
+      expect(transcript().textContent).not.toContain('Failed ·');
+    });
+  });
+
+  describe('one failure, one next step, one retry (issues #1556, #1560)', () => {
+    type ActionKind = 'retry' | 'connections' | 'settings' | 'allowance' | 'book';
+
+    interface FailureCase {
+      code: string;
+      message: string;
+      retryable: boolean;
+      action: ActionKind;
+    }
+
+    const ACTION_LABELS: Record<ActionKind, string> = {
+      retry: 'Try again',
+      connections: 'Open AI connections',
+      settings: 'Open Settings',
+      allowance: 'Manage allowance',
+      book: 'Open the book',
+    };
+
+    // Every code the backend can put in a failed event, plus the client's
+    // transport codes. The message column is the backend's own sentence.
+    const CASES: FailureCase[] = [
+      { code: 'assistant_disabled', message: 'Ask Nostos is disabled by this Nostos host.', retryable: false, action: 'settings' },
+      { code: 'assistant_not_configured', message: 'Ask Nostos needs an AI provider configured in Settings.', retryable: false, action: 'connections' },
+      { code: 'assistant_access_denied', message: 'Ask Nostos is not available for this account.', retryable: false, action: 'allowance' },
+      { code: 'assistant_permission_denied', message: 'The AI service did not accept its key. Check the AI provider in Settings.', retryable: false, action: 'connections' },
+      { code: 'assistant_rate_limited', message: 'Ask Nostos is temporarily busy. Try again shortly.', retryable: true, action: 'retry' },
+      { code: 'assistant_provider_timeout', message: 'Ask Nostos took too long to answer. Try again.', retryable: true, action: 'retry' },
+      { code: 'assistant_provider_error', message: 'The AI service could not complete this turn. Try again.', retryable: true, action: 'retry' },
+      { code: 'assistant_response_invalid', message: 'The AI service sent a response this app could not read.', retryable: true, action: 'retry' },
+      { code: 'ai_access_denied', message: 'Ask Nostos is not available for this account.', retryable: false, action: 'allowance' },
+      { code: 'ai_rate_limited', message: 'Ask Nostos is temporarily busy. Try again shortly.', retryable: true, action: 'retry' },
+      { code: 'ai_usage_limit_reached', message: 'Your AI allowance is used up for now.', retryable: false, action: 'allowance' },
+      { code: 'ai_disabled', message: 'Managed AI is temporarily disabled.', retryable: true, action: 'retry' },
+      { code: 'ai_temporarily_unavailable', message: 'Ask Nostos is temporarily unavailable.', retryable: true, action: 'retry' },
+      { code: 'assistant_unknown_capability', message: 'That action is not available in this version.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_unavailable', message: 'These changes are no longer available.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_not_found', message: 'These changes could not be found.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_token_mismatch', message: 'These changes can no longer be applied from here.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_not_reviewable', message: 'These changes can no longer be reviewed.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_not_undoable', message: 'These changes can no longer be undone here.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_busy', message: 'These changes are already being applied.', retryable: false, action: 'book' },
+      { code: 'assistant_not_permitted', message: 'That action is not permitted.', retryable: false, action: 'book' },
+      { code: 'assistant_invalid_arguments', message: 'The requested change could not be completed.', retryable: false, action: 'book' },
+      { code: 'assistant_not_found', message: 'The requested item could not be found.', retryable: false, action: 'book' },
+      { code: 'assistant_continuation_not_found', message: 'That follow-up has expired. Nothing was changed.', retryable: false, action: 'book' },
+      { code: 'assistant_continuation_mismatch', message: 'That follow-up belongs to a different conversation. Nothing was changed.', retryable: false, action: 'book' },
+      { code: 'assistant_continuation_answer_required', message: 'A book is required before this capture can be saved.', retryable: false, action: 'book' },
+      { code: 'invalid_processing_mode', message: 'That processing mode is not available.', retryable: false, action: 'book' },
+      { code: 'assistant_turn_already_running', message: 'This turn is already running.', retryable: false, action: 'book' },
+      { code: 'assistant_turn_cancelled', message: 'Stopped.', retryable: false, action: 'book' },
+      { code: 'assistant_execution_budget_exhausted', message: 'This turn reached its execution limit before it could finish.', retryable: false, action: 'book' },
+      // `assistant_turn_partially_completed` is deliberately absent: it is an
+      // incomplete turn with its own "Not finished" label, never a failure
+      // block. `assistant-failure.spec.ts` still pins its mapping.
+      { code: 'assistant_unverified_completion_claim', message: 'That change was not confirmed by the server.', retryable: false, action: 'book' },
+      { code: 'assistant_no_evidence', message: 'I could not find usable evidence for that in your Nostos material.', retryable: false, action: 'book' },
+      { code: 'assistant_source_indexing_pending', message: 'This source is still being indexed. Try again when it is ready.', retryable: false, action: 'book' },
+      { code: 'assistant_source_indexing_failed', message: 'Text indexing failed for this source, so Ask Nostos cannot search it yet.', retryable: false, action: 'book' },
+      { code: 'assistant_source_indexing_unsupported', message: 'This source cannot be searched as text in its current format.', retryable: false, action: 'book' },
+      { code: 'assistant_network_error', message: 'The connection to Ask Nostos was interrupted. Your message is ready to retry.', retryable: true, action: 'retry' },
+      { code: 'assistant_offline', message: 'You are offline. Reconnect and retry this message.', retryable: true, action: 'retry' },
+      { code: 'assistant_stream_stalled', message: 'Ask Nostos did not answer in time. Your message is ready to retry.', retryable: true, action: 'retry' },
+      { code: 'assistant_turn_failed', message: 'Ask Nostos could not complete this turn.', retryable: true, action: 'retry' },
+    ];
+
+    function transcript(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]');
+    }
+
+    function failures(): HTMLElement[] {
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('[data-testid="assistant-failure"]'),
+      ) as HTMLElement[];
+    }
+
+    /** One streamed turn that ends in the given failure. Returns its TurnId. */
+    function sendFailure(
+      code: string,
+      message: string,
+      retryable: boolean,
+      response: Partial<AssistantTurnResponse> | null = null,
+    ): string {
+      assistant.open();
+      fixture.detectChanges();
+      assistant.updateDraft(`Question for ${code}`);
+      assistant.submit();
+      fixture.detectChanges();
+
+      const request = http.expectOne('/api/assistant/turn/stream');
+      const turnId = request.request.body.turnId as string;
+      const body = JSON.stringify({
+        turnId,
+        sequence: 2,
+        kind: 'failed',
+        failure: { code, message, retryable },
+        ...(response ? { response } : {}),
+      });
+      request.flush(
+        JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n' + body + '\n',
+      );
+      fixture.detectChanges();
+      return turnId;
+    }
+
+    it('renders a failure once: one sentence, one action, and the code behind Details', () => {
+      const message = 'Ask Nostos took too long to answer. Try again.';
+      sendFailure('assistant_provider_timeout', message, true);
+
+      expect(failures().length).toBe(1);
+      const block = failures()[0];
+      expect(block.textContent?.match(/Ask Nostos took too long to answer/g)?.length).toBe(1);
+      expect(transcript().textContent).not.toContain('Failed ·');
+
+      const text = block.querySelector('.entry-failure-text') as HTMLElement;
+      expect(text.textContent?.trim()).toBe(message);
+      expect(text.getAttribute('role')).toBe('status');
+      expect(text.getAttribute('aria-live')).toBe('polite');
+
+      const details = block.querySelector('details') as HTMLDetailsElement;
+      expect(details).toBeTruthy();
+      expect(details.open).toBe(false);
+      expect(details.querySelector('summary')?.textContent?.trim()).toBe('Details');
+      expect(details.querySelector('code')?.textContent).toBe('assistant_provider_timeout');
+      expect(block.querySelectorAll('code').length).toBe(1);
+
+      // Nothing prints the raw code outside its Details disclosure.
+      const statuses = Array.from(transcript().querySelectorAll('.entry-status'));
+      for (const status of statuses) {
+        expect(status.textContent).not.toContain('assistant_provider_timeout');
+      }
+
+      expect(block.querySelector('[data-testid="assistant-retry"]')?.textContent?.trim())
+        .toBe('Try again');
+    });
+
+    it('does not render a second failure label when the response carries the sentence', () => {
+      const message = 'I could not find usable evidence for that in your Nostos material.';
+      sendFailure('assistant_no_evidence', message, false, turn({
+        reply: message,
+        error: { code: 'assistant_no_evidence', message },
+      }));
+
+      expect(failures().length).toBe(1);
+      expect(transcript().textContent?.match(/could not find usable evidence/g)?.length).toBe(1);
+      expect(transcript().textContent).not.toContain('Failed ·');
+      expect(failures()[0].querySelector('code')?.textContent).toBe('assistant_no_evidence');
+    });
+
+    it('gives every backend failure code its sentence and its one action', () => {
+      allowance.setAccountUrl('https://nostos.page/account');
+
+      for (const item of CASES) {
+        assistant.newConversation();
+        fixture.detectChanges();
+
+        sendFailure(item.code, item.message, item.retryable);
+
+        const block = failures()[0];
+        expect(block, item.code).toBeTruthy();
+        expect(block.querySelector('.entry-failure-text')?.textContent?.trim(), item.code)
+          .toBe(item.message);
+
+        const action = block.querySelector(
+          '[data-testid="assistant-retry"], [data-testid="assistant-failure-allowance"], [data-testid="assistant-failure-action"]',
+        ) as HTMLElement | null;
+        expect(action, item.code).toBeTruthy();
+        expect(action?.textContent?.trim(), item.code).toBe(ACTION_LABELS[item.action]);
+      }
+    });
+
+    it('keeps the account link and the renewal date for an exhausted allowance', () => {
+      allowance.setAccountUrl('https://nostos.page/account');
+      allowance.setUsage({
+        state: 'exhausted',
+        renewsAtUtc: '2026-12-01T00:00:00Z',
+        refill: { available: true, state: 'active' },
+      });
+
+      sendFailure('ai_usage_limit_reached', 'Your AI allowance is used up for now.', false);
+
+      const block = failures()[0];
+      expect(block.textContent).toContain('Allowance renews 1 Dec 2026.');
+      const link = block.querySelector('[data-testid="assistant-failure-allowance"]') as HTMLAnchorElement;
+      expect(link).toBeTruthy();
+      expect(link.textContent?.trim()).toBe('Manage allowance');
+      expect(link.getAttribute('href')).toBe('https://nostos.page/account');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(allowance.ensureUsage).toHaveBeenCalled();
+    });
+
+    it('opens the AI connections section for a provider configuration failure', () => {
+      sendFailure(
+        'assistant_permission_denied',
+        'The AI service did not accept its key. Check the AI provider in Settings.',
+        false,
+      );
+
+      const action = failures()[0].querySelector('[data-testid="assistant-failure-action"]') as HTMLButtonElement;
+      action.click();
+
+      expect(router.navigate).toHaveBeenCalledWith(
+        ['/settings'],
+        { queryParams: { section: 'connections' } },
+      );
+    });
+
+    it('opens the turn\'s own book for an indexing failure', () => {
+      sendFailure(
+        'assistant_source_indexing_pending',
+        'This source is still being indexed. Try again when it is ready.',
+        false,
+      );
+
+      const action = failures()[0].querySelector('[data-testid="assistant-failure-action"]') as HTMLButtonElement;
+      action.click();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/read', 'b1']);
+    });
+
+    it('replays the stored turn with the same TurnId and does not add a user entry', () => {
+      vi.useFakeTimers();
+      try {
+        const turnId = sendFailure(
+          'assistant_provider_timeout',
+          'Ask Nostos took too long to answer. Try again.',
+          true,
+        );
+        const userEntries = () => assistant.entries().filter((entry) => entry.kind === 'user');
+
+        const retry = failures()[0].querySelector('[data-testid="assistant-retry"]') as HTMLButtonElement;
+        retry.click();
+
+        const request = http.expectOne('/api/assistant/turn/stream');
+        expect(request.request.body.turnId).toBe(turnId);
+        expect(request.request.body.idempotencyKey).toBe(turnId);
+
+        vi.advanceTimersByTime(0);
+        fixture.detectChanges();
+        expect(document.activeElement).toBe(transcript());
+        expect(userEntries().length).toBe(1);
+        expect(failures().length).toBe(0);
+
+        request.flush(
+          JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n'
+          + JSON.stringify({
+            turnId,
+            sequence: 2,
+            kind: 'completed',
+            response: turn({ reply: 'Here it is.' }),
+          }) + '\n',
+        );
+        fixture.detectChanges();
+
+        expect(failures().length).toBe(0);
+        expect(transcript().textContent).toContain('Here it is.');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('turns a silent stream into the retry block at the watchdog limit, not before', () => {
+      vi.useFakeTimers();
+      try {
+        assistant.open();
+        fixture.detectChanges();
+        assistant.updateDraft('Are you there?');
+        assistant.submit();
+        fixture.detectChanges();
+
+        const request = http.expectOne('/api/assistant/turn/stream');
+        const turnId = request.request.body.turnId as string;
+        request.event({
+          type: HttpEventType.DownloadProgress,
+          partialText: JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n',
+        } as never);
+        fixture.detectChanges();
+
+        vi.advanceTimersByTime(ASSISTANT_PENDING_DELAY_MS);
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-pending"]')).toBeTruthy();
+
+        // One millisecond before every server clock has passed: still waiting.
+        vi.advanceTimersByTime(ASSISTANT_TURN_WATCHDOG_MS - ASSISTANT_PENDING_DELAY_MS - 1);
+        fixture.detectChanges();
+        expect(failures().length).toBe(0);
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-pending"]')).toBeTruthy();
+
+        vi.advanceTimersByTime(1);
+        fixture.detectChanges();
+
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-pending"]')).toBeNull();
+        expect(failures().length).toBe(1);
+        expect(failures()[0].textContent).toContain('Ask Nostos did not answer in time.');
+        expect(failures()[0].querySelector('[data-testid="assistant-retry"]')).toBeTruthy();
+        expect(assistant.sending()).toBe(false);
+        // The request is cancelled, so a late server response is never applied.
+        expect(request.cancelled).toBe(true);
+        vi.advanceTimersByTime(ASSISTANT_TURN_WATCHDOG_MS);
+        fixture.detectChanges();
+        expect(failures().length).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not leave a dead Try again on a failure a later turn superseded', () => {
+      sendFailure(
+        'assistant_provider_timeout',
+        'Ask Nostos took too long to answer. Try again.',
+        true,
+      );
+
+      // Sending a new message clears the stored turn; the old failure keeps its
+      // sentence and Details but must not offer a button that cannot replay it.
+      assistant.updateDraft('A different question');
+      assistant.submit();
+      fixture.detectChanges();
+      const next = http.expectOne('/api/assistant/turn/stream');
+      next.flush(turn({ reply: 'A different answer.' }));
+      fixture.detectChanges();
+
+      const oldFailure = failures().find((block) =>
+        block.textContent?.includes('Ask Nostos took too long')) as HTMLElement;
+      expect(oldFailure).toBeTruthy();
+      expect(oldFailure.querySelector('[data-testid="assistant-retry"]')).toBeNull();
+      expect(oldFailure.querySelector('details')).toBeTruthy();
     });
   });
 

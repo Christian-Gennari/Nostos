@@ -6,6 +6,7 @@ import {
   afterNextRender,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   signal,
   viewChild,
@@ -28,7 +29,13 @@ import {
 import { AssistantVoiceService } from './assistant-voice.service';
 import type { AssistantContext } from './assistant-context.service';
 import { AssistantStatusService } from './assistant-status.service';
+import { AssistantAllowanceService } from './assistant-allowance.service';
+import {
+  failureAction as failureActionFor,
+  type AssistantFailureAction,
+} from './assistant-failure';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
+import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { AssistantChangesetCardComponent } from './changeset-card/assistant-changeset-card.component';
@@ -296,6 +303,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
     IconButtonComponent,
     AssistantChangesetCardComponent,
     CapturedNoteTopicsComponent,
+    NostosDatePipe,
   ],
   templateUrl: './assistant.component.html',
   styleUrl: './assistant.component.css',
@@ -307,6 +315,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
 export class AssistantComponent {
   readonly assistant = inject(AssistantService);
   readonly voice = inject(AssistantVoiceService);
+  readonly allowance = inject(AssistantAllowanceService);
   private readonly status = inject(AssistantStatusService);
   private readonly router = inject(Router, { optional: true });
   private readonly preferences = inject(LibraryPreferencesService);
@@ -435,6 +444,21 @@ export class AssistantComponent {
   constructor() {
     // Availability is a server fact; ask once for the life of the session.
     this.status.ensureLoaded();
+
+    // The failure block needs the deployment contract to choose between "Open
+    // AI connections" (SelfHosted) and "Open Settings" (managed), and the
+    // account link for an allowance failure. The contract normally arrives at
+    // bootstrap; ask once if it has not.
+    this.allowance.ensureCapabilities();
+
+    // An allowance failure is the only one whose copy also needs the renewal
+    // date; fetch usage only when that block is actually on screen.
+    effect(() => {
+      const allowanceFailure = this.assistant.entries().some(
+        (entry) => entry.kind === 'error' && entry.meta === 'ai_usage_limit_reached',
+      );
+      if (allowanceFailure) this.allowance.ensureUsage();
+    });
 
     // A finished transcript is handed to the conversation, which owns the ONE
     // policy for whether it is reviewed or auto-sent. The composer keeps focus so
@@ -665,11 +689,11 @@ export class AssistantComponent {
         return `Changed · ${this.humanizeCapability(artifact.capability)}`;
       case 'failure':
         // Cancelled failures are not rendered: the turn's stop message owns that state.
-        // An incomplete turn's reply already explains what is left; the label only
-        // marks it, and never says "Failed" about changes that were applied.
-        return artifact.state === 'incomplete'
-          ? 'Not finished'
-          : `Failed · ${artifact.message}`;
+        // A real failure is the error entry's one block (#1556), not a second
+        // "Failed · …" label. An incomplete turn's reply already explains what
+        // is left; the label only marks it, and never says "Failed" about
+        // changes that were applied.
+        return artifact.state === 'incomplete' ? 'Not finished' : '';
       case 'proposal':
         return `Proposed · ${artifact.proposal.label} — ${artifact.proposal.reason}`;
       case 'changeset':
@@ -677,6 +701,84 @@ export class AssistantComponent {
       case 'evidence':
         return this.evidenceLabel(artifact.evidence);
     }
+  }
+
+  /** The failure artifact that belongs to this turn, if the turn failed. */
+  private failureArtifact(
+    entry: AssistantEntry,
+  ): Extract<AssistantTurnArtifact, { kind: 'failure' }> | null {
+    return (entry.artifacts ?? []).find(
+      (artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'failure' }> =>
+        artifact.kind === 'failure' && artifact.state !== 'cancelled',
+    ) ?? null;
+  }
+
+  /** The raw typed code, kept behind Details for support. */
+  failureCode(entry: AssistantEntry): string {
+    const artifact = this.failureArtifact(entry);
+    return entry.meta ?? artifact?.code ?? 'assistant_turn_failed';
+  }
+
+  /**
+   * One next step for this failure, or null when the turn can no longer be
+   * retried (a later turn superseded it). Nothing is inferred from the prose:
+   * only the typed code, the server's retryable flag and the deployment decide.
+   */
+  failureAction(entry: AssistantEntry): AssistantFailureAction | null {
+    const retryable = this.assistant.retryableTurnId() === entry.turnId;
+    const bookId = this.assistant.bookIdForTurn(entry.turnId);
+    const action = failureActionFor(this.failureCode(entry), {
+      retryable,
+      canConfigureAiProvider: this.allowance.canConfigureAiProvider(),
+      accountManagementUrl: this.allowance.accountManagementUrl(),
+      bookId,
+    });
+
+    // A retry control is only real while this exact turn is still the stored
+    // one. An older failure keeps its sentence and Details, and still leads
+    // somewhere concrete instead of offering a button that cannot replay it.
+    if (action.kind === 'retry' && !retryable) {
+      return bookId
+        ? { kind: 'book', label: 'Open the book', bookId }
+        : { kind: 'settings', label: 'Open Settings' };
+    }
+    return action;
+  }
+
+  /** The Cloud renewal date, only for the allowance failure that needs it. */
+  allowanceRenewsAt(entry: AssistantEntry): string | null {
+    if (this.failureCode(entry) !== 'ai_usage_limit_reached') return null;
+    return this.allowance.usage()?.renewsAtUtc ?? null;
+  }
+
+  /** Replay this exact turn through the same TurnId (§1560). */
+  onRetryFailure(entry: AssistantEntry): void {
+    if (!this.assistant.retryTurn(entry.turnId)) return;
+
+    this.following.set(true);
+    // The pending bar only appears after ASSISTANT_PENDING_DELAY_MS; the
+    // conversation itself is the stable place to put focus now. The live
+    // progress/failure region then announces without stealing it back.
+    setTimeout(() => {
+      this.transcript()?.nativeElement.focus({ preventScroll: true });
+      this.followEnd();
+    }, 0);
+  }
+
+  onFailureAction(action: AssistantFailureAction): void {
+    if (!this.router) return;
+
+    if (action.kind === 'book') {
+      void this.router.navigate(['/read', action.bookId]).then((navigated) => {
+        if (navigated && this.isPhoneViewport()) this.close();
+      });
+      return;
+    }
+
+    const section = action.kind === 'connections' ? 'connections' : 'assistant';
+    void this.router.navigate(['/settings'], { queryParams: { section } }).then((navigated) => {
+      if (navigated && this.isPhoneViewport()) this.close();
+    });
   }
 
   private humanizeCapability(capability: string): string {

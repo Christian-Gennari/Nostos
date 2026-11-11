@@ -19,7 +19,7 @@
  */
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { HttpClient, HttpEventType } from '@angular/common/http';
-import { Subject } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { formatAudioTime } from '../../core/format';
@@ -299,6 +299,21 @@ export interface AssistantTurnEventDto {
 
 export const ASSISTANT_PENDING_DELAY_MS = 350;
 
+/**
+ * How long a turn may stay silent before the panel stops waiting (#1560).
+ *
+ * The server owns two clocks (`AssistantOptions`): the whole-turn budget is
+ * 90 s (`MaxTurnElapsedMilliseconds`) and one provider call may take 95 s
+ * (`RequestTimeoutSeconds`). The orchestrator gives the provider call whatever
+ * is left of the turn budget, so a healthy server always writes a terminal
+ * event inside 90 s; the larger 95 s per-call timeout is the outer bound even
+ * if a future change lets one call run on its own clock. Adding a 15 s
+ * transport grace makes 110 s the first moment a silent stream cannot still
+ * be a legitimate turn. Waiting longer only strands the reader on three dots;
+ * firing earlier would replace a slow but live turn with a false failure.
+ */
+export const ASSISTANT_TURN_WATCHDOG_MS = 110_000;
+
 /** One normal turn result, mirroring `AssistantTurnResponse`. */
 export interface AssistantTurnResponse {
   reply: string;
@@ -480,6 +495,7 @@ export class AssistantService {
   /** Transport-local turn id; Stop is exposed only after server 'started'. */
   private inFlightTurnId: string | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The most recent turn, for the transcript and live verification. */
   readonly lastTurn = signal<AssistantTurnResponse | null>(null);
@@ -538,6 +554,13 @@ export class AssistantService {
    * draft resends this exact request and TurnId; editing starts a new turn.
    */
   private readonly retryableTurn = signal<PreparedAssistantTurn | null>(null);
+
+  /**
+   * The turn a visible "Try again" control belongs to, if any. The failure
+   * block renders the control only for its own turn, so a later successful
+   * turn cannot leave an older retry action armed.
+   */
+  readonly retryableTurnId = computed(() => this.retryableTurn()?.turnId ?? null);
 
   /**
    * Model history is a projection of the canonical event ledger. A transport-
@@ -904,6 +927,42 @@ export class AssistantService {
   }
 
   /**
+   * Replay the stored turn from its failure block (#1560).
+   *
+   * This is deliberately not "submit the draft": the prepared request is sent
+   * unchanged, so its TurnId and idempotency key stay identical. The server's
+   * mutation receipts are keyed by (TurnId, capability, arguments)
+   * (`AssistantMutationIdentity`), so a capture or library change that already
+   * committed is replayed instead of written twice — the Gate A HTTP tests
+   * prove exactly that across two requests.
+   *
+   * The restored draft is cleared only while it is still the failed turn's own
+   * text. If the reader edited it, their new words stay in the composer for a
+   * separate send.
+   */
+  retryTurn(turnId?: string): boolean {
+    const turn = this.retryableTurn();
+    if (!turn || this.sending()) return false;
+    if (turnId && turn.turnId !== turnId) return false;
+
+    if (this.draft().trim() === turn.text.trim()) this.draft.set('');
+    this.sendPreparedTurn(turn);
+    return true;
+  }
+
+  /**
+   * The book a turn was about, for "Open the book" on its failure block. Uses
+   * the turn's own historical context, so navigating away does not retarget an
+   * older failure at whatever book is open now.
+   */
+  bookIdForTurn(turnId: string): string | null {
+    const userEvent = this.eventLedger().find(
+      (event) => event.turnId === turnId && event.kind === 'user',
+    );
+    return userEvent?.historyContext?.bookId ?? null;
+  }
+
+  /**
    * "I don't know" is an explicit deterministic continuation turn for page /
    * timestamp prompts. Book questions remain deliberately non-skippable.
    */
@@ -1231,8 +1290,15 @@ export class AssistantService {
   }
 
   private sendPreparedTurn(turn: PreparedAssistantTurn): void {
+    // A retry replaces the previous delivery failure for this exact turn; the
+    // old block described an attempt that is no longer the current one, and
+    // leaving it would show the same failure beside its own retry.
+    this.eventLedger.update((events) =>
+      events.filter((event) => !(event.turnId === turn.turnId && event.kind === 'error')),
+    );
     this.updateUserDelivery(turn.userEntryId, 'sending', null);
     this.retryableTurn.set(turn);
+    this.lastError.set(null);
     this.sending.set(true);
     this.beginTurnUi(turn.turnId);
 
@@ -1325,7 +1391,7 @@ export class AssistantService {
       }
     };
 
-    this.http.post('/api/assistant/turn/stream', turn.request, {
+    const subscription: Subscription = this.http.post('/api/assistant/turn/stream', turn.request, {
       observe: 'events',
       reportProgress: true,
       responseType: 'text',
@@ -1365,6 +1431,23 @@ export class AssistantService {
         );
       },
     });
+
+    // The server writes `started` immediately, then only terminal events and
+    // occasional activity. A stream that stays silent past every server clock
+    // is a black-holed connection: stop waiting, cancel the request, and turn
+    // the pending dots into the same retry block a network failure produces.
+    this.clearWatchdog();
+    this.watchdogTimer = setTimeout(() => {
+      this.watchdogTimer = null;
+      if (terminalHandled) return;
+      terminalHandled = true;
+      subscription.unsubscribe();
+      this.handleTransportFailure(
+        turn,
+        'assistant_stream_stalled',
+        'Ask Nostos did not answer in time. Your message is ready to retry.',
+      );
+    }, ASSISTANT_TURN_WATCHDOG_MS);
   }
 
   /** Stop only the currently visible logical turn. No new turn is created. */
@@ -1384,6 +1467,7 @@ export class AssistantService {
 
   private beginTurnUi(turnId: string): void {
     this.clearPendingTimer();
+    this.clearWatchdog();
     this.inFlightTurnId = turnId;
     this.activeTurnId.set(null);
     this.turnActivity.set(null);
@@ -1411,6 +1495,7 @@ export class AssistantService {
   private finishTurnUi(turnId: string | null): void {
     if (turnId !== null && this.inFlightTurnId !== turnId) return;
     this.clearPendingTimer();
+    this.clearWatchdog();
     this.inFlightTurnId = null;
     this.activeTurnId.set(null);
     this.turnActivity.set(null);
@@ -1422,6 +1507,13 @@ export class AssistantService {
     if (this.pendingTimer !== null) {
       clearTimeout(this.pendingTimer);
       this.pendingTimer = null;
+    }
+  }
+
+  private clearWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      clearTimeout(this.watchdogTimer);
+      this.watchdogTimer = null;
     }
   }
 
@@ -1445,7 +1537,10 @@ export class AssistantService {
 
     this.lastError.set(code === PARTIALLY_COMPLETED_CODE ? null : message);
 
-    if (!response?.reply && !response?.acknowledgement) {
+    // An acknowledgement is not a replacement for the failure: a capture can
+    // commit and a later provider call still fail. Only a real reply (or an
+    // incomplete turn's own explanation) owns the words.
+    if (!response?.reply && code !== PARTIALLY_COMPLETED_CODE) {
       this.pushEntry(turn.turnId, 'error', message, null, code, [], false);
     }
 
