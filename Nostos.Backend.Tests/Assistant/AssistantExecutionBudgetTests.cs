@@ -1,7 +1,10 @@
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services.Ai;
+using Nostos.Product.Composition;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Assistant;
@@ -95,8 +98,103 @@ public sealed class AssistantExecutionBudgetTests
         options.MaxToolIterations.Should().Be(12);
         options.MaxTurnTokens.Should().Be(120_000);
         options.MaxTurnElapsedMilliseconds.Should().Be(90_000);
-        options.MaxTurnElapsedMilliseconds.Should().BeLessThan(options.RequestTimeoutSeconds * 1000,
-            "a stalled call is stopped by the turn budget, not by a transport error");
+        options.RequestTimeoutSeconds.Should().Be(60);
+
+        // The inner clock must fire first, with a tool round still available.
+        // #1561: the shipped 95 s request timeout could never fire before the
+        // 90 s turn budget, so "took too long" was unreachable.
+        options.RequestTimeoutSeconds.Should().BeLessThan(
+            options.MaxTurnElapsedMilliseconds / 1000,
+            "a stalled request must report its own timeout, not the turn's execution limit");
+        (options.MaxTurnElapsedMilliseconds - options.RequestTimeoutSeconds * 1000)
+            .Should().BeGreaterThanOrEqualTo(
+                AssistantExecutionBudget.MinimumToolRoundMarginMilliseconds,
+                "one tool round must fit between the request timeout and the turn budget");
+        options.TransportTimeout.Should().Be(
+            options.RequestTimeout + TimeSpan.FromSeconds(AssistantOptions.TransportTimeoutGraceSeconds),
+            "the transport timeout is a backstop above the typed in-process clock");
+    }
+
+    [Fact]
+    public void Shipped_clock_order_passes_startup_validation()
+    {
+        AssistantExecutionBudget.ValidateClocks(new AssistantOptions());
+    }
+
+    [Fact]
+    public void Request_timeout_at_or_above_the_turn_budget_is_rejected_with_both_keys()
+    {
+        // The pre-#1561 defaults: 95 s against a 90 s turn.
+        var options = new AssistantOptions
+        {
+            MaxTurnElapsedMilliseconds = 90_000,
+            RequestTimeoutSeconds = 95,
+        };
+
+        var act = () => AssistantExecutionBudget.ValidateClocks(options);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Assistant:RequestTimeoutSeconds (95 s)*")
+            .WithMessage("*Assistant:MaxTurnElapsedMilliseconds (90000 ms)*")
+            .WithMessage("*75 s or less*");
+    }
+
+    [Fact]
+    public void Request_timeout_that_leaves_no_tool_round_is_rejected()
+    {
+        var options = new AssistantOptions
+        {
+            MaxTurnElapsedMilliseconds = 30_000,
+            RequestTimeoutSeconds = 20,
+        };
+
+        var act = () => AssistantExecutionBudget.ValidateClocks(options);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*at least 15 s below*")
+            .WithMessage("*15 s or less*");
+    }
+
+    [Fact]
+    public void A_disabled_turn_budget_leaves_the_positive_request_timeout_unconstrained()
+    {
+        var options = new AssistantOptions
+        {
+            MaxTurnElapsedMilliseconds = 0,
+            RequestTimeoutSeconds = 600,
+        };
+
+        var act = () => AssistantExecutionBudget.ValidateClocks(options);
+
+        act.Should().NotThrow("there is no turn clock to order the request clock against");
+    }
+
+    [Fact]
+    public void A_non_positive_request_timeout_is_rejected()
+    {
+        var options = new AssistantOptions { RequestTimeoutSeconds = 0 };
+
+        var act = () => AssistantExecutionBudget.ValidateClocks(options);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Assistant:RequestTimeoutSeconds must be greater than zero*");
+    }
+
+    [Fact]
+    public void Startup_composition_rejects_a_request_timeout_that_is_not_below_the_turn_budget()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Assistant:RequestTimeoutSeconds"] = "95",
+            })
+            .Build();
+
+        var act = () => new ServiceCollection().AddNostosProduct(configuration);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Assistant:RequestTimeoutSeconds (95 s)*")
+            .WithMessage("*Assistant:MaxTurnElapsedMilliseconds (90000 ms)*");
     }
 
     [Fact]
