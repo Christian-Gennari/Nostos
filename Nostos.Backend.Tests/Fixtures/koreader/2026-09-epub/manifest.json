@@ -1,0 +1,12 @@
+{
+  "source": "koreader",
+  "version": "2026-09-epub",
+  "file": "metadata.lua",
+  "companions": [],
+  "expected": {
+    "foundBooks": 1,
+    "importedAnnotations": 2,
+    "skipped": {},
+    "missingOptionalColumns": []
+  }
+}

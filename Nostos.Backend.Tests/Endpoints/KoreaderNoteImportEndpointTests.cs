@@ -18,7 +18,7 @@ public sealed class KoreaderNoteImportEndpointTests
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var fixture = FixturePath("metadata.lua");
+        var fixture = ImportFixtures.KoreaderEpub;
 
         var first = await UploadAsync(client, fixture);
         first.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -64,7 +64,7 @@ public sealed class KoreaderNoteImportEndpointTests
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
 
-        var response = await UploadAsync(client, FixturePath("metadata.lua"));
+        var response = await UploadAsync(client, ImportFixtures.KoreaderEpub);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var report = await response.Content.ReadFromJsonAsync<KoreaderImportReport>();
@@ -96,9 +96,6 @@ public sealed class KoreaderNoteImportEndpointTests
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await response.Content.ReadFromJsonAsync<BookDto>())!;
     }
-
-    private static string FixturePath(string name) =>
-        Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", name);
 
     private static NostosDbContext CreateContext(string path)
     {

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Nostos.Backend.Services.Notes.Imports;
+using Nostos.Backend.Tests.Support;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services.Notes;
@@ -38,7 +39,7 @@ public sealed class ImportFileShapeTests : IDisposable
     [Fact]
     public void A_readwise_export_shows_its_header_and_never_a_row()
     {
-        var (source, shape) = ImportFileShape.Describe(Fixture("readwise", "readwise-export.csv"));
+        var (source, shape) = ImportFileShape.Describe(ImportFixtures.ReadwiseExport);
 
         source.Should().Be(HighlightImportSourceReader.Readwise);
         shape.Should().StartWith("header (11 cells): Highlight, Book Title, Book Author");
@@ -95,7 +96,7 @@ public sealed class ImportFileShapeTests : IDisposable
     [Fact]
     public void A_koreader_sidecar_shows_only_its_top_level_keys()
     {
-        var (source, shape) = ImportFileShape.Describe(Fixture("koreader", "metadata.lua"));
+        var (source, shape) = ImportFileShape.Describe(ImportFixtures.KoreaderEpub);
 
         source.Should().Be(HighlightImportSourceReader.Koreader);
         shape.Should().Contain("keys: doc_props, annotations");
@@ -130,9 +131,6 @@ public sealed class ImportFileShapeTests : IDisposable
         shape.Should().HaveLength(ImportFileShape.MaxLength);
         shape.Should().EndWith("…");
     }
-
-    private static string Fixture(string folder, string name) =>
-        Path.Combine(AppContext.BaseDirectory, "Fixtures", folder, name);
 
     private string Write(string name, string text)
     {

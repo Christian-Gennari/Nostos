@@ -1,0 +1,12 @@
+{
+  "source": "koreader",
+  "version": "2026-10-pdf-untitled",
+  "file": "metadata.pdf-untitled.lua",
+  "companions": [],
+  "expected": {
+    "foundBooks": 1,
+    "importedAnnotations": 2,
+    "skipped": {},
+    "missingOptionalColumns": []
+  }
+}

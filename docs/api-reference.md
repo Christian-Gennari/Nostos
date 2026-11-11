@@ -477,6 +477,9 @@ format line of each unrecognised clipping
 at 2 KB. It never contains highlight text, titles, authors, file names, paths
 or user identifiers. In Cloud logs, search for `HighlightImportShape` and
 group by `Outcome`; SelfHosted writes it to the app's normal warning log.
+The maintainer workflow from a reported failure to a versioned, anonymized
+fixture is in
+[runbooks/import-failure-to-fixture.md](runbooks/import-failure-to-fixture.md).
 
 ---
 

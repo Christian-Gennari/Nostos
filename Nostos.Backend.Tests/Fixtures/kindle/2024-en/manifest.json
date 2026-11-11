@@ -1,0 +1,16 @@
+{
+  "source": "kindle",
+  "version": "2024-en",
+  "file": "My Clippings.txt",
+  "companions": [],
+  "expected": {
+    "foundBooks": 4,
+    "importedAnnotations": 5,
+    "skipped": {
+      "bookmark": 1,
+      "clipping-limit": 1,
+      "empty": 1
+    },
+    "missingOptionalColumns": []
+  }
+}

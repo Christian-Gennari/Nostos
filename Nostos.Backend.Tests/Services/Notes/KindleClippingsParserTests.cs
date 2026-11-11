@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Nostos.Backend.Services.Notes.Imports;
+using Nostos.Backend.Tests.Support;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services.Notes;
@@ -9,7 +10,7 @@ public sealed class KindleClippingsParserTests
     [Fact]
     public void English_clippings_fold_edits_and_notes_into_one_annotation_each()
     {
-        var text = Fixture("My Clippings.txt");
+        var text = File.ReadAllText(ImportFixtures.KindleEnglish);
         KindleClippingsParser.Looks(text).Should().BeTrue();
 
         var (books, skipped) = KindleClippingsParser.Parse(text);
@@ -54,7 +55,7 @@ public sealed class KindleClippingsParserTests
     [Fact]
     public void Other_ui_languages_are_read_and_an_unknown_one_is_left_out_with_a_reason()
     {
-        var (books, skipped) = KindleClippingsParser.Parse(Fixture("My Clippings.languages.txt"));
+        var (books, skipped) = KindleClippingsParser.Parse(File.ReadAllText(ImportFixtures.KindleLanguages));
 
         var byTitle = books.ToDictionary(book => book.Title!);
         byTitle.Keys.Should().BeEquivalentTo("Der Process", "Candide", "Don Quijote", "吾輩は猫である", "论语", "Truncated Book");
@@ -139,7 +140,7 @@ public sealed class KindleClippingsParserTests
         System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
         try
         {
-            var (books, _) = KindleClippingsParser.Parse(Fixture("My Clippings.txt"));
+            var (books, _) = KindleClippingsParser.Parse(File.ReadAllText(ImportFixtures.KindleEnglish));
 
             // Extended on the device a minute later: the date of the first entry.
             books[0].Annotations.Single().CreatedAt.Should().Be(Utc(2024, 1, 1, 10, 0));
@@ -169,7 +170,4 @@ public sealed class KindleClippingsParserTests
 
     private static DateTime Utc(int year, int month, int day, int hour, int minute) =>
         new(year, month, day, hour, minute, 0, DateTimeKind.Utc);
-
-    private static string Fixture(string name) =>
-        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", name));
 }
