@@ -1,0 +1,482 @@
+{
+  "empty-compact-desktop-light": {
+    "panel": {
+      "selector": "[data-testid=\"assistant-panel\"]",
+      "borderRadius": "14px",
+      "width": 408,
+      "height": 494,
+      "top": 322,
+      "left": 516
+    },
+    "empty": {
+      "selector": ".assistant-empty",
+      "borderRadius": "0px",
+      "width": 366,
+      "height": 313,
+      "top": 394,
+      "left": 533
+    },
+    "emptyTitle": {
+      "selector": ".assistant-empty-title",
+      "borderRadius": "0px",
+      "width": 362,
+      "height": 23,
+      "top": 400,
+      "left": 535
+    },
+    "door": {
+      "selector": ".capability-door",
+      "borderRadius": "0px",
+      "width": 362,
+      "height": 102,
+      "top": 431,
+      "left": 535
+    },
+    "example": {
+      "selector": ".capability-example",
+      "borderRadius": "999px",
+      "width": 247,
+      "height": 30,
+      "top": 431,
+      "left": 607
+    }
+  },
+  "empty-expanded-desktop-light": {
+    "panel": {
+      "selector": "[data-testid=\"assistant-panel\"]",
+      "borderRadius": "14px",
+      "width": 1000,
+      "height": 792,
+      "top": 54,
+      "left": 220
+    },
+    "empty": {
+      "selector": ".assistant-empty",
+      "borderRadius": "0px",
+      "width": 760,
+      "height": 589,
+      "top": 134,
+      "left": 336
+    },
+    "emptyTitle": {
+      "selector": ".assistant-empty-title",
+      "borderRadius": "0px",
+      "width": 506,
+      "height": 25,
+      "top": 288,
+      "left": 338
+    },
+    "door": {
+      "selector": ".capability-door",
+      "borderRadius": "0px",
+      "width": 364,
+      "height": 133,
+      "top": 331,
+      "left": 338
+    },
+    "example": {
+      "selector": ".capability-example",
+      "borderRadius": "999px",
+      "width": 364,
+      "height": 30,
+      "top": 358,
+      "left": 338
+    }
+  },
+  "answer-citations-desktop-light": {
+    "composer": {
+      "selector": ".composer-shell",
+      "borderRadius": "8px",
+      "width": 382,
+      "height": 73,
+      "top": 730,
+      "left": 529
+    },
+    "userBubble": {
+      "selector": ".entry-user",
+      "borderRadius": "14px 14px 3px",
+      "width": 285,
+      "height": 43,
+      "top": 402,
+      "left": 614
+    },
+    "source": {
+      "selector": ".entry-source",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 640,
+      "left": 535
+    },
+    "group": {
+      "selector": ".entry-source-group",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 640,
+      "left": 535
+    },
+    "copy": {
+      "replyText": "Attention, not time, is the thing you keep returning to. 1\nIn The Magic Mountain the sanatorium removes the ordinary markers of time — no work, no seasons worth counting — and what is left is where a person puts their at",
+      "replyHtmlStart": "<p>Attention, not time, is the thing you keep returning to. <sup class=\"assistant-cite\"><a class=\"assistant-cite-link\" href=\"#source-1\" title=\"The Magic Mountain · reading position — Mann keeps making time do something physical: the sanatorium has no seasons, only the rhythm of meals and rest.\" aria-label=\"Source 1\">1</a></sup></p>\n<p>In <em>The Magic Mounta",
+      "groupText": "1–2The Magic Mountain · 2 passages"
+    }
+  },
+  "changeset-desktop-light": {
+    "card": {
+      "selector": ".changeset",
+      "borderRadius": "8px",
+      "width": 362,
+      "height": 129,
+      "top": 578,
+      "left": 535
+    },
+    "headline": {
+      "selector": ".changeset__headline",
+      "borderRadius": "0px",
+      "width": 336,
+      "height": 23,
+      "top": 612,
+      "left": 548
+    }
+  },
+  "empty-compact-phone-light": {
+    "panel": {
+      "selector": "[data-testid=\"assistant-panel\"]",
+      "borderRadius": "0px",
+      "width": 390,
+      "height": 844,
+      "top": 0,
+      "left": 0
+    },
+    "empty": {
+      "selector": ".assistant-empty",
+      "borderRadius": "0px",
+      "width": 350,
+      "height": 411,
+      "top": 71,
+      "left": 16
+    },
+    "emptyTitle": {
+      "selector": ".assistant-empty-title",
+      "borderRadius": "0px",
+      "width": 346,
+      "height": 23,
+      "top": 77,
+      "left": 18
+    },
+    "door": {
+      "selector": ".capability-door",
+      "borderRadius": "0px",
+      "width": 346,
+      "height": 144,
+      "top": 108,
+      "left": 18
+    },
+    "example": {
+      "selector": ".capability-example",
+      "borderRadius": "999px",
+      "width": 247,
+      "height": 44,
+      "top": 108,
+      "left": 90
+    }
+  },
+  "answer-citations-phone-light": {
+    "composer": {
+      "selector": ".composer-shell",
+      "borderRadius": "8px",
+      "width": 366,
+      "height": 73,
+      "top": 759,
+      "left": 12
+    },
+    "userBubble": {
+      "selector": ".entry-user",
+      "borderRadius": "14px 14px 3px",
+      "width": 285,
+      "height": 43,
+      "top": 71,
+      "left": 81
+    },
+    "source": {
+      "selector": ".entry-source",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 332,
+      "left": 18
+    },
+    "group": {
+      "selector": ".entry-source-group",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 332,
+      "left": 18
+    },
+    "copy": {
+      "replyText": "Attention, not time, is the thing you keep returning to. 1\nIn The Magic Mountain the sanatorium removes the ordinary markers of time — no work, no seasons worth counting — and what is left is where a person puts their at",
+      "replyHtmlStart": "<p>Attention, not time, is the thing you keep returning to. <sup class=\"assistant-cite\"><a class=\"assistant-cite-link\" href=\"#source-1\" title=\"The Magic Mountain · reading position — Mann keeps making time do something physical: the sanatorium has no seasons, only the rhythm of meals and rest.\" aria-label=\"Source 1\">1</a></sup></p>\n<p>In <em>The Magic Mounta",
+      "groupText": "1–2The Magic Mountain · 2 passages"
+    }
+  },
+  "changeset-phone-light": {
+    "card": {
+      "selector": ".changeset",
+      "borderRadius": "8px",
+      "width": 346,
+      "height": 129,
+      "top": 558,
+      "left": 18
+    },
+    "headline": {
+      "selector": ".changeset__headline",
+      "borderRadius": "0px",
+      "width": 320,
+      "height": 23,
+      "top": 592,
+      "left": 31
+    }
+  },
+  "empty-compact-desktop-dark": {
+    "panel": {
+      "selector": "[data-testid=\"assistant-panel\"]",
+      "borderRadius": "14px",
+      "width": 408,
+      "height": 494,
+      "top": 322,
+      "left": 516
+    },
+    "empty": {
+      "selector": ".assistant-empty",
+      "borderRadius": "0px",
+      "width": 366,
+      "height": 313,
+      "top": 394,
+      "left": 533
+    },
+    "emptyTitle": {
+      "selector": ".assistant-empty-title",
+      "borderRadius": "0px",
+      "width": 362,
+      "height": 23,
+      "top": 400,
+      "left": 535
+    },
+    "door": {
+      "selector": ".capability-door",
+      "borderRadius": "0px",
+      "width": 362,
+      "height": 102,
+      "top": 431,
+      "left": 535
+    },
+    "example": {
+      "selector": ".capability-example",
+      "borderRadius": "999px",
+      "width": 247,
+      "height": 30,
+      "top": 431,
+      "left": 607
+    }
+  },
+  "empty-expanded-desktop-dark": {
+    "panel": {
+      "selector": "[data-testid=\"assistant-panel\"]",
+      "borderRadius": "14px",
+      "width": 1000,
+      "height": 792,
+      "top": 54,
+      "left": 220
+    },
+    "empty": {
+      "selector": ".assistant-empty",
+      "borderRadius": "0px",
+      "width": 760,
+      "height": 589,
+      "top": 134,
+      "left": 336
+    },
+    "emptyTitle": {
+      "selector": ".assistant-empty-title",
+      "borderRadius": "0px",
+      "width": 506,
+      "height": 25,
+      "top": 288,
+      "left": 338
+    },
+    "door": {
+      "selector": ".capability-door",
+      "borderRadius": "0px",
+      "width": 364,
+      "height": 133,
+      "top": 331,
+      "left": 338
+    },
+    "example": {
+      "selector": ".capability-example",
+      "borderRadius": "999px",
+      "width": 364,
+      "height": 30,
+      "top": 358,
+      "left": 338
+    }
+  },
+  "answer-citations-desktop-dark": {
+    "composer": {
+      "selector": ".composer-shell",
+      "borderRadius": "8px",
+      "width": 382,
+      "height": 73,
+      "top": 730,
+      "left": 529
+    },
+    "userBubble": {
+      "selector": ".entry-user",
+      "borderRadius": "14px 14px 3px",
+      "width": 285,
+      "height": 43,
+      "top": 402,
+      "left": 614
+    },
+    "source": {
+      "selector": ".entry-source",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 640,
+      "left": 535
+    },
+    "group": {
+      "selector": ".entry-source-group",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 640,
+      "left": 535
+    },
+    "copy": {
+      "replyText": "Attention, not time, is the thing you keep returning to. 1\nIn The Magic Mountain the sanatorium removes the ordinary markers of time — no work, no seasons worth counting — and what is left is where a person puts their at",
+      "replyHtmlStart": "<p>Attention, not time, is the thing you keep returning to. <sup class=\"assistant-cite\"><a class=\"assistant-cite-link\" href=\"#source-1\" title=\"The Magic Mountain · reading position — Mann keeps making time do something physical: the sanatorium has no seasons, only the rhythm of meals and rest.\" aria-label=\"Source 1\">1</a></sup></p>\n<p>In <em>The Magic Mounta",
+      "groupText": "1–2The Magic Mountain · 2 passages"
+    }
+  },
+  "changeset-desktop-dark": {
+    "card": {
+      "selector": ".changeset",
+      "borderRadius": "8px",
+      "width": 362,
+      "height": 129,
+      "top": 578,
+      "left": 535
+    },
+    "headline": {
+      "selector": ".changeset__headline",
+      "borderRadius": "0px",
+      "width": 336,
+      "height": 23,
+      "top": 612,
+      "left": 548
+    }
+  },
+  "empty-compact-phone-dark": {
+    "panel": {
+      "selector": "[data-testid=\"assistant-panel\"]",
+      "borderRadius": "0px",
+      "width": 390,
+      "height": 844,
+      "top": 0,
+      "left": 0
+    },
+    "empty": {
+      "selector": ".assistant-empty",
+      "borderRadius": "0px",
+      "width": 350,
+      "height": 411,
+      "top": 71,
+      "left": 16
+    },
+    "emptyTitle": {
+      "selector": ".assistant-empty-title",
+      "borderRadius": "0px",
+      "width": 346,
+      "height": 23,
+      "top": 77,
+      "left": 18
+    },
+    "door": {
+      "selector": ".capability-door",
+      "borderRadius": "0px",
+      "width": 346,
+      "height": 144,
+      "top": 108,
+      "left": 18
+    },
+    "example": {
+      "selector": ".capability-example",
+      "borderRadius": "999px",
+      "width": 247,
+      "height": 44,
+      "top": 108,
+      "left": 90
+    }
+  },
+  "answer-citations-phone-dark": {
+    "composer": {
+      "selector": ".composer-shell",
+      "borderRadius": "8px",
+      "width": 366,
+      "height": 73,
+      "top": 759,
+      "left": 12
+    },
+    "userBubble": {
+      "selector": ".entry-user",
+      "borderRadius": "14px 14px 3px",
+      "width": 285,
+      "height": 43,
+      "top": 71,
+      "left": 81
+    },
+    "source": {
+      "selector": ".entry-source",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 332,
+      "left": 18
+    },
+    "group": {
+      "selector": ".entry-source-group",
+      "borderRadius": "999px",
+      "width": 232,
+      "height": 28,
+      "top": 332,
+      "left": 18
+    },
+    "copy": {
+      "replyText": "Attention, not time, is the thing you keep returning to. 1\nIn The Magic Mountain the sanatorium removes the ordinary markers of time — no work, no seasons worth counting — and what is left is where a person puts their at",
+      "replyHtmlStart": "<p>Attention, not time, is the thing you keep returning to. <sup class=\"assistant-cite\"><a class=\"assistant-cite-link\" href=\"#source-1\" title=\"The Magic Mountain · reading position — Mann keeps making time do something physical: the sanatorium has no seasons, only the rhythm of meals and rest.\" aria-label=\"Source 1\">1</a></sup></p>\n<p>In <em>The Magic Mounta",
+      "groupText": "1–2The Magic Mountain · 2 passages"
+    }
+  },
+  "changeset-phone-dark": {
+    "card": {
+      "selector": ".changeset",
+      "borderRadius": "8px",
+      "width": 346,
+      "height": 129,
+      "top": 558,
+      "left": 18
+    },
+    "headline": {
+      "selector": ".changeset__headline",
+      "borderRadius": "0px",
+      "width": 320,
+      "height": 23,
+      "top": 592,
+      "left": 31
+    }
+  }
+}

@@ -567,6 +567,72 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         expect(markers()).toEqual([]);
         expect(fixture.nativeElement.querySelector('[data-testid="assistant-entry-markdown"] code')?.textContent).toBe('[^1]');
       });
+
+      it('keeps each marker with the word before it, even at a line end', () => {
+        renderEntry(entry({
+          text: 'Attention, not time, is the thing you keep returning to.[^1]\n\nA second claim [^2].',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 3), pdfEvidence(2, 9)),
+        }));
+
+        const reply = fixture.nativeElement.querySelector('[data-testid="assistant-entry-markdown"]') as HTMLElement;
+        // A narrow no-break space glues the marker to the last word, so the
+        // inline box cannot wrap alone onto the next line.
+        expect(reply.innerHTML).toContain('\u202F<sup class="assistant-cite">');
+        expect(reply.innerHTML).not.toMatch(/[ \t]<sup class="assistant-cite">/);
+        // Copy/paste and a screen reader still get a space, then the number.
+        expect(reply.textContent).toContain('returning to.\u202F1');
+        expect(reply.textContent).toContain('second claim\u202F2');
+        expect(reply.textContent).not.toContain('[^1]');
+      });
+
+      it('numbers a grouped source row with the markers it covers', () => {
+        renderEntry(entry({
+          text: 'One passage[^1] and another[^2].',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 7), pdfEvidence(2, 9)),
+        }));
+
+        expect(sourceGroups().length).toBe(1);
+        const group = sourceGroups()[0];
+        expect(group.querySelector('.entry-source-number')?.textContent?.trim()).toBe('1–2');
+        expect(group.textContent).toContain('Grounded PDF · 2 passages');
+
+        group.click();
+        fixture.detectChanges();
+        const numbers = sourceItems();
+        expect(numbers.length).toBe(2);
+        expect(numbers[0].querySelector('.entry-source-number')?.textContent?.trim()).toBe('1');
+        expect(numbers[1].querySelector('.entry-source-number')?.textContent?.trim()).toBe('2');
+      });
+
+      it('lists non-consecutive group numbers separately and keeps the ungrouped row', () => {
+        renderEntry(entry({
+          text: 'First[^1], unrelated[^2], third[^3].',
+          artifacts: evidenceArtifacts(
+            pdfEvidence(1, 7),
+            epubEvidence(1, 'epubcfi(/6/2!/4/2:0)'),
+            pdfEvidence(3, 9),
+          ),
+        }));
+
+        const groups = sourceGroups();
+        expect(groups.length).toBe(1);
+        expect(groups[0].querySelector('.entry-source-number')?.textContent?.trim()).toBe('1, 3');
+
+        const ungrouped = Array.from(sourceItems()).find(
+          (item) => item.textContent?.includes('East of Eden'),
+        );
+        expect(ungrouped?.querySelector('.entry-source-number')?.textContent?.trim()).toBe('2');
+      });
+
+      it('leaves a grouped source unnumbered when the reply does not cite', () => {
+        renderEntry(entry({
+          text: 'No citations here.',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 7), pdfEvidence(2, 9)),
+        }));
+
+        expect(sourceGroups().length).toBe(1);
+        expect(sourceGroups()[0].querySelector('.entry-source-number')).toBeNull();
+      });
     });
 
     it('prefers canonical evidence over legacy sources when both are present', () => {

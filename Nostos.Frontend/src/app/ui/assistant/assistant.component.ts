@@ -207,6 +207,26 @@ export interface EntrySourceView {
   items: EntrySourceDisplay[];
 }
 
+/**
+ * The citation numbers a grouped source row covers, compressed for the row:
+ * `1–2` for a run, `1, 3` for markers that are not consecutive. Kept beside
+ * `buildEntrySourceView` so a group and its inline markers cannot drift.
+ */
+export function formatCitationNumbers(numbers: readonly number[]): string {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let index = 0; index < sorted.length; index += 1) {
+    const start = sorted[index];
+    let end = start;
+    while (index + 1 < sorted.length && sorted[index + 1] === end + 1) {
+      end = sorted[index + 1];
+      index += 1;
+    }
+    parts.push(end > start ? `${start}–${end}` : String(start));
+  }
+  return parts.join(', ');
+}
+
 function canonicalEvidenceKey(evidence: AssistantEvidenceReferenceDto): string {
   const handle = evidence.handle;
   return [
@@ -671,6 +691,14 @@ export class AssistantComponent {
 
   sourceView(entry: AssistantEntry): EntrySourceView {
     return buildEntrySourceView(entry);
+  }
+
+  /** The numbers a grouped source covers, so the group matches its markers. */
+  sourceGroupNumbers(display: EntrySourceDisplay): string {
+    if (display.kind !== 'group') return '';
+    return formatCitationNumbers(
+      display.items.flatMap((item) => (item.kind === 'evidence' ? [item.number] : [])),
+    );
   }
 
   // --- Numbered citations (issue #1002) ---
