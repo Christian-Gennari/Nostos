@@ -119,6 +119,10 @@ All 24 scenarios (C1–C20 plus the C21 Swedish probe, the C22 paper-book quote 
 real orchestrator with a scripted provider — real SQLite stores, real retrieval services, real
 HTTP/streaming surface, real approval/continuation machinery; no paid model calls.
 
+> *November 2026: §10 added C30–C33 and §13 added C34, C35 and C37, so the
+> deterministic catalogue now holds 31 scenarios. The counts in this §3 section
+> describe the September revision.*
+
 - `Nostos.Backend.Tests/Assistant/QualityBed/` — 28 tests pass (`Quality_bed_deterministic_scenarios_pass`,
   fixture-shape/vocabulary guards, live wiring proof, scoring unit tests).
 - Scenarios and modes: C1–C12, C16–C24 run in **both** deterministic and live modes; C13/C14/C15
@@ -723,3 +727,37 @@ The C series runs chat turns through `QualityRunner` with a scripted LLM, one ho
 `QualityBedMcpLiveWiringTests` proves the path offline on every run: a stub gateway plays the client model, calls `search` over `/mcp` through the real provider and the meter, and the test checks the model saw our tools and instructions (and no Ask Nostos names) and got the result back.
 
 What a live run does not reproduce: Claude.ai's and ChatGPT's own system prompts, tool-loop limits and 10 s tool timeout. A pass says an outside model can use our descriptions and results; it is not a measurement of a given app. **Live run in this change: none** (no automatic paid runs; the repository secrets in §10.4 are still needed).
+
+---
+
+## 13. Panel states — C34–C38 (#1563)
+
+The polish plan's §5 table is spread across the layers that can prove each
+claim. The model-facing scenarios run through `QualityRunner` and the scripted
+provider like every other C scenario; the two UI-only scenarios have no model
+lane and are pinned where the panel is rendered.
+
+| Id | Lane | Asserts | Live lane |
+| --- | --- | --- | --- |
+| **C34 capability disclosure** | quality bed, deterministic + live | The reply names search, capture, organising (with undo or review), Studio drafts and To read; it says it cannot delete books/notes or change settings. The deterministic lane also checks the model prompt carries `AssistantConversationBuilder.CapabilitySentence` and both boundaries. | **Yes.** Scores the real disclosure. Positive phrase misses are prose advisories (as elsewhere in live mode); a claim to reach the web or email is a hard failure. |
+| **C35 committed-then-failed** | quality bed, deterministic; Gate A `AssistantGateAPartialWriteTests` | A capture commits, the next provider call fails, and the failure body carries the capture (note id + acknowledgement). A replay of the same TurnId while the harness holds the turn answers from the receipt and creates no second note. | **None.** A provider failure after a capture cannot be forced against a paid model; live runs record natural failures as data. Gate A covers the same contract over the REST route. |
+| **C36 tall review** | Playwright `assistant-tall-review.spec.ts`, plus the review leg of `assistant-panel-states.spec.ts` | A 20-step review arrives with `Review before applying`, its headline and `Apply changes` inside the transcript viewport; expanding “Show every change” keeps them there, at 1440 and 390 px. | **None.** Layout, not model output. |
+| **C37 empty-state doors** | component `assistant.component.spec.ts` + quality bed, deterministic + live | Each door prefills the composer and never sends; the library/reader/Studio rows differ; the three page-door texts respectively retrieve, capture exactly once and apply one collection change. | **Yes.** Scores the answer each door produces. Path and prose misses are advisories; a write the turn did not ask for stays a hard failure. |
+| **C38 one failure** | component `assistant.component.spec.ts` (`one failure, one next step, one retry`) | A failed turn renders one sentence once, with no `Failed ·` and no raw code outside the closed Details disclosure; a retryable turn renders `Try again`, which replays the same TurnId. | **None.** Rendering, not model output. |
+
+C15 also pins the user-facing sentence for every failure class it injects —
+timeout (“took too long to answer”), rate limit (“temporarily busy”), provider
+failure and unreachable gateway (“could not complete this turn”), indexing
+pending (“still being indexed”) and no evidence (“could not find usable
+evidence”). The one action per code (Try again / Open AI connections / Manage
+allowance / Open the book / Open Settings) is pinned in
+`Nostos.Frontend/src/app/ui/assistant/assistant-failure.spec.ts`; the allowance
+sentence is asserted by `AssistantEndpointTests.Streamed_usage_limit_is_distinct_from_provider_rate_limit`.
+
+The end-to-end walk (`Nostos.Frontend/e2e/assistant-panel-states.spec.ts`)
+covers the same states as a user meets them on the real app and backend, with
+only the turn stream stubbed: empty doors prefill without sending, an answer
+with numbered citations and a grouped `1–2 · The Salt Meridian · 2 passages`
+row, a review with its title and Apply in view, one failure whose Try again
+replays the same TurnId, and a committed capture above the failure. It runs at
+1440 and 390 px. **Live runs in this change: none** (`NOSTOS_QG_LIVE` unset).
