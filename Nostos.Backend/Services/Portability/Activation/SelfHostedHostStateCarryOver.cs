@@ -84,6 +84,10 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Carry,
             "Host credentials and provider configuration are deployment-local, contain no foreign key, and must never be imported from a portable archive."),
         new(
+            typeof(ReadwiseConnectionModel),
+            HostStateCarryOverKind.Clear,
+            "The Readwise token and its updatedAfter watermark (issue #1525) belong to the replaced library generation: keeping the watermark would skip books the imported library has never seen, and a portable archive must never carry the credential."),
+        new(
             typeof(McpAccessTokenModel),
             HostStateCarryOverKind.Carry,
             "Access tokens for connected AI apps (#1469) are host credentials with no foreign key; replacing the library must not disconnect the apps the owner set up, and a portable archive never carries them."),

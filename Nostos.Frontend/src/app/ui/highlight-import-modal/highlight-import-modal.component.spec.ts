@@ -11,6 +11,7 @@ import {
   HighlightImportService,
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { ReadwiseService } from '../../core/services/readwise.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { Book, PaginatedResponse } from '../../core/dtos/book.dtos';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
@@ -106,6 +107,40 @@ describe('HighlightImportModal', () => {
     fixture.detectChanges();
     expect(text()).toContain('Import highlights');
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-input"]')).not.toBeNull();
+  });
+
+  it('imports a Readwise export API page without a file and commits to its endpoint', async () => {
+    const readwise = TestBed.inject(ReadwiseService);
+    vi.spyOn(readwise, 'preview').mockReturnValue(
+      of({
+        source: 'readwise',
+        books: [previewBook({ sourceKey: 'readwise:meta:A|B', match: 'none', bookId: null, candidates: [] })],
+        skipped: [{ title: 'An article', author: 'A writer', count: 2, reason: 'A web article.' }],
+      }),
+    );
+    const commit = vi
+      .spyOn(readwise, 'commit')
+      .mockReturnValue(of({ batchId: 'rw-batch', source: 'readwise', books: [resultBook({ sourceKey: 'readwise:meta:A|B' })] }));
+
+    service.open('readwise');
+    await vi.waitFor(() => expect(component.stage()).toBe('review'));
+    fixture.detectChanges();
+
+    expect(component.rows()).toHaveLength(1);
+    expect(component.unimportable()).toEqual([
+      expect.objectContaining({ title: 'An article', count: 2, fileName: 'Readwise' }),
+    ]);
+    component.addToLibrary(component.rows()[0]);
+    fixture.detectChanges();
+
+    await component.importReviewed();
+
+    expect(commit).toHaveBeenCalledWith(
+      [expect.objectContaining({ sourceKey: 'readwise:meta:A|B', create: true })],
+      null,
+    );
+    expect(component.batchIds()).toEqual(['rw-batch']);
+    expect(component.stage()).toBe('result');
   });
 
   it('sends Apple Books files chosen together as one upload, and commits the same set', async () => {

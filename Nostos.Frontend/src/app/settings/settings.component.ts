@@ -67,6 +67,7 @@ import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
 import { CloudAccountDeletionSettingsComponent } from './cloud-account-deletion-settings.component';
 import { ExternalMediaSettingsComponent } from './external-media-settings.component';
+import { ReadwiseImportSettingsComponent } from './readwise-import-settings.component';
 import { ConnectedAppsSettingsComponent } from './connected-apps-settings.component';
 import { READ_ALOUD_GUIDE_URL } from './read-aloud-guide';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
@@ -307,6 +308,7 @@ const defaultProgress: BackupProgress = {
     ConfirmModal,
     CloudAccountDeletionSettingsComponent,
     ExternalMediaSettingsComponent,
+    ReadwiseImportSettingsComponent,
     ConnectedAppsSettingsComponent,
     LibraryTransferHostComponent,
     SegmentedComponent,
@@ -638,7 +640,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'koreader', name: 'KOReader', hint: "A book's metadata.lua, from its .sdr folder." },
     { id: 'kindle', name: 'Kindle', hint: 'My Clippings.txt from the Kindle, connected by USB.' },
     { id: 'applebooks', name: 'Apple Books', hint: 'From Books on your Mac, with what you highlighted on iPhone and iPad.', beta: true },
-    { id: 'readwise', name: 'Readwise', hint: 'A CSV export from Readwise.' },
+    // Readwise has its own row (the export API token and the CSV fallback),
+    // rendered by ReadwiseImportSettingsComponent below the loop.
   ];
 
   openHighlightImport(start: HighlightImportStart = 'all'): void {

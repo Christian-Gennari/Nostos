@@ -103,6 +103,11 @@ public class NostosDbContext : DbContext
     public DbSet<BookUploadSessionRecord> BookUploadSessionRecords => Set<BookUploadSessionRecord>();
     public DbSet<BookUploadPartReceiptRecord> BookUploadPartReceiptRecords => Set<BookUploadPartReceiptRecord>();
 
+    // The library's Readwise export-API connection (issue #1525). Host-local
+    // credential and import watermark: the token is Data-Protection
+    // ciphertext, never returned, and never part of a portable archive.
+    public DbSet<ReadwiseConnectionModel> ReadwiseConnections => Set<ReadwiseConnectionModel>();
+
     // SelfHosted access tokens for the MCP endpoint (issue #1469). Host-local
     // credentials: only a hash is stored, never the token, and they are never
     // part of a portable archive.
@@ -1005,6 +1010,21 @@ public class NostosDbContext : DbContext
                 .IsRequired(false);
             e.Property(x => x.AlignmentTranscriptionApiStyle)
                 .IsRequired(false);
+        });
+
+        // --- READWISE EXPORT API (issue #1525) ---
+        // One connection per library, pinned to a single row like the settings
+        // above. The token is ciphertext written only by the connection
+        // service; the watermark is the last import's start in UTC.
+        modelBuilder.Entity<ReadwiseConnectionModel>(e =>
+        {
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_ReadwiseConnections_SingletonId",
+                $"\"Id\" = {ReadwiseConnectionModel.SingletonId}"));
+
+            e.Property(x => x.TokenEncrypted).IsRequired();
+            e.Property(x => x.UpdatedAfterUtc).IsRequired(false);
+            e.Property(x => x.LastImportedAtUtc).IsRequired(false);
         });
 
         // --- ASSISTANT SETTINGS (issue #262 §7) ---

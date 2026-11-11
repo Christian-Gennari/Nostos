@@ -73,7 +73,7 @@ public sealed class SelfHostedHostStateCarryOverTests
     }
 
     [Fact]
-    public void Cleared_entities_are_the_import_undo_history_alignment_anchors_external_media_references_and_writing_citations()
+    public void Cleared_entities_are_the_import_undo_history_alignment_anchors_external_media_references_writing_citations_and_readwise()
     {
         var cleared = SelfHostedHostStateCarryOver.Decisions
             .Where(decision => decision.Kind == HostStateCarryOverKind.Clear)
@@ -91,6 +91,7 @@ public sealed class SelfHostedHostStateCarryOverTests
             nameof(Nostos.Backend.Data.Models.WritingCitationModel),
             nameof(Nostos.Backend.Data.Models.BookUploadSessionRecord),
             nameof(Nostos.Backend.Data.Models.BookUploadPartReceiptRecord),
+            nameof(Nostos.Backend.Data.Models.ReadwiseConnectionModel),
         ]);
     }
 

@@ -1,5 +1,6 @@
 import { HighlightImportService } from '../core/services/highlight-import.service';
 import { ReadingHistoryImportService } from '../core/services/reading-history-import.service';
+import { ReadwiseService } from '../core/services/readwise.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
@@ -73,6 +74,14 @@ import {
 
 const toastMock = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
 const routerMock = { navigate: vi.fn() };
+
+const readwiseServiceMock = {
+  status: vi.fn(() => of({ connected: false, lastImportedAtUtc: null, importedThroughUtc: null })),
+  connect: vi.fn(() => of({ connected: true, lastImportedAtUtc: null, importedThroughUtc: null })),
+  disconnect: vi.fn(() => of({ connected: false, lastImportedAtUtc: null, importedThroughUtc: null })),
+  preview: vi.fn(),
+  commit: vi.fn(),
+};
 
 const selfHostedCapabilities: DeploymentCapabilities = {
   deploymentMode: 'SelfHosted',
@@ -464,6 +473,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
         { provide: ExternalMediaService, useValue: externalMediaServiceMock },
         { provide: McpConnectedAppsService, useValue: mcpAccessTokensServiceMock },
+        { provide: ReadwiseService, useValue: readwiseServiceMock },
       ],
     }).compileComponents();
 
@@ -3087,6 +3097,7 @@ describe('SettingsComponent shared library transfer host', () => {
         { provide: CloudEntryService, useValue: cloudEntryServiceMock },
         { provide: CloudAccountDeletionService, useValue: cloudAccountDeletionServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
+        { provide: ReadwiseService, useValue: readwiseServiceMock },
         { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport },
         { provide: HASH_WORKER_FACTORY, useValue: () => null },
       ],

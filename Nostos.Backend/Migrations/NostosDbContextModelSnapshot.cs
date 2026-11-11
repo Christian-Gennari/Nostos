@@ -15,7 +15,7 @@ namespace Nostos.Backend.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.AiProviderSettingsModel", b =>
                 {
@@ -1413,6 +1413,37 @@ namespace Nostos.Backend.Migrations
                     b.HasIndex("NextPosition");
 
                     b.ToTable("ReadingListEntries", (string)null);
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.ReadwiseConnectionModel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastImportedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenEncrypted")
+                        .IsRequired()
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAfterUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ReadwiseConnections", t =>
+                        {
+                            t.HasCheckConstraint("CK_ReadwiseConnections_SingletonId", "\"Id\" = 1");
+                        });
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>

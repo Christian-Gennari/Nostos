@@ -13,6 +13,7 @@ Fixtures/
   kindle/2024-en/           My Clippings.txt
   kindle/2024-multi/        My Clippings.languages.txt
   readwise/2026-10/         readwise-export.csv
+  readwise/api-2026-11/     readwise-export.json (export API, mapper tests)
   koreader/2026-09-epub/    metadata.lua
   …
 ```

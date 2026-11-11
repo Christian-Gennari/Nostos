@@ -449,6 +449,9 @@ public class BackupService : IBackupService
             _settingsProvider.UpdateProgress("Collecting files", 10, 2, 5);
             var sanitizedPath = backupDbPath.Replace("'", "''");
             await ExecuteVacuumWithRetryAsync(sanitizedPath, ct);
+            // The copy is a whole-file snapshot; host credentials must not
+            // travel in it (issue #1525).
+            await BackupSecretScrubber.ScrubAsync(backupDbPath, ct);
 
             var booksDir = Path.Combine(tempDir, "books");
             Directory.CreateDirectory(booksDir);

@@ -54,7 +54,7 @@ Ask the reporter to send the export, not a screenshot:
   and
   `…/BKLibrary/BKLibrary-*.sqlite`; include `-wal`/`-shm` if present.
 - **Kindle:** `documents/My Clippings.txt`.
-- **Readwise:** the CSV export.
+- **Readwise:** the CSV export, or the JSON `GET https://readwise.io/api/v2/export/` response when the API mapping is at fault.
 - **KOReader:** the book's `metadata.*.lua` sidecar.
 
 Say that the file will be anonymized and committed as a test fixture, and that
@@ -67,11 +67,11 @@ they can redact it themselves if they prefer. Never commit the raw file.
 | Kobo | Settings → Device information firmware; `DbVersion.version` from the file |
 | Apple Books | macOS release (`sw_vers -productVersion`); the `AEAnnotation_*`/`BKLibrary-*` filenames |
 | Kindle | the year and UI language of the clippings (a `My Clippings.txt` has no firmware version) |
-| Readwise | `yyyy-mm` of the export |
+| Readwise | `yyyy-mm` of the CSV export, or `api-yyyy-mm` of the API recording |
 | KOReader | the sidecar date plus the shape (a sidecar has no plugin version) |
 
 Use that as the folder name: `kobo/fw-4.38.23552`, `applebooks/macos-15`,
-`readwise/2026-10`. When a version is genuinely unknown, say so in the folder
+`readwise/2026-10` or `readwise/api-2026-11`. When a version is genuinely unknown, say so in the folder
 name and README rather than guessing (the current Apple corpus uses
 `macos-unknown-2022-09`).
 
@@ -90,8 +90,24 @@ declared type and row count, preserves row relationships, runs `VACUUM` so the
 replaced text is not left in free pages, and checks `PRAGMA integrity_check`
 before writing. A file it does not recognize is refused, not copied.
 
-For text sources (Kindle, Readwise, KOReader) there is no script: replace every
-title, author, highlight and note, and keep the layout, separators and keys.
+A Readwise API recording has its own script:
+
+```bash
+python3 scripts/anonymize_readwise_export.py raw/export.json \
+  -o Nostos.Backend.Tests/Fixtures/readwise/api-2026-11/readwise-export.json \
+  --max-books 5 --max-highlights 15 --add-missing-skip-kinds tweet,podcast
+```
+
+It replaces every title, author, highlight/note text, URL, tag name and id-like
+value, keeps field names, nesting, types and null-ness, caps the fixture at five
+books and fifteen highlights, and refuses to write when a personal string
+survives. `--add-missing-skip-kinds` adds a tweet or podcast entry from the
+documented shape when the recording account has none; the README must say so.
+Keep the raw recording outside the worktree and delete it afterwards.
+
+For text sources (Kindle, Readwise CSV, KOReader) there is no script: replace
+every title, author, highlight and note, and keep the layout, separators and
+keys.
 
 Before committing, check both the live rows and the raw bytes:
 

@@ -11,7 +11,7 @@ import type { NoteSearchHit } from '../dtos/note.dtos';
  */
 export type HighlightImportMatch = 'exact' | 'remembered' | 'suggested' | 'none';
 
-export type HighlightImportStart = 'all' | 'applebooks';
+export type HighlightImportStart = 'all' | 'applebooks' | 'readwise';
 
 /** Where Books keeps its databases on a Mac; the owner pastes it into the folder window. */
 export const APPLE_BOOKS_FOLDER = '~/Library/Containers/com.apple.iBooksX/Data/Documents';
@@ -147,7 +147,10 @@ export interface HighlightImportBatch {
 @Injectable({ providedIn: 'root' })
 export class HighlightImportService {
   readonly isOpen = signal(false);
-  /** Where the dialog opens: the list of every source, or straight on Apple Books' steps. */
+  /**
+   * Where the dialog opens: the list of every source, straight on Apple Books'
+   * steps, or straight on a Readwise export-API import (issue #1525).
+   */
   readonly startOn = signal<HighlightImportStart>('all');
 
   constructor(private http: HttpClient) {}
