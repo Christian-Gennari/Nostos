@@ -32,40 +32,7 @@
           duplicates.
         </p>
 
-        <label
-          appDropZone
-          class="history-drop-zone"
-          (dragover)="onDragOver($event)"
-          (drop)="onDrop($event)"
-        >
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            class="history-file-input"
-            data-testid="reading-history-import-input"
-            (change)="onFileSelected($event)"
-          />
-          <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
-          <span class="nostos-drop-zone__title">Choose the CSV or drop it here</span>
-          <span class="nostos-drop-zone__hint">goodreads_library_export.csv or the StoryGraph export</span>
-        </label>
-
-        <dl class="history-sources">
-          <div class="history-source">
-            <dt>Goodreads</dt>
-            <dd>
-              Export your library from <strong>My Books → Import and export</strong>, then pick
-              <code>goodreads_library_export.csv</code>.
-            </dd>
-          </div>
-          <div class="history-source">
-            <dt>StoryGraph</dt>
-            <dd>
-              Export from <strong>Manage Account → Export StoryGraph Library</strong>, then pick the CSV it
-              gives you. Quarter stars are rounded to the nearest whole star.
-            </dd>
-          </div>
-        </dl>
+        <app-import-drop-zone />
 
         @if (recent().length > 0) {
           <section class="history-section history-recent" aria-labelledby="history-recent-title">

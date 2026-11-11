@@ -800,6 +800,189 @@ public sealed class HighlightImportEndpointTests : IDisposable
         elsewhere.Books.Single().ImportedCount.Should().Be(2);
     }
 
+    [Fact]
+    public async Task A_kobo_import_keeps_a_report_that_adds_up()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
+
+        await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", owned.Id));
+
+        var report = (await RecentBatchAsync(client)).Report;
+        report.Should().NotBeNull();
+        // Five annotations: two in vol-1, one in vol-2, two in vol-3. The other
+        // bookmark rows on the device are not annotations at all.
+        (report!.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((5, 2, 0, 0, 3));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((1, 0, 2));
+        report.SkippedReasons.Should().BeEmpty();
+        ShouldAddUp(report);
+    }
+
+    [Fact]
+    public async Task A_koreader_import_keeps_a_report_that_adds_up()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var preview = await PreviewAsync(client, sidecar);
+
+        await CommitAsync(client, sidecar, new HighlightImportDecision(preview.Books.Single().SourceKey, book.Id));
+
+        var report = (await RecentBatchAsync(client)).Report;
+        report.Should().NotBeNull();
+        (report!.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((2, 2, 0, 0, 0));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((1, 0, 0));
+        report.SkippedReasons.Should().BeEmpty();
+        ShouldAddUp(report);
+    }
+
+    [Fact]
+    public async Task A_kindle_import_keeps_a_report_that_adds_up_and_names_what_it_skipped()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
+        var clippings = Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt");
+        var preview = await PreviewAsync(client, clippings);
+        var exact = preview.Books.Single(book => book.Title == "Pride and Prejudice");
+        var meditations = preview.Books.Single(book => book.Title == "Meditations (Penguin Classics)");
+
+        await CommitAsync(client, clippings,
+            new HighlightImportDecision(exact.SourceKey, austen.Id),
+            new HighlightImportDecision(meditations.SourceKey, Create: true));
+
+        var report = (await RecentBatchAsync(client)).Report;
+        report.Should().NotBeNull();
+        // Five importable annotations (Walden's two notes fold into one loose
+        // note) and three entries the parser reports as unimportable.
+        (report!.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((8, 2, 0, 3, 3));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((1, 1, 2));
+        report.SkippedReasons.Should().BeEquivalentTo(new[]
+        {
+            new HighlightImportSkipped("Pride and Prejudice", "Jane Austen", 1, KindleClippingsParser.BookmarkReason),
+            new HighlightImportSkipped("Pride and Prejudice", "Jane Austen", 1, KindleClippingsParser.ClippingLimitReason),
+            new HighlightImportSkipped("Walden", "Henry David Thoreau", 1, KindleClippingsParser.EmptyReason),
+        });
+        ShouldAddUp(report);
+    }
+
+    [Fact]
+    public async Task A_readwise_import_keeps_a_report_that_adds_up_and_names_what_it_skipped()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen");
+        var export = Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", "readwise-export.csv");
+        var preview = await PreviewAsync(client, export);
+        var book = preview.Books.Single(candidate => candidate.SourceKey == "readwise:asin:B00SYNTH01");
+
+        await CommitAsync(client, export, new HighlightImportDecision(book.SourceKey, austen.Id));
+
+        var report = (await RecentBatchAsync(client)).Report;
+        report.Should().NotBeNull();
+        // Three importable Pride rows, one Walden row and one blog article
+        // (a book with a notice) are found; tweet, podcast and empty row are
+        // reported as skipped instead.
+        (report!.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((8, 3, 0, 3, 2));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((1, 0, 2));
+        report.SkippedReasons.Should().BeEquivalentTo(new[]
+        {
+            new HighlightImportSkipped("Tweets From Ada Reader", "@adareader", 1, ReadwiseCsvParser.TweetReason),
+            new HighlightImportSkipped("Episode 12: Reading", "The Reading Show", 1, ReadwiseCsvParser.PodcastReason),
+            new HighlightImportSkipped("Walden", "Henry David Thoreau", 1, ReadwiseCsvParser.EmptyReason),
+        });
+        ShouldAddUp(report);
+    }
+
+    [Fact]
+    public async Task An_apple_books_import_keeps_a_report_that_adds_up()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var walden = await CreateBookAsync(client, "Walden", "Henry David Thoreau");
+        var annotations = AppleBooksFixtures.CreateAnnotations(_directory,
+            new AppleBooksFixtures.Annotation("ASSET-W", "Our life is frittered away by detail.", "Keep this."),
+            new AppleBooksFixtures.Annotation("ASSET-W", "Simplify, simplify.", RangeStart: 5),
+            new AppleBooksFixtures.Annotation("ASSET-W", "Gone.", Deleted: 1));
+        var library = AppleBooksFixtures.CreateLibrary(_directory,
+            new AppleBooksFixtures.Asset("ASSET-W", "Walden", "Henry David Thoreau"));
+
+        var response = await UploadWithCompanionsAsync(client, "commit", annotations, [library],
+            [new HighlightImportDecision("applebooks:ASSET-W", walden.Id)]);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var report = (await RecentBatchAsync(client)).Report;
+        report.Should().NotBeNull();
+        // The deleted annotation is not one the import finds at all.
+        (report!.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((2, 2, 0, 0, 0));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((1, 0, 0));
+        report.SkippedReasons.Should().BeEmpty();
+        ShouldAddUp(report);
+    }
+
+    [Fact]
+    public async Task Files_imported_together_add_up_into_one_report()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var kobo = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
+        var koreader = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecarKey = (await PreviewAsync(client, sidecar)).Books.Single().SourceKey;
+
+        var first = await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", kobo.Id));
+        var response = await UploadAsync(client, "commit", sidecar,
+            [new HighlightImportDecision(sidecarKey, koreader.Id)], first.BatchId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var report = (await RecentBatchAsync(client)).Report;
+        report.Should().NotBeNull();
+        (report!.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((7, 4, 0, 0, 3));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((2, 0, 2));
+        ShouldAddUp(report);
+    }
+
+    [Fact]
+    public async Task A_batch_from_before_reports_existed_has_none()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
+
+        await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", owned.Id));
+        await using (var db = CreateContext(factory.DatabasePath))
+        {
+            var batch = await db.NoteImportBatches.SingleAsync();
+            batch.ReportJson = null;
+            await db.SaveChangesAsync();
+        }
+
+        var summary = await RecentBatchAsync(client);
+        summary.Report.Should().BeNull("an old batch must not show invented numbers");
+        summary.NoteCount.Should().Be(2);
+        summary.BookCount.Should().Be(1);
+    }
+
+    private static async Task<HighlightImportBatchSummary> RecentBatchAsync(HttpClient client)
+    {
+        var batches = await client.GetFromJsonAsync<List<HighlightImportBatchSummary>>("/api/notes/imports/batches");
+        batches.Should().ContainSingle();
+        return batches![0];
+    }
+
+    private static void ShouldAddUp(HighlightImportReport report) =>
+        report.Found.Should().Be(
+            report.Imported + report.Duplicates + report.Skipped + report.LeftOut,
+            "found = imported + duplicates + skipped + left out");
+
     private const string Schema =
         """
             -- Column layout of Kobo firmware 4.38.23828 (the Bookmark table in

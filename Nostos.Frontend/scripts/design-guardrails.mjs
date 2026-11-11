@@ -611,6 +611,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // An imported book in the import report: the same row as the non-interactive
   // failure rows beside it, made clickable.
   'src/app/ui/highlight-import-modal/highlight-import-modal.component.html': ['highlight-row'],
+  // The one import drop zone (issue #1526): a dashed target whose whole surface
+  // is the control, and a help row that is a disclosure, not an action button.
+  'src/app/ui/import-drop-zone/import-drop-zone.component.html': ['import-drop__button', 'import-help__summary'],
   // Assistant rows and recording controls (see also check-design RULE 15).
   'src/app/ui/assistant/assistant.component.html': ['starter', 'suggestion-chip', 'anchor-chip-dismiss', 'voice-control', 'assistant-trigger'],
 
@@ -631,6 +634,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // --- Acquisition, Brain and Studio product rows (also in check-design RULE 15).
   'src/app/add-book-modal/add-book-modal.component.html': ['source-result'],
   'src/app/brain/brain-topic-words.component.html': ['words-add'],
+  // A related note is a full-width reading row under the open note, the same
+  // shape as the Brain list's rows rather than a filled button.
+  'src/app/brain/brain-note-detail.component.html': ['related-row'],
   'src/app/writing-studio/writing-studio.component.html': ['editor-desk-telemetry', 'tab-btn', 'toggle-opt', 'list-item',
     // The open writing's title is the control: it reads as the heading and
     // opens the shared inline rename (the same shape as the Brain's topic title).

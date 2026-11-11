@@ -1,0 +1,121 @@
+/* The note in full, shared by its own page and the wide Brain's pane
+   (issue #1531). The header is the book the note came from; the body is the
+   reading measure, capped at 46rem however wide the pane gets. */
+:host {
+  display: block;
+}
+
+.note-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.95rem max(1rem, calc((100% - 46rem) / 2));
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-body);
+}
+
+.note-detail-head-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.note-detail-title {
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-medium);
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-detail-author {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.note-detail-body {
+  padding: 0.75rem max(1rem, calc((100% - 46rem) / 2)) 6rem;
+}
+
+/* --- Related notes ------------------------------------------------------- */
+.related {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.related-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 1.1rem 0 0.4rem;
+}
+
+.eyebrow {
+  color: var(--color-text-light);
+  font-size: 0.7rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.related-sharing {
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+.related-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: calc(100% + 1rem);
+  margin-inline: -0.5rem;
+  padding: 0.65rem 0.5rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: var(--radius-row);
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.related-row:hover {
+  background: var(--bg-hover);
+}
+
+.related-row:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.related-text {
+  color: var(--color-text-main);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.related-meta {
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+/* The pane's sticky head should not run under the phone's safe area. */
+@media (max-width: 768px) {
+  .note-detail-head {
+    padding-top: max(0.8rem, env(safe-area-inset-top, 0px));
+  }
+
+  .note-detail-body {
+    padding-bottom: 5rem;
+  }
+}

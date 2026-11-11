@@ -47,6 +47,18 @@ They combine one way only: place AND book AND search, in the chosen order.
 Active filters show as chips with a remove button above the list. Lists load
 25 notes at a time; Back returns to the list where you left it.
 
+### On a wide screen
+
+At 1280px and wider the list becomes an index and the note you choose opens
+beside it, so reading several notes no longer means leaving the list. Opening
+a note writes `?note=<id>` next to the current place and filters, so a reload,
+a shared link and Back reopen the same note in the same list. ↑/↓ walk the
+selection, Enter gives the note the keyboard, and Esc returns to the list.
+With no note chosen the pane says so. Closing the sidebar gives its width to
+the note. `/brain/notes/:id` still works: on a phone it is the full page, and
+on a wide screen it opens the note in the pane. On narrower screens nothing
+changes: the list and the note's own page are the same as before.
+
 **Selecting several notes** shows a bar with Add topic…, Keep with writing…
 and Delete; adding a topic to many notes has Undo for exactly the notes it
 changed.

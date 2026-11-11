@@ -183,7 +183,9 @@
   </div>
   }
 
-  <main class="brain-list" [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes">
+  <div class="brain-work">
+    <main class="brain-list" #list [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes"
+      (scroll)="onScroll($event)" (keydown)="onListKeydown($event)">
     @if (topicMissing()) {
     <nostos-empty-state concept="topic" message="This topic is gone. It may have been merged into another or deleted.">
       <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
@@ -201,10 +203,11 @@
       }
     </nostos-empty-state>
     } @else {
+    <div class="note-list" [attr.role]="wide() ? 'listbox' : null" [attr.aria-label]="wide() ? 'Notes' : null">
     @for (note of notes(); track note.id; let i = $index) {
       @if (order() === 'book') {
         @if (startsBook(i)) {
-        <header class="note-group">
+        <header class="note-group" [attr.role]="wide() ? 'presentation' : null">
           <h2 class="note-group-title">{{ note.bookTitle || unknownBook }}</h2>
           <span class="note-group-meta">
             @if (note.bookAuthor) { {{ note.bookAuthor }} · }
@@ -215,12 +218,20 @@
       } @else {
         @let dateGroup = dateGroups()[i];
         @if (dateGroup && dateGroup.starts) {
-        <header class="note-group">
+        <header class="note-group" [attr.role]="wide() ? 'presentation' : null">
           <h2 class="note-group-title">{{ dateGroup.label }}</h2>
           <span class="note-group-meta">{{ plural(dateGroup.count, 'note') }}</span>
         </header>
         }
       }
+      @if (wide()) {
+      <app-brain-note-row
+        [note]="note"
+        [selected]="selectedNoteId() === note.id"
+        [tabIndex]="rowTabIndex(note.id)"
+        (click)="chooseNote(note)"
+      />
+      } @else {
       <app-note-item
         [note]="note"
         [topics]="state.topics()"
@@ -246,19 +257,50 @@
         (deleteRequested)="noteActions.askDelete([note.id])"
         (restored)="noteActions.restored($event)"
       />
+      }
     }
+    </div>
     <nostos-paging-status
       [hasMore]="notes().length < total()"
       [loading]="loading()"
       [failed]="failed()"
-      [root]="scroller"
+      [root]="wide() ? list : scroller"
       label="Loading more notes"
       failedMessage="More notes could not be loaded."
       (more)="loadMore()"
       (retry)="loadPage()"
     />
     }
-  </main>
+    </main>
+
+    @if (wide()) {
+    <aside class="brain-detail-pane" role="region" aria-label="Selected note" tabindex="-1" #detailPane
+      [attr.aria-busy]="noteLoading()" (keydown.escape)="focusList()">
+      @if (selectedNote(); as current) {
+      <app-brain-note-detail
+        [note]="current"
+        (moreFromBook)="moreFromBook(current)"
+        (relatedChosen)="selectNote($event)"
+      />
+      } @else if (noteLoading()) {
+      <div class="detail-state">
+        <nostos-loading-indicator label="Loading the note" />
+      </div>
+      } @else if (noteFailed()) {
+      <div class="detail-state">
+        <nostos-empty-state error concept="note" message="This note could not be found. It may have been deleted."
+          [retryable]="false">
+          <button appButton variant="secondary" size="sm" type="button" (click)="clearNoteSelection()">Close</button>
+        </nostos-empty-state>
+      </div>
+      } @else {
+      <div class="detail-state">
+        <nostos-empty-state concept="note" message="Choose a note" [detail]="noNoteText" />
+      </div>
+      }
+    </aside>
+    }
+  </div>
 </div>
 
 @if (selecting()) {
