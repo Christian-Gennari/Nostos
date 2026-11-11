@@ -84,7 +84,9 @@ test('captured source survives Brain → Keep in a document → Studio on the re
       waitUntil: 'domcontentloaded',
     });
 
-    const inspector = page.locator('app-brain-note-page app-note-item');
+    // At 1280 the note opens in the Brain's wide detail pane (issue #1531);
+    // below that it is the note's own page. Both use the same note item.
+    const inspector = page.locator('app-note-item');
     await expect(inspector).toBeVisible();
     await expect(inspector.locator('.note-item-book')).toHaveText(bookTitle);
 
