@@ -23,8 +23,10 @@ using Nostos.Backend.Serialization;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.BookUpload;
+using Nostos.Backend.Services.Calibre;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Library.Imports;
 using Nostos.Backend.Services.Mcp;
 using Nostos.Backend.Services.Mcp.OAuth;
 using Nostos.Backend.Services.Notes;
@@ -277,6 +279,19 @@ builder.Services.AddSingleton<IBookAssetStorage>(
 builder.Services.AddSingleton<IBookTrackStorage>(
     sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 
+// Calibre library import (issue #1527): the same read-only folder discipline as
+// external media, with a separate administrator-named root so a Calibre library
+// is not also offered as a set of loose media folders. The import itself is
+// host-agnostic (Nostos.Product); only this folder source is SelfHosted.
+builder.Services.AddOptions<CalibreOptions>()
+    .BindConfiguration(CalibreOptions.SectionName);
+builder.Services.AddSingleton<CalibreFolderSource>();
+builder.Services.AddSingleton<ICalibreLibrarySource>(
+    sp => sp.GetRequiredService<CalibreFolderSource>());
+builder.Services.AddSingleton<ICalibreLibraryAvailability>(
+    sp => sp.GetRequiredService<CalibreFolderSource>());
+builder.Services.AddSingleton<CalibreImportJob>();
+
 // Resumable book-file uploads (#1266). The staging store lives beside the
 // migration transfer root but in its own namespace. The capability endpoint
 // advertises exactly this registration, and the route group is mapped only
@@ -383,6 +398,9 @@ var app = builder.Build();
 // A mistyped ExternalMedia:Root must stop the server with its own message,
 // not surface later as a failed capability request.
 app.Services.GetRequiredService<ExternalMediaRoot>();
+// The same for Calibre:LibraryRoot: a relative path is a configuration error,
+// not something to discover when the first import fails.
+app.Services.GetRequiredService<CalibreFolderSource>();
 
 // Repair the matched DB/media generation before bootstrap, workers, or traffic.
 // Corrupt/unsupported/inconsistent journals refuse host startup with a safe error.
@@ -526,6 +544,7 @@ app.MapNostosProductEndpoints(
     NostosProductEndpointPolicies.None with { MapResumableBookUploadEndpoints = true });
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
+app.MapCalibreEndpoints();
 app.MapMcpAccessTokenEndpoints();
 app.MapMcpOAuthEndpoints();
 

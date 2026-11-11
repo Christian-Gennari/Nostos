@@ -1,0 +1,587 @@
+@if (isOpen()) {
+<app-modal-shell
+  closeLabel="Close Calibre import"
+  [isOpen]="true"
+  variant="sheet"
+  cardClass="calibre-card"
+  [maxWidth]="'680px'"
+  [maxHeight]="'min(820px, calc(100dvh - 2.5rem))'"
+  [layer]="110"
+  [busy]="busy() || undoBusy()"
+  [dismissOnBackdrop]="stage() === 'review'"
+  ariaLabelledBy="calibre-title"
+  [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
+  (closed)="close()"
+>
+  <header class="calibre-head" shellHeader>
+    <h2 id="calibre-title" class="calibre-title">
+      {{ stage() === 'review' ? 'Review before importing' : 'Import from Calibre' }}
+    </h2>
+  </header>
+
+  <div class="calibre-body">
+    @if (undoError()) {
+      <p appNotice tone="danger" role="alert">{{ undoError() }}</p>
+    }
+
+    @switch (stage()) {
+      @case ('loading') {
+        <div class="calibre-progress" role="status" aria-live="polite">
+          <nostos-loading-indicator decorative size="xl" />
+          <p class="calibre-progress-title">Reading your Calibre library…</p>
+          <p class="calibre-progress-note">
+            Nostos reads metadata.db and the book folders beside it. Nothing is changed.
+          </p>
+        </div>
+      }
+
+      @case ('setup') {
+        <p class="calibre-hint">
+          Nostos can bring in the books you keep in Calibre — titles, authors, series, tags,
+          publisher, ISBN, ratings, comments, covers and the EPUB, PDF and audio files
+          themselves.
+        </p>
+        <p class="calibre-hint">{{ promise }}</p>
+
+        <div appNotice class="calibre-setup" role="status" data-testid="calibre-setup">
+          <p>Nostos has not been given a Calibre library yet. Whoever runs this server sets it up once:</p>
+          <ul>
+            <li>
+              <strong>Docker:</strong> mount your Calibre library at
+              <code>{{ dockerPath }}</code>, read-only, by adding
+              <code>- /mnt/calibre:{{ dockerPath }}:ro</code> under <code>volumes</code>, then run
+              <code>docker compose up -d</code>.
+            </li>
+            <li>
+              <strong>Without Docker:</strong> set <code>Calibre__LibraryRoot</code> to the folder that
+              holds <code>metadata.db</code> and restart Nostos.
+            </li>
+          </ul>
+          <p>The folder must contain Calibre's own <code>metadata.db</code>, not a copy of the books alone.</p>
+        </div>
+
+        @if (recent().length > 0) {
+          <section class="calibre-section" aria-labelledby="calibre-recent-title">
+            <div class="calibre-section-header">
+              <h3 class="calibre-section-title" id="calibre-recent-title">Recent imports</h3>
+            </div>
+            <ul class="calibre-rows">
+              @for (batch of recent(); track batch.id) {
+                <li class="calibre-row calibre-recent-row">
+                  <span class="calibre-row-text">
+                    <span class="calibre-row-title">
+                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'file') }}
+                    </span>
+                    <span class="calibre-row-sub">{{ batch.createdAtUtc | nostosDate: 'datetime' }}</span>
+                  </span>
+                  <button appButton type="button" variant="ghost" size="sm" [disabled]="undoBusy()" (click)="askUndoRecent(batch)">
+                    Undo
+                  </button>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      }
+
+      @case ('unavailable') {
+        <div appNotice tone="caution" class="calibre-setup" role="alert" data-testid="calibre-unavailable">
+          <p>
+            <strong>Nostos cannot see the Calibre library right now.</strong>
+            @if (error()) {
+              {{ error() }}
+            } @else {
+              Check that the folder is mounted at <code>{{ dockerPath }}</code> and holds
+              <code>metadata.db</code>.
+            }
+          </p>
+          <p>{{ promise }}</p>
+        </div>
+        <p class="calibre-hint">
+          If this is the first time, mount the library read-only:
+          <code>- /mnt/calibre:{{ dockerPath }}:ro</code> under <code>volumes</code>, then run
+          <code>docker compose up -d</code>. Without Docker, set <code>Calibre__LibraryRoot</code>.
+        </p>
+      }
+
+      @case ('review') {
+        <p class="calibre-hint">
+          Nothing has been added yet. Check the formats to bring, then import. Your Calibre library is
+          read only: the files are copied into Nostos and the originals stay where they are.
+        </p>
+
+        @if (summary(); as found) {
+          <p class="calibre-counts" data-testid="calibre-counts">
+            {{ countLabel(found.books, 'book') }} found ·
+            {{ found.ready }} ready
+            @if (found.inLibrary > 0) {
+              ({{ found.inLibrary }} already in your library)
+            }
+            · {{ found.alreadyHere }} already here
+            @if (found.needsReview > 0) {
+              · {{ found.needsReview }} to check
+            }
+            @if (found.skipped > 0) {
+              · {{ found.skipped }} skipped
+            }
+          </p>
+        }
+
+        @for (warning of warnings(); track $index) {
+          <p appNotice class="calibre-warning" role="status">{{ warning }}</p>
+        }
+
+        @if (summary()?.truncated) {
+          <p appNotice tone="caution" class="calibre-warning" role="status">
+            This library is larger than one preview reads. Only the first books were listed; import
+            them, then read the library again for the rest.
+          </p>
+        }
+
+        @if (hasTags()) {
+          <label class="calibre-option" data-testid="calibre-map-tags">
+            <input
+              type="checkbox"
+              appCheckbox
+              [checked]="mapTags()"
+              (change)="onMapTags($event)"
+            />
+            <span>
+              <span class="calibre-option-title">Create collections from Calibre tags</span>
+              <span class="calibre-option-hint">
+                Every tag already becomes a category on the book. Tick this to also put the book in a
+                collection for each tag. Missing collections are created; nothing is created unless you
+                tick this.
+              </span>
+            </span>
+          </label>
+        }
+
+        @if (customColumns().length > 0) {
+          <details class="calibre-columns" data-testid="calibre-custom-columns">
+            <summary class="calibre-columns-toggle">
+              <nostos-icon name="caret-right" [size]="12" class="calibre-disclosure"></nostos-icon>
+              Custom columns
+            </summary>
+            <ul class="calibre-columns-list">
+              @for (column of customColumns(); track column.label) {
+                <li class="calibre-column">
+                  <span class="calibre-column-name">#{{ column.label }}</span>
+                  <span class="calibre-column-state">
+                    @if (column.status === 'used') {
+                      Read — {{ column.reason }}
+                    } @else {
+                      Left alone — {{ column.reason }}
+                    }
+                  </span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+
+        @if (toCheck().length > 0) {
+          <section class="calibre-section" aria-labelledby="calibre-check-title">
+            <div class="calibre-section-header">
+              <h3 class="calibre-section-title" id="calibre-check-title">Check these</h3>
+              <span class="calibre-count-badge">{{ toCheck().length }}</span>
+            </div>
+            <p class="calibre-section-hint">
+              These look like books you already have, but not certainly. Pick the library book, or tick a
+              format to add them as new.
+            </p>
+            <ul class="calibre-rows">
+              @for (row of toCheck(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (ready().length > 0) {
+          <section class="calibre-section" aria-labelledby="calibre-ready-title">
+            <div class="calibre-section-header">
+              <h3 class="calibre-section-title" id="calibre-ready-title">Ready</h3>
+              <span class="calibre-count-badge">{{ ready().length }}</span>
+              @if (selectedBooks() < ready().length) {
+                <button appButton type="button" variant="ghost" size="sm" class="calibre-select-all" (click)="selectAllReady()">
+                  Select all
+                </button>
+              }
+            </div>
+            <ul class="calibre-rows">
+              @for (row of ready(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (alreadyHereRows().length > 0) {
+          <details class="calibre-section calibre-already" data-testid="calibre-already-here">
+            <summary class="calibre-section-header">
+              <nostos-icon name="caret-right" [size]="12" class="calibre-disclosure"></nostos-icon>
+              <h3 class="calibre-section-title">Already in Nostos</h3>
+              <span class="calibre-count-badge">{{ alreadyHereRows().length }}</span>
+            </summary>
+            <p class="calibre-section-hint">These formats are already in your library. Nothing will be duplicated.</p>
+            <ul class="calibre-rows">
+              @for (row of alreadyHereRows(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </details>
+        }
+
+        @if (skipped().length > 0) {
+          <details class="calibre-section calibre-unplaced" data-testid="calibre-skipped">
+            <summary class="calibre-section-header">
+              <nostos-icon name="caret-right" [size]="12" class="calibre-disclosure"></nostos-icon>
+              <h3 class="calibre-section-title">Not imported</h3>
+              <span class="calibre-count-badge">{{ skipped().length }}</span>
+            </summary>
+            <ul class="calibre-rows">
+              @for (entry of skipped(); track $index) {
+                <li class="calibre-row">
+                  <span class="calibre-row-text">
+                    <span class="calibre-row-title">{{ entry.title || unknownBook }}</span>
+                    <span class="calibre-row-sub">
+                      @if (entry.author) {
+                        {{ entry.author }} ·
+                      }
+                      {{ entry.reason }}
+                    </span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      }
+
+      @case ('importing') {
+        <div class="calibre-progress" role="status" aria-live="polite" data-testid="calibre-progress">
+          <nostos-loading-indicator decorative size="xl" />
+          <p class="calibre-progress-title">Importing into your library…</p>
+          <p class="calibre-progress-count">{{ statusLine() }}</p>
+          <div class="calibre-progress-track" aria-hidden="true">
+            <span [style.width.%]="progressPercent()"></span>
+          </div>
+          @if (progress()?.current; as current) {
+            <p class="calibre-progress-current">{{ current }}</p>
+          }
+          <p class="calibre-progress-note">
+            You can close this window. The import runs on the server, and reopening Settings shows its progress.
+          </p>
+        </div>
+      }
+
+      @case ('result') {
+        <div class="calibre-result-summary" data-testid="calibre-summary" aria-live="polite">
+          <nostos-icon
+            [name]="undone() === null && imported().length > 0 ? 'check-circle' : 'warning-circle'"
+            [size]="22"
+            weight="light"
+          ></nostos-icon>
+          <div>
+            <p class="calibre-result-headline">{{ headline() }}</p>
+            @if (summaryLine()) {
+              <p class="calibre-result-sub">{{ summaryLine() }}</p>
+            }
+          </div>
+        </div>
+
+        @if (error()) {
+          <p appNotice tone="danger" role="alert">{{ error() }}</p>
+        }
+
+        @if (imported().length > 0 && undone() === null) {
+          <section class="calibre-section" aria-labelledby="calibre-imported-title">
+            <div class="calibre-section-header">
+              <h3 class="calibre-section-title" id="calibre-imported-title">Imported</h3>
+              <span class="calibre-count-badge">{{ imported().length }}</span>
+            </div>
+            <ul class="calibre-rows">
+              @for (book of imported(); track book.sourceKey) {
+                <li class="calibre-row">
+                  <span class="calibre-row-text">
+                    <span class="calibre-row-title">{{ book.bookTitle || book.title || unknownBook }}</span>
+                    <span class="calibre-row-sub">
+                      @if (book.created) {
+                        Added as a new book
+                      } @else {
+                        File added to the existing book
+                      }
+                      · {{ countLabel(book.fileCount, 'file') }}
+                      @if (book.message) {
+                        · {{ book.message }}
+                      }
+                    </span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (unchanged().length > 0) {
+          <section class="calibre-section" aria-labelledby="calibre-unchanged-title">
+            <div class="calibre-section-header">
+              <h3 class="calibre-section-title" id="calibre-unchanged-title">Already here</h3>
+              <span class="calibre-count-badge">{{ unchanged().length }}</span>
+            </div>
+            <ul class="calibre-rows">
+              @for (book of unchanged(); track book.sourceKey) {
+                <li class="calibre-row">
+                  <span class="calibre-row-text">
+                    <span class="calibre-row-title">{{ book.bookTitle || book.title || unknownBook }}</span>
+                    <span class="calibre-row-sub">{{ book.message || 'Every chosen format is already in Nostos.' }}</span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (failed().length > 0) {
+          <details class="calibre-section calibre-unplaced" [open]="imported().length === 0">
+            <summary class="calibre-section-header">
+              <nostos-icon name="caret-right" [size]="12" class="calibre-disclosure"></nostos-icon>
+              <h3 class="calibre-section-title">Not imported</h3>
+              <span class="calibre-count-badge">{{ failed().length }}</span>
+            </summary>
+            <ul class="calibre-rows">
+              @for (book of failed(); track book.sourceKey) {
+                <li class="calibre-row">
+                  <span class="calibre-row-text">
+                    <span class="calibre-row-title">{{ book.title || unknownBook }}</span>
+                    <span class="calibre-row-sub">{{ book.message || 'This book could not be imported.' }}</span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+
+        @if (recent().length > 0 && undone() === null) {
+          <section class="calibre-section calibre-recent" aria-labelledby="calibre-recent-result-title">
+            <div class="calibre-section-header">
+              <h3 class="calibre-section-title" id="calibre-recent-result-title">Recent imports</h3>
+            </div>
+            <ul class="calibre-rows">
+              @for (batch of recent(); track batch.id) {
+                <li class="calibre-row calibre-recent-row">
+                  <span class="calibre-row-text">
+                    <span class="calibre-row-title">
+                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'file') }}
+                    </span>
+                    <span class="calibre-row-sub">{{ batch.createdAtUtc | nostosDate: 'datetime' }}</span>
+                  </span>
+                  @if (batch.id !== batchId()) {
+                    <button appButton type="button" variant="ghost" size="sm" [disabled]="undoBusy()" (click)="askUndoRecent(batch)">
+                      Undo
+                    </button>
+                  }
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      }
+    }
+  </div>
+
+  @if (stage() === 'setup' || stage() === 'unavailable') {
+    <app-dialog-actions shellActions>
+      <button appButton type="button" variant="primary" (click)="close()">Close</button>
+    </app-dialog-actions>
+  }
+
+  @if (stage() === 'review') {
+    <app-dialog-actions shellActions>
+      <button
+        appButton
+        dialogActionsStart
+        type="button"
+        variant="ghost"
+        [disabled]="busy()"
+        (click)="refresh()"
+      >
+        <nostos-icon name="arrow-clockwise" [size]="14"></nostos-icon>
+        Read again
+      </button>
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        data-testid="calibre-commit"
+        [disabled]="!canImport()"
+        (click)="importNow()"
+      >
+        @if (selectedFormats() === 0) {
+          Nothing selected
+        } @else {
+          Import {{ countLabel(selectedBooks(), 'book') }}, {{ countLabel(selectedFormats(), 'file') }}
+        }
+      </button>
+    </app-dialog-actions>
+  }
+
+  @if (stage() === 'result') {
+    <app-dialog-actions shellActions>
+      @if (batchId() && undone() === null) {
+        <button
+          appButton
+          dialogActionsStart
+          type="button"
+          variant="ghost"
+          data-testid="calibre-undo"
+          [disabled]="undoBusy()"
+          [busy]="undoBusy()"
+          (click)="askUndoImport()"
+        >
+          <nostos-icon name="arrow-counter-clockwise" [size]="14"></nostos-icon>
+          Undo import
+        </button>
+      }
+      <button appButton type="button" variant="secondary" [disabled]="undoBusy()" (click)="importAgain()">
+        Import again
+      </button>
+      <button appButton type="button" variant="primary" [disabled]="undoBusy()" (click)="close()">Done</button>
+    </app-dialog-actions>
+  }
+</app-modal-shell>
+}
+
+<app-confirm-modal
+  [isOpen]="pendingUndo() !== null"
+  heading="Undo this import?"
+  [description]="undoDescription()"
+  confirmLabel="Undo import"
+  busyLabel="Undoing…"
+  icon="arrow-counter-clockwise"
+  [busy]="undoBusy()"
+  (confirm)="confirmUndo()"
+  (cancel)="cancelUndo()"
+></app-confirm-modal>
+
+<!-- One Calibre book: what it is, the formats it can bring, and where it goes. -->
+<ng-template #reviewRow let-row>
+  <li
+    class="calibre-review"
+    data-testid="calibre-review-row"
+    [class.is-included]="hasSelection(row)"
+    [class.is-question]="row.book.match === 'suggested' && !row.chosenBookId"
+    [class.is-already]="alreadyHere(row)"
+  >
+    <div class="calibre-review-source">
+      <span class="calibre-row-title">{{ row.book.title || unknownBook }}</span>
+      <span class="calibre-row-sub">
+        {{ row.book.author || unknownAuthor }}
+        @if (row.book.series) {
+          · {{ row.book.series }}
+          @if (row.book.volumeNumber) {
+            #{{ row.book.volumeNumber }}
+          }
+        }
+        @if (row.book.publishedDate) {
+          · {{ row.book.publishedDate }}
+        }
+      </span>
+
+      <span class="calibre-chips">
+        @if (row.book.rating > 0) {
+          <span class="calibre-chip">{{ row.book.rating }} {{ row.book.rating === 1 ? 'star' : 'stars' }}</span>
+        }
+        @if (row.book.readAt) {
+          <span class="calibre-chip">Read {{ row.book.readAt | nostosDate: 'date' }}</span>
+        }
+        @if (row.book.tags.length > 0) {
+          <span class="calibre-chip">{{ row.book.tags.length }} {{ row.book.tags.length === 1 ? 'tag' : 'tags' }}</span>
+        }
+        @if (row.book.isbn) {
+          <span class="calibre-chip">ISBN {{ row.book.isbn }}</span>
+        }
+      </span>
+
+      @if (row.book.readNotice) {
+        <p class="calibre-note">{{ row.book.readNotice }}</p>
+      }
+
+      @if (row.book.tags.length > 0) {
+        <p class="calibre-tags">Tags: {{ row.book.tags.join(', ') }}</p>
+      }
+
+      <div class="calibre-formats">
+        @for (format of row.book.formats; track format.key) {
+          <label class="calibre-format" [class.is-already]="format.alreadyHere">
+            <input
+              type="checkbox"
+              appCheckbox
+              [checked]="row.selected.has(format.key)"
+              [disabled]="format.alreadyHere || busy()"
+              (change)="toggleFormat(row, format)"
+            />
+            <span class="calibre-format-name">{{ format.format }}</span>
+            @if (format.alreadyHere) {
+              <span class="calibre-format-state">already here</span>
+            } @else if (formatSize(format.bytes)) {
+              <span class="calibre-format-state">{{ formatSize(format.bytes) }}</span>
+            }
+          </label>
+        }
+      </div>
+
+      @if (row.book.unsupportedFormats.length > 0) {
+        <p class="calibre-note">
+          Also in Calibre:
+          @for (file of row.book.unsupportedFormats; track file.fileName; let last = $last) {
+            {{ file.format }} ({{ file.reason }}){{ last ? '' : ', ' }}
+          }
+        </p>
+      }
+
+      @if (row.book.description) {
+        <details class="calibre-words">
+          <summary class="calibre-words-toggle">
+            <nostos-icon name="caret-right" [size]="12" class="calibre-disclosure"></nostos-icon>
+            Description
+          </summary>
+          <p class="calibre-words-text">{{ row.book.description }}</p>
+        </details>
+      }
+
+      @if (row.book.match === 'suggested') {
+        <div class="calibre-candidates">
+          <span class="calibre-candidate-label">
+            @if (row.chosenBookLabel) {
+              Goes into <strong>{{ row.chosenBookLabel }}</strong>
+              <button appButton type="button" variant="ghost" size="sm" (click)="clearCandidate(row)">Change</button>
+            } @else {
+              Is this already in your library?
+            }
+          </span>
+          @if (!row.chosenBookLabel) {
+            <div class="calibre-candidate-list">
+              @for (candidate of row.book.candidates; track candidate.bookId) {
+                <button appButton type="button" variant="secondary" size="sm" (click)="chooseCandidate(row, candidate)">
+                  {{ candidate.title }}{{ candidate.author ? ' — ' + candidate.author : '' }}
+                </button>
+              }
+            </div>
+          }
+        </div>
+      } @else if (row.book.match === 'exact' && !alreadyHere(row)) {
+        <p class="calibre-target">
+          <nostos-icon name="link-simple" [size]="13"></nostos-icon>
+          Goes into <strong>{{ row.book.existingTitle || row.book.title }}</strong> in your library
+        </p>
+      } @else if (row.book.match === 'none') {
+        <p class="calibre-target">
+          <nostos-icon name="plus" [size]="13"></nostos-icon>
+          New book in Nostos
+        </p>
+      }
+    </div>
+  </li>
+</ng-template>

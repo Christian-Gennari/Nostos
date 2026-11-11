@@ -1,0 +1,560 @@
+/* The backdrop, card, scrim and entrance animation belong to `app-modal-shell`;
+   this file styles the working area inside it. Header, section header, count
+   badge and row recipes follow the reading-history and highlight import
+   dialogs, so the imports read as one family. */
+
+:host {
+  display: contents;
+}
+
+.calibre-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.calibre-title {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+}
+
+.calibre-body {
+  padding: 0.95rem 1.25rem 1.25rem;
+}
+
+.calibre-hint {
+  margin: 0 0 1.15rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.calibre-counts {
+  margin: -0.5rem 0 1rem;
+  font-size: 0.74rem;
+  color: var(--color-text-light);
+}
+
+.calibre-warning {
+  margin: 0 0 0.8rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+/* --- Setup -------------------------------------------------------------- */
+
+.calibre-setup {
+  margin-bottom: 1.15rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.calibre-setup p {
+  margin: 0 0 0.55rem;
+}
+
+.calibre-setup p:last-child {
+  margin-bottom: 0;
+}
+
+.calibre-setup ul {
+  margin: 0 0 0.55rem;
+  padding-left: 1.1rem;
+}
+
+.calibre-setup li + li {
+  margin-top: 0.35rem;
+}
+
+.calibre-setup code,
+.calibre-hint code {
+  padding: 0 0.25em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 0.95em;
+  color: var(--color-text-main);
+}
+
+/* --- Progress ----------------------------------------------------------- */
+
+.calibre-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--color-text-light);
+}
+
+.calibre-progress p {
+  margin: 0;
+}
+
+.calibre-progress-title {
+  margin-top: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.calibre-progress-count,
+.calibre-progress-current,
+.calibre-progress-note {
+  max-width: 100%;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.calibre-progress-current {
+  margin-top: 0.35rem;
+  color: var(--color-text-main);
+}
+
+.calibre-progress-note {
+  margin-top: 0.6rem;
+  line-height: 1.45;
+}
+
+.calibre-progress-track {
+  width: min(320px, 100%);
+  height: 5px;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-hover);
+}
+
+.calibre-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+  transition: width 0.25s ease;
+}
+
+/* --- Sections and rows -------------------------------------------------- */
+
+.calibre-section + .calibre-section,
+.calibre-warning + .calibre-section {
+  margin-top: 1.15rem;
+}
+
+.calibre-recent {
+  margin-top: 1.4rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.calibre-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.72rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+}
+
+.calibre-section-title {
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.calibre-section-hint {
+  margin: -0.25rem 0 0.55rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--color-text-light);
+}
+
+.calibre-count-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+summary.calibre-section-header {
+  cursor: pointer;
+  list-style: none;
+}
+
+summary.calibre-section-header::-webkit-details-marker {
+  display: none;
+}
+
+summary.calibre-section-header:focus-visible,
+summary.calibre-columns-toggle:focus-visible,
+summary.calibre-words-toggle:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.calibre-disclosure {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.calibre-unplaced[open] .calibre-disclosure,
+.calibre-already[open] .calibre-disclosure,
+.calibre-columns[open] .calibre-disclosure,
+.calibre-words[open] .calibre-disclosure {
+  transform: rotate(90deg);
+}
+
+.calibre-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.calibre-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  text-align: left;
+  font: inherit;
+}
+
+.calibre-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.calibre-row-title {
+  font-size: 0.88rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calibre-row-sub {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calibre-recent-row {
+  padding: 0.45rem 0.7rem;
+}
+
+/* --- Review ------------------------------------------------------------- */
+
+.calibre-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+
+.calibre-option input {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.calibre-option-title {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.calibre-option-hint {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.calibre-columns {
+  margin: 0 0 1rem;
+}
+
+.calibre-columns-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.calibre-columns-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.calibre-columns-list {
+  margin: 0.3rem 0 0;
+  padding: 0 0 0 1.05rem;
+  list-style: none;
+}
+
+.calibre-column {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.calibre-column + .calibre-column {
+  margin-top: 0.2rem;
+}
+
+.calibre-column-name {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.calibre-column-state {
+  color: var(--color-text-muted);
+}
+
+.calibre-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+}
+
+/* A row with a chosen format is the one the primary action will bring. */
+.calibre-review.is-included {
+  border-color: var(--border-focus);
+}
+
+/* A suggested match still needs an answer. */
+.calibre-review.is-question {
+  border-color: var(--border-focus);
+}
+
+.calibre-review.is-already {
+  background: transparent;
+}
+
+.calibre-review-source {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.calibre-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.calibre-chip {
+  padding: 1px 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.calibre-tags {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.calibre-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.calibre-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+
+.calibre-format.is-already {
+  color: var(--color-text-light);
+  cursor: default;
+}
+
+.calibre-format input {
+  flex-shrink: 0;
+}
+
+.calibre-format-name {
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+}
+
+.calibre-format-state {
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+}
+
+.calibre-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--color-text-light);
+}
+
+.calibre-target {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.calibre-target strong {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.calibre-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.calibre-candidate-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.calibre-candidate-label strong {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.calibre-candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.calibre-words {
+  margin-top: 0.35rem;
+}
+
+.calibre-words-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.calibre-words-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.calibre-words-text {
+  margin: 0.25rem 0 0;
+  padding-left: 1.05rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-text-main);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.calibre-select-all {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* --- Result ------------------------------------------------------------- */
+
+.calibre-result-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin-bottom: 1.15rem;
+  color: var(--color-text-main);
+}
+
+.calibre-result-summary p {
+  margin: 0;
+}
+
+.calibre-result-headline {
+  font-family: 'Newsreader', serif;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.calibre-result-sub {
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}

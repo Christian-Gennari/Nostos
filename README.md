@@ -170,6 +170,7 @@ The easiest way to start: **[get started at nostos.page](https://nostos.page/sta
 - **Memory:** Nostos uses about 110–125 MB when idle and about 220–330 MB with a small library (50 ebooks with covers and 5 audiobooks). Give it at least 512 MB; 1 GB leaves room for large imports and backups.
 - **Update:** `docker compose pull && docker compose up -d`. `latest` is published only after the full CI passes on `main` and that exact image has passed its start-up and persistence check; it never moves back to an older revision. To pin a build, set `NOSTOS_IMAGE_TAG=selfhosted-sha-<commit>`; a commit that only changes documentation shares its parent's image. Older `sha-*` tags are not SelfHosted builds.
 - **Books already on your server:** mount the folder at `/external/media` (read-only), then open **Settings → This server → External media**. See the [External media guide](docs/external-media.md).
+- **Coming from Calibre:** mount the library folder at `/external/calibre` (read-only), then open **Settings → Import → Calibre library**. See the [Calibre import guide](docs/calibre-import.md).
 - **Coming from an older image?** Older images kept the key ring inside the container. Copy it into `/data/keys` before you replace the container, or re-enter your AI keys afterwards.
 
 The [self-hosting docs](https://docs.nostos.page/get-started/quickstart/) cover requirements, reverse proxies, backups and updates.
@@ -214,7 +215,7 @@ Nostos/
 
 - **[docs.nostos.page](https://docs.nostos.page):** guides for Nostos Cloud and self-hosting.
 - **[Releases](https://github.com/Christian-Gennari/Nostos/releases):** what's new. How releases are made: [docs/releases.md](docs/releases.md).
-- **Guides in this repo:** [External media](docs/external-media.md) · [Read aloud](docs/read-aloud.md) · [Content providers](docs/content-providers.md) · [Library portability](docs/cloud/portability.md) · [SelfHosted activation & recovery](docs/selfhosted-activation-recovery.md)
+- **Guides in this repo:** [External media](docs/external-media.md) · [Calibre import](docs/calibre-import.md) · [Read aloud](docs/read-aloud.md) · [Content providers](docs/content-providers.md) · [Library portability](docs/cloud/portability.md) · [SelfHosted activation & recovery](docs/selfhosted-activation-recovery.md)
 - **For developers and agents:** [REST API](Nostos.Backend/_docs/endpoints.md) · [Library skill for agents](.agents/skills/nostos-library/SKILL.md) · [Deployment capabilities](docs/cloud/deployment-modes.md) · [PostgreSQL compatibility](docs/cloud/postgresql-compatibility-spike.md)
 - **[Security policy](SECURITY.md):** how to report a vulnerability.
 

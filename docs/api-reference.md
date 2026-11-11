@@ -478,6 +478,39 @@ at 2 KB. It never contains highlight text, titles, authors, file names, paths
 or user identifiers. In Cloud logs, search for `HighlightImportShape` and
 group by `Outcome`; SelfHosted writes it to the app's normal warning log.
 
+### Calibre library import — `/api/calibre`
+
+SelfHosted only. Settings → Import → Calibre library opens the review dialog.
+The host reads `metadata.db` and the book folders from the one folder named by
+`Calibre:LibraryRoot`; no route accepts a path. The database is opened read-only
+and the book files are only opened for reading.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `GET` | `/api/calibre/` | `{ configured, available, import }`. Always answers, so Settings can explain how to set a library up. |
+| `GET` | `/api/calibre/preview` | Read the library and return `{ source, summary, books, skipped, customColumns, warnings }` without writing. |
+| `POST` | `/api/calibre/import` | Body `{ decisions }`; start one background import and return `202` with its progress. |
+| `GET` | `/api/calibre/import` | The running or last import: `{ status, total, completed, current, batchId, results, error }`. |
+| `GET` | `/api/calibre/batches` | The five most recent Calibre imports, with book and file counts. |
+| `DELETE` | `/api/calibre/batches/{id}` | Undo an import; return `{ removed, kept }` or `404`. |
+
+Preview books carry the Calibre `sourceKey`, title/author, series and volume,
+ISBN, publisher, publication date, `rating` (0–5), plain-text `description`,
+tags, `readAt`, `match` (`exact`, `suggested` or `none`), candidates, and
+`formats`. Each format has a stable `key`, its `format` name, `fileName`,
+`bytes`, `kind` (`ebook` or `audiobook`), `alreadyHere`, `existingBookId` and
+`selectedByDefault`. `unsupportedFormats` lists the files Nostos cannot read
+with the reason. `skipped` lists books with no readable format. `customColumns`
+lists every Calibre custom column with `status: "used"` (a common read or
+read-date column) or `"skipped"` and why.
+
+A decision is `{ sourceKey, formats, bookId?, createCollections? }`.
+`formats` names the format keys to bring; an empty list leaves the book out.
+`bookId` picks a library book for a `suggested` match; without it the book is
+created. `createCollections` is the only way tags become collections. Each
+commit is one `BookImportBatch`, so Undo takes it all back; a created book that
+has since been read or annotated is kept.
+
 ---
 
 ## Portable archives and library migration — /api/portability

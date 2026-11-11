@@ -278,6 +278,7 @@ public static class NostosProductComposition
         services.AddScoped<KoreaderNoteImportService>();
         services.AddScoped<HighlightImportService>();
         services.AddScoped<ReadingHistoryImportService>();
+        services.AddScoped<CalibreImportService>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();

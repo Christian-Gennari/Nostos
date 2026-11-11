@@ -1,4 +1,5 @@
 import { HighlightImportService } from '../core/services/highlight-import.service';
+import { CalibreImportService } from '../core/services/calibre-import.service';
 import { ReadingHistoryImportService } from '../core/services/reading-history-import.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -88,6 +89,7 @@ const selfHostedCapabilities: DeploymentCapabilities = {
   usageMeteringAvailable: false,
   accountManagementUrl: null,
   feedbackUrl: null,
+  supportsCalibreImport: true,
 };
 
 const cloudCapabilities: DeploymentCapabilities = {
@@ -405,6 +407,11 @@ const mcpAccessTokensServiceMock = {
   denyRequest: vi.fn(),
 };
 
+const calibreImportServiceMock = {
+  isOpen: signal(false),
+  open: vi.fn(),
+};
+
 const externalMediaServiceMock = {
   status: vi.fn(() =>
     of({
@@ -463,6 +470,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
         { provide: ExternalMediaService, useValue: externalMediaServiceMock },
+        { provide: CalibreImportService, useValue: calibreImportServiceMock },
         { provide: McpConnectedAppsService, useValue: mcpAccessTokensServiceMock },
       ],
     }).compileComponents();
@@ -1426,6 +1434,19 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.destroy();
     }
     expect(externalMediaServiceMock.status).not.toHaveBeenCalled();
+  });
+
+  it('offers the Calibre import on a SelfHosted server and hides it on Cloud', () => {
+    capabilitiesServiceMock.get.mockReturnValueOnce(
+      of({ ...selfHostedCapabilities, supportsCalibreImport: true }),
+    );
+    render();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-calibre-card"]')).toBeTruthy();
+    fixture.destroy();
+
+    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    render();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-calibre-card"]')).toBeNull();
   });
 
   it('offers Connected apps when the server keeps a record of them', () => {

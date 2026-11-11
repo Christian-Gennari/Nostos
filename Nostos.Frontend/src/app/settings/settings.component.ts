@@ -61,6 +61,7 @@ import {
   READING_HISTORY_SOURCE_EXPORT_HINT,
   ReadingHistoryImportService,
 } from '../core/services/reading-history-import.service';
+import { CalibreImportService } from '../core/services/calibre-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -342,6 +343,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
   private readingHistoryImport = inject(ReadingHistoryImportService);
+  private calibreImport = inject(CalibreImportService);
 
   @ViewChild('firstRunImportInput')
   private firstRunImportInput?: ElementRef<HTMLInputElement>;
@@ -500,6 +502,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
     () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
   );
   /**
+   * A SelfHosted server that can read a Calibre library (#1527).
+   * Server-authoritative: never inferred from `deploymentMode`.
+   */
+  readonly supportsCalibreImport = computed(
+    () => this.deploymentCapabilities()?.supportsCalibreImport === true,
+  );
+  /**
    * Settings → Connected apps (#1469): a server that keeps a record of the AI
    * apps connected over MCP (SelfHosted access tokens; Cloud sign-ins once it
    * advertises them). Server-authoritative, never inferred from the mode.
@@ -653,6 +662,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   openReadingHistoryImport(): void {
     this.readingHistoryImport.open();
+  }
+
+  openCalibreImport(): void {
+    this.calibreImport.open();
   }
 
   /** The .nostos import lives with the rest of Backups & data. */

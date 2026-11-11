@@ -613,6 +613,38 @@
               </div>
             </section>
 
+            @if (supportsCalibreImport()) {
+              <section class="settings-card" data-testid="import-calibre-card">
+                <div class="card-header">
+                  <div class="card-header-copy">
+                    <h2>Calibre library</h2>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="setting-row" data-testid="import-source-calibre">
+                    <div class="setting-label">
+                      <span class="label-text">Calibre library</span>
+                      <span class="label-desc">
+                        Bring in your Calibre books with their authors, series, tags, ratings, covers, read
+                        dates and files. Your Calibre library is only read; you see every book before
+                        anything is added.
+                      </span>
+                    </div>
+                    <button
+                      appButton
+                      variant="secondary"
+                      class="import-action"
+                      data-testid="import-action-calibre"
+                      aria-label="Import from Calibre"
+                      (click)="openCalibreImport()"
+                    >
+                      Import…
+                    </button>
+                  </div>
+                </div>
+              </section>
+            }
+
             @if (supportsExternalMediaLibraries()) {
               <section class="settings-card" data-testid="import-books-card">
                 <div class="card-header">
