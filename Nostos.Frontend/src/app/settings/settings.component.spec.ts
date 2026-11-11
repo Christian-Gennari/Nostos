@@ -2221,7 +2221,7 @@ describe('SettingsComponent backup-only surface', () => {
     const card = assistantCard();
     expect(card).not.toBeNull();
     expect(card!.textContent).toContain(
-      'Show the dock capsule for capturing thoughts while reading.',
+      'Read, capture and organise anywhere in Nostos. Changes are applied with Undo, or shown for review first.',
     );
 
     const toggle = assistantToggle();
@@ -2293,7 +2293,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card!.textContent?.replace(/\s+/g, ' ')).toContain(
       'Connect an AI provider in AI connections to turn this on.',
     );
-    expect(card!.textContent).not.toContain('Show the dock capsule');
+    expect(card!.textContent).not.toContain('Read, capture and organise anywhere in Nostos');
 
     const toggle = assistantToggle();
     expect(toggle.disabled).toBe(true);
