@@ -1,0 +1,11 @@
+﻿Highlight,Book Title,Book Author,Amazon Book ID,Note,Color,Tags,Location Type,Location,Highlighted at,Document tags
+"""It is a truth"", she wrote,
+across two lines.",Pride and Prejudice,Jane Austen,B00SYNTH01,Opening line.,yellow,favorite,location,5,2024-01-01 10:00:00+00:00,
+A second synthetic highlight.,Pride and Prejudice,Jane Austen,B00SYNTH01,,blue,,location,120,2024-01-01 10:05:00+00:00,
+,Pride and Prejudice,Jane Austen,B00SYNTH01,A note with no highlight.,,,location,130,2024-01-01 10:06:00+00:00,
+I went to the woods because I wished to live deliberately,Walden,Henry David Thoreau,,,,,page,88,2024-01-02 09:00:00+00:00,
+A synthetic sentence from a blog post.,How to Read Slowly,Example Blog,,,,,order,3,2024-01-03 09:00:00+00:00,reading
+A synthetic tweet.,Tweets From Ada Reader,@adareader,,,,,order,1,2024-01-04 09:00:00+00:00,
+A synthetic podcast line.,Episode 12: Reading,The Reading Show,,,,,time_offset,754,2024-01-05 09:00:00+00:00,
+,Walden,Henry David Thoreau,,,,,page,90,2024-01-02 09:10:00+00:00,
+
