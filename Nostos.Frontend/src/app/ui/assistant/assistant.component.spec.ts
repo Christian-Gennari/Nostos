@@ -1675,6 +1675,50 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         .toBe('Try again');
     });
 
+    it('keeps a capture that committed before the failure above the failure block', () => {
+      const message = 'The AI service could not complete this turn. Try again.';
+      const turnId = sendFailure('assistant_provider_error', message, true, turn({
+        reply: '',
+        acknowledgement: 'Saved to The Magic Mountain.',
+        capturedNoteId: 'note-1558',
+        executedCapabilities: [],
+        suggestions: [],
+        sources: [],
+        evidence: [],
+      }));
+
+      http.expectOne('/api/topics').flush([]);
+      http.expectOne('/api/notes/note-1558').flush({
+        id: 'note-1558', content: 'A thought for The Magic Mountain', topicNames: [],
+      });
+      fixture.detectChanges();
+
+      // The committed outcome reads first: saved, then the failure with its one
+      // retry. Nothing is reported twice (#1558 on top of #1556).
+      const text = transcript().textContent ?? '';
+      expect(text).toContain('Saved to The Magic Mountain.');
+      expect(text).toContain('Saved note');
+      expect(text.indexOf('Saved to The Magic Mountain.')).toBeLessThan(text.indexOf(message));
+      expect(text.indexOf('Saved note')).toBeLessThan(text.indexOf(message));
+      expect(failures().length).toBe(1);
+      expect(text.match(/could not complete this turn/g)?.length).toBe(1);
+      expect(text).not.toContain('Failed ·');
+
+      const retry = failures()[0].querySelector('[data-testid="assistant-retry"]') as HTMLButtonElement;
+      expect(retry?.textContent?.trim()).toBe('Try again');
+
+      // Try again is a replay of the same turn, so the server's receipts answer
+      // instead of writing the note a second time.
+      retry.click();
+      const request = http.expectOne('/api/assistant/turn/stream');
+      expect(request.request.body.turnId).toBe(turnId);
+      request.flush(turn({ reply: 'Here is the answer, on the second delivery.' }));
+      fixture.detectChanges();
+
+      expect(failures().length).toBe(0);
+      expect(transcript().textContent).toContain('Here is the answer, on the second delivery.');
+    });
+
     it('does not render a second failure label when the response carries the sentence', () => {
       const message = 'I could not find usable evidence for that in your Nostos material.';
       sendFailure('assistant_no_evidence', message, false, turn({

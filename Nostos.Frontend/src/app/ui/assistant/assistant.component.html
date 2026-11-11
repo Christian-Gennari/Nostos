@@ -127,54 +127,7 @@
           [innerHTML]="entry.text | assistantMarkdown: citationPreviews(entry)"
           (click)="onReplyClick($event, entry)"
         ></div>
-        } @else if (entry.kind === 'error') {
-        <!-- One failure, once (#1556): the server sentence, one next step that
-             fits the typed code, and the raw code only behind Details. -->
-        <div class="entry-failure" data-testid="assistant-failure">
-          <p class="entry-failure-text" role="status" aria-live="polite">{{ entry.text }}</p>
-          @if (allowanceRenewsAt(entry); as renewsAt) {
-          <p class="entry-failure-note">Allowance renews {{ renewsAt | nostosDate }}.</p>
-          }
-          @if (failureAction(entry); as action) {
-          <div class="entry-failure-actions">
-            @if (action.kind === 'allowance') {
-            <a
-              appButton
-              variant="secondary"
-              size="sm"
-              [href]="action.href"
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="assistant-failure-allowance"
-            >{{ action.label }}</a>
-            } @else if (action.kind === 'retry') {
-            <button
-              appButton
-              variant="secondary"
-              size="sm"
-              type="button"
-              (click)="onRetryFailure(entry)"
-              [disabled]="assistant.sending()"
-              data-testid="assistant-retry"
-            >{{ action.label }}</button>
-            } @else {
-            <button
-              appButton
-              variant="secondary"
-              size="sm"
-              type="button"
-              (click)="onFailureAction(action)"
-              data-testid="assistant-failure-action"
-            >{{ action.label }}</button>
-            }
-          </div>
-          }
-          <details class="entry-failure-details" data-testid="assistant-failure-details">
-            <summary>Details</summary>
-            <code class="entry-failure-code">{{ failureCode(entry) }}</code>
-          </details>
-        </div>
-        } @else {
+        } @else if (entry.kind !== 'error') {
         <blockquote class="entry-text">{{ entry.text }}</blockquote>
         }
 
@@ -396,6 +349,56 @@
             />
             }
           }
+        </div>
+        }
+        @if (entry.kind === 'error') {
+        <!-- The turn's committed outcomes come first (#1558): a capture that was
+             saved stays visible above the failure, then the failure itself
+             (#1556): the server sentence, one next step that fits the typed
+             code, and the raw code only behind Details. -->
+        <div class="entry-failure" data-testid="assistant-failure">
+          <p class="entry-failure-text" role="status" aria-live="polite">{{ entry.text }}</p>
+          @if (allowanceRenewsAt(entry); as renewsAt) {
+          <p class="entry-failure-note">Allowance renews {{ renewsAt | nostosDate }}.</p>
+          }
+          @if (failureAction(entry); as action) {
+          <div class="entry-failure-actions">
+            @if (action.kind === 'allowance') {
+            <a
+              appButton
+              variant="secondary"
+              size="sm"
+              [href]="action.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="assistant-failure-allowance"
+            >{{ action.label }}</a>
+            } @else if (action.kind === 'retry') {
+            <button
+              appButton
+              variant="secondary"
+              size="sm"
+              type="button"
+              (click)="onRetryFailure(entry)"
+              [disabled]="assistant.sending()"
+              data-testid="assistant-retry"
+            >{{ action.label }}</button>
+            } @else {
+            <button
+              appButton
+              variant="secondary"
+              size="sm"
+              type="button"
+              (click)="onFailureAction(action)"
+              data-testid="assistant-failure-action"
+            >{{ action.label }}</button>
+            }
+          </div>
+          }
+          <details class="entry-failure-details" data-testid="assistant-failure-details">
+            <summary>Details</summary>
+            <code class="entry-failure-code">{{ failureCode(entry) }}</code>
+          </details>
         </div>
         }
         <!-- A failure's code belongs behind Details, not in the entry footer. -->
