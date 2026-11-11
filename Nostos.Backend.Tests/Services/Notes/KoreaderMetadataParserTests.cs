@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Nostos.Backend.Services.Notes.Imports;
+using Nostos.Backend.Tests.Support;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services.Notes;
@@ -9,7 +10,7 @@ public sealed class KoreaderMetadataParserTests
     [Fact]
     public void Pdf_sidecar_keeps_every_highlight_past_its_nested_position_tables()
     {
-        var document = KoreaderMetadataParser.Parse(Fixture("metadata.pdf.lua"));
+        var document = KoreaderMetadataParser.Parse(File.ReadAllText(ImportFixtures.KoreaderPdf));
 
         document.Title.Should().Be("Synthetic Reader PDF");
         document.PartialMd5.Should().Be("0123456789abcdef0123456789abcdef");
@@ -37,7 +38,7 @@ public sealed class KoreaderMetadataParserTests
     [Fact]
     public void Datetime_is_kept_for_the_import_to_use_as_the_note_date()
     {
-        var document = KoreaderMetadataParser.Parse(Fixture("metadata.pdf.lua"));
+        var document = KoreaderMetadataParser.Parse(File.ReadAllText(ImportFixtures.KoreaderPdf));
 
         document.Annotations[0].DateTime.Should().Be("2026-09-28 12:00:00");
         ImportDates.Iso(document.Annotations[0].DateTime)
@@ -50,7 +51,7 @@ public sealed class KoreaderMetadataParserTests
     [Fact]
     public void Pdf_without_embedded_metadata_is_named_by_what_the_device_shows()
     {
-        var document = KoreaderMetadataParser.Parse(Fixture("metadata.pdf-untitled.lua"));
+        var document = KoreaderMetadataParser.Parse(File.ReadAllText(ImportFixtures.KoreaderPdfUntitled));
 
         document.Title.Should().Be("Ada Reader - Synthetic Reader PDF");
         document.Author.Should().BeNull("\"N/A\" is KOReader's placeholder, not an author");
@@ -69,7 +70,7 @@ public sealed class KoreaderMetadataParserTests
     [Fact]
     public void Highlight_across_a_paragraph_break_keeps_its_whole_text()
     {
-        var document = KoreaderMetadataParser.Parse(Fixture("metadata.multiline.lua"));
+        var document = KoreaderMetadataParser.Parse(File.ReadAllText(ImportFixtures.KoreaderMultiline));
 
         document.Annotations.Should().HaveCount(3);
         document.Annotations[0].Text.Should().Be("The end of one paragraph.\nThe start of the next.");
@@ -81,7 +82,7 @@ public sealed class KoreaderMetadataParserTests
     [Fact]
     public void Epub_sidecar_reads_as_before()
     {
-        var document = KoreaderMetadataParser.Parse(Fixture("metadata.lua"));
+        var document = KoreaderMetadataParser.Parse(File.ReadAllText(ImportFixtures.KoreaderEpub));
 
         document.Title.Should().Be("Synthetic Reader Book");
         document.Author.Should().Be("Ada Reader");
@@ -95,7 +96,7 @@ public sealed class KoreaderMetadataParserTests
     [Fact]
     public void Page_bookmark_in_a_reflowable_book_keeps_its_xpointer_not_its_screen_count()
     {
-        var bookmark = KoreaderMetadataParser.Parse(Fixture("metadata.multiline.lua")).Annotations[2];
+        var bookmark = KoreaderMetadataParser.Parse(File.ReadAllText(ImportFixtures.KoreaderMultiline)).Annotations[2];
 
         KoreaderNoteImportService.Anchor(bookmark).Should().Be((
             "koreader_xpointer",
@@ -121,7 +122,4 @@ public sealed class KoreaderMetadataParserTests
 
         parse.Should().Throw<FormatException>();
     }
-
-    private static string Fixture(string name) =>
-        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", name));
 }

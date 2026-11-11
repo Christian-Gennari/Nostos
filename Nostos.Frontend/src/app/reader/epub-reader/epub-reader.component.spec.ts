@@ -1150,7 +1150,15 @@ describe('typographyCss', () => {
 
       expect(getComputedStyle(prose).fontFamily).toContain('system-ui');
       expect(getComputedStyle(heading).fontFamily).toContain('system-ui');
-      expect(getComputedStyle(prose).lineHeight).toBe('1.8');
+      // jsdom 31's CSS engine resolves a unitless line-height to the used pixel
+      // value; older jsdom echoed the unitless number. Compare the ratio to the
+      // computed font size so the assertion means the same thing either way.
+      const proseStyle = getComputedStyle(prose);
+      const lineHeight = parseFloat(proseStyle.lineHeight);
+      const fontSize = parseFloat(proseStyle.fontSize);
+      expect(fontSize).toBeGreaterThan(0);
+      const ratio = proseStyle.lineHeight.endsWith('px') ? lineHeight / fontSize : lineHeight;
+      expect(ratio).toBeCloseTo(1.8, 5);
       expect(getComputedStyle(code).fontFamily).toContain('PublisherCode');
       expect(getComputedStyle(pre).fontFamily).toContain('PublisherCode');
       expect(getComputedStyle(icon).fontFamily).toContain('PublisherIcons');

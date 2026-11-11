@@ -1,0 +1,15 @@
+{
+  "source": "kindle",
+  "version": "2024-multi",
+  "file": "My Clippings.languages.txt",
+  "companions": [],
+  "expected": {
+    "foundBooks": 6,
+    "importedAnnotations": 6,
+    "skipped": {
+      "bookmark": 1,
+      "unrecognised-format": 2
+    },
+    "missingOptionalColumns": []
+  }
+}

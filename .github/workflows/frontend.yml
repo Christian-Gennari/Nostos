@@ -95,11 +95,30 @@ jobs:
 
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
+      # The runner image already carries Chromium's runtime libraries; apt
+      # mostly adds fonts. When the Ubuntu mirrors cannot be reached (#1570),
+      # carry on only if every package apt could not fetch is a font package;
+      # any other missing package still fails the job.
       - name: Install Playwright system dependencies
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        run: |
+          set -o pipefail
+          if npx playwright install-deps chromium 2>&1 | tee "$RUNNER_TEMP/playwright-deps.log"; then
+            exit 0
+          fi
+          missing=$(grep -oE 'Failed to fetch [^ ]+/pool/[^ ]+_' "$RUNNER_TEMP/playwright-deps.log" \
+            | sed -E 's#.*/([^/_]+)_.*#\1#' | sort -u)
+          if [ -z "$missing" ]; then
+            echo "::error::Playwright system dependencies failed for a reason other than unreachable packages."
+            exit 1
+          fi
+          other=$(echo "$missing" | grep -vE '^x?fonts-' || true)
+          if [ -n "$other" ]; then
+            echo "::error::Could not install required packages: $(echo $other)"
+            exit 1
+          fi
+          echo "::warning::Ubuntu mirrors unreachable; continuing without optional font packages: $(echo $missing)"
 
       - name: Launcher lifecycle regression
         run: node e2e/support/launch-regression.mjs
