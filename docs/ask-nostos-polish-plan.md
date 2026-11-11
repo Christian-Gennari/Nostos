@@ -313,10 +313,10 @@ several times” is measured.
 ## 6. Ready-to-file sub-issues
 
 Titles are Conventional Commits. Labels are from
-`gh label list -R Christian-Gennari/Nostos`. The orchestrator files these after
-review.
+`gh label list -R Christian-Gennari/Nostos`. Filed on 2026-11-11 as #1556–#1563
+(sub-issues of #1464), in the order below.
 
-### 1. `fix(assistant): show each failure once and offer the next step`
+### 1. `fix(assistant): show each failure once and offer the next step` — #1556
 
 Today a failure is rendered as the entry, `Failed · <sentence>` and the raw
 code, with no link to Settings, the book or the allowance.
@@ -326,7 +326,7 @@ Cover allowance renewal and refill with the existing account link.
 Labels: `bug`, `frontend`, `priority: high`, `ai: mixed` · Priority: **P0**
 Files: `assistant.component.html`, `assistant.component.ts`, `assistant.service.ts`, `assistant.component.spec.ts`.
 
-### 2. `fix(assistant): keep a tall review card's title and Apply in view`
+### 2. `fix(assistant): keep a tall review card's title and Apply in view` — #1557
 
 A review taller than the panel scrolls to its end on arrival, hiding “Review
 before applying”, the headline and the first steps (20-step case: label at y=33,
@@ -336,7 +336,7 @@ when “Show every change” expands it.
 Labels: `bug`, `frontend`, `priority: high` · Priority: **P0**
 Files: `assistant.component.ts`, `assistant.component.html`, new e2e spec in `Nostos.Frontend/e2e/`.
 
-### 3. `fix(assistant): report writes that completed before a turn failed`
+### 3. `fix(assistant): report writes that completed before a turn failed` — #1558
 
 A capture can commit and a later provider call fail; the failure body is empty,
 so the panel never says the note was saved (and a retry is only safe because the
@@ -346,7 +346,7 @@ above the failure; add a Gate A test for the no-duplicate retry.
 Labels: `bug`, `backend`, `frontend`, `priority: high`, `ai: mixed` · Priority: **P0**
 Files: `AssistantOrchestrator.cs`, `AssistantEndpoints.cs`, `Nostos.Backend.Tests/Assistant/GateA/`, `assistant.service.ts`, `assistant.component.html`.
 
-### 4. `feat(assistant): say what Ask Nostos can do where it is used`
+### 4. `feat(assistant): say what Ask Nostos can do where it is used` — #1559
 
 The empty state names asking and capturing, the Settings card names reading and
 capturing, and the model prompt omits Studio drafts, To read and quotes.
@@ -356,7 +356,7 @@ prompt's capability sentence complete.
 Labels: `enhancement`, `frontend`, `priority: high`, `ai: mixed` · Priority: **P1**
 Files: `assistant.component.html/.ts/.css`, `settings.component.html`, `reader-shell.component.html`, `AssistantConversationBuilder.cs`, `README.md`.
 
-### 5. `fix(assistant): give retryable turns a retry control and a watchdog`
+### 5. `fix(assistant): give retryable turns a retry control and a watchdog` — #1560
 
 “Ready to retry” has no button; a stalled connection leaves the three dots
 forever.
@@ -365,7 +365,7 @@ client watchdog that turns a silent stream into the retry block.
 Labels: `bug`, `frontend`, `priority: high` · Priority: **P1**
 Files: `assistant.component.html`, `assistant.component.ts`, `assistant.service.ts`, `assistant.component.spec.ts`.
 
-### 6. `fix(assistant): align the slow-turn budget with the provider timeout`
+### 6. `fix(assistant): align the slow-turn budget with the provider timeout` — #1561
 
 The 90 s turn budget fires first, so the 95 s “took too long” message is
 unreachable; a slow turn reads as “execution limit”.
@@ -374,7 +374,7 @@ its own “taking longer” state with Stop; test both clocks together.
 Labels: `bug`, `backend`, `priority: medium` · Priority: **P1**
 Files: `AssistantOptions.cs`, `AssistantOrchestrator.cs`, `AssistantEndpoints.cs`, tests.
 
-### 7. `fix(assistant): polish the conversation surface to match Nostos`
+### 7. `fix(assistant): polish the conversation surface to match Nostos` — #1562
 
 Six radii (two off-token), an expanded empty state pinned to the top-left of a
 1000 px card, citation markers that wrap alone, and grouped sources with no
@@ -384,7 +384,7 @@ keep the marker with its word, number grouped sources.
 Labels: `enhancement`, `frontend`, `priority: medium` · Priority: **P2**
 Files: `assistant.component.css/.html`, `assistant-markdown.pipe.ts`, `changeset-card/assistant-changeset-card.component.css`, `assistant.component.spec.ts`.
 
-### 8. `test(assistant): cover the panel's failure, retry and review states`
+### 8. `test(assistant): cover the panel's failure, retry and review states` — #1563
 
 The e2e suite covers the capsule and quote highlighting but not the panel's
 empty, answer, changeset, error or retry states; the failure duplication is
