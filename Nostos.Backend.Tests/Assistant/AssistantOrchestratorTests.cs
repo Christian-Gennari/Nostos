@@ -2510,6 +2510,130 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task A_stalled_provider_request_reports_its_own_timeout_before_the_turn_budget()
+    {
+        // #1561: both clocks run together on the same TimeProvider. The request
+        // clock (60 s by default) must be the one that fires for a stalled call,
+        // so the person gets "Ask Nostos took too long to answer. Try again."
+        // (assistant_provider_timeout) and not the turn's execution limit.
+        var clock = new MultiTimerClock();
+        var h = CreateHarness(timeProvider: clock);
+        var providerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Llm.AsyncResponder = async (_, cancellationToken) =>
+        {
+            providerEntered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new LlmCompletion("Too late.", "stop", []);
+        };
+
+        var turn = h.Orchestrator.HandleTurnAsync(
+            Turn("Hello.", Context(surface: "library", route: "/library")));
+
+        await providerEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        clock.LiveDueTimes.Should().BeEquivalentTo(
+            [TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(90)],
+            "the request clock and the turn clock are both armed for the call");
+        turn.IsCompleted.Should().BeFalse("both clocks are still waiting");
+
+        // A real stall consumes wall clock. At 60 s the turn budget (90 s) is
+        // still intact, so the request clock is the one that must fail the turn.
+        clock.Advance(TimeSpan.FromSeconds(60));
+        clock.Fire(TimeSpan.FromSeconds(60));
+
+        Func<Task> waitForTurn = async () => await turn.WaitAsync(TimeSpan.FromSeconds(10));
+        var thrown = await waitForTurn.Should().ThrowAsync<LlmException>(
+            "a stalled request is a provider failure, not a completed turn");
+        thrown.Which.Code.Should().Be(LlmErrorCodes.Timeout);
+        h.Llm.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_turn_that_keeps_making_fast_requests_still_ends_at_the_turn_budget()
+    {
+        // Several requests, each finishing well inside its own 5 s timeout, and
+        // a long tool round between them. The request clock never fires; the whole
+        // turn reaches its 20 s budget and reports the execution limit.
+        var clock = new MultiTimerClock();
+        var h = CreateHarness(
+            configure: options =>
+            {
+                options.MaxTurnElapsedMilliseconds = 20_000;
+                options.RequestTimeoutSeconds = 5;
+            },
+            timeProvider: clock);
+
+        h.Llm.AsyncResponder = (call, _) =>
+        {
+            // Each round's tool work advances the shared clock by seven seconds;
+            // the provider call itself completes immediately, inside its 5 s
+            // request timeout.
+            clock.Advance(TimeSpan.FromSeconds(7));
+            return Task.FromResult(new LlmCompletion(
+                null,
+                "tool_calls",
+                [new LlmToolCall(
+                    $"call-{call}",
+                    "library_list_collections",
+                    $$"""{"round":{{call}}}""")]));
+        };
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("Which collections do I have?", Context(surface: "library", route: "/library")))
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        h.Llm.CallCount.Should().Be(3, "the fourth call would start after the turn budget");
+        response.Error!.Code.Should().Be(AssistantErrorCodes.ExecutionBudgetExhausted);
+        response.Reply.Should().Be(AssistantOrchestrator.IncompleteTurnReply);
+    }
+
+    [Fact]
+    public async Task A_request_with_less_than_its_own_timeout_left_fails_on_the_turn_budget()
+    {
+        // The turn has 4 s left when the second request starts, less than its 5 s
+        // request timeout. There is nothing left for the request clock to be
+        // ordered against, so the turn clock is the deliberate failure.
+        var clock = new MultiTimerClock();
+        var h = CreateHarness(
+            configure: options =>
+            {
+                options.MaxTurnElapsedMilliseconds = 20_000;
+                options.RequestTimeoutSeconds = 5;
+            },
+            timeProvider: clock);
+        var secondCallEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Llm.AsyncResponder = async (call, cancellationToken) =>
+        {
+            if (call == 1)
+            {
+                clock.Advance(TimeSpan.FromSeconds(16));
+                return new LlmCompletion(
+                    null,
+                    "tool_calls",
+                    [new LlmToolCall("call-1", "library_list_collections", """{"round":1}""")]);
+            }
+
+            secondCallEntered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new LlmCompletion("Too late.", "stop", []);
+        };
+
+        var turn = h.Orchestrator.HandleTurnAsync(
+            Turn("Which collections do I have?", Context(surface: "library", route: "/library")));
+
+        await secondCallEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        clock.LiveDueTimes.Should().BeEquivalentTo(
+            [TimeSpan.FromSeconds(4)],
+            "only the remaining turn budget is armed; the full request timeout cannot fit");
+
+        clock.Fire(TimeSpan.FromSeconds(4));
+
+        var response = await turn.WaitAsync(TimeSpan.FromSeconds(10));
+        h.Llm.CallCount.Should().Be(2);
+        response.Error!.Code.Should().Be(AssistantErrorCodes.ExecutionBudgetExhausted);
+        response.Reply.Should().Be(AssistantOrchestrator.IncompleteTurnReply);
+    }
+
+    [Fact]
     public async Task Missing_provider_usage_never_trips_the_token_ceiling()
     {
         var h = CreateHarness(configure: options =>
@@ -4505,6 +4629,77 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     /// A clock that never advances and arms timers without running them, so the
     /// turn deadline fires exactly when a test calls <see cref="FireDeadline"/>.
     /// </summary>
+    /// <summary>
+    /// A <see cref="TimeProvider"/> whose timestamp the test controls and whose
+    /// timers the test fires by due time. It exists so the per-request clock and
+    /// the whole-turn clock can run together deterministically (#1561): real time
+    /// never fires either one behind the test's back.
+    /// </summary>
+    private sealed class MultiTimerClock : TimeProvider
+    {
+        private long _timestampMilliseconds;
+        private readonly List<ManualTimer> _timers = [];
+
+        public override long GetTimestamp() => _timestampMilliseconds;
+
+        public override long TimestampFrequency => 1_000;
+
+        /// <summary>Timers still armed, in creation order.</summary>
+        public IReadOnlyList<TimeSpan> LiveDueTimes =>
+            _timers.Where(timer => !timer.IsDisposed).Select(timer => timer.DueTime).ToList();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new ManualTimer(callback, state, dueTime);
+            lock (_timers) _timers.Add(timer);
+            return timer;
+        }
+
+        public void Advance(TimeSpan amount) =>
+            _timestampMilliseconds += (long)amount.TotalMilliseconds;
+
+        public void Fire(TimeSpan dueTime)
+        {
+            ManualTimer timer;
+            lock (_timers)
+            {
+                timer = _timers.Single(
+                    candidate => !candidate.IsDisposed && candidate.DueTime == dueTime);
+            }
+
+            timer.Fire();
+        }
+
+        private sealed class ManualTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime) : ITimer
+        {
+            public TimeSpan DueTime { get; } = dueTime;
+
+            public bool IsDisposed { get; private set; }
+
+            public void Fire()
+            {
+                if (!IsDisposed) callback(state);
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => !IsDisposed;
+
+            public void Dispose() => IsDisposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
     private sealed class TurnDeadlineClock : TimeProvider
     {
         private ManualTimer? _deadline;

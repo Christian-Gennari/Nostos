@@ -73,20 +73,75 @@ public sealed class AssistantOptions
     /// </summary>
     public int MaxTurnTokens { get; set; } = 120_000;
 
+    // The turn's clocks, in the order they fire. The first two share the
+    // turn's TimeProvider (see AssistantOrchestrator):
+    //
+    //   1. Per provider request — RequestTimeoutSeconds (60 s). A stalled call
+    //      fails with assistant_provider_timeout ("Ask Nostos took too long to
+    //      answer. Try again."), never as an execution limit.
+    //   2. Transport backstop — RequestTimeoutSeconds + 5 s, set on the named
+    //      HttpClient in Program.cs. It only covers the case where the
+    //      in-process clock cannot run, and maps to the same typed timeout.
+    //   3. Whole turn — MaxTurnElapsedMilliseconds (90 s), across every request
+    //      and tool round. A request started near the deadline gets only the
+    //      time that is left; when that is less than clock 1, the turn clock is
+    //      the one that fires. This is the only clock that reports an execution
+    //      limit.
+    //
+    // There is no per-tool timer and no server-side stream-idle timer: tools
+    // are in-process, and a mutation that has already begun is allowed to
+    // reach its terminal state rather than be abandoned mid-write.
+    //
+    // AssistantExecutionBudget.ValidateClocks requires at least
+    // MinimumToolRoundMarginMilliseconds between clocks 1 and 3 while clock 3
+    // is on, so one request can always time out inside a fresh turn and leave
+    // room for one tool round. The shipped 60 s / 90 s pair leaves 30 s.
+
     /// <summary>
     /// Wall-clock ceiling for one turn in milliseconds. Zero or below disables the
     /// ceiling. Selected from the same measurement: 99% of turns finished inside
     /// 14.6 s, while 8 of 900 stalled for 141-145 s waiting on a single slow upstream
-    /// call. The value stays below the per-request transport timeout on purpose, so a
-    /// stalled turn is stopped by this budget rather than by a transport error.
+    /// call. This is the OUTER clock: <see cref="RequestTimeoutSeconds"/> is shorter
+    /// on purpose, so a stalled provider request reports its own timeout before the
+    /// turn can report an execution limit.
     /// </summary>
     public int MaxTurnElapsedMilliseconds { get; set; } = 90_000;
 
     /// <summary>
-    /// Per-LLM-call ceiling. The pool spends reasoning tokens even on trivial
-    /// answers, so this is generous on purpose.
+    /// Per-provider-request ceiling in seconds. This is the INNER clock: it must
+    /// stay below <see cref="MaxTurnElapsedMilliseconds"/> by at least one tool
+    /// round, and startup rejects a configuration that does not (see
+    /// <c>AssistantExecutionBudget.ValidateClocks</c>). 60 s is four times the
+    /// measured 99th-percentile turn (14.6 s) and cuts the 141-145 s stalls
+    /// observed in the 900-turn run. The named HttpClient's transport timeout is
+    /// this value plus a small grace; it is a backstop, not the primary clock.
     /// </summary>
-    public int RequestTimeoutSeconds { get; set; } = 95;
+    public int RequestTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// Extra seconds added to the named assistant HttpClient's timeout so the
+    /// orchestrator's in-process request clock normally fires first. A transport
+    /// timeout maps to the same typed provider timeout, so the grace never changes
+    /// what the person sees.
+    /// </summary>
+    public const int TransportTimeoutGraceSeconds = 5;
+
+    /// <summary>
+    /// The in-process per-request clock as a duration. A non-positive configured
+    /// value is treated as the one-second floor the transport has always used;
+    /// startup validation rejects it instead of silently changing the ordering.
+    /// </summary>
+    public TimeSpan RequestTimeout =>
+        TimeSpan.FromSeconds(Math.Max(1, RequestTimeoutSeconds));
+
+    /// <summary>
+    /// The named assistant HttpClient's whole-request timeout. Deliberately a few
+    /// seconds longer than <see cref="RequestTimeout"/> so a stalled call normally
+    /// fails on the orchestrator's typed clock first; this covers only the case
+    /// where that timer could not run.
+    /// </summary>
+    public TimeSpan TransportTimeout =>
+        RequestTimeout + TimeSpan.FromSeconds(TransportTimeoutGraceSeconds);
 
     /// <summary>
     /// The change policy's limits (<see cref="Integrations.Assistant.AssistantChangePolicy"/>):
