@@ -107,15 +107,44 @@
             </div>
             <ul class="highlight-rows">
               @for (batch of recent(); track batch.id) {
-                <li class="highlight-row" data-testid="highlight-recent-row">
-                  <span class="highlight-row-text">
-                    <span class="highlight-row-title">
-                      {{ count(batch.noteCount, 'highlight') }} into {{ count(batch.bookCount, 'book') }}
+                <li class="highlight-row highlight-recent-row" data-testid="highlight-recent-row">
+                  @if (batch.report; as report) {
+                    @if (report.skippedReasons.length > 0) {
+                      <!-- The line explains the batch; the reasons explain the skipped ones. -->
+                      <details class="highlight-recent-report" data-testid="highlight-recent-reasons">
+                        <summary class="highlight-recent-summary">
+                          <nostos-icon name="caret-right" [size]="11" class="highlight-disclosure"></nostos-icon>
+                          <ng-container *ngTemplateOutlet="recentText; context: { batch, report }"></ng-container>
+                        </summary>
+                        <ul class="highlight-recent-reason-rows">
+                          @for (entry of report.skippedReasons; track $index) {
+                            <li class="highlight-row-sub">
+                              <span class="highlight-reason-title">{{ entry.title || 'Untitled' }}</span>
+                              @if (entry.author) {
+                                <span> · {{ entry.author }}</span>
+                              }
+                              @if (entry.count > 1) {
+                                <span> · {{ entry.count }} entries</span>
+                              }
+                              <span class="highlight-reason-text"> · {{ entry.reason }}</span>
+                            </li>
+                          }
+                        </ul>
+                      </details>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="recentText; context: { batch, report }"></ng-container>
+                    }
+                  } @else {
+                    <!-- An import from before reports existed: its counts as they have always shown. -->
+                    <span class="highlight-row-text">
+                      <span class="highlight-row-title">
+                        {{ count(batch.noteCount, 'highlight') }} into {{ count(batch.bookCount, 'book') }}
+                      </span>
+                      <span class="highlight-row-sub">
+                        {{ sourceName(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }}
+                      </span>
                     </span>
-                    <span class="highlight-row-sub">
-                      {{ sourceName(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }}
-                    </span>
-                  </span>
+                  }
                   <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="askUndoRecent(batch)">
                     Undo
                   </button>
@@ -479,6 +508,17 @@
       </ul>
     </details>
   }
+</ng-template>
+
+<!-- What a committed batch found, and where every entry went (issue #1522). -->
+<ng-template #recentText let-batch="batch" let-report="report">
+  <span class="highlight-row-text">
+    <span class="highlight-row-title">{{ reportLine(report) }}</span>
+    <span class="highlight-row-sub">
+      {{ sourceName(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }} ·
+      {{ reportBooks(report) }}
+    </span>
+  </span>
 </ng-template>
 
 <!-- One book from the device. Its three states read top to bottom as: what the

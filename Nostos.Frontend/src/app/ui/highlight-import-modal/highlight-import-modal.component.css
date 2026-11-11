@@ -359,6 +359,69 @@ summary.highlight-section-header:focus-visible {
   border-top: 1px solid var(--border-color);
 }
 
+/* A batch's report: one line, and the skipped entries' reasons under it. */
+.highlight-recent-row {
+  align-items: flex-start;
+}
+
+/* The report is a sentence, not a title: it wraps rather than truncating, so
+   the numbers stay readable at phone width. */
+.highlight-recent-row .highlight-row-title,
+.highlight-recent-row .highlight-row-sub {
+  white-space: normal;
+  overflow: visible;
+}
+
+.highlight-recent-report,
+.highlight-recent-summary {
+  flex: 1;
+  min-width: 0;
+}
+
+.highlight-recent-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.highlight-recent-summary::-webkit-details-marker {
+  display: none;
+}
+
+.highlight-recent-summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.highlight-recent-report[open] .highlight-disclosure {
+  transform: rotate(90deg);
+}
+
+.highlight-recent-reason-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.55rem 0 0 1.1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.highlight-recent-reason-rows .highlight-row-sub {
+  margin-top: 0;
+  white-space: normal;
+  overflow: visible;
+}
+
+.highlight-reason-title {
+  color: var(--color-text-main);
+}
+
+.highlight-reason-text {
+  white-space: normal;
+}
+
 .highlight-review {
   display: flex;
   flex-direction: column;
