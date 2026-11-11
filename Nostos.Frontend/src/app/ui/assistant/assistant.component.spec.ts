@@ -2358,6 +2358,249 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     });
   });
 
+  describe('a tall review arrives in view (issue #1557)', () => {
+    const PANE_HEIGHT = 400;
+    const CONTENT_HEIGHT = 1200;
+    const END = CONTENT_HEIGHT - PANE_HEIGHT;
+    /** Where the review card starts in the transcript's scroll content. */
+    const CARD_TOP = 600;
+    let contentHeight = CONTENT_HEIGHT;
+    const positions = new WeakMap<Element, number>();
+    let originalResizeObserver: typeof ResizeObserver | undefined;
+    let originalMatchMedia: typeof window.matchMedia | undefined;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+
+    function isBody(element: Element): boolean {
+      return element.getAttribute('data-testid') === 'assistant-body';
+    }
+
+    function isCard(element: Element): boolean {
+      return element.hasAttribute('data-changeset-id');
+    }
+
+    function rect(top: number, width: number, height: number): DOMRect {
+      return {
+        x: 0, y: top, top, left: 0, right: width, bottom: top + height,
+        width, height, toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    beforeEach(() => {
+      contentHeight = CONTENT_HEIGHT;
+      originalResizeObserver = globalThis.ResizeObserver;
+      originalMatchMedia = window.matchMedia;
+
+      class TestResizeObserver {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+
+      Object.defineProperty(globalThis, 'ResizeObserver', {
+        value: TestResizeObserver,
+        configurable: true,
+        writable: true,
+      });
+
+      Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+        get(this: HTMLElement) {
+          return isBody(this) ? contentHeight : 0;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+        get(this: HTMLElement) {
+          return isBody(this) ? PANE_HEIGHT : 0;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+        get(this: HTMLElement) {
+          return positions.get(this) ?? 0;
+        },
+        set(this: HTMLElement, value: number) {
+          if (isBody(this)) positions.set(this, value);
+        },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        value(this: HTMLElement, options: ScrollToOptions) {
+          if (typeof options === 'object' && options.top !== undefined) this.scrollTop = options.top;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+        value(this: Element) {
+          if (isBody(this)) return rect(0, 335, PANE_HEIGHT);
+          if (isCard(this)) {
+            const body = this.ownerDocument.querySelector('[data-testid="assistant-body"]');
+            const scrolled = body ? positions.get(body) ?? 0 : 0;
+            return rect(CARD_TOP - scrolled, 335, 855);
+          }
+          return rect(0, 0, 0);
+        },
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      for (const property of ['scrollHeight', 'clientHeight', 'scrollTop', 'scrollTo']) {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
+      }
+      Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+        value: originalGetBoundingClientRect,
+        configurable: true,
+      });
+      if (originalResizeObserver) {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          value: originalResizeObserver,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+      }
+      if (originalMatchMedia) window.matchMedia = originalMatchMedia;
+      else delete (window as { matchMedia?: unknown }).matchMedia;
+    });
+
+    function body(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-testid="assistant-body"]');
+    }
+
+    function card(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-changeset-id="cs-9"]');
+    }
+
+    function readerScrollsTo(position: number): void {
+      const element = body();
+      element.scrollTop = position;
+      element.dispatchEvent(new Event('scroll'));
+    }
+
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    async function open(): Promise<void> {
+      assistant.open();
+      await render();
+    }
+
+    async function send(message: string, response: Parameters<typeof turn>[0]): Promise<void> {
+      assistant.updateDraft(message);
+      fixture.componentInstance.onSendClick();
+      await render();
+      http.expectOne('/api/assistant/turn/stream').flush(turn(response));
+      await render();
+    }
+
+    it('puts an arriving review at the top of the transcript, not at its end', async () => {
+      await open();
+      expect(body().scrollTop).toBe(END);
+
+      await send('Regroup everything.', {
+        reply: "Here's what I'd change.",
+        changeset: reviewChangeset(),
+      });
+
+      expect(card()).toBeTruthy();
+      expect(body().scrollTop).toBe(CARD_TOP);
+      expect(card().getBoundingClientRect().top).toBe(0);
+    });
+
+    it('still follows an ordinary answer to the end', async () => {
+      await open();
+      await send('What should I read next?', { reply: 'A plain answer.' });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-changeset"]')).toBeNull();
+      expect(body().scrollTop).toBe(END);
+    });
+
+    it('does not let a delayed end-of-transcript event re-arm following over an anchor', async () => {
+      // Before the review arrives the transcript is only the user's own line,
+      // so the last follow target was the top. The card makes it tall.
+      contentHeight = PANE_HEIGHT;
+      await open();
+      expect(body().scrollTop).toBe(0);
+
+      assistant.updateDraft('Regroup everything.');
+      fixture.componentInstance.onSendClick();
+      await render();
+      contentHeight = CONTENT_HEIGHT;
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: reviewChangeset() }));
+      await render();
+      expect(body().scrollTop).toBe(CARD_TOP);
+
+      // A scroll event from before the anchor lands near the end. It must not
+      // switch following back on: the next post-layout render would then snap
+      // the transcript down and hide the card again.
+      const element = body();
+      element.scrollTop = END - 10;
+      element.dispatchEvent(new Event('scroll'));
+      contentHeight = CONTENT_HEIGHT + 200;
+      await render();
+
+      expect(body().scrollTop).toBe(END - 10);
+    });
+
+    it('keeps an expanding card header in view', async () => {
+      await open();
+      await send('Regroup everything.', {
+        reply: "Here's what I'd change.",
+        changeset: reviewChangeset(),
+      });
+      readerScrollsTo(CARD_TOP + 120);
+      await render();
+
+      const toggle = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-changeset-details-toggle"]',
+      ) as HTMLButtonElement;
+      toggle.click();
+      await render();
+
+      expect(card().getBoundingClientRect().top).toBe(0);
+      expect(body().scrollTop).toBe(CARD_TOP);
+    });
+
+    it('leaves an arriving review alone when an older turn is being read', async () => {
+      await open();
+      assistant.updateDraft('Regroup everything.');
+      fixture.componentInstance.onSendClick();
+      await render();
+      readerScrollsTo(200);
+      await render();
+
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: reviewChangeset() }));
+      await render();
+
+      expect(body().scrollTop).toBe(200);
+    });
+
+    it('jumps instead of gliding when the reader asks for reduced motion', async () => {
+      const scrollTo = vi.fn(function (this: HTMLElement, options: ScrollToOptions) {
+        this.scrollTop = options.top ?? 0;
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        value: scrollTo,
+        configurable: true,
+      });
+      window.matchMedia = ((query: string) =>
+        ({ matches: query.includes('prefers-reduced-motion'), media: query })) as typeof window.matchMedia;
+
+      await open();
+      await send('Regroup everything.', {
+        reply: "Here's what I'd change.",
+        changeset: reviewChangeset(),
+      });
+
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(body().scrollTop).toBe(CARD_TOP);
+    });
+  });
+
   describe('voice capture in the composer', () => {
     function open(): void {
       assistant.open();

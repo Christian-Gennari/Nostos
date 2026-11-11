@@ -124,34 +124,38 @@
   }
 
   @if (inReview()) {
-  <div class="changeset__actions">
-    <button
-      appButton
-      variant="ghost"
-      size="sm"
-      type="button"
-      [disabled]="disabled()"
-      (click)="discard.emit()"
-      data-testid="assistant-changeset-discard"
-    >
-      Discard
-    </button>
-    <button
-      appButton
-      variant="primary"
-      size="sm"
-      type="button"
-      [disabled]="!canApply()"
-      [busy]="busy()"
-      (click)="apply.emit()"
-      data-testid="assistant-changeset-apply"
-    >
-      {{ busy() ? 'Applying…' : 'Apply changes' }}
-    </button>
-  </div>
-  @if (answerable()) {
-  <p class="changeset__hint">Or reply “yes” or “no”.</p>
-  }
+  <!-- The review's decision stays reachable while a tall card scrolls: the
+       footer is sticky inside the transcript's scrollport (#1557). -->
+  <footer class="changeset__review-footer">
+    <div class="changeset__actions">
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        type="button"
+        [disabled]="disabled()"
+        (click)="discard.emit()"
+        data-testid="assistant-changeset-discard"
+      >
+        Discard
+      </button>
+      <button
+        appButton
+        variant="primary"
+        size="sm"
+        type="button"
+        [disabled]="!canApply()"
+        [busy]="busy()"
+        (click)="apply.emit()"
+        data-testid="assistant-changeset-apply"
+      >
+        {{ busy() ? 'Applying…' : 'Apply changes' }}
+      </button>
+    </div>
+    @if (answerable()) {
+    <p class="changeset__hint">Or reply “yes” or “no”.</p>
+    }
+  </footer>
   } @else if (status() === 'applied') {
   <div class="changeset__actions">
     @if (changeset().canUndo) {

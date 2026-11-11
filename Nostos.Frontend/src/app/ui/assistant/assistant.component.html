@@ -381,6 +381,7 @@
             }
             @if (artifact.kind === 'changeset') {
             <app-assistant-changeset-card
+              [attr.data-changeset-id]="artifact.changeset.changesetId"
               [changeset]="artifact.changeset"
               [conflicts]="artifact.conflicts ?? []"
               [busy]="assistant.changesetBusy() === artifact.changeset.changesetId"
@@ -391,6 +392,7 @@
               (discard)="assistant.discardChangeset(artifact.changeset.changesetId)"
               (undo)="assistant.undoChangeset(artifact.changeset.changesetId)"
               (stepToggled)="assistant.setChangesetStepIncluded(artifact.changeset.changesetId, $event.index, $event.included)"
+              (detailsToggled)="onChangesetDetailsToggled(artifact.changeset.changesetId, $event)"
             />
             }
           }

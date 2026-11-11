@@ -98,6 +98,14 @@ export function starterPrompts(context: AssistantContext): StarterPrompt[] {
  */
 const FOLLOW_THRESHOLD_PX = 32;
 
+/** True when the OS asks for reduced motion; the transcript then jumps, never glides. */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+  );
+}
+
 export type EntrySourceItem =
   | {
       kind: 'evidence';
@@ -355,6 +363,23 @@ export class AssistantComponent {
    */
   private programmaticScrollTop: number | null = null;
 
+  /**
+   * Whether the remembered programmatic scroll was followEnd (true) or an
+   * anchor that deliberately left the end (false, #1557). A delayed event
+   * from the scroll an anchor replaced must not switch following back on.
+   */
+  private programmaticScrollKeepsFollowing = true;
+
+  /**
+   * Review cards already brought into view (#1557), so only an ARRIVING card
+   * moves the transcript. A later render — a step toggle, the composer
+   * growing — must not re-anchor it.
+   */
+  private readonly revealedReviewCards = new Set<string>();
+
+  /** The card whose full diff just toggled; its header stays in view next pass. */
+  private detailsAnchorId: string | null = null;
+
   /** The element focused before opening, restored on close. */
   private previouslyFocused: HTMLElement | null = null;
 
@@ -406,6 +431,22 @@ export class AssistantComponent {
 
   /** Drives the quiet send affordance without making the template inspect text. */
   readonly hasDraft = computed(() => this.assistant.draft().trim().length > 0);
+
+  /**
+   * Review changesets in the transcript, oldest first (#1557).
+   *
+   * The newest one is the reader's next decision, so it — not the end of the
+   * transcript — is what an arrival brings into view.
+   */
+  private readonly reviewCards = computed(() =>
+    this.assistant.entries().flatMap((entry) =>
+      (entry.artifacts ?? []).flatMap((artifact) =>
+        artifact.kind === 'changeset' && artifact.changeset.status === 'review'
+          ? [artifact.changeset.changesetId]
+          : [],
+      ),
+    ),
+  );
 
   /**
    * Geometry of the actually visible browser viewport.
@@ -487,6 +528,7 @@ export class AssistantComponent {
           this.body()?.nativeElement ?? null,
           this.transcript()?.nativeElement ?? null,
         );
+        this.keepReviewCardsInView();
         this.followEnd();
       },
     });
@@ -552,7 +594,13 @@ export class AssistantComponent {
       // grown. Its old target is then no longer the current end, but it still
       // must not be mistaken for the reader deliberately scrolling back.
       if (Math.abs(element.scrollTop - requested) <= FOLLOW_THRESHOLD_PX) {
-        this.following.set(true);
+        this.following.set(this.programmaticScrollKeepsFollowing);
+        return;
+      }
+      if (!this.programmaticScrollKeepsFollowing) {
+        // This event belongs to the scroll the anchor replaced. The anchor
+        // owns the view; a reader who wants the end scrolls again.
+        this.following.set(false);
         return;
       }
     }
@@ -1004,7 +1052,109 @@ export class AssistantComponent {
 
     const target = Math.max(0, element.scrollHeight - element.clientHeight);
     this.programmaticScrollTop = target;
+    this.programmaticScrollKeepsFollowing = true;
     element.scrollTop = target;
+  }
+
+  /**
+   * Brings an arriving review's TOP into view (#1557).
+   *
+   * The end of a review taller than the panel is a wall of steps; its title,
+   * the headline and the first steps — the words that say what is about to
+   * happen — were the part scrolled out. Only the newest review card is
+   * anchored, and only once: a step toggle or a composer reflow leaves the
+   * reader where they are. Following is switched off deliberately, because a
+   * review is something to read, not a reply to keep pinned to the end.
+   */
+  private keepReviewCardsInView(): void {
+    const cards = this.reviewCards();
+    if (cards.length === 0) return;
+
+    const unseen = cards.filter((id) => !this.revealedReviewCards.has(id));
+    if (unseen.length === 0) {
+      this.keepDetailsAnchorInView();
+      return;
+    }
+
+    const body = this.body()?.nativeElement;
+    if (!body) return; // Closed panel: keep the arrival pending until it shows it.
+
+    const newest = cards[cards.length - 1];
+    const card = this.changesetCardElement(newest);
+    if (!card) return;
+
+    // Every review currently rendered counts as seen; an older one restored
+    // beside the newest must not win a later anchor.
+    for (const id of cards) this.revealedReviewCards.add(id);
+
+    // A reader who scrolled back to an older turn keeps their place.
+    if (!this.following()) return;
+
+    this.following.set(false);
+    this.scrollBodyTo(body, this.changesetStartScrollTop(body, card));
+  }
+
+  /**
+   * "Show every change" grows the card downward. Its header must stay on
+   * screen (#1557), so the card's start returns to the top of the transcript
+   * viewport — the same anchor the arrival uses, and one the expanding layout
+   * cannot drag back to the end.
+   */
+  private keepDetailsAnchorInView(): void {
+    const id = this.detailsAnchorId;
+    if (!id) return;
+
+    const body = this.body()?.nativeElement;
+    const card = body ? this.changesetCardElement(id) : null;
+    if (!body || !card) {
+      this.detailsAnchorId = null;
+      return;
+    }
+
+    this.detailsAnchorId = null;
+    this.scrollBodyTo(body, this.changesetStartScrollTop(body, card));
+  }
+
+  /** The full diff of a review opened or closed; see keepDetailsAnchorInView. */
+  onChangesetDetailsToggled(changesetId: string, open: boolean): void {
+    // Inspecting a card is not a request to follow the transcript's end.
+    this.following.set(false);
+    this.detailsAnchorId = open ? changesetId : null;
+    this.keepDetailsAnchorInView();
+  }
+
+  private changesetCardElement(changesetId: string): HTMLElement | null {
+    const transcript = this.transcript()?.nativeElement;
+    if (!transcript) return null;
+    const cards = transcript.querySelectorAll<HTMLElement>('[data-changeset-id]');
+    for (const card of cards) {
+      if (card.getAttribute('data-changeset-id') === changesetId) return card;
+    }
+    return null;
+  }
+
+  /** The scroll position that puts the card's top edge at the viewport's top. */
+  private changesetStartScrollTop(body: HTMLElement, card: HTMLElement): number {
+    const bodyTop = body.getBoundingClientRect().top;
+    return Math.max(0, body.scrollTop + card.getBoundingClientRect().top - bodyTop);
+  }
+
+  /**
+   * Scrolls the transcript without touching focus. Motion is the reader's
+   * choice: `prefers-reduced-motion` makes the same move instantly.
+   */
+  private scrollBodyTo(body: HTMLElement, top: number): void {
+    if (Math.abs(body.scrollTop - top) < 1) return;
+    // A followEnd target from before this move no longer describes the
+    // scrollport. Remember this anchor instead, so the first smooth-scroll
+    // event cannot look like "still at the end" (#1557).
+    this.programmaticScrollTop = top;
+    this.programmaticScrollKeepsFollowing = false;
+    if (prefersReducedMotion() || typeof body.scrollTo !== 'function') {
+      body.scrollTop = top;
+      return;
+    }
+    body.scrollTo({ top, behavior: 'smooth' });
   }
 
   /**
