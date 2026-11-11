@@ -634,6 +634,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // --- Acquisition, Brain and Studio product rows (also in check-design RULE 15).
   'src/app/add-book-modal/add-book-modal.component.html': ['source-result'],
   'src/app/brain/brain-topic-words.component.html': ['words-add'],
+  // A related note is a full-width reading row under the open note, the same
+  // shape as the Brain list's rows rather than a filled button.
+  'src/app/brain/brain-note-detail.component.html': ['related-row'],
   'src/app/writing-studio/writing-studio.component.html': ['editor-desk-telemetry', 'tab-btn', 'toggle-opt', 'list-item',
     // The open writing's title is the control: it reads as the heading and
     // opens the shared inline rename (the same shape as the Brain's topic title).
