@@ -608,7 +608,10 @@
 
 :host-context(body.nostos-zen) .sidebar-left,
 :host-context(body.nostos-zen) .sidebar-right {
-  display: none;
+  /* Zen outranks the closed slide-over rules below
+     (`.studio-layout.drawer-files .sidebar-left:not(.open)`), which are more
+     specific and would otherwise leave the files rail displayed off-screen. */
+  display: none !important;
 }
 
 /* Document header / action strip is chrome in zen; the fixed Exit-zen
