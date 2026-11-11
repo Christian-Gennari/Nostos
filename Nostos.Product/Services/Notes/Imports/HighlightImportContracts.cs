@@ -98,7 +98,27 @@ public sealed record HighlightImportBatchSummary(
     string? FileName,
     DateTime CreatedAtUtc,
     int NoteCount,
-    int BookCount);
+    int BookCount,
+    // Null for a batch committed before reports existed (issue #1522).
+    HighlightImportReport? Report = null);
+
+/// <summary>
+/// What one committed batch found and where every entry went (issue #1522).
+/// <see cref="Skipped"/> are the file's unimportable entries, grouped by
+/// <see cref="SkippedReasons"/> exactly as the preview reports them;
+/// <see cref="LeftOut"/> are the entries of books the owner left out of the
+/// review. The four outcomes always add up to <see cref="Found"/>.
+/// </summary>
+public sealed record HighlightImportReport(
+    int Found,
+    int Imported,
+    int Duplicates,
+    int Skipped,
+    int LeftOut,
+    IReadOnlyList<HighlightImportSkipped> SkippedReasons,
+    int BooksMatched,
+    int BooksCreated,
+    int BooksLeftOut);
 
 internal sealed record ImportSourceBook(
     string SourceKey,

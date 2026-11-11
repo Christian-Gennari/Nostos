@@ -57,11 +57,6 @@ import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService, type HighlightImportStart } from '../core/services/highlight-import.service';
-import {
-  READING_HISTORY_SOURCE_EXPORT_HINT,
-  ReadingHistoryImportService,
-} from '../core/services/reading-history-import.service';
-import { CalibreImportService } from '../core/services/calibre-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -71,6 +66,7 @@ import { ExternalMediaSettingsComponent } from './external-media-settings.compon
 import { ConnectedAppsSettingsComponent } from './connected-apps-settings.component';
 import { READ_ALOUD_GUIDE_URL } from './read-aloud-guide';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
+import { ImportDropZoneComponent } from '../ui/import-drop-zone/import-drop-zone.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
   AiProviderKind,
@@ -180,15 +176,6 @@ const BOOK_PROVIDER_COPY = {
   empty: 'No book sources are available on this server.',
   saveFailed: 'Could not save this source. Your previous choice is still in effect.',
 } as const;
-
-/** One source in Import › Highlights & notes. */
-interface ImportSourceRow {
-  id: string;
-  name: string;
-  hint: string;
-  /** New and checked on few real devices yet. */
-  beta?: boolean;
-}
 
 /** How a section's inline status line is coloured. */
 type SettingsSection =
@@ -310,6 +297,7 @@ const defaultProgress: BackupProgress = {
     ExternalMediaSettingsComponent,
     ConnectedAppsSettingsComponent,
     LibraryTransferHostComponent,
+    ImportDropZoneComponent,
     SegmentedComponent,
     CheckboxDirective,
     EmptyStateComponent,
@@ -342,8 +330,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private cloudAuth = inject(CloudAuthService);
   readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
-  private readingHistoryImport = inject(ReadingHistoryImportService);
-  private calibreImport = inject(CalibreImportService);
 
   @ViewChild('firstRunImportInput')
   private firstRunImportInput?: ElementRef<HTMLInputElement>;
@@ -502,13 +488,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
   );
   /**
-   * A SelfHosted server that can read a Calibre library (#1527).
-   * Server-authoritative: never inferred from `deploymentMode`.
-   */
-  readonly supportsCalibreImport = computed(
-    () => this.deploymentCapabilities()?.supportsCalibreImport === true,
-  );
-  /**
    * Settings → Connected apps (#1469): a server that keeps a record of the AI
    * apps connected over MCP (SelfHosted access tokens; Cloud sign-ins once it
    * advertises them). Server-authoritative, never inferred from the mode.
@@ -641,36 +620,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { value: '20', label: '20' },
   ] satisfies readonly DropdownOption[];
 
-  /** The rows of Import › Highlights & notes; each opens the one highlight import. */
-  readonly highlightImportSources: readonly ImportSourceRow[] = [
-    { id: 'kobo', name: 'Kobo', hint: 'KoboReader.sqlite from the e-reader, connected by USB.' },
-    { id: 'koreader', name: 'KOReader', hint: "A book's metadata.lua, from its .sdr folder." },
-    { id: 'kindle', name: 'Kindle', hint: 'My Clippings.txt from the Kindle, connected by USB.' },
-    { id: 'applebooks', name: 'Apple Books', hint: 'From Books on your Mac, with what you highlighted on iPhone and iPad.', beta: true },
-    { id: 'readwise', name: 'Readwise', hint: 'A CSV export from Readwise.' },
-  ];
-
   openHighlightImport(start: HighlightImportStart = 'all'): void {
     this.highlightImport.open(start);
-  }
-
-  /** Goodreads and StoryGraph exports; the server tells them apart by header. */
-  readonly readingHistoryImportSources: readonly ImportSourceRow[] = [
-    { id: 'goodreads', name: 'Goodreads', hint: `Export from ${READING_HISTORY_SOURCE_EXPORT_HINT.goodreads}, then pick the CSV.` },
-    { id: 'storygraph', name: 'StoryGraph', hint: `Export from ${READING_HISTORY_SOURCE_EXPORT_HINT.storygraph}, then pick the CSV.` },
-  ];
-
-  openReadingHistoryImport(): void {
-    this.readingHistoryImport.open();
-  }
-
-  openCalibreImport(): void {
-    this.calibreImport.open();
-  }
-
-  /** The .nostos import lives with the rest of Backups & data. */
-  openLibraryArchiveImport(): void {
-    void this.router?.navigate(['/settings/library'], { queryParams: { action: 'import' } });
   }
 
   setSettingsSection(section: SettingsSection): void {

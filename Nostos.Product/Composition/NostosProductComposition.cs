@@ -140,6 +140,9 @@ public static class NostosProductComposition
         var assistant =
             configuration.GetSection(AssistantOptions.SectionName).Get<AssistantOptions>()
             ?? new AssistantOptions();
+        // The request timeout must fire before the whole-turn budget; otherwise a
+        // stalled provider is reported as an execution limit (#1561).
+        AssistantExecutionBudget.ValidateClocks(assistant);
         services.AddSingleton(assistant);
 
         var speech =

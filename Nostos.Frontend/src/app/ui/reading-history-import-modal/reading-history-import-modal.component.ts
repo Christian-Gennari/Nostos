@@ -21,7 +21,7 @@ import { DialogActionsComponent } from '../dialog-actions/dialog-actions.compone
 import { ButtonComponent } from '../button/button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
-import { DropZoneComponent } from '../drop-zone/drop-zone.component';
+import { ImportDropZoneComponent } from '../import-drop-zone/import-drop-zone.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
 import { ConfirmModal } from '../confirm-modal/confirm-modal.component';
@@ -70,7 +70,7 @@ interface FileFailure {
     ChoiceRowComponent,
     SearchFieldComponent,
     LoadingIndicatorComponent,
-    DropZoneComponent,
+    ImportDropZoneComponent,
     NostosDatePipe,
     NgTemplateOutlet,
     ModalShell,
@@ -179,6 +179,17 @@ export class ReadingHistoryImportModal {
       if (this.isOpen() && this.stage() === 'pick') this.loadRecent();
     });
 
+    // A file from the one drop zone (issue #1526) starts the same import as a
+    // file chosen in this dialog, with no source picked first.
+    effect(() => {
+      const file = this.service.pendingFile();
+      if (!this.isOpen() || !file) return;
+      untracked(() => {
+        this.service.pendingFile.set(null);
+        void this.readFile(file);
+      });
+    });
+
     this.searchSubject
       .pipe(
         debounceTime(200),
@@ -215,23 +226,6 @@ export class ReadingHistoryImportModal {
   }
 
   // --- Pick ---------------------------------------------------------------
-
-  onDragOver(event: DragEvent): void {
-    event.preventDefault();
-  }
-
-  onDrop(event: DragEvent): void {
-    event.preventDefault();
-    const file = event.dataTransfer?.files?.[0];
-    if (file) void this.readFile(file);
-  }
-
-  onFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
-    input.value = '';
-    if (file) void this.readFile(file);
-  }
 
   /** Step one: ask the server what the file holds. Nothing is written. */
   async readFile(file: File): Promise<void> {

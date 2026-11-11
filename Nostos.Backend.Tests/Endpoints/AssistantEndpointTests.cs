@@ -330,6 +330,12 @@ public sealed class AssistantEndpointTests : IDisposable
         events[^1].Kind.Should().Be(AssistantTurnEventKinds.Failed);
         events[^1].Failure!.Code.Should().Be(errorCode);
         events[^1].Failure.Retryable.Should().BeTrue();
+        if (errorCode == LlmErrorCodes.Timeout)
+        {
+            // The whole-turn budget reports "execution limit"; a provider request
+            // that times out must say what actually happened (#1561).
+            events[^1].Failure.Message.Should().Be("Ask Nostos took too long to answer. Try again.");
+        }
     }
 
     [Fact]

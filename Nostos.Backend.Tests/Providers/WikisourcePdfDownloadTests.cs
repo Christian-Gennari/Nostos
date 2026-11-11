@@ -73,7 +73,10 @@ public sealed class WikisourcePdfDownloadTests : IDisposable
         });
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
 
-        var act = () => CreateDownloader(handler, attempts: 1).DownloadAsync(
+        // The per-attempt deadline must sit far beyond the caller's 200 ms, or a
+        // busy CI runner can fire the 1 s deadline timer first and the download
+        // reports a timeout instead of the caller's cancellation.
+        var act = () => CreateDownloader(handler, attempts: 1, timeoutSeconds: 60).DownloadAsync(
             PdfUrl, Path.Combine(_directory, "book.pdf"), CreateProvider(), long.MaxValue, progress: null, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -81,10 +84,10 @@ public sealed class WikisourcePdfDownloadTests : IDisposable
 
     private static WikisourceProvider CreateProvider() => new(new StubHttpClientFactory());
 
-    private static ProviderContentDownloader CreateDownloader(HttpMessageHandler handler, int attempts) =>
+    private static ProviderContentDownloader CreateDownloader(HttpMessageHandler handler, int attempts, int timeoutSeconds = 1) =>
         new(
             new HandlerFactory(handler),
-            Options.Create(new AcquisitionOptions { DownloadAttempts = attempts, DownloadTimeoutSeconds = 1 }),
+            Options.Create(new AcquisitionOptions { DownloadAttempts = attempts, DownloadTimeoutSeconds = timeoutSeconds }),
             NullLogger<ProviderContentDownloader>.Instance);
 
     private sealed class HandlerFactory(HttpMessageHandler handler) : IHttpClientFactory

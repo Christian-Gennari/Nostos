@@ -145,7 +145,10 @@ describe('App activation boundary', () => {
           provide: SwUpdate,
           useValue: { isEnabled: false, checkForUpdate: () => Promise.resolve(false) },
         },
-        { provide: DeploymentCapabilitiesService, useValue: { get: () => of(cloudCapabilities) } },
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: { get: () => of(cloudCapabilities), peek: () => cloudCapabilities },
+        },
         {
           provide: LibraryActivationController,
           useValue: { state: activationState, phase: activationPhase, reattach },
@@ -247,7 +250,7 @@ describe('App shell utility area', () => {
         },
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of(cloudCapabilities) },
+          useValue: { get: () => of(cloudCapabilities), peek: () => cloudCapabilities },
         },
       ],
     }).compileComponents();

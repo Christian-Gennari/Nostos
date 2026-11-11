@@ -77,29 +77,40 @@
   >
     @if (assistant.entries().length === 0) {
     <div class="assistant-empty" data-testid="assistant-empty">
-      <p class="assistant-empty-title">What would you like to know?</p>
-      <p class="assistant-empty-copy">Ask about your books and notes, or capture a thought without leaving the page.</p>
-      <div class="starter-list" role="list" aria-label="Suggested questions">
-        @for (starter of starters(); track starter.id) {
-        <div role="listitem">
-          <button
-            type="button"
-            class="starter"
-            (click)="runStarter(starter)"
-            [disabled]="assistant.sending()"
-            data-testid="assistant-starter"
-          >
-            <span class="starter-label">{{ starter.label }}</span>
-            <nostos-icon class="starter-go" name="arrow-right" [size]="14"></nostos-icon>
-          </button>
+      <p class="assistant-empty-title">Ask, capture, or change your library.</p>
+      <div class="capability-doors" aria-label="What Ask Nostos can do">
+        @for (door of doors(); track door.id) {
+        <div class="capability-door" [attr.data-door]="door.id" [attr.data-testid]="'assistant-door-' + door.id">
+          <span class="capability-door-label">{{ door.label }}</span>
+          <div class="capability-door-examples">
+            @for (example of door.examples; track example.id) {
+            <button
+              appButton
+              variant="secondary"
+              size="sm"
+              type="button"
+              class="capability-example"
+              (click)="prefillFromDoor(example)"
+              [disabled]="assistant.sending()"
+              [attr.data-testid]="'assistant-example-' + example.id"
+            >{{ example.label }}</button>
+            }
+          </div>
         </div>
         }
       </div>
+      <p class="assistant-empty-boundary">It can't delete books or notes, or change settings.</p>
     </div>
     }
 
     @if (assistant.entries().length > 0) {
-    <div class="assistant-transcript" #transcript data-testid="assistant-transcript">
+    <div
+      class="assistant-transcript"
+      #transcript
+      tabindex="-1"
+      aria-label="Conversation"
+      data-testid="assistant-transcript"
+    >
       @for (entry of assistant.entries(); track entry.id) {
       <article
         class="entry"
@@ -121,7 +132,7 @@
           [innerHTML]="entry.text | assistantMarkdown: citationPreviews(entry)"
           (click)="onReplyClick($event, entry)"
         ></div>
-        } @else {
+        } @else if (entry.kind !== 'error') {
         <blockquote class="entry-text">{{ entry.text }}</blockquote>
         }
 
@@ -142,6 +153,9 @@
                   [attr.aria-controls]="sourceGroupId(entry.id, display.bookId)"
                   data-testid="assistant-source-group"
                 >
+                  @if (citesSources(entry)) {
+                  <span class="entry-source-number">{{ sourceGroupNumbers(display) }}</span>
+                  }
                   <nostos-icon name="book-open" [size]="12"></nostos-icon>
                   <span>{{ display.bookTitle }} · {{ display.items.length }} passages</span>
                 </button>
@@ -317,7 +331,7 @@
             @if (
               artifact.kind === 'capture'
               || artifact.kind === 'action'
-              || (artifact.kind === 'failure' && artifact.state !== 'cancelled')
+              || (artifact.kind === 'failure' && artifact.state === 'incomplete')
             ) {
             <footer class="entry-meta">
               <span class="entry-status">{{ artifactLabel(artifact) }}</span>
@@ -328,6 +342,7 @@
             }
             @if (artifact.kind === 'changeset') {
             <app-assistant-changeset-card
+              [attr.data-changeset-id]="artifact.changeset.changesetId"
               [changeset]="artifact.changeset"
               [conflicts]="artifact.conflicts ?? []"
               [busy]="assistant.changesetBusy() === artifact.changeset.changesetId"
@@ -338,12 +353,64 @@
               (discard)="assistant.discardChangeset(artifact.changeset.changesetId)"
               (undo)="assistant.undoChangeset(artifact.changeset.changesetId)"
               (stepToggled)="assistant.setChangesetStepIncluded(artifact.changeset.changesetId, $event.index, $event.included)"
+              (detailsToggled)="onChangesetDetailsToggled(artifact.changeset.changesetId, $event)"
             />
             }
           }
         </div>
         }
-        @if (entry.anchorLabel || entry.meta) {
+        @if (entry.kind === 'error') {
+        <!-- The turn's committed outcomes come first (#1558): a capture that was
+             saved stays visible above the failure, then the failure itself
+             (#1556): the server sentence, one next step that fits the typed
+             code, and the raw code only behind Details. -->
+        <div class="entry-failure" data-testid="assistant-failure">
+          <p class="entry-failure-text" role="status" aria-live="polite">{{ entry.text }}</p>
+          @if (allowanceRenewsAt(entry); as renewsAt) {
+          <p class="entry-failure-note">Allowance renews {{ renewsAt | nostosDate }}.</p>
+          }
+          @if (failureAction(entry); as action) {
+          <div class="entry-failure-actions">
+            @if (action.kind === 'allowance') {
+            <a
+              appButton
+              variant="secondary"
+              size="sm"
+              [href]="action.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="assistant-failure-allowance"
+            >{{ action.label }}</a>
+            } @else if (action.kind === 'retry') {
+            <button
+              appButton
+              variant="secondary"
+              size="sm"
+              type="button"
+              (click)="onRetryFailure(entry)"
+              [disabled]="assistant.sending()"
+              data-testid="assistant-retry"
+            >{{ action.label }}</button>
+            } @else {
+            <button
+              appButton
+              variant="secondary"
+              size="sm"
+              type="button"
+              (click)="onFailureAction(action)"
+              data-testid="assistant-failure-action"
+            >{{ action.label }}</button>
+            }
+          </div>
+          }
+          <details class="entry-failure-details" data-testid="assistant-failure-details">
+            <summary>Details</summary>
+            <code class="entry-failure-code">{{ failureCode(entry) }}</code>
+          </details>
+        </div>
+        }
+        <!-- A failure's code belongs behind Details, not in the entry footer. -->
+        @if (entry.kind !== 'error' && (entry.anchorLabel || entry.meta)) {
         <footer class="entry-meta">
           @if (entry.anchorLabel) { <span class="entry-anchor">{{ entry.anchorLabel }}</span> }
           @if (entry.meta) { <span class="entry-status">{{ entry.meta }}</span> }

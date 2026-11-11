@@ -1,0 +1,12 @@
+{
+  "source": "applebooks",
+  "version": "macos-unknown-2022-09",
+  "file": "AEAnnotation_v10312011_1727_local.sqlite",
+  "companions": ["BKLibrary-1-091020131601.sqlite"],
+  "expected": {
+    "foundBooks": 3,
+    "importedAnnotations": 10,
+    "skipped": {},
+    "missingOptionalColumns": []
+  }
+}

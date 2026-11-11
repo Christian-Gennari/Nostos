@@ -15,7 +15,7 @@ namespace Nostos.Backend.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.AiProviderSettingsModel", b =>
                 {
@@ -1179,6 +1179,9 @@ namespace Nostos.Backend.Migrations
 
                     b.Property<string>("FileName")
                         .HasMaxLength(260)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReportJson")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Source")

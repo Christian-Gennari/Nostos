@@ -80,6 +80,20 @@ assistantMarkdown.use({
 });
 
 /**
+ * Keep a citation marker with the word before it.
+ *
+ * The reply's prose may end a sentence flush with `[^n]`, and the marker is
+ * rendered as its own inline box. A phone-width line then wrapped the marker
+ * alone onto the next line (assessment screenshot 22). A narrow no-break space
+ * between the last word and the marker removes the break opportunity
+ * regardless of how the marker box is styled. It stays a space to a screen
+ * reader and to copy/paste.
+ */
+function keepCitationsWithTheirWord(html: string): string {
+  return html.replace(/[ \t]*(<sup class="assistant-cite">)/g, '\u202F$1');
+}
+
+/**
  * Compile one assistant reply to safe-to-bind HTML.
  *
  * This deliberately returns an ordinary string rather than SafeHtml. Binding
@@ -90,7 +104,9 @@ export function renderAssistantMarkdown(source: string, previews: readonly strin
   citationPreviews = previews;
   try {
     const rendered = assistantMarkdown.parse(source);
-    return typeof rendered === 'string' ? rendered : escapeHtml(source);
+    return typeof rendered === 'string'
+      ? keepCitationsWithTheirWord(rendered)
+      : escapeHtml(source);
   } finally {
     citationPreviews = [];
   }
