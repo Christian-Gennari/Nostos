@@ -47,8 +47,9 @@ Each version folder has one `manifest.json` next to the file(s):
   lacks; `[]` means the file has everything the reader knows. This is the same
   data the `HighlightImportShape` log reports (issue #1523).
 
-`ImportFixtureCorpusTests` discovers every folder with a `manifest.json`; there
-is no list of fixtures in C#. To add a version: drop the file in a new folder,
+`ImportFixtureCorpusTests` discovers every folder with a `manifest.json` except
+the `readwise/api-*` recordings, which the JSON mapper tests read; there is no
+list of fixtures in C#. To add a version: drop the file in a new folder,
 add its manifest, and run:
 
 ```bash
