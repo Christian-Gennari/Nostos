@@ -160,7 +160,7 @@ const CALIBRE_HELP: readonly HelpEntry[] = [
     hint: 'The Calibre library folder this server can see.',
     steps: [
       {
-        text: 'Give the server your Calibre library — the folder that holds metadata.db. In Docker, mount it read-only at /external/calibre; without Docker, set Calibre__LibraryRoot.',
+        text: 'Give the server your Calibre library, not a folder of loose books: mount it read-only at /external/calibre in Docker, or set Calibre__LibraryRoot without Docker, and restart. It is the folder that holds',
         code: 'metadata.db',
       },
       {
