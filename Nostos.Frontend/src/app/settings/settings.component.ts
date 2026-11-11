@@ -388,6 +388,24 @@ export class SettingsComponent implements OnInit, OnDestroy {
     // `?section=import&open=applebooks` opens straight on Apple Books' steps,
     // so help pages and support replies can link to them (#1357). The
     // parameter is dropped once used, so a reload does not reopen it.
+    // `?open=calibre` opens the Calibre import directly, so the upload and
+    // review can be linked to (support replies, the release notes and the
+    // visual QA screenshots). Dropped once used, like `open=applebooks`.
+    effect(() => {
+      if (this.isManageLibraryPage || this.queryParamMap().get('open') !== 'calibre') return;
+      if (!this.supportsCalibre()) return;
+      untracked(() => {
+        this.showSection('import');
+        this.openCalibreImport();
+        void this.router?.navigate([], {
+          relativeTo: this.route,
+          queryParams: { open: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
+    });
+
     effect(() => {
       if (this.isManageLibraryPage || this.queryParamMap().get('open') !== 'applebooks') return;
       untracked(() => {
@@ -502,11 +520,23 @@ export class SettingsComponent implements OnInit, OnDestroy {
     () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
   );
   /**
-   * A SelfHosted server that can read a Calibre library (#1527).
+   * A SelfHosted server that can read a Calibre folder (#1527).
    * Server-authoritative: never inferred from `deploymentMode`.
    */
   readonly supportsCalibreImport = computed(
     () => this.deploymentCapabilities()?.supportsCalibreImport === true,
+  );
+  /**
+   * A server that accepts a zipped Calibre library through the resumable
+   * upload (#1572). SelfHosted offers it beside its folder; Cloud offers it
+   * instead of one.
+   */
+  readonly supportsCalibreUpload = computed(
+    () => this.deploymentCapabilities()?.supportsCalibreUpload === true,
+  );
+  /** Either Calibre path is enough to show the entry. */
+  readonly supportsCalibre = computed(
+    () => this.supportsCalibreImport() || this.supportsCalibreUpload(),
   );
   /**
    * Settings → Connected apps (#1469): a server that keeps a record of the AI

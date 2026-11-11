@@ -1436,7 +1436,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(externalMediaServiceMock.status).not.toHaveBeenCalled();
   });
 
-  it('offers the Calibre import on a SelfHosted server and hides it on Cloud', () => {
+  it('offers the Calibre import on a SelfHosted server and hides it on Cloud without a source', () => {
     capabilitiesServiceMock.get.mockReturnValueOnce(
       of({ ...selfHostedCapabilities, supportsCalibreImport: true }),
     );
@@ -1447,6 +1447,15 @@ describe('SettingsComponent backup-only surface', () => {
     capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
     render();
     expect(fixture.nativeElement.querySelector('[data-testid="import-calibre-card"]')).toBeNull();
+  });
+
+  it('offers the Calibre upload on Cloud when the host advertises it', () => {
+    capabilitiesServiceMock.get.mockReturnValueOnce(
+      of({ ...cloudCapabilities, supportsCalibreUpload: true }),
+    );
+    render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="import-calibre-card"]')).toBeTruthy();
   });
 
   it('offers Connected apps when the server keeps a record of them', () => {

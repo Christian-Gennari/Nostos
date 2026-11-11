@@ -35,6 +35,9 @@ public class LibraryEndpointFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Testing");
         builder.UseSetting("Storage:BooksRoot", _booksRoot);
+        builder.UseSetting(
+            "CalibreUpload:RootPath",
+            Path.Combine(_storageTempRoot, "calibre-uploads"));
         builder.ConfigureAppConfiguration((ctx, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>

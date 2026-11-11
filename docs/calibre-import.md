@@ -1,14 +1,68 @@
 # Import a Calibre library
 
-SelfHosted only, for now. Nostos reads the Calibre library folder the server can
-see, shows what it found, and brings in the books you choose. Your Calibre
-library is never changed or deleted.
+Nostos reads a Calibre library, shows what it found, and brings in the books
+you choose. Your Calibre library is never changed or deleted.
 
-Nostos Cloud cannot read a folder, so it does not offer this yet: a Cloud
-import needs the library uploaded (a zipped Calibre folder through the library
-transfer). That is a follow-up, not part of this release.
+There are two ways to give Nostos the library, and both end in the same review
+screen and the same undoable import:
 
-## Set it up
+- **SelfHosted** reads a folder the server can see, in place. That is the
+  primary path on a server you run yourself.
+- **Cloud** cannot read a folder, so it takes a **zip of the library** through
+  the resumable upload. SelfHosted offers the same upload too: it is the same
+  product code, so there was no reason to hide it. A configured folder wins
+  when both are available.
+
+## Upload a zipped library
+
+1. Zip the Calibre library folder — the one that holds `metadata.db` and the
+   book folders, not a folder of loose books:
+
+   ```bash
+   cd /path/to/Calibre\ Library
+   zip -r ~/calibre-library.zip .
+   ```
+
+   On Windows, right-click the library folder and choose **Send to →
+   Compressed (zipped) folder**. The zip may hold `metadata.db` at its root or
+   inside one top-level folder.
+2. **Settings → Import → Calibre library → Choose a zipped Calibre library.**
+3. Nostos checks the file's SHA-256, receives it in resumable parts, verifies
+   the whole file, unpacks it in a private scratch directory, and checks that
+   `metadata.db` is Calibre's own database. Only then does the review open.
+4. Review, import and undo exactly as below. The scratch copy is deleted when
+   the import finishes, when you cancel the upload, or after 24 hours.
+
+The upload is resumable. If the connection drops or the page reloads, choose
+the same zip again: the server reports which parts it already has and the
+browser sends only the rest. Choosing a different zip replaces the staged one.
+
+### Limits
+
+| Limit | Default | Configuration |
+| --- | --- | --- |
+| Zip size | 8 GB | `CalibreUpload__MaxLibraryBytes` |
+| Extracted size | 16 GB | `CalibreUpload__MaxExtractedBytes` |
+| Files | 100,000 | `CalibreUpload__MaxFiles` |
+| Session lifetime | 24 hours | `CalibreUpload__SessionLifetimeHours` |
+| Scratch directory | `<transfer root>/calibre-uploads` | `CalibreUpload__RootPath` |
+
+The size cap is deliberately generous — a library with audiobooks is much
+larger than one of text EPUBs — while still bounded, because the zip is held
+and then extracted on the server's scratch volume. A Cloud plan can report a
+different cap; the dialog always shows the effective one, and a library over it
+is refused before a byte is saved with a message naming both sizes.
+
+The upload zip is never trusted as a path source. Entries with an absolute
+path, a drive letter, `..`, a symbolic link, a reserved name, or a duplicate
+are refused; the total extracted bytes and file count are enforced while
+copying, not only from the zip's headers. A refused zip leaves no partial
+extraction behind.
+
+## Set up a folder (SelfHosted, optional)
+
+The rest of this guide is for a server that reads the folder in place. You do
+not need any of it to upload a zip.
 
 ### Docker Compose
 

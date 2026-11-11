@@ -81,6 +81,87 @@
   color: var(--color-text-main);
 }
 
+/* --- Upload ------------------------------------------------------------- */
+
+.calibre-upload {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 1.6rem 1rem;
+  margin-bottom: 0.9rem;
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-alt);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(120ms) var(--ease-standard),
+    background var(120ms) var(--ease-standard);
+}
+
+.calibre-upload:hover,
+.calibre-upload:focus-within {
+  border-color: var(--color-accent);
+  background: var(--bg-hover);
+}
+
+.calibre-upload input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.calibre-upload-icon {
+  color: var(--color-accent);
+}
+
+.calibre-upload-title {
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.calibre-upload-hint {
+  max-width: 34rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.calibre-upload-actions {
+  display: flex;
+  justify-content: center;
+  margin: -0.25rem 0 0.9rem;
+}
+
+.calibre-folder-option {
+  margin-top: 0.6rem;
+}
+
+.calibre-folder-steps {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.calibre-folder-steps li + li {
+  margin-top: 0.35rem;
+}
+
+.calibre-folder-steps code {
+  padding: 0 0.25em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 0.95em;
+  color: var(--color-text-main);
+}
+
 /* --- Progress ----------------------------------------------------------- */
 
 .calibre-progress {

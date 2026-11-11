@@ -483,19 +483,42 @@ fixture is in
 
 ### Calibre library import — `/api/calibre`
 
-SelfHosted only. Settings → Import → Calibre library opens the review dialog.
-The host reads `metadata.db` and the book folders from the one folder named by
-`Calibre:LibraryRoot`; no route accepts a path. The database is opened read-only
-and the book files are only opened for reading.
+Settings → Import → Calibre library opens the review dialog. A SelfHosted host
+reads the folder named by `Calibre:LibraryRoot` in place; any host that maps
+the upload routes accepts a zipped library instead (#1572). No route accepts a
+filesystem path. The database is opened read-only and the book files are only
+opened for reading.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| `GET` | `/api/calibre/` | `{ configured, available, import }`. Always answers, so Settings can explain how to set a library up. |
+| `GET` | `/api/calibre/` | `{ configured, available, source, folderSupported, uploadSupported, maxUploadBytes, upload, import }`. Always answers, so Settings can explain how to set a library up. |
 | `GET` | `/api/calibre/preview` | Read the library and return `{ source, summary, books, skipped, customColumns, warnings }` without writing. |
 | `POST` | `/api/calibre/import` | Body `{ decisions }`; start one background import and return `202` with its progress. |
-| `GET` | `/api/calibre/import` | The running or last import: `{ status, total, completed, current, batchId, results, error }`. |
+| `GET` | `/api/calibre/import` | The running or last import: `{ status, total, completed, current, batchId, results, error }`. Answers after an uploaded library has been released. |
 | `GET` | `/api/calibre/batches` | The five most recent Calibre imports, with book and file counts. |
 | `DELETE` | `/api/calibre/batches/{id}` | Undo an import; return `{ removed, kept }` or `404`. |
+
+#### Uploading a zipped library
+
+A host that maps these routes advertises `supportsCalibreUpload` in
+`/api/runtime/capabilities`. The upload is the same resumable contract as the
+library transfer: server-owned `partBytes`, a SHA-256 receipt per part, and a
+whole-file check before extraction. `X-Nostos-Chunk-SHA256` and
+`Content-Range: bytes start-end/total` are required on every part.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `GET` | `/api/calibre/upload` | The owner's current upload, or `204`. |
+| `POST` | `/api/calibre/upload` | Body `{ totalBytes, fileName, sha256 }`; create or resume the one session. `413` with `calibre_upload_too_large` over the cap. |
+| `GET` | `/api/calibre/upload/{id}` | One session's state, received parts and limits. |
+| `PUT` | `/api/calibre/upload/{id}/parts/{index}` | One part. Re-sending the same part is idempotent; different bytes answer `409 calibre_upload_part_conflict`. |
+| `POST` | `/api/calibre/upload/{id}/complete` | Verify, extract and validate; answers the staged session with `books` and `stagedBytes`. `409 calibre_upload_incomplete` names the missing parts. |
+| `DELETE` | `/api/calibre/upload/{id}` | Remove the session and its scratch bytes. |
+
+Invalid archives answer `422` with `calibre_upload_invalid_archive`,
+`calibre_upload_unsafe_entry` (zip slip, absolute path, symlink),
+`calibre_upload_too_many_files`, `calibre_upload_extracted_too_large`,
+`calibre_upload_metadata_missing` or `calibre_upload_not_calibre`.
 
 Preview books carry the Calibre `sourceKey`, title/author, series and volume,
 ISBN, publisher, publication date, `rating` (0–5), plain-text `description`,

@@ -189,6 +189,13 @@ public interface ICalibreLibrarySource
 
     /// <summary>The cover's file extension with the dot, for storage naming.</summary>
     string? CoverExtension { get; }
+
+    /// <summary>
+    /// Called after an import has finished. A source whose bytes are only
+    /// needed while the import runs (an uploaded zip) removes them here; a
+    /// mounted folder has nothing to remove and keeps the default no-op.
+    /// </summary>
+    Task ReleaseAfterCommitAsync(CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>The capability seam: Settings offers the feature when a source is registered.</summary>
