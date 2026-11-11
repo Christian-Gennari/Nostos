@@ -302,17 +302,16 @@ export const ASSISTANT_PENDING_DELAY_MS = 350;
 /**
  * How long a turn may stay silent before the panel stops waiting (#1560).
  *
- * The server owns two clocks (`AssistantOptions`): the whole-turn budget is
- * 90 s (`MaxTurnElapsedMilliseconds`) and one provider call may take 95 s
- * (`RequestTimeoutSeconds`). The orchestrator gives the provider call whatever
- * is left of the turn budget, so a healthy server always writes a terminal
- * event inside 90 s; the larger 95 s per-call timeout is the outer bound even
- * if a future change lets one call run on its own clock. Adding a 15 s
- * transport grace makes 110 s the first moment a silent stream cannot still
- * be a legitimate turn. Waiting longer only strands the reader on three dots;
- * firing earlier would replace a slow but live turn with a false failure.
+ * The server owns the clocks (`AssistantOptions`, #1561): one provider call
+ * times out at 60 s (`RequestTimeoutSeconds`), and the whole turn ends at 90 s
+ * (`MaxTurnElapsedMilliseconds`), which startup validation keeps above the
+ * per-call timeout. So a healthy server always writes a terminal event inside
+ * 90 s. Adding a 15 s transport grace makes 105 s the first moment a silent
+ * stream cannot still be a legitimate turn. Waiting longer only strands the
+ * reader on three dots; firing earlier would replace a slow but live turn with
+ * a false failure.
  */
-export const ASSISTANT_TURN_WATCHDOG_MS = 110_000;
+export const ASSISTANT_TURN_WATCHDOG_MS = 105_000;
 
 /** One normal turn result, mirroring `AssistantTurnResponse`. */
 export interface AssistantTurnResponse {
