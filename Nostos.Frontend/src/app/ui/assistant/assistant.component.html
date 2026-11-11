@@ -153,6 +153,9 @@
                   [attr.aria-controls]="sourceGroupId(entry.id, display.bookId)"
                   data-testid="assistant-source-group"
                 >
+                  @if (citesSources(entry)) {
+                  <span class="entry-source-number">{{ sourceGroupNumbers(display) }}</span>
+                  }
                   <nostos-icon name="book-open" [size]="12"></nostos-icon>
                   <span>{{ display.bookTitle }} · {{ display.items.length }} passages</span>
                 </button>

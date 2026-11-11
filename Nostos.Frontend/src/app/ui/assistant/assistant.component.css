@@ -194,7 +194,19 @@
 }
 
 .assistant-panel.is-expanded .assistant-empty {
-  gap: 12px;
+  /* The wide card is a place to work, not a stretched flyout: the empty state
+     owns the free height and sits in the middle of it. The measure stays
+     readable, and the three doors use the extra width as a grid. */
+  flex: 1 1 auto;
+  /* `safe` so a short viewport falls back to top-aligned scrolling instead of
+     clipping the first row (the audio reader's centred surface uses the same). */
+  justify-content: safe center;
+  width: 100%;
+  max-width: 760px;
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding-block: 24px;
+  gap: 10px;
 }
 
 .assistant-panel.is-expanded .assistant-empty-title {
@@ -202,19 +214,47 @@
   font-size: 1.22rem;
 }
 
-/* The expanded workspace has the width for three capability doors side by
-   side; the compact flyout keeps them as labelled rows. */
+.assistant-panel.is-expanded .assistant-empty-boundary {
+  max-width: 60ch;
+}
+
+/* Two columns, with Organise spanning the full width beneath Ask and Capture:
+   three equal columns made the longest prompt labels wrap into a ragged row. */
 .assistant-panel.is-expanded .capability-doors {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px 24px;
-  margin-top: 4px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 28px;
+  margin-top: 8px;
 }
 
 .assistant-panel.is-expanded .capability-door {
   grid-template-columns: 1fr;
   align-content: start;
-  gap: 6px;
+  gap: 8px;
+}
+
+.assistant-panel.is-expanded .capability-door:last-child {
+  grid-column: 1 / -1;
+}
+
+.assistant-panel.is-expanded .capability-door-examples {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.assistant-panel.is-expanded .capability-door:last-child .capability-door-examples {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.assistant-panel.is-expanded .capability-example {
+  width: 100%;
+  max-width: 100%;
+}
+
+.assistant-panel.is-expanded .capability-door:last-child .capability-example {
+  width: auto;
 }
 
 @keyframes assistant-reveal {
@@ -428,7 +468,9 @@
   max-width: 85%;
   padding: 8px 13px 9px;
   border: 1px solid var(--border-color);
-  border-radius: 16px 16px 4px 16px;
+  /* Nested inside the 14px panel, with the one tail corner the bubble
+     deliberately keeps. Both values come from the token graph. */
+  border-radius: var(--radius-dialog) var(--radius-dialog) var(--radius-sm) var(--radius-dialog);
   background: var(--dock-field);
 }
 
@@ -550,7 +592,7 @@
 :host ::ng-deep .entry-markdown code {
   padding: 0.08em 0.28em;
   border: 1px solid var(--border-color);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 0.82em;
@@ -922,7 +964,7 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: var(--radius-field);
   background: var(--bg-input);
   transition:
     border-color var(--motion-fast) var(--ease-plain),
@@ -1200,6 +1242,51 @@
     padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* An expanded panel that is resized to a phone keeps the compact empty
+     state: one column of labelled rows, pinned under the header. */
+  .assistant-panel.is-expanded .assistant-empty {
+    flex: none;
+    justify-content: flex-start;
+    max-width: none;
+    padding-block: 6px 4px;
+    gap: 4px;
+  }
+
+  .assistant-panel.is-expanded .assistant-empty-title {
+    max-width: none;
+    font-size: 1.12rem;
+  }
+
+  .assistant-panel.is-expanded .assistant-empty-boundary {
+    max-width: none;
+  }
+
+  .assistant-panel.is-expanded .capability-doors {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .assistant-panel.is-expanded .capability-door,
+  .assistant-panel.is-expanded .capability-door:last-child {
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-column: auto;
+  }
+
+  .assistant-panel.is-expanded .capability-door-examples,
+  .assistant-panel.is-expanded .capability-door:last-child .capability-door-examples {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .assistant-panel.is-expanded .capability-example,
+  .assistant-panel.is-expanded .capability-door:last-child .capability-example {
+    width: auto;
+  }
+
   .assistant-expand {
     display: none;
   }
@@ -1287,7 +1374,7 @@
   gap: 0.3rem;
   max-width: 100%;
   border: 1px solid var(--border-color);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
@@ -1384,8 +1471,11 @@
 }
 
 :host ::ng-deep .entry-markdown .assistant-cite-link {
-  display: inline-block;
-  min-width: 1.4em;
+  /* Inline, not inline-block: an inline-block marker is a line-break
+     opportunity of its own, so it could wrap away from its word even with a
+     no-break space before it (assessment screenshot 22). The padding still
+     paints the pill; a marker is never a block of content. */
+  display: inline;
   padding: 0.1em 0.3em;
   line-height: 1.2;
   border-radius: var(--radius-pill);
