@@ -1,0 +1,50 @@
+
+<header class="note-detail-head">
+  <div class="note-detail-head-inner">
+    <h2 class="note-detail-title">{{ note().bookTitle || unknownBook }}</h2>
+    @if (note().bookAuthor) {
+    <span class="note-detail-author">{{ note().bookAuthor }}</span>
+    }
+  </div>
+</header>
+
+<div class="note-detail-body">
+  <app-note-item
+    [note]="note()"
+    [topics]="state.topics()"
+    [topicMap]="state.lookup()"
+    [busy]="busy()"
+    [canSelect]="false"
+    [showFormat]="(note().editionCount ?? 1) > 1"
+    [quoteSize]="quoteSize()"
+    [citedWritings]="cited()"
+    [suggestions]="suggestions.namesFor(note().id)"
+    [suggestionState]="suggestions.stateFor(note().id)"
+    (topicAdded)="noteActions.addTopic(note(), $event)"
+    (topicRemoved)="noteActions.removeTopic(note(), $event)"
+    (pickerOpened)="suggestions.request(note())"
+    (pickerClosed)="suggestions.closeFor(note().id)"
+    (edited)="noteActions.edit($event)"
+    (keepWithWriting)="noteActions.keepWithWriting([note().id])"
+    (moreFromBook)="moreFromBook.emit()"
+    (deleteRequested)="noteActions.askDelete([note().id])"
+    (restored)="noteActions.restored($event)"
+  />
+
+  @if (related().length) {
+  <section class="related" [attr.aria-labelledby]="'related-' + note().id">
+    <div class="related-head">
+      <span class="eyebrow" [id]="'related-' + note().id">Related notes</span>
+      @if (sharedTopicsLabel()) {
+      <span class="related-sharing">sharing {{ sharedTopicsLabel() }}</span>
+      }
+    </div>
+    @for (related of related(); track related.id) {
+    <button type="button" class="related-row" (click)="openRelated(related)">
+      <span class="related-text">{{ related.excerpt || 'A note with no words yet.' }}</span>
+      <span class="related-meta">{{ related.bookTitle }} · {{ related.createdAt | nostosDate }}</span>
+    </button>
+    }
+  </section>
+  }
+</div>

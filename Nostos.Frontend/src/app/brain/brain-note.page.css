@@ -11,10 +11,9 @@
 
 .note-head {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5rem;
-  padding: 1.5rem 3rem 0.5rem;
+  padding: 1.5rem max(1rem, calc((100% - 46rem) / 2)) 0;
 }
 
 .place-switch {
@@ -23,8 +22,6 @@
 
 .note-column {
   display: block;
-  max-width: calc(46rem + 6rem);
-  padding: 0 3rem 8rem;
 }
 
 .list-loading {
@@ -35,7 +32,7 @@
 
 @media (max-width: 768px) {
   .note-head {
-    padding: 10px 14px 0;
+    padding: 10px 16px 0;
   }
 
   .place-switch {
@@ -47,13 +44,7 @@
     font-weight: var(--fw-semibold);
   }
 
-  .back-link,
-  .page-title {
+  .back-link {
     display: none;
   }
-
-  .note-column {
-    padding: 0 16px 6rem;
-  }
 }
-
