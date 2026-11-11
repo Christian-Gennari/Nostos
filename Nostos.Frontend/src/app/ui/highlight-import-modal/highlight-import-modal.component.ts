@@ -16,6 +16,7 @@ import {
   HighlightImportCandidate,
   HighlightImportDecision,
   HighlightImportPreviewBook,
+  HighlightImportReport,
   HighlightImportResultBook,
   HighlightImportService,
   HighlightImportSkipped,
@@ -654,6 +655,27 @@ export class HighlightImportModal {
 
   sourceName(source: HighlightImportSource): string {
     return HIGHLIGHT_IMPORT_SOURCE_LABEL[source] ?? source;
+  }
+
+  /**
+   * One line for a batch's report (issue #1522): what the file held, and the
+   * three places the rest went. Empty outcomes are left out, as the issue's
+   * example does; found and imported always show.
+   */
+  reportLine(report: HighlightImportReport): string {
+    const parts = [`${report.found} found`, `${report.imported} imported`];
+    if (report.duplicates > 0) parts.push(`${report.duplicates} already here`);
+    if (report.skipped > 0) parts.push(`${report.skipped} skipped`);
+    if (report.leftOut > 0) parts.push(`${report.leftOut} left out`);
+    return parts.join(' · ');
+  }
+
+  /** "2 books matched · 1 added · 4 left out" for the batch's sub-line. */
+  reportBooks(report: HighlightImportReport): string {
+    const parts = [`${this.count(report.booksMatched, 'book')} matched`];
+    if (report.booksCreated > 0) parts.push(`${report.booksCreated} added`);
+    if (report.booksLeftOut > 0) parts.push(`${report.booksLeftOut} left out`);
+    return parts.join(' · ');
   }
 
   count(value: number, noun: string): string {

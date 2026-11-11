@@ -131,6 +131,23 @@ export interface HighlightImportResult {
   books: HighlightImportResultBook[];
 }
 
+/**
+ * What one committed import found and where every entry went (issue #1522).
+ * `found` always equals `imported + duplicates + skipped + leftOut`.
+ */
+export interface HighlightImportReport {
+  found: number;
+  imported: number;
+  duplicates: number;
+  skipped: number;
+  leftOut: number;
+  /** The file's unimportable entries, grouped by title, author and reason. */
+  skippedReasons: HighlightImportSkipped[];
+  booksMatched: number;
+  booksCreated: number;
+  booksLeftOut: number;
+}
+
 export interface HighlightImportBatch {
   id: string;
   source: HighlightImportSource;
@@ -138,6 +155,8 @@ export interface HighlightImportBatch {
   createdAtUtc: string;
   noteCount: number;
   bookCount: number;
+  /** Null for an import made before reports existed. */
+  report: HighlightImportReport | null;
 }
 
 /**
