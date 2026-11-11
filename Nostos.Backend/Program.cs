@@ -184,9 +184,12 @@ builder.Services.AddSingleton<AlignmentSttProvider>();
 builder.Services.AddScoped<IAlignmentTranscriber, SettingsAlignmentTranscriber>();
 
 // --- ASSISTANT LLM BRIDGE (issue #261 §3, §7) ---
+// The transport timeout is the orchestrator's per-request clock plus a small
+// grace: a stalled call normally fails on the typed in-process clock first
+// (#1561). See AssistantOptions for the clock order.
 builder.Services.AddHttpClient(OpenAiCompatibleLlmProvider.HttpClientName, client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(Math.Max(1, assistantOptions.RequestTimeoutSeconds));
+    client.Timeout = assistantOptions.TransportTimeout;
 });
 builder.Services.AddSingleton<ILlmProvider, OpenAiCompatibleLlmProvider>();
 
