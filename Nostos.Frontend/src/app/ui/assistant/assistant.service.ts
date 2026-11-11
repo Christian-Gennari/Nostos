@@ -1543,7 +1543,11 @@ export class AssistantService {
       this.pushEntry(turn.turnId, 'error', message, null, code, [], false);
     }
 
-    if (failure?.retryable && !response) {
+    // A retryable provider failure stays retryable even when the turn had
+    // already committed something: the panel shows what was saved, then the
+    // failure with Try again. The replay reuses this TurnId, so the server's
+    // receipts answer instead of writing a second note (#1558).
+    if (failure?.retryable) {
       this.retryableTurn.set(turn);
       this.draft.set(turn.text);
       this.updateUserDelivery(turn.userEntryId, 'retryable', 'Ready to retry');
