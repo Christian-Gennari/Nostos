@@ -52,7 +52,10 @@ jobs:
   browser:
     name: browser
     if: ${{ !inputs.docs_only }}
-    runs-on: ubuntu-latest
+    # Pinned while ubuntu-latest (ubuntu-26.04) cannot resolve
+    # security.ubuntu.com, so Playwright's system dependencies fail to install
+    # (#1570). Return to ubuntu-latest once that image installs them again.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
