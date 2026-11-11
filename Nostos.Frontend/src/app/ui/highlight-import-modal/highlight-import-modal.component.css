@@ -36,52 +36,6 @@
   color: var(--color-text-muted);
 }
 
-/* --- Pick --------------------------------------------------------------- */
-
-.highlight-sources {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  margin: 1.15rem 0 0;
-}
-
-.highlight-source {
-  display: grid;
-  grid-template-columns: 5rem 1fr;
-  gap: 0.75rem;
-  font-size: 0.78rem;
-  line-height: 1.5;
-}
-
-.highlight-source dt {
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-main);
-}
-
-.highlight-source dd {
-  margin: 0;
-  color: var(--color-text-muted);
-}
-
-.highlight-source strong {
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-main);
-}
-
-.highlight-source kbd {
-  font-family: inherit;
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-main);
-}
-
-.highlight-source code {
-  padding: 0 0.25em;
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  font-size: 0.95em;
-  color: var(--color-text-main);
-}
-
 /* --- Apple Books steps (#1357) ------------------------------------------ */
 
 .highlight-steps {

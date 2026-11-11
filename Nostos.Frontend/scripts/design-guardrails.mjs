@@ -611,6 +611,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // An imported book in the import report: the same row as the non-interactive
   // failure rows beside it, made clickable.
   'src/app/ui/highlight-import-modal/highlight-import-modal.component.html': ['highlight-row'],
+  // The one import drop zone (issue #1526): a dashed target whose whole surface
+  // is the control, and a help row that is a disclosure, not an action button.
+  'src/app/ui/import-drop-zone/import-drop-zone.component.html': ['import-drop__button', 'import-help__summary'],
   // Assistant rows and recording controls (see also check-design RULE 15).
   'src/app/ui/assistant/assistant.component.html': ['starter', 'suggestion-chip', 'anchor-chip-dismiss', 'voice-control', 'assistant-trigger'],
 

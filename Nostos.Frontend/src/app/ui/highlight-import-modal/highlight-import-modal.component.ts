@@ -28,8 +28,8 @@ import { DialogActionsComponent } from '../dialog-actions/dialog-actions.compone
 import { ButtonComponent } from '../button/button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
-import { DropZoneComponent } from '../drop-zone/drop-zone.component';
 import { BadgeComponent } from '../badge/badge.component';
+import { ImportDropZoneComponent } from '../import-drop-zone/import-drop-zone.component';
 import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SearchFieldComponent } from '../search-field/search-field.component';
@@ -96,8 +96,8 @@ export interface UnimportableEntry extends HighlightImportSkipped {
     ChoiceRowComponent,
     SearchFieldComponent,
     LoadingIndicatorComponent,
-    DropZoneComponent,
     BadgeComponent,
+    ImportDropZoneComponent,
     NostosDatePipe,
     NgTemplateOutlet,
     ModalShell,
@@ -123,7 +123,6 @@ export class HighlightImportModal {
 
   readonly isOpen = this.service.isOpen;
   readonly stage = signal<Stage>('pick');
-  readonly dragActive = signal(false);
   readonly busy = computed(() => this.stage() === 'reading' || this.stage() === 'importing');
 
   /** Progress through the selected files; the upload itself reports none. */
@@ -245,6 +244,20 @@ export class HighlightImportModal {
       });
     });
 
+    // A file from the one drop zone (issue #1526) starts the same import as a
+    // file chosen in this dialog, with no source picked first.
+    effect(() => {
+      const files = this.service.pendingFiles();
+      if (!this.isOpen() || !files?.length) return;
+      untracked(() => {
+        this.service.pendingFiles.set(null);
+        this.fromAppleBooks.set(false);
+        this.appleBooksError.set(false);
+        this.closePicker();
+        void this.readFiles(files);
+      });
+    });
+
     this.searchSubject
       .pipe(
         debounceTime(200),
@@ -297,21 +310,6 @@ export class HighlightImportModal {
 
   // --- Pick ---------------------------------------------------------------
 
-  onDragOver(event: DragEvent): void {
-    event.preventDefault();
-    this.dragActive.set(true);
-  }
-
-  onDragLeave(): void {
-    this.dragActive.set(false);
-  }
-
-  onDrop(event: DragEvent): void {
-    event.preventDefault();
-    this.dragActive.set(false);
-    void this.readFiles(Array.from(event.dataTransfer?.files ?? []));
-  }
-
   /**
    * The Books folder on a Mac holds the two databases in separate folders,
    * which one file window cannot select together. The whole folder is
@@ -354,14 +352,6 @@ export class HighlightImportModal {
       // Without clipboard access the location is shown to copy by hand.
       this.folderCopied.set('failed');
     }
-  }
-
-  onFilesSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
-    // Reset so choosing the same file again still fires `change`.
-    input.value = '';
-    void this.readFiles(files);
   }
 
   /** Step one: ask the server what each file holds. Nothing is written. */

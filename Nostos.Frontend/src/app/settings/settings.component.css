@@ -1016,11 +1016,6 @@
   font-size: 0.95em;
 }
 
-.import-beta {
-  margin-left: 0.4rem;
-  vertical-align: middle;
-}
-
 .backup-warning {
   display: flex;
   align-items: center;

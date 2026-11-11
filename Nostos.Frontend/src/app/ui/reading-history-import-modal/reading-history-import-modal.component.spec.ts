@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 import { ReadingHistoryImportModal } from './reading-history-import-modal.component';
@@ -11,6 +12,7 @@ import {
   ReadingHistoryValues,
 } from '../../core/services/reading-history-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 
 const values = (overrides: Partial<ReadingHistoryValues> = {}): ReadingHistoryValues => ({
   rating: 0,
@@ -101,7 +103,12 @@ describe('ReadingHistoryImportModal', () => {
     await TestBed.configureTestingModule({
       imports: [ReadingHistoryImportModal],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: { get: () => of({ deploymentMode: 'SelfHosted' }), peek: () => null },
+        },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [], totalCount: 0 })) } },
       ],
     }).compileComponents();
@@ -119,7 +126,7 @@ describe('ReadingHistoryImportModal', () => {
     service.open();
     fixture.detectChanges();
     expect(text()).toContain('Import reading history');
-    expect(fixture.nativeElement.querySelector('[data-testid="reading-history-import-input"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-drop-zone-input"]')).not.toBeNull();
     expect(text()).toContain('My Books → Import and export');
     expect(text()).toContain('Manage Account → Export StoryGraph Library');
   });

@@ -106,10 +106,18 @@ export interface ReadingHistoryImportBatch {
 @Injectable({ providedIn: 'root' })
 export class ReadingHistoryImportService {
   readonly isOpen = signal(false);
+  /** The file a drop zone handed over (issue #1526); read once, then cleared. */
+  readonly pendingFile = signal<File | null>(null);
 
   constructor(private http: HttpClient) {}
 
   open(): void {
+    this.isOpen.set(true);
+  }
+
+  /** Opens the dialog on a file from the one drop zone; nothing is chosen first. */
+  openWithFile(file: File): void {
+    this.pendingFile.set(file);
     this.isOpen.set(true);
   }
 

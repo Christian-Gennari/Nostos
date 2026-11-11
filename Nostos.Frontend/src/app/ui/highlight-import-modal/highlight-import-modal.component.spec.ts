@@ -105,7 +105,8 @@ describe('HighlightImportModal', () => {
     service.open();
     fixture.detectChanges();
     expect(text()).toContain('Import highlights');
-    expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-input"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-drop-zone-input"]')).not.toBeNull();
+    expect(text()).toContain('Where to find your file');
   });
 
   it('sends Apple Books files chosen together as one upload, and commits the same set', async () => {
