@@ -720,11 +720,10 @@ export class AssistantComponent {
   }
 
   /**
-   * One next step for this failure, or null when the turn can no longer be
-   * retried (a later turn superseded it). Nothing is inferred from the prose:
-   * only the typed code, the server's retryable flag and the deployment decide.
+   * One next step for this failure. Nothing is inferred from the prose: only
+   * the typed code, the server's retryable flag and the deployment decide.
    */
-  failureAction(entry: AssistantEntry): AssistantFailureAction | null {
+  failureAction(entry: AssistantEntry): AssistantFailureAction {
     const retryable = this.assistant.retryableTurnId() === entry.turnId;
     const bookId = this.assistant.bookIdForTurn(entry.turnId);
     const action = failureActionFor(this.failureCode(entry), {
