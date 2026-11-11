@@ -1,0 +1,12 @@
+{
+  "source": "koreader",
+  "version": "2026-10-epub-multiline",
+  "file": "metadata.multiline.lua",
+  "companions": [],
+  "expected": {
+    "foundBooks": 1,
+    "importedAnnotations": 3,
+    "skipped": {},
+    "missingOptionalColumns": []
+  }
+}

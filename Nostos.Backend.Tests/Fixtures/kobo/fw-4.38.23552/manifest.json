@@ -1,0 +1,12 @@
+{
+  "source": "kobo",
+  "version": "fw-4.38.23552",
+  "file": "KoboReader.sqlite",
+  "companions": [],
+  "expected": {
+    "foundBooks": 5,
+    "importedAnnotations": 45,
+    "skipped": {},
+    "missingOptionalColumns": []
+  }
+}

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Nostos.Backend.Services.Notes.Imports;
+using Nostos.Backend.Tests.Support;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services.Notes;
@@ -9,7 +10,7 @@ public sealed class ReadwiseCsvParserTests
     [Fact]
     public void An_export_is_read_by_book_and_what_is_not_a_book_is_left_out_or_flagged()
     {
-        var text = Fixture("readwise-export.csv");
+        var text = File.ReadAllText(ImportFixtures.ReadwiseExport);
         ReadwiseCsvParser.Looks(text).Should().BeTrue();
 
         var (books, skipped) = ReadwiseCsvParser.Parse(text);
@@ -117,7 +118,4 @@ public sealed class ReadwiseCsvParserTests
             System.Globalization.CultureInfo.CurrentCulture = previous;
         }
     }
-
-    private static string Fixture(string name) =>
-        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", name));
 }

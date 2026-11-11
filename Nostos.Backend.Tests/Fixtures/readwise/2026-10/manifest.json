@@ -1,0 +1,16 @@
+{
+  "source": "readwise",
+  "version": "2026-10",
+  "file": "readwise-export.csv",
+  "companions": [],
+  "expected": {
+    "foundBooks": 3,
+    "importedAnnotations": 5,
+    "skipped": {
+      "tweet": 1,
+      "podcast": 1,
+      "empty": 1
+    },
+    "missingOptionalColumns": []
+  }
+}

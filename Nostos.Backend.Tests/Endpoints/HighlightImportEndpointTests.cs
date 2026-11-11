@@ -360,7 +360,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var client = factory.CreateClient();
         var kobo = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var koreader = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecar = ImportFixtures.KoreaderEpub;
         var sidecarKey = (await PreviewAsync(client, sidecar)).Books.Single().SourceKey;
 
         var first = await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", kobo.Id));
@@ -416,7 +416,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecar = ImportFixtures.KoreaderEpub;
 
         var preview = await PreviewAsync(client, sidecar);
         preview.Source.Should().Be("koreader");
@@ -442,7 +442,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.multiline.lua");
+        var sidecar = ImportFixtures.KoreaderMultiline;
 
         // Exactly what the line-based reader stored for this sidecar: the first
         // source line of the two-paragraph highlight, quote and backslash
@@ -506,7 +506,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecar = ImportFixtures.KoreaderEpub;
         var preview = await PreviewAsync(client, sidecar);
         await CommitAsync(client, sidecar, new HighlightImportDecision(preview.Books.Single().SourceKey, book.Id));
 
@@ -539,7 +539,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader PDF", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.pdf-untitled.lua");
+        var sidecar = ImportFixtures.KoreaderPdfUntitled;
 
         var preview = await PreviewAsync(client, sidecar);
         var only = preview.Books.Should().ContainSingle().Subject;
@@ -578,7 +578,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var client = factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
         await CreateBookAsync(client, "Walden; or, Life in the Woods", "Henry David Thoreau");
-        var clippings = Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt");
+        var clippings = ImportFixtures.KindleEnglish;
 
         var preview = await PreviewAsync(client, clippings);
 
@@ -674,7 +674,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
-        var clippings = Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt");
+        var clippings = ImportFixtures.KindleEnglish;
         var preview = await PreviewAsync(client, clippings);
         var exact = preview.Books.Single(book => book.Title == "Pride and Prejudice");
         var meditations = preview.Books.Single(book => book.Title == "Meditations (Penguin Classics)");
@@ -717,7 +717,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen");
-        var export = Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", "readwise-export.csv");
+        var export = ImportFixtures.ReadwiseExport;
 
         var preview = await PreviewAsync(client, export);
 

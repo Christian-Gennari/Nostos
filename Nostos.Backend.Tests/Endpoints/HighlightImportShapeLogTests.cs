@@ -103,7 +103,7 @@ public sealed class HighlightImportShapeLogTests : IDisposable
         var client = factory.CreateClient();
 
         var response = await UploadAsync(
-            client, "preview", Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", "readwise-export.csv"));
+            client, "preview", ImportFixtures.ReadwiseExport);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         ShapeLines(factory).Should().BeEmpty();
@@ -146,8 +146,8 @@ public sealed class HighlightImportShapeLogTests : IDisposable
         var logger = provider.CreateLogger("shape-test");
         var fixtures = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt"),
-            Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", "readwise-export.csv"),
+            ImportFixtures.KindleEnglish,
+            ImportFixtures.ReadwiseExport,
         };
 
         foreach (var path in fixtures)
