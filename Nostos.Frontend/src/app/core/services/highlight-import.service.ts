@@ -131,6 +131,23 @@ export interface HighlightImportResult {
   books: HighlightImportResultBook[];
 }
 
+/**
+ * What one committed import found and where every entry went (issue #1522).
+ * `found` always equals `imported + duplicates + skipped + leftOut`.
+ */
+export interface HighlightImportReport {
+  found: number;
+  imported: number;
+  duplicates: number;
+  skipped: number;
+  leftOut: number;
+  /** The file's unimportable entries, grouped by title, author and reason. */
+  skippedReasons: HighlightImportSkipped[];
+  booksMatched: number;
+  booksCreated: number;
+  booksLeftOut: number;
+}
+
 export interface HighlightImportBatch {
   id: string;
   source: HighlightImportSource;
@@ -138,6 +155,8 @@ export interface HighlightImportBatch {
   createdAtUtc: string;
   noteCount: number;
   bookCount: number;
+  /** Null for an import made before reports existed. */
+  report: HighlightImportReport | null;
 }
 
 /**
@@ -149,11 +168,23 @@ export class HighlightImportService {
   readonly isOpen = signal(false);
   /** Where the dialog opens: the list of every source, or straight on Apple Books' steps. */
   readonly startOn = signal<HighlightImportStart>('all');
+  /**
+   * Files a drop zone handed over (issue #1526). The dialog reads them once,
+   * as if they had been chosen in its own box.
+   */
+  readonly pendingFiles = signal<File[] | null>(null);
 
   constructor(private http: HttpClient) {}
 
   open(start: HighlightImportStart = 'all'): void {
     this.startOn.set(start);
+    this.isOpen.set(true);
+  }
+
+  /** Opens the dialog on files from the one drop zone; nothing is chosen first. */
+  openWithFiles(files: readonly File[]): void {
+    this.startOn.set('all');
+    this.pendingFiles.set([...files]);
     this.isOpen.set(true);
   }
 

@@ -241,6 +241,88 @@
   padding: 4rem 0;
 }
 
+/* --- Wide: the list and the selected note, side by side (issue #1531) ----- */
+@media (min-width: 1280px) {
+  .brain-scroller {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .toolbar,
+  .topic-words,
+  .often-with,
+  .filter-bar,
+  .narrow-notice {
+    flex: none;
+  }
+
+  /* The strips above the panes were centred in the reading column; with two
+     panes they belong over the list, which is the column they filter. */
+  .topic-words,
+  .often-with,
+  .filter-bar,
+  .narrow-notice {
+    max-width: none;
+    margin-inline: 0;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .brain-work {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: clamp(340px, 38%, 440px) minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  /* The list is its own scroll container: the note beside it does not move
+     when the index scrolls, and vice versa. */
+  .brain-list {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    margin: 0;
+    padding: 0.35rem 1.25rem 6rem;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .note-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .note-group {
+    padding: 1.5rem 0.85rem 0.45rem;
+  }
+
+  .brain-list.is-selecting {
+    padding-bottom: calc(var(--control-h-touch) + 3rem);
+  }
+
+  .brain-detail-pane {
+    height: 100%;
+    min-width: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--border-color);
+    background: var(--bg-body);
+    scrollbar-gutter: stable;
+  }
+
+  .brain-detail-pane:focus {
+    outline: none;
+  }
+
+  .detail-state {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    padding: 2rem;
+  }
+}
+
 /* --- Phone ---------------------------------------------------------------- */
 @media (max-width: 768px) {
   .toolbar {

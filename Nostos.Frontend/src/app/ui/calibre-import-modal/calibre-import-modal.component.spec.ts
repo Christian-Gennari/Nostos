@@ -245,6 +245,54 @@ describe('CalibreImportModal', () => {
     expect(text()).toContain('Review before importing');
   });
 
+  it('starts the upload a drop zone handed over before reading any folder', async () => {
+    const uploadService = TestBed.inject(CalibreUploadService);
+    const staged: CalibreUploadStatus = {
+      sessionId: 'up-2',
+      state: 'staged',
+      fileName: 'library.zip',
+      totalBytes: 1_000_000,
+      partBytes: 16 * 1024 * 1024,
+      totalParts: 1,
+      receivedParts: [0],
+      receivedBytes: 1_000_000,
+      createdAtUtc: '2026-11-12T10:00:00Z',
+      expiresAtUtc: '2026-11-13T10:00:00Z',
+      maxLibraryBytes: 8 * 1024 * 1024 * 1024,
+      maxExtractedBytes: 16 * 1024 * 1024 * 1024,
+      maxFiles: 100_000,
+      books: 1,
+      stagedBytes: 2_000_000,
+      failureCode: null,
+      failureMessage: null,
+    };
+    const idle: CalibreStatus = {
+      configured: false,
+      available: false,
+      import: { ...importing, status: 'idle', total: 0, current: null },
+      folderSupported: true,
+      uploadSupported: true,
+      maxUploadBytes: 8 * 1024 * 1024 * 1024,
+      upload: null,
+    };
+    const status = vi.spyOn(service, 'status').mockReturnValue(of({ ...idle, available: true, configured: true, upload: staged }));
+    vi.spyOn(service, 'preview').mockReturnValue(of(preview([book()])));
+    const upload = vi.spyOn(uploadService, 'upload').mockResolvedValue(staged);
+    const file = new File([new Uint8Array([1, 2, 3])], 'library.zip', { type: 'application/zip' });
+
+    service.openWithFile(file);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(upload).toHaveBeenCalledWith(file, expect.objectContaining({ signal: expect.anything() }));
+    expect(status.mock.invocationCallOrder[0]).toBeGreaterThan(upload.mock.invocationCallOrder[0]);
+    expect(component.stage()).toBe('review');
+    expect(text()).toContain('Review before importing');
+  });
+
   it('keeps a partial upload visible for resuming and cancels it explicitly', async () => {
     const uploadService = TestBed.inject(CalibreUploadService);
     const partial: CalibreUploadStatus = {

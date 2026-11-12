@@ -174,10 +174,21 @@ export interface CalibreUndoResult {
 @Injectable({ providedIn: 'root' })
 export class CalibreImportService {
   readonly isOpen = signal(false);
+  /**
+   * The zip a drop zone handed over (#1572). The dialog reads it once, then
+   * clears it, so a reload cannot replay an upload.
+   */
+  readonly pendingFile = signal<File | null>(null);
 
   constructor(private http: HttpClient) {}
 
   open(): void {
+    this.isOpen.set(true);
+  }
+
+  /** Opens the dialog on a dropped Calibre zip; nothing is chosen first. */
+  openWithFile(file: File): void {
+    this.pendingFile.set(file);
     this.isOpen.set(true);
   }
 

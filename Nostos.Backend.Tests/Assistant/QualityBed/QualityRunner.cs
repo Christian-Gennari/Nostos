@@ -93,6 +93,12 @@ internal sealed class QualityBedHost : IDisposable
 
     public QualityScriptedProvider? Scripted { get; }
 
+    /// <summary>
+    /// Live mode's request log (null in deterministic mode): the same tool
+    /// results the scripted provider hands the deterministic lane (#1573).
+    /// </summary>
+    public QualityProviderRequestCapture? RequestCapture { get; }
+
     public QualityMetricsSink Sink { get; }
 
     public string ModelId { get; }
@@ -103,6 +109,7 @@ internal sealed class QualityBedHost : IDisposable
         HttpClient client,
         IServiceProvider services,
         QualityScriptedProvider? scripted,
+        QualityProviderRequestCapture? requestCapture,
         QualityMetricsSink sink,
         string modelId,
         bool owned = true)
@@ -113,6 +120,7 @@ internal sealed class QualityBedHost : IDisposable
         Client = client;
         Services = services;
         Scripted = scripted;
+        RequestCapture = requestCapture;
         Sink = sink;
         ModelId = modelId;
     }
@@ -122,7 +130,7 @@ internal sealed class QualityBedHost : IDisposable
     /// running (QualityBedSharedHost owns it).
     /// </summary>
     public QualityBedHost Borrow() =>
-        new(Factory, _host, Client, Services, Scripted, Sink, ModelId, owned: false);
+        new(Factory, _host, Client, Services, Scripted, RequestCapture, Sink, ModelId, owned: false);
 
     public void Dispose()
     {
@@ -159,7 +167,7 @@ internal sealed class QualityBedHost : IDisposable
         var client = host.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(5);
         return new QualityBedHost(
-            factory, host, client, host.Services, scripted, sink, "quality-scripted");
+            factory, host, client, host.Services, scripted, null, sink, "quality-scripted");
     }
 
     public static QualityBedHost CreateLive(
@@ -167,6 +175,7 @@ internal sealed class QualityBedHost : IDisposable
         string? reasoningEffort = null, QualityBudget? budget = null)
     {
         var factory = new LibraryEndpointFactory();
+        var capture = new QualityProviderRequestCapture();
         var host = factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Assistant:Enabled", "true");
@@ -186,7 +195,8 @@ internal sealed class QualityBedHost : IDisposable
                         provider.GetRequiredService<ILogger<OpenAiCompatibleLlmProvider>>()),
                     sink,
                     model,
-                    budget));
+                    budget,
+                    capture));
                 // Production-posture control, transport boundary only: every
                 // live chat-completion request through the product's named
                 // client gains reasoning_effort. Additive on top of the
@@ -203,7 +213,7 @@ internal sealed class QualityBedHost : IDisposable
         var client = host.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(10);
         return new QualityBedHost(
-            factory, host, client, host.Services, null, sink, model);
+            factory, host, client, host.Services, null, capture, sink, model);
     }
 }
 
@@ -563,6 +573,7 @@ internal static class QualityRunner
 
         var (notesBefore, collectionsBefore) = await CountAsync(host, ct);
         var meterFrom = host.Sink.Count;
+        var requestsFrom = host.RequestCapture?.Count ?? 0;
         var wall = System.Diagnostics.Stopwatch.StartNew();
 
         List<QualityActivityEvent> activities = new();
@@ -671,6 +682,11 @@ internal static class QualityRunner
             .Select(r => new QualityProviderRequestLog(
                 r.Messages.Select(m => new QualityProviderMessageLog(m.Role, m.Content)).ToList()))
             .ToList();
+        IReadOnlyList<QualityToolResultLog> toolResults = host.Scripted is { } scripted
+            ? (scripted.TurnRequests.LastOrDefault() is { } lastRequest
+                ? QualityToolResultLog.From(lastRequest.Messages)
+                : Array.Empty<QualityToolResultLog>())
+            : host.RequestCapture?.ToolResultsSince(requestsFrom) ?? Array.Empty<QualityToolResultLog>();
 
         if (harnessError is not null)
             return new QualityTurnRecord(
@@ -678,13 +694,13 @@ internal static class QualityRunner
                 upstream, requested, activities, ttfActivity, wall.Elapsed.TotalMilliseconds,
                 wall.Elapsed.TotalMilliseconds, providerRequests.Count,
                 providerRequests, notesBefore, notesAfter, collectionsBefore, collectionsAfter,
-                harnessError);
+                harnessError, ToolResults: toolResults);
 
         if (terminal is null)
             return HarnessErrorRecord(
                 host, turnIndex, turnId, spec, "stream ended without a terminal event",
                 upstream, requested, activities, wall, providerRequests,
-                notesBefore, notesAfter, collectionsBefore, collectionsAfter);
+                notesBefore, notesAfter, collectionsBefore, collectionsAfter, toolResults);
 
         var kind = terminal.Kind;
         return new QualityTurnRecord(
@@ -693,7 +709,8 @@ internal static class QualityRunner
             terminal.Response, upstream, requested, activities,
             ttfActivity, wall.Elapsed.TotalMilliseconds, wall.Elapsed.TotalMilliseconds,
             providerRequests.Count, providerRequests,
-            notesBefore, notesAfter, collectionsBefore, collectionsAfter, null);
+            notesBefore, notesAfter, collectionsBefore, collectionsAfter, null,
+            ToolResults: toolResults);
     }
 
     private static QualityTurnRecord HarnessErrorRecord(
@@ -707,13 +724,15 @@ internal static class QualityRunner
         IReadOnlyList<QualityActivityEvent>? activities = null,
         System.Diagnostics.Stopwatch? wall = null,
         IReadOnlyList<QualityProviderRequestLog>? providerRequests = null,
-        int notesBefore = 0, int notesAfter = 0, int collectionsBefore = 0, int collectionsAfter = 0) =>
+        int notesBefore = 0, int notesAfter = 0, int collectionsBefore = 0, int collectionsAfter = 0,
+        IReadOnlyList<QualityToolResultLog>? toolResults = null) =>
         new(
             turnIndex, turnId, spec.Message, "harness_error", null, null, null,
             upstream ?? [], requested ?? [], activities ?? [],
             -1, wall?.Elapsed.TotalMilliseconds ?? 0, wall?.Elapsed.TotalMilliseconds ?? 0,
             providerRequests?.Count ?? 0, providerRequests ?? [],
-            notesBefore, notesAfter, collectionsBefore, collectionsAfter, error);
+            notesBefore, notesAfter, collectionsBefore, collectionsAfter, error,
+            ToolResults: toolResults);
 
     /// <summary>The library revision the change feed compares; null when it cannot be read.</summary>
     private static async Task<string?> RevisionAsync(QualityBedHost host)

@@ -42,48 +42,6 @@
   color: var(--color-text-light);
 }
 
-/* --- Pick --------------------------------------------------------------- */
-
-.history-sources {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  margin: 1.15rem 0 0;
-}
-
-.history-source {
-  display: grid;
-  grid-template-columns: 5.5rem 1fr;
-  gap: 0.75rem;
-  font-size: 0.78rem;
-  line-height: 1.5;
-}
-
-.history-source dt {
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-main);
-}
-
-.history-source dd {
-  margin: 0;
-  color: var(--color-text-muted);
-}
-
-.history-source strong {
-  font-weight: var(--fw-semibold);
-  color: var(--color-text-main);
-}
-
-.history-source code {
-  padding: 0 0.25em;
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  font-size: 0.95em;
-  color: var(--color-text-main);
-}
-
-/* The real input is stretched over the box by `appDropZone`. */
-
 /* --- Progress ----------------------------------------------------------- */
 
 .history-progress {

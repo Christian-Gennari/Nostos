@@ -6,6 +6,7 @@ import {
   afterNextRender,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   signal,
   viewChild,
@@ -28,59 +29,126 @@ import {
 import { AssistantVoiceService } from './assistant-voice.service';
 import type { AssistantContext } from './assistant-context.service';
 import { AssistantStatusService } from './assistant-status.service';
+import { AssistantAllowanceService } from './assistant-allowance.service';
+import {
+  failureAction as failureActionFor,
+  type AssistantFailureAction,
+} from './assistant-failure';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
+import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
 import { AssistantChangesetCardComponent } from './changeset-card/assistant-changeset-card.component';
 import { CapturedNoteTopicsComponent } from './captured-note-topics.component';
 import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 
-/** A ready-made question offered while the conversation is empty. */
-export interface StarterPrompt {
+/**
+ * One ready-made request under a capability door. Clicking it places
+ * <see cref="fill"/> in the composer; the person still sends it themselves.
+ */
+export interface CapabilityExample {
   id: string;
   label: string;
+  /** Text placed in the composer. Defaults to the label. */
+  fill?: string;
 }
 
 /**
- * Starter questions for the page the reader is on. They are questions the
- * assistant can answer from the library (books, notes, topics), worded for the
- * surface: about this book in the reader, about connections in the Brain.
+ * One of the three jobs Ask Nostos does — ask, capture, organise — with
+ * examples that name a capability the registry really offers.
  */
-export function starterPrompts(context: AssistantContext): StarterPrompt[] {
+export interface CapabilityDoor {
+  id: 'ask' | 'capture' | 'organise';
+  label: string;
+  examples: CapabilityExample[];
+}
+
+/**
+ * Capability doors for the page the reader is on. They are grouped by job, and
+ * every example is worded for the surface: about this book in the reader,
+ * about connections in the Brain, about a draft in the Studio. Organising the
+ * library, the To read list and Studio drafts appear everywhere, because the
+ * app otherwise never mentions them.
+ */
+export function capabilityDoors(context: AssistantContext): CapabilityDoor[] {
   const book = context.bookTitle?.trim();
+
+  let ask: CapabilityExample[];
   switch (context.surface) {
     case 'reader':
-      return [
+      ask = [
         ...(context.selectedText?.trim()
           ? [{ id: 'explain-selection', label: 'Explain the passage I selected' }]
           : []),
-        { id: 'reader-summary', label: book ? `Summarise what I have read of ${book} so far` : 'Summarise what I have read so far' },
-        { id: 'reader-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
+        {
+          id: 'reader-summary',
+          label: book
+            ? `Summarise what I have read of ${book} so far`
+            : 'Summarise what I have read so far',
+        },
+        {
+          id: 'reader-notes',
+          label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?',
+        },
       ];
+      break;
     case 'book-detail':
-      return [
+      ask = [
         { id: 'book-about', label: book ? `What is ${book} about?` : 'What is this book about?' },
-        { id: 'book-notes', label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?' },
+        {
+          id: 'book-notes',
+          label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?',
+        },
         { id: 'book-related', label: 'Which of my other books connect to this one?' },
       ];
+      break;
     case 'brain':
-      return [
+      ask = [
         { id: 'brain-connections', label: 'What connects my topics?' },
         { id: 'brain-recent', label: 'Summarise my most recent notes' },
         { id: 'brain-gaps', label: 'Which topics have only one or two notes?' },
       ];
+      break;
     case 'studio':
-      return [
+      ask = [
         { id: 'studio-sources', label: 'Which of my notes could support what I am writing?' },
-        { id: 'studio-recent', label: 'Summarise my most recent notes' },
+        { id: 'studio-drafts', label: 'Which Studio drafts am I working on?' },
       ];
+      break;
     default:
-      return [
+      ask = [
         { id: 'library-next', label: 'What should I read next from my library?' },
         { id: 'library-recent', label: 'What have I been reading lately?' },
         { id: 'library-topics', label: 'Which topics come up most in my notes?' },
       ];
   }
+
+  // A Brain review already has the note; proposing topics is the job there.
+  // Everywhere else, point at the Studio documents users never hear about.
+  const organiseExample: CapabilityExample = context.brainReviewNoteId
+    ? { id: 'organise-topics', label: 'Suggest topics for this note' }
+    : { id: 'organise-studio', label: 'Open my Studio draft about memory' };
+
+  return [
+    { id: 'ask', label: 'Ask', examples: ask },
+    {
+      id: 'capture',
+      label: 'Capture',
+      examples: [
+        { id: 'capture-thought', label: 'Save this thought:', fill: 'Save this thought: ' },
+        { id: 'capture-quote', label: 'Save this quote:', fill: 'Save this quote: ' },
+      ],
+    },
+    {
+      id: 'organise',
+      label: 'Organise',
+      examples: [
+        { id: 'organise-collection', label: 'Move my Le Guin books into a collection' },
+        { id: 'organise-to-read', label: 'Add Piranesi to To read' },
+        organiseExample,
+      ],
+    },
+  ];
 }
 
 /**
@@ -90,6 +158,14 @@ export function starterPrompts(context: AssistantContext): StarterPrompt[] {
  * to an older turn always registers as one.
  */
 const FOLLOW_THRESHOLD_PX = 32;
+
+/** True when the OS asks for reduced motion; the transcript then jumps, never glides. */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+  );
+}
 
 export type EntrySourceItem =
   | {
@@ -129,6 +205,26 @@ export type EntrySourceDisplay =
 
 export interface EntrySourceView {
   items: EntrySourceDisplay[];
+}
+
+/**
+ * The citation numbers a grouped source row covers, compressed for the row:
+ * `1–2` for a run, `1, 3` for markers that are not consecutive. Kept beside
+ * `buildEntrySourceView` so a group and its inline markers cannot drift.
+ */
+export function formatCitationNumbers(numbers: readonly number[]): string {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let index = 0; index < sorted.length; index += 1) {
+    const start = sorted[index];
+    let end = start;
+    while (index + 1 < sorted.length && sorted[index + 1] === end + 1) {
+      end = sorted[index + 1];
+      index += 1;
+    }
+    parts.push(end > start ? `${start}–${end}` : String(start));
+  }
+  return parts.join(', ');
 }
 
 function canonicalEvidenceKey(evidence: AssistantEvidenceReferenceDto): string {
@@ -296,6 +392,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
     IconButtonComponent,
     AssistantChangesetCardComponent,
     CapturedNoteTopicsComponent,
+    NostosDatePipe,
   ],
   templateUrl: './assistant.component.html',
   styleUrl: './assistant.component.css',
@@ -307,6 +404,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
 export class AssistantComponent {
   readonly assistant = inject(AssistantService);
   readonly voice = inject(AssistantVoiceService);
+  readonly allowance = inject(AssistantAllowanceService);
   private readonly status = inject(AssistantStatusService);
   private readonly router = inject(Router, { optional: true });
   private readonly preferences = inject(LibraryPreferencesService);
@@ -345,6 +443,23 @@ export class AssistantComponent {
    * mode just before the reply arrives.
    */
   private programmaticScrollTop: number | null = null;
+
+  /**
+   * Whether the remembered programmatic scroll was followEnd (true) or an
+   * anchor that deliberately left the end (false, #1557). A delayed event
+   * from the scroll an anchor replaced must not switch following back on.
+   */
+  private programmaticScrollKeepsFollowing = true;
+
+  /**
+   * Review cards already brought into view (#1557), so only an ARRIVING card
+   * moves the transcript. A later render — a step toggle, the composer
+   * growing — must not re-anchor it.
+   */
+  private readonly revealedReviewCards = new Set<string>();
+
+  /** The card whose full diff just toggled; its header stays in view next pass. */
+  private detailsAnchorId: string | null = null;
 
   /** The element focused before opening, restored on close. */
   private previouslyFocused: HTMLElement | null = null;
@@ -392,11 +507,27 @@ export class AssistantComponent {
    */
   readonly readingLabel = computed(() => (this.assistant.anchorChip() ? null : this.currentBookTitle()));
 
-  /** Ready-made questions for an empty conversation, worded for this page. */
-  readonly starters = computed(() => starterPrompts(this.assistant.context()));
+  /** Ready-made requests for an empty conversation, grouped by capability. */
+  readonly doors = computed(() => capabilityDoors(this.assistant.context()));
 
   /** Drives the quiet send affordance without making the template inspect text. */
   readonly hasDraft = computed(() => this.assistant.draft().trim().length > 0);
+
+  /**
+   * Review changesets in the transcript, oldest first (#1557).
+   *
+   * The newest one is the reader's next decision, so it — not the end of the
+   * transcript — is what an arrival brings into view.
+   */
+  private readonly reviewCards = computed(() =>
+    this.assistant.entries().flatMap((entry) =>
+      (entry.artifacts ?? []).flatMap((artifact) =>
+        artifact.kind === 'changeset' && artifact.changeset.status === 'review'
+          ? [artifact.changeset.changesetId]
+          : [],
+      ),
+    ),
+  );
 
   /**
    * Geometry of the actually visible browser viewport.
@@ -436,6 +567,21 @@ export class AssistantComponent {
     // Availability is a server fact; ask once for the life of the session.
     this.status.ensureLoaded();
 
+    // The failure block needs the deployment contract to choose between "Open
+    // AI connections" (SelfHosted) and "Open Settings" (managed), and the
+    // account link for an allowance failure. The contract normally arrives at
+    // bootstrap; ask once if it has not.
+    this.allowance.ensureCapabilities();
+
+    // An allowance failure is the only one whose copy also needs the renewal
+    // date; fetch usage only when that block is actually on screen.
+    effect(() => {
+      const allowanceFailure = this.assistant.entries().some(
+        (entry) => entry.kind === 'error' && entry.meta === 'ai_usage_limit_reached',
+      );
+      if (allowanceFailure) this.allowance.ensureUsage();
+    });
+
     // A finished transcript is handed to the conversation, which owns the ONE
     // policy for whether it is reviewed or auto-sent. The composer keeps focus so
     // the user can read and edit before pressing Enter.
@@ -463,6 +609,7 @@ export class AssistantComponent {
           this.body()?.nativeElement ?? null,
           this.transcript()?.nativeElement ?? null,
         );
+        this.keepReviewCardsInView();
         this.followEnd();
       },
     });
@@ -528,7 +675,13 @@ export class AssistantComponent {
       // grown. Its old target is then no longer the current end, but it still
       // must not be mistaken for the reader deliberately scrolling back.
       if (Math.abs(element.scrollTop - requested) <= FOLLOW_THRESHOLD_PX) {
-        this.following.set(true);
+        this.following.set(this.programmaticScrollKeepsFollowing);
+        return;
+      }
+      if (!this.programmaticScrollKeepsFollowing) {
+        // This event belongs to the scroll the anchor replaced. The anchor
+        // owns the view; a reader who wants the end scrolls again.
+        this.following.set(false);
         return;
       }
     }
@@ -538,6 +691,14 @@ export class AssistantComponent {
 
   sourceView(entry: AssistantEntry): EntrySourceView {
     return buildEntrySourceView(entry);
+  }
+
+  /** The numbers a grouped source covers, so the group matches its markers. */
+  sourceGroupNumbers(display: EntrySourceDisplay): string {
+    if (display.kind !== 'group') return '';
+    return formatCitationNumbers(
+      display.items.flatMap((item) => (item.kind === 'evidence' ? [item.number] : [])),
+    );
   }
 
   // --- Numbered citations (issue #1002) ---
@@ -665,11 +826,11 @@ export class AssistantComponent {
         return `Changed · ${this.humanizeCapability(artifact.capability)}`;
       case 'failure':
         // Cancelled failures are not rendered: the turn's stop message owns that state.
-        // An incomplete turn's reply already explains what is left; the label only
-        // marks it, and never says "Failed" about changes that were applied.
-        return artifact.state === 'incomplete'
-          ? 'Not finished'
-          : `Failed · ${artifact.message}`;
+        // A real failure is the error entry's one block (#1556), not a second
+        // "Failed · …" label. An incomplete turn's reply already explains what
+        // is left; the label only marks it, and never says "Failed" about
+        // changes that were applied.
+        return artifact.state === 'incomplete' ? 'Not finished' : '';
       case 'proposal':
         return `Proposed · ${artifact.proposal.label} — ${artifact.proposal.reason}`;
       case 'changeset':
@@ -677,6 +838,83 @@ export class AssistantComponent {
       case 'evidence':
         return this.evidenceLabel(artifact.evidence);
     }
+  }
+
+  /** The failure artifact that belongs to this turn, if the turn failed. */
+  private failureArtifact(
+    entry: AssistantEntry,
+  ): Extract<AssistantTurnArtifact, { kind: 'failure' }> | null {
+    return (entry.artifacts ?? []).find(
+      (artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'failure' }> =>
+        artifact.kind === 'failure' && artifact.state !== 'cancelled',
+    ) ?? null;
+  }
+
+  /** The raw typed code, kept behind Details for support. */
+  failureCode(entry: AssistantEntry): string {
+    const artifact = this.failureArtifact(entry);
+    return entry.meta ?? artifact?.code ?? 'assistant_turn_failed';
+  }
+
+  /**
+   * One next step for this failure. Nothing is inferred from the prose: only
+   * the typed code, the server's retryable flag and the deployment decide.
+   */
+  failureAction(entry: AssistantEntry): AssistantFailureAction {
+    const retryable = this.assistant.retryableTurnId() === entry.turnId;
+    const bookId = this.assistant.bookIdForTurn(entry.turnId);
+    const action = failureActionFor(this.failureCode(entry), {
+      retryable,
+      canConfigureAiProvider: this.allowance.canConfigureAiProvider(),
+      accountManagementUrl: this.allowance.accountManagementUrl(),
+      bookId,
+    });
+
+    // A retry control is only real while this exact turn is still the stored
+    // one. An older failure keeps its sentence and Details, and still leads
+    // somewhere concrete instead of offering a button that cannot replay it.
+    if (action.kind === 'retry' && !retryable) {
+      return bookId
+        ? { kind: 'book', label: 'Open the book', bookId }
+        : { kind: 'settings', label: 'Open Settings' };
+    }
+    return action;
+  }
+
+  /** The Cloud renewal date, only for the allowance failure that needs it. */
+  allowanceRenewsAt(entry: AssistantEntry): string | null {
+    if (this.failureCode(entry) !== 'ai_usage_limit_reached') return null;
+    return this.allowance.usage()?.renewsAtUtc ?? null;
+  }
+
+  /** Replay this exact turn through the same TurnId (§1560). */
+  onRetryFailure(entry: AssistantEntry): void {
+    if (!this.assistant.retryTurn(entry.turnId)) return;
+
+    this.following.set(true);
+    // The pending bar only appears after ASSISTANT_PENDING_DELAY_MS; the
+    // conversation itself is the stable place to put focus now. The live
+    // progress/failure region then announces without stealing it back.
+    setTimeout(() => {
+      this.transcript()?.nativeElement.focus({ preventScroll: true });
+      this.followEnd();
+    }, 0);
+  }
+
+  onFailureAction(action: AssistantFailureAction): void {
+    if (!this.router) return;
+
+    if (action.kind === 'book') {
+      void this.router.navigate(['/read', action.bookId]).then((navigated) => {
+        if (navigated && this.isPhoneViewport()) this.close();
+      });
+      return;
+    }
+
+    const section = action.kind === 'connections' ? 'connections' : 'assistant';
+    void this.router.navigate(['/settings'], { queryParams: { section } }).then((navigated) => {
+      if (navigated && this.isPhoneViewport()) this.close();
+    });
   }
 
   private humanizeCapability(capability: string): string {
@@ -858,12 +1096,21 @@ export class AssistantComponent {
     this.submitDraft();
   }
 
-  /** Asks a starter question as if it had been typed and sent. */
-  runStarter(prompt: StarterPrompt): void {
+  /**
+   * Puts a door's example in the composer and leaves it there. It never
+   * submits: a prefilled write is shown to the person before it can run.
+   */
+  prefillFromDoor(example: CapabilityExample): void {
     if (this.assistant.sending()) return;
-    this.assistant.updateDraft(prompt.label);
-    this.submitDraft();
-    if (!this.isPhoneViewport()) setTimeout(() => this.composer()?.nativeElement.focus(), 0);
+    this.assistant.updateDraft(example.fill ?? example.label);
+    setTimeout(() => {
+      const element = this.composer()?.nativeElement;
+      if (!element) return;
+      element.value = this.assistant.draft();
+      this.autoGrow(element);
+      element.focus();
+      element.setSelectionRange(element.value.length, element.value.length);
+    }, 0);
   }
 
   onSendClick(): void {
@@ -903,7 +1150,109 @@ export class AssistantComponent {
 
     const target = Math.max(0, element.scrollHeight - element.clientHeight);
     this.programmaticScrollTop = target;
+    this.programmaticScrollKeepsFollowing = true;
     element.scrollTop = target;
+  }
+
+  /**
+   * Brings an arriving review's TOP into view (#1557).
+   *
+   * The end of a review taller than the panel is a wall of steps; its title,
+   * the headline and the first steps — the words that say what is about to
+   * happen — were the part scrolled out. Only the newest review card is
+   * anchored, and only once: a step toggle or a composer reflow leaves the
+   * reader where they are. Following is switched off deliberately, because a
+   * review is something to read, not a reply to keep pinned to the end.
+   */
+  private keepReviewCardsInView(): void {
+    const cards = this.reviewCards();
+    if (cards.length === 0) return;
+
+    const unseen = cards.filter((id) => !this.revealedReviewCards.has(id));
+    if (unseen.length === 0) {
+      this.keepDetailsAnchorInView();
+      return;
+    }
+
+    const body = this.body()?.nativeElement;
+    if (!body) return; // Closed panel: keep the arrival pending until it shows it.
+
+    const newest = cards[cards.length - 1];
+    const card = this.changesetCardElement(newest);
+    if (!card) return;
+
+    // Every review currently rendered counts as seen; an older one restored
+    // beside the newest must not win a later anchor.
+    for (const id of cards) this.revealedReviewCards.add(id);
+
+    // A reader who scrolled back to an older turn keeps their place.
+    if (!this.following()) return;
+
+    this.following.set(false);
+    this.scrollBodyTo(body, this.changesetStartScrollTop(body, card));
+  }
+
+  /**
+   * "Show every change" grows the card downward. Its header must stay on
+   * screen (#1557), so the card's start returns to the top of the transcript
+   * viewport — the same anchor the arrival uses, and one the expanding layout
+   * cannot drag back to the end.
+   */
+  private keepDetailsAnchorInView(): void {
+    const id = this.detailsAnchorId;
+    if (!id) return;
+
+    const body = this.body()?.nativeElement;
+    const card = body ? this.changesetCardElement(id) : null;
+    if (!body || !card) {
+      this.detailsAnchorId = null;
+      return;
+    }
+
+    this.detailsAnchorId = null;
+    this.scrollBodyTo(body, this.changesetStartScrollTop(body, card));
+  }
+
+  /** The full diff of a review opened or closed; see keepDetailsAnchorInView. */
+  onChangesetDetailsToggled(changesetId: string, open: boolean): void {
+    // Inspecting a card is not a request to follow the transcript's end.
+    this.following.set(false);
+    this.detailsAnchorId = open ? changesetId : null;
+    this.keepDetailsAnchorInView();
+  }
+
+  private changesetCardElement(changesetId: string): HTMLElement | null {
+    const transcript = this.transcript()?.nativeElement;
+    if (!transcript) return null;
+    const cards = transcript.querySelectorAll<HTMLElement>('[data-changeset-id]');
+    for (const card of cards) {
+      if (card.getAttribute('data-changeset-id') === changesetId) return card;
+    }
+    return null;
+  }
+
+  /** The scroll position that puts the card's top edge at the viewport's top. */
+  private changesetStartScrollTop(body: HTMLElement, card: HTMLElement): number {
+    const bodyTop = body.getBoundingClientRect().top;
+    return Math.max(0, body.scrollTop + card.getBoundingClientRect().top - bodyTop);
+  }
+
+  /**
+   * Scrolls the transcript without touching focus. Motion is the reader's
+   * choice: `prefers-reduced-motion` makes the same move instantly.
+   */
+  private scrollBodyTo(body: HTMLElement, top: number): void {
+    if (Math.abs(body.scrollTop - top) < 1) return;
+    // A followEnd target from before this move no longer describes the
+    // scrollport. Remember this anchor instead, so the first smooth-scroll
+    // event cannot look like "still at the end" (#1557).
+    this.programmaticScrollTop = top;
+    this.programmaticScrollKeepsFollowing = false;
+    if (prefersReducedMotion() || typeof body.scrollTo !== 'function') {
+      body.scrollTop = top;
+      return;
+    }
+    body.scrollTo({ top, behavior: 'smooth' });
   }
 
   /**

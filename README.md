@@ -124,7 +124,7 @@ The Brain is where notes from different books meet.
 
 ### Ask Nostos (optional)
 
-Ask Nostos is an AI assistant for your own library. It can find what you have read, help you capture a thought, or reorganise your collections. When it changes your library, it shows one set of changes you can undo, or review before anything happens. Nostos works fully without it.
+Ask Nostos is an AI assistant for your own library. It can find what you have read, save a thought or a quote, add books, link notes to topics, open and draft Studio documents, put a book on To read, or reorganise your collections and book details. When it changes your library, it shows one set of changes you can undo, or review before anything happens. Nostos works fully without it.
 
 On SelfHosted, you connect your own AI provider in **Settings → AI connections**. Nostos Cloud includes a managed allowance.
 

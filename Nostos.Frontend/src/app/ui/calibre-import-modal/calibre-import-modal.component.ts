@@ -201,11 +201,31 @@ export class CalibreImportModal {
 
   private nextRowId = 0;
   private poll?: Subscription;
+  /** True for the rest of an opening that a dropped zip started. */
+  private openedOnFile = false;
 
   constructor() {
     effect(() => {
-      if (!this.isOpen()) return;
-      untracked(() => this.load());
+      const open = this.isOpen();
+      // A zip from the one drop zone (#1572) starts the same upload as a file
+      // chosen in this dialog, instead of reading the server's folder first.
+      const pending = this.service.pendingFile();
+      if (!open) {
+        this.openedOnFile = false;
+        return;
+      }
+      untracked(() => {
+        if (pending) {
+          this.service.pendingFile.set(null);
+          this.openedOnFile = true;
+          void this.startUpload(pending);
+          return;
+        }
+        // Clearing the pending file re-runs this effect; it must not reload
+        // over the upload it just started.
+        if (this.openedOnFile) return;
+        void this.load();
+      });
     });
 
     this.destroyRef.onDestroy(() => this.abortUpload());

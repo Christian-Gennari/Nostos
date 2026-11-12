@@ -59,6 +59,7 @@ import { LibraryTransferCoordinator } from '../services/library-transfer-coordin
 import { TransferResumeStore } from '../services/transfer-resume-store.service';
 import { TransferTabLease } from '../services/transfer-tab-lease.service';
 import { LibraryTransferProgressComponent } from './library-transfer-progress.component';
+import { PortableArchiveHandoffService } from '../../core/services/portable-archive-handoff.service';
 import { LibraryReplacementDialogComponent } from './library-replacement-dialog.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { formatNostosDate } from '../../core/date-formats';
@@ -124,6 +125,8 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   readonly coordinator = inject(LibraryTransferCoordinator);
   private readonly resumeStore = inject(TransferResumeStore);
   private readonly tabLease = inject(TransferTabLease);
+  private readonly archiveHandoff = inject(PortableArchiveHandoffService);
+  private handoffReady = false;
 
   readonly state = this.coordinator.state;
   readonly otherTabActive = this.tabLease.otherTabActive;
@@ -379,6 +382,18 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   });
 
   constructor() {
+    // A `.nostos` file dropped on the one drop zone (issue #1526) is handed
+    // over after navigation; take it here, where the import flow lives. The
+    // first mount consumes it in ngOnInit, once auto-resume has settled.
+    effect(() => {
+      const waiting = this.archiveHandoff.pending();
+      if (!waiting || !this.handoffReady) return;
+      untracked(() => {
+        const file = this.archiveHandoff.take();
+        if (file) this.selectFile(file);
+      });
+    });
+
     // Release the lease when an active transfer reaches a terminal state (or
     // is explicitly dismissed). A terminal state on first mount (the transfer
     // finished while the host was closed) releases too; idle on first mount
@@ -457,6 +472,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   async ngOnInit(): Promise<void> {
     await this.tryAutoResume();
+    this.handoffReady = true;
+    const handed = this.archiveHandoff.take();
+    if (handed) this.selectFile(handed);
   }
 
   ngOnDestroy(): void {
@@ -477,8 +495,11 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (!file) return;
+    if (file) this.selectFile(file);
+  }
 
+  /** Starts (or continues) an import with this archive, from the picker or a drop. */
+  selectFile(file: File): void {
     // A live lease in another tab owns the shared resume record; starting here
     // would overwrite it (review-724 cross-tab item).
     if (!this.claimForAction()) return;

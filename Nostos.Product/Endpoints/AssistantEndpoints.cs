@@ -77,6 +77,16 @@ public static class AssistantEndpoints
         {
             return Results.Ok(await orchestrator.HandleTurnAsync(request, ct));
         }
+        catch (AssistantTurnAbortedException ex)
+        {
+            // The turn committed writes and a later provider call failed (#1558):
+            // the body carries those outcomes beside the typed failure.
+            return Failure(
+                ex.Cause.Code,
+                StatusFor(ex.Cause.Code),
+                LlmEventFailure(ex.Cause, managed).Message,
+                ex.Committed);
+        }
         catch (AiUsageException ex)
         {
             return Failure(ex.Code, ex.StatusCode, ex.Message);
@@ -184,6 +194,17 @@ public static class AssistantEndpoints
                     responseBody: response,
                     requestAborted: http.RequestAborted);
             }
+        }
+        catch (AssistantTurnAbortedException ex)
+        {
+            // A committed capture (or another write) survives the provider
+            // failure: the failed event keeps the outcomes so the panel can say
+            // what was saved before the failure (#1558).
+            await writer.WriteAsync(
+                AssistantTurnEventKinds.Failed,
+                failure: LlmEventFailure(ex.Cause, ManagedAi(http)),
+                responseBody: ex.Committed,
+                requestAborted: http.RequestAborted);
         }
         catch (AiUsageException ex)
         {
@@ -372,8 +393,24 @@ public static class AssistantEndpoints
         _ => StatusCodes.Status502BadGateway,
     };
 
-    private static IResult Failure(string code, int statusCode, string detail) =>
-        Results.Problem(statusCode: statusCode, title: code, detail: detail);
+    /// <summary>
+    /// The failure body. Nothing committed keeps the exact problem-details shape
+    /// clients already read; a turn that committed writes before failing appends
+    /// the optional <c>committed</c> response object (#1558), so an older client
+    /// simply ignores it.
+    /// </summary>
+    private static IResult Failure(
+        string code,
+        int statusCode,
+        string detail,
+        AssistantTurnResponse? committed = null) =>
+        committed is null
+            ? Results.Problem(statusCode: statusCode, title: code, detail: detail)
+            : Results.Problem(
+                statusCode: statusCode,
+                title: code,
+                detail: detail,
+                extensions: new Dictionary<string, object?> { ["committed"] = committed });
 
     private sealed class TurnEventWriter(HttpResponse response, string turnId)
     {
