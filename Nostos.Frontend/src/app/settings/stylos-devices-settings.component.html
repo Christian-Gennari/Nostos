@@ -1,0 +1,70 @@
+@if (loadFailed()) {
+  <nostos-empty-state
+    compact
+    error
+    message="Could not load your devices"
+    detail="Nostos could not read the list of paired devices."
+    (retry)="load()"
+  />
+} @else if (devices(); as list) {
+  <div class="setting-row setting-row--stacked" data-testid="stylos-devices-intro">
+    <div class="label">
+      <span class="label-text">Stylos writing devices</span>
+      <span class="label-desc">
+        A paired device syncs its Markdown files as Studio drafts and downloads your highlights,
+        notes and passages for quoting. Pairing uses a code the device shows; no password is shared.
+      </span>
+    </div>
+    <a appButton variant="secondary" size="sm" routerLink="/pair" class="pair-link" data-testid="stylos-devices-pair">Pair a device</a>
+  </div>
+
+  @if (list.length === 0) {
+    <p class="device-empty" data-testid="stylos-devices-empty">
+      No devices paired yet. Pair one to bring your writing onto a Stylos laptop.
+    </p>
+  } @else {
+    <div class="device-list" data-testid="stylos-devices-list">
+      @for (device of list; track device.id) {
+        <div class="device-item" data-testid="stylos-devices-item">
+          <div class="device-info">
+            <span class="device-name">{{ device.name }}</span>
+            <span class="device-meta">
+              Paired {{ device.createdAt | nostosDate }} &middot;
+              @if (device.lastUsedAt) {
+                last synced {{ device.lastUsedAt | nostosDate: 'datetime' }}
+              } @else {
+                not synced yet
+              }
+            </span>
+          </div>
+          <button
+            appIconButton
+            icon="trash"
+            size="xs"
+            tone="danger"
+            [glyphSize]="14"
+            [attr.aria-label]="'Revoke ' + device.name"
+            title="Revoke"
+            (click)="requestRevoke(device)"
+            data-testid="stylos-devices-revoke"
+          ></button>
+        </div>
+      }
+    </div>
+  }
+} @else {
+  <div class="device-loading">
+    <nostos-loading-indicator label="Loading devices" />
+  </div>
+}
+
+<app-confirm-modal
+  [isOpen]="!!pendingRevoke()"
+  [heading]="'Revoke ' + (pendingRevoke()?.name ?? '') + '?'"
+  description="The device loses access on its next sync and must pair again with a new code. Drafts and quotes it already synced stay in your library."
+  confirmLabel="Revoke"
+  busyLabel="Revoking…"
+  [busy]="revoking()"
+  (confirm)="confirmRevoke()"
+  (cancel)="cancelRevoke()"
+/>

@@ -69,4 +69,10 @@ export interface DeploymentCapabilities {
    * Connected apps; absent/false keeps the section hidden.
    */
   supportsMcpConnectedApps?: boolean;
+  /**
+   * The Stylos Sync Protocol (WP8) is served here: a writing device can pair
+   * and sync, and Settings → Devices lists the paired ones. Absent/false keeps
+   * the section hidden; never inferred from `deploymentMode`.
+   */
+  supportsStylosDevices?: boolean;
 }

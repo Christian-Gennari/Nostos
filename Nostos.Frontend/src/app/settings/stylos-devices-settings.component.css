@@ -1,0 +1,95 @@
+:host {
+  display: contents;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+}
+
+.setting-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+}
+
+.label-text {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+}
+
+.label-desc {
+  display: block;
+  max-width: 610px;
+  color: var(--color-text-light);
+  font-size: 0.78rem;
+  line-height: 1.48;
+}
+
+.pair-link {
+  align-self: flex-start;
+}
+
+.device-list {
+  padding: 0;
+}
+
+.device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.device-item:last-child {
+  border-bottom: none;
+}
+
+.device-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.device-name {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.device-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+
+.device-empty {
+  margin: 0;
+  padding: 15px 0;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.device-loading {
+  padding: 15px 0;
+}

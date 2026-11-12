@@ -1,0 +1,147 @@
+.pair-page {
+  display: grid;
+  min-height: 100vh;
+  padding: 32px 20px 56px;
+  place-items: center;
+  background: var(--bg-body);
+}
+
+.pair-card {
+  width: min(100%, 460px);
+  padding: 32px 32px 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+}
+
+.pair-brand {
+  display: block;
+  margin-bottom: 28px;
+}
+
+.pair-header {
+  margin-bottom: 24px;
+}
+
+.pair-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.pair-title {
+  margin: 0 0 10px;
+  font-size: 1.45rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--color-text-main);
+}
+
+.pair-intro,
+.pair-device-copy,
+.pair-done-copy,
+.pair-hint,
+.pair-foot {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--color-text-light);
+}
+
+.pair-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pair-label {
+  font-size: 0.78rem;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.pair-code-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.pair-code {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pair-hint {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.pair-notice {
+  margin-top: 16px;
+  font-size: 0.82rem;
+}
+
+.pair-device,
+.pair-done {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 18px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  color: var(--color-text-main);
+}
+
+.pair-device-name {
+  margin: 2px 0 0;
+  font-size: 1.05rem;
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.pair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.pair-foot {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.pair-foot a {
+  color: var(--color-primary);
+}
+
+@media (max-width: 560px) {
+  .pair-page {
+    padding: 16px 12px 40px;
+    place-items: start center;
+  }
+
+  .pair-card {
+    padding: 24px 18px 20px;
+  }
+
+  .pair-code-row {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+}

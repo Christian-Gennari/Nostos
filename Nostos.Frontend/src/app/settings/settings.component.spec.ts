@@ -31,6 +31,7 @@ import { ProviderSettingsItem, ProviderSettingsResponse } from '../core/dtos/pro
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { McpConnectedAppsService } from '../core/services/mcp-connected-apps.service';
+import { StylosService } from '../core/services/stylos.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
@@ -422,6 +423,14 @@ const calibreImportServiceMock = {
   open: vi.fn(),
 };
 
+const stylosServiceMock = {
+  devices: vi.fn(() => of({ devices: [] })),
+  revoke: vi.fn(() => of(undefined as void)),
+  findPending: vi.fn(),
+  approve: vi.fn(),
+  deny: vi.fn(),
+};
+
 const externalMediaServiceMock = {
   status: vi.fn(() =>
     of({
@@ -482,6 +491,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: ExternalMediaService, useValue: externalMediaServiceMock },
         { provide: CalibreImportService, useValue: calibreImportServiceMock },
         { provide: McpConnectedAppsService, useValue: mcpAccessTokensServiceMock },
+        { provide: StylosService, useValue: stylosServiceMock },
         { provide: ReadwiseService, useValue: readwiseServiceMock },
       ],
     }).compileComponents();
@@ -1528,6 +1538,34 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.destroy();
     }
     expect(mcpAccessTokensServiceMock.list).not.toHaveBeenCalled();
+  });
+
+  it('offers Devices when the server serves the Stylos Sync Protocol', () => {
+    capabilitiesServiceMock.get.mockReturnValueOnce(
+      of({ ...selfHostedCapabilities, supportsStylosDevices: true }),
+    );
+
+    render();
+
+    const nav = fixture.nativeElement.querySelector('[data-testid="settings-nav-devices"]') as HTMLButtonElement;
+    expect(nav.textContent).toContain('Devices');
+    nav.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('devices');
+    expect(fixture.nativeElement.querySelector('[data-testid="stylos-devices-card"]')).toBeTruthy();
+    expect(stylosServiceMock.devices).toHaveBeenCalled();
+  });
+
+  it('hides Devices and asks for nothing without the capability', () => {
+    for (const capabilities of [selfHostedCapabilities, cloudCapabilities]) {
+      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      render();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-devices"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="stylos-devices-card"]')).toBeNull();
+      fixture.destroy();
+    }
   });
 
   it('keeps Cloud Backups & data available for portable export without e-reader access', () => {

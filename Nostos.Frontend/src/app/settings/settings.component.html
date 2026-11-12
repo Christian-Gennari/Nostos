@@ -138,6 +138,23 @@
             <span class="settings-nav-copy">Connected apps</span>
           </button>
           }
+          @if (supportsStylosDevices()) {
+          <button
+            type="button"
+            class="nav-item settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'devices'"
+            [attr.aria-selected]="activeSettingsSection() === 'devices'"
+            aria-controls="devices"
+            data-testid="settings-nav-devices"
+            (click)="setSettingsSection('devices')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="notebook" [size]="16" weight="light"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">Devices</span>
+          </button>
+          }
           @if (hasDataSection()) {
           <button
             type="button"
@@ -2119,6 +2136,36 @@
               </div>
               <div class="card-body">
                 <app-connected-apps-settings />
+              </div>
+            </section>
+          </section>
+          }
+
+          @if (supportsStylosDevices()) {
+          <section
+            class="settings-section"
+            id="devices"
+            role="tabpanel"
+            aria-labelledby="devices-heading"
+            [hidden]="activeSettingsSection() !== 'devices'"
+            data-testid="settings-devices-section"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="devices-heading">Devices</h2>
+              <p class="settings-section-desc">
+                Stylos writing devices paired with this library. A device syncs its Markdown files as
+                Studio drafts and downloads your highlights, notes and passages for offline quoting.
+              </p>
+            </header>
+
+            <section class="settings-card" data-testid="stylos-devices-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Writing devices</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <app-stylos-devices-settings />
               </div>
             </section>
           </section>

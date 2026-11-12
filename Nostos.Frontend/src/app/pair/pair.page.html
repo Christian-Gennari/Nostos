@@ -1,0 +1,126 @@
+<main class="pair-page">
+  <section class="pair-card" aria-labelledby="pair-heading">
+    <nostos-brand-lockup class="pair-brand" />
+
+    <header class="pair-header">
+      <p class="pair-eyebrow">Stylos</p>
+      <h1 class="pair-title" id="pair-heading">Pair a writing device</h1>
+      <p class="pair-intro">
+        Type the code the device shows, or open the link from its QR. Approve only a code you started:
+        a paired device can read and write your Studio drafts and download your library for quoting.
+      </p>
+    </header>
+
+    @if (approved(); as done) {
+      <div class="pair-done" data-testid="pair-approved">
+        <nostos-icon name="check-circle" [size]="32" weight="light" aria-hidden="true" />
+        <p class="pair-device-name">{{ done.deviceName }}</p>
+        <p class="pair-done-copy">
+          can sync with Nostos now. The device finishes pairing on its own in a few seconds; you can
+          close this page.
+        </p>
+        <div class="pair-actions">
+          <button type="button" appButton variant="secondary" size="sm" (click)="startOver()" data-testid="pair-again">
+            Pair another device
+          </button>
+          <a appButton variant="primary" size="sm" routerLink="/library" data-testid="pair-library">Go to the Library</a>
+        </div>
+      </div>
+    } @else if (device(); as found) {
+      <div class="pair-device" data-testid="pair-device">
+        <nostos-icon name="notebook" [size]="32" weight="light" aria-hidden="true" />
+        <p class="pair-device-name" data-testid="pair-device-name">{{ found.deviceName }}</p>
+        <p class="pair-device-copy">
+          wants to sync its Markdown drafts with your Studio and download your highlights and passages.
+          This code expires at {{ found.expiresAt | nostosDate: 'time' }}.
+        </p>
+        <div class="pair-actions">
+          <button
+            type="button"
+            appButton
+            variant="secondary"
+            size="sm"
+            [disabled]="busy() !== null"
+            [busy]="busy() === 'deny'"
+            (click)="deny()"
+            data-testid="pair-deny"
+          >
+            Deny
+          </button>
+          <button
+            type="button"
+            appButton
+            variant="primary"
+            size="sm"
+            [disabled]="busy() !== null"
+            [busy]="busy() === 'approve'"
+            (click)="approve()"
+            data-testid="pair-approve"
+          >
+            Approve {{ found.deviceName }}
+          </button>
+        </div>
+      </div>
+
+      @if (error(); as message) {
+        <p appNotice tone="caution" class="pair-notice" role="alert" data-testid="pair-error">
+          {{ message }}
+        </p>
+      }
+    } @else {
+      <form class="pair-form" (submit)="$event.preventDefault(); find()">
+        <label class="pair-label" for="pair-code">Pairing code</label>
+        <div class="pair-code-row">
+          <input
+            id="pair-code"
+            appInput
+            controlSize="compact"
+            class="pair-code"
+            type="text"
+            inputmode="text"
+            autocomplete="one-time-code"
+            autocapitalize="characters"
+            spellcheck="false"
+            maxlength="7"
+            placeholder="K7Q-4MZ"
+            aria-describedby="pair-code-hint"
+            [value]="code()"
+            (input)="onCodeInput($event)"
+            data-testid="pair-code"
+          />
+          <button
+            type="submit"
+            appButton
+            variant="primary"
+            size="sm"
+            [disabled]="!canFind()"
+            [busy]="busy() === 'find'"
+            data-testid="pair-find"
+          >
+            Find device
+          </button>
+        </div>
+        <p class="pair-hint" id="pair-code-hint">
+          Six characters from the device’s screen. A dash is added for you.
+        </p>
+      </form>
+
+      @if (denied()) {
+        <p appNotice tone="neutral" class="pair-notice" role="status" data-testid="pair-denied">
+          That device was not paired. It will stop waiting shortly.
+        </p>
+      }
+
+      @if (error(); as message) {
+        <p appNotice tone="caution" class="pair-notice" role="alert" data-testid="pair-error">
+          {{ message }}
+        </p>
+      }
+    }
+
+    <footer class="pair-foot">
+      Paired devices can be revoked at any time in
+      <a routerLink="/settings" [queryParams]="{ section: 'devices' }">Settings → Devices</a>.
+    </footer>
+  </section>
+</main>
