@@ -32,7 +32,7 @@ public static class DeploymentCapabilitiesEndpoints
                 services.GetService<IServiceProviderIsService>()?.IsService(typeof(IMcpConnectedApps)) == true,
                 services.GetService<ICalibreLibraryAvailability>(),
                 services.GetService<ICalibreUploadAvailability>(),
-                services.GetService<Nostos.Backend.Services.Stylos.StylosSyncService>() is not null)))
+                services.GetService<Nostos.Backend.Services.Carrel.CarrelSyncService>() is not null)))
             .AllowAnonymous();
         return routes;
     }
@@ -45,7 +45,7 @@ public static class DeploymentCapabilitiesEndpoints
         bool mcpConnectedApps = false,
         ICalibreLibraryAvailability? calibre = null,
         ICalibreUploadAvailability? calibreUpload = null,
-        bool stylosDevices = false) =>
+        bool carrelDevices = false) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -106,9 +106,9 @@ public static class DeploymentCapabilitiesEndpoints
             // of the apps connected over MCP (SelfHosted tokens, Cloud OAuth
             // clients). The same registration maps the list/revoke routes.
             SupportsMcpConnectedApps: mcpConnectedApps,
-            // The Stylos Sync Protocol (WP8): a host that registered the
-            // device store answers /stylos/v1 and shows Settings → Devices.
-            SupportsStylosDevices: stylosDevices);
+            // The Carrel Sync Protocol (WP8): a host that registered the
+            // device store answers /carrel/v1 and shows Settings → Devices.
+            SupportsCarrelDevices: carrelDevices);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -146,7 +146,7 @@ public sealed record DeploymentCapabilitiesResponse(
     /// </summary>
     bool SupportsCalibreUpload = false,
     /// <summary>
-    /// The Stylos Sync Protocol (WP8) is available: devices can pair, and
+    /// The Carrel Sync Protocol (WP8) is available: devices can pair, and
     /// Settings shows the Devices section. Absent/false hides both.
     /// </summary>
-    bool SupportsStylosDevices = false);
+    bool SupportsCarrelDevices = false);

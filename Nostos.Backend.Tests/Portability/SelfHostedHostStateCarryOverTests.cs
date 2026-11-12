@@ -69,7 +69,7 @@ public sealed class SelfHostedHostStateCarryOverTests
             nameof(Nostos.Backend.Data.Models.MigrationChunkReceiptRecord),
             nameof(Nostos.Backend.Data.Models.MigrationExportArtifactRecord),
             nameof(Nostos.Backend.Data.Models.MigrationStorageReservationRecord),
-            nameof(Nostos.Backend.Data.Models.StylosDeviceModel),
+            nameof(Nostos.Backend.Data.Models.CarrelDeviceModel),
         ]);
     }
 
@@ -93,10 +93,10 @@ public sealed class SelfHostedHostStateCarryOverTests
             nameof(Nostos.Backend.Data.Models.BookUploadSessionRecord),
             nameof(Nostos.Backend.Data.Models.BookUploadPartReceiptRecord),
             nameof(Nostos.Backend.Data.Models.ReadwiseConnectionModel),
-            nameof(Nostos.Backend.Data.Models.StylosPairingModel),
-            nameof(Nostos.Backend.Data.Models.StylosFileModel),
-            nameof(Nostos.Backend.Data.Models.StylosLibraryItemModel),
-            nameof(Nostos.Backend.Data.Models.StylosSyncStateModel),
+            nameof(Nostos.Backend.Data.Models.CarrelPairingModel),
+            nameof(Nostos.Backend.Data.Models.CarrelFileModel),
+            nameof(Nostos.Backend.Data.Models.CarrelLibraryItemModel),
+            nameof(Nostos.Backend.Data.Models.CarrelSyncStateModel),
         ]);
     }
 

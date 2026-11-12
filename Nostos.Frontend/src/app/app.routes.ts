@@ -40,7 +40,7 @@ export const routes: Routes = [
     path: 'pair',
     loadComponent: () => import('./pair/pair.page').then((m) => m.PairPage),
   },
-  // The address a Stylos device puts in its QR.
+  // The address a Carrel device puts in its QR.
   {
     path: 'approve',
     loadComponent: () =>

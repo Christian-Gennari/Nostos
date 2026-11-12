@@ -140,25 +140,25 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Carry,
             "Storage admission and reservation accounting; no foreign key and no portability semantics, so it must survive the replacement unchanged."),
         new(
-            typeof(StylosDeviceModel),
+            typeof(CarrelDeviceModel),
             HostStateCarryOverKind.Carry,
-            "A paired Stylos writing device (WP8) is a host credential stored only as a token hash, with no foreign key. Replacing the library must not unpair the device the owner set up, and a portable archive never carries it."),
+            "A paired Carrel writing device (WP8) is a host credential stored only as a token hash, with no foreign key. Replacing the library must not unpair the device the owner set up, and a portable archive never carries it."),
         new(
-            typeof(StylosPairingModel),
+            typeof(CarrelPairingModel),
             HostStateCarryOverKind.Clear,
             "Pairing attempts (WP8) are short-lived handoffs tied to the generation they were approved for; a code waiting when the library is replaced must not carry a token into the imported one."),
         new(
-            typeof(StylosFileModel),
+            typeof(CarrelFileModel),
             HostStateCarryOverKind.Clear,
-            "The Stylos file map (WP8) points at the replaced generation's Writing Studio drafts by id. A matching GUID is not the same draft after a whole-library replacement, so the map is cleared and rebuilt from the imported drafts."),
+            "The Carrel file map (WP8) points at the replaced generation's Writing Studio drafts by id. A matching GUID is not the same draft after a whole-library replacement, so the map is cleared and rebuilt from the imported drafts."),
         new(
-            typeof(StylosLibraryItemModel),
+            typeof(CarrelLibraryItemModel),
             HostStateCarryOverKind.Clear,
-            "The Stylos library feed's exported-note memory (WP8) names notes of the replaced generation. It is derived bookkeeping, so it is cleared and rebuilt from the imported notes."),
+            "The Carrel library feed's exported-note memory (WP8) names notes of the replaced generation. It is derived bookkeeping, so it is cleared and rebuilt from the imported notes."),
         new(
-            typeof(StylosSyncStateModel),
+            typeof(CarrelSyncStateModel),
             HostStateCarryOverKind.Clear,
-            "The Stylos change cursors (WP8) belong to the replaced feed generation. Clearing them makes every paired device pull the imported library from the start instead of being told only about changes after a cursor that no longer means anything."),
+            "The Carrel change cursors (WP8) belong to the replaced feed generation. Clearing them makes every paired device pull the imported library from the start instead of being told only about changes after a cursor that no longer means anything."),
     ];
 
     internal static IReadOnlyList<HostStateCarryOverDecision> CarryDecisions { get; } =
