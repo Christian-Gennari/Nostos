@@ -91,7 +91,13 @@ public sealed record NostosProductEndpointPolicies(
     /// Whether the resumable Calibre zip upload routes are mapped. Requires
     /// the host to register <c>CalibreUploadService</c> and its store.
     /// </summary>
-    bool MapCalibreUploadEndpoints = false)
+    bool MapCalibreUploadEndpoints = false,
+    /// <summary>
+    /// Authorization policy for the signed-in Stylos pairing and devices API
+    /// (<c>/api/stylos</c>). A host with accounts passes its customer policy;
+    /// SelfHosted has one local owner and passes null.
+    /// </summary>
+    string? StylosManagementAuthorizationPolicy = null)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -539,6 +545,11 @@ public static class NostosProductComposition
         api.MapDeploymentCapabilitiesEndpoints();
         // Settings → Connected apps: only where the host keeps a record of them.
         api.MapMcpConnectedAppsEndpoints();
+        // Stylos Sync Protocol v1 (WP8): /stylos/v1 for paired devices, and the
+        // signed-in pairing/device routes. Both map only on a host that
+        // registered the feature.
+        routes.MapStylosProtocolEndpoints();
+        api.MapStylosManagementEndpoints(policies.StylosManagementAuthorizationPolicy);
         api.MapManagedBackupEndpoints(
             policies.ManagedBackupsAuthorizationPolicy,
             policies.LargeTransferRateLimitPolicy);

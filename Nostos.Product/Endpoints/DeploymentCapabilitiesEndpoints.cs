@@ -31,7 +31,8 @@ public static class DeploymentCapabilitiesEndpoints
                 services.GetService<IBookFileUploadStore>(),
                 services.GetService<IServiceProviderIsService>()?.IsService(typeof(IMcpConnectedApps)) == true,
                 services.GetService<ICalibreLibraryAvailability>(),
-                services.GetService<ICalibreUploadAvailability>())))
+                services.GetService<ICalibreUploadAvailability>(),
+                services.GetService<Nostos.Backend.Services.Stylos.StylosSyncService>() is not null)))
             .AllowAnonymous();
         return routes;
     }
@@ -43,7 +44,8 @@ public static class DeploymentCapabilitiesEndpoints
         IBookFileUploadStore? bookFileUploadStore = null,
         bool mcpConnectedApps = false,
         ICalibreLibraryAvailability? calibre = null,
-        ICalibreUploadAvailability? calibreUpload = null) =>
+        ICalibreUploadAvailability? calibreUpload = null,
+        bool stylosDevices = false) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -103,7 +105,10 @@ public static class DeploymentCapabilitiesEndpoints
             // Settings → Connected apps (#1469): any host that keeps a record
             // of the apps connected over MCP (SelfHosted tokens, Cloud OAuth
             // clients). The same registration maps the list/revoke routes.
-            SupportsMcpConnectedApps: mcpConnectedApps);
+            SupportsMcpConnectedApps: mcpConnectedApps,
+            // The Stylos Sync Protocol (WP8): a host that registered the
+            // device store answers /stylos/v1 and shows Settings → Devices.
+            SupportsStylosDevices: stylosDevices);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -139,4 +144,9 @@ public sealed record DeploymentCapabilitiesResponse(
     /// upload (#1572). SelfHosted offers it beside the folder; Cloud offers it
     /// instead of one. Absent/false keeps the upload path hidden.
     /// </summary>
-    bool SupportsCalibreUpload = false);
+    bool SupportsCalibreUpload = false,
+    /// <summary>
+    /// The Stylos Sync Protocol (WP8) is available: devices can pair, and
+    /// Settings shows the Devices section. Absent/false hides both.
+    /// </summary>
+    bool SupportsStylosDevices = false);
