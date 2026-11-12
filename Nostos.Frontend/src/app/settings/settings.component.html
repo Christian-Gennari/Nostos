@@ -138,7 +138,7 @@
             <span class="settings-nav-copy">Connected apps</span>
           </button>
           }
-          @if (supportsStylosDevices()) {
+          @if (supportsCarrelDevices()) {
           <button
             type="button"
             class="nav-item settings-nav-item"
@@ -2141,7 +2141,7 @@
           </section>
           }
 
-          @if (supportsStylosDevices()) {
+          @if (supportsCarrelDevices()) {
           <section
             class="settings-section"
             id="devices"
@@ -2153,19 +2153,19 @@
             <header class="settings-section-header">
               <h2 class="settings-section-title" id="devices-heading">Devices</h2>
               <p class="settings-section-desc">
-                Stylos writing devices paired with this library. A device syncs its Markdown files as
+                Carrel writing devices paired with this library. A device syncs its Markdown files as
                 Studio drafts and downloads your highlights, notes and passages for offline quoting.
               </p>
             </header>
 
-            <section class="settings-card" data-testid="stylos-devices-card">
+            <section class="settings-card" data-testid="carrel-devices-card">
               <div class="card-header">
                 <div class="card-header-copy">
                   <h2>Writing devices</h2>
                 </div>
               </div>
               <div class="card-body">
-                <app-stylos-devices-settings />
+                <app-carrel-devices-settings />
               </div>
             </section>
           </section>

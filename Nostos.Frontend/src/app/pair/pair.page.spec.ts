@@ -3,12 +3,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
-import type { StylosPairingApproved, StylosPendingPairing } from '../core/dtos/stylos.dtos';
-import { StylosService, formatPairingCode, isCompletePairingCode } from '../core/services/stylos.service';
+import type { CarrelPairingApproved, CarrelPendingPairing } from '../core/dtos/carrel.dtos';
+import { CarrelService, formatPairingCode, isCompletePairingCode } from '../core/services/carrel.service';
 import { ToastService } from '../core/services/toast.service';
 import { CODE_ENDED, NO_WAITING_DEVICE, PairPage } from './pair.page';
 
-const device: StylosPendingPairing = {
+const device: CarrelPendingPairing = {
   code: 'K7Q-4MZ',
   deviceName: 'X250',
   expiresAt: '2026-11-12T09:30:00Z',
@@ -16,7 +16,7 @@ const device: StylosPendingPairing = {
 
 const approver = {
   findPending: vi.fn(() => of(device)),
-  approve: vi.fn(() => of({ deviceId: 'd1', deviceName: 'X250' } as StylosPairingApproved)),
+  approve: vi.fn(() => of({ deviceId: 'd1', deviceName: 'X250' } as CarrelPairingApproved)),
   deny: vi.fn(() => of(undefined as void)),
   devices: vi.fn(() => of({ devices: [] })),
   revoke: vi.fn(() => of(undefined as void)),
@@ -27,7 +27,7 @@ async function configurePage(query: Record<string, string>): Promise<ComponentFi
   await TestBed.configureTestingModule({
     imports: [PairPage],
     providers: [
-      { provide: StylosService, useValue: approver },
+      { provide: CarrelService, useValue: approver },
       { provide: ToastService, useValue: toast },
       provideRouter([]),
       // After provideRouter: the router provides an ActivatedRoute of its own,

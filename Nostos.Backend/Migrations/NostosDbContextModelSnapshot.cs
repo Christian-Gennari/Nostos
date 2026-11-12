@@ -538,6 +538,228 @@ namespace Nostos.Backend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.CarrelDeviceModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastUsedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublicKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerKey");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("CarrelDevices", t =>
+                        {
+                            t.HasCheckConstraint("CK_CarrelDevices_Name", "length(\"Name\") > 0 AND length(\"Name\") <= 100");
+
+                            t.HasCheckConstraint("CK_CarrelDevices_TokenHash", "length(\"TokenHash\") = 64");
+                        });
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.CarrelFileModel", b =>
+                {
+                    b.Property<Guid>("FileId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Cursor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DraftUpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModifiedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Rev")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("FileId");
+
+                    b.HasIndex("OwnerKey", "Cursor");
+
+                    b.HasIndex("OwnerKey", "DraftId")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerKey", "Path");
+
+                    b.ToTable("CarrelFiles", t =>
+                        {
+                            t.HasCheckConstraint("CK_CarrelFiles_Hash", "length(\"Hash\") = 64");
+
+                            t.HasCheckConstraint("CK_CarrelFiles_Rev", "\"Rev\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.CarrelLibraryItemModel", b =>
+                {
+                    b.Property<string>("OwnerKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Cursor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ModifiedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Signature")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OwnerKey", "NoteId");
+
+                    b.HasIndex("OwnerKey", "Cursor");
+
+                    b.ToTable("CarrelLibraryItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_CarrelLibraryItems_Signature", "length(\"Signature\") = 64");
+                        });
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.CarrelPairingModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(7)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DeviceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DevicePublicKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenEncrypted")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code");
+
+                    b.HasIndex("Status", "ExpiresAtUtc");
+
+                    b.ToTable("CarrelPairings", t =>
+                        {
+                            t.HasCheckConstraint("CK_CarrelPairings_Status", "\"Status\" IN ('pending', 'approved', 'denied', 'expired')");
+                        });
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.CarrelSyncStateModel", b =>
+                {
+                    b.Property<string>("OwnerKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FilesCursor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("LibraryCursor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("OwnerKey");
+
+                    b.ToTable("CarrelSyncStates", t =>
+                        {
+                            t.HasCheckConstraint("CK_CarrelSyncStates_FilesCursor", "\"FilesCursor\" >= 0");
+
+                            t.HasCheckConstraint("CK_CarrelSyncStates_LibraryCursor", "\"LibraryCursor\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.CollectionModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1446,228 +1668,6 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("ReadwiseConnections", t =>
                         {
                             t.HasCheckConstraint("CK_ReadwiseConnections_SingletonId", "\"Id\" = 1");
-                        });
-                });
-
-            modelBuilder.Entity("Nostos.Backend.Data.Models.StylosDeviceModel", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("LastUsedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OwnerKey")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PublicKey")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TokenHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OwnerKey");
-
-                    b.HasIndex("TokenHash")
-                        .IsUnique();
-
-                    b.ToTable("StylosDevices", t =>
-                        {
-                            t.HasCheckConstraint("CK_StylosDevices_Name", "length(\"Name\") > 0 AND length(\"Name\") <= 100");
-
-                            t.HasCheckConstraint("CK_StylosDevices_TokenHash", "length(\"TokenHash\") = 64");
-                        });
-                });
-
-            modelBuilder.Entity("Nostos.Backend.Data.Models.StylosFileModel", b =>
-                {
-                    b.Property<Guid>("FileId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Cursor")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("Deleted")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("DraftId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("DraftUpdatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Hash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ModifiedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OwnerKey")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Path")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Rev")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("FileId");
-
-                    b.HasIndex("OwnerKey", "Cursor");
-
-                    b.HasIndex("OwnerKey", "DraftId")
-                        .IsUnique();
-
-                    b.HasIndex("OwnerKey", "Path");
-
-                    b.ToTable("StylosFiles", t =>
-                        {
-                            t.HasCheckConstraint("CK_StylosFiles_Hash", "length(\"Hash\") = 64");
-
-                            t.HasCheckConstraint("CK_StylosFiles_Rev", "\"Rev\" > 0");
-                        });
-                });
-
-            modelBuilder.Entity("Nostos.Backend.Data.Models.StylosLibraryItemModel", b =>
-                {
-                    b.Property<string>("OwnerKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("NoteId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Cursor")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("Deleted")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("ModifiedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Signature")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("OwnerKey", "NoteId");
-
-                    b.HasIndex("OwnerKey", "Cursor");
-
-                    b.ToTable("StylosLibraryItems", t =>
-                        {
-                            t.HasCheckConstraint("CK_StylosLibraryItems_Signature", "length(\"Signature\") = 64");
-                        });
-                });
-
-            modelBuilder.Entity("Nostos.Backend.Data.Models.StylosPairingModel", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("ApprovedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(7)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("DeviceId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DeviceName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DevicePublicKey")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("OwnerKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TokenEncrypted")
-                        .HasMaxLength(4096)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code");
-
-                    b.HasIndex("Status", "ExpiresAtUtc");
-
-                    b.ToTable("StylosPairings", t =>
-                        {
-                            t.HasCheckConstraint("CK_StylosPairings_Status", "\"Status\" IN ('pending', 'approved', 'denied', 'expired')");
-                        });
-                });
-
-            modelBuilder.Entity("Nostos.Backend.Data.Models.StylosSyncStateModel", b =>
-                {
-                    b.Property<string>("OwnerKey")
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("FilesCursor")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("LibraryCursor")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("OwnerKey");
-
-                    b.ToTable("StylosSyncStates", t =>
-                        {
-                            t.HasCheckConstraint("CK_StylosSyncStates_FilesCursor", "\"FilesCursor\" >= 0");
-
-                            t.HasCheckConstraint("CK_StylosSyncStates_LibraryCursor", "\"LibraryCursor\" >= 0");
                         });
                 });
 

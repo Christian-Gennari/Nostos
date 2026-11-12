@@ -34,7 +34,7 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
-using Nostos.Backend.Services.Stylos;
+using Nostos.Backend.Services.Carrel;
 using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
 using Nostos.Backend.Workers;
@@ -87,12 +87,12 @@ var product = builder.Services.AddNostosProduct(builder.Configuration);
 builder.Services.AddNostosMcp();
 builder.Services.AddSelfHostedMcpAccessTokens();
 
-// Stylos Sync Protocol v1 (WP8): a Stylos writing device pairs with this
+// Carrel Sync Protocol v1 (WP8): a Carrel writing device pairs with this
 // server, syncs its Markdown as Writing Studio drafts and downloads the
 // library for offline quoting. SelfHosted has one local owner; a host with
 // accounts registers its own owner provider.
-builder.Services.AddSingleton<IStylosOwnerProvider, SelfHostedStylosOwnerProvider>();
-builder.Services.AddNostosStylosSync();
+builder.Services.AddSingleton<ICarrelOwnerProvider, SelfHostedCarrelOwnerProvider>();
+builder.Services.AddNostosCarrelSync();
 var assistantOptions = product.Assistant;
 var speechOptions = product.Speech;
 var opdsOptions = product.Opds;

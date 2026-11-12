@@ -65,7 +65,7 @@ import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.
 import { CloudAccountDeletionSettingsComponent } from './cloud-account-deletion-settings.component';
 import { ExternalMediaSettingsComponent } from './external-media-settings.component';
 import { ConnectedAppsSettingsComponent } from './connected-apps-settings.component';
-import { StylosDevicesSettingsComponent } from './stylos-devices-settings.component';
+import { CarrelDevicesSettingsComponent } from './carrel-devices-settings.component';
 import { READ_ALOUD_GUIDE_URL } from './read-aloud-guide';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { ImportDropZoneComponent } from '../ui/import-drop-zone/import-drop-zone.component';
@@ -209,7 +209,7 @@ const LINKABLE_SECTIONS: readonly SettingsSection[] = [
 const SECTION_ALIASES: Readonly<Record<string, SettingsSection>> = {
   'external-media': 'external',
   'connected-apps': 'apps',
-  'stylos': 'devices',
+  'carrel': 'devices',
   'backups': 'data',
   'backups-data': 'data',
 };
@@ -301,7 +301,7 @@ const defaultProgress: BackupProgress = {
     CloudAccountDeletionSettingsComponent,
     ExternalMediaSettingsComponent,
     ConnectedAppsSettingsComponent,
-    StylosDevicesSettingsComponent,
+    CarrelDevicesSettingsComponent,
     LibraryTransferHostComponent,
     ImportDropZoneComponent,
     SegmentedComponent,
@@ -374,7 +374,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (requested === 'connections' && !this.canConfigureAiProvider()) return;
       if (requested === 'external' && !this.supportsExternalMediaLibraries()) return;
       if (requested === 'apps' && !this.supportsMcpConnectedApps()) return;
-      if (requested === 'devices' && !this.supportsStylosDevices()) return;
+      if (requested === 'devices' && !this.supportsCarrelDevices()) return;
       if (requested === 'account' && !this.isCloud()) return;
       untracked(() => this.showSection(requested));
     });
@@ -541,11 +541,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
     () => this.deploymentCapabilities()?.supportsMcpConnectedApps === true,
   );
   /**
-   * Settings → Devices (WP8): a server that serves the Stylos Sync Protocol.
+   * Settings → Devices (WP8): a server that serves the Carrel Sync Protocol.
    * Server-authoritative, never inferred from the deployment mode.
    */
-  readonly supportsStylosDevices = computed(
-    () => this.deploymentCapabilities()?.supportsStylosDevices === true,
+  readonly supportsCarrelDevices = computed(
+    () => this.deploymentCapabilities()?.supportsCarrelDevices === true,
   );
   readonly hasManageLibraryActions = computed(
     () =>
@@ -606,7 +606,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.canConfigureAiProvider() ||
       this.supportsExternalMediaLibraries() ||
       this.supportsMcpConnectedApps() ||
-      this.supportsStylosDevices() ||
+      this.supportsCarrelDevices() ||
       this.hasDataSection() ||
       this.isCloud(),
   );

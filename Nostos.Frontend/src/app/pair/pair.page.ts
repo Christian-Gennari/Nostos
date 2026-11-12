@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 
-import type { StylosPairingApproved, StylosPendingPairing } from '../core/dtos/stylos.dtos';
-import { StylosService, formatPairingCode, isCompletePairingCode } from '../core/services/stylos.service';
+import type { CarrelPairingApproved, CarrelPendingPairing } from '../core/dtos/carrel.dtos';
+import { CarrelService, formatPairingCode, isCompletePairingCode } from '../core/services/carrel.service';
 import { ToastService } from '../core/services/toast.service';
 import { BrandLockupComponent } from '../ui/brand-lockup/brand-lockup.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -20,7 +20,7 @@ export const NO_WAITING_DEVICE =
 export const CODE_ENDED = 'That code has expired. Start pairing again from the device.';
 
 /**
- * `/pair` (WP8): the page a Stylos device's QR opens, and where a code typed
+ * `/pair` (WP8): the page a Carrel device's QR opens, and where a code typed
  * from the device's screen is approved. The device shows a code and waits; the
  * person finds it here, sees which device it is, and approves or denies it.
  * Opening the QR link (`/pair?code=K7Q-4MZ`) looks the code up straight away.
@@ -43,14 +43,14 @@ export const CODE_ENDED = 'That code has expired. Start pairing again from the d
 })
 export class PairPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
-  private readonly stylos = inject(StylosService);
+  private readonly carrel = inject(CarrelService);
   private readonly toast = inject(ToastService);
 
   readonly code = signal('');
   /** The device the code names, once found. */
-  readonly device = signal<StylosPendingPairing | null>(null);
+  readonly device = signal<CarrelPendingPairing | null>(null);
   /** The device that was approved on this page. */
-  readonly approved = signal<StylosPairingApproved | null>(null);
+  readonly approved = signal<CarrelPairingApproved | null>(null);
   readonly denied = signal(false);
   readonly error = signal<string | null>(null);
   readonly busy = signal<'find' | 'approve' | 'deny' | null>(null);
@@ -82,7 +82,7 @@ export class PairPage implements OnInit {
     this.busy.set('find');
     this.error.set(null);
     this.denied.set(false);
-    this.stylos.findPending(code).subscribe({
+    this.carrel.findPending(code).subscribe({
       next: (device) => {
         this.busy.set(null);
         this.device.set(device);
@@ -104,7 +104,7 @@ export class PairPage implements OnInit {
     if (!device || this.busy()) return;
     this.busy.set('approve');
     this.error.set(null);
-    this.stylos.approve(device.code).subscribe({
+    this.carrel.approve(device.code).subscribe({
       next: (approved) => {
         this.busy.set(null);
         this.device.set(null);
@@ -124,7 +124,7 @@ export class PairPage implements OnInit {
     if (!device || this.busy()) return;
     this.busy.set('deny');
     this.error.set(null);
-    this.stylos.deny(device.code).subscribe({
+    this.carrel.deny(device.code).subscribe({
       next: () => this.afterDeny(),
       // Gone already is the same answer as denied.
       error: (error: HttpErrorResponse) => {
