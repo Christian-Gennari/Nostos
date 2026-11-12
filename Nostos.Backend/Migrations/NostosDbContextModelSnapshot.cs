@@ -1418,6 +1418,37 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("ReadingListEntries", (string)null);
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.ReadwiseConnectionModel", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastImportedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenEncrypted")
+                        .IsRequired()
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedAfterUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ReadwiseConnections", t =>
+                        {
+                            t.HasCheckConstraint("CK_ReadwiseConnections_SingletonId", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>
                 {
                     b.Property<Guid>("Id")

@@ -69,7 +69,7 @@
 - **Passages:** save a long stretch of a book, a range of PDF pages or a clip of an audiobook, and read or play it again on its own.
 - **Switch between ebook and audiobook:** if you have both editions, continue in the other one near where you are (needs a speech-to-text provider; otherwise each edition opens where you left it).
 - **Read aloud:** listen to any EPUB or PDF with your device's voice or a natural voice from a speech server.
-- **Bring your highlights:** import highlights and notes from Kobo, KOReader, a Kindle's `My Clippings.txt` or a Readwise CSV export, review them, then add them to the right books.
+- **Bring your highlights:** import highlights and notes from Kobo, KOReader, a Kindle's `My Clippings.txt` or Readwise — through its export API with an access token, or a CSV export — review them, then add them to the right books.
 
 <div align="center">
   <img width="2880" height="1800" alt="Nostos EPUB reader open at the first chapter of Moby-Dick" src="docs/screenshots/reader.png" />

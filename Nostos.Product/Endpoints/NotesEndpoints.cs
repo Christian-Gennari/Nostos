@@ -222,6 +222,74 @@ public static class NotesEndpoints
                 Results.Ok(await importer.ListBatchesAsync(5, ct))
         );
 
+        // READWISE EXPORT API (issue #1525). "Connect with a token" beside the
+        // CSV path: the token is checked with GET /api/v2/auth/ (204 = valid)
+        // and stored only as Data-Protection ciphertext. Preview and commit
+        // fetch the export afresh from the saved watermark, so the browser
+        // never carries the owner's highlights between the two steps.
+        group.MapGet(
+            "/notes/imports/readwise",
+            async (ReadwiseConnectionService connection, CancellationToken ct) =>
+                Results.Ok(await connection.GetStatusAsync(ct))
+        );
+
+        group.MapPost(
+            "/notes/imports/readwise/connect",
+            async (ReadwiseConnectRequest request, ReadwiseConnectionService connection, CancellationToken ct) =>
+            {
+                try
+                {
+                    return Results.Ok(await connection.ConnectAsync(request.Token, ct));
+                }
+                catch (Exception ex) when (IsReadwiseFailure(ex))
+                {
+                    return ReadwiseFailure(ex);
+                }
+            }
+        );
+
+        group.MapDelete(
+            "/notes/imports/readwise",
+            async (ReadwiseConnectionService connection, CancellationToken ct) =>
+            {
+                await connection.DisconnectAsync(ct);
+                return Results.Ok(new ReadwiseConnectionStatusDto(false, null, null));
+            }
+        );
+
+        group.MapPost(
+            "/notes/imports/readwise/preview",
+            async (ReadwiseImportService importer, CancellationToken ct) =>
+            {
+                try
+                {
+                    return Results.Ok(await importer.PreviewAsync(ct));
+                }
+                catch (Exception ex) when (IsReadwiseFailure(ex))
+                {
+                    return ReadwiseFailure(ex);
+                }
+            }
+        );
+
+        group.MapPost(
+            "/notes/imports/readwise/commit",
+            async (
+                ReadwiseCommitRequest request,
+                ReadwiseImportService importer,
+                CancellationToken ct) =>
+            {
+                try
+                {
+                    return Results.Ok(await importer.CommitAsync(request.Decisions, request.BatchId, ct));
+                }
+                catch (Exception ex) when (IsReadwiseFailure(ex))
+                {
+                    return ReadwiseFailure(ex);
+                }
+            }
+        );
+
         // STARTER DRAFT (issue #1220): the imported highlights a first draft
         // opens with. `batchIds` narrows it to an import just made; without
         // it, the library's most recently imported highlights.
@@ -294,6 +362,40 @@ public static class NotesEndpoints
     }
 
     private static readonly JsonSerializerOptions ImportJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// The Readwise failures the Settings card can explain. Anything else is a
+    /// real defect and stays a 500. The messages carry no response content and
+    /// no token.
+    /// </summary>
+    private static bool IsReadwiseFailure(Exception ex) =>
+        ex is ReadwiseNotConnectedException
+            or ReadwiseInvalidTokenException
+            or ReadwiseRateLimitedException
+            or ReadwiseFormatException
+            or ReadwiseUpstreamException
+            or ArgumentException;
+
+    private static IResult ReadwiseFailure(Exception ex) => ex switch
+    {
+        ReadwiseNotConnectedException => Results.Conflict(new { error = ex.Message }),
+        ReadwiseInvalidTokenException => Results.BadRequest(new { error = ex.Message }),
+        ReadwiseRateLimitedException limited => Results.Json(
+            new
+            {
+                error = limited.Message,
+                retryAfterSeconds = (int)Math.Ceiling(limited.RetryAfter.TotalSeconds),
+            },
+            statusCode: StatusCodes.Status503ServiceUnavailable),
+        ReadwiseFormatException format => Results.Json(
+            new { error = format.Message },
+            statusCode: StatusCodes.Status502BadGateway),
+        ReadwiseUpstreamException upstream => Results.Json(
+            new { error = upstream.Message },
+            statusCode: StatusCodes.Status502BadGateway),
+        ArgumentException invalid => Results.BadRequest(new { error = invalid.Message }),
+        _ => throw ex,
+    };
 
     // SQLite needs a real file and may create -wal/-shm beside it, so the
     // upload is spooled to a private temp directory that is removed whatever

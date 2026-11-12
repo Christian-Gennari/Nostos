@@ -258,6 +258,13 @@ public static class NostosProductComposition
         });
 
         services.AddHttpClient();
+        services.Configure<ReadwiseOptions>(configuration.GetSection(ReadwiseOptions.SectionName));
+        services.AddHttpClient(ReadwiseApiClient.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(120);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+        });
         services.AddHttpClient(BookLookupService.HttpClientName, client =>
         {
             client.Timeout = TimeSpan.FromSeconds(15);
@@ -280,6 +287,9 @@ public static class NostosProductComposition
         services.AddScoped<IReadingListService, ReadingListService>();
         services.AddScoped<KoreaderNoteImportService>();
         services.AddScoped<HighlightImportService>();
+        services.AddScoped<ReadwiseApiClient>();
+        services.AddScoped<ReadwiseConnectionService>();
+        services.AddScoped<ReadwiseImportService>();
         services.AddScoped<ReadingHistoryImportService>();
         services.AddScoped<CalibreImportService>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();

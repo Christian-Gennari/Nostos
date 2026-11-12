@@ -454,6 +454,32 @@ and PDFs are imported. Without one, tweets (`Tweets From …` or an `@` author)
 and podcasts (positioned by time) are skipped, and a book positioned by order
 with no Amazon ID is flagged with a `notice`.
 
+### Readwise export API — `/api/notes/imports/readwise`
+
+Settings → Import → Readwise → **Connect with a token** stores a Readwise
+access token for this library. The token is checked with Readwise's
+`GET /api/v2/auth/` (204 means valid), saved as ASP.NET Data-Protection
+ciphertext, and never returned to a client, written to a log, put in a portable
+export or kept in a SelfHosted backup. The CSV import above stays available.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `GET` | `/api/notes/imports/readwise` | Return `{ connected, lastImportedAtUtc, importedThroughUtc }`; never the token. |
+| `POST` | `/api/notes/imports/readwise/connect` | Body `{ "token": "…" }`; validate with Readwise and save it. `400` when Readwise rejects it. |
+| `DELETE` | `/api/notes/imports/readwise` | Remove the token and its watermark. |
+| `POST` | `/api/notes/imports/readwise/preview` | Fetch the export from the saved `updatedAfter` watermark and return the same `{ source, books, skipped }` shape as a file preview. Writes nothing. |
+| `POST` | `/api/notes/imports/readwise/commit` | Body `{ "decisions": […], "batchId": "…" }`; fetch the same range, import through the same preview → match → dedupe → undo path, then advance the watermark to the run's start. |
+
+The API maps into the CSV reader's `ImportSourceBook` shape, including the same
+book identity (Amazon id, otherwise title and author), skip reasons for
+articles, tweets and podcasts, and `readwise_*` anchors. Readwise's response is
+checked for the fields Nostos reads before mapping; a missing field or a changed
+type is a `502` whose message carries JSON paths and types only. Paging follows
+`nextPageCursor`, `updatedAfter` is sent only on the first page, and a `429`
+waits for its `Retry-After`. A weekly GitHub Actions canary
+(`.github/workflows/readwise-canary.yml`) runs the same shape check against the
+first page of the live export using `READWISE_CANARY_TOKEN`.
+
 **Positions.** Kindle notes are anchored as `kindle_location` (`180-181`) or,
 for a PDF with no locations, `kindle_page`; Readwise notes as
 `readwise_location`, `readwise_page` or `readwise_order`. These anchors are

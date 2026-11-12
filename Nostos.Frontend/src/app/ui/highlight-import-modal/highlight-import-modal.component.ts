@@ -23,6 +23,7 @@ import {
   HighlightImportSource,
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { ReadwiseService } from '../../core/services/readwise.service';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../button/button.component';
@@ -48,10 +49,15 @@ export type ImportTarget =
   | { kind: 'book'; bookId: string; title: string; author: string | null }
   | { kind: 'create' };
 
+/** Where this import came from: files the owner chose, or the Readwise API. */
+export type ImportOrigin =
+  | { kind: 'file'; file: File; companions: File[] }
+  | { kind: 'readwise' };
+
 /** One book found on the device, with the owner's current answer for it. */
 export interface ReviewRow {
   id: number;
-  file: File;
+  origin: ImportOrigin;
   book: HighlightImportPreviewBook;
   /** The server's best guess, shown as a question until answered. */
   suggestion: HighlightImportCandidate | null;
@@ -118,6 +124,7 @@ export class HighlightImportModal {
   protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   private readonly service = inject(HighlightImportService);
   private readonly booksService = inject(BooksService);
+  private readonly readwise = inject(ReadwiseService);
   private readonly router = inject(Router);
   private readonly starter = inject(StarterDraftService);
 
@@ -225,10 +232,10 @@ export class HighlightImportModal {
   readonly folderCopied = signal<'idle' | 'copied' | 'failed'>('idle');
   /** The import started from Apple Books' steps, so Back and "again" return there. */
   readonly fromAppleBooks = signal(false);
+  /** The import came from the Readwise export API rather than a chosen file. */
+  readonly fromReadwise = signal(false);
 
   private nextRowId = 0;
-  /** Files that went up with a main file, so the commit sends the same set. */
-  private readonly companions = new Map<File, File[]>();
 
   constructor() {
     effect(() => {
@@ -240,6 +247,19 @@ export class HighlightImportModal {
       if (!this.isOpen() || this.service.startOn() !== 'applebooks') return;
       untracked(() => {
         if (this.stage() === 'pick') this.showAppleBooks();
+        this.service.startOn.set('all');
+      });
+    });
+
+    // Settings' "Import now" opens straight on a Readwise API import.
+    effect(() => {
+      if (!this.isOpen() || this.service.startOn() !== 'readwise') return;
+      untracked(() => {
+        if (this.stage() === 'pick') {
+          this.fromReadwise.set(true);
+          this.fromAppleBooks.set(false);
+          void this.readReadwise();
+        }
         this.service.startOn.set('all');
       });
     });
@@ -367,25 +387,55 @@ export class HighlightImportModal {
     this.undoError.set(null);
     this.draftError.set(null);
     const uploads = groupHighlightImportFiles(files);
-    this.companions.clear();
-    for (const upload of uploads) this.companions.set(upload.file, upload.companions);
+    this.fromReadwise.set(false);
     this.fileCount.set(uploads.length);
     this.stage.set('reading');
 
     for (const [index, { file, companions }] of uploads.entries()) {
       this.currentIndex.set(index + 1);
       this.currentFileName.set(file.name);
+      const origin: ImportOrigin = { kind: 'file', file, companions };
       try {
         const preview = await firstValueFrom(this.service.preview(file, companions));
-        this.rows.update((rows) => [...rows, ...preview.books.map((book) => this.toRow(file, book))]);
+        this.rows.update((rows) => [...rows, ...preview.books.map((book) => this.toRow(origin, book))]);
         const skipped = (preview.skipped ?? []).map((entry) => ({ ...entry, fileName: file.name }));
         if (skipped.length > 0) this.unimportable.update((all) => [...all, ...skipped]);
       } catch (error) {
-        this.fail(file, this.failureMessage(error));
+        this.fail(file.name, this.failureMessage(error));
       }
     }
 
     // With nothing to review there is nothing to decide: show why.
+    this.stage.set(this.rows().length > 0 ? 'review' : 'result');
+  }
+
+  /** Step one for Readwise's export API: the server fetches and maps; nothing is written. */
+  async readReadwise(): Promise<void> {
+    if (this.busy()) return;
+
+    this.rows.set([]);
+    this.failures.set([]);
+    this.unimportable.set([]);
+    this.results.set([]);
+    this.batchIds.set([]);
+    this.undone.set(null);
+    this.undoError.set(null);
+    this.draftError.set(null);
+    this.fileCount.set(1);
+    this.currentIndex.set(1);
+    this.currentFileName.set('Readwise');
+    this.stage.set('reading');
+
+    const origin: ImportOrigin = { kind: 'readwise' };
+    try {
+      const preview = await firstValueFrom(this.readwise.preview());
+      this.rows.set(preview.books.map((book) => this.toRow(origin, book)));
+      const skipped = (preview.skipped ?? []).map((entry) => ({ ...entry, fileName: 'Readwise' }));
+      if (skipped.length > 0) this.unimportable.set(skipped);
+    } catch (error) {
+      this.fail('Readwise', this.failureMessage(error));
+    }
+
     this.stage.set(this.rows().length > 0 ? 'review' : 'result');
   }
 
@@ -469,6 +519,11 @@ export class HighlightImportModal {
   }
 
   backToPick(): void {
+    // A Readwise API import has no file picker to return to; leave the dialog.
+    if (this.fromReadwise()) {
+      this.close();
+      return;
+    }
     this.stage.set(this.fromAppleBooks() ? 'applebooks' : 'pick');
     this.closePicker();
   }
@@ -477,17 +532,20 @@ export class HighlightImportModal {
   async importReviewed(): Promise<void> {
     if (this.busy() || this.included().length === 0) return;
 
-    const files = [...new Set(this.rows().map((row) => row.file))];
-    this.fileCount.set(files.length);
+    const origins: ImportOrigin[] = [];
+    for (const row of this.rows()) {
+      if (!origins.includes(row.origin)) origins.push(row.origin);
+    }
+    this.fileCount.set(origins.length);
     this.closePicker();
     this.stage.set('importing');
 
-    for (const [index, file] of files.entries()) {
+    for (const [index, origin] of origins.entries()) {
       this.currentIndex.set(index + 1);
-      this.currentFileName.set(file.name);
+      this.currentFileName.set(origin.kind === 'file' ? origin.file.name : 'Readwise');
 
       const decisions: HighlightImportDecision[] = this.rows()
-        .filter((row) => row.file === file && row.target !== null)
+        .filter((row) => row.origin === origin && row.target !== null)
         .filter((row) => !this.allExcluded(row))
         .map((row): HighlightImportDecision => {
           const decision: HighlightImportDecision =
@@ -500,15 +558,18 @@ export class HighlightImportModal {
       if (decisions.length === 0) continue;
 
       try {
+        const batchId = this.batchIds()[0] ?? null;
         const result = await firstValueFrom(
-          this.service.commit(file, decisions, this.batchIds()[0] ?? null, this.companions.get(file) ?? []),
+          origin.kind === 'file'
+            ? this.service.commit(origin.file, decisions, batchId, origin.companions)
+            : this.readwise.commit(decisions, batchId),
         );
         this.results.update((all) => [...all, ...result.books]);
         if (result.batchId && !this.batchIds().includes(result.batchId)) {
           this.batchIds.update((ids) => [...ids, result.batchId!]);
         }
       } catch (error) {
-        this.fail(file, this.failureMessage(error));
+        this.fail(origin.kind === 'file' ? origin.file.name : 'Readwise', this.failureMessage(error));
       }
     }
 
@@ -609,7 +670,15 @@ export class HighlightImportModal {
     void this.router.navigate(['/studio'], { queryParams: { writingId } });
   }
 
+  readonly importAnotherLabel = computed(() =>
+    this.fromReadwise() ? 'Import from Readwise again' : 'Import another file',
+  );
+
   importAnother(): void {
+    if (this.fromReadwise()) {
+      void this.readReadwise();
+      return;
+    }
     this.stage.set(this.fromAppleBooks() ? 'applebooks' : 'pick');
   }
 
@@ -624,6 +693,7 @@ export class HighlightImportModal {
     this.service.close();
     this.stage.set('pick');
     this.fromAppleBooks.set(false);
+    this.fromReadwise.set(false);
     this.appleBooksError.set(false);
     this.rows.set([]);
     this.results.set([]);
@@ -672,12 +742,12 @@ export class HighlightImportModal {
     return plural(value, noun);
   }
 
-  private toRow(file: File, book: HighlightImportPreviewBook): ReviewRow {
+  private toRow(origin: ImportOrigin, book: HighlightImportPreviewBook): ReviewRow {
     const decided = book.match === 'exact' || book.match === 'remembered';
     const best = book.candidates[0] ?? null;
     return {
       id: this.nextRowId++,
-      file,
+      origin,
       book,
       suggestion: decided ? null : best,
       target: decided && best ? this.bookTarget(best) : null,
@@ -718,8 +788,8 @@ export class HighlightImportModal {
     return books.reduce((total, book) => total + book[key], 0);
   }
 
-  private fail(file: File, message: string): void {
-    this.failures.update((all) => [...all, { fileName: file.name, message }]);
+  private fail(fileName: string, message: string): void {
+    this.failures.update((all) => [...all, { fileName, message }]);
   }
 
   private failureMessage(error: unknown): string {

@@ -129,6 +129,12 @@
                 <a class="import-help__link" [href]="appleBooksFeedbackUrl()" target="_blank" rel="noopener">Tell us whether it worked for you</a>.
               </p>
             }
+            @if (entry.id === 'readwise' && readwiseActions()) {
+              <!-- The CSV is dropped above; these are the export API's own
+                   actions (issue #1525), beside the file steps like Apple
+                   Books' folder buttons. -->
+              <app-readwise-import-settings [inline]="true" />
+            }
           </div>
         </div>
       }
