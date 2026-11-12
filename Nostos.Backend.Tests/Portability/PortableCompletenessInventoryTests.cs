@@ -373,6 +373,9 @@ public sealed class PortableCompletenessInventoryTests
             ["AiProviderSettingsModel"] = ExcludedEntity(
                 "Host credentials, API keys, and host AI-provider configuration must never be transferred as portable library data."),
 
+            ["ReadwiseConnectionModel"] = ExcludedEntity(
+                "The Readwise export-API token and its updatedAfter watermark (issue #1525): a host credential and installation-local import cursor. It must never be transferred as portable library data."),
+
             ["McpAccessTokenModel"] = ExcludedEntity(
                 "Access tokens for connected AI apps (issue #1469): host credentials stored only as a hash. They must never be transferred as portable library data."),
 

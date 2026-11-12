@@ -1,0 +1,39 @@
+name: Readwise format canary
+
+# Issue #1525: the one import source with an account we can test against. Once a
+# week, call Readwise's documented export API with the repository's
+# READWISE_CANARY_TOKEN, first page only, and fail when a field the mapper reads
+# disappears or changes type. The job prints JSON paths and types; never a
+# title, an author or a highlight.
+
+on:
+  schedule:
+    # Mondays at 06:17 UTC, away from the top of the hour.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: readwise-format-canary
+  cancel-in-progress: false
+
+jobs:
+  export-shape:
+    name: Readwise export schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Check the first page of Readwise's export
+        env:
+          READWISE_CANARY_TOKEN: ${{ secrets.READWISE_CANARY_TOKEN }}
+        run: dotnet run --project tools/ReadwiseCanary/ReadwiseCanary.csproj --configuration Release

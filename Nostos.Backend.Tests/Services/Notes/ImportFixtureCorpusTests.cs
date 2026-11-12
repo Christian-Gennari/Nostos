@@ -30,7 +30,12 @@ public sealed class ImportFixtureCorpusTests
             if (!Directory.Exists(root))
                 continue;
 
+            // API recordings live under the same source with an `api-` version
+            // folder (issue #1525). They are JSON for the mapper tests, not a
+            // file HighlightImportSourceReader can parse, so this corpus skips
+            // them while still requiring their manifest in the folder test.
             foreach (var directory in Directory.EnumerateDirectories(root)
+                         .Where(path => !Path.GetFileName(path).StartsWith("api-", StringComparison.Ordinal))
                          .OrderBy(path => path, StringComparer.Ordinal))
             {
                 if (File.Exists(Path.Combine(directory, "manifest.json")))

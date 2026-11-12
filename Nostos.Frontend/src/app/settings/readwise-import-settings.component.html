@@ -1,0 +1,124 @@
+<div class="setting-row" [class.is-inline]="inline()" data-testid="import-source-readwise">
+  @if (!inline()) {
+  <div class="setting-label">
+    <span class="label-text">
+      Readwise
+      @if (connected()) {
+        <span class="readwise-connected" data-testid="readwise-connected">Connected</span>
+      }
+    </span>
+    <span class="label-desc">
+      @if (connected()) {
+        Nostos uses Readwise's export API and picks up where the last import left off. Connect
+        with a token, or keep using a CSV export from Readwise.
+      } @else {
+        Connect with an access token to import through Readwise's export API, or pick a CSV
+        export from Readwise. Only highlights from books are imported.
+      }
+    </span>
+    @if (connected() && lastImportLabel()) {
+      <span class="label-desc readwise-meta" data-testid="readwise-last-import">{{ lastImportLabel() }}</span>
+    }
+    @if (connected() && throughLabel()) {
+      <span class="label-desc readwise-meta">{{ throughLabel() }}</span>
+    }
+  </div>
+  }
+
+  <div class="readwise-actions">
+    @if (connected()) {
+      <button
+        appButton
+        variant="primary"
+        type="button"
+        data-testid="readwise-import-now"
+        [disabled]="busy() || loading()"
+        (click)="importNow()"
+      >
+        Import now
+      </button>
+      <button
+        appButton
+        variant="ghost"
+        type="button"
+        data-testid="readwise-disconnect"
+        [disabled]="busy()"
+        (click)="disconnect()"
+      >
+        Disconnect
+      </button>
+    } @else {
+      <button
+        appButton
+        variant="secondary"
+        type="button"
+        data-testid="readwise-connect"
+        [disabled]="busy() || loading()"
+        (click)="openForm()"
+      >
+        Connect with a token
+      </button>
+    }
+    <button
+      appButton
+      variant="ghost"
+      type="button"
+      data-testid="import-action-readwise"
+      [attr.aria-label]="'Import from Readwise'"
+      (click)="importCsv()"
+    >
+      Import CSV…
+    </button>
+  </div>
+</div>
+
+@if (formOpen()) {
+  <form class="readwise-form" data-testid="readwise-token-form" (submit)="$event.preventDefault(); connect()">
+    <label class="readwise-form-label" for="readwise-access-token">Readwise access token</label>
+    <div class="readwise-form-row">
+      <input
+        id="readwise-access-token"
+        appInput
+        type="password"
+        name="readwise-token"
+        autocomplete="off"
+        spellcheck="false"
+        data-testid="readwise-token-input"
+        [value]="token()"
+        [attr.aria-invalid]="error() ? 'true' : null"
+        (input)="setToken($any($event.target).value)"
+      />
+      <button
+        appButton
+        variant="primary"
+        type="submit"
+        data-testid="readwise-token-save"
+        [disabled]="busy() || token().trim().length === 0"
+        [busy]="busy()"
+      >
+        Connect
+      </button>
+      <button
+        appButton
+        variant="ghost"
+        type="button"
+        data-testid="readwise-token-cancel"
+        [disabled]="busy()"
+        (click)="cancelForm()"
+      >
+        Cancel
+      </button>
+    </div>
+    <span class="readwise-hint">
+      Find it at <a [href]="tokenUrl" target="_blank" rel="noopener">readwise.io/access_token</a>.
+      Nostos checks it with Readwise before saving it, stores it encrypted, and never shows it again.
+    </span>
+  </form>
+}
+
+@if (error()) {
+  <p class="readwise-message is-error" role="alert" data-testid="readwise-error">{{ error() }}</p>
+}
+@if (notice()) {
+  <p class="readwise-message" role="status" data-testid="readwise-notice">{{ notice() }}</p>
+}

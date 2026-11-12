@@ -9,6 +9,7 @@ import {
   ViewChild,
   computed,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -23,6 +24,7 @@ import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { BadgeComponent } from '../badge/badge.component';
 import { ButtonComponent } from '../button/button.component';
+import { ReadwiseImportSettingsComponent } from '../../settings/readwise-import-settings.component';
 import { routeImportFiles, type ImportProbeFile, type ImportRoute } from './import-file-route';
 
 type HelpId =
@@ -103,10 +105,10 @@ const HIGHLIGHT_HELP: readonly HelpEntry[] = [
   {
     id: 'readwise',
     name: 'Readwise',
-    hint: 'Export to CSV from Readwise.',
+    hint: 'Export a CSV, or connect with a token.',
     steps: [
       { text: 'In Readwise, open Export and choose CSV.' },
-      { text: 'Choose the downloaded file. Only highlights from books are imported.' },
+      { text: 'Drop the downloaded file here. Only highlights from books are imported.' },
     ],
   },
 ];
@@ -163,7 +165,12 @@ const ARCHIVE_HELP: readonly HelpEntry[] = [
 @Component({
   selector: 'app-import-drop-zone',
   standalone: true,
-  imports: [NostosIconComponent, BadgeComponent, ButtonComponent],
+  imports: [
+    NostosIconComponent,
+    BadgeComponent,
+    ButtonComponent,
+    ReadwiseImportSettingsComponent,
+  ],
   templateUrl: './import-drop-zone.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './import-drop-zone.component.css',
@@ -175,6 +182,13 @@ export class ImportDropZoneComponent {
   private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly feedbackLink = inject(FeedbackLinkService);
   private readonly router = inject(Router);
+
+  /**
+   * Whether the Readwise help line offers the export API's own actions beside
+   * the CSV steps. Settings owns the connection (issue #1525); the dialogs show
+   * the steps only, so opening them never asks the server for a token status.
+   */
+  readonly readwiseActions = input(false);
 
   @ViewChild('fileInput')
   private fileInput?: ElementRef<HTMLInputElement>;
