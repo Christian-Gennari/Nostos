@@ -450,7 +450,8 @@ internal static class QualityRunner
                 try
                 {
                     var verifyNeeded = new QualityTurnVerifyContext(
-                        host.Services, record, turns, mode, host.Client);
+                        host.Services, record, turns, mode, host.Client, sessionId,
+                        spec.Context?.Invoke() ?? new AssistantContextDto("second-brain", "/second-brain"));
                     var problem = await spec.Verify(verifyNeeded);
                     if (problem is not null)
                     {
