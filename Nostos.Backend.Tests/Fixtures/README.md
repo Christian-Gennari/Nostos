@@ -13,6 +13,7 @@ Fixtures/
   kindle/2024-en/           My Clippings.txt
   kindle/2024-multi/        My Clippings.languages.txt
   readwise/2026-10/         readwise-export.csv
+  readwise/api-2026-11/     readwise-export.json (export API, mapper tests)
   koreader/2026-09-epub/    metadata.lua
   …
 ```
@@ -46,8 +47,9 @@ Each version folder has one `manifest.json` next to the file(s):
   lacks; `[]` means the file has everything the reader knows. This is the same
   data the `HighlightImportShape` log reports (issue #1523).
 
-`ImportFixtureCorpusTests` discovers every folder with a `manifest.json`; there
-is no list of fixtures in C#. To add a version: drop the file in a new folder,
+`ImportFixtureCorpusTests` discovers every folder with a `manifest.json` except
+the `readwise/api-*` recordings, which the JSON mapper tests read; there is no
+list of fixtures in C#. To add a version: drop the file in a new folder,
 add its manifest, and run:
 
 ```bash

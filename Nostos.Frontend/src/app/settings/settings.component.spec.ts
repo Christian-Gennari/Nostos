@@ -1,5 +1,6 @@
 import { HighlightImportService } from '../core/services/highlight-import.service';
 import { CalibreImportService } from '../core/services/calibre-import.service';
+import { ReadwiseService } from '../core/services/readwise.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
@@ -75,6 +76,14 @@ const toastMock = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
 // `events` feeds FeedbackLinkService, which the import drop zone reaches
 // through its Apple Books help line.
 const routerMock = { navigate: vi.fn(), events: of([]) };
+
+const readwiseServiceMock = {
+  status: vi.fn(() => of({ connected: false, lastImportedAtUtc: null, importedThroughUtc: null })),
+  connect: vi.fn(() => of({ connected: true, lastImportedAtUtc: null, importedThroughUtc: null })),
+  disconnect: vi.fn(() => of({ connected: false, lastImportedAtUtc: null, importedThroughUtc: null })),
+  preview: vi.fn(),
+  commit: vi.fn(),
+};
 
 const selfHostedCapabilities: DeploymentCapabilities = {
   deploymentMode: 'SelfHosted',
@@ -473,6 +482,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: ExternalMediaService, useValue: externalMediaServiceMock },
         { provide: CalibreImportService, useValue: calibreImportServiceMock },
         { provide: McpConnectedAppsService, useValue: mcpAccessTokensServiceMock },
+        { provide: ReadwiseService, useValue: readwiseServiceMock },
       ],
     }).compileComponents();
 
@@ -1786,6 +1796,22 @@ describe('SettingsComponent backup-only surface', () => {
     fixture.detectChanges();
     (appleBooks.querySelector('[data-testid="import-help-applebooks-open"]') as HTMLButtonElement).click();
     expect(open).toHaveBeenCalledWith('applebooks');
+  });
+
+  it('offers the Readwise export API from its help line, beside the CSV steps', () => {
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    const entry = fixture.nativeElement.querySelector('[data-testid="import-help-readwise"]') as HTMLElement;
+    expect(entry.textContent).toContain('Export a CSV, or connect with a token');
+    (entry.querySelector('[aria-expanded]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(entry.textContent).toContain('In Readwise, open Export and choose CSV');
+    const connect = entry.querySelector('[data-testid="readwise-connect"]') as HTMLButtonElement;
+    expect(connect).not.toBeNull();
+    expect(connect.textContent).toContain('Connect with a token');
+    expect(entry.querySelector('[data-testid="readwise-import-now"]')).toBeNull();
   });
 
   it('offers the Nostos archive in the same drop zone when the host imports one', () => {
@@ -3148,6 +3174,7 @@ describe('SettingsComponent shared library transfer host', () => {
         { provide: CloudEntryService, useValue: cloudEntryServiceMock },
         { provide: CloudAccountDeletionService, useValue: cloudAccountDeletionServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
+        { provide: ReadwiseService, useValue: readwiseServiceMock },
         { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport },
         { provide: HASH_WORKER_FACTORY, useValue: () => null },
       ],

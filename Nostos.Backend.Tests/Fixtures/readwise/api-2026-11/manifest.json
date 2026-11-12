@@ -1,0 +1,16 @@
+{
+  "source": "readwise",
+  "version": "api-2026-11",
+  "file": "readwise-export.json",
+  "companions": [],
+  "expected": {
+    "foundBooks": 1,
+    "importedAnnotations": 2,
+    "skipped": {
+      "article": 3,
+      "tweet": 1,
+      "podcast": 1
+    },
+    "missingOptionalColumns": []
+  }
+}

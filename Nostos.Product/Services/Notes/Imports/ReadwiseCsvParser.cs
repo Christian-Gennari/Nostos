@@ -14,18 +14,16 @@ namespace Nostos.Backend.Services.Notes.Imports;
 /// </summary>
 internal static class ReadwiseCsvParser
 {
-    public const string AnchorPrefix = "readwise_";
-    public const string UnknownAnchor = "readwise_unknown";
+    public const string AnchorPrefix = ReadwiseBookRules.AnchorPrefix;
+    public const string UnknownAnchor = ReadwiseBookRules.UnknownAnchor;
 
-    internal const string ArticleReason = "A web article. Only highlights from books are imported.";
-    internal const string ArticleNotice = "Readwise keeps this like a web article.";
-    internal const string TweetReason = "A tweet. Only highlights from books are imported.";
-    internal const string PodcastReason = "A podcast. Only highlights from books are imported.";
-    internal const string OtherReason = "Not a book. Only highlights from books are imported.";
-    internal const string EmptyReason = "The row has no highlight or note.";
-    internal const string UntitledReason = "The row has no book title.";
-
-    private static readonly HashSet<string> AnchorTypes = new(StringComparer.Ordinal) { "location", "page", "order" };
+    internal const string ArticleReason = ReadwiseBookRules.ArticleReason;
+    internal const string ArticleNotice = ReadwiseBookRules.ArticleNotice;
+    internal const string TweetReason = ReadwiseBookRules.TweetReason;
+    internal const string PodcastReason = ReadwiseBookRules.PodcastReason;
+    internal const string OtherReason = ReadwiseBookRules.OtherReason;
+    internal const string EmptyReason = ReadwiseBookRules.EmptyReason;
+    internal const string UntitledReason = ReadwiseBookRules.UntitledReason;
 
     /// <summary>True when the first line is a Readwise header.</summary>
     public static bool Looks(string text)
@@ -71,7 +69,7 @@ internal static class ReadwiseCsvParser
             var bookAsin = Cell(asin);
             var type = Cell(locationType)?.ToLowerInvariant();
 
-            if (NotABook(Cell(category)?.ToLowerInvariant(), type, bookTitle, bookAuthor, bookAsin) is { } reason)
+            if (ReadwiseBookRules.NotABook(Cell(category)?.ToLowerInvariant(), type, bookTitle, bookAuthor, bookAsin) is { } reason)
             {
                 skipped.Add(bookTitle, bookAuthor, reason);
                 continue;
@@ -92,9 +90,7 @@ internal static class ReadwiseCsvParser
             }
 
             var value = Cell(location);
-            var (kind, anchor) = type is not null && AnchorTypes.Contains(type) && value is not null
-                ? (AnchorPrefix + type, value)
-                : (UnknownAnchor, (string?)null);
+            var (kind, anchor) = ReadwiseBookRules.Anchor(type, value);
 
             var key = bookAsin is not null
                 ? $"readwise:asin:{bookAsin.ToUpperInvariant()}"
@@ -124,34 +120,6 @@ internal static class ReadwiseCsvParser
                 book.LooksLikeArticle ? ArticleNotice : null))
             .ToList();
         return (result, skipped.ToList());
-    }
-
-    /// <summary>
-    /// Why a row is not from a book, or null when it is. An export that names
-    /// each row's category says so outright; one that does not gives it away
-    /// by its shape: a tweet thread is "Tweets From …" by an @handle, and a
-    /// podcast is positioned by time.
-    /// </summary>
-    private static string? NotABook(string? category, string? locationType, string? title, string? author, string? asin)
-    {
-        if (category is not null)
-        {
-            return category switch
-            {
-                "books" or "book" or "supplementals" or "supplemental" or "pdfs" or "pdf" or "epubs" or "epub" => null,
-                "articles" or "article" => ArticleReason,
-                "tweets" or "tweet" => TweetReason,
-                "podcasts" or "podcast" => PodcastReason,
-                _ => OtherReason,
-            };
-        }
-
-        if (asin is not null)
-            return null;
-        if ((title?.StartsWith("Tweets From ", StringComparison.OrdinalIgnoreCase) ?? false)
-            || (author?.StartsWith('@') ?? false))
-            return TweetReason;
-        return locationType is "time_offset" or "time" or "timestamp" ? PodcastReason : null;
     }
 
     private sealed class ReadwiseBook(string title, string? author)

@@ -48,16 +48,17 @@ public sealed class HighlightImportService
     public async Task<HighlightImportPreview> PreviewAsync(string path, IReadOnlyList<string> companions, CancellationToken ct = default)
     {
         var file = ReadSource(path, companions);
+        LogShape(file, path);
+        return await PreviewSourceAsync(file, ct);
+    }
+
+    /// <summary>
+    /// The same preview for a source that did not arrive as an uploaded file,
+    /// such as one page set fetched from Readwise's export API (issue #1525).
+    /// </summary>
+    internal async Task<HighlightImportPreview> PreviewSourceAsync(ImportSourceFile file, CancellationToken ct = default)
+    {
         var (source, sourceBooks, skipped) = file;
-        if (file.MissingOptionalColumns.Count > 0)
-        {
-            HighlightImportShapeLog.Write(
-                _logger, path, HighlightImportShapeLog.MissingOptionalColumns, file.MissingOptionalColumns);
-        }
-        else if (skipped.Any(entry => entry.Reason == KindleClippingsParser.UnrecognisedReason))
-        {
-            HighlightImportShapeLog.Write(_logger, path, HighlightImportShapeLog.UnrecognisedEntries);
-        }
 
         var library = await LoadLibraryAsync(ct);
         var links = await LoadLinksAsync(source, sourceBooks, ct);
@@ -124,14 +125,30 @@ public sealed class HighlightImportService
         Guid? batchId = null,
         CancellationToken ct = default)
     {
-        // The preview of this file already logged any missing columns; a
-        // commit logging them again would count every import twice.
-        var (source, sourceBooks, skipped) = ReadSource(path, companions);
+        var file = ReadSource(path, companions);
+        return await CommitSourceAsync(file, fileName, decisions, batchId, ct);
+    }
 
-        // Every entry the file holds is found once: the annotations of its
+    /// <summary>
+    /// The same commit for a source that did not arrive as an uploaded file.
+    /// A Readwise API import (#1525) joins the same batch, dedupe and undo path.
+    /// </summary>
+    internal async Task<HighlightImportResult> CommitSourceAsync(
+        ImportSourceFile file,
+        string? fileName,
+        IReadOnlyList<HighlightImportDecision> decisions,
+        Guid? batchId = null,
+        CancellationToken ct = default)
+    {
+        // The preview of this source already logged any missing columns; a
+        // commit logging them again would count every import twice.
+        var (source, sourceBooks, skipped) = file;
+
+        // Every entry the source holds is found once: the annotations of its
         // books, plus what the reader reports as unimportable (a bookmark, a
         // web article, an entry past the clipping limit). The report below
-        // must always account for all of them.
+        // must always account for all of them, whichever way the source arrived
+        // (#1550 for files, #1525 for the Readwise export API).
         var found = sourceBooks.Sum(book => book.Annotations.Count) + skipped.Sum(entry => entry.Count);
         var importedTotal = 0;
         var duplicateTotal = 0;
@@ -695,6 +712,24 @@ public sealed class HighlightImportService
             .AsNoTracking()
             .Where(link => link.Source == source && keys.Contains(link.SourceKey))
             .ToDictionaryAsync(link => link.SourceKey, link => link.BookId, StringComparer.Ordinal, ct);
+    }
+
+    /// <summary>
+    /// The structural description for a file the reader just parsed, once per
+    /// import (issue #1523). A source fetched from an API has no file shape to
+    /// log.
+    /// </summary>
+    private void LogShape(ImportSourceFile file, string path)
+    {
+        if (file.MissingOptionalColumns.Count > 0)
+        {
+            HighlightImportShapeLog.Write(
+                _logger, path, HighlightImportShapeLog.MissingOptionalColumns, file.MissingOptionalColumns);
+        }
+        else if (file.Skipped.Any(entry => entry.Reason == KindleClippingsParser.UnrecognisedReason))
+        {
+            HighlightImportShapeLog.Write(_logger, path, HighlightImportShapeLog.UnrecognisedEntries);
+        }
     }
 
     /// <summary>

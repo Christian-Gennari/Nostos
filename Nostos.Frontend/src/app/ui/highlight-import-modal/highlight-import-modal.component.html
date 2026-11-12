@@ -15,7 +15,7 @@
 >
   <header class="highlight-import-head" shellHeader>
     <h2 id="highlight-import-title" class="highlight-import-title">
-      {{ stage() === 'review' ? 'Review before importing' : stage() === 'applebooks' ? 'Import from Apple Books' : 'Import highlights' }}
+      {{ stage() === 'review' ? 'Review before importing' : stage() === 'applebooks' ? 'Import from Apple Books' : fromReadwise() ? 'Import from Readwise' : 'Import highlights' }}
       @if (stage() === 'applebooks') {
         <span appBadge class="highlight-beta" data-testid="highlight-applebooks-beta">Beta</span>
       }
@@ -366,7 +366,7 @@
         </button>
       }
       <button appButton type="button" variant="secondary" [disabled]="undoing()" (click)="importAnother()">
-        Import another file
+        {{ importAnotherLabel() }}
       </button>
       <button appButton type="button" variant="primary" [disabled]="undoing()" (click)="close()">Done</button>
     </app-dialog-actions>

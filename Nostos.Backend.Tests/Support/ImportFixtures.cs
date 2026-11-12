@@ -10,6 +10,8 @@ internal static class ImportFixtures
     public static string KindleEnglish => FixturePath("kindle", "2024-en", "My Clippings.txt");
     public static string KindleLanguages => FixturePath("kindle", "2024-multi", "My Clippings.languages.txt");
     public static string ReadwiseExport => FixturePath("readwise", "2026-10", "readwise-export.csv");
+    public static string ReadwiseApiExport => FixturePath("readwise", "api-2026-11", "readwise-export.json");
+    public static string ReadwiseApiManifest => FixturePath("readwise", "api-2026-11", "manifest.json");
     public static string KoreaderEpub => FixturePath("koreader", "2026-09-epub", "metadata.lua");
     public static string KoreaderMultiline => FixturePath("koreader", "2026-10-epub-multiline", "metadata.multiline.lua");
     public static string KoreaderPdf => FixturePath("koreader", "2026-09-pdf", "metadata.pdf.lua");
