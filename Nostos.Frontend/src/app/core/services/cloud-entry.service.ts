@@ -91,6 +91,10 @@ export class CloudEntryService {
   readonly supportsExternalMediaLibraries = computed(
     () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
   );
+  /** A SelfHosted server that can read a Calibre library (#1527). */
+  readonly supportsCalibreImport = computed(
+    () => this.deploymentCapabilities()?.supportsCalibreImport === true,
+  );
 
   /**
    * Server-authoritative safe activation (#681). The shared import flow only

@@ -18,6 +18,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { APPLE_BOOKS_FOLDER, HighlightImportService } from '../../core/services/highlight-import.service';
 import { ReadingHistoryImportService } from '../../core/services/reading-history-import.service';
+import { CalibreImportService } from '../../core/services/calibre-import.service';
 import { PortableArchiveHandoffService } from '../../core/services/portable-archive-handoff.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { FeedbackLinkService } from '../../core/services/feedback-link.service';
@@ -35,7 +36,8 @@ type HelpId =
   | 'readwise'
   | 'goodreads'
   | 'storygraph'
-  | 'archive';
+  | 'archive'
+  | 'calibre';
 
 interface HelpStep {
   readonly text: string;
@@ -148,6 +150,29 @@ const ARCHIVE_HELP: readonly HelpEntry[] = [
 ];
 
 /**
+ * Calibre is a folder the server reads, not a file dropped here (#1527), so
+ * its help line carries the one action its steps need — the same shape as
+ * Apple Books' "Choose the Books folder". The capability gate keeps it off a
+ * host that registered no Calibre source (Cloud, until it accepts an upload).
+ */
+const CALIBRE_HELP: readonly HelpEntry[] = [
+  {
+    id: 'calibre',
+    name: 'Calibre',
+    hint: 'The Calibre library folder this server can see.',
+    steps: [
+      {
+        text: 'Give the server your Calibre library, not a folder of loose books: mount it read-only at /external/calibre in Docker, or set Calibre__LibraryRoot without Docker, and restart. It is the folder that holds',
+        code: 'metadata.db',
+      },
+      {
+        text: 'Press Import from Calibre. Nostos reads the library and shows every book before anything is added; the library itself is never changed.',
+      },
+    ],
+  },
+];
+
+/**
  * The one drop zone for every import file (issue #1526): highlights from an
  * e-reader or Readwise, a Goodreads or StoryGraph reading history, and a
  * `.nostos` archive. It replaces the row of "Import…" buttons: the server
@@ -178,6 +203,7 @@ const ARCHIVE_HELP: readonly HelpEntry[] = [
 export class ImportDropZoneComponent {
   private readonly highlightImport = inject(HighlightImportService);
   private readonly readingHistoryImport = inject(ReadingHistoryImportService);
+  private readonly calibreImport = inject(CalibreImportService);
   private readonly archiveHandoff = inject(PortableArchiveHandoffService);
   private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly feedbackLink = inject(FeedbackLinkService);
@@ -197,10 +223,13 @@ export class ImportDropZoneComponent {
   readonly routing = signal(false);
   readonly notice = signal<ImportNotice | null>(null);
   readonly archiveAvailable = signal(false);
+  readonly calibreAvailable = signal(false);
 
   readonly highlightHelp = HIGHLIGHT_HELP;
   readonly historyHelp = HISTORY_HELP;
   readonly archiveHelp = ARCHIVE_HELP;
+  readonly calibreHelp = CALIBRE_HELP;
+  /** Calibre is a folder on the server, not a file: it is help, never a route. */
   readonly allHelp = computed<readonly HelpEntry[]>(() => [
     ...HIGHLIGHT_HELP,
     ...HISTORY_HELP,
@@ -223,11 +252,17 @@ export class ImportDropZoneComponent {
     // and on Cloud through a portable export. Until the server has answered,
     // the help line stays out rather than promising a flow that is not there.
     this.capabilities.get().subscribe({
-      next: (capabilities) =>
+      next: (capabilities) => {
         this.archiveAvailable.set(
           capabilities.supportsLibraryMigration === true || capabilities.deploymentMode === 'Cloud',
-        ),
-      error: () => this.archiveAvailable.set(false),
+        );
+        // A host that registered no Calibre source (Cloud today) stays dark.
+        this.calibreAvailable.set(capabilities.supportsCalibreImport === true);
+      },
+      error: () => {
+        this.archiveAvailable.set(false);
+        this.calibreAvailable.set(false);
+      },
     });
   }
 
@@ -330,6 +365,12 @@ export class ImportDropZoneComponent {
   openLibraryImport(): void {
     this.closeDialogs();
     void this.router.navigate(['/settings/library'], { queryParams: { action: 'import' } });
+  }
+
+  /** Calibre reads a folder on the server; its dialog is opened from the help line. */
+  openCalibreImport(): void {
+    this.closeDialogs();
+    this.calibreImport.open();
   }
 
   private follow(route: ImportRoute): void {

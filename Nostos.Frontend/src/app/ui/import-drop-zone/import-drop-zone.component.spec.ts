@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImportDropZoneComponent } from './import-drop-zone.component';
 import { HighlightImportService } from '../../core/services/highlight-import.service';
 import { ReadingHistoryImportService } from '../../core/services/reading-history-import.service';
+import { CalibreImportService } from '../../core/services/calibre-import.service';
 import { PortableArchiveHandoffService } from '../../core/services/portable-archive-handoff.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 
@@ -31,6 +32,7 @@ const selfHosted = {
   supportsEreaderAccess: true,
   usageMeteringAvailable: false,
   supportsLibraryMigration: true,
+  supportsCalibreImport: true,
 };
 
 function csv(headers: string, name: string): File {
@@ -57,6 +59,7 @@ describe('ImportDropZoneComponent', () => {
   let highlight: HighlightImportService;
   let history: ReadingHistoryImportService;
   let handoff: PortableArchiveHandoffService;
+  let calibre: CalibreImportService;
   let router: Router;
 
   const button = () =>
@@ -87,6 +90,7 @@ describe('ImportDropZoneComponent', () => {
     highlight = TestBed.inject(HighlightImportService);
     history = TestBed.inject(ReadingHistoryImportService);
     handoff = TestBed.inject(PortableArchiveHandoffService);
+    calibre = TestBed.inject(CalibreImportService);
     router = TestBed.inject(Router);
     vi.spyOn(router, 'navigate').mockResolvedValue(true as never);
     fixture.detectChanges();
@@ -209,7 +213,7 @@ describe('ImportDropZoneComponent', () => {
   });
 
   it('lists the help for every source, one line each, expandable', () => {
-    for (const id of ['kobo', 'koreader', 'kindle', 'applebooks', 'readwise', 'goodreads', 'storygraph', 'archive']) {
+    for (const id of ['kobo', 'koreader', 'kindle', 'applebooks', 'readwise', 'goodreads', 'storygraph', 'archive', 'calibre']) {
       const entry = fixture.nativeElement.querySelector(`[data-testid="import-help-${id}"]`) as HTMLElement;
       expect(entry, id).toBeTruthy();
       const summary = entry.querySelector('[aria-expanded]') as HTMLButtonElement;
@@ -220,6 +224,21 @@ describe('ImportDropZoneComponent', () => {
     }
     expect(text()).toContain('My Books → Import and export');
     expect(text()).toContain('Manage Account → Export StoryGraph Library');
+  });
+
+  it('opens the Calibre import from its help line, as the whole-library action it is', () => {
+    const open = vi.spyOn(calibre, 'open');
+    const help = fixture.nativeElement.querySelector('[data-testid="import-help"]') as HTMLElement;
+    const groups = Array.from(help.querySelectorAll('.import-help__group')).map((group) =>
+      (group.textContent ?? '').trim(),
+    );
+    expect(groups).toContain('Whole library');
+
+    const entry = fixture.nativeElement.querySelector('[data-testid="import-help-calibre"]') as HTMLElement;
+    (entry.querySelector('[aria-expanded]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (entry.querySelector('[data-testid="import-help-calibre-open"]') as HTMLButtonElement).click();
+    expect(open).toHaveBeenCalled();
   });
 
   it('opens the Apple Books folder steps from its help line', () => {

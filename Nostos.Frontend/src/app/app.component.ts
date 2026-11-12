@@ -13,11 +13,13 @@ import { CommandPaletteService } from './ui/command-palette/command-palette.serv
 import { RecentItemsService } from './ui/command-palette/recent-items.service';
 import { HighlightImportModal } from './ui/highlight-import-modal/highlight-import-modal.component';
 import { ReadingHistoryImportModal } from './ui/reading-history-import-modal/reading-history-import-modal.component';
+import { CalibreImportModal } from './ui/calibre-import-modal/calibre-import-modal.component';
 import { AssistantComponent } from './ui/assistant/assistant.component';
 import { AssistantService } from './ui/assistant/assistant.service';
 import { AssistantLauncherService } from './ui/assistant/assistant-launcher.service';
 import { HighlightImportService } from './core/services/highlight-import.service';
 import { ReadingHistoryImportService } from './core/services/reading-history-import.service';
+import { CalibreImportService } from './core/services/calibre-import.service';
 import { PassageViewerComponent } from './ui/passage-viewer/passage-viewer.component';
 import { PassageViewerService } from './ui/passage-viewer/passage-viewer.service';
 import { SwUpdateService } from './core/services/sw-update.service';
@@ -38,6 +40,7 @@ import { LibraryActivationController } from './library-transfer/services/library
     CommandPalette,
     HighlightImportModal,
     ReadingHistoryImportModal,
+    CalibreImportModal,
     PassageViewerComponent,
     AssistantComponent,
     CloudEntryComponent,
@@ -59,6 +62,7 @@ export class App {
   readonly passageViewer = inject(PassageViewerService);
   readonly highlightImport = inject(HighlightImportService);
   readonly readingHistoryImport = inject(ReadingHistoryImportService);
+  readonly calibreImport = inject(CalibreImportService);
   private readonly assistant = inject(AssistantService);
   private readonly assistantLauncher = inject(AssistantLauncherService);
   /** True once the first navigation has rendered, so the dock's presence is known. */

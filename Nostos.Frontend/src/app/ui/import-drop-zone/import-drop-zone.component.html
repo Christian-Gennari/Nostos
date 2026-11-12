@@ -176,48 +176,95 @@
       }
     </div>
 
-    @if (archiveAvailable()) {
+    @if (archiveAvailable() || calibreAvailable()) {
       <h4 class="import-help__group">Whole library</h4>
       <div class="import-help__entries">
-        @for (entry of archiveHelp; track entry.id) {
-          <div class="import-help__entry" [id]="helpEntryId(entry.id)" [attr.data-testid]="'import-help-' + entry.id">
-            <button
-              type="button"
-              class="import-help__summary"
-              [attr.aria-expanded]="isHelpOpen(entry.id)"
-              [attr.aria-controls]="helpPanelId(entry.id)"
-              (click)="toggleHelp(entry.id)"
-            >
-              <span class="import-help__name">{{ entry.name }}</span>
-              <span class="import-help__hint">{{ entry.hint }}</span>
-              <nostos-icon
-                name="caret-right"
-                [size]="12"
-                class="import-help__caret"
-                [class.is-open]="isHelpOpen(entry.id)"
-              ></nostos-icon>
-            </button>
-            <div class="import-help__panel" [id]="helpPanelId(entry.id)" [hidden]="!isHelpOpen(entry.id)">
-              <ol class="import-help__steps">
-                @for (step of entry.steps; track $index) {
-                  <li>
-                    <span>{{ step.text }}</span>
-                  </li>
-                }
-              </ol>
-              <p class="import-help__note">
-                Resuming an interrupted import?
-                <button
-                  type="button"
-                  appButton
-                  variant="link"
-                  class="import-help__link"
-                  data-testid="import-help-archive-open"
-                  (click)="openLibraryImport()"
-                >Open Backups &amp; data</button>
-              </p>
+        @if (archiveAvailable()) {
+          @for (entry of archiveHelp; track entry.id) {
+            <div class="import-help__entry" [id]="helpEntryId(entry.id)" [attr.data-testid]="'import-help-' + entry.id">
+              <button
+                type="button"
+                class="import-help__summary"
+                [attr.aria-expanded]="isHelpOpen(entry.id)"
+                [attr.aria-controls]="helpPanelId(entry.id)"
+                (click)="toggleHelp(entry.id)"
+              >
+                <span class="import-help__name">{{ entry.name }}</span>
+                <span class="import-help__hint">{{ entry.hint }}</span>
+                <nostos-icon
+                  name="caret-right"
+                  [size]="12"
+                  class="import-help__caret"
+                  [class.is-open]="isHelpOpen(entry.id)"
+                ></nostos-icon>
+              </button>
+              <div class="import-help__panel" [id]="helpPanelId(entry.id)" [hidden]="!isHelpOpen(entry.id)">
+                <ol class="import-help__steps">
+                  @for (step of entry.steps; track $index) {
+                    <li>
+                      <span>{{ step.text }}</span>
+                    </li>
+                  }
+                </ol>
+                <p class="import-help__note">
+                  Resuming an interrupted import?
+                  <button
+                    type="button"
+                    appButton
+                    variant="link"
+                    class="import-help__link"
+                    data-testid="import-help-archive-open"
+                    (click)="openLibraryImport()"
+                  >Open Backups &amp; data</button>
+                </p>
+              </div>
             </div>
-          </div>
+          }
+        }
+        @if (calibreAvailable()) {
+          @for (entry of calibreHelp; track entry.id) {
+            <div class="import-help__entry" [id]="helpEntryId(entry.id)" [attr.data-testid]="'import-help-' + entry.id">
+              <button
+                type="button"
+                class="import-help__summary"
+                [attr.aria-expanded]="isHelpOpen(entry.id)"
+                [attr.aria-controls]="helpPanelId(entry.id)"
+                (click)="toggleHelp(entry.id)"
+              >
+                <span class="import-help__name">{{ entry.name }}</span>
+                <span class="import-help__hint">{{ entry.hint }}</span>
+                <nostos-icon
+                  name="caret-right"
+                  [size]="12"
+                  class="import-help__caret"
+                  [class.is-open]="isHelpOpen(entry.id)"
+                ></nostos-icon>
+              </button>
+              <div class="import-help__panel" [id]="helpPanelId(entry.id)" [hidden]="!isHelpOpen(entry.id)">
+                <ol class="import-help__steps">
+                  @for (step of entry.steps; track $index) {
+                    <li>
+                      <span>{{ step.text }}</span>
+                      @if (step.code) {
+                        <code>{{ step.code }}</code>
+                      }
+                    </li>
+                  }
+                </ol>
+                <button
+                  appButton
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  class="import-help__action"
+                  data-testid="import-help-calibre-open"
+                  (click)="openCalibreImport()"
+                >
+                  Import from Calibre…
+                </button>
+              </div>
+            </div>
+          }
         }
       </div>
     }

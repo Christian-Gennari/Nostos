@@ -22,6 +22,9 @@ Nostos.Backend/backup-settings.json
 *.db-wal
 nostos.db*
 *.db.bak*
+# The Calibre fixture's metadata.db is a checked-in test library (Calibre's
+# schema with tiny public-domain files), not user data.
+!Nostos.Backend.Tests/Fixtures/calibre/library/metadata.db
 
 # dotenv files
 .env

@@ -58,6 +58,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     Storage__BooksRoot=/data/books \
     Storage__BackupsRoot=/data/backups \
     ExternalMedia__Root=/external/media \
+    Calibre__LibraryRoot=/external/calibre \
     TMPDIR=/tmp/nostos
 EXPOSE 8080
 VOLUME ["/data"]

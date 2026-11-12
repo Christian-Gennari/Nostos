@@ -10,6 +10,11 @@ services:
       # folder. Keep ":/external/media:ro" as it is; ":ro" means read-only.
       # Full steps: docs/external-media.md
       # - /mnt/audiobooks:/external/media:ro
+      # Optional: import a Calibre library from its folder. Uncomment and
+      # replace /mnt/calibre with the folder that holds metadata.db. Keep
+      # ":/external/calibre:ro" as it is; ":ro" means read-only.
+      # Full steps: docs/calibre-import.md
+      # - /mnt/calibre:/external/calibre:ro
     restart: unless-stopped
 
 volumes:

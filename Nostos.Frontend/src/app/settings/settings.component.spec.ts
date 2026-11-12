@@ -1,4 +1,5 @@
 import { HighlightImportService } from '../core/services/highlight-import.service';
+import { CalibreImportService } from '../core/services/calibre-import.service';
 import { ReadwiseService } from '../core/services/readwise.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -98,6 +99,7 @@ const selfHostedCapabilities: DeploymentCapabilities = {
   usageMeteringAvailable: false,
   accountManagementUrl: null,
   feedbackUrl: null,
+  supportsCalibreImport: true,
 };
 
 const cloudCapabilities: DeploymentCapabilities = {
@@ -415,6 +417,11 @@ const mcpAccessTokensServiceMock = {
   denyRequest: vi.fn(),
 };
 
+const calibreImportServiceMock = {
+  isOpen: signal(false),
+  open: vi.fn(),
+};
+
 const externalMediaServiceMock = {
   status: vi.fn(() =>
     of({
@@ -473,6 +480,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
         { provide: ExternalMediaService, useValue: externalMediaServiceMock },
+        { provide: CalibreImportService, useValue: calibreImportServiceMock },
         { provide: McpConnectedAppsService, useValue: mcpAccessTokensServiceMock },
         { provide: ReadwiseService, useValue: readwiseServiceMock },
       ],
@@ -1437,6 +1445,32 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.destroy();
     }
     expect(externalMediaServiceMock.status).not.toHaveBeenCalled();
+  });
+
+  it('offers the Calibre import as a help line in the drop zone, and hides it on Cloud', () => {
+    render();
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="import-calibre-card"]')).toBeNull();
+    const calibre = fixture.nativeElement.querySelector(
+      '[data-testid="import-help-calibre"]',
+    ) as HTMLElement;
+    expect(calibre).toBeTruthy();
+    expect(calibre.textContent).toContain('The Calibre library folder this server can see.');
+
+    (calibre.querySelector('[aria-expanded]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    calibreImportServiceMock.open.mockClear();
+    (calibre.querySelector('[data-testid="import-help-calibre-open"]') as HTMLButtonElement).click();
+    expect(calibreImportServiceMock.open).toHaveBeenCalled();
+    fixture.destroy();
+
+    capabilitiesServiceMock.get.mockReturnValue(of(cloudCapabilities));
+    render();
+    navItem('Import').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-help-calibre"]')).toBeNull();
   });
 
   it('offers Connected apps when the server keeps a record of them', () => {

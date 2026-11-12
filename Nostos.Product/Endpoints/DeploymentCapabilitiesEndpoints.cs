@@ -2,6 +2,7 @@ using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Mcp;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
+using Nostos.Backend.Services.Library.Imports;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 
@@ -28,7 +29,8 @@ public static class DeploymentCapabilitiesEndpoints
                 services.GetService<IMigrationPhaseAvailability>(),
                 services.GetService<IExternalMediaAvailability>(),
                 services.GetService<IBookFileUploadStore>(),
-                services.GetService<IServiceProviderIsService>()?.IsService(typeof(IMcpConnectedApps)) == true)))
+                services.GetService<IServiceProviderIsService>()?.IsService(typeof(IMcpConnectedApps)) == true,
+                services.GetService<ICalibreLibraryAvailability>())))
             .AllowAnonymous();
         return routes;
     }
@@ -38,7 +40,8 @@ public static class DeploymentCapabilitiesEndpoints
         IMigrationPhaseAvailability? migrationAvailability = null,
         IExternalMediaAvailability? externalMedia = null,
         IBookFileUploadStore? bookFileUploadStore = null,
-        bool mcpConnectedApps = false) =>
+        bool mcpConnectedApps = false,
+        ICalibreLibraryAvailability? calibre = null) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -81,6 +84,11 @@ public static class DeploymentCapabilitiesEndpoints
             // one up instead of hiding that the feature exists.
             SupportsExternalMediaLibraries: deployment.Mode == DeploymentMode.SelfHosted
                 && externalMedia is not null,
+            // A Calibre library the host can read (#1527). Same two locks: a
+            // SelfHosted host, and one that registered a source. Cloud stays
+            // dark until a source that accepts an uploaded library exists.
+            SupportsCalibreImport: deployment.Mode == DeploymentMode.SelfHosted
+                && calibre is not null,
             // Same registration the upload routes require: a host that maps the
             // resumable contract registers this store, and a host that does not
             // stays on the legacy whole-request upload.
@@ -112,4 +120,10 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsManagedBackupRestore = false,
     bool SupportsExternalMediaLibraries = false,
     bool SupportsResumableBookUploads = false,
-    bool SupportsMcpConnectedApps = false);
+    bool SupportsMcpConnectedApps = false,
+    /// <summary>
+    /// A SelfHosted server that can import a Calibre library (#1527), whether or
+    /// not one is set up yet. Absent/false keeps the Settings card hidden on
+    /// Cloud; never inferred from <see cref="DeploymentMode"/>.
+    /// </summary>
+    bool SupportsCalibreImport = false);
