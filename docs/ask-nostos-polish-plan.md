@@ -306,6 +306,13 @@ Extend the quality gate; do not replace it. The catalogue lives in
 | **C38 one failure** | component | A failed turn renders exactly one copy of the message and no raw code; a retryable one renders a Try again control. |
 | **C15 extension** | deterministic | The existing typed-failure scenario also pins the user-facing sentence and the action code for allowance, rate limit, timeout, indexing and no-evidence. |
 
+Implemented in #1563: C34, C35 and C37 run in `Nostos.Backend.Tests/Assistant/QualityBed/`
+(`QualityCatalogueI.cs`), C36 in `Nostos.Frontend/e2e/assistant-tall-review.spec.ts`
+and the review leg of `assistant-panel-states.spec.ts`, C38 in
+`assistant.component.spec.ts`, and the C15 sentences in `QualityCatalogueC.cs`
+plus `AssistantEndpointTests`. The scenario notes live in §13 of
+`docs/ask-nostos-v3-quality-gate.md`.
+
 Also add the **live consistency run** (assessment §6) to the manual
 `quality-bed-live.yml`, with the $2 cap from #1466; this is where “same request
 several times” is measured.

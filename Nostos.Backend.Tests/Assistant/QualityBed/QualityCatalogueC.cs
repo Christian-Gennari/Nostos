@@ -257,9 +257,10 @@ internal static partial class QualityCatalogue
         //
         // Allowance/quota (ai_usage_limit_reached) is exercised by the
         // existing AssistantEndpointTests streaming test that swaps in a
-        // blocking usage service (AssistantEndpointTests.cs ~line 344); it is
+        // blocking usage service (AssistantEndpointTests.cs ~line 366); it is
         // a host-service behavior, not a provider behavior, so re-driving it
-        // here would duplicate that test rather than extend coverage.
+        // here would duplicate that test rather than extend coverage. That
+        // test now also pins its user-facing sentence, as these turns do.
         return new QualityScenario(
             "C15",
             "Typed operational failures",
@@ -272,15 +273,18 @@ internal static partial class QualityCatalogue
                 C15FailureTurn(
                     "Summarize the rope entries (this turn will time out).",
                     QualityScript.Throw(LlmException.TimedOut()),
-                    LlmErrorCodes.Timeout),
+                    LlmErrorCodes.Timeout,
+                    "took too long to answer"),
                 C15FailureTurn(
                     "Summarize the rope entries (this turn will be rate limited).",
                     QualityScript.Throw(LlmException.RateLimited()),
-                    LlmErrorCodes.RateLimited),
+                    LlmErrorCodes.RateLimited,
+                    "temporarily busy"),
                 C15FailureTurn(
                     "Summarize the rope entries (the provider will fail).",
                     QualityScript.Throw(LlmException.ProviderFailure("stub HTTP 500")),
-                    LlmErrorCodes.Provider),
+                    LlmErrorCodes.Provider,
+                    "could not complete this turn"),
                 C15FailureTurn(
                     "Summarize the rope entries (the gateway is unreachable).",
                     // The product wraps an unreachable gateway as a provider
@@ -289,7 +293,8 @@ internal static partial class QualityCatalogue
                     // injects the wrapped shape directly.
                     QualityScript.Throw(LlmException.ProviderFailure(
                         "the gateway could not be reached (no route to host)")),
-                    LlmErrorCodes.Provider),
+                    LlmErrorCodes.Provider,
+                    "could not complete this turn"),
                 new QualityTurnSpec(
                     "Search the granary ledger for rye totals.",
                     QualityContexts.SecondBrain,
@@ -304,7 +309,8 @@ internal static partial class QualityCatalogue
                         RequiredTools: ["knowledge_search"],
                         ForbiddenTools: [],
                         GoldNoteIds: [],
-                        ExpectedErrorCode: AssistantErrorCodes.SourceIndexingPending)),
+                        ExpectedErrorCode: AssistantErrorCodes.SourceIndexingPending,
+                        ExpectedErrorMessageContains: "still being indexed")),
                 new QualityTurnSpec(
                     "What did I conclude about quasar brass abacus zephyr alignments?",
                     QualityContexts.SecondBrain,
@@ -320,14 +326,16 @@ internal static partial class QualityCatalogue
                         RequiredTools: ["knowledge_search"],
                         ForbiddenTools: [],
                         GoldNoteIds: [],
-                        ExpectedErrorCode: AssistantErrorCodes.NoEvidence)),
+                        ExpectedErrorCode: AssistantErrorCodes.NoEvidence,
+                        ExpectedErrorMessageContains: "could not find usable evidence")),
             ]);
     }
 
     private static QualityTurnSpec C15FailureTurn(
         string message,
         Func<QualityScriptContext, Task<LlmCompletion>> script,
-        string expectedCode) =>
+        string expectedCode,
+        string expectedMessage) =>
         new(
             message,
             QualityContexts.SecondBrain,
@@ -338,5 +346,6 @@ internal static partial class QualityCatalogue
                 GoldNoteIds: [],
                 MaxUpstreamCalls: 1,
                 MaxToolCalls: 0,
-                ExpectedErrorCode: expectedCode));
+                ExpectedErrorCode: expectedCode,
+                ExpectedErrorMessageContains: expectedMessage));
 }

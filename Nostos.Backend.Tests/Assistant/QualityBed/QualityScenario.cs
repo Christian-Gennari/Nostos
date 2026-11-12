@@ -83,7 +83,11 @@ internal sealed record QualityTurnVerifyContext(
     QualityModes Mode,
     // The host's client, for checks that act as the user would after the
     // turn (apply or undo a changeset through its route).
-    HttpClient? Client = null);
+    HttpClient? Client = null,
+    // The logical conversation this turn belongs to, and the context it sent.
+    // A retry check (C35) replays the identical TurnId through the same route.
+    string? ConversationId = null,
+    AssistantContextDto? Context = null);
 
 internal sealed record QualityTurnSpec(
     string Message,
