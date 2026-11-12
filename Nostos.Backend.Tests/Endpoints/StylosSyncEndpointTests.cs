@@ -74,8 +74,16 @@ public sealed class StylosSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         token.Should().StartWith("stl_").And.HaveLength(47);
 
         var listed = await Client.GetFromJsonAsync<JsonElement>("/api/stylos/devices");
-        listed.GetProperty("devices").EnumerateArray().Should().Contain(
-            d => d.GetProperty("name").GetString() == "Approved Device");
+        var listedDevice = listed.GetProperty("devices").EnumerateArray()
+            .Single(d => d.GetProperty("name").GetString() == "Approved Device");
+        listedDevice.GetProperty("createdAt").GetDateTime().Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(2));
+
+        // After one sync the list says when it was last used.
+        (await AuthedClient(token).GetAsync("/stylos/v1/files")).EnsureSuccessStatusCode();
+        var used = await Client.GetFromJsonAsync<JsonElement>("/api/stylos/devices");
+        used.GetProperty("devices").EnumerateArray()
+            .Single(d => d.GetProperty("name").GetString() == "Approved Device")
+            .GetProperty("lastUsedAt").GetDateTime().Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(2));
 
         // Only a hash is stored; the token itself never appears in the database.
         using var scope = _factory.Services.CreateScope();
@@ -273,8 +281,8 @@ public sealed class StylosSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         read.GetProperty("hash").GetString().Should().Be(Sha256(content));
 
         // The Studio sees one document called "november" inside notes/2026.
-        var writings = await Client.GetFromJsonAsync<WritingDto[]>("/api/writings");
-        var draft = writings!.Single(w => w.Name == "november");
+        var writings = (await Client.GetFromJsonAsync<WritingDto[]>("/api/writings"))!;
+        var draft = writings.Single(w => w.Name == "november");
         draft.Type.Should().Be("Document");
         var year = writings.Single(w => w.Id == draft.ParentId);
         year.Name.Should().Be("2026");

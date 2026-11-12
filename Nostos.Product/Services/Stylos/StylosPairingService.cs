@@ -23,7 +23,7 @@ public sealed class StylosOptions
 
 /// <summary>A device as Settings → Devices lists it. Never carries a token.</summary>
 public sealed record StylosDeviceDto(
-    Guid Id, string Name, DateTime CreatedAtUtc, DateTime? LastUsedAtUtc);
+    Guid Id, string Name, DateTime CreatedAt, DateTime? LastUsedAt);
 
 /// <summary>A pairing code waiting for its owner.</summary>
 public sealed record StylosPendingPairing(string Code, string DeviceName, DateTime ExpiresAtUtc);
