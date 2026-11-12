@@ -44,7 +44,9 @@ import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.compone
 import { BrainTopicUsedInComponent, USED_IN_FETCHED } from './topic-used-in/brain-topic-used-in.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
+import { BrainNoteDetailComponent } from './brain-note-detail.component';
 import { BrainNoteDialogsComponent } from './brain-note-dialogs.component';
+import { BrainNoteRowComponent } from './brain-note-row.component';
 import { BrainStateService } from './brain-state.service';
 import { BrainTopicActionsService } from './brain-topic-actions.service';
 import { BrainTopicWordsComponent } from './brain-topic-words.component';
@@ -70,6 +72,7 @@ import {
 } from './brain.helpers';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { UNKNOWN_BOOK } from '../core/book-format';
+import { BRAIN_WIDE_QUERY, isBrainWideViewport } from '../ui/breakpoints';
 
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -108,6 +111,8 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     TopicPickerPopoverComponent,
     InlineRenameComponent,
     BrainNoteDialogsComponent,
+    BrainNoteDetailComponent,
+    BrainNoteRowComponent,
     BrainTopicWordsComponent,
     BrainTopicUsedInComponent,
     EmptyStateComponent,
@@ -137,6 +142,12 @@ export class BrainListPage {
   private readonly data = toSignal(this.route.data, { initialValue: this.route.snapshot.data });
   private readonly params = toSignal(this.route.paramMap, { initialValue: this.route.snapshot.paramMap });
   private readonly queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+
+  /** The wide Brain splits into the list and the selected note (issue #1531). */
+  private readonly wideMedia = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(BRAIN_WIDE_QUERY)
+    : null;
+  readonly wide = signal(isBrainWideViewport());
 
   readonly place = computed<BrainPlace>(() => (this.data()['place'] as BrainPlace | undefined) ?? 'all');
   readonly topicId = computed(() => (this.place() === 'topic' ? this.params().get('topicId') : null));
@@ -205,6 +216,19 @@ export class BrainListPage {
   readonly selectionPickerOpen = signal(false);
   readonly selectionPickerPositions = SELECTION_PICKER_POSITIONS;
 
+  // The selected note in the wide pane. It is in the URL (`?note=`), so a
+  // reload, Back and a shared link restore the same note in the same list.
+  readonly selectedNoteId = computed(() => this.queryParams().get('note'));
+  readonly selectedNote = signal<NoteSearchHit | null>(null);
+  readonly noteLoading = signal(false);
+  readonly noteFailed = signal(false);
+  /** The row Tab lands on: the selection, or the first note when nothing is chosen. */
+  readonly keyboardAnchorId = computed(() => {
+    const id = this.selectedNoteId();
+    if (id && this.notes().some((note) => note.id === id)) return id;
+    return this.notes()[0]?.id ?? null;
+  });
+
   readonly visibleRelated = computed(() =>
     this.relatedExpanded() ? this.related() : this.related().slice(0, RELATED_SHOWN));
   readonly hiddenRelated = computed(() => Math.max(0, this.related().length - RELATED_SHOWN));
@@ -242,6 +266,8 @@ export class BrainListPage {
   });
 
   private readonly scroller = viewChild<ElementRef<HTMLElement>>('scroller');
+  private readonly listScroller = viewChild<ElementRef<HTMLElement>>('list');
+  private readonly detailPane = viewChild<ElementRef<HTMLElement>>('detailPane');
   private seq = 0;
   private booksSeq = 0;
   private booksKey: string | null = null;
@@ -250,6 +276,10 @@ export class BrainListPage {
   private lastScrollTop = 0;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private currentKey: string | null = null;
+  /** The note id + topics version whose detail is loaded; avoids rereading it. */
+  private selectedLoadKey: string | null = null;
+  /** Guards the phone redirect from asking twice before the route changes. */
+  private openingNoteId: string | null = null;
 
   private readonly listKey = computed(() =>
     JSON.stringify([this.place(), this.topicId(), this.q(), this.bookId(), this.withId(), this.order()]));
@@ -287,6 +317,39 @@ export class BrainListPage {
       untracked(() => {
         // Only a change from elsewhere: the reader's own trailing space stays.
         if (this.searchTimer === null && this.searchDraft().trim() !== q) this.searchDraft.set(q);
+      });
+    });
+
+    // The wide layout is a viewport fact, not a routing one: crossing the
+    // breakpoint turns the pane on or off without rebuilding the list.
+    if (this.wideMedia) {
+      const onChange = (event: MediaQueryListEvent) => this.wide.set(event.matches);
+      this.wideMedia.addEventListener('change', onChange);
+      inject(DestroyRef).onDestroy(() => this.wideMedia?.removeEventListener('change', onChange));
+    }
+
+    // The URL says which note is open; the pane shows it (or the list notices
+    // that this width needs the note's own page).
+    effect(() => {
+      const id = this.selectedNoteId();
+      const wide = this.wide();
+      const rewritten = this.state.topicsRewritten();
+      const notes = this.notes();
+      untracked(() => this.syncSelectedNote(id, wide, rewritten, notes));
+    });
+
+    // A new note starts at its top, however far the last one was scrolled, and
+    // its row comes into view when the selection came from the URL.
+    effect(() => {
+      const id = this.selectedNoteId();
+      untracked(() => {
+        this.detailPane()?.nativeElement.scrollTo({ top: 0 });
+        afterNextRender(() => {
+          if (!id) return;
+          this.rowElements()
+            .find((row) => row.dataset['noteId'] === id)
+            ?.scrollIntoView({ block: 'nearest' });
+        }, { injector: this.injector });
       });
     });
 
@@ -341,7 +404,7 @@ export class BrainListPage {
       this.loaded.set(true);
       this.failed.set(false);
       this.lastScrollTop = restored.scrollTop;
-      afterNextRender(() => this.scroller()?.nativeElement.scrollTo({ top: restored.scrollTop }), {
+      afterNextRender(() => this.scrollContainer()?.scrollTo({ top: restored.scrollTop }), {
         injector: this.injector,
       });
       return;
@@ -352,7 +415,7 @@ export class BrainListPage {
     this.loaded.set(false);
     this.failed.set(false);
     this.lastScrollTop = 0;
-    this.scroller()?.nativeElement.scrollTo({ top: 0 });
+    this.scrollContainer()?.scrollTo({ top: 0 });
     this.loadPage();
     this.loadBooks();
   }
@@ -372,6 +435,163 @@ export class BrainListPage {
 
   onScroll(event: Event): void {
     this.lastScrollTop = (event.target as HTMLElement).scrollTop;
+  }
+
+  /** The element that scrolls the list: the whole page narrow, the list wide. */
+  private scrollContainer(): HTMLElement | undefined {
+    return (this.wide() ? this.listScroller() : this.scroller())?.nativeElement;
+  }
+
+  // --- The note open in the wide pane ------------------------------------
+
+  /**
+   * The URL is the selection: `?note=` shows its note in the pane. A narrow
+   * viewport has no pane, so the same id opens the note's own page (replacing
+   * the list entry, so Back does not land on a URL that redirects again).
+   */
+  private syncSelectedNote(
+    id: string | null,
+    wide: boolean,
+    topicsVersion: number,
+    notes: readonly NoteSearchHit[],
+  ): void {
+    if (!id) {
+      this.selectedNote.set(null);
+      this.noteLoading.set(false);
+      this.noteFailed.set(false);
+      this.selectedLoadKey = null;
+      return;
+    }
+    if (!wide) {
+      this.selectedNote.set(null);
+      this.noteLoading.set(false);
+      this.noteFailed.set(false);
+      if (this.openingNoteId !== id) {
+        this.openingNoteId = id;
+        void this.router.navigate(['/brain/notes', id], { replaceUrl: true });
+      }
+      return;
+    }
+    this.openingNoteId = null;
+    const key = `${id}:${topicsVersion}`;
+    const fromList = notes.find((note) => note.id === id) ?? null;
+    if (fromList) {
+      this.selectedNote.set(fromList);
+      this.noteLoading.set(false);
+      this.noteFailed.set(false);
+      this.selectedLoadKey = key;
+      return;
+    }
+    if (this.selectedLoadKey === key) return;
+    this.selectedLoadKey = key;
+    this.noteLoading.set(true);
+    this.noteFailed.set(false);
+    this.notesService.get(id).subscribe({
+      next: (note) => {
+        if (this.selectedNoteId() !== id) return;
+        this.selectedNote.set(note);
+        this.noteLoading.set(false);
+      },
+      error: () => {
+        if (this.selectedNoteId() !== id) return;
+        this.selectedNote.set(null);
+        this.noteLoading.set(false);
+        this.noteFailed.set(true);
+      },
+    });
+  }
+
+  /** The calm state when a wide Brain has no note open. */
+  readonly noNoteText = 'Select a note from the list, or press ↑ and ↓ to move through it.';
+
+  chooseNote(note: NoteSearchHit): void {
+    this.selectNote(note.id);
+  }
+
+  /**
+   * A related note, the keyboard, or a row: open it in the same place. A click
+   * pushes a history entry (so Back returns to the note read before it); the
+   * arrow keys replace it, so walking the list does not flood history.
+   */
+  selectNote(id: string, replace = false): void {
+    if (!this.wide()) {
+      void this.router.navigate(['/brain/notes', id]);
+      return;
+    }
+    if (this.selectedNoteId() === id) return;
+    this.setQuery({ note: id }, replace);
+  }
+
+  clearNoteSelection(): void {
+    this.selectedNote.set(null);
+    this.selectedLoadKey = null;
+    if (this.selectedNoteId()) this.setQuery({ note: null }, true);
+  }
+
+  /** Roving tabindex: one stop per list, on the chosen note or the first one. */
+  rowTabIndex(noteId: string): number {
+    return this.keyboardAnchorId() === noteId ? 0 : -1;
+  }
+
+  private rowElements(): HTMLElement[] {
+    const root = this.scroller()?.nativeElement;
+    return root ? Array.from(root.querySelectorAll<HTMLElement>('[data-note-row]')) : [];
+  }
+
+  /** ↑/↓ walk the list, Enter hands focus to the pane, Space chooses. */
+  onListKeydown(event: KeyboardEvent): void {
+    if (!this.wide()) return;
+    const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-note-row]');
+    // Only a note row is a listbox option. The paging status below the list
+    // keeps its own keyboard behaviour.
+    if (!target) return;
+    const rows = this.rowElements();
+    if (!rows.length) return;
+    const currentId = target.dataset['noteId'];
+    const index = rows.findIndex((row) => row.dataset['noteId'] === currentId);
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const next = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? rows.length - 1
+          : index < 0
+            ? (event.key === 'ArrowDown' ? 0 : rows.length - 1)
+            : Math.min(rows.length - 1, Math.max(0, index + (event.key === 'ArrowDown' ? 1 : -1)));
+      const row = rows[next];
+      const id = row?.dataset['noteId'];
+      if (!id) return;
+      this.selectNote(id, true);
+      row.focus();
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (currentId && this.selectedNoteId() !== currentId) this.selectNote(currentId);
+      this.focusDetail();
+      return;
+    }
+
+    if (event.key === ' ') {
+      if (!currentId) return;
+      event.preventDefault();
+      this.selectNote(currentId, true);
+    }
+  }
+
+  /** Enter from the list: the note itself takes the keyboard. */
+  focusDetail(): void {
+    this.detailPane()?.nativeElement.focus();
+  }
+
+  /** Esc from the pane: back to the list row the reader came from. */
+  focusList(): void {
+    const id = this.selectedNoteId();
+    const rows = this.rowElements();
+    const row = rows.find((candidate) => candidate.dataset['noteId'] === id) ?? rows[0];
+    row?.focus();
   }
 
   /**
@@ -537,6 +757,7 @@ export class BrainListPage {
   // --- The notes on screen ----------------------------------------------
 
   private replaceNote(note: NoteSearchHit): void {
+    if (this.selectedNote()?.id === note.id) this.selectedNote.set(note);
     const belongs = stillBelongs(note, this.place(), this.topic(), this.withTopic());
     if (!this.notes().some((item) => item.id === note.id)) {
       // A note this list had let go belongs again (Undo): back in its place.
@@ -556,6 +777,7 @@ export class BrainListPage {
   }
 
   private removeNote(id: string): void {
+    if (this.selectedNoteId() === id) this.clearNoteSelection();
     const at = this.notes().findIndex((note) => note.id === id);
     if (at < 0) return;
     this.letGo.set(id, at);

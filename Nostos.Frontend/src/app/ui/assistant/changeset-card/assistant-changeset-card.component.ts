@@ -44,6 +44,8 @@ export class AssistantChangesetCardComponent {
   readonly discard = output<void>();
   readonly undo = output<void>();
   readonly stepToggled = output<{ index: number; included: boolean }>();
+  /** The full diff opened or closed; the transcript keeps this card's header in view. */
+  readonly detailsToggled = output<boolean>();
 
   readonly detailsOpen = signal(false);
 
@@ -91,6 +93,7 @@ export class AssistantChangesetCardComponent {
 
   toggleDetails(): void {
     this.detailsOpen.update((open) => !open);
+    this.detailsToggled.emit(this.detailsOpen());
   }
 
   toggleStep(index: number, event: Event): void {

@@ -1,0 +1,225 @@
+<div class="import-drop" data-testid="import-drop-zone">
+  <button
+    type="button"
+    class="import-drop__button"
+    data-testid="import-drop-zone-button"
+    [class.is-dragging]="dragActive()"
+    [class.is-routing]="routing()"
+    [disabled]="routing()"
+    [attr.aria-busy]="routing()"
+    (click)="openPicker()"
+    (dragenter)="onDragEnter($event)"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
+    <span class="import-drop__title">Drop an export here, or choose a file</span>
+    <span class="import-drop__hint">
+      Kobo, KOReader, Kindle, Apple Books, Readwise, Goodreads, StoryGraph or a .nostos archive
+    </span>
+  </button>
+  <input
+    #fileInput
+    type="file"
+    class="visually-hidden"
+    tabindex="-1"
+    aria-hidden="true"
+    multiple
+    data-testid="import-drop-zone-input"
+    (change)="onFilesSelected($event)"
+  />
+
+  @if (notice(); as current) {
+    <div class="import-drop__notice" role="alert" data-testid="import-drop-zone-notice">
+      <p class="import-drop__notice-title">{{ current.message }}</p>
+      @if (current.serverMessage) {
+        <p class="import-drop__notice-detail">{{ current.serverMessage }}</p>
+      }
+      <p class="import-drop__notice-help">
+        Nostos can import these files:
+        @for (entry of allHelp(); track entry.id; let last = $last) {
+          <button
+            type="button"
+            appButton
+            variant="link"
+            [attr.data-testid]="'import-supported-' + entry.id"
+            (click)="revealHelp(entry.id)"
+          >{{ entry.name }}</button>@if (!last) {<span>, </span>} @if (last) {<span>.</span>}
+        }
+      </p>
+    </div>
+  }
+
+  <section class="import-help" aria-labelledby="import-help-title" data-testid="import-help">
+    <h3 class="import-help__title" id="import-help-title">Where to find your file</h3>
+
+    <h4 class="import-help__group">Highlights &amp; notes</h4>
+    <div class="import-help__entries">
+      @for (entry of highlightHelp; track entry.id) {
+        <div class="import-help__entry" [id]="helpEntryId(entry.id)" [attr.data-testid]="'import-help-' + entry.id">
+          <button
+            type="button"
+            class="import-help__summary"
+            [attr.aria-expanded]="isHelpOpen(entry.id)"
+            [attr.aria-controls]="helpPanelId(entry.id)"
+            (click)="toggleHelp(entry.id)"
+          >
+            <span class="import-help__name">
+              {{ entry.name }}
+              @if (entry.beta) {
+                <span appBadge class="import-help__beta">Beta</span>
+              }
+            </span>
+            <span class="import-help__hint">{{ entry.hint }}</span>
+            <nostos-icon
+              name="caret-right"
+              [size]="12"
+              class="import-help__caret"
+              [class.is-open]="isHelpOpen(entry.id)"
+            ></nostos-icon>
+          </button>
+
+          <div class="import-help__panel" [id]="helpPanelId(entry.id)" [hidden]="!isHelpOpen(entry.id)">
+            <ol class="import-help__steps">
+              @for (step of entry.steps; track $index) {
+                <li>
+                  <span>{{ step.text }}</span>
+                  @if (step.code) {
+                    <code>{{ step.code }}</code>
+                  }
+                  @if (entry.id === 'applebooks' && $index === 1) {
+                    <button
+                      appButton
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      class="import-help__action"
+                      data-testid="import-help-applebooks-copy"
+                      (click)="copyAppleBooksFolder()"
+                    >
+                      <nostos-icon [name]="folderCopied() === 'copied' ? 'check' : 'copy'" [size]="14"></nostos-icon>
+                      {{ folderCopied() === 'copied' ? 'Copied' : 'Copy folder location' }}
+                    </button>
+                    @if (folderCopied() === 'failed') {
+                      <span class="import-help__fallback">
+                        Copy this instead: <code>{{ appleBooksFolder }}</code>
+                      </span>
+                    }
+                  }
+                  @if (entry.id === 'applebooks' && $index === 2) {
+                    <button
+                      appButton
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      class="import-help__action"
+                      data-testid="import-help-applebooks-open"
+                      (click)="openAppleBooks()"
+                    >
+                      Choose the Books folder
+                    </button>
+                  }
+                </li>
+              }
+            </ol>
+            @if (entry.id === 'applebooks') {
+              <p class="import-help__note" data-testid="import-help-applebooks-feedback">
+                Apple Books import is new.
+                <a class="import-help__link" [href]="appleBooksFeedbackUrl()" target="_blank" rel="noopener">Tell us whether it worked for you</a>.
+              </p>
+            }
+            @if (entry.id === 'readwise' && readwiseActions()) {
+              <!-- The CSV is dropped above; these are the export API's own
+                   actions (issue #1525), beside the file steps like Apple
+                   Books' folder buttons. -->
+              <app-readwise-import-settings [inline]="true" />
+            }
+          </div>
+        </div>
+      }
+    </div>
+
+    <h4 class="import-help__group">Reading history</h4>
+    <div class="import-help__entries">
+      @for (entry of historyHelp; track entry.id) {
+        <div class="import-help__entry" [id]="helpEntryId(entry.id)" [attr.data-testid]="'import-help-' + entry.id">
+          <button
+            type="button"
+            class="import-help__summary"
+            [attr.aria-expanded]="isHelpOpen(entry.id)"
+            [attr.aria-controls]="helpPanelId(entry.id)"
+            (click)="toggleHelp(entry.id)"
+          >
+            <span class="import-help__name">{{ entry.name }}</span>
+            <span class="import-help__hint">{{ entry.hint }}</span>
+            <nostos-icon
+              name="caret-right"
+              [size]="12"
+              class="import-help__caret"
+              [class.is-open]="isHelpOpen(entry.id)"
+            ></nostos-icon>
+          </button>
+          <div class="import-help__panel" [id]="helpPanelId(entry.id)" [hidden]="!isHelpOpen(entry.id)">
+            <ol class="import-help__steps">
+              @for (step of entry.steps; track $index) {
+                <li>
+                  <span>{{ step.text }}</span>
+                  @if (step.code) {
+                    <code>{{ step.code }}</code>
+                  }
+                </li>
+              }
+            </ol>
+          </div>
+        </div>
+      }
+    </div>
+
+    @if (archiveAvailable()) {
+      <h4 class="import-help__group">Whole library</h4>
+      <div class="import-help__entries">
+        @for (entry of archiveHelp; track entry.id) {
+          <div class="import-help__entry" [id]="helpEntryId(entry.id)" [attr.data-testid]="'import-help-' + entry.id">
+            <button
+              type="button"
+              class="import-help__summary"
+              [attr.aria-expanded]="isHelpOpen(entry.id)"
+              [attr.aria-controls]="helpPanelId(entry.id)"
+              (click)="toggleHelp(entry.id)"
+            >
+              <span class="import-help__name">{{ entry.name }}</span>
+              <span class="import-help__hint">{{ entry.hint }}</span>
+              <nostos-icon
+                name="caret-right"
+                [size]="12"
+                class="import-help__caret"
+                [class.is-open]="isHelpOpen(entry.id)"
+              ></nostos-icon>
+            </button>
+            <div class="import-help__panel" [id]="helpPanelId(entry.id)" [hidden]="!isHelpOpen(entry.id)">
+              <ol class="import-help__steps">
+                @for (step of entry.steps; track $index) {
+                  <li>
+                    <span>{{ step.text }}</span>
+                  </li>
+                }
+              </ol>
+              <p class="import-help__note">
+                Resuming an interrupted import?
+                <button
+                  type="button"
+                  appButton
+                  variant="link"
+                  class="import-help__link"
+                  data-testid="import-help-archive-open"
+                  (click)="openLibraryImport()"
+                >Open Backups &amp; data</button>
+              </p>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </section>
+</div>

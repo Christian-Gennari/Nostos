@@ -386,7 +386,11 @@ public sealed class AssistantOrchestrator(
                 throw await FinishProviderFailureAsync(
                     LlmException.TimedOut(),
                     executionMeter,
-                    usageLease);
+                    usageLease,
+                    CommittedOutcomesOrNull(
+                        mutationCompleted, acknowledgement, capturedNoteId,
+                        executedCapabilities, sourceReferences, evidenceReferences,
+                        retrieval.ResolvedBook));
             }
             catch (OperationCanceledException) when (turnTimer?.IsCancellationRequested == true)
             {
@@ -397,7 +401,14 @@ public sealed class AssistantOrchestrator(
             }
             catch (LlmException exception)
             {
-                throw await FinishProviderFailureAsync(exception, executionMeter, usageLease);
+                throw await FinishProviderFailureAsync(
+                    exception,
+                    executionMeter,
+                    usageLease,
+                    CommittedOutcomesOrNull(
+                        mutationCompleted, acknowledgement, capturedNoteId,
+                        executedCapabilities, sourceReferences, evidenceReferences,
+                        retrieval.ResolvedBook));
             }
             finally
             {
@@ -994,11 +1005,16 @@ public sealed class AssistantOrchestrator(
     /// detail (the HTTP status, the gateway's message, an unreachable host) is what
     /// an owner needs to fix a misconfigured endpoint, so it goes to the log and
     /// never carries the key.
+    ///
+    /// When the turn already committed something, the returned exception wraps
+    /// the typed failure together with those outcomes (#1558) so the endpoint can
+    /// report them beside the failure instead of dropping them.
     /// </summary>
-    private async Task<LlmException> FinishProviderFailureAsync(
+    private async Task<Exception> FinishProviderFailureAsync(
         LlmException exception,
         AssistantExecutionMeter executionMeter,
-        AiUsageLease? usageLease)
+        AiUsageLease? usageLease,
+        AssistantTurnResponse? committed)
     {
         logger.LogWarning(
             "Ask Nostos provider call failed ({Code}): {Detail}",
@@ -1007,8 +1023,39 @@ public sealed class AssistantOrchestrator(
         var metrics = executionMeter.Finish(AssistantTurnStopReason.ProviderError);
         LogExecutionMetrics(metrics);
         await CompleteUsageAsync(usageLease, metrics);
-        return exception;
+        return committed is null
+            ? exception
+            : new AssistantTurnAbortedException(exception, committed);
     }
+
+    /// <summary>
+    /// The committed half of a turn that a provider failure ended (#1558). Null
+    /// when nothing canonical was written: an ordinary provider failure keeps the
+    /// contract it had, with no body to explain. Never includes the changeset
+    /// draft — its staged changes were not applied and must not be presented.
+    /// </summary>
+    private static AssistantTurnResponse? CommittedOutcomesOrNull(
+        bool mutationCompleted,
+        string? acknowledgement,
+        string? capturedNoteId,
+        IReadOnlyList<string> executedCapabilities,
+        IReadOnlyList<AssistantSourceReferenceDto> sourceReferences,
+        IReadOnlyList<AssistantEvidenceReferenceDto> evidenceReferences,
+        AssistantResolvedBookDto? resolvedBook) =>
+        mutationCompleted
+            ? new AssistantTurnResponse(
+                Reply: string.Empty,
+                Acknowledgement: acknowledgement,
+                AnchorPrompt: null,
+                Suggestions: [],
+                Changeset: null,
+                CapturedNoteId: capturedNoteId,
+                ExecutedCapabilities: [.. executedCapabilities],
+                Sources: [.. sourceReferences],
+                Error: null,
+                Evidence: [.. evidenceReferences],
+                ResolvedBook: resolvedBook)
+            : null;
 
     private Task CompleteUsageAsync(
         AiUsageLease? lease,

@@ -19,6 +19,17 @@
   border-bottom: none;
 }
 
+/* Inside the import drop zone's help panel (issue #1526) the row carries the
+   export API's actions only; the help line above it names the source. */
+.setting-row.is-inline {
+  padding: 8px 0 0;
+  border-bottom: none;
+}
+
+.setting-row.is-inline .readwise-actions {
+  justify-content: flex-start;
+}
+
 .setting-label {
   flex: 1;
   min-width: 0;

@@ -2695,6 +2695,8 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     const context = TestBed.inject(AssistantContextService);
 
     expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+    // The action says what it is for, not just a bare sparkle.
+    expect(el('selection-ask-nostos')!.textContent).toContain('Ask Nostos');
     (el('selection-ask-nostos') as HTMLButtonElement).click();
     render();
 

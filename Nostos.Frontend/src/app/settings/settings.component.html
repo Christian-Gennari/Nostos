@@ -543,74 +543,18 @@
               <p class="settings-section-desc">Everything you can bring into Nostos from somewhere else, in one place.</p>
             </header>
 
-            <section class="settings-card" data-testid="import-highlights-card">
+            <section class="settings-card" data-testid="import-drop-card">
               <div class="card-header">
                 <div class="card-header-copy">
-                  <h2>Highlights &amp; notes</h2>
+                  <h2>Import a file</h2>
                 </div>
               </div>
               <div class="card-body">
                 <p class="label-desc card-purpose">
-                  They go into the matching books in your library. You see where each book is going before
-                  anything is added, and importing the same thing again never creates duplicates.
+                  Drop an export from any of these apps and Nostos takes it from there. You see where every book is
+                  going before anything is added, and importing the same file again never creates duplicates.
                 </p>
-                @for (source of highlightImportSources; track source.id) {
-                  <div class="setting-row" [attr.data-testid]="'import-source-' + source.id">
-                    <div class="setting-label">
-                      <span class="label-text">
-                        {{ source.name }}
-                        @if (source.beta) {
-                          <span appBadge class="import-beta">Beta</span>
-                        }
-                      </span>
-                      <span class="label-desc">{{ source.hint }}</span>
-                    </div>
-                    <button
-                      appButton
-                      variant="secondary"
-                      class="import-action"
-                      [attr.data-testid]="source.id === 'kobo' ? 'highlight-import-action' : 'import-action-' + source.id"
-                      [attr.aria-label]="'Import from ' + source.name"
-                      (click)="openHighlightImport(source.id === 'applebooks' ? 'applebooks' : 'all')"
-                    >
-                      Import…
-                    </button>
-                  </div>
-                }
-                <app-readwise-import-settings />
-              </div>
-            </section>
-
-            <section class="settings-card" data-testid="reading-history-card">
-              <div class="card-header">
-                <div class="card-header-copy">
-                  <h2>Reading history</h2>
-                </div>
-              </div>
-              <div class="card-body">
-                <p class="label-desc card-purpose">
-                  Bring in what you have read, when you read it, the rating, the review and your shelves. You
-                  see where every book is going before anything is added, and importing the same file again
-                  changes nothing.
-                </p>
-                @for (source of readingHistoryImportSources; track source.id) {
-                  <div class="setting-row" [attr.data-testid]="'import-source-history-' + source.id">
-                    <div class="setting-label">
-                      <span class="label-text">{{ source.name }}</span>
-                      <span class="label-desc">{{ source.hint }}</span>
-                    </div>
-                    <button
-                      appButton
-                      variant="secondary"
-                      class="import-action"
-                      data-testid="import-action-reading-history"
-                      [attr.aria-label]="'Import reading history from ' + source.name"
-                      (click)="openReadingHistoryImport()"
-                    >
-                      Import…
-                    </button>
-                  </div>
-                }
+                <app-import-drop-zone [readwiseActions]="true" />
               </div>
             </section>
 
@@ -634,27 +578,6 @@
                 </div>
               </section>
             }
-
-            @if (supportsLibraryMigration() || supportsCloudPortableExport()) {
-              <section class="settings-card" data-testid="import-library-card">
-                <div class="card-header">
-                  <div class="card-header-copy">
-                    <h2>Whole library</h2>
-                  </div>
-                </div>
-                <div class="card-body">
-                  <div class="setting-row" data-testid="import-source-archive">
-                    <div class="setting-label">
-                      <span class="label-text">Nostos archive</span>
-                      <span class="label-desc">A <code>.nostos</code> library exported from another Nostos, Cloud or self-hosted.</span>
-                    </div>
-                    <button appButton variant="secondary" class="import-action" data-testid="import-action-archive" (click)="openLibraryArchiveImport()">
-                      Import…
-                    </button>
-                  </div>
-                </div>
-              </section>
-            }
           </section>
 
           <section
@@ -666,7 +589,7 @@
           >
             <header class="settings-section-header">
               <h2 class="settings-section-title" id="assistant-heading">Assistant</h2>
-              <p class="settings-section-desc">How Ask Nostos appears while you read.</p>
+              <p class="settings-section-desc">Ask about your books and notes, capture a thought, or reorganise your library.</p>
             </header>
 
       <!-- Reading assistant (W1). Availability is the server's to decide; this
@@ -685,7 +608,7 @@
             <div class="setting-label">
               <span class="label-text">Show Ask Nostos</span>
               @if (assistantAvailable()) {
-                <span class="label-desc">Show the dock capsule for capturing thoughts while reading.</span>
+                <span class="label-desc">Read, capture and organise anywhere in Nostos. Changes are applied with Undo, or shown for review first.</span>
               } @else if (managedAi() || !canConfigureAiProvider()) {
                 <span class="label-desc">{{ assistantUnavailableCopy() }}</span>
               } @else {

@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, computed, inject, input, signal, ChangeDetectionStrategy } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
@@ -29,6 +29,13 @@ export const READWISE_TOKEN_URL = 'https://readwise.io/access_token';
 export class ReadwiseImportSettingsComponent implements OnInit {
   private readonly api = inject(ReadwiseService);
   private readonly highlightImport = inject(HighlightImportService);
+
+  /**
+   * Actions only, with no name or hint of its own: the import drop zone's
+   * Readwise help line already names the source and says where the CSV is
+   * (issue #1526). Settings and the component's own tests use the full row.
+   */
+  readonly inline = input(false);
 
   readonly tokenUrl = READWISE_TOKEN_URL;
   readonly status = signal<ReadwiseConnectionStatus | null>(null);

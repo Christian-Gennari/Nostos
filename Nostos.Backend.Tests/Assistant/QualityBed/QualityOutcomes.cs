@@ -5,6 +5,8 @@
 // deviations as advisories. Safety checks stay hard in both modes.
 namespace Nostos.Backend.Tests.Assistant.QualityBed;
 
+using System.Text.Json;
+using Nostos.Backend.Services.Ai;
 using Nostos.Shared.Dtos;
 
 internal sealed record QualityActivityEvent(
@@ -12,7 +14,39 @@ internal sealed record QualityActivityEvent(
     string Message,
     double ReceivedMs);
 
+// One message the provider saw (deterministic mode only).
 internal sealed record QualityProviderMessageLog(string Role, string? Content);
+
+// One capability result the model read, in call order: the tool call's name
+// and the result JSON the orchestrator put on the tool message. This is the
+// backend's own receipt for what the act did (#1573), recorded in both modes
+// so the live lane can tell an idempotent re-add from a real write without
+// keeping live prompts around.
+internal sealed record QualityToolResultLog(string Name, string Content)
+{
+    /// <summary>
+    /// Reads the tool results out of one request's messages: each tool call's
+    /// name is matched to the result that repeats its id.
+    /// </summary>
+    public static IReadOnlyList<QualityToolResultLog> From(IReadOnlyList<LlmMessage> messages)
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var results = new List<QualityToolResultLog>();
+        foreach (var message in messages)
+        {
+            if (message.ToolCalls is { } calls)
+                foreach (var call in calls)
+                    names[call.Id] = call.Name;
+            if (string.Equals(message.Role, "tool", StringComparison.Ordinal)
+                && message.ToolCallId is { Length: > 0 } callId
+                && message.Content is { } content
+                && names.TryGetValue(callId, out var name))
+                results.Add(new QualityToolResultLog(name, content));
+        }
+
+        return results;
+    }
+}
 
 internal sealed record QualityProviderRequestLog(IReadOnlyList<QualityProviderMessageLog> Messages);
 
@@ -33,7 +67,8 @@ internal sealed record QualityTurnRecord(
     double TotalMs,
     int ProviderRequestCount,
     // Deterministic mode only: the exact provider requests (for history /
-    // continuity asserts). Empty in live mode.
+    // continuity asserts). Empty in live mode; live tool results are in
+    // ToolResults below.
     IReadOnlyList<QualityProviderRequestLog> ProviderRequests,
     int NoteCountBefore,
     int NoteCountAfter,
@@ -48,7 +83,12 @@ internal sealed record QualityTurnRecord(
     // live library feed re-reads every open screen when it moves, so a turn
     // that writes nothing must leave it alone, and one that writes must move it.
     string? RevisionBefore = null,
-    string? RevisionAfter = null);
+    string? RevisionAfter = null,
+    // The capability receipts the model read this turn, recorded in both
+    // modes. The revision check reads them to see what an executed act did
+    // (#1573): an idempotent re-add says `"duplicate": true` instead of
+    // leaving a revision bump.
+    IReadOnlyList<QualityToolResultLog>? ToolResults = null);
 
 internal sealed record QualitySessionTotals(
     int Turns,
@@ -257,26 +297,19 @@ internal static class QualityExpectationEvaluator
                 || turn.NoteCountAfter != turn.NoteCountBefore
                 || turn.CollectionCountAfter != turn.CollectionCountBefore;
             // An act that found its target already there (a book already on To
-            // read: `"duplicate": true`) ran but changed nothing. Deterministic
-            // runs can tell, because they log the tool results the model read.
+            // read) ran but changed nothing; the backend says so in its
+            // receipt, not in the revision. Only when every executed
+            // capability's own result carries that receipt may the turn be
+            // treated as a non-write. A missing result leaves `wrote` alone,
+            // so a real write that failed to bump still fails.
             if (wrote
                 && string.IsNullOrWhiteSpace(response.CapturedNoteId)
                 && response.Changeset?.Status is not "applied"
                 && turn.NoteCountAfter == turn.NoteCountBefore
                 && turn.CollectionCountAfter == turn.CollectionCountBefore
-                && turn.ProviderRequests.LastOrDefault() is { } lastRequest)
+                && AllExecutedCapabilitiesWereIdempotentReadds(response, turn.ToolResults))
             {
-                var toolResults = lastRequest.Messages
-                    .Where(m => string.Equals(m.Role, "tool", StringComparison.Ordinal))
-                    .Select(m => m.Content ?? string.Empty)
-                    .TakeLast(response.ExecutedCapabilities?.Count ?? 0)
-                    .ToList();
-                if (toolResults.Count > 0 && toolResults.All(content =>
-                        content.Replace(" ", string.Empty, StringComparison.Ordinal)
-                            .Contains("\"duplicate\":true", StringComparison.Ordinal)))
-                {
-                    wrote = false;
-                }
+                wrote = false;
             }
 
             var moved = !string.Equals(revisionBefore, revisionAfter, StringComparison.Ordinal);
@@ -295,6 +328,64 @@ internal static class QualityExpectationEvaluator
         }
 
         return new QualityEvaluationResult(failures, advisories);
+    }
+
+    /// <summary>
+    /// True when every Act capability the turn reports as executed returned a
+    /// receipt whose data says <c>"duplicate": true</c> — the backend's own
+    /// signal that an idempotent write found its target already there and
+    /// changed nothing. Results are matched to capabilities by name and in
+    /// call order, so a second call of the same capability cannot stand in for
+    /// the first. A result that is missing, unattributable or not that receipt
+    /// returns false: the revision check then fails closed and a real write
+    /// still has to move the revision.
+    /// </summary>
+    internal static bool AllExecutedCapabilitiesWereIdempotentReadds(
+        AssistantTurnResponse response,
+        IReadOnlyList<QualityToolResultLog>? toolResults)
+    {
+        var executed = response.ExecutedCapabilities;
+        if (executed is not { Count: > 0 } || toolResults is not { Count: > 0 })
+            return false;
+
+        var available = toolResults.ToList();
+        foreach (var capability in executed)
+        {
+            var index = available.FindLastIndex(result =>
+                string.Equals(result.Name, capability, StringComparison.Ordinal));
+            if (index < 0)
+                return false;
+            var content = available[index].Content;
+            available.RemoveAt(index);
+            if (!IsDuplicateReceipt(content))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the capability receipt (<c>{ success, data }</c>): true only when
+    /// its data carries the boolean <c>"duplicate": true</c>. Anything else —
+    /// a real write, an error, or unreadable JSON — is not a no-op.
+    /// </summary>
+    internal static bool IsDuplicateReceipt(string content)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("data", out var data))
+                root = data;
+            return root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("duplicate", out var duplicate)
+                && duplicate.ValueKind == JsonValueKind.True;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

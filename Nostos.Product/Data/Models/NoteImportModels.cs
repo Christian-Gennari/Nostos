@@ -34,6 +34,11 @@ public class NoteImportBatch
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
+    // What the file held and where every entry went (issue #1522), as JSON.
+    // Batches from before the report existed keep NULL: the list shows their
+    // note and book counts as it always did, rather than invented zeroes.
+    public string? ReportJson { get; set; }
+
     public List<NoteImportBatchNote> Notes { get; set; } = [];
 }
 

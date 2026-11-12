@@ -106,7 +106,8 @@ describe('HighlightImportModal', () => {
     service.open();
     fixture.detectChanges();
     expect(text()).toContain('Import highlights');
-    expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-input"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-drop-zone-input"]')).not.toBeNull();
+    expect(text()).toContain('Where to find your file');
   });
 
   it('imports a Readwise export API page without a file and commits to its endpoint', async () => {
@@ -499,13 +500,95 @@ describe('HighlightImportModal', () => {
 
   it('names where each recent import came from', () => {
     vi.spyOn(service, 'recent').mockReturnValue(
-      of([{ id: 'b', source: 'kindle', fileName: 'My Clippings.txt', createdAtUtc: '2026-10-24T08:00:00Z', noteCount: 3, bookCount: 1 }]),
+      of([{ id: 'b', source: 'kindle', fileName: 'My Clippings.txt', createdAtUtc: '2026-10-24T08:00:00Z', noteCount: 3, bookCount: 1, report: null }]),
     );
     service.open();
     fixture.detectChanges();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-recent-row"]').textContent).toContain('Kindle ·');
+  });
+
+  it('shows what a recent import found and where every entry went', () => {
+    vi.spyOn(service, 'recent').mockReturnValue(
+      of([{
+        id: 'b',
+        source: 'kindle',
+        fileName: 'My Clippings.txt',
+        createdAtUtc: '2026-10-24T08:00:00Z',
+        noteCount: 380,
+        bookCount: 12,
+        report: {
+          found: 412,
+          imported: 380,
+          duplicates: 20,
+          skipped: 12,
+          leftOut: 0,
+          skippedReasons: [],
+          booksMatched: 10,
+          booksCreated: 2,
+          booksLeftOut: 3,
+        },
+      }]),
+    );
+    service.open();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const row = fixture.nativeElement.querySelector('[data-testid="highlight-recent-row"]') as HTMLElement;
+    expect(row.textContent).toContain('412 found · 380 imported · 20 already here · 12 skipped');
+    expect(row.textContent).toContain('10 books matched · 2 added · 3 left out');
+  });
+
+  it('expands a recent import into the reasons its entries were skipped', () => {
+    vi.spyOn(service, 'recent').mockReturnValue(
+      of([{
+        id: 'b',
+        source: 'kindle',
+        fileName: 'My Clippings.txt',
+        createdAtUtc: '2026-10-24T08:00:00Z',
+        noteCount: 4,
+        bookCount: 1,
+        report: {
+          found: 6,
+          imported: 4,
+          duplicates: 0,
+          skipped: 2,
+          leftOut: 0,
+          skippedReasons: [
+            { title: 'Pride and Prejudice', author: 'Jane Austen', count: 1, reason: 'Bookmarks mark a place and hold no text.' },
+            { title: 'Walden', author: null, count: 1, reason: 'The entry has no text.' },
+          ],
+          booksMatched: 1,
+          booksCreated: 0,
+          booksLeftOut: 0,
+        },
+      }]),
+    );
+    service.open();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const details = fixture.nativeElement.querySelector('[data-testid="highlight-recent-reasons"]') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')!.textContent).toContain('6 found · 4 imported · 2 skipped');
+    expect(details.textContent).toContain('Pride and Prejudice');
+    expect(details.textContent).toContain('Bookmarks mark a place and hold no text.');
+    expect(details.textContent).toContain('The entry has no text.');
+  });
+
+  it('shows a batch from before reports existed without invented numbers', () => {
+    vi.spyOn(service, 'recent').mockReturnValue(
+      of([{ id: 'old', source: 'kobo', fileName: null, createdAtUtc: '2026-10-24T08:00:00Z', noteCount: 3, bookCount: 1, report: null }]),
+    );
+    service.open();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const row = fixture.nativeElement.querySelector('[data-testid="highlight-recent-row"]') as HTMLElement;
+    expect(row.textContent).toContain('3 highlights into 1 book');
+    expect(row.textContent).not.toContain('found');
+    expect(row.querySelector('[data-testid="highlight-recent-reasons"]')).toBeNull();
   });
 
   it('cannot be closed while it is working', () => {
@@ -601,7 +684,7 @@ describe('HighlightImportModal', () => {
     });
 
     it('asks before undoing a recent import too', async () => {
-      const batch = { id: 'old', source: 'kobo' as const, fileName: null, createdAtUtc: '2026-11-01T00:00:00Z', noteCount: 4, bookCount: 1 };
+      const batch = { id: 'old', source: 'kobo' as const, fileName: null, createdAtUtc: '2026-11-01T00:00:00Z', noteCount: 4, bookCount: 1, report: null };
       const undo = vi.spyOn(service, 'undo').mockReturnValue(of({ removed: 4 }));
       component.askUndoRecent(batch);
       expect(undo).not.toHaveBeenCalled();

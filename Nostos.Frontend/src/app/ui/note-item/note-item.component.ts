@@ -34,7 +34,7 @@ import { InputDirective, TextareaDirective } from '../form-control/form-control.
 import { NoteComposerComponent, draftChanged, draftForNote, draftToSave } from '../note-composer/note-composer.component';
 import { TopicRowComponent } from '../topic-row/topic-row.component';
 import { PenSwatchesComponent } from '../pen-swatches/pen-swatches.component';
-import { QuoteBlockComponent } from '../quote-block/quote-block.component';
+import { QuoteBlockComponent, type QuoteBlockSize } from '../quote-block/quote-block.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NoteCaptureDetailsComponent } from '../note-capture-details/note-capture-details.component';
 import { PassageViewerService, type PassageViewerRequest } from '../passage-viewer/passage-viewer.service';
@@ -163,6 +163,11 @@ export class NoteItemComponent {
   readonly showFormat = input(false);
   /** Offer "More from this book" (not when the list is already that book). */
   readonly showMoreFromBook = input(true);
+  /**
+   * How large the quote reads: the card's own step in a list, the larger one
+   * where the note is the page (or the wide Brain's detail pane).
+   */
+  readonly quoteSize = input<QuoteBlockSize>('md');
   /** A topic change for this note is in flight: its topic controls wait. */
   readonly busy = input(false);
   /** Offer "Select" in the menu (a list where several notes can be chosen). */

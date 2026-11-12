@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Data.Repositories;
@@ -16,6 +17,7 @@ using Nostos.Backend.Services.ReadingList;
 using Nostos.Backend.Tests.Services.Ai;
 using Nostos.Backend.Tests.Support;
 using Nostos.Product.BookText;
+using Nostos.Shared.Dtos;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Assistant;
@@ -91,6 +93,44 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             AssistantTrustClass.Act,
             AssistantTrustClass.Stage,
         ]);
+    }
+
+    [Fact]
+    public void The_prompt_capability_sentence_names_every_registered_capability_category()
+    {
+        var h = CreateHarness();
+
+        // One product-family phrase per category. A new category, or a
+        // capability in a category the sentence does not name, fails here
+        // rather than letting the prompt under-sell the registry again.
+        var phraseByCategory = new Dictionary<AssistantCapabilityCategory, string>
+        {
+            [AssistantCapabilityCategory.KnowledgeRetrieval] = "notes, topics",
+            [AssistantCapabilityCategory.SourceNavigation] = "imported book text",
+            [AssistantCapabilityCategory.LibraryRead] = "reading and searching the library",
+            [AssistantCapabilityCategory.Capture] = "thoughts and quotes",
+            [AssistantCapabilityCategory.Organization] = "organising collections and book details",
+            [AssistantCapabilityCategory.OrdinaryAction] = "To read list",
+            [AssistantCapabilityCategory.Writing] = "Studio documents",
+        };
+
+        Enum.GetValues<AssistantCapabilityCategory>().Should().BeSubsetOf(phraseByCategory.Keys);
+
+        var registered = h.Registry.All.Select(c => c.Category).Distinct().ToList();
+        registered.Should().BeSubsetOf(phraseByCategory.Keys);
+
+        foreach (var category in registered)
+            AssistantConversationBuilder.CapabilitySentence.Should().Contain(
+                phraseByCategory[category],
+                $"the prompt must name the {category} capabilities");
+
+        // And the sentence is the one the model actually receives.
+        var builder = new AssistantConversationBuilder(
+            h.Registry, new AssistantContextPacker(new AssistantOptions()));
+        var conversation = builder.BuildConversation(new AssistantTurnRequest(
+            "client", "turn", "What can you do?", new AssistantContextDto("other", "/")));
+
+        conversation[0].Content.Should().Contain(AssistantConversationBuilder.CapabilitySentence);
     }
 
     [Fact]

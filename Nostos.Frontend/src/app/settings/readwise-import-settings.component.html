@@ -1,4 +1,5 @@
-<div class="setting-row" data-testid="import-source-readwise">
+<div class="setting-row" [class.is-inline]="inline()" data-testid="import-source-readwise">
+  @if (!inline()) {
   <div class="setting-label">
     <span class="label-text">
       Readwise
@@ -22,6 +23,7 @@
       <span class="label-desc readwise-meta">{{ throughLabel() }}</span>
     }
   </div>
+  }
 
   <div class="readwise-actions">
     @if (connected()) {

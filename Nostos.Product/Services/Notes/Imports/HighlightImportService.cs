@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
@@ -141,7 +142,20 @@ public sealed class HighlightImportService
     {
         // The preview of this source already logged any missing columns; a
         // commit logging them again would count every import twice.
-        var (source, sourceBooks, _) = file;
+        var (source, sourceBooks, skipped) = file;
+
+        // Every entry the source holds is found once: the annotations of its
+        // books, plus what the reader reports as unimportable (a bookmark, a
+        // web article, an entry past the clipping limit). The report below
+        // must always account for all of them, whichever way the source arrived
+        // (#1550 for files, #1525 for the Readwise export API).
+        var found = sourceBooks.Sum(book => book.Annotations.Count) + skipped.Sum(entry => entry.Count);
+        var importedTotal = 0;
+        var duplicateTotal = 0;
+        var leftOutTotal = 0;
+        var booksMatched = 0;
+        var booksCreated = 0;
+        var booksLeftOut = 0;
 
         var bySourceKey = decisions
             .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
@@ -165,6 +179,8 @@ public sealed class HighlightImportService
             if (decision is null || (decision.BookId is null && !decision.Create))
             {
                 results.Add(Skipped(fullBook, null));
+                leftOutTotal += fullBook.Annotations.Count;
+                booksLeftOut++;
                 continue;
             }
 
@@ -173,9 +189,11 @@ public sealed class HighlightImportService
             var sourceBook = excluded.Count == 0
                 ? fullBook
                 : fullBook with { Annotations = fullBook.Annotations.Where((_, index) => !excluded.Contains(index)).ToList() };
+            leftOutTotal += fullBook.Annotations.Count - sourceBook.Annotations.Count;
             if (sourceBook.Annotations.Count == 0)
             {
                 results.Add(Skipped(sourceBook, "Every highlight was left out."));
+                booksLeftOut++;
                 continue;
             }
 
@@ -187,6 +205,8 @@ public sealed class HighlightImportService
                 if (title is null)
                 {
                     results.Add(Skipped(sourceBook, "The file has no title for this book."));
+                    leftOutTotal += sourceBook.Annotations.Count;
+                    booksLeftOut++;
                     continue;
                 }
 
@@ -203,6 +223,8 @@ public sealed class HighlightImportService
                 if (outcome.Data is not LibraryCreateOrMatchResultDto { BookId: not null } createdBook)
                 {
                     results.Add(Skipped(sourceBook, "The book could not be added to the library."));
+                    leftOutTotal += sourceBook.Annotations.Count;
+                    booksLeftOut++;
                     continue;
                 }
 
@@ -218,6 +240,8 @@ public sealed class HighlightImportService
             if (book is null)
             {
                 results.Add(Skipped(sourceBook, "That book is no longer in the library."));
+                leftOutTotal += sourceBook.Annotations.Count;
+                booksLeftOut++;
                 continue;
             }
 
@@ -279,6 +303,13 @@ public sealed class HighlightImportService
                 imported++;
             }
 
+            importedTotal += imported;
+            duplicateTotal += duplicates;
+            if (created)
+                booksCreated++;
+            else
+                booksMatched++;
+
             results.Add(new HighlightImportResultBook(
                 sourceBook.SourceKey,
                 "imported",
@@ -297,9 +328,37 @@ public sealed class HighlightImportService
                         : $"{repaired} notes from an earlier import were corrected."));
         }
 
+        var report = new HighlightImportReport(
+            found,
+            importedTotal,
+            duplicateTotal,
+            skipped.Sum(entry => entry.Count),
+            leftOutTotal,
+            skipped,
+            booksMatched,
+            booksCreated,
+            booksLeftOut);
+        if (report.Found != report.Imported + report.Duplicates + report.Skipped + report.LeftOut)
+        {
+            // The stored report is only useful when it adds up. The tests assert
+            // this for every source; logging keeps a production surprise visible.
+            _logger.LogError(
+                "Highlight import report does not add up: source {Source}, found {Found}, imported {Imported}, duplicates {Duplicates}, skipped {Skipped}, left out {LeftOut}.",
+                source, report.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut);
+        }
+
         // A batch exists to be undone; one that added nothing has nothing to undo.
         if (isNewBatch && added.Count > 0)
+        {
+            batch.ReportJson = SerializeReport(report);
             _db.NoteImportBatches.Add(batch);
+        }
+        else if (!isNewBatch && batch.ReportJson is not null)
+        {
+            // Files chosen together are one batch, so their reports add up too.
+            batch.ReportJson = SerializeReport(AddReports(ReadReport(batch.ReportJson), report));
+        }
+
         _db.NoteImportBatchNotes.AddRange(added);
         await _db.SaveChangesAsync(ct);
 
@@ -355,6 +414,7 @@ public sealed class HighlightImportService
                 batch.Source,
                 batch.FileName,
                 batch.CreatedAtUtc,
+                batch.ReportJson,
                 NoteCount = batch.Notes.Count,
                 BookCount = batch.Notes.Select(note => note.Note.BookId).Distinct().Count(),
             })
@@ -362,7 +422,13 @@ public sealed class HighlightImportService
 
         return batches
             .Select(batch => new HighlightImportBatchSummary(
-                batch.Id, batch.Source, batch.FileName, batch.CreatedAtUtc, batch.NoteCount, batch.BookCount))
+                batch.Id,
+                batch.Source,
+                batch.FileName,
+                batch.CreatedAtUtc,
+                batch.NoteCount,
+                batch.BookCount,
+                ReadReport(batch.ReportJson)))
             .ToList();
     }
 
@@ -682,6 +748,66 @@ public sealed class HighlightImportService
             HighlightImportShapeLog.Write(_logger, path, HighlightImportShapeLog.ParseFailed);
             throw;
         }
+    }
+
+    private static readonly JsonSerializerOptions ReportJson = new(JsonSerializerDefaults.Web);
+
+    private static string SerializeReport(HighlightImportReport report) =>
+        JsonSerializer.Serialize(report, ReportJson);
+
+    // NULL or unreadable means "no report", never a report of zeroes: an image
+    // written before this field existed must keep showing as it always did.
+    private static HighlightImportReport? ReadReport(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        try
+        {
+            return JsonSerializer.Deserialize<HighlightImportReport>(json, ReportJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static HighlightImportReport AddReports(HighlightImportReport? previous, HighlightImportReport next) =>
+        previous is null
+            ? next
+            : new HighlightImportReport(
+                previous.Found + next.Found,
+                previous.Imported + next.Imported,
+                previous.Duplicates + next.Duplicates,
+                previous.Skipped + next.Skipped,
+                previous.LeftOut + next.LeftOut,
+                MergeSkipped(previous.SkippedReasons, next.SkippedReasons),
+                previous.BooksMatched + next.BooksMatched,
+                previous.BooksCreated + next.BooksCreated,
+                previous.BooksLeftOut + next.BooksLeftOut);
+
+    /// <summary>
+    /// One reason line per title, author and reason, with the counts added, in
+    /// the order the files first reported them.
+    /// </summary>
+    private static List<HighlightImportSkipped> MergeSkipped(
+        IEnumerable<HighlightImportSkipped> previous,
+        IEnumerable<HighlightImportSkipped> next)
+    {
+        var merged = new List<HighlightImportSkipped>();
+        var positions = new Dictionary<(string? Title, string? Author, string Reason), int>();
+        foreach (var entry in previous.Concat(next))
+        {
+            var key = (entry.Title, entry.Author, entry.Reason);
+            if (positions.TryGetValue(key, out var at))
+                merged[at] = merged[at] with { Count = merged[at].Count + entry.Count };
+            else
+            {
+                positions[key] = merged.Count;
+                merged.Add(entry);
+            }
+        }
+
+        return merged;
     }
 
     private static HighlightImportResultBook Skipped(ImportSourceBook sourceBook, string? message) =>

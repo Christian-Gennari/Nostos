@@ -1,5 +1,4 @@
 import { HighlightImportService } from '../core/services/highlight-import.service';
-import { ReadingHistoryImportService } from '../core/services/reading-history-import.service';
 import { ReadwiseService } from '../core/services/readwise.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -73,7 +72,9 @@ import {
 } from '../core/dtos/ai-provider.dtos';
 
 const toastMock = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
-const routerMock = { navigate: vi.fn() };
+// `events` feeds FeedbackLinkService, which the import drop zone reaches
+// through its Apple Books help line.
+const routerMock = { navigate: vi.fn(), events: of([]) };
 
 const readwiseServiceMock = {
   status: vi.fn(() => of({ connected: false, lastImportedAtUtc: null, importedThroughUtc: null })),
@@ -1691,27 +1692,22 @@ describe('SettingsComponent backup-only surface', () => {
     expect((entries[0] as HTMLElement).textContent).toContain('Backups & data');
     expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('[data-testid="import-highlights-card"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="import-drop-card"]')).toBeTruthy();
   });
 
   it('offers a reading history import from Goodreads and StoryGraph', () => {
     navItem('Import').click();
     fixture.detectChanges();
 
-    const card = fixture.nativeElement.querySelector('[data-testid="reading-history-card"]') as HTMLElement;
-    expect(card).toBeTruthy();
-    expect(card.textContent).toContain('Reading history');
-    expect(card.querySelector('[data-testid="import-source-history-goodreads"]')?.textContent).toContain(
+    const dropZone = fixture.nativeElement.querySelector('[data-testid="import-drop-zone"]') as HTMLElement;
+    expect(dropZone).toBeTruthy();
+    expect(dropZone.textContent).toContain('Drop an export here, or choose a file');
+    expect(dropZone.querySelector('[data-testid="import-help-goodreads"]')?.textContent).toContain(
       'My Books → Import and export',
     );
-    expect(card.querySelector('[data-testid="import-source-history-storygraph"]')?.textContent).toContain(
+    expect(dropZone.querySelector('[data-testid="import-help-storygraph"]')?.textContent).toContain(
       'Manage Account → Export StoryGraph Library',
     );
-
-    const importService = TestBed.inject(ReadingHistoryImportService);
-    const open = vi.spyOn(importService, 'open');
-    (card.querySelector('[data-testid="import-action-reading-history"]') as HTMLButtonElement).click();
-    expect(open).toHaveBeenCalled();
   });
 
   it('opens Apple Books steps from a link', () => {
@@ -1726,30 +1722,62 @@ describe('SettingsComponent backup-only surface', () => {
     expect(routerMock.navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { open: null } }));
   });
 
-  it('gathers every way into Nostos under Import', () => {
+  it('gathers every way into Nostos under Import, as help rather than buttons', () => {
     navItem('Import').click();
     fixture.detectChanges();
 
     const section = fixture.nativeElement.querySelector('[data-testid="settings-import-section"]') as HTMLElement;
     expect(section.hidden).toBe(false);
-    const rows = Array.from(section.querySelectorAll('[data-testid^="import-source-"]')).map((row) =>
+    expect(section.querySelector('[data-testid="import-drop-zone-button"]')?.tagName).toBe('BUTTON');
+
+    const help = Array.from(section.querySelectorAll('[data-testid^="import-help-"]')).map((row) =>
       row.getAttribute('data-testid'),
     );
-    expect(rows).toEqual(expect.arrayContaining([
-      'import-source-kobo',
-      'import-source-koreader',
-      'import-source-kindle',
-      'import-source-applebooks',
-      'import-source-readwise',
-    ]));
-    expect(section.querySelector('[data-testid="import-source-book-files"]')).toBeNull();
+    for (const id of ['kobo', 'koreader', 'kindle', 'applebooks', 'readwise', 'goodreads', 'storygraph']) {
+      expect(help).toContain(`import-help-${id}`);
+    }
+    expect(section.querySelector('[data-testid="highlight-import-action"]')).toBeNull();
+    expect(section.querySelector('[data-testid="import-action-reading-history"]')).toBeNull();
+    expect(section.querySelector('[data-testid="import-action-archive"]')).toBeNull();
 
     const highlightImport = TestBed.inject(HighlightImportService);
     const open = vi.spyOn(highlightImport, 'open');
-    (section.querySelector('[data-testid="import-action-applebooks"]') as HTMLButtonElement).click();
+    const appleBooks = section.querySelector('[data-testid="import-help-applebooks"]') as HTMLElement;
+    (appleBooks.querySelector('[aria-expanded]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (appleBooks.querySelector('[data-testid="import-help-applebooks-open"]') as HTMLButtonElement).click();
     expect(open).toHaveBeenCalledWith('applebooks');
-    (section.querySelector('[data-testid="highlight-import-action"]') as HTMLButtonElement).click();
-    expect(open).toHaveBeenLastCalledWith('all');
+  });
+
+  it('offers the Readwise export API from its help line, beside the CSV steps', () => {
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    const entry = fixture.nativeElement.querySelector('[data-testid="import-help-readwise"]') as HTMLElement;
+    expect(entry.textContent).toContain('Export a CSV, or connect with a token');
+    (entry.querySelector('[aria-expanded]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(entry.textContent).toContain('In Readwise, open Export and choose CSV');
+    const connect = entry.querySelector('[data-testid="readwise-connect"]') as HTMLButtonElement;
+    expect(connect).not.toBeNull();
+    expect(connect.textContent).toContain('Connect with a token');
+    expect(entry.querySelector('[data-testid="readwise-import-now"]')).toBeNull();
+  });
+
+  it('offers the Nostos archive in the same drop zone when the host imports one', () => {
+    capabilitiesServiceMock.get.mockReturnValue(
+      of({ ...selfHostedCapabilities, supportsLibraryMigration: true }),
+    );
+    fixture.destroy();
+    fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    const section = fixture.nativeElement.querySelector('[data-testid="settings-import-section"]') as HTMLElement;
+    expect(section.querySelector('[data-testid="import-help-archive"]')).not.toBeNull();
+    expect(section.textContent).toContain('A .nostos archive exported from another Nostos.');
   });
 
   it('describes Backups & data for this deployment and marks it as the open section', () => {
@@ -2219,7 +2247,7 @@ describe('SettingsComponent backup-only surface', () => {
     const card = assistantCard();
     expect(card).not.toBeNull();
     expect(card!.textContent).toContain(
-      'Show the dock capsule for capturing thoughts while reading.',
+      'Read, capture and organise anywhere in Nostos. Changes are applied with Undo, or shown for review first.',
     );
 
     const toggle = assistantToggle();
@@ -2291,7 +2319,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card!.textContent?.replace(/\s+/g, ' ')).toContain(
       'Connect an AI provider in AI connections to turn this on.',
     );
-    expect(card!.textContent).not.toContain('Show the dock capsule');
+    expect(card!.textContent).not.toContain('Read, capture and organise anywhere in Nostos');
 
     const toggle = assistantToggle();
     expect(toggle.disabled).toBe(true);

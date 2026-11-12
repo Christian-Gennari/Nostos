@@ -4,10 +4,11 @@ import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 
-import { AssistantComponent, starterPrompts } from './assistant.component';
+import { AssistantComponent, capabilityDoors } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
+  ASSISTANT_TURN_WATCHDOG_MS,
   AssistantChangesetDto,
   AssistantEntry,
   AssistantEvidenceReferenceDto,
@@ -17,6 +18,8 @@ import {
   AssistantTurnResponse,
 } from './assistant.service';
 import { AssistantStatusService } from './assistant-status.service';
+import { AssistantAllowanceService } from './assistant-allowance.service';
+import type { CloudManagedAiUsage } from '../../core/dtos/cloud-ai-refill.dtos';
 import { ASSISTANT_LAUNCHER_ATTR, AssistantLauncherService } from './assistant-launcher.service';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import {
@@ -83,6 +86,25 @@ function fakeVoiceService() {
   };
 }
 
+/** The managed allowance, driven directly so no Cloud endpoint is called. */
+function fakeAllowanceService() {
+  const canConfigure = signal(true);
+  const accountUrl = signal<string | null>(null);
+  const usage = signal<CloudManagedAiUsage | null>(null);
+  return {
+    canConfigureAiProvider: canConfigure.asReadonly(),
+    accountManagementUrl: accountUrl.asReadonly(),
+    usage: usage.asReadonly(),
+    usageAvailable: computed(() => true),
+    usageFailed: signal(false).asReadonly(),
+    ensureCapabilities: vi.fn(),
+    ensureUsage: vi.fn(),
+    setCanConfigure: (value: boolean) => canConfigure.set(value),
+    setAccountUrl: (value: string | null) => accountUrl.set(value),
+    setUsage: (value: CloudManagedAiUsage | null) => usage.set(value),
+  };
+}
+
 /** A status service the component can drive, with no HTTP behind it. */
 function fakeStatusService(initial: boolean) {
   const available = signal(initial);
@@ -138,35 +160,63 @@ function reviewChangeset(overrides: Partial<AssistantChangesetDto> = {}): Assist
   };
 }
 
-describe('starterPrompts', () => {
+describe('capabilityDoors', () => {
   const ctx = (overrides: Partial<AssistantContext>): AssistantContext =>
     ({ surface: 'other', route: '/', bookId: null, bookTitle: null, selectedText: null, ...overrides }) as AssistantContext;
 
+  it('groups every example under Ask, Capture and Organise, two or three each', () => {
+    for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library'] as const) {
+      const doors = capabilityDoors(ctx({ surface, bookTitle: 'Dune' }));
+      expect(doors.map((door) => door.label)).toEqual(['Ask', 'Capture', 'Organise']);
+      for (const door of doors) {
+        expect(door.examples.length, `${surface}/${door.id}`).toBeGreaterThanOrEqual(2);
+        expect(door.examples.length, `${surface}/${door.id}`).toBeLessThanOrEqual(3);
+        expect(new Set(door.examples.map((example) => example.id)).size).toBe(door.examples.length);
+      }
+    }
+  });
+
+  it('names quotes, collections, the To read list and Studio drafts, which the app omitted', () => {
+    const text = capabilityDoors(ctx({ surface: 'library' }))
+      .flatMap((door) => door.examples.map((example) => example.fill ?? example.label))
+      .join(' ');
+
+    expect(text).toContain('Save this thought:');
+    expect(text).toContain('Save this quote:');
+    expect(text).toContain('collection');
+    expect(text).toContain('To read');
+    expect(text).toContain('Studio draft');
+  });
+
   it('asks about the open book in the reader, and about a selection when there is one', () => {
-    expect(starterPrompts(ctx({ surface: 'reader', bookTitle: 'Dune' })).map((p) => p.label)).toEqual([
+    expect(capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune' }))[0].examples.map((p) => p.label)).toEqual([
       'Summarise what I have read of Dune so far',
       'What have I noted from Dune?',
     ]);
-    expect(starterPrompts(ctx({ surface: 'reader', bookTitle: 'Dune', selectedText: 'Fear is the mind-killer' }))[0].label).toBe(
-      'Explain the passage I selected',
-    );
+    expect(
+      capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune', selectedText: 'Fear is the mind-killer' }))[0]
+        .examples[0].label,
+    ).toBe('Explain the passage I selected');
   });
 
   it('still reads naturally without a book title', () => {
-    expect(starterPrompts(ctx({ surface: 'book-detail' }))[0].label).toBe('What is this book about?');
+    expect(capabilityDoors(ctx({ surface: 'book-detail' }))[0].examples[0].label).toBe(
+      'What is this book about?',
+    );
+  });
+
+  it('suggests topics instead of a Studio draft when a Brain note is under review', () => {
+    const doors = capabilityDoors(ctx({ surface: 'brain', brainReviewNoteId: 'note-1' }));
+
+    expect(doors[2].examples.map((example) => example.label)).toContain('Suggest topics for this note');
+    expect(doors[2].examples.map((example) => example.label)).not.toContain(
+      'Open my Studio draft about memory',
+    );
   });
 
   it('falls back to library questions anywhere else', () => {
     for (const surface of ['library', 'settings', 'home', 'other'] as const) {
-      expect(starterPrompts(ctx({ surface }))[0].id).toBe('library-next');
-    }
-  });
-
-  it('gives every surface at least two questions with unique ids', () => {
-    for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library'] as const) {
-      const prompts = starterPrompts(ctx({ surface }));
-      expect(prompts.length).toBeGreaterThanOrEqual(2);
-      expect(new Set(prompts.map((p) => p.id)).size).toBe(prompts.length);
+      expect(capabilityDoors(ctx({ surface }))[0].examples[0].id).toBe('library-next');
     }
   });
 });
@@ -178,6 +228,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   let fake: ReturnType<typeof fakeContextService>;
   let voice: ReturnType<typeof fakeVoiceService>;
   let status: ReturnType<typeof fakeStatusService>;
+  let allowance: ReturnType<typeof fakeAllowanceService>;
   let router: { navigate: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
@@ -191,6 +242,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fake = fakeContextService({ surface: 'reader', route: '/read/b1', bookId: 'b1' });
     voice = fakeVoiceService();
     status = fakeStatusService(true);
+    allowance = fakeAllowanceService();
     router = { navigate: vi.fn(() => Promise.resolve(true)) };
 
     await TestBed.configureTestingModule({
@@ -199,6 +251,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         { provide: AssistantContextService, useValue: fake },
         { provide: AssistantVoiceService, useValue: voice },
         { provide: AssistantStatusService, useValue: status },
+        { provide: AssistantAllowanceService, useValue: allowance },
         { provide: Router, useValue: router },
         provideHttpClient(),
         provideHttpClientTesting(),
@@ -513,6 +566,72 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         renderEntry(entry({ text: 'Write `[^1]` for a footnote.', artifacts: evidenceArtifacts(pdfEvidence(1, 3)) }));
         expect(markers()).toEqual([]);
         expect(fixture.nativeElement.querySelector('[data-testid="assistant-entry-markdown"] code')?.textContent).toBe('[^1]');
+      });
+
+      it('keeps each marker with the word before it, even at a line end', () => {
+        renderEntry(entry({
+          text: 'Attention, not time, is the thing you keep returning to.[^1]\n\nA second claim [^2].',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 3), pdfEvidence(2, 9)),
+        }));
+
+        const reply = fixture.nativeElement.querySelector('[data-testid="assistant-entry-markdown"]') as HTMLElement;
+        // A narrow no-break space glues the marker to the last word, so the
+        // inline box cannot wrap alone onto the next line.
+        expect(reply.innerHTML).toContain('\u202F<sup class="assistant-cite">');
+        expect(reply.innerHTML).not.toMatch(/[ \t]<sup class="assistant-cite">/);
+        // Copy/paste and a screen reader still get a space, then the number.
+        expect(reply.textContent).toContain('returning to.\u202F1');
+        expect(reply.textContent).toContain('second claim\u202F2');
+        expect(reply.textContent).not.toContain('[^1]');
+      });
+
+      it('numbers a grouped source row with the markers it covers', () => {
+        renderEntry(entry({
+          text: 'One passage[^1] and another[^2].',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 7), pdfEvidence(2, 9)),
+        }));
+
+        expect(sourceGroups().length).toBe(1);
+        const group = sourceGroups()[0];
+        expect(group.querySelector('.entry-source-number')?.textContent?.trim()).toBe('1–2');
+        expect(group.textContent).toContain('Grounded PDF · 2 passages');
+
+        group.click();
+        fixture.detectChanges();
+        const numbers = sourceItems();
+        expect(numbers.length).toBe(2);
+        expect(numbers[0].querySelector('.entry-source-number')?.textContent?.trim()).toBe('1');
+        expect(numbers[1].querySelector('.entry-source-number')?.textContent?.trim()).toBe('2');
+      });
+
+      it('lists non-consecutive group numbers separately and keeps the ungrouped row', () => {
+        renderEntry(entry({
+          text: 'First[^1], unrelated[^2], third[^3].',
+          artifacts: evidenceArtifacts(
+            pdfEvidence(1, 7),
+            epubEvidence(1, 'epubcfi(/6/2!/4/2:0)'),
+            pdfEvidence(3, 9),
+          ),
+        }));
+
+        const groups = sourceGroups();
+        expect(groups.length).toBe(1);
+        expect(groups[0].querySelector('.entry-source-number')?.textContent?.trim()).toBe('1, 3');
+
+        const ungrouped = Array.from(sourceItems()).find(
+          (item) => item.textContent?.includes('East of Eden'),
+        );
+        expect(ungrouped?.querySelector('.entry-source-number')?.textContent?.trim()).toBe('2');
+      });
+
+      it('leaves a grouped source unnumbered when the reply does not cite', () => {
+        renderEntry(entry({
+          text: 'No citations here.',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 7), pdfEvidence(2, 9)),
+        }));
+
+        expect(sourceGroups().length).toBe(1);
+        expect(sourceGroups()[0].querySelector('.entry-source-number')).toBeNull();
       });
     });
 
@@ -1193,34 +1312,59 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   });
 
   describe('empty conversation', () => {
-    it('offers starter questions worded for the page', () => {
+    it('regroups the empty state into Ask, Capture and Organise doors for the page', () => {
       fake.set({ surface: 'brain', route: '/brain' });
       assistant.open();
       fixture.detectChanges();
 
-      const starters = Array.from<HTMLElement>(
-        fixture.nativeElement.querySelectorAll('[data-testid="assistant-starter"]'),
-      ).map((b) => b.textContent?.trim());
-      expect(starters).toEqual([
-        'What connects my topics?',
-        'Summarise my most recent notes',
-        'Which topics have only one or two notes?',
-      ]);
+      const doors = Array.from<HTMLElement>(
+        fixture.nativeElement.querySelectorAll('[data-testid^="assistant-door-"]'),
+      );
+      expect(doors.map((door) => door.dataset['door'])).toEqual(['ask', 'capture', 'organise']);
+      expect(doors[0].textContent).toContain('What connects my topics?');
+      expect(doors[1].textContent).toContain('Save this thought:');
+      expect(doors[2].textContent).toContain('Move my Le Guin books into a collection');
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')?.textContent).toContain(
+        "It can't delete books or notes, or change settings.",
+      );
     });
 
-    it('sends a starter as the question, and the starters give way to the conversation', () => {
+    it('prefills the composer from a door and never sends', () => {
       fake.set({ surface: 'library', route: '/library' });
       assistant.open();
       fixture.detectChanges();
 
-      (fixture.nativeElement.querySelector('[data-testid="assistant-starter"]') as HTMLButtonElement).click();
+      (fixture.nativeElement.querySelector(
+        '[data-testid="assistant-example-organise-to-read"]',
+      ) as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      const request = http.expectOne('/api/assistant/turn/stream');
-      expect(request.request.body.message).toBe('What should I read next from my library?');
-      request.flush(turn({ reply: 'Try Middlemarch.' }));
+      const composer = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-composer"]',
+      ) as HTMLTextAreaElement;
+      expect(composer.value).toBe('Add Piranesi to To read');
+      expect(assistant.draft()).toBe('Add Piranesi to To read');
+      expect(assistant.entries()).toEqual([]);
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')).not.toBeNull();
+      http.expectNone('/api/assistant/turn/stream');
+    });
+
+    it('prefills a capture as a shape to finish, not as a sent note', () => {
+      fake.set({ surface: 'reader', route: '/read/b1', bookId: 'b1', bookTitle: 'Dune' });
+      assistant.open();
       fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')).toBeNull();
+
+      (fixture.nativeElement.querySelector(
+        '[data-testid="assistant-example-capture-thought"]',
+      ) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const composer = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-composer"]',
+      ) as HTMLTextAreaElement;
+      expect(composer.value).toBe('Save this thought: ');
+      expect(assistant.entries()).toEqual([]);
+      http.expectNone('/api/assistant/turn/stream');
     });
   });
 
@@ -1506,7 +1650,385 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         error: { code: 'assistant_execution_budget_exhausted', message },
       }));
 
-      expect(transcript().textContent).toContain(`Failed · ${message}`);
+      const failures = transcript().querySelectorAll('[data-testid="assistant-failure"]');
+      expect(failures.length).toBe(1);
+      expect(failures[0].textContent).toContain("I reached this turn's execution limit");
+      expect(failures[0].querySelector('code')?.textContent)
+        .toBe('assistant_execution_budget_exhausted');
+      expect(transcript().textContent).not.toContain('Failed ·');
+    });
+  });
+
+  describe('one failure, one next step, one retry (issues #1556, #1560)', () => {
+    type ActionKind = 'retry' | 'connections' | 'settings' | 'allowance' | 'book';
+
+    interface FailureCase {
+      code: string;
+      message: string;
+      retryable: boolean;
+      action: ActionKind;
+    }
+
+    const ACTION_LABELS: Record<ActionKind, string> = {
+      retry: 'Try again',
+      connections: 'Open AI connections',
+      settings: 'Open Settings',
+      allowance: 'Manage allowance',
+      book: 'Open the book',
+    };
+
+    // Every code the backend can put in a failed event, plus the client's
+    // transport codes. The message column is the backend's own sentence.
+    const CASES: FailureCase[] = [
+      { code: 'assistant_disabled', message: 'Ask Nostos is disabled by this Nostos host.', retryable: false, action: 'settings' },
+      { code: 'assistant_not_configured', message: 'Ask Nostos needs an AI provider configured in Settings.', retryable: false, action: 'connections' },
+      { code: 'assistant_access_denied', message: 'Ask Nostos is not available for this account.', retryable: false, action: 'allowance' },
+      { code: 'assistant_permission_denied', message: 'The AI service did not accept its key. Check the AI provider in Settings.', retryable: false, action: 'connections' },
+      { code: 'assistant_rate_limited', message: 'Ask Nostos is temporarily busy. Try again shortly.', retryable: true, action: 'retry' },
+      { code: 'assistant_provider_timeout', message: 'Ask Nostos took too long to answer. Try again.', retryable: true, action: 'retry' },
+      { code: 'assistant_provider_error', message: 'The AI service could not complete this turn. Try again.', retryable: true, action: 'retry' },
+      { code: 'assistant_response_invalid', message: 'The AI service sent a response this app could not read.', retryable: true, action: 'retry' },
+      { code: 'ai_access_denied', message: 'Ask Nostos is not available for this account.', retryable: false, action: 'allowance' },
+      { code: 'ai_rate_limited', message: 'Ask Nostos is temporarily busy. Try again shortly.', retryable: true, action: 'retry' },
+      { code: 'ai_usage_limit_reached', message: 'Your AI allowance is used up for now.', retryable: false, action: 'allowance' },
+      { code: 'ai_disabled', message: 'Managed AI is temporarily disabled.', retryable: true, action: 'retry' },
+      { code: 'ai_temporarily_unavailable', message: 'Ask Nostos is temporarily unavailable.', retryable: true, action: 'retry' },
+      { code: 'assistant_unknown_capability', message: 'That action is not available in this version.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_unavailable', message: 'These changes are no longer available.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_not_found', message: 'These changes could not be found.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_token_mismatch', message: 'These changes can no longer be applied from here.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_not_reviewable', message: 'These changes can no longer be reviewed.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_not_undoable', message: 'These changes can no longer be undone here.', retryable: false, action: 'book' },
+      { code: 'assistant_changeset_busy', message: 'These changes are already being applied.', retryable: false, action: 'book' },
+      { code: 'assistant_not_permitted', message: 'That action is not permitted.', retryable: false, action: 'book' },
+      { code: 'assistant_invalid_arguments', message: 'The requested change could not be completed.', retryable: false, action: 'book' },
+      { code: 'assistant_not_found', message: 'The requested item could not be found.', retryable: false, action: 'book' },
+      { code: 'assistant_continuation_not_found', message: 'That follow-up has expired. Nothing was changed.', retryable: false, action: 'book' },
+      { code: 'assistant_continuation_mismatch', message: 'That follow-up belongs to a different conversation. Nothing was changed.', retryable: false, action: 'book' },
+      { code: 'assistant_continuation_answer_required', message: 'A book is required before this capture can be saved.', retryable: false, action: 'book' },
+      { code: 'invalid_processing_mode', message: 'That processing mode is not available.', retryable: false, action: 'book' },
+      { code: 'assistant_turn_already_running', message: 'This turn is already running.', retryable: false, action: 'book' },
+      { code: 'assistant_turn_cancelled', message: 'Stopped.', retryable: false, action: 'book' },
+      { code: 'assistant_execution_budget_exhausted', message: 'This turn reached its execution limit before it could finish.', retryable: false, action: 'book' },
+      // `assistant_turn_partially_completed` is deliberately absent: it is an
+      // incomplete turn with its own "Not finished" label, never a failure
+      // block. `assistant-failure.spec.ts` still pins its mapping.
+      { code: 'assistant_unverified_completion_claim', message: 'That change was not confirmed by the server.', retryable: false, action: 'book' },
+      { code: 'assistant_no_evidence', message: 'I could not find usable evidence for that in your Nostos material.', retryable: false, action: 'book' },
+      { code: 'assistant_source_indexing_pending', message: 'This source is still being indexed. Try again when it is ready.', retryable: false, action: 'book' },
+      { code: 'assistant_source_indexing_failed', message: 'Text indexing failed for this source, so Ask Nostos cannot search it yet.', retryable: false, action: 'book' },
+      { code: 'assistant_source_indexing_unsupported', message: 'This source cannot be searched as text in its current format.', retryable: false, action: 'book' },
+      { code: 'assistant_network_error', message: 'The connection to Ask Nostos was interrupted. Your message is ready to retry.', retryable: true, action: 'retry' },
+      { code: 'assistant_offline', message: 'You are offline. Reconnect and retry this message.', retryable: true, action: 'retry' },
+      { code: 'assistant_stream_stalled', message: 'Ask Nostos did not answer in time. Your message is ready to retry.', retryable: true, action: 'retry' },
+      { code: 'assistant_turn_failed', message: 'Ask Nostos could not complete this turn.', retryable: true, action: 'retry' },
+    ];
+
+    function transcript(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]');
+    }
+
+    function failures(): HTMLElement[] {
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('[data-testid="assistant-failure"]'),
+      ) as HTMLElement[];
+    }
+
+    /** One streamed turn that ends in the given failure. Returns its TurnId. */
+    function sendFailure(
+      code: string,
+      message: string,
+      retryable: boolean,
+      response: Partial<AssistantTurnResponse> | null = null,
+    ): string {
+      assistant.open();
+      fixture.detectChanges();
+      assistant.updateDraft(`Question for ${code}`);
+      assistant.submit();
+      fixture.detectChanges();
+
+      const request = http.expectOne('/api/assistant/turn/stream');
+      const turnId = request.request.body.turnId as string;
+      const body = JSON.stringify({
+        turnId,
+        sequence: 2,
+        kind: 'failed',
+        failure: { code, message, retryable },
+        ...(response ? { response } : {}),
+      });
+      request.flush(
+        JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n' + body + '\n',
+      );
+      fixture.detectChanges();
+      return turnId;
+    }
+
+    it('renders a failure once: one sentence, one action, and the code behind Details', () => {
+      const message = 'Ask Nostos took too long to answer. Try again.';
+      sendFailure('assistant_provider_timeout', message, true);
+
+      expect(failures().length).toBe(1);
+      const block = failures()[0];
+      expect(block.textContent?.match(/Ask Nostos took too long to answer/g)?.length).toBe(1);
+      expect(transcript().textContent).not.toContain('Failed ·');
+
+      const text = block.querySelector('.entry-failure-text') as HTMLElement;
+      expect(text.textContent?.trim()).toBe(message);
+      expect(text.getAttribute('role')).toBe('status');
+      expect(text.getAttribute('aria-live')).toBe('polite');
+
+      const details = block.querySelector('details') as HTMLDetailsElement;
+      expect(details).toBeTruthy();
+      expect(details.open).toBe(false);
+      expect(details.querySelector('summary')?.textContent?.trim()).toBe('Details');
+      expect(details.querySelector('code')?.textContent).toBe('assistant_provider_timeout');
+      expect(block.querySelectorAll('code').length).toBe(1);
+
+      // Nothing prints the raw code outside its Details disclosure.
+      const statuses = Array.from(transcript().querySelectorAll('.entry-status'));
+      for (const status of statuses) {
+        expect(status.textContent).not.toContain('assistant_provider_timeout');
+      }
+
+      expect(block.querySelector('[data-testid="assistant-retry"]')?.textContent?.trim())
+        .toBe('Try again');
+    });
+
+    it('keeps a capture that committed before the failure above the failure block', () => {
+      const message = 'The AI service could not complete this turn. Try again.';
+      const turnId = sendFailure('assistant_provider_error', message, true, turn({
+        reply: '',
+        acknowledgement: 'Saved to The Magic Mountain.',
+        capturedNoteId: 'note-1558',
+        executedCapabilities: [],
+        suggestions: [],
+        sources: [],
+        evidence: [],
+      }));
+
+      http.expectOne('/api/topics').flush([]);
+      http.expectOne('/api/notes/note-1558').flush({
+        id: 'note-1558', content: 'A thought for The Magic Mountain', topicNames: [],
+      });
+      fixture.detectChanges();
+
+      // The committed outcome reads first: saved, then the failure with its one
+      // retry. Nothing is reported twice (#1558 on top of #1556).
+      const text = transcript().textContent ?? '';
+      expect(text).toContain('Saved to The Magic Mountain.');
+      expect(text).toContain('Saved note');
+      expect(text.indexOf('Saved to The Magic Mountain.')).toBeLessThan(text.indexOf(message));
+      expect(text.indexOf('Saved note')).toBeLessThan(text.indexOf(message));
+      expect(failures().length).toBe(1);
+      expect(text.match(/could not complete this turn/g)?.length).toBe(1);
+      expect(text).not.toContain('Failed ·');
+
+      const retry = failures()[0].querySelector('[data-testid="assistant-retry"]') as HTMLButtonElement;
+      expect(retry?.textContent?.trim()).toBe('Try again');
+
+      // Try again is a replay of the same turn, so the server's receipts answer
+      // instead of writing the note a second time.
+      retry.click();
+      const request = http.expectOne('/api/assistant/turn/stream');
+      expect(request.request.body.turnId).toBe(turnId);
+      request.flush(turn({ reply: 'Here is the answer, on the second delivery.' }));
+      fixture.detectChanges();
+
+      expect(failures().length).toBe(0);
+      expect(transcript().textContent).toContain('Here is the answer, on the second delivery.');
+    });
+
+    it('does not render a second failure label when the response carries the sentence', () => {
+      const message = 'I could not find usable evidence for that in your Nostos material.';
+      sendFailure('assistant_no_evidence', message, false, turn({
+        reply: message,
+        error: { code: 'assistant_no_evidence', message },
+      }));
+
+      expect(failures().length).toBe(1);
+      expect(transcript().textContent?.match(/could not find usable evidence/g)?.length).toBe(1);
+      expect(transcript().textContent).not.toContain('Failed ·');
+      expect(failures()[0].querySelector('code')?.textContent).toBe('assistant_no_evidence');
+    });
+
+    it('gives every backend failure code its sentence and its one action', () => {
+      allowance.setAccountUrl('https://nostos.page/account');
+
+      for (const item of CASES) {
+        assistant.newConversation();
+        fixture.detectChanges();
+
+        sendFailure(item.code, item.message, item.retryable);
+
+        const block = failures()[0];
+        expect(block, item.code).toBeTruthy();
+        expect(block.querySelector('.entry-failure-text')?.textContent?.trim(), item.code)
+          .toBe(item.message);
+
+        const action = block.querySelector(
+          '[data-testid="assistant-retry"], [data-testid="assistant-failure-allowance"], [data-testid="assistant-failure-action"]',
+        ) as HTMLElement | null;
+        expect(action, item.code).toBeTruthy();
+        expect(action?.textContent?.trim(), item.code).toBe(ACTION_LABELS[item.action]);
+      }
+    });
+
+    it('keeps the account link and the renewal date for an exhausted allowance', () => {
+      allowance.setAccountUrl('https://nostos.page/account');
+      allowance.setUsage({
+        state: 'exhausted',
+        renewsAtUtc: '2026-12-01T00:00:00Z',
+        refill: { available: true, state: 'active' },
+      });
+
+      sendFailure('ai_usage_limit_reached', 'Your AI allowance is used up for now.', false);
+
+      const block = failures()[0];
+      expect(block.textContent).toContain('Allowance renews 1 Dec 2026.');
+      const link = block.querySelector('[data-testid="assistant-failure-allowance"]') as HTMLAnchorElement;
+      expect(link).toBeTruthy();
+      expect(link.textContent?.trim()).toBe('Manage allowance');
+      expect(link.getAttribute('href')).toBe('https://nostos.page/account');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(allowance.ensureUsage).toHaveBeenCalled();
+    });
+
+    it('opens the AI connections section for a provider configuration failure', () => {
+      sendFailure(
+        'assistant_permission_denied',
+        'The AI service did not accept its key. Check the AI provider in Settings.',
+        false,
+      );
+
+      const action = failures()[0].querySelector('[data-testid="assistant-failure-action"]') as HTMLButtonElement;
+      action.click();
+
+      expect(router.navigate).toHaveBeenCalledWith(
+        ['/settings'],
+        { queryParams: { section: 'connections' } },
+      );
+    });
+
+    it('opens the turn\'s own book for an indexing failure', () => {
+      sendFailure(
+        'assistant_source_indexing_pending',
+        'This source is still being indexed. Try again when it is ready.',
+        false,
+      );
+
+      const action = failures()[0].querySelector('[data-testid="assistant-failure-action"]') as HTMLButtonElement;
+      action.click();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/read', 'b1']);
+    });
+
+    it('replays the stored turn with the same TurnId and does not add a user entry', () => {
+      vi.useFakeTimers();
+      try {
+        const turnId = sendFailure(
+          'assistant_provider_timeout',
+          'Ask Nostos took too long to answer. Try again.',
+          true,
+        );
+        const userEntries = () => assistant.entries().filter((entry) => entry.kind === 'user');
+
+        const retry = failures()[0].querySelector('[data-testid="assistant-retry"]') as HTMLButtonElement;
+        retry.click();
+
+        const request = http.expectOne('/api/assistant/turn/stream');
+        expect(request.request.body.turnId).toBe(turnId);
+        expect(request.request.body.idempotencyKey).toBe(turnId);
+
+        vi.advanceTimersByTime(0);
+        fixture.detectChanges();
+        expect(document.activeElement).toBe(transcript());
+        expect(userEntries().length).toBe(1);
+        expect(failures().length).toBe(0);
+
+        request.flush(
+          JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n'
+          + JSON.stringify({
+            turnId,
+            sequence: 2,
+            kind: 'completed',
+            response: turn({ reply: 'Here it is.' }),
+          }) + '\n',
+        );
+        fixture.detectChanges();
+
+        expect(failures().length).toBe(0);
+        expect(transcript().textContent).toContain('Here it is.');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('turns a silent stream into the retry block at the watchdog limit, not before', () => {
+      vi.useFakeTimers();
+      try {
+        assistant.open();
+        fixture.detectChanges();
+        assistant.updateDraft('Are you there?');
+        assistant.submit();
+        fixture.detectChanges();
+
+        const request = http.expectOne('/api/assistant/turn/stream');
+        const turnId = request.request.body.turnId as string;
+        request.event({
+          type: HttpEventType.DownloadProgress,
+          partialText: JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n',
+        } as never);
+        fixture.detectChanges();
+
+        vi.advanceTimersByTime(ASSISTANT_PENDING_DELAY_MS);
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-pending"]')).toBeTruthy();
+
+        // One millisecond before every server clock has passed: still waiting.
+        vi.advanceTimersByTime(ASSISTANT_TURN_WATCHDOG_MS - ASSISTANT_PENDING_DELAY_MS - 1);
+        fixture.detectChanges();
+        expect(failures().length).toBe(0);
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-pending"]')).toBeTruthy();
+
+        vi.advanceTimersByTime(1);
+        fixture.detectChanges();
+
+        expect(fixture.nativeElement.querySelector('[data-testid="assistant-pending"]')).toBeNull();
+        expect(failures().length).toBe(1);
+        expect(failures()[0].textContent).toContain('Ask Nostos did not answer in time.');
+        expect(failures()[0].querySelector('[data-testid="assistant-retry"]')).toBeTruthy();
+        expect(assistant.sending()).toBe(false);
+        // The request is cancelled, so a late server response is never applied.
+        expect(request.cancelled).toBe(true);
+        vi.advanceTimersByTime(ASSISTANT_TURN_WATCHDOG_MS);
+        fixture.detectChanges();
+        expect(failures().length).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not leave a dead Try again on a failure a later turn superseded', () => {
+      sendFailure(
+        'assistant_provider_timeout',
+        'Ask Nostos took too long to answer. Try again.',
+        true,
+      );
+
+      // Sending a new message clears the stored turn; the old failure keeps its
+      // sentence and Details but must not offer a button that cannot replay it.
+      assistant.updateDraft('A different question');
+      assistant.submit();
+      fixture.detectChanges();
+      const next = http.expectOne('/api/assistant/turn/stream');
+      next.flush(turn({ reply: 'A different answer.' }));
+      fixture.detectChanges();
+
+      const oldFailure = failures().find((block) =>
+        block.textContent?.includes('Ask Nostos took too long')) as HTMLElement;
+      expect(oldFailure).toBeTruthy();
+      expect(oldFailure.querySelector('[data-testid="assistant-retry"]')).toBeNull();
+      expect(oldFailure.querySelector('details')).toBeTruthy();
     });
   });
 
@@ -1996,6 +2518,249 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       await render();
 
       expect(body().scrollTop).toBe(END);
+    });
+  });
+
+  describe('a tall review arrives in view (issue #1557)', () => {
+    const PANE_HEIGHT = 400;
+    const CONTENT_HEIGHT = 1200;
+    const END = CONTENT_HEIGHT - PANE_HEIGHT;
+    /** Where the review card starts in the transcript's scroll content. */
+    const CARD_TOP = 600;
+    let contentHeight = CONTENT_HEIGHT;
+    const positions = new WeakMap<Element, number>();
+    let originalResizeObserver: typeof ResizeObserver | undefined;
+    let originalMatchMedia: typeof window.matchMedia | undefined;
+    const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+
+    function isBody(element: Element): boolean {
+      return element.getAttribute('data-testid') === 'assistant-body';
+    }
+
+    function isCard(element: Element): boolean {
+      return element.hasAttribute('data-changeset-id');
+    }
+
+    function rect(top: number, width: number, height: number): DOMRect {
+      return {
+        x: 0, y: top, top, left: 0, right: width, bottom: top + height,
+        width, height, toJSON: () => ({}),
+      } as DOMRect;
+    }
+
+    beforeEach(() => {
+      contentHeight = CONTENT_HEIGHT;
+      originalResizeObserver = globalThis.ResizeObserver;
+      originalMatchMedia = window.matchMedia;
+
+      class TestResizeObserver {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+
+      Object.defineProperty(globalThis, 'ResizeObserver', {
+        value: TestResizeObserver,
+        configurable: true,
+        writable: true,
+      });
+
+      Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+        get(this: HTMLElement) {
+          return isBody(this) ? contentHeight : 0;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+        get(this: HTMLElement) {
+          return isBody(this) ? PANE_HEIGHT : 0;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+        get(this: HTMLElement) {
+          return positions.get(this) ?? 0;
+        },
+        set(this: HTMLElement, value: number) {
+          if (isBody(this)) positions.set(this, value);
+        },
+        configurable: true,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        value(this: HTMLElement, options: ScrollToOptions) {
+          if (typeof options === 'object' && options.top !== undefined) this.scrollTop = options.top;
+        },
+        configurable: true,
+      });
+      Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+        value(this: Element) {
+          if (isBody(this)) return rect(0, 335, PANE_HEIGHT);
+          if (isCard(this)) {
+            const body = this.ownerDocument.querySelector('[data-testid="assistant-body"]');
+            const scrolled = body ? positions.get(body) ?? 0 : 0;
+            return rect(CARD_TOP - scrolled, 335, 855);
+          }
+          return rect(0, 0, 0);
+        },
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      for (const property of ['scrollHeight', 'clientHeight', 'scrollTop', 'scrollTo']) {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
+      }
+      Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+        value: originalGetBoundingClientRect,
+        configurable: true,
+      });
+      if (originalResizeObserver) {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          value: originalResizeObserver,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+      }
+      if (originalMatchMedia) window.matchMedia = originalMatchMedia;
+      else delete (window as { matchMedia?: unknown }).matchMedia;
+    });
+
+    function body(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-testid="assistant-body"]');
+    }
+
+    function card(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-changeset-id="cs-9"]');
+    }
+
+    function readerScrollsTo(position: number): void {
+      const element = body();
+      element.scrollTop = position;
+      element.dispatchEvent(new Event('scroll'));
+    }
+
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    async function open(): Promise<void> {
+      assistant.open();
+      await render();
+    }
+
+    async function send(message: string, response: Parameters<typeof turn>[0]): Promise<void> {
+      assistant.updateDraft(message);
+      fixture.componentInstance.onSendClick();
+      await render();
+      http.expectOne('/api/assistant/turn/stream').flush(turn(response));
+      await render();
+    }
+
+    it('puts an arriving review at the top of the transcript, not at its end', async () => {
+      await open();
+      expect(body().scrollTop).toBe(END);
+
+      await send('Regroup everything.', {
+        reply: "Here's what I'd change.",
+        changeset: reviewChangeset(),
+      });
+
+      expect(card()).toBeTruthy();
+      expect(body().scrollTop).toBe(CARD_TOP);
+      expect(card().getBoundingClientRect().top).toBe(0);
+    });
+
+    it('still follows an ordinary answer to the end', async () => {
+      await open();
+      await send('What should I read next?', { reply: 'A plain answer.' });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-changeset"]')).toBeNull();
+      expect(body().scrollTop).toBe(END);
+    });
+
+    it('does not let a delayed end-of-transcript event re-arm following over an anchor', async () => {
+      // Before the review arrives the transcript is only the user's own line,
+      // so the last follow target was the top. The card makes it tall.
+      contentHeight = PANE_HEIGHT;
+      await open();
+      expect(body().scrollTop).toBe(0);
+
+      assistant.updateDraft('Regroup everything.');
+      fixture.componentInstance.onSendClick();
+      await render();
+      contentHeight = CONTENT_HEIGHT;
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: reviewChangeset() }));
+      await render();
+      expect(body().scrollTop).toBe(CARD_TOP);
+
+      // A scroll event from before the anchor lands near the end. It must not
+      // switch following back on: the next post-layout render would then snap
+      // the transcript down and hide the card again.
+      const element = body();
+      element.scrollTop = END - 10;
+      element.dispatchEvent(new Event('scroll'));
+      contentHeight = CONTENT_HEIGHT + 200;
+      await render();
+
+      expect(body().scrollTop).toBe(END - 10);
+    });
+
+    it('keeps an expanding card header in view', async () => {
+      await open();
+      await send('Regroup everything.', {
+        reply: "Here's what I'd change.",
+        changeset: reviewChangeset(),
+      });
+      readerScrollsTo(CARD_TOP + 120);
+      await render();
+
+      const toggle = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-changeset-details-toggle"]',
+      ) as HTMLButtonElement;
+      toggle.click();
+      await render();
+
+      expect(card().getBoundingClientRect().top).toBe(0);
+      expect(body().scrollTop).toBe(CARD_TOP);
+    });
+
+    it('leaves an arriving review alone when an older turn is being read', async () => {
+      await open();
+      assistant.updateDraft('Regroup everything.');
+      fixture.componentInstance.onSendClick();
+      await render();
+      readerScrollsTo(200);
+      await render();
+
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: reviewChangeset() }));
+      await render();
+
+      expect(body().scrollTop).toBe(200);
+    });
+
+    it('jumps instead of gliding when the reader asks for reduced motion', async () => {
+      const scrollTo = vi.fn(function (this: HTMLElement, options: ScrollToOptions) {
+        this.scrollTop = options.top ?? 0;
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+        value: scrollTo,
+        configurable: true,
+      });
+      window.matchMedia = ((query: string) =>
+        ({ matches: query.includes('prefers-reduced-motion'), media: query })) as typeof window.matchMedia;
+
+      await open();
+      await send('Regroup everything.', {
+        reply: "Here's what I'd change.",
+        changeset: reviewChangeset(),
+      });
+
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(body().scrollTop).toBe(CARD_TOP);
     });
   });
 

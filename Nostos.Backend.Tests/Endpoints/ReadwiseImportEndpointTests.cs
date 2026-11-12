@@ -167,6 +167,73 @@ public sealed class ReadwiseImportEndpointTests
     }
 
     [Fact]
+    public async Task An_api_import_keeps_a_report_that_adds_up()
+    {
+        // The fixture's one importable book, twice under different titles, so a
+        // review can leave a book out and still commit one: every counter of
+        // the report (issue #1550) then has a non-zero value.
+        var export = PageWithTwoBooks();
+        await using var readwise = LoopbackHttpServer.Start(async (request, stream, ct) =>
+        {
+            if (request.RequestLine.StartsWith("GET /api/v2/auth/", StringComparison.Ordinal))
+            {
+                await LoopbackHttpServer.WriteResponseAsync(stream, 204, "", "application/json", ct);
+                return;
+            }
+
+            if (request.RequestLine.StartsWith("GET /api/v2/export/", StringComparison.Ordinal))
+            {
+                await LoopbackHttpServer.WriteResponseAsync(stream, 200, export, "application/json", ct);
+                return;
+            }
+
+            await LoopbackHttpServer.WriteResponseAsync(stream, 404, "", "application/json", ct);
+        });
+
+        using var factory = new ReadwiseEndpointFactory($"http://127.0.0.1:{readwise.Port}");
+        var client = factory.CreateClient();
+        (await client.PostAsJsonAsync("/api/notes/imports/readwise/connect", new { token = Token }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var previewResponse = await client.PostAsync("/api/notes/imports/readwise/preview", null);
+        var preview = JsonSerializer.Deserialize<HighlightImportPreview>(
+            await previewResponse.Content.ReadAsStringAsync(), Json)!;
+        preview.Books.Should().HaveCount(2);
+        var committed = preview.Books[0];
+        var leftOut = preview.Books[1];
+
+        // --- The report accounts for the book imported and the one left out --
+        var first = await CommitManyAsync(client, new { sourceKey = committed.SourceKey, create = true });
+        var report = await ReportAsync(factory.DatabasePath, first.BatchId!.Value);
+        // Nine entries are found: two highlights in each importable book and the
+        // five the fixture reports as unimportable (three article rows, a tweet,
+        // a podcast). One book's two highlights are left out of the review.
+        (report.Found, report.Imported, report.Duplicates, report.Skipped, report.LeftOut)
+            .Should().Be((9, 2, 0, 5, 2));
+        (report.BooksMatched, report.BooksCreated, report.BooksLeftOut).Should().Be((0, 1, 1));
+        report.SkippedReasons.Select(entry => entry.Reason).Should().BeEquivalentTo(new[]
+        {
+            ReadwiseBookRules.ArticleReason,
+            ReadwiseBookRules.ArticleReason,
+            ReadwiseBookRules.TweetReason,
+            ReadwiseBookRules.PodcastReason,
+        });
+        ShouldAddUp(report);
+
+        // --- The next run imports the other book and reports the duplicates ---
+        var firstBookId = first.Books.Single(book => book.SourceKey == committed.SourceKey).BookId;
+        var second = await CommitManyAsync(
+            client,
+            new { sourceKey = committed.SourceKey, bookId = firstBookId },
+            new { sourceKey = leftOut.SourceKey, create = true });
+        var nextReport = await ReportAsync(factory.DatabasePath, second.BatchId!.Value);
+        (nextReport.Found, nextReport.Imported, nextReport.Duplicates, nextReport.Skipped, nextReport.LeftOut)
+            .Should().Be((9, 2, 2, 5, 0));
+        (nextReport.BooksMatched, nextReport.BooksCreated, nextReport.BooksLeftOut).Should().Be((1, 1, 0));
+        ShouldAddUp(nextReport);
+    }
+
+    [Fact]
     public async Task An_empty_token_is_a_bad_request_and_never_reaches_readwise()
     {
         await using var readwise = LoopbackHttpServer.Start((_, stream, ct) =>
@@ -196,6 +263,56 @@ public sealed class ReadwiseImportEndpointTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return (await response.Content.ReadFromJsonAsync<HighlightImportResult>(Json))!;
     }
+
+    private static async Task<HighlightImportResult> CommitManyAsync(
+        HttpClient client,
+        params object[] decisions)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/notes/imports/readwise/commit",
+            new { decisions });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<HighlightImportResult>(Json))!;
+    }
+
+    /// <summary>
+    /// The fixture's one importable book repeated under a second title, so the
+    /// review can commit one book and leave the other out. Both highlight ids
+    /// and the user book id move out of the recorded range.
+    /// </summary>
+    private static string PageWithTwoBooks()
+    {
+        var node = JsonNode.Parse(File.ReadAllText(ImportFixtures.ReadwiseApiExport))!;
+        node["nextPageCursor"] = null;
+        var results = node["results"]!.AsArray();
+        var book = results
+            .Single(entry => entry!["category"]!.GetValue<string>() == "books")!
+            .DeepClone();
+        book["user_book_id"] = 9001;
+        book["title"] = "Synthetic Title 8";
+        book["readable_title"] = "Synthetic Title 8";
+        foreach (var highlight in book["highlights"]!.AsArray())
+        {
+            highlight!["id"] = highlight["id"]!.GetValue<int>() + 9000;
+            highlight["book_id"] = 9001;
+        }
+        results.Add(book);
+        node["count"] = results.Count;
+        return node.ToJsonString();
+    }
+
+    private static async Task<HighlightImportReport> ReportAsync(string path, Guid batchId)
+    {
+        await using var db = CreateContext(path);
+        var batch = await db.NoteImportBatches.AsNoTracking().SingleAsync(item => item.Id == batchId);
+        batch.ReportJson.Should().NotBeNull("an API import keeps a report like every other source");
+        return JsonSerializer.Deserialize<HighlightImportReport>(batch.ReportJson!, Json)!;
+    }
+
+    private static void ShouldAddUp(HighlightImportReport report) =>
+        report.Found.Should().Be(
+            report.Imported + report.Duplicates + report.Skipped + report.LeftOut,
+            "found = imported + duplicates + skipped + left out");
 
     private static string PageWithNoNextCursor()
     {
