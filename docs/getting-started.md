@@ -92,6 +92,7 @@ cd publish
 | `Logging:LogLevel:Default` | `Information` | Minimum log level |
 | `ExternalMedia:Root`       | not set (`/external/media` in the Docker image) | Absolute path of a folder of existing books to read in place. See [External media](external-media.md) |
 | `Calibre:LibraryRoot`      | not set (`/external/calibre` in the Docker image) | Absolute path of a Calibre library folder, read-only. See [Calibre import](calibre-import.md) |
+| `CalibreUpload:RootPath`   | `<transfer root>/calibre-uploads` | Scratch for a zipped Calibre library received through the resumable upload. Absolute, or relative to the content root. See [Calibre import](calibre-import.md) |
 | `ReadAloud:Enabled`, `ReadAloud:BaseUrl` | off, not set | Connects a speech server so books are read aloud with a natural voice. Also settable in Settings → AI connections. See [Read aloud](read-aloud.md) |
 
 The SQLite database file path is resolved in `Program.cs` using `Path.Combine(builder.Environment.ContentRootPath, "nostos.db")` to ensure an absolute path is used regardless of the working directory.

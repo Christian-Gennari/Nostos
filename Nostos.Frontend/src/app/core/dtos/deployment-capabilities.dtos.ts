@@ -46,11 +46,17 @@ export interface DeploymentCapabilities {
    */
   supportsExternalMediaLibraries?: boolean;
   /**
-   * A SelfHosted server that can import a Calibre library (#1527), whether or
-   * not one is set up yet. Absent/false keeps the Settings card hidden on
-   * Cloud; never inferred from `deploymentMode`.
+   * A SelfHosted server that can read a Calibre library folder (#1527),
+   * whether or not one is set up yet. Absent/false keeps the folder path
+   * hidden; never inferred from `deploymentMode`.
    */
   supportsCalibreImport?: boolean;
+  /**
+   * A server that accepts a zipped Calibre library through the resumable
+   * upload (#1572). SelfHosted offers it beside the folder; Cloud offers it
+   * instead of one. Absent/false keeps the upload path hidden.
+   */
+  supportsCalibreUpload?: boolean;
   /**
    * Resumable, chunked book-file uploads (#1266). When true the host maps the
    * part-upload contract and accepts a re-sent part after a dropped

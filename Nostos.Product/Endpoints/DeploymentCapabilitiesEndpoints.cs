@@ -30,7 +30,8 @@ public static class DeploymentCapabilitiesEndpoints
                 services.GetService<IExternalMediaAvailability>(),
                 services.GetService<IBookFileUploadStore>(),
                 services.GetService<IServiceProviderIsService>()?.IsService(typeof(IMcpConnectedApps)) == true,
-                services.GetService<ICalibreLibraryAvailability>())))
+                services.GetService<ICalibreLibraryAvailability>(),
+                services.GetService<ICalibreUploadAvailability>())))
             .AllowAnonymous();
         return routes;
     }
@@ -41,7 +42,8 @@ public static class DeploymentCapabilitiesEndpoints
         IExternalMediaAvailability? externalMedia = null,
         IBookFileUploadStore? bookFileUploadStore = null,
         bool mcpConnectedApps = false,
-        ICalibreLibraryAvailability? calibre = null) =>
+        ICalibreLibraryAvailability? calibre = null,
+        ICalibreUploadAvailability? calibreUpload = null) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -89,6 +91,11 @@ public static class DeploymentCapabilitiesEndpoints
             // dark until a source that accepts an uploaded library exists.
             SupportsCalibreImport: deployment.Mode == DeploymentMode.SelfHosted
                 && calibre is not null,
+            // The uploaded-zip path (#1572) is advertised by the same
+            // registration the upload routes require. It is not tied to the
+            // deployment mode: SelfHosted offers it beside its folder, and a
+            // hosted deployment offers it instead of one.
+            SupportsCalibreUpload: calibreUpload is not null,
             // Same registration the upload routes require: a host that maps the
             // resumable contract registers this store, and a host that does not
             // stays on the legacy whole-request upload.
@@ -122,8 +129,14 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsResumableBookUploads = false,
     bool SupportsMcpConnectedApps = false,
     /// <summary>
-    /// A SelfHosted server that can import a Calibre library (#1527), whether or
-    /// not one is set up yet. Absent/false keeps the Settings card hidden on
-    /// Cloud; never inferred from <see cref="DeploymentMode"/>.
+    /// A SelfHosted server that can read a Calibre library folder (#1527),
+    /// whether or not one is set up yet. Absent/false keeps the folder path
+    /// hidden; never inferred from <see cref="DeploymentMode"/>.
     /// </summary>
-    bool SupportsCalibreImport = false);
+    bool SupportsCalibreImport = false,
+    /// <summary>
+    /// A server that accepts a zipped Calibre library through the resumable
+    /// upload (#1572). SelfHosted offers it beside the folder; Cloud offers it
+    /// instead of one. Absent/false keeps the upload path hidden.
+    /// </summary>
+    bool SupportsCalibreUpload = false);

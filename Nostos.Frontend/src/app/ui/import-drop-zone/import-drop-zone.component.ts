@@ -150,27 +150,45 @@ const ARCHIVE_HELP: readonly HelpEntry[] = [
 ];
 
 /**
- * Calibre is a folder the server reads, not a file dropped here (#1527), so
- * its help line carries the one action its steps need — the same shape as
- * Apple Books' "Choose the Books folder". The capability gate keeps it off a
- * host that registered no Calibre source (Cloud, until it accepts an upload).
+ * Calibre's one help line. The folder is what a SelfHosted server reads
+ * (#1527); the zip is what a host without a readable folder accepts (#1572),
+ * and a SelfHosted host offers it beside its folder. Either way the entry
+ * carries the one action its steps need — the same shape as Apple Books'
+ * "Choose the Books folder" — and the capability gate keeps it off a host
+ * that has neither.
  */
-const CALIBRE_HELP: readonly HelpEntry[] = [
-  {
+function calibreHelp(folder: boolean, upload: boolean): HelpEntry {
+  const steps: HelpStep[] = [];
+  if (folder) {
+    steps.push({
+      text: 'Give the server your Calibre library, not a folder of loose books: mount it read-only at /external/calibre in Docker, or set Calibre__LibraryRoot without Docker, and restart. It is the folder that holds',
+      code: 'metadata.db',
+    });
+  } else {
+    steps.push({
+      text: 'Zip the folder that holds Calibre’s metadata.db — the whole library, not a folder of loose books. Nostos unpacks it in scratch, reads only that copy, and removes it when the import finishes.',
+      code: 'metadata.db',
+    });
+  }
+  if (folder && upload) {
+    steps.push({
+      text: 'Or zip that folder and choose the zip instead. The upload resumes if the connection drops.',
+    });
+  }
+  steps.push({
+    text: 'Press Import from Calibre. Nostos shows every book before anything is added; your Calibre library itself is never changed.',
+  });
+  return {
     id: 'calibre',
     name: 'Calibre',
-    hint: 'The Calibre library folder this server can see.',
-    steps: [
-      {
-        text: 'Give the server your Calibre library, not a folder of loose books: mount it read-only at /external/calibre in Docker, or set Calibre__LibraryRoot without Docker, and restart. It is the folder that holds',
-        code: 'metadata.db',
-      },
-      {
-        text: 'Press Import from Calibre. Nostos reads the library and shows every book before anything is added; the library itself is never changed.',
-      },
-    ],
-  },
-];
+    hint: folder
+      ? upload
+        ? 'The Calibre library folder this server can see, or a zip of it.'
+        : 'The Calibre library folder this server can see.'
+      : 'A zip of your Calibre library.',
+    steps,
+  };
+}
 
 /**
  * The one drop zone for every import file (issue #1526): highlights from an
@@ -223,18 +241,37 @@ export class ImportDropZoneComponent {
   readonly routing = signal(false);
   readonly notice = signal<ImportNotice | null>(null);
   readonly archiveAvailable = signal(false);
-  readonly calibreAvailable = signal(false);
+  readonly calibreFolderAvailable = signal(false);
+  readonly calibreUploadAvailable = signal(false);
+  /** Either Calibre path is enough to show the help line. */
+  readonly calibreAvailable = computed(
+    () => this.calibreFolderAvailable() || this.calibreUploadAvailable(),
+  );
 
   readonly highlightHelp = HIGHLIGHT_HELP;
   readonly historyHelp = HISTORY_HELP;
   readonly archiveHelp = ARCHIVE_HELP;
-  readonly calibreHelp = CALIBRE_HELP;
-  /** Calibre is a folder on the server, not a file: it is help, never a route. */
+  readonly calibreHelp = computed<readonly HelpEntry[]>(() => [
+    calibreHelp(this.calibreFolderAvailable(), this.calibreUploadAvailable()),
+  ]);
+  /**
+   * The files a refusal lists. Calibre is a folder on a SelfHosted host, but a
+   * host that accepts the zip (#1572) does import a file, so it is offered
+   * there.
+   */
   readonly allHelp = computed<readonly HelpEntry[]>(() => [
     ...HIGHLIGHT_HELP,
     ...HISTORY_HELP,
     ...(this.archiveAvailable() ? ARCHIVE_HELP : []),
+    ...(this.calibreUploadAvailable() ? this.calibreHelp() : []),
   ]);
+
+  /** The line under the button: Calibre's zip is a dropped file where it exists. */
+  readonly dropHint = computed(() =>
+    this.calibreUploadAvailable()
+      ? 'Kobo, KOReader, Kindle, Apple Books, Readwise, Goodreads, StoryGraph, Calibre or a .nostos archive'
+      : 'Kobo, KOReader, Kindle, Apple Books, Readwise, Goodreads, StoryGraph or a .nostos archive',
+  );
 
   /** Apple Books is in beta until it has run on more Macs (issue #1357). */
   readonly appleBooksFeedbackUrl = computed(
@@ -256,12 +293,16 @@ export class ImportDropZoneComponent {
         this.archiveAvailable.set(
           capabilities.supportsLibraryMigration === true || capabilities.deploymentMode === 'Cloud',
         );
-        // A host that registered no Calibre source (Cloud today) stays dark.
-        this.calibreAvailable.set(capabilities.supportsCalibreImport === true);
+        // Two Calibre paths, each with its own registration: a folder the
+        // server reads (#1527) and a zip it accepts (#1572). Neither is
+        // inferred from the deployment mode.
+        this.calibreFolderAvailable.set(capabilities.supportsCalibreImport === true);
+        this.calibreUploadAvailable.set(capabilities.supportsCalibreUpload === true);
       },
       error: () => {
         this.archiveAvailable.set(false);
-        this.calibreAvailable.set(false);
+        this.calibreFolderAvailable.set(false);
+        this.calibreUploadAvailable.set(false);
       },
     });
   }
@@ -340,7 +381,9 @@ export class ImportDropZoneComponent {
     this.notice.set(null);
     this.routing.set(true);
     try {
-      const route = await routeImportFiles(files, this.probe);
+      const route = await routeImportFiles(files, this.probe, {
+        calibreZip: this.calibreUploadAvailable(),
+      });
       this.follow(route);
     } finally {
       this.routing.set(false);
@@ -387,6 +430,12 @@ export class ImportDropZoneComponent {
         this.closeDialogs();
         this.archiveHandoff.hand(route.file);
         void this.router.navigate(['/settings/library'], { queryParams: { action: 'import' } });
+        return;
+      case 'calibre':
+        // A dropped zip is the same import the help line opens, with the file
+        // already chosen (#1572).
+        this.closeDialogs();
+        this.calibreImport.openWithFile(route.file);
         return;
       case 'unknown':
         this.notice.set({ message: route.message, serverMessage: route.serverMessage });

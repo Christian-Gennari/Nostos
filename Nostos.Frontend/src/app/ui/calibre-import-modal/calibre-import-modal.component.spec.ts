@@ -9,7 +9,13 @@ import {
   CalibrePreview,
   CalibrePreviewBook,
   CalibreImportService,
+  CalibreStatus,
+  CalibreUploadStatus,
 } from '../../core/services/calibre-import.service';
+import {
+  CalibreUploadError,
+  CalibreUploadService,
+} from '../../core/services/calibre-upload.service';
 
 const format = (overrides: Partial<CalibreFormatChoice> = {}): CalibreFormatChoice => ({
   key: 'calibre:1:EPUB',
@@ -92,12 +98,18 @@ describe('CalibreImportModal', () => {
 
   const text = () => (fixture.nativeElement as HTMLElement).textContent ?? '';
 
-  const open = async (status: { configured: boolean; available: boolean }, books: CalibrePreviewBook[]) => {
+  const open = async (
+    status: { configured: boolean; available: boolean } & Partial<CalibreStatus>,
+    books: CalibrePreviewBook[],
+  ) => {
     vi.spyOn(service, 'status').mockReturnValue(of({
-      configured: status.configured,
-      available: status.available,
       import: { ...importing, status: 'idle', total: 0, current: null },
-    }));
+      folderSupported: true,
+      uploadSupported: false,
+      maxUploadBytes: null,
+      upload: null,
+      ...status,
+    } as CalibreStatus));
     vi.spyOn(service, 'preview').mockReturnValue(of(preview(books)));
     service.open();
     fixture.detectChanges();
@@ -172,6 +184,178 @@ describe('CalibreImportModal', () => {
     ]);
     expect(component.stage()).toBe('importing');
     component.close();
+  });
+
+  it('offers the zip upload on a host without a folder and goes to review when it lands', async () => {
+    const uploadService = TestBed.inject(CalibreUploadService);
+    const staged: CalibreUploadStatus = {
+      sessionId: 'up-1',
+      state: 'staged',
+      fileName: 'library.zip',
+      totalBytes: 1_000_000,
+      partBytes: 16 * 1024 * 1024,
+      totalParts: 1,
+      receivedParts: [0],
+      receivedBytes: 1_000_000,
+      createdAtUtc: '2026-11-11T10:00:00Z',
+      expiresAtUtc: '2026-11-12T10:00:00Z',
+      maxLibraryBytes: 8 * 1024 * 1024 * 1024,
+      maxExtractedBytes: 16 * 1024 * 1024 * 1024,
+      maxFiles: 100_000,
+      books: 1,
+      stagedBytes: 2_000_000,
+      failureCode: null,
+      failureMessage: null,
+    };
+    const idle: CalibreStatus = {
+      configured: false,
+      available: false,
+      import: { ...importing, status: 'idle', total: 0, current: null },
+      folderSupported: false,
+      uploadSupported: true,
+      maxUploadBytes: 8 * 1024 * 1024 * 1024,
+      upload: null,
+    };
+    vi.spyOn(service, 'status')
+      .mockReturnValueOnce(of(idle))
+      .mockReturnValue(of({ ...idle, available: true, configured: true, upload: staged }));
+    vi.spyOn(service, 'preview').mockReturnValue(of(preview([book()])));
+    vi.spyOn(uploadService, 'upload').mockResolvedValue(staged);
+
+    service.open();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(component.stage()).toBe('upload');
+    expect(fixture.nativeElement.querySelector('[data-testid="calibre-upload-picker"]')).toBeTruthy();
+    expect(text()).toContain('Up to 8.0 GB');
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'library.zip', { type: 'application/zip' });
+    await component.onLibraryFile({ target: { files: [file], value: 'library.zip' } } as unknown as Event);
+    fixture.detectChanges();
+
+    expect(uploadService.upload).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({ maxBytes: 8 * 1024 * 1024 * 1024 }),
+    );
+    expect(component.stage()).toBe('review');
+    expect(text()).toContain('Review before importing');
+  });
+
+  it('starts the upload a drop zone handed over before reading any folder', async () => {
+    const uploadService = TestBed.inject(CalibreUploadService);
+    const staged: CalibreUploadStatus = {
+      sessionId: 'up-2',
+      state: 'staged',
+      fileName: 'library.zip',
+      totalBytes: 1_000_000,
+      partBytes: 16 * 1024 * 1024,
+      totalParts: 1,
+      receivedParts: [0],
+      receivedBytes: 1_000_000,
+      createdAtUtc: '2026-11-12T10:00:00Z',
+      expiresAtUtc: '2026-11-13T10:00:00Z',
+      maxLibraryBytes: 8 * 1024 * 1024 * 1024,
+      maxExtractedBytes: 16 * 1024 * 1024 * 1024,
+      maxFiles: 100_000,
+      books: 1,
+      stagedBytes: 2_000_000,
+      failureCode: null,
+      failureMessage: null,
+    };
+    const idle: CalibreStatus = {
+      configured: false,
+      available: false,
+      import: { ...importing, status: 'idle', total: 0, current: null },
+      folderSupported: true,
+      uploadSupported: true,
+      maxUploadBytes: 8 * 1024 * 1024 * 1024,
+      upload: null,
+    };
+    const status = vi.spyOn(service, 'status').mockReturnValue(of({ ...idle, available: true, configured: true, upload: staged }));
+    vi.spyOn(service, 'preview').mockReturnValue(of(preview([book()])));
+    const upload = vi.spyOn(uploadService, 'upload').mockResolvedValue(staged);
+    const file = new File([new Uint8Array([1, 2, 3])], 'library.zip', { type: 'application/zip' });
+
+    service.openWithFile(file);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(upload).toHaveBeenCalledWith(file, expect.objectContaining({ signal: expect.anything() }));
+    expect(status.mock.invocationCallOrder[0]).toBeGreaterThan(upload.mock.invocationCallOrder[0]);
+    expect(component.stage()).toBe('review');
+    expect(text()).toContain('Review before importing');
+  });
+
+  it('keeps a partial upload visible for resuming and cancels it explicitly', async () => {
+    const uploadService = TestBed.inject(CalibreUploadService);
+    const partial: CalibreUploadStatus = {
+      sessionId: 'up-2',
+      state: 'receiving',
+      fileName: 'library.zip',
+      totalBytes: 40_000_000,
+      partBytes: 16 * 1024 * 1024,
+      totalParts: 3,
+      receivedParts: [0],
+      receivedBytes: 16 * 1024 * 1024,
+      createdAtUtc: '2026-11-11T10:00:00Z',
+      expiresAtUtc: '2026-11-12T10:00:00Z',
+      maxLibraryBytes: 8 * 1024 * 1024 * 1024,
+      maxExtractedBytes: 16 * 1024 * 1024 * 1024,
+      maxFiles: 100_000,
+      books: null,
+      stagedBytes: null,
+      failureCode: null,
+      failureMessage: null,
+    };
+    await open(
+      {
+        configured: false,
+        available: false,
+        folderSupported: false,
+        uploadSupported: true,
+        upload: partial,
+        maxUploadBytes: partial.maxLibraryBytes,
+      },
+      [],
+    );
+    const cancel = vi.spyOn(uploadService, 'cancel').mockResolvedValue();
+
+    expect(component.stage()).toBe('upload');
+    expect(text()).toContain('Choose the same zip to resume');
+    expect(text()).toContain('16.0 MB of 38.1 MB');
+
+    await component.cancelUpload();
+    expect(cancel).toHaveBeenCalledWith('up-2');
+    expect(component.currentUpload()).toBeNull();
+  });
+
+  it('shows the server reason when a zip is refused', async () => {
+    const uploadService = TestBed.inject(CalibreUploadService);
+    await open(
+      { configured: false, available: false, folderSupported: false, uploadSupported: true },
+      [],
+    );
+    vi.spyOn(uploadService, 'upload').mockRejectedValue(
+      new CalibreUploadError(
+        'calibre_upload_unsafe_entry',
+        422,
+        'The zip contains a symbolic link. Create it without links.',
+      ),
+    );
+
+    const file = new File([new Uint8Array([1])], 'library.zip', { type: 'application/zip' });
+    await component.onLibraryFile({ target: { files: [file], value: 'library.zip' } } as unknown as Event);
+    fixture.detectChanges();
+
+    expect(component.stage()).toBe('upload');
+    expect(text()).toContain('The zip contains a symbolic link');
   });
 
   it('asks before undoing and reports what was kept', async () => {

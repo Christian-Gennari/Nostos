@@ -57,6 +57,7 @@ import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService, type HighlightImportStart } from '../core/services/highlight-import.service';
+import { CalibreImportService } from '../core/services/calibre-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
@@ -330,6 +331,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private cloudAuth = inject(CloudAuthService);
   readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
+  private calibreImport = inject(CalibreImportService);
 
   @ViewChild('firstRunImportInput')
   private firstRunImportInput?: ElementRef<HTMLInputElement>;
@@ -369,6 +371,24 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (requested === 'apps' && !this.supportsMcpConnectedApps()) return;
       if (requested === 'account' && !this.isCloud()) return;
       untracked(() => this.showSection(requested));
+    });
+
+    // `?open=calibre` opens the Calibre import directly, so the upload and
+    // review can be linked to (support replies, the release notes and the
+    // visual QA screenshots). Dropped once used, like `open=applebooks`.
+    effect(() => {
+      if (this.isManageLibraryPage || this.queryParamMap().get('open') !== 'calibre') return;
+      if (!this.supportsCalibre()) return;
+      untracked(() => {
+        this.showSection('import');
+        this.openCalibreImport();
+        void this.router?.navigate([], {
+          relativeTo: this.route,
+          queryParams: { open: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      });
     });
 
     // `?section=import&open=applebooks` opens straight on Apple Books' steps,
@@ -486,6 +506,25 @@ export class SettingsComponent implements OnInit, OnDestroy {
    */
   readonly supportsExternalMediaLibraries = computed(
     () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
+  );
+  /**
+   * A SelfHosted server that can read a Calibre folder (#1527).
+   * Server-authoritative: never inferred from `deploymentMode`.
+   */
+  readonly supportsCalibreImport = computed(
+    () => this.deploymentCapabilities()?.supportsCalibreImport === true,
+  );
+  /**
+   * A server that accepts a zipped Calibre library through the resumable
+   * upload (#1572). SelfHosted offers it beside its folder; Cloud offers it
+   * instead of one.
+   */
+  readonly supportsCalibreUpload = computed(
+    () => this.deploymentCapabilities()?.supportsCalibreUpload === true,
+  );
+  /** Either Calibre path is enough to open the import by link. */
+  readonly supportsCalibre = computed(
+    () => this.supportsCalibreImport() || this.supportsCalibreUpload(),
   );
   /**
    * Settings → Connected apps (#1469): a server that keeps a record of the AI
@@ -622,6 +661,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   openHighlightImport(start: HighlightImportStart = 'all'): void {
     this.highlightImport.open(start);
+  }
+
+  openCalibreImport(): void {
+    this.calibreImport.open();
   }
 
   setSettingsSection(section: SettingsSection): void {

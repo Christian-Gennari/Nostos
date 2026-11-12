@@ -110,10 +110,47 @@ export interface CalibreImportJobState {
   error: string | null;
 }
 
+export type CalibreUploadState = 'receiving' | 'staged' | 'failed';
+
+/** One resumable zip upload of a Calibre library (#1572). */
+export interface CalibreUploadStatus {
+  sessionId: string;
+  state: CalibreUploadState;
+  fileName: string;
+  totalBytes: number;
+  partBytes: number;
+  totalParts: number;
+  receivedParts: number[];
+  receivedBytes: number;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  maxLibraryBytes: number;
+  maxExtractedBytes: number;
+  maxFiles: number;
+  books: number | null;
+  stagedBytes: number | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+}
+
+export interface CalibreUploadPartReceipt {
+  sessionId: string;
+  partIndex: number;
+  alreadyPresent: boolean;
+}
+
 export interface CalibreStatus {
   configured: boolean;
   available: boolean;
   import: CalibreImportJobState;
+  /** Which source the server will read: a mounted folder or an uploaded zip. */
+  source?: 'folder' | 'upload' | null;
+  /** The server can read a folder on this machine. */
+  folderSupported?: boolean;
+  /** The server accepts a zipped library through the resumable upload. */
+  uploadSupported?: boolean;
+  maxUploadBytes?: number | null;
+  upload?: CalibreUploadStatus | null;
 }
 
 export interface CalibreBatch {
@@ -137,10 +174,21 @@ export interface CalibreUndoResult {
 @Injectable({ providedIn: 'root' })
 export class CalibreImportService {
   readonly isOpen = signal(false);
+  /**
+   * The zip a drop zone handed over (#1572). The dialog reads it once, then
+   * clears it, so a reload cannot replay an upload.
+   */
+  readonly pendingFile = signal<File | null>(null);
 
   constructor(private http: HttpClient) {}
 
   open(): void {
+    this.isOpen.set(true);
+  }
+
+  /** Opens the dialog on a dropped Calibre zip; nothing is chosen first. */
+  openWithFile(file: File): void {
+    this.pendingFile.set(file);
     this.isOpen.set(true);
   }
 
@@ -174,5 +222,13 @@ export class CalibreImportService {
   /** Takes one import back: its files, covers, memberships and unused books. */
   undo(batchId: string): Observable<CalibreUndoResult> {
     return this.http.delete<CalibreUndoResult>(`/api/calibre/batches/${batchId}`);
+  }
+
+  /**
+   * Verifies, extracts and validates the uploaded zip. Answers with the
+   * staged session (including how many books it holds), or a stable error.
+   */
+  completeUpload(sessionId: string): Observable<CalibreUploadStatus> {
+    return this.http.post<CalibreUploadStatus>(`/api/calibre/upload/${sessionId}/complete`, null);
   }
 }

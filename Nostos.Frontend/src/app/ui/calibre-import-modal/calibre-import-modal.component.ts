@@ -15,8 +15,16 @@ import {
   CalibrePreviewBook,
   CalibrePreviewSummary,
   CalibreStatus,
+  CalibreUploadStatus,
 } from '../../core/services/calibre-import.service';
+import {
+  CalibreUploadProgress,
+  CalibreUploadService,
+  describeCalibreUploadFailure,
+} from '../../core/services/calibre-upload.service';
+import { TransferCancelledError } from '../../library-transfer/models/library-transfer.models';
 import type { HighlightImportCandidate } from '../../core/services/highlight-import.service';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../button/button.component';
@@ -28,7 +36,7 @@ import { NoticeComponent } from '../notice/notice.component';
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { UNKNOWN_AUTHOR, UNKNOWN_BOOK } from '../../core/book-format';
 
-type Stage = 'loading' | 'setup' | 'unavailable' | 'review' | 'importing' | 'result';
+type Stage = 'loading' | 'setup' | 'upload' | 'unavailable' | 'review' | 'importing' | 'result';
 
 /** One Calibre book, with the owner's current answer. */
 export interface CalibreRow {
@@ -83,6 +91,8 @@ export class CalibreImportModal {
   protected readonly dockerPath = CALIBRE_DOCKER_PATH;
 
   private readonly service = inject(CalibreImportService);
+  private readonly uploadService = inject(CalibreUploadService);
+  private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly isOpen = this.service.isOpen;
@@ -102,6 +112,15 @@ export class CalibreImportModal {
   readonly pendingUndo = signal<CalibreBatch | { id: string; bookCount: number; changeCount: number } | null>(null);
   readonly recent = signal<CalibreBatch[]>([]);
 
+  // The resumable zip upload (#1572). The server owns the session and its
+  // parts; this state only says what the dialog should show about it.
+  readonly uploadProgress = signal<CalibreUploadProgress | null>(null);
+  readonly uploadError = signal<string | null>(null);
+  readonly uploadBusy = signal(false);
+  readonly uploadFileName = signal<string | null>(null);
+  readonly currentUpload = signal<CalibreUploadStatus | null>(null);
+  private uploadAbort: AbortController | null = null;
+
   readonly summary = computed<CalibrePreviewSummary | null>(() => this.preview()?.summary ?? null);
   readonly customColumns = computed<CalibreCustomColumn[]>(() => this.preview()?.customColumns ?? []);
   readonly skipped = computed(() => this.preview()?.skipped ?? []);
@@ -117,6 +136,23 @@ export class CalibreImportModal {
     this.rows().reduce((total, row) => total + row.selected.size, 0),
   );
   readonly hasTags = computed(() => this.rows().some((row) => row.book.tags.length > 0));
+
+  /** SelfHosted's folder path. Cloud has none, so it must not be advertised there. */
+  readonly folderSupported = computed(
+    () => this.capabilities.peek()?.supportsCalibreImport === true,
+  );
+  readonly uploadSupported = computed(() => this.status()?.uploadSupported === true);
+  readonly uploadMax = computed(
+    () => this.status()?.maxUploadBytes ?? this.currentUpload()?.maxLibraryBytes ?? null,
+  );
+  readonly uploadPercent = computed(() => this.uploadProgress()?.percent ?? 0);
+  readonly uploadPhaseText = computed(() => {
+    const progress = this.uploadProgress();
+    if (!progress) return '';
+    if (progress.phase === 'preparing') return 'Checking the zip…';
+    if (progress.phase === 'finishing') return 'Reading the library…';
+    return `${this.formatSize(progress.movedBytes)} of ${this.formatSize(progress.totalBytes)}`;
+  });
 
   readonly importing = computed(() => this.stage() === 'importing');
   readonly busy = computed(() => this.stage() === 'loading' || this.stage() === 'importing');
@@ -165,12 +201,34 @@ export class CalibreImportModal {
 
   private nextRowId = 0;
   private poll?: Subscription;
+  /** True for the rest of an opening that a dropped zip started. */
+  private openedOnFile = false;
 
   constructor() {
     effect(() => {
-      if (!this.isOpen()) return;
-      untracked(() => this.load());
+      const open = this.isOpen();
+      // A zip from the one drop zone (#1572) starts the same upload as a file
+      // chosen in this dialog, instead of reading the server's folder first.
+      const pending = this.service.pendingFile();
+      if (!open) {
+        this.openedOnFile = false;
+        return;
+      }
+      untracked(() => {
+        if (pending) {
+          this.service.pendingFile.set(null);
+          this.openedOnFile = true;
+          void this.startUpload(pending);
+          return;
+        }
+        // Clearing the pending file re-runs this effect; it must not reload
+        // over the upload it just started.
+        if (this.openedOnFile) return;
+        void this.load();
+      });
     });
+
+    this.destroyRef.onDestroy(() => this.abortUpload());
   }
 
   // --- Reading -----------------------------------------------------------
@@ -190,18 +248,7 @@ export class CalibreImportModal {
     try {
       const status = await firstValueFrom(this.service.status());
       this.status.set(status);
-
-      if (!status.configured) {
-        this.stage.set('setup');
-        this.loadRecent();
-        return;
-      }
-
-      if (!status.available) {
-        this.stage.set('unavailable');
-        this.loadRecent();
-        return;
-      }
+      this.currentUpload.set(status.upload ?? null);
 
       if (status.import.status === 'importing') {
         this.progress.set(status.import);
@@ -210,14 +257,39 @@ export class CalibreImportModal {
         return;
       }
 
-      const preview = await firstValueFrom(this.service.preview());
-      this.preview.set(preview);
-      this.rows.set(preview.books.map((book) => this.toRow(book)));
-      this.stage.set('review');
+      // A staged upload is `available`, so it goes straight to review with
+      // the same screen a mounted folder uses.
+      if (status.available) {
+        const preview = await firstValueFrom(this.service.preview());
+        this.preview.set(preview);
+        this.rows.set(preview.books.map((book) => this.toRow(book)));
+        this.stage.set('review');
+        this.loadRecent();
+        return;
+      }
+
+      if (status.uploadSupported) {
+        this.stage.set('upload');
+        this.loadRecent();
+        return;
+      }
+
+      if (!status.configured) {
+        this.stage.set('setup');
+        this.loadRecent();
+        return;
+      }
+
+      this.stage.set('unavailable');
       this.loadRecent();
     } catch (error) {
       this.error.set(this.failureMessage(error));
-      this.stage.set('unavailable');
+      if (this.status()?.uploadSupported) {
+        this.uploadError.set(this.failureMessage(error));
+        this.stage.set('upload');
+      } else {
+        this.stage.set('unavailable');
+      }
     }
   }
 
@@ -238,6 +310,86 @@ export class CalibreImportModal {
       chosenBookId: null,
       chosenBookLabel: null,
     };
+  }
+
+  // --- Uploading a zipped library (Cloud, and optionally SelfHosted) ------
+
+  async onLibraryFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    // The same zip must be selectable again to resume after a reload.
+    input.value = '';
+    if (!file) return;
+    await this.startUpload(file);
+  }
+
+  private async startUpload(file: File): Promise<void> {
+    if (this.uploadBusy()) return;
+
+    const controller = new AbortController();
+    this.uploadAbort = controller;
+    this.uploadBusy.set(true);
+    this.uploadError.set(null);
+    this.uploadProgress.set(null);
+    this.uploadFileName.set(file.name);
+    this.stage.set('upload');
+
+    try {
+      const uploaded = await this.uploadService.upload(file, {
+        signal: controller.signal,
+        maxBytes: this.uploadMax(),
+        onProgress: (progress) => this.uploadProgress.set(progress),
+      });
+      this.currentUpload.set(uploaded);
+      await this.load();
+    } catch (error) {
+      if (error instanceof TransferCancelledError || controller.signal.aborted) {
+        // A deliberate cancel leaves the session resumable; the Cancel
+        // button deletes it explicitly.
+        this.uploadProgress.set(null);
+        return;
+      }
+
+      this.uploadError.set(describeCalibreUploadFailure(error));
+      this.currentUpload.set(await this.loadCurrentUpload());
+    } finally {
+      if (this.uploadAbort === controller) this.uploadAbort = null;
+      this.uploadBusy.set(false);
+      this.uploadProgress.set(null);
+    }
+  }
+
+  /** Stops transferring but keeps the receipted parts, so the same zip resumes. */
+  abortUpload(): void {
+    this.uploadAbort?.abort();
+    this.uploadAbort = null;
+    this.uploadBusy.set(false);
+    this.uploadProgress.set(null);
+  }
+
+  /** Stops the upload and deletes its scratch bytes on the server. */
+  async cancelUpload(): Promise<void> {
+    this.abortUpload();
+    this.uploadError.set(null);
+    const current = this.currentUpload() ?? (await this.loadCurrentUpload());
+    if (current) {
+      try {
+        await this.uploadService.cancel(current.sessionId);
+      } catch {
+        // The session may already have expired; the next status read says so.
+      }
+    }
+
+    this.currentUpload.set(null);
+    this.uploadFileName.set(null);
+  }
+
+  private async loadCurrentUpload(): Promise<CalibreUploadStatus | null> {
+    try {
+      return await this.uploadService.current();
+    } catch {
+      return null;
+    }
   }
 
   // --- Answering ---------------------------------------------------------
@@ -397,6 +549,7 @@ export class CalibreImportModal {
   }
 
   close(): void {
+    this.abortUpload();
     this.stopPolling();
     this.service.close();
     this.stage.set('loading');
@@ -410,7 +563,8 @@ export class CalibreImportModal {
     if (bytes <= 0) return '';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   }
 
   trackFormat(_: number, format: CalibreFormatChoice): string {

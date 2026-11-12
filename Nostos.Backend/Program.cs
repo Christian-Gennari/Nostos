@@ -289,11 +289,48 @@ builder.Services.AddSingleton<IBookTrackStorage>(
 builder.Services.AddOptions<CalibreOptions>()
     .BindConfiguration(CalibreOptions.SectionName);
 builder.Services.AddSingleton<CalibreFolderSource>();
-builder.Services.AddSingleton<ICalibreLibrarySource>(
-    sp => sp.GetRequiredService<CalibreFolderSource>());
 builder.Services.AddSingleton<ICalibreLibraryAvailability>(
     sp => sp.GetRequiredService<CalibreFolderSource>());
-builder.Services.AddSingleton<CalibreImportJob>();
+
+// A zipped Calibre library (#1572). The tenant's scratch area lives beside the
+// migration transfer root, in its own namespace, so cleanup here can never
+// touch an in-flight library migration. The same resumable contract the
+// browser uses for library transfer is used for the zip: server-owned 16 MiB
+// parts, a SHA-256 receipt per part, and a whole-file check before extraction.
+builder.Services.AddOptions<CalibreUploadOptions>()
+    .BindConfiguration(CalibreUploadOptions.SectionName);
+var calibreUploadOptions = builder.Configuration
+    .GetSection(CalibreUploadOptions.SectionName).Get<CalibreUploadOptions>()
+    ?? new CalibreUploadOptions();
+CalibreUploadOptions.Validate(calibreUploadOptions);
+var calibreUploadRoot = string.IsNullOrWhiteSpace(calibreUploadOptions.RootPath)
+    ? Path.Combine(transferRootPath, "calibre-uploads")
+    : Path.GetFullPath(
+        Path.IsPathRooted(calibreUploadOptions.RootPath)
+            ? calibreUploadOptions.RootPath
+            : Path.Combine(builder.Environment.ContentRootPath, calibreUploadOptions.RootPath));
+if (TransferStorageOptions.IsUnsafeRoot(calibreUploadRoot, builder.Environment.ContentRootPath))
+{
+    throw new InvalidOperationException(
+        $"'{CalibreUploadOptions.SectionName}:RootPath' must not be a filesystem root, " +
+        "the application content root, or an ancestor of the application content root.");
+}
+
+calibreUploadOptions.RootPath = calibreUploadRoot;
+builder.Services.AddSingleton(calibreUploadOptions);
+builder.Services.AddSingleton<ICalibreUploadLimitsProvider, SelfHostedCalibreUploadLimitsProvider>();
+builder.Services.AddScoped<ICalibreUploadOwnerProvider, SelfHostedCalibreUploadOwnerProvider>();
+builder.Services.AddSingleton<ICalibreUploadStore>(sp => new FileCalibreUploadStore(
+    calibreUploadRoot,
+    sp.GetRequiredService<ILogger<FileCalibreUploadStore>>()));
+builder.Services.AddScoped<CalibreUploadService>();
+builder.Services.AddScoped<ICalibreUploadAvailability>(
+    sp => sp.GetRequiredService<CalibreUploadService>());
+builder.Services.AddScoped<CalibreUploadSource>();
+builder.Services.AddScoped<CalibreImportSourceRouter>();
+builder.Services.AddScoped<ICalibreLibrarySource>(
+    sp => sp.GetRequiredService<CalibreImportSourceRouter>());
+builder.Services.AddHostedService<CalibreUploadCleanupService>();
 
 // Resumable book-file uploads (#1266). The staging store lives beside the
 // migration transfer root but in its own namespace. The capability endpoint
@@ -544,10 +581,14 @@ app.UseStaticFiles(Nostos.Product.Http.NostosFrontendStaticFiles.CreateOptions()
 // Map the public product API with the SelfHosted host's provider-neutral policy.
 app.MapNostosProductEndpoints(
     opdsOptions,
-    NostosProductEndpointPolicies.None with { MapResumableBookUploadEndpoints = true });
+    NostosProductEndpointPolicies.None with
+    {
+        MapResumableBookUploadEndpoints = true,
+        MapCalibreImportEndpoints = true,
+        MapCalibreUploadEndpoints = true,
+    });
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
-app.MapCalibreEndpoints();
 app.MapMcpAccessTokenEndpoints();
 app.MapMcpOAuthEndpoints();
 

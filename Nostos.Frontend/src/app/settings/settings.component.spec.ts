@@ -1473,6 +1473,21 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="import-help-calibre"]')).toBeNull();
   });
 
+  it('offers the Calibre upload on Cloud when the host advertises it', () => {
+    capabilitiesServiceMock.get.mockReturnValue(of({ ...cloudCapabilities, supportsCalibreUpload: true }));
+    render();
+    navItem('Import').click();
+    fixture.detectChanges();
+
+    const calibre = fixture.nativeElement.querySelector(
+      '[data-testid="import-help-calibre"]',
+    ) as HTMLElement;
+    expect(calibre).toBeTruthy();
+    expect(calibre.textContent).toContain('A zip of your Calibre library');
+    fixture.destroy();
+    capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
+  });
+
   it('offers Connected apps when the server keeps a record of them', () => {
     mcpAccessTokensServiceMock.list.mockClear();
     capabilitiesServiceMock.get.mockReturnValueOnce(

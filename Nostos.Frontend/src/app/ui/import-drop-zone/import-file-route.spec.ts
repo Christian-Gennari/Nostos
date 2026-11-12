@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   classifyImportFile,
   csvHeader,
+  looksLikeCalibreZip,
   looksLikeGoodreads,
   looksLikeReadwise,
   looksLikeStorygraph,
   routeImportFiles,
+  zipEntryNames,
   type ImportProbe,
 } from './import-file-route';
+import { storedZip } from './test-zip';
 
 const GOODREADS_HEADER =
   'Book Id,Title,Author,Author l-f,Additional Authors,ISBN,ISBN13,My Rating,Average Rating,Publisher,' +
@@ -130,6 +133,57 @@ describe('import file routing', () => {
     const probe = vi.fn(async (): Promise<ImportProbe> => ({ flow: 'highlights', message: null }));
     expect(await routeImportFiles([new File([], 'empty.csv')], probe)).toMatchObject({ kind: 'unknown' });
     expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('routes a zip holding a Calibre metadata.db to the Calibre upload', async () => {
+    const root = storedZip([{ name: 'metadata.db' }, { name: 'books/1.epub' }], 'calibre.zip');
+    const nested = storedZip(
+      [{ name: 'library/metadata.db' }, { name: 'library/books/1.epub' }],
+      'library.zip',
+    );
+
+    expect(await classifyImportFile(root, { calibreZip: true })).toBe('calibre');
+    expect(await classifyImportFile(nested, { calibreZip: true })).toBe('calibre');
+    expect(await routeImportFiles([root], noProbe, { calibreZip: true })).toMatchObject({
+      kind: 'calibre',
+      file: root,
+    });
+    expect(noProbe).not.toHaveBeenCalled();
+  });
+
+  it('reads the central directory without the archive contents', async () => {
+    const zip = storedZip(
+      [{ name: 'metadata.db', content: 'not really sqlite' }, { name: 'library/1.epub' }],
+      'library.zip',
+    );
+
+    expect(await zipEntryNames(zip)).toEqual(['metadata.db', 'library/1.epub']);
+    expect(looksLikeCalibreZip(['metadata.db'])).toBe(true);
+    expect(looksLikeCalibreZip(['library/metadata.db'])).toBe(true);
+    expect(looksLikeCalibreZip(['library/books/metadata.db'])).toBe(false);
+    expect(looksLikeCalibreZip(['library/metadata_db'])).toBe(false);
+  });
+
+  it('leaves a zip alone when the host takes no Calibre upload or it holds no library', async () => {
+    const calibre = storedZip([{ name: 'metadata.db' }], 'calibre.zip');
+    const other = storedZip([{ name: 'photos/1.jpg' }], 'photos.zip');
+
+    expect(await classifyImportFile(calibre)).toBe('unknown');
+    expect(await classifyImportFile(other, { calibreZip: true })).toBe('unknown');
+
+    const route = await routeImportFiles([other], noProbe, { calibreZip: true });
+    expect(route.kind).toBe('unknown');
+    expect(route.kind === 'unknown' && route.message).toContain('not a Calibre library');
+    expect(noProbe).toHaveBeenCalledWith(other);
+  });
+
+  it('asks for one Calibre zip at a time', async () => {
+    const zip = storedZip([{ name: 'metadata.db' }], 'calibre.zip');
+    const sidecar = file('return { annotations = {} }', 'metadata.lua');
+
+    const route = await routeImportFiles([zip, sidecar], noProbe, { calibreZip: true });
+    expect(route.kind).toBe('unknown');
+    expect(route.kind === 'unknown' && route.message).toContain('one Calibre library at a time');
   });
 
   it('reads a quoted header row as a CSV, not on a comma inside a title', () => {

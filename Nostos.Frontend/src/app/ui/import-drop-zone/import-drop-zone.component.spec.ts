@@ -7,6 +7,7 @@ import { throwError, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImportDropZoneComponent } from './import-drop-zone.component';
+import { storedZip } from './test-zip';
 import { HighlightImportService } from '../../core/services/highlight-import.service';
 import { ReadingHistoryImportService } from '../../core/services/reading-history-import.service';
 import { CalibreImportService } from '../../core/services/calibre-import.service';
@@ -33,6 +34,7 @@ const selfHosted = {
   usageMeteringAvailable: false,
   supportsLibraryMigration: true,
   supportsCalibreImport: true,
+  supportsCalibreUpload: true,
 };
 
 function csv(headers: string, name: string): File {
@@ -224,6 +226,26 @@ describe('ImportDropZoneComponent', () => {
     }
     expect(text()).toContain('My Books → Import and export');
     expect(text()).toContain('Manage Account → Export StoryGraph Library');
+  });
+
+  it('names Calibre among the files the zone takes when it accepts the zip', () => {
+    expect(text()).toContain('StoryGraph, Calibre or a .nostos archive');
+  });
+
+  it('sends a dropped Calibre zip to the Calibre upload, file and all', async () => {
+    const openWithFile = vi.spyOn(calibre, 'openWithFile');
+    const highlightOpen = vi.spyOn(highlight, 'openWithFiles');
+    const historyOpen = vi.spyOn(history, 'openWithFile');
+    const zip = storedZip(
+      [{ name: 'library/metadata.db' }, { name: 'library/books/1.epub' }],
+      'calibre-library.zip',
+    );
+
+    await drop([zip]);
+    await vi.waitFor(() => expect(openWithFile).toHaveBeenCalledWith(zip));
+
+    expect(highlightOpen).not.toHaveBeenCalled();
+    expect(historyOpen).not.toHaveBeenCalled();
   });
 
   it('opens the Calibre import from its help line, as the whole-library action it is', () => {

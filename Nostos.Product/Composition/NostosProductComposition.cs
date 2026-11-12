@@ -80,7 +80,18 @@ public sealed record NostosProductEndpointPolicies(
     bool MapMigrationTransferEndpoints = true,
     string? ManagedBackupsAuthorizationPolicy = null,
     bool MapResumableBookUploadEndpoints = false,
-    string? McpRateLimitPolicy = null)
+    string? McpRateLimitPolicy = null,
+    /// <summary>
+    /// Whether the Calibre import routes are mapped. A host that registers an
+    /// <c>ICalibreLibrarySource</c> (a folder or an uploaded-library source)
+    /// sets this; a host with no Calibre source leaves it off.
+    /// </summary>
+    bool MapCalibreImportEndpoints = false,
+    /// <summary>
+    /// Whether the resumable Calibre zip upload routes are mapped. Requires
+    /// the host to register <c>CalibreUploadService</c> and its store.
+    /// </summary>
+    bool MapCalibreUploadEndpoints = false)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -292,6 +303,10 @@ public static class NostosProductComposition
         services.AddScoped<ReadwiseImportService>();
         services.AddScoped<ReadingHistoryImportService>();
         services.AddScoped<CalibreImportService>();
+        // One import at a time per process; the host registers the source that
+        // stands behind it (a folder, an uploaded library, or both).
+        services.TryAddSingleton<CalibreUploadOwnerScope>();
+        services.TryAddSingleton<CalibreImportJob>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
@@ -506,6 +521,10 @@ public static class NostosProductComposition
         api.MapProviderEndpoints(policies);
         api.MapProviderSettingsEndpoints();
         api.MapImportEndpoints();
+        if (policies.MapCalibreImportEndpoints)
+            api.MapCalibreEndpoints(
+                policies.MapCalibreUploadEndpoints,
+                policies.LargeTransferRateLimitPolicy);
         api.MapLibraryChangesEndpoints();
         api.MapNotesEndpoints();
         api.MapNoteProcessingEndpoints();

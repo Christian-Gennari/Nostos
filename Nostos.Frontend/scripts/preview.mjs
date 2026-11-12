@@ -65,6 +65,11 @@ const CLOUD_FIXTURES = {
     feedbackUrl: 'https://nostos.page/feedback?from=settings',
     supportsLibraryMigration: false,
     supportsSafeActivation: false,
+    // Cloud has no readable folder; the uploaded-zip path is its Calibre
+    // source (#1572). The status and preview below are forwarded to the real
+    // SelfHosted API, so the review screen shows real data.
+    supportsCalibreImport: false,
+    supportsCalibreUpload: true,
     supportsManagedBackups: true,
     supportsManagedBackupRestore: true,
     supportsAccountDeletion: true,
