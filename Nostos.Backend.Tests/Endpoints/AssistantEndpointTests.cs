@@ -330,12 +330,13 @@ public sealed class AssistantEndpointTests : IDisposable
         events[^1].Kind.Should().Be(AssistantTurnEventKinds.Failed);
         events[^1].Failure!.Code.Should().Be(errorCode);
         events[^1].Failure.Retryable.Should().BeTrue();
-        if (errorCode == LlmErrorCodes.Timeout)
-        {
+        // The panel shows this sentence, once, beside its one action (C15,
+        // #1563); the action itself is pinned in `assistant-failure.spec.ts`.
+        events[^1].Failure.Message.Should().Be(errorCode == LlmErrorCodes.Timeout
             // The whole-turn budget reports "execution limit"; a provider request
             // that times out must say what actually happened (#1561).
-            events[^1].Failure.Message.Should().Be("Ask Nostos took too long to answer. Try again.");
-        }
+            ? "Ask Nostos took too long to answer. Try again."
+            : "Ask Nostos is temporarily busy. Try again shortly.");
     }
 
     [Fact]
@@ -365,6 +366,7 @@ public sealed class AssistantEndpointTests : IDisposable
         events[^1].Kind.Should().Be(AssistantTurnEventKinds.Failed);
         events[^1].Failure!.Code.Should().Be("ai_usage_limit_reached");
         events[^1].Failure.Retryable.Should().BeFalse();
+        events[^1].Failure.Message.Should().Be("Your AI allowance is used up for now.");
         provider.CallCount.Should().Be(0);
     }
 
