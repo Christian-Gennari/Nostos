@@ -23,16 +23,31 @@ public static class CarrelProtocolEndpoints
 {
     public const string Route = "/carrel/v1";
 
-    public static bool MapCarrelProtocolEndpoints(this IEndpointRouteBuilder routes)
+    public static bool MapCarrelProtocolEndpoints(
+        this IEndpointRouteBuilder routes, string? rateLimitPolicy = null)
     {
         if (routes.ServiceProvider.GetService<CarrelSyncService>() is null)
             return false;
 
         var group = routes.MapGroup(Route);
+        if (!string.IsNullOrEmpty(rateLimitPolicy))
+            group.RequireRateLimiting(rateLimitPolicy);
         group.AddEndpointFilter(async (context, next) =>
         {
             context.HttpContext.Response.Headers.CacheControl = "no-store";
-            return await next(context);
+            try
+            {
+                return await next(context);
+            }
+            catch (CarrelOwnerUnavailableException)
+            {
+                // The token was good a moment ago but its owner's data is not
+                // available now (an account being deleted): say nothing more.
+                context.HttpContext.Response.Headers.WWWAuthenticate = "Bearer";
+                return Results.Json(
+                    new CarrelErrorResponse("missing or invalid token"),
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
         });
 
         group.MapPost("/pair/start", async (

@@ -54,7 +54,7 @@ public abstract record CarrelDeleteOutcome
 /// cursor can never skip a change that commits later. The cursor a request
 /// returns is never ahead of the changes it actually returned.</para>
 /// </summary>
-public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext> contexts)
+public sealed partial class CarrelSyncService(ICarrelDeviceDirectory directory)
 {
     /// <summary>Most a device may send; the protocol's own limit.</summary>
     public const int MaxFileBytes = CarrelPaths.MaxFileBytes;
@@ -73,7 +73,7 @@ public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext>
         if (!TryParseCursor(since, out var sinceValue, out var cursorError))
             throw new CarrelCursorException(cursorError);
 
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         await EnsureStateAsync(ownerKey, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockStateAsync(db, ownerKey, ct);
@@ -95,7 +95,7 @@ public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext>
     public async Task<CarrelFileContent?> GetFileAsync(
         string ownerKey, Guid fileId, CancellationToken ct = default)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         await EnsureStateAsync(ownerKey, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockStateAsync(db, ownerKey, ct);
@@ -152,7 +152,7 @@ public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext>
         var content = request.Content ?? string.Empty;
         var hash = CarrelTokens.ContentHash(content);
 
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         await EnsureStateAsync(ownerKey, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = DateTime.UtcNow;
@@ -256,7 +256,7 @@ public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext>
     public async Task<CarrelDeleteOutcome> DeleteFileAsync(
         string ownerKey, Guid fileId, long? baseRev, CancellationToken ct = default)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         await EnsureStateAsync(ownerKey, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = DateTime.UtcNow;
@@ -312,7 +312,7 @@ public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext>
         if (!TryParseCursor(since, out var sinceValue, out var cursorError))
             throw new CarrelCursorException(cursorError);
 
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         await EnsureStateAsync(ownerKey, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = DateTime.UtcNow;
@@ -888,7 +888,7 @@ public sealed partial class CarrelSyncService(IDbContextFactory<NostosDbContext>
     /// <summary>Creates this owner's cursor row once, outside the request's transaction.</summary>
     private async Task EnsureStateAsync(string ownerKey, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         if (await db.CarrelSyncStates.AsNoTracking().AnyAsync(s => s.OwnerKey == ownerKey, ct))
             return;
 

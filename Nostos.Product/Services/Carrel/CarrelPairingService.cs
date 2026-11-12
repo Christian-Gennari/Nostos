@@ -53,7 +53,7 @@ public abstract record CarrelApprovalOutcome
 /// device row, so the next request with that token is refused.</para>
 /// </summary>
 public sealed class CarrelPairingService(
-    IDbContextFactory<NostosDbContext> contexts,
+    ICarrelDeviceDirectory directory,
     IDataProtectionProvider dataProtection,
     IOptions<CarrelOptions>? options = null,
     TimeProvider? clock = null)
@@ -76,7 +76,7 @@ public sealed class CarrelPairingService(
     public async Task<CarrelPairStatusResponse?> StatusAsync(Guid pairId, CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenPairingsAsync(ct);
         var pairing = await db.CarrelPairings.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == pairId, ct);
         if (pairing is null)
@@ -123,7 +123,7 @@ public sealed class CarrelPairingService(
         string deviceName, string devicePublicKey, CancellationToken ct = default)
     {
         var now = _clock.GetUtcNow().UtcDateTime;
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenPairingsAsync(ct);
 
         // Old pairing rows are operational leftovers, not history worth keeping.
         await db.CarrelPairings
@@ -170,7 +170,7 @@ public sealed class CarrelPairingService(
             return null;
 
         var now = _clock.GetUtcNow().UtcDateTime;
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenPairingsAsync(ct);
         var pairing = await db.CarrelPairings.AsNoTracking()
             .Where(p => p.Code == normalized
                 && p.Status == CarrelPairingStatus.Pending
@@ -190,7 +190,7 @@ public sealed class CarrelPairingService(
             return new CarrelApprovalOutcome.NotFound();
 
         var now = _clock.GetUtcNow().UtcDateTime;
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenPairingsAsync(ct);
         var pairing = await db.CarrelPairings
             .Where(p => p.Code == normalized)
             .OrderByDescending(p => p.CreatedAtUtc)
@@ -231,9 +231,52 @@ public sealed class CarrelPairingService(
         if (claimed == 0)
             return new CarrelApprovalOutcome.AlreadyApproved();
 
-        db.CarrelDevices.Add(device);
-        await db.SaveChangesAsync(ct);
+        // The pairing and the owner's devices may live in different databases,
+        // so the claim above is committed before the device row exists. If the
+        // device cannot be created, the code goes back to waiting and the
+        // person can approve it again; nothing is left half-done.
+        try
+        {
+            await using var owner = await directory.OpenOwnerAsync(ownerKey, ct);
+            owner.CarrelDevices.Add(device);
+            await owner.SaveChangesAsync(ct);
+            await directory.RegisterDeviceAsync(ownerKey, device.Id, device.TokenHash, ct);
+        }
+        catch
+        {
+            await UndoApprovalAsync(db, pairing.Id, ownerKey, device.Id);
+            throw;
+        }
+
         return new CarrelApprovalOutcome.Approved(pairing.DeviceName, device.Id);
+    }
+
+    private async Task UndoApprovalAsync(
+        NostosDbContext pairings, Guid pairingId, string ownerKey, Guid deviceId)
+    {
+        try
+        {
+            await pairings.CarrelPairings
+                .Where(p => p.Id == pairingId && p.DeviceId == deviceId
+                    && p.Status == CarrelPairingStatus.Approved)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(p => p.Status, CarrelPairingStatus.Pending)
+                        .SetProperty(p => p.OwnerKey, (string?)null)
+                        .SetProperty(p => p.ApprovedAtUtc, (DateTime?)null)
+                        .SetProperty(p => p.DeviceId, (Guid?)null)
+                        .SetProperty(p => p.TokenEncrypted, (string?)null),
+                    CancellationToken.None);
+            await using var owner = await directory.OpenOwnerAsync(ownerKey, CancellationToken.None);
+            await owner.CarrelDevices
+                .Where(d => d.Id == deviceId && d.OwnerKey == ownerKey)
+                .ExecuteDeleteAsync(CancellationToken.None);
+            await directory.UnregisterDeviceAsync(ownerKey, deviceId, CancellationToken.None);
+        }
+        catch
+        {
+            // Best effort: the original failure is what the caller sees. A
+            // pairing left approved without a device expires on its own.
+        }
     }
 
     /// <summary>Refuses a pending code. A denied pairing polls as expired.</summary>
@@ -244,7 +287,7 @@ public sealed class CarrelPairingService(
             return false;
 
         var now = _clock.GetUtcNow().UtcDateTime;
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenPairingsAsync(ct);
         var denied = await db.CarrelPairings
             .Where(p => p.Code == normalized
                 && p.Status == CarrelPairingStatus.Pending
@@ -259,7 +302,7 @@ public sealed class CarrelPairingService(
     public async Task<IReadOnlyList<CarrelDeviceDto>> ListDevicesAsync(
         string ownerKey, CancellationToken ct = default)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
         var rows = await db.CarrelDevices
             .AsNoTracking()
             .Where(d => d.OwnerKey == ownerKey)
@@ -272,10 +315,16 @@ public sealed class CarrelPairingService(
 
     public async Task<bool> RevokeAsync(string ownerKey, Guid deviceId, CancellationToken ct = default)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
-        return await db.CarrelDevices
+        await using var db = await directory.OpenOwnerAsync(ownerKey, ct);
+        var removed = await db.CarrelDevices
             .Where(d => d.Id == deviceId && d.OwnerKey == ownerKey)
             .ExecuteDeleteAsync(ct) > 0;
+
+        // The device row is what authenticates a token, so the token is dead
+        // once it is gone. The index entry is forgotten even when this call
+        // found nothing to delete, so a retry after a failure cleans up too.
+        await directory.UnregisterDeviceAsync(ownerKey, deviceId, ct);
+        return removed;
     }
 
     /// <summary>The token's device, or null when it is malformed, unknown or revoked.</summary>
@@ -286,9 +335,27 @@ public sealed class CarrelPairingService(
             return null;
 
         var hash = CarrelTokens.Hash(token!);
-        await using var db = await contexts.CreateDbContextAsync(ct);
+
+        // The directory only says which owner to look in. The owner's own
+        // database must still hold the device row, so a wrong index entry
+        // makes the request fail and never reaches another owner's data.
+        var ownerKey = await directory.FindOwnerAsync(hash, ct);
+        if (string.IsNullOrEmpty(ownerKey))
+            return null;
+
+        NostosDbContext db;
+        try
+        {
+            db = await directory.OpenOwnerAsync(ownerKey, ct);
+        }
+        catch (CarrelOwnerUnavailableException)
+        {
+            return null;
+        }
+
+        await using var _ = db;
         var device = await db.CarrelDevices.AsNoTracking()
-            .FirstOrDefaultAsync(d => d.TokenHash == hash, ct);
+            .FirstOrDefaultAsync(d => d.TokenHash == hash && d.OwnerKey == ownerKey, ct);
         if (device is null || !CarrelTokens.HashEquals(device.TokenHash, hash))
             return null;
 
