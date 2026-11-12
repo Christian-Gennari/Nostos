@@ -11,6 +11,7 @@ internal static partial class QualityCatalogue
         C11(), C12(), C13(), C14(), C15(), C16(), C17(), C18(), C19(), C20(), C21(), C22(),
         C23(), C24(),
         .. CatalogueH,
+        .. CatalogueI,
     ];
 
     public static QualityScenario ById(string id) =>

@@ -826,7 +826,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecar = ImportFixtures.KoreaderEpub;
         var preview = await PreviewAsync(client, sidecar);
 
         await CommitAsync(client, sidecar, new HighlightImportDecision(preview.Books.Single().SourceKey, book.Id));
@@ -846,7 +846,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
-        var clippings = Path.Combine(AppContext.BaseDirectory, "Fixtures", "kindle", "My Clippings.txt");
+        var clippings = ImportFixtures.KindleEnglish;
         var preview = await PreviewAsync(client, clippings);
         var exact = preview.Books.Single(book => book.Title == "Pride and Prejudice");
         var meditations = preview.Books.Single(book => book.Title == "Meditations (Penguin Classics)");
@@ -877,7 +877,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen");
-        var export = Path.Combine(AppContext.BaseDirectory, "Fixtures", "readwise", "readwise-export.csv");
+        var export = ImportFixtures.ReadwiseExport;
         var preview = await PreviewAsync(client, export);
         var book = preview.Books.Single(candidate => candidate.SourceKey == "readwise:asin:B00SYNTH01");
 
@@ -934,7 +934,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var client = factory.CreateClient();
         var kobo = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var koreader = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
-        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecar = ImportFixtures.KoreaderEpub;
         var sidecarKey = (await PreviewAsync(client, sidecar)).Books.Single().SourceKey;
 
         var first = await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", kobo.Id));
