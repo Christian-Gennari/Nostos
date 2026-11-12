@@ -34,6 +34,19 @@ export const routes: Routes = [
     loadComponent: () => import('./reader/reader-shell.component').then((m) => m.ReaderShell),
   },
 
+  // Pairing a writing device (WP8). Outside the workspace shell: the QR link
+  // opens it, and it works before the person has looked at anything else.
+  {
+    path: 'pair',
+    loadComponent: () => import('./pair/pair.page').then((m) => m.PairPage),
+  },
+  // The address a Stylos device puts in its QR.
+  {
+    path: 'approve',
+    loadComponent: () =>
+      import('./pair/pair-approve-redirect.page').then((m) => m.PairApproveRedirectPage),
+  },
+
   // Wrap ONLY library + brain inside workspace layout
   {
     path: '',

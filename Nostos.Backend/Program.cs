@@ -34,6 +34,7 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
+using Nostos.Backend.Services.Stylos;
 using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
 using Nostos.Backend.Workers;
@@ -85,6 +86,13 @@ var product = builder.Services.AddNostosProduct(builder.Configuration);
 // claude.ai and ChatGPT, approved by the owner in Settings (issue #1470).
 builder.Services.AddNostosMcp();
 builder.Services.AddSelfHostedMcpAccessTokens();
+
+// Stylos Sync Protocol v1 (WP8): a Stylos writing device pairs with this
+// server, syncs its Markdown as Writing Studio drafts and downloads the
+// library for offline quoting. SelfHosted has one local owner; a host with
+// accounts registers its own owner provider.
+builder.Services.AddSingleton<IStylosOwnerProvider, SelfHostedStylosOwnerProvider>();
+builder.Services.AddNostosStylosSync();
 var assistantOptions = product.Assistant;
 var speechOptions = product.Speech;
 var opdsOptions = product.Opds;

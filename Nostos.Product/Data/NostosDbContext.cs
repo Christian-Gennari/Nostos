@@ -118,6 +118,16 @@ public class NostosDbContext : DbContext
     public DbSet<McpOAuthGrantModel> McpOAuthGrants => Set<McpOAuthGrantModel>();
     public DbSet<McpOAuthTokenModel> McpOAuthTokens => Set<McpOAuthTokenModel>();
 
+    // Stylos Sync Protocol v1 (WP8): paired writing devices, pairing attempts,
+    // the file ↔ Writing Studio draft map, the library's exported-note memory
+    // and the two opaque change cursors. Host-local operational state: never
+    // part of a portable archive. Only the device token's hash is kept.
+    public DbSet<StylosDeviceModel> StylosDevices => Set<StylosDeviceModel>();
+    public DbSet<StylosPairingModel> StylosPairings => Set<StylosPairingModel>();
+    public DbSet<StylosFileModel> StylosFiles => Set<StylosFileModel>();
+    public DbSet<StylosLibraryItemModel> StylosLibraryItems => Set<StylosLibraryItemModel>();
+    public DbSet<StylosSyncStateModel> StylosSyncStates => Set<StylosSyncStateModel>();
+
     // A few legacy import/repository paths still add a BookModel directly.
     // Keep those writes valid now that WorkId is a required foreign key. The
     // library service always assigns the work explicitly; this is only a
@@ -862,6 +872,87 @@ public class NostosDbContext : DbContext
                 t.HasCheckConstraint(
                     "CK_McpOAuthTokens_TokenHash",
                     "length(\"TokenHash\") = 64");
+            });
+        });
+
+        // --- STYLOS SYNC (WP8) ---
+        // A device token is found by its hash, so the hash is unique. Pairing
+        // codes and live file paths are kept unique among their live rows by
+        // the service (a provider-neutral filtered index is not available on
+        // both SQLite and PostgreSQL), with indexes for the lookups.
+        modelBuilder.Entity<StylosDeviceModel>(e =>
+        {
+            e.HasKey(d => d.Id);
+            e.Property(d => d.OwnerKey).IsRequired().HasMaxLength(200);
+            e.Property(d => d.Name).IsRequired().HasMaxLength(StylosDeviceModel.MaxNameLength);
+            e.Property(d => d.PublicKey).HasMaxLength(StylosDeviceModel.MaxPublicKeyLength);
+            e.Property(d => d.TokenHash).IsRequired().HasMaxLength(StylosDeviceModel.HashLength);
+            e.HasIndex(d => d.TokenHash).IsUnique();
+            e.HasIndex(d => d.OwnerKey);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_StylosDevices_Name",
+                    "length(\"Name\") > 0 AND length(\"Name\") <= 100");
+                t.HasCheckConstraint(
+                    "CK_StylosDevices_TokenHash",
+                    "length(\"TokenHash\") = 64");
+            });
+        });
+
+        modelBuilder.Entity<StylosPairingModel>(e =>
+        {
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Code).IsRequired().HasMaxLength(7);
+            e.Property(p => p.DeviceName).IsRequired().HasMaxLength(StylosPairingModel.MaxDeviceNameLength);
+            e.Property(p => p.DevicePublicKey).IsRequired().HasMaxLength(StylosPairingModel.MaxPublicKeyLength);
+            e.Property(p => p.Status).IsRequired().HasMaxLength(16);
+            e.Property(p => p.OwnerKey).HasMaxLength(200);
+            e.Property(p => p.TokenEncrypted).HasMaxLength(4096);
+            e.HasIndex(p => p.Code);
+            e.HasIndex(p => new { p.Status, p.ExpiresAtUtc });
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_StylosPairings_Status",
+                "\"Status\" IN ('pending', 'approved', 'denied', 'expired')"));
+        });
+
+        modelBuilder.Entity<StylosFileModel>(e =>
+        {
+            e.HasKey(f => f.FileId);
+            e.Property(f => f.OwnerKey).IsRequired().HasMaxLength(200);
+            e.Property(f => f.Path).IsRequired().HasMaxLength(StylosFileModel.MaxPathLength);
+            e.Property(f => f.Hash).IsRequired().HasMaxLength(StylosFileModel.HashLength);
+            e.HasIndex(f => new { f.OwnerKey, f.DraftId }).IsUnique();
+            e.HasIndex(f => new { f.OwnerKey, f.Cursor });
+            e.HasIndex(f => new { f.OwnerKey, f.Path });
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_StylosFiles_Hash",
+                    "length(\"Hash\") = 64");
+                t.HasCheckConstraint(
+                    "CK_StylosFiles_Rev",
+                    "\"Rev\" > 0");
+            });
+        });
+
+        modelBuilder.Entity<StylosLibraryItemModel>(e =>
+        {
+            e.HasKey(i => new { i.OwnerKey, i.NoteId });
+            e.Property(i => i.Signature).IsRequired().HasMaxLength(StylosLibraryItemModel.HashLength);
+            e.HasIndex(i => new { i.OwnerKey, i.Cursor });
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_StylosLibraryItems_Signature",
+                "length(\"Signature\") = 64"));
+        });
+
+        modelBuilder.Entity<StylosSyncStateModel>(e =>
+        {
+            e.HasKey(s => s.OwnerKey);
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_StylosSyncStates_FilesCursor", "\"FilesCursor\" >= 0");
+                t.HasCheckConstraint("CK_StylosSyncStates_LibraryCursor", "\"LibraryCursor\" >= 0");
             });
         });
 

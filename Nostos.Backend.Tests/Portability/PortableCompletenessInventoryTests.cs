@@ -385,6 +385,21 @@ public sealed class PortableCompletenessInventoryTests
             ["McpOAuthTokenModel"] = ExcludedEntity(
                 "Hashes of OAuth access and refresh tokens (issue #1470): host credentials. They must never be transferred as portable library data."),
 
+            ["StylosDeviceModel"] = ExcludedEntity(
+                "A Stylos writing device paired with this server (WP8): a host credential, stored only as the token's hash, with the owner and the SHA-256 that revoke it. It must never be transferred as portable library data."),
+
+            ["StylosPairingModel"] = ExcludedEntity(
+                "A short-lived Stylos pairing attempt (WP8): an operational code, the device's public key and Data-Protection ciphertext of the token waiting to be collected. Host-local credentials and expiry state, never portable library data."),
+
+            ["StylosFileModel"] = ExcludedEntity(
+                "The Stylos Sync Protocol's file ↔ Writing Studio draft map (WP8): protocol file ids, paths, revisions, hashes and tombstones. The drafts themselves are portable WritingModel rows; the map is this server's sync bookkeeping and is rebuilt on a restore."),
+
+            ["StylosLibraryItemModel"] = ExcludedEntity(
+                "The Stylos library feed's memory of which notes it exported, their cursors and payload signatures (WP8). The notes themselves are portable NoteModel rows; this is local feed bookkeeping used to report deletions."),
+
+            ["StylosSyncStateModel"] = ExcludedEntity(
+                "The Stylos Sync Protocol's opaque per-owner change cursors (WP8): local synchronization state, not user library content."),
+
             ["ProviderPreferenceModel"] = ExcludedEntity(
                 "Local provider enablement choices about which free sources this installation searches; host configuration rather than portable library content."),
 
