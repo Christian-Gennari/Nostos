@@ -352,7 +352,11 @@
             </p>
             @if (importCounts().alreadyLinked > 0) {
               <p class="external-progress-file">
-                {{ importCounts().alreadyLinked }} were already in Nostos and were left as they are.
+                @if (importCounts().alreadyLinked === 1) {
+                  {{ importCounts().alreadyLinked }} was already in Nostos and was left as it is.
+                } @else {
+                  {{ importCounts().alreadyLinked }} were already in Nostos and were left as they are.
+                }
               </p>
             }
           </div>
