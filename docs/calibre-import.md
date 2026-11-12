@@ -26,7 +26,9 @@ screen and the same undoable import:
    On Windows, right-click the library folder and choose **Send to →
    Compressed (zipped) folder**. The zip may hold `metadata.db` at its root or
    inside one top-level folder.
-2. **Settings → Import → Calibre library → Choose a zipped Calibre library.**
+2. **Settings → Import → Whole library → Calibre → Import from Calibre**, then choose
+   the zip — or drop the zip on the Import page and Nostos opens the same
+   dialog with it. Nostos also offers this on SelfHosted, beside the folder.
 3. Nostos checks the file's SHA-256, receives it in resumable parts, verifies
    the whole file, unpacks it in a private scratch directory, and checks that
    `metadata.db` is Calibre's own database. Only then does the review open.
@@ -169,8 +171,9 @@ until you answer it.
 
 ## Review, import, undo
 
-1. **Settings → Import → Calibre library → Import…**. Nostos reads
-   `metadata.db` and the book folders. Nothing is written.
+1. **Settings → Import → Whole library → Calibre → Import from Calibre…**.
+   Nostos reads `metadata.db` and the book folders (or the zip it was given).
+   Nothing is written.
 2. **Review.** The screen shows the counts, every book, the formats it can
    bring, the tags and read date it found, and the custom columns it left alone.
    Untick anything you do not want. *Create collections from Calibre tags* is

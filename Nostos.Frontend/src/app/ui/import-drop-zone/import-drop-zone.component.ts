@@ -252,6 +252,13 @@ export class ImportDropZoneComponent {
     ...(this.calibreUploadAvailable() ? this.calibreHelp() : []),
   ]);
 
+  /** The line under the button: Calibre's zip is a dropped file where it exists. */
+  readonly dropHint = computed(() =>
+    this.calibreUploadAvailable()
+      ? 'Kobo, KOReader, Kindle, Apple Books, Readwise, Goodreads, StoryGraph, Calibre or a .nostos archive'
+      : 'Kobo, KOReader, Kindle, Apple Books, Readwise, Goodreads, StoryGraph or a .nostos archive',
+  );
+
   /** Apple Books is in beta until it has run on more Macs (issue #1357). */
   readonly appleBooksFeedbackUrl = computed(
     () => this.feedbackLink.url() ?? 'https://github.com/Christian-Gennari/Nostos/issues/1357',

@@ -228,6 +228,10 @@ describe('ImportDropZoneComponent', () => {
     expect(text()).toContain('Manage Account → Export StoryGraph Library');
   });
 
+  it('names Calibre among the files the zone takes when it accepts the zip', () => {
+    expect(text()).toContain('StoryGraph, Calibre or a .nostos archive');
+  });
+
   it('sends a dropped Calibre zip to the Calibre upload, file and all', async () => {
     const openWithFile = vi.spyOn(calibre, 'openWithFile');
     const highlightOpen = vi.spyOn(highlight, 'openWithFiles');

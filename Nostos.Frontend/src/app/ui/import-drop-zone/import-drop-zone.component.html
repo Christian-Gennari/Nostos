@@ -15,9 +15,7 @@
   >
     <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
     <span class="import-drop__title">Drop an export here, or choose a file</span>
-    <span class="import-drop__hint">
-      Kobo, KOReader, Kindle, Apple Books, Readwise, Goodreads, StoryGraph or a .nostos archive
-    </span>
+    <span class="import-drop__hint">{{ dropHint() }}</span>
   </button>
   <input
     #fileInput
