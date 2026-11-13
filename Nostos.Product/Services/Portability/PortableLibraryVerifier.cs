@@ -1037,7 +1037,11 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         IReadOnlyDictionary<(Guid BookId, string Kind), PortableArchiveMediaEntry> media,
         FailureList failures)
     {
-        var expected = data.Books.ToDictionary(item => item.Id);
+        var expected = data.Books.ToDictionary(
+            item => item.Id,
+            item => PortableLegacyPhysicalFileBooks.ToCurrent(
+                item,
+                ResolveMediaFileName(media, item.Id, PortableArchiveFormat.BookMediaKind)));
         var actual = books.ToDictionary(item => item.Id);
         CompareIdSets("book", expected.Keys, actual.Keys, failures);
         foreach (var (id, item) in expected)

@@ -700,6 +700,7 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
         var data = await PortableLibraryDatabaseMaterializer.ReadRelationalDataAsync(
             staging,
             prepared.Metadata.StagingId,
+            prepared.Media,
             default);
 
         var fixture = new ActivationBuildFixture(

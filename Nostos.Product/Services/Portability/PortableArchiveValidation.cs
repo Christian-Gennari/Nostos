@@ -749,6 +749,13 @@ internal static class PortableArchiveValidation
                     $"Book {book.Id} has unsupported type '{book.Type}'.");
             }
 
+            // A physical book that carries a file is accepted, not rejected:
+            // archives written before #332 were made by a build whose Add Book
+            // defaulted to Physical and whose upload accepted any row. The
+            // restore converts it by the same rule as the database migration
+            // (PortableLegacyPhysicalFileBooks / LegacyPhysicalFileBook), so
+            // nothing is lost and an older archive still imports.
+
             if (!Enum.TryParse<BookStatus>(book.Status, ignoreCase: true, out _))
             {
                 throw new PortableArchiveException(
