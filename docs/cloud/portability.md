@@ -336,7 +336,9 @@ Media is streamed into the archive. The manifest is written after the stream fin
 This is an explicit provider-independent representation, not an EF entity graph. It preserves stable IDs and relationships for:
 
 - works, books, and book metadata;
-- reading progress, ratings, favorites, reviews, and timestamps;
+- reading progress and timestamps, the book's own rating, favourite and review
+  (`PortableWork`, DataVersion 6), and each edition's own rating and review where
+  it differs from its book's;
 - collections and nested collection membership;
 - notes, source anchors, capture provenance, topics, and note links (stored under the archive's original `concepts` / `noteConcepts` JSON keys, which the Concepts → Topics rename deliberately left unchanged so older archives still import);
 - Writing Studio documents and folder hierarchy;
@@ -439,8 +441,19 @@ SelfHosted local backup remains useful for same-installation recovery because it
 - Format version 1 / DataVersion 3: Adds `NoteImportBookLink` remembered book mappings.
 - Format version 1 / DataVersion 4: Adds multi-track audiobooks (a track list and `track` media).
 - Format version 1 / DataVersion 5: Adds `ReadingListEntries`, the books the user wants and does not have yet.
+- Format version 1 / DataVersion 6: Moves `Rating`, `IsFavorite` and `PersonalReview` from each edition onto its work (`PortableWork`). An edition keeps only its own rating and review as an exception, and `PortableReadingProgress.IsFavorite` is always `false`.
 
-Payload and manifest versions must strictly agree (`data_version_mismatch`). A payload declaring version < 5 carrying `ReadingListEntries`, declaring version < 3 carrying `NoteImportBookLinks` or declaring version < 2 carrying `WritingNotes` is rejected with `unexpected_version_data`. Older versions default omitted collections to empty.
+Payload and manifest versions must strictly agree (`data_version_mismatch`). A payload declaring version < 5 carrying `ReadingListEntries`, declaring version < 3 carrying `NoteImportBookLinks`, declaring version < 2 carrying `WritingNotes`, declaring version < 6 with rating, favourite or review on a work, or declaring version 6 or newer with a favourite on an edition, is rejected with `unexpected_version_data`; a work rating outside 0–5 is `malformed_data`. Older versions default omitted collections to empty.
+
+### Reading DataVersion 1–5 archives
+
+`PortableLegacyBookValues.ToCurrent` rolls an older archive's per-edition values up onto its works when the archive is imported or verified, using `BookValueRollUp` — the same rule the `MoveBookValuesToWork` migration and "link as one book" use:
+
+- values agree, or only one edition has one: it becomes the book's;
+- values differ: the edition read most recently wins (last read first, then never read, then newest, then lowest id, so the result is deterministic), and every other edition keeps its own rating or review as an exception;
+- favourite: on for the book if any edition had it on, and cleared from every edition.
+
+The rolled-up library keeps its original version number so the manifest check still agrees with the payload, and the rollup runs exactly once — calling it a second time is not a no-op. A current (DataVersion 6) archive is returned unchanged.
 
 ---
 

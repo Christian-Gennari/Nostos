@@ -134,21 +134,66 @@ Collide radius/strength is **not** exposed in the UI — it is fixed at 60 / 0.5
 `nodeSizeMultiplier 0.945`, `lineSizeMultiplier 1`. So Christian runs the stock
 repel/link values with a much stronger center force and stock 250 link distance.
 
-## Why this differs from the Nostos implementation
+## How the Nostos topic map implements this
 
-Nostos runs **graphology-layout-forceatlas2**: a different algorithm (its own
-repulsion/attraction/gravity with adaptive speed), executed **synchronously for 400
-iterations** and then frozen, with the settled positions rescaled into stage pixels.
-FA2's `assign()` also rebuilds its matrices per call and discards the previous call's
-velocity, so per-frame stepping during a drag has no momentum to carry.
+The topic map runs this model in the browser with **d3-force** itself.
+`Nostos.Frontend/src/app/brain/topic-map/topic-map-simulation.ts` owns the
+simulation and the drag lifecycle; `topic-map.helpers.ts` holds `OBSIDIAN_FORCES`,
+every default above, verbatim, in one place. It replaced
+`graphology-layout-forceatlas2`, which ran 400 synchronous iterations, froze the
+result and rescaled it into stage pixels.
 
-The observable consequences, all fixable by moving to the model above:
-1. no sustained simulation — the layout is a static snapshot, so nothing settles after
-   a drag and the map is inert while idle;
-2. no inertia — velocity does not persist, so nodes stop dead instead of gliding;
-3. no soft centering — FA2 `gravity` is not the same as forceX/forceY at
-   `centerStrength`;
-4. no collision term — FA2's `adjustSizes` is not a hard `forceCollide` radius, so
-   nodes can still land on top of each other;
-5. the portrait fit's anisotropic stretch (`MAX_FIT_ANISOTROPY`) shears the
-   physics-space geometry into ellipses, which is physically wrong at any aspect.
+What is Obsidian's, unchanged:
+
+- the five forces: `forceX`/`forceY` at `centerStrength`, `forceLink` at
+  `linkDistance` with degree-weighted strength, `forceManyBody` at
+  `-repelStrength` with `distanceMin` 30, `forceCollide` at radius 60 / strength
+  0.5 — and no `forceCenter`;
+- d3's own defaults for the rest of the engine, which is why the constants can be
+  named and left alone: `velocityDecay` 0.6, `alphaMin` 0.001 and
+  `alphaDecay = 1 - 0.001^(1/300)` — 300 ticks from alpha 1 down to `alphaMin`, so
+  a settle that starts at `SETTLE_ALPHA` 0.3 halts after roughly 250 (about four
+  seconds at 60 fps);
+- alpha as an energy budget, not a force balance: the layout starts at
+  `SETTLE_ALPHA` 0.3, and a drag holds `DRAG_ALPHA` 0.3 as the target for the whole
+  gesture, dropping it to 0 on release so the graph cools with inertia;
+- seeding: nodes start on a ring around the centre (`seedPositions`, an angle and
+  radius drawn from a hash of the node id, so a capture and a test run stay
+  reproducible), not in a uniform random square;
+- dragging: the dragged node is pinned with `fx`/`fy` at the pointer, the camera is
+  disabled for the gesture, and a press only becomes a drag after
+  `DRAG_THRESHOLD_PX` (3 CSS pixels) of travel.
+
+Where Nostos intentionally differs, and why:
+
+- **No worker.** The simulation ticks on the main thread, one
+  `requestAnimationFrame` tick per frame, and only while alpha is above
+  `alphaMin`. The result is written back into the graphology graph Sigma renders
+  from, so the graph stays the single source of truth; there is no Float32Array
+  handoff.
+- **A synchronous pre-settle.** `initLayout` ticks the simulation synchronously
+  (at most 300 ticks) before Sigma mounts the graph, so the map opens as a settled
+  layout rather than as its seed ring. Obsidian lets its worker post frames as
+  they are computed.
+- **Per-axis centre strength.** `centerStrengths` weakens the pull along the
+  stage's long axis (capped at 2.2:1) so a phone or a wide desktop stage settles
+  into its own shape. The per-axis stretch that used to do this to the finished
+  layout is gone: it sheared the physics, and the live loop inflated the graph by
+  2.03× on a portrait stage once it ran at the stretched constants
+  (`scripts/map-audit/live-loop-behaviour.mjs`).
+- **A rigid long-axis rotation.** `alignmentRotation` turns the settled cloud so
+  its principal axis lies along the stage's. A rotation preserves every distance
+  the forces produced, so unlike the removed stretch it cannot distort them.
+- **Unconnected topics are shelved, not simulated.** Topics with no edge are held
+  out of the simulation and laid out in rows under the graph (`shelfPositions`),
+  where they stay findable instead of deciding the camera fit.
+- **No force sliders.** The four Obsidian sliders are constants: the map has one
+  behaviour rather than a settings panel.
+- **Framing is the camera's.** Positions stay in graph units and Sigma's camera
+  fits them (`FIT_OCCUPANCY` 0.88, uniform on both axes), as Obsidian's pan/zoom
+  does; nothing is rescaled into stage pixels.
+
+The five drawbacks listed for the old implementation are therefore all gone: the
+layout keeps relaxing after a drag, nodes carry velocity, centring is
+forceX/forceY, collisions are a hard radius, and there is no anisotropic stretch
+left to shear the geometry.
