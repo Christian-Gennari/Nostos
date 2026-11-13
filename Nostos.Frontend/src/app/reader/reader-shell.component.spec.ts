@@ -29,7 +29,7 @@ import {
   AUDIO_PLAYER_FACTORY,
   PlaylistCallbacks,
   PlaylistTrack,
-} from './audio-reader/track-playlist-player';
+} from '../core/media/track-playlist-player';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import { NoteItemComponent } from '../ui/note-item/note-item.component';

@@ -4,7 +4,7 @@ import { of } from 'rxjs';
 import { AudioReader, PLAYING_SAVE_INTERVAL_MS, parseTimeString } from './audio-reader.component';
 import { BooksService } from '../../core/services/books.service';
 import { Book } from '../../core/dtos/book.dtos';
-import { AUDIO_PLAYER_FACTORY, PlaylistCallbacks, PlaylistTrack } from './track-playlist-player';
+import { AUDIO_PLAYER_FACTORY, PlaylistCallbacks, PlaylistTrack } from '../../core/media/track-playlist-player';
 
 // A fake player so specs can drive the player lifecycle (onload / onloaderror)
 // without real media loading. `config` holds the callbacks the reader passed.

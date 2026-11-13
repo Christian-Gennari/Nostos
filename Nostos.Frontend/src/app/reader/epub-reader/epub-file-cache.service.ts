@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 
 import { BookFileVersionDto, BooksService } from '../../core/services/books.service';
+import { bookFileUrl } from '../../core/book-url';
 import { CloudAuthService } from '../../core/services/cloud-auth.service';
 import { NO_ACCOUNT_SCOPE, epubFileCacheName } from '../../core/services/epub-file-cache-scope';
 
@@ -104,7 +105,7 @@ export class EpubFileCacheService {
   private async download(bookId: string): Promise<ArrayBuffer> {
     // no-cache, because `max-age` on this URL would otherwise hand back a file
     // that was replaced minutes ago. Where the URL is stable that costs a 304.
-    const response = await fetch(`/api/books/${bookId}/file`, { cache: 'no-cache' });
+    const response = await fetch(bookFileUrl(bookId), { cache: 'no-cache' });
     if (!response.ok) throw new Error(`The book file answered ${response.status}.`);
     return response.arrayBuffer();
   }

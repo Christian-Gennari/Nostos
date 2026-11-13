@@ -63,43 +63,6 @@ export function marginInsetPercent(margin: EpubMargin): number {
 }
 
 /**
- * The bundled Libron faces (SIL OFL 1.1, see `public/fonts/libron/`). Only 400
- * and 700 exist; the browser's weight matching maps every authored weight onto
- * one of them, so bold and italic text resolve to a real face, never a
- * synthesised one.
- */
-export const LIBRON_FACES: { file: string; style: 'normal' | 'italic'; weight: 400 | 700 }[] = [
-  { file: 'Libron-Regular.woff2', style: 'normal', weight: 400 },
-  { file: 'Libron-Italic.woff2', style: 'italic', weight: 400 },
-  { file: 'Libron-Bold.woff2', style: 'normal', weight: 700 },
-  { file: 'Libron-BoldItalic.woff2', style: 'italic', weight: 700 },
-];
-
-/**
- * Absolute URLs of the Libron files. They must be absolute: epub.js renders
- * each section in its own iframe document (srcdoc/blob), where a relative URL
- * would not resolve against the app.
- */
-export function libronFaceUrls(baseUri: string): string[] {
-  return LIBRON_FACES.map((face) => new URL(`fonts/libron/${face.file}`, baseUri).href);
-}
-
-/**
- * The `@font-face` rules that make Libron available inside one contents
- * document. Pure for testability. Declaring a face costs nothing until text
- * actually uses it, so the rules are injected whatever typeface is selected —
- * switching to Libron later needs no second injection.
- */
-export function libronFontFaceCss(baseUri: string): string {
-  const urls = libronFaceUrls(baseUri);
-  return LIBRON_FACES.map(
-    (face, i) =>
-      `@font-face{font-family:"Libron";font-style:${face.style};font-weight:${face.weight};` +
-      `font-display:block;src:url("${urls[i]}") format("woff2");}`,
-  ).join('');
-}
-
-/**
  * Stored typeface values and what they mean now. `default` and `serif` are the
  * names earlier versions wrote: Publisher keeps being Publisher, and the old
  * generic Serif becomes Libron, the Nostos serif. Anything else is not a

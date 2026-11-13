@@ -14,6 +14,7 @@ import { BookDetailStore } from './book-detail.store';
 import { Book, EditionSummaryDto, LinkableBookDto } from '../core/dtos/book.dtos';
 import { formatBytes } from '../library-transfer/library-transfer.copy';
 import { formatNostosDate } from '../core/date-formats';
+import { bookFileDownloadUrl } from '../core/book-url';
 
 /**
  * How many RENDERED LINES a review may occupy before Book Details opens it as a
@@ -1105,7 +1106,7 @@ export class BookDetail implements OnInit, OnDestroy {
 
   downloadFile() {
     const id = this.store.book()?.id;
-    if (id) window.open(`/api/books/${id}/file/download`, '_blank');
+    if (id) window.open(bookFileDownloadUrl(id), '_blank');
   }
 
   openReader() {
