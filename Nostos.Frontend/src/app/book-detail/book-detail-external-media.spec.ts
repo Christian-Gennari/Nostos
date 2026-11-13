@@ -7,7 +7,7 @@ import { of } from 'rxjs';
 
 import { BookDetail } from './book-detail.component';
 import { Book } from '../core/dtos/book.dtos';
-import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { bookNotes, brainReads, notesPage } from './book-detail.testing';
 
 const book = {
@@ -62,7 +62,7 @@ describe('BookDetail linked external media', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: book.id })) } },
-        { provide: CloudEntryService, useValue: { supportsExternalMediaLibraries: supported } },
+        { provide: DeploymentCapabilitiesService, useValue: { supportsExternalMediaLibraries: supported } },
       ],
     }).compileComponents();
 

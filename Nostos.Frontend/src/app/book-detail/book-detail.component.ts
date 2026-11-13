@@ -74,7 +74,7 @@ import { LIBRARY_BACK_STATE } from '../library/library-list-cache.service';
 import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
-import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { ExternalMediaBookStatus, ExternalMediaService } from '../core/services/external-media.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -158,7 +158,7 @@ export class BookDetail implements OnInit, OnDestroy {
   private preferences = inject(LibraryPreferencesService);
   private booksService = inject(BooksService);
   private toast = inject(ToastService);
-  private cloudEntry = inject(CloudEntryService);
+  private capabilities = inject(DeploymentCapabilitiesService);
   private externalMediaApi = inject(ExternalMediaService);
   private libraryChanges = inject(LibraryChangesService);
 
@@ -477,7 +477,7 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   readonly externalMediaLookup = effect((onCleanup) => {
-    const supported = this.cloudEntry.supportsExternalMediaLibraries();
+    const supported = this.capabilities.supportsExternalMediaLibraries();
     const book = this.store.book();
     if (!supported || !book?.hasFile) {
       this.externalMedia.set(null);

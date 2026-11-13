@@ -13,6 +13,7 @@ import {
 } from '../../core/services/reading-history-import.service';
 import { BooksService } from '../../core/services/books.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from '../../core/services/deployment-capabilities.testing';
 
 const values = (overrides: Partial<ReadingHistoryValues> = {}): ReadingHistoryValues => ({
   rating: 0,
@@ -107,7 +108,9 @@ describe('ReadingHistoryImportModal', () => {
         provideHttpClient(),
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of({ deploymentMode: 'SelfHosted' }), peek: () => null },
+          useValue: createDeploymentCapabilitiesServiceMock(
+            () => of({ deploymentMode: 'SelfHosted' } as unknown as import('../../core/dtos/deployment-capabilities.dtos').DeploymentCapabilities),
+          ),
         },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [], totalCount: 0 })) } },
       ],

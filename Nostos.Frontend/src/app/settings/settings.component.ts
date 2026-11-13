@@ -51,7 +51,6 @@ import { AiProviderService } from '../core/services/ai-provider.service';
 import { ProviderSettingsService } from '../core/services/provider-settings.service';
 import { ProviderSettingsItem } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
-import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
@@ -435,22 +434,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   /** Server-authoritative deployment capabilities. Null means not loaded yet. */
-  readonly deploymentCapabilities = signal<DeploymentCapabilities | null>(null);
-  readonly capabilitiesFailed = signal(false);
+  readonly deploymentCapabilities = this.deploymentCapabilitiesService.capabilities;
+  readonly capabilitiesFailed = this.deploymentCapabilitiesService.failed;
   readonly capabilitiesLoading = computed(
-    () => this.deploymentCapabilities() === null && !this.capabilitiesFailed(),
-  );
-  readonly supportsLocalBackupConfiguration = computed(
-    () => this.deploymentCapabilities()?.supportsLocalBackupConfiguration === true,
-  );
-  readonly supportsManagedRestore = computed(
     () =>
-      this.deploymentCapabilities()?.supportsManagedBackups === true &&
-      this.deploymentCapabilities()?.supportsManagedBackupRestore === true,
+      this.deploymentCapabilitiesService.loading() ||
+      (this.deploymentCapabilities() === null && !this.capabilitiesFailed()),
   );
-  readonly supportsManagedBackups = computed(
-    () => this.deploymentCapabilities()?.supportsManagedBackups === true,
-  );
+  readonly supportsLocalBackupConfiguration =
+    this.deploymentCapabilitiesService.supportsLocalBackupConfiguration;
+  readonly supportsManagedRestore = this.deploymentCapabilitiesService.supportsManagedRestore;
+  readonly supportsManagedBackups = this.deploymentCapabilitiesService.supportsManagedBackups;
   readonly managedBackups = signal<ManagedBackupListing | null>(null);
   /** Newest backup: the only one shown until the restore list is opened. */
   readonly latestManagedBackup = computed(() => {
@@ -469,20 +463,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly managedRestoreBusy = signal(false);
   readonly managedRestoreError = signal<string | null>(null);
   readonly managedRestoreUncertain = signal(false);
-  readonly supportsPrivateNetworkAccess = computed(
-    () => this.deploymentCapabilities()?.supportsPrivateNetworkAccess === true,
-  );
-  readonly supportsEreaderAccess = computed(
-    () => this.deploymentCapabilities()?.supportsEreaderAccess === true,
-  );
-  readonly isCloud = computed(() => this.deploymentCapabilities()?.deploymentMode === 'Cloud');
+  readonly supportsPrivateNetworkAccess =
+    this.deploymentCapabilitiesService.supportsPrivateNetworkAccess;
+  readonly supportsEreaderAccess = this.deploymentCapabilitiesService.supportsEreaderAccess;
+  readonly isCloud = this.deploymentCapabilitiesService.isCloud;
   readonly cloudAccountManagementUrl = computed(() =>
-    this.isCloud() ? (this.deploymentCapabilities()?.accountManagementUrl ?? null) : null,
+    this.isCloud() ? this.deploymentCapabilitiesService.accountManagementUrl() : null,
   );
   readonly supportsAccountDeletion = computed(
-    () => this.isCloud() && this.deploymentCapabilities()?.supportsAccountDeletion === true,
+    () => this.isCloud() && this.deploymentCapabilitiesService.supportsAccountDeletion(),
   );
-  readonly supportsCloudPortableExport = computed(() => this.isCloud());
+  readonly supportsCloudPortableExport = this.isCloud;
   readonly showFirstRunCloudImport = computed(
     () =>
       this.isManageLibraryPage &&
@@ -496,57 +487,42 @@ export class SettingsComponent implements OnInit, OnDestroy {
    * this surface exactly as it is on main. Never inferred from
    * `deploymentMode`.
    */
-  readonly supportsLibraryMigration = computed(
-    () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
-  );
+  readonly supportsLibraryMigration = this.deploymentCapabilitiesService.supportsLibraryMigration;
   /**
    * Server-authoritative safe activation (#681). The shared import flow only
    * starts activation when this is true; false keeps the gated explanation.
    */
-  readonly supportsSafeActivation = computed(
-    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
-  );
+  readonly supportsSafeActivation = this.deploymentCapabilitiesService.supportsSafeActivation;
   /**
    * A SelfHosted server with an external media folder configured (#843).
    * Server-authoritative: never inferred from `deploymentMode`.
    */
-  readonly supportsExternalMediaLibraries = computed(
-    () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
-  );
+  readonly supportsExternalMediaLibraries =
+    this.deploymentCapabilitiesService.supportsExternalMediaLibraries;
   /**
    * A SelfHosted server that can read a Calibre folder (#1527).
    * Server-authoritative: never inferred from `deploymentMode`.
    */
-  readonly supportsCalibreImport = computed(
-    () => this.deploymentCapabilities()?.supportsCalibreImport === true,
-  );
+  readonly supportsCalibreImport = this.deploymentCapabilitiesService.supportsCalibreImport;
   /**
    * A server that accepts a zipped Calibre library through the resumable
    * upload (#1572). SelfHosted offers it beside its folder; Cloud offers it
    * instead of one.
    */
-  readonly supportsCalibreUpload = computed(
-    () => this.deploymentCapabilities()?.supportsCalibreUpload === true,
-  );
+  readonly supportsCalibreUpload = this.deploymentCapabilitiesService.supportsCalibreUpload;
   /** Either Calibre path is enough to open the import by link. */
-  readonly supportsCalibre = computed(
-    () => this.supportsCalibreImport() || this.supportsCalibreUpload(),
-  );
+  readonly supportsCalibre = this.deploymentCapabilitiesService.supportsCalibre;
   /**
    * Settings → Connected apps (#1469): a server that keeps a record of the AI
    * apps connected over MCP (SelfHosted access tokens; Cloud sign-ins once it
    * advertises them). Server-authoritative, never inferred from the mode.
    */
-  readonly supportsMcpConnectedApps = computed(
-    () => this.deploymentCapabilities()?.supportsMcpConnectedApps === true,
-  );
+  readonly supportsMcpConnectedApps = this.deploymentCapabilitiesService.supportsMcpConnectedApps;
   /**
    * Settings → Devices (WP8): a server that serves the Carrel Sync Protocol.
    * Server-authoritative, never inferred from the deployment mode.
    */
-  readonly supportsCarrelDevices = computed(
-    () => this.deploymentCapabilities()?.supportsCarrelDevices === true,
-  );
+  readonly supportsCarrelDevices = this.deploymentCapabilitiesService.supportsCarrelDevices;
   readonly hasManageLibraryActions = computed(
     () =>
       this.supportsLocalBackupConfiguration() ||
@@ -577,24 +553,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   });
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
-    () =>
-      this.supportsEreaderAccess() &&
-      this.deploymentCapabilities()?.deploymentMode === 'Cloud',
+    () => this.supportsEreaderAccess() && this.isCloud(),
   );
-  readonly canConfigureAiProvider = computed(
-    () => this.deploymentCapabilities()?.canConfigureAiProvider === true,
-  );
-  readonly managedAi = computed(
-    () => this.deploymentCapabilities()?.managedAi === true,
-  );
-  readonly managedVoiceTranscription = computed(
-    () => this.deploymentCapabilities()?.managedVoiceTranscription === true,
-  );
+  readonly canConfigureAiProvider = this.deploymentCapabilitiesService.canConfigureAiProvider;
+  readonly managedAi = this.deploymentCapabilitiesService.managedAi;
+  readonly managedVoiceTranscription =
+    this.deploymentCapabilitiesService.managedVoiceTranscription;
   readonly managedAiUsageAvailable = computed(
     () =>
-      this.deploymentCapabilities()?.deploymentMode === 'Cloud' &&
-      this.deploymentCapabilities()?.managedAi === true &&
-      this.deploymentCapabilities()?.usageMeteringAvailable === true,
+      this.isCloud() &&
+      this.managedAi() &&
+      this.deploymentCapabilitiesService.usageMeteringAvailable(),
   );
   /** Backups & data is offered when this deployment has anything to put in it. */
   readonly hasDataSection = computed(
@@ -998,26 +967,22 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** "Try again" after the capability read failed: back to the loading state. */
   retryCapabilities(): void {
-    this.capabilitiesFailed.set(false);
-    this.loadCapabilities();
+    this.loadCapabilities(true);
   }
 
   /** "Try again" after the e-reader access details failed to load. */
   retryEreaderAccess(): void {
     this.loadOpdsInfo();
-    if (this.deploymentCapabilities()?.deploymentMode === 'Cloud') this.loadManagedOpdsAccess();
+    if (this.isCloud()) this.loadManagedOpdsAccess();
   }
 
   retryManagedBackups(): void {
     this.loadManagedBackups();
   }
 
-  private loadCapabilities(): void {
-    this.deploymentCapabilitiesService.get().subscribe({
+  private loadCapabilities(refresh = false): void {
+    this.deploymentCapabilitiesService.get(refresh).subscribe({
       next: (capabilities) => {
-        this.deploymentCapabilities.set(capabilities);
-        this.capabilitiesFailed.set(false);
-
         // Do not touch owner/infrastructure APIs before the server says this
         // deployment exposes them. This also prevents forbidden controls from
         // flashing while the capability request is in flight.
@@ -1041,10 +1006,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
         this.assistantStatus.refresh();
       },
-      error: () => {
-        this.deploymentCapabilities.set(null);
-        this.capabilitiesFailed.set(true);
-      },
+      error: () => {},
     });
   }
 

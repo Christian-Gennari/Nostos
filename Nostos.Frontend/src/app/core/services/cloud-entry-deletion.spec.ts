@@ -12,6 +12,7 @@ import { CloudAuthService } from './cloud-auth.service';
 import { CloudEntryService } from './cloud-entry.service';
 import { CloudOnboardingService } from './cloud-onboarding.service';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from './deployment-capabilities.testing';
 import { PortableLibraryService } from './portable-library.service';
 
 describe('CloudEntryService account deletion', () => {
@@ -37,9 +38,8 @@ describe('CloudEntryService account deletion', () => {
     canRetry: false,
     selectedOffer: null,
   };
-  const capabilitiesService = {
-    get: vi.fn(() => of(capabilities)),
-  };
+  const capabilitiesGet = vi.fn(() => of(capabilities));
+  const capabilitiesService = createDeploymentCapabilitiesServiceMock(() => capabilitiesGet());
   const authService = {
     getSession: vi.fn(() => of(currentSession)),
     loginUrl: vi.fn(() => '/api/auth/login'),
@@ -73,8 +73,9 @@ describe('CloudEntryService account deletion', () => {
       accountState: 'DeletionRequested',
       account: { id: 'account-1', displayName: 'Reader', email: 'reader@example.test' },
     };
-    capabilitiesService.get.mockReset();
-    capabilitiesService.get.mockImplementation(() => of(capabilities));
+    capabilitiesService.reset();
+    capabilitiesGet.mockReset();
+    capabilitiesGet.mockImplementation(() => of(capabilities));
     authService.getSession.mockReset();
     authService.getSession.mockImplementation(() => of(currentSession));
     onboardingService.getState.mockReset();

@@ -138,9 +138,7 @@ export class CalibreImportModal {
   readonly hasTags = computed(() => this.rows().some((row) => row.book.tags.length > 0));
 
   /** SelfHosted's folder path. Cloud has none, so it must not be advertised there. */
-  readonly folderSupported = computed(
-    () => this.capabilities.peek()?.supportsCalibreImport === true,
-  );
+  readonly folderSupported = this.capabilities.supportsCalibreImport;
   readonly uploadSupported = computed(() => this.status()?.uploadSupported === true);
   readonly uploadMax = computed(
     () => this.status()?.maxUploadBytes ?? this.currentUpload()?.maxLibraryBytes ?? null,
