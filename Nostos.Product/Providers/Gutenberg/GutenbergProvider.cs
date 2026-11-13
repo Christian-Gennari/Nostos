@@ -189,48 +189,36 @@ public sealed partial class GutenbergProvider : IContentProvider,
     /// </summary>
     public async Task<ProviderSnapshot> ReadAsync(ProviderSnapshotRequest request, CancellationToken ct)
     {
-        try
-        {
-            using var probe = new HttpRequestMessage(HttpMethod.Head, GutenbergCatalog.SnapshotPath);
-            ApplyValidators(probe, request);
+        using var probe = new HttpRequestMessage(HttpMethod.Head, GutenbergCatalog.SnapshotPath);
+        ApplyValidators(probe, request);
 
+        using var response = await ProviderHttp.ExecuteAsync(Id, ct, async token =>
+        {
             using var probeTimeout = new CancellationTokenSource(_snapshotDownloadOptions.MaxDuration);
-            using var probeCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, probeTimeout.Token);
-            using var response = await _snapshotHttp.SendAsync(
+            using var probeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, probeTimeout.Token);
+            return await _snapshotHttp.SendAsync(
                 probe,
                 HttpCompletionOption.ResponseHeadersRead,
                 probeCancellation.Token);
+        });
 
-            if (response.StatusCode == HttpStatusCode.NotModified)
-            {
-                return ProviderSnapshot.NotModified(
-                    etag: request.ETag ?? response.Headers.ETag?.ToString(),
-                    lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
-            }
+        if (response.StatusCode == HttpStatusCode.NotModified)
+        {
+            return ProviderSnapshot.NotModified(
+                etag: request.ETag ?? response.Headers.ETag?.ToString(),
+                lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
+        }
 
-            if (!response.IsSuccessStatusCode)
-                throw ProviderException.UnavailableFor(Id, "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+            throw ProviderException.UnavailableFor(Id, "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
 
-            return new ProviderSnapshot(
-                ProviderSnapshotStatus.Updated,
-                ReadSnapshotItemsAsync(
-                    response.Content.Headers.ContentLength,
-                    SnapshotValidator.FromResponse(response)),
-                ETag: response.Headers.ETag?.ToString(),
-                LastModified: response.Content.Headers.LastModified);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
-        catch (IOException ex)
-        {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
-        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
-        {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
+        return new ProviderSnapshot(
+            ProviderSnapshotStatus.Updated,
+            ReadSnapshotItemsAsync(
+                response.Content.Headers.ContentLength,
+                SnapshotValidator.FromResponse(response)),
+            ETag: response.Headers.ETag?.ToString(),
+            LastModified: response.Content.Headers.LastModified);
     }
 
     // --- IProviderAcquisitionPlanner -------------------------------------
@@ -319,7 +307,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
     {
         for (var attempt = 0; ; attempt++)
         {
-            using var response = await _http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
 
             // The catalogue answers 404 for an unknown ebook; that is an ordinary
             // "no such item", not a source failure.
@@ -342,17 +330,20 @@ public sealed partial class GutenbergProvider : IContentProvider,
             if (!response.IsSuccessStatusCode)
                 throw ProviderException.UnavailableFor(Id, $"the catalogue answered HTTP {(int)response.StatusCode}");
 
-            try
+            return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                return await XDocument.LoadAsync(stream, LoadOptions.None, ct);
-            }
-            catch (XmlException ex)
-            {
-                // A maintenance page or an HTML error document: worth reporting as a
-                // source problem, never worth passing off as an empty catalogue.
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
+                try
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync(token);
+                    return await XDocument.LoadAsync(stream, LoadOptions.None, token);
+                }
+                catch (XmlException ex)
+                {
+                    // A maintenance page or an HTML error document: worth reporting as a
+                    // source problem, never worth passing off as an empty catalogue.
+                    throw ProviderException.InvalidResponse(Id, ex.Message);
+                }
+            });
         }
     }
 
