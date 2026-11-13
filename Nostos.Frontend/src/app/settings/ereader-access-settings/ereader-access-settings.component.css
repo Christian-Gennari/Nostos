@@ -1,0 +1,122 @@
+.settings-pane-loading {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0;
+}
+
+/* --- E-reader access card (issue #187) ---
+   The address is the point of the card, so it gets its own line inside the row
+   instead of sitting in the right-hand column: a URL in a narrow column wraps
+   mid-token and stops being readable or copyable. */
+.setting-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.catalog-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.catalog-url {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  color: var(--color-text-main);
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  /* Manual copy is the fallback when the clipboard API is unavailable, so a
+     click selects the whole address rather than a word of it. */
+  user-select: all;
+}
+
+.inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
+  color: var(--color-text-main);
+  background: var(--bg-surface-alt);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+}
+
+.setting-label code {
+  padding: 0 0.25em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 0.95em;
+}
+
+.catalog-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+
+.catalog-note--warning {
+  color: var(--color-text-main);
+}
+
+.catalog-note nostos-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ereader-credentials {
+  display: grid;
+  gap: 10px;
+}
+
+.ereader-credential-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.ereader-credential-label {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-light);
+}
+
+.ereader-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  .catalog-url-row {
+    width: 100%;
+  }
+
+  .catalog-url {
+    flex-basis: 100%;
+  }
+
+  .ereader-credential-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .ereader-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ereader-actions .nostos-button {
+    width: 100%;
+  }
+}

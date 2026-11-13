@@ -1,0 +1,10 @@
+/*
+ * Each section component wraps one card, or a run of them, and takes the place
+ * the card itself used to have in the page's flow: a block, 18px clear of the
+ * next one. The page zeroes the margin on its last child, so a section ends
+ * exactly where its last card does.
+ */
+:host {
+  display: block;
+  margin-bottom: 18px;
+}

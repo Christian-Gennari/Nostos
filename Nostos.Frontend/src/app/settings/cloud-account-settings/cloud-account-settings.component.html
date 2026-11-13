@@ -1,0 +1,65 @@
+            <section class="settings-card" data-testid="cloud-account-settings">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Nostos Cloud account</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text">
+                      {{ cloudSession()?.account?.displayName || cloudSession()?.account?.email || 'Signed in' }}
+                    </span>
+                    @if (cloudSession()?.account?.email) {
+                      <span class="label-desc">{{ cloudSession()?.account?.email }}</span>
+                    } @else {
+                      <span class="label-desc">Authenticated with your Nostos Cloud account.</span>
+                    }
+                  </div>
+                </div>
+
+                @if (accountManagementUrl(); as accountUrl) {
+                  <div class="setting-row" data-testid="cloud-account-management">
+                    <div class="setting-label">
+                      <span class="label-text">Account & billing</span>
+                      <span class="label-desc">Manage your Nostos Cloud account, subscription, and purchases on nostos.page.</span>
+                    </div>
+                    <a
+                      appButton
+                      variant="secondary"
+                      [href]="accountUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="cloud-account-management-link"
+                    >
+                      Manage account & billing ↗
+                    </a>
+                  </div>
+                }
+
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text">Session</span>
+                    <span class="label-desc">Sign out of this Nostos app session.</span>
+                  </div>
+                  <button appButton variant="secondary" type="button" (click)="signOut()">
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            @if (supportsAccountDeletion()) {
+            <section class="settings-card settings-card--danger" data-testid="cloud-account-danger-zone">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Danger zone</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <app-cloud-account-deletion-settings
+                  (pending)="deletionPending.emit($event)"
+                />
+              </div>
+            </section>
+            }

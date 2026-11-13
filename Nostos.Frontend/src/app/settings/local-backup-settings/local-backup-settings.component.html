@@ -1,0 +1,295 @@
+            <section class="manage-library-group" aria-labelledby="manage-library-protect-heading">
+            <h2
+              class="settings-section-title manage-library-group-title"
+              id="manage-library-protect-heading"
+            >
+              Protect this installation
+            </h2>
+            <section class="settings-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Backup</h2>
+          </div>
+          <button
+            appButton variant="primary"
+            [disabled]="backingUp()"
+            [busy]="backingUp()"
+            (click)="triggerBackup()"
+          >
+            @if (backingUp()) {
+              Backing up…
+            } @else {
+              <nostos-icon name="arrows-clockwise" [size]="16"></nostos-icon>
+              Back up now
+            }
+          </button>
+        </div>
+
+        <div class="card-body">
+          @if (supportsMigration()) {
+            <p class="label-desc card-purpose" data-testid="backup-purpose">
+              Backups are for recovering this self-hosted installation. They are not library
+              archives.
+            </p>
+          }
+          @if (backupWarning(); as warning) {
+            <div appNotice tone="caution" role="status" class="backup-warning" data-testid="backup-warning">
+              <span>{{ warning.message }}</span>
+              @if (warning.action === 'enable') {
+                <button appButton variant="secondary" size="sm" (click)="enableAutomaticBackup()">Turn on</button>
+              } @else {
+                <button appButton variant="secondary" size="sm" [disabled]="backingUp()" (click)="triggerBackup()">Back up now</button>
+              }
+            </div>
+          }
+          <!-- Enable Toggle -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Automatic backup</span>
+              @if (settings().isEnabled) {
+                <span class="label-desc">Backups are created automatically every {{ formatInterval(settings().intervalHours) }}. The first one runs within 5 minutes of turning this on.</span>
+              } @else {
+                <span class="label-desc">Turn on to create backups automatically.</span>
+              }
+            </div>
+            <label appSwitch>
+              <input
+                type="checkbox"
+                [checked]="settings().isEnabled"
+                (change)="toggleEnabled($event)"
+                aria-label="Automatic backup"
+              >
+            </label>
+          </div>
+
+          <!-- Include Book Files -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Include book files</span>
+              <span class="label-desc">Include EPUB, PDF, and audio files in backups. Makes archives much larger. Files linked from External media are not included; they stay in your folder.</span>
+            </div>
+            <label appSwitch>
+              <input
+                type="checkbox"
+                [checked]="settings().includeBookFiles"
+                (change)="toggleBookFiles($event)"
+                aria-label="Include book files"
+              >
+            </label>
+          </div>
+
+          <!-- Schedule -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Backup frequency</span>
+              <span class="label-desc">How often to create automatic backups.</span>
+            </div>
+            <app-dropdown
+              class="select-sm"
+              controlSize="compact"
+              ariaLabel="Backup frequency"
+              [options]="backupIntervalOptions"
+              [value]="settings().intervalHours.toString()"
+              (valueChange)="changeInterval($event)"
+            />
+          </div>
+
+          <!-- Max Backups -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Backups to keep</span>
+              <span class="label-desc">Oldest backups will be automatically deleted when this limit is reached.</span>
+            </div>
+            <app-dropdown
+              class="select-sm"
+              controlSize="compact"
+              ariaLabel="Backups to keep"
+              [options]="maxBackupOptions"
+              [value]="settings().maxBackups.toString()"
+              (valueChange)="changeMaxBackups($event)"
+            />
+          </div>
+
+          @if (backingUp() && progress().isRunning) {
+            <div class="progress-bar-container">
+              <div class="progress-step-label">
+                Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
+              </div>
+              <nostos-progress [value]="progress().percentComplete" [label]="progress().currentStep" />
+              @if (showSlowNotice()) {
+                <div appNotice tone="caution" class="slow-notice">
+                  This step may take a few minutes for large libraries.
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Import from Disk -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Import from disk</span>
+              <span class="label-desc">Copy .nostos files to the backups folder on the server (/data/backups in Docker, Storage/backups/ otherwise), then scan to add them to your history.</span>
+            </div>
+            <button
+              appButton variant="secondary"
+              [disabled]="importing()"
+              [busy]="importing()"
+              (click)="scanForBackups()"
+            >
+              @if (importing()) {
+                Scanning…
+              } @else {
+                <nostos-icon name="folder-simple" [size]="16"></nostos-icon>
+                Scan for backups
+              }
+            </button>
+          </div>
+
+          <!-- Last backup info -->
+          @if (status().lastBackupAt) {
+            <div class="last-backup-info">
+              Last backup {{ status().lastBackupAt | nostosDate: 'datetime' }}
+              <span
+                appBadge
+                [tone]="backupStatusTone(status().lastBackupStatus)"
+              >
+                {{ backupStatusLabel(status().lastBackupStatus) }}
+              </span>
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- Backup History -->
+      <section class="settings-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Backup history</h2>
+          </div>
+          <span appBadge>{{ history().length }}</span>
+        </div>
+
+        @if (history().length === 0) {
+          <nostos-empty-state compact icon="archive" message="No backups yet. Create your first backup to get started." />
+        } @else {
+          <div class="card-body">
+            <button
+              appButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="backup-history-toggle"
+              aria-controls="backup-history-list"
+              [attr.aria-expanded]="historyExpanded()"
+              (click)="historyExpanded.set(!historyExpanded())"
+            >
+              <nostos-icon
+                [name]="historyExpanded() ? 'caret-up' : 'caret-down'"
+                [size]="14"
+              ></nostos-icon>
+              {{ historyExpanded() ? 'Hide backups' : 'Show backups' }}
+            </button>
+          </div>
+        }
+
+        @if (history().length > 0 && historyExpanded()) {
+          <div class="history-list" id="backup-history-list">
+            @for (item of history(); track item.id) {
+              <div class="history-item">
+                <div class="history-info">
+                  <span class="history-date">{{ item.createdAt | nostosDate: 'datetime' }}</span>
+                  <span class="history-meta">
+                    {{ formatSize(item.sizeBytes) }}
+                    @if (item.includeBookFiles) {
+                      &middot; with files
+                    } @else {
+                      &middot; metadata only
+                    }
+                    @if (item.errorMessage) {
+                      &middot; <span class="history-error">{{ item.errorMessage }}</span>
+                    }
+                  </span>
+                </div>
+                <div class="history-actions">
+                  <span
+                    appBadge
+                    [tone]="backupStatusTone(item.status)"
+                  >
+                    {{ backupStatusLabel(item.status) }}
+                  </span>
+                  @if (item.status === 'Completed') {
+                    <button
+                      appIconButton
+                      icon="download-simple"
+                      size="xs"
+                      [glyphSize]="14"
+                      (click)="downloadBackup(item.id)"
+                      aria-label="Download archive"
+                      title="Download archive"
+                    ></button>
+                    <button appButton variant="secondary" size="sm" (click)="restoreBackup(item.id)" [disabled]="restoring()" title="Restore from this backup">
+                      <nostos-icon name="arrows-clockwise" [size]="14"></nostos-icon>
+                      Restore
+                    </button>
+                  }
+                  <button
+                    appIconButton
+                    icon="trash"
+                    size="xs"
+                    tone="danger"
+                    [glyphSize]="14"
+                    (click)="deleteBackup(item.id)"
+                    aria-label="Delete backup"
+                    title="Delete backup"
+                  ></button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        @if (restoring() && progress().isRunning) {
+          <div class="progress-bar-container">
+            <div class="progress-step-label">
+              Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
+            </div>
+            <nostos-progress [value]="progress().percentComplete" [label]="progress().currentStep" />
+            @if (showSlowNotice()) {
+              <div appNotice tone="caution" class="slow-notice">
+                This step may take a few minutes for large libraries.
+              </div>
+            }
+          </div>
+        }
+      </section>
+            </section>
+
+    <!-- Restore overwrites live data and delete removes the archive: both ask
+         through the shared modal instead of window.confirm(). -->
+    <app-confirm-modal
+      [isOpen]="!!pendingRestore()"
+      heading="Restore from this backup?"
+      description="This overwrites your current database and book files with the backup data. A safety copy of the current database is made first. No restart is needed."
+      confirmLabel="Restore"
+      busyLabel="Restoring…"
+      icon="arrow-counter-clockwise"
+      [busy]="restoring()"
+      (confirm)="confirmRestore()"
+      (cancel)="cancelRestore()"
+    >
+      @if (restoring()) {
+        <p role="status" aria-live="polite">Restoring your library. Keep this page open.</p>
+      }
+    </app-confirm-modal>
+
+    <app-confirm-modal
+      [isOpen]="!!pendingBackupDelete()"
+      [heading]="'Delete ' + backupName(pendingBackupDelete()) + '?'"
+      description="The backup and its archive file are permanently removed."
+      confirmLabel="Delete backup"
+      busyLabel="Deleting…"
+      [busy]="deletingBackup()"
+      (confirm)="confirmBackupDelete()"
+      (cancel)="cancelBackupDelete()"
+    >
+    </app-confirm-modal>

@@ -626,7 +626,10 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   'src/app/layout/app-dock/app-dock.component.ts': ['dock-item', 'dock-ask'],
   // Side navigation rows (the shared `.nav-item` page-chrome recipe in styles.css).
   'src/app/library/sidebar-collections/sidebar-collections.component.html': ['nav-item'],
-  'src/app/settings/settings.component.html': ['settings-nav-item', 'theme-card'],
+  'src/app/settings/settings.component.html': ['settings-nav-item'],
+  // The theme card is a radio in a swatch grid: it shows the theme in its own
+  // colours, so it is not a button primitive and cannot be one.
+  'src/app/settings/theme-settings/theme-settings.component.html': ['theme-card'],
 
   // --- Transport: play, skip, chapter and time are the player's own controls.
   'src/app/reader/audio-reader/audio-reader.component.html': ['chapter-btn', 'time-label-btn', 'skip-btn', 'play-btn'],

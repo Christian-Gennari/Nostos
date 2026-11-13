@@ -1,0 +1,39 @@
+/*
+ * The narrow-width half of the shared card chrome. It is a separate sheet
+ * because it must come AFTER each section's own rules: the original single
+ * stylesheet ended with these media queries, so `.setting-row`'s phone stack
+ * overrides the section-specific `.setting-row--stacked`. Loading this last
+ * keeps that cascade exactly as it was.
+ */
+@media (max-width: 760px) {
+  .settings-card {
+    padding: 0 16px;
+  }
+
+  .card-header {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .card-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .card-header > .nostos-button,
+  .card-header > .nostos-badge {
+    align-self: flex-start;
+  }
+
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .setting-row > .nostos-switch,
+  .setting-row > .select-sm {
+    align-self: flex-start;
+  }
+}

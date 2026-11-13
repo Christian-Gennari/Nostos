@@ -1,0 +1,99 @@
+      <section class="manage-library-group" aria-labelledby="manage-library-export-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-export-heading"
+      >
+        Move to another Nostos
+      </h2>
+      <section class="settings-card" data-testid="cloud-portable-export-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Data export</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          @if (showFirstRunCloudImport()) {
+            <section
+              #firstRunCloudImport
+              class="first-run-cloud-import"
+              [class.is-selected]="isImportSelected()"
+              id="manage-library-import-entry"
+              data-testid="first-run-cloud-import"
+              tabindex="-1"
+              aria-label="Import an existing Nostos library"
+            >
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="label-text">Import an existing Nostos library</span>
+                  <span class="label-desc">Choose the portable .nostos archive you want to bring into this new library.</span>
+                  @if (cloudEntry.actionError(); as importError) {
+                    <span class="label-desc portable-export-status is-error" role="alert">{{ importError }}</span>
+                  }
+                </div>
+                <input
+                  #firstRunImportInput
+                  type="file"
+                  accept=".nostos,application/vnd.nostos.portable+zip"
+                  (change)="importFirstRunArchive($event)"
+                  data-testid="first-run-cloud-import-file"
+                  hidden
+                >
+                <button
+                  appButton
+                  variant="secondary"
+                  type="button"
+                  data-testid="first-run-cloud-import-open"
+                  [disabled]="cloudEntry.actionPending()"
+                  [busy]="cloudEntry.actionPending()"
+                  (click)="openFirstRunImportPicker()"
+                >
+                  @if (cloudEntry.actionPending()) {
+                    Importing…
+                  } @else {
+                    <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
+                    Choose archive
+                  }
+                </button>
+              </div>
+            </section>
+          }
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Your complete Nostos archive</span>
+              <span class="label-desc">Download one library archive (.nostos) containing your library, notes, Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
+              @if (portableExportBusy()) {
+                <span class="label-desc portable-export-status" aria-live="polite">
+                  @if (portableExportProgress() !== null) {
+                    Downloading your archive — {{ portableExportProgress() }}%
+                  } @else {
+                    Preparing your archive. Larger libraries can take a little longer.
+                  }
+                </span>
+              }
+              @if (portableExportError(); as exportError) {
+                <span class="label-desc portable-export-status is-error" role="alert">{{ exportError }}</span>
+              }
+            </div>
+
+            <button
+              appButton
+              variant="secondary"
+              class="portable-export-action"
+              data-testid="cloud-portable-export-action"
+              [disabled]="portableExportBusy()"
+              [busy]="portableExportBusy()"
+              (click)="exportAllNostosData()"
+            >
+              @if (portableExportBusy()) {
+                Exporting…
+              } @else {
+                <nostos-icon name="download-simple" [size]="16"></nostos-icon>
+                Export all my Nostos data
+              }
+            </button>
+          </div>
+        </div>
+      </section>
+      </section>

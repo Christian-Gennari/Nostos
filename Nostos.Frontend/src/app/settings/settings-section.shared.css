@@ -1,0 +1,151 @@
+/*
+ * Chrome shared by the settings section components.
+ *
+ * Angular scopes component styles, so a card that moves into its own component
+ * stops receiving the parent sheet's rules. These are the selectors every
+ * extracted section needs to keep its card looking exactly as it did inside
+ * `SettingsComponent`: the card surface, its header, the rows inside it and the
+ * label pair each row is built from.
+ *
+ * It is shared the same way `library-transfer.shared.css` is: imported by every
+ * component that renders a settings card, so a card's chrome has one definition
+ * rather than a copy per section. Section-specific rules stay in the section's
+ * own stylesheet.
+ */
+
+/* --- Settings Card --- */
+.settings-card {
+  margin-bottom: 18px;
+  padding: 0 20px;
+  overflow: visible;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  box-shadow: none;
+}
+
+.settings-card:last-child {
+  margin-bottom: 0;
+}
+
+.settings-card--danger {
+  border-color: color-mix(in srgb, var(--color-danger) 38%, var(--border-color));
+}
+
+.settings-card--danger .card-header h2 {
+  color: var(--color-danger);
+}
+
+/* The title heads its card by weight and position; no rule under it. The rows
+   below keep their separators, so a rule here only doubled the first one. */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 0 4px;
+  background: transparent;
+}
+
+.card-header-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+}
+
+.card-body {
+  padding: 0;
+}
+
+/* --- Setting Row --- */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+}
+
+.setting-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.label-text {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.label-desc {
+  display: block;
+  max-width: 610px;
+  font-size: 0.78rem;
+  line-height: 1.48;
+  color: var(--color-text-light);
+}
+
+.card-purpose {
+  margin: 0;
+  padding: 14px 0 12px;
+}
+
+/* The "show the list" disclosure under a backup card: its label lines up with
+   the rows above it, and it keeps clear of the card's bottom edge. */
+.settings-card [aria-expanded][aria-controls] {
+  margin: 8px 0 10px -10px;
+}
+
+/* --- Backups & data groups ---------------------------------------------- */
+.manage-library-group {
+  margin-bottom: 28px;
+}
+
+/* A label over a run of cards inside Backups & data, not another page heading. */
+.manage-library-group-title {
+  margin: 0 0 10px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* An inline jump to another settings section, inside a row's supporting text. */
+.label-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.label-link:hover {
+  color: var(--color-text-main);
+}
+
+.label-link:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

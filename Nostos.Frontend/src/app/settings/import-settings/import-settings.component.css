@@ -1,0 +1,9 @@
+.import-action {
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .import-action {
+    width: 100%;
+  }
+}

@@ -1,0 +1,25 @@
+.portable-export-status {
+  margin-top: 6px;
+}
+
+.portable-export-status.is-error {
+  color: var(--color-danger);
+}
+
+.notes-export-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+
+.notes-export-option .label-desc {
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .portable-export-action {
+    width: 100%;
+  }
+}

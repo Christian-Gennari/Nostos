@@ -3,7 +3,7 @@ import { CalibreImportService } from '../core/services/calibre-import.service';
 import { ReadwiseService } from '../core/services/readwise.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { signal } from '@angular/core';
+import { Type, signal } from '@angular/core';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import {
@@ -15,6 +15,14 @@ import {
 } from '@angular/common/http';
 
 import { SettingsComponent } from './settings.component';
+import { AiProviderSettingsComponent } from './ai-provider-settings/ai-provider-settings.component';
+import { AssistantSettingsComponent } from './assistant-settings/assistant-settings.component';
+import { EreaderAccessSettingsComponent } from './ereader-access-settings/ereader-access-settings.component';
+import { ManagedBackupsSettingsComponent } from './managed-backups-settings/managed-backups-settings.component';
+import { LocalBackupSettingsComponent } from './local-backup-settings/local-backup-settings.component';
+import { NotesExportSettingsComponent } from './notes-export-settings/notes-export-settings.component';
+import { PortableExportSettingsComponent } from './portable-export-settings/portable-export-settings.component';
+import { ThemeSettingsComponent } from './theme-settings/theme-settings.component';
 import { BackupService } from '../core/services/backup.service';
 import { BackupStatus } from '../core/dtos/backup.dtos';
 import { OpdsService } from '../core/services/opds.service';
@@ -86,6 +94,13 @@ const readwiseServiceMock = {
   preview: vi.fn(),
   commit: vi.fn(),
 };
+
+/** The instance of an extracted settings section rendered by the page. */
+function section<T>(fixture: ComponentFixture<SettingsComponent>, type: Type<T>): T {
+  const debugElement = fixture.debugElement.query(By.directive(type));
+  if (!debugElement) throw new Error(`${type.name} is not on the page`);
+  return debugElement.componentInstance as T;
+}
 
 const selfHostedCapabilities: DeploymentCapabilities = {
   deploymentMode: 'SelfHosted',
@@ -977,8 +992,8 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card.querySelectorAll('[data-testid="managed-backup"]')).toHaveLength(0);
     expect(card.querySelector('[data-testid="managed-backup-restore"]')).toBeNull();
 
-    fixture.componentInstance.requestManagedRestore('nightly-backup-1');
-    expect(fixture.componentInstance.pendingManagedRestore()).toBeNull();
+    section(fixture, ManagedBackupsSettingsComponent).requestManagedRestore('nightly-backup-1');
+    expect(section(fixture, ManagedBackupsSettingsComponent).pendingManagedRestore()).toBeNull();
     expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
   });
 
@@ -986,13 +1001,14 @@ describe('SettingsComponent backup-only surface', () => {
     openManageLibraryPage();
     fixture.detectChanges();
 
-    fixture.componentInstance.requestManagedRestore('nightly-backup-1');
-
-    expect(fixture.componentInstance.pendingManagedRestore()).toBeNull();
-    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
+    expect(managedBackupsServiceMock.getBackups).not.toHaveBeenCalled();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="managed-backups-card"]'),
+    ).toBeNull();
     expect(
       fixture.nativeElement.querySelector('[data-testid="managed-backup-restore"]'),
     ).toBeNull();
+    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
   });
 
   it('requires destructive confirmation before calling restore', () => {
@@ -1003,7 +1019,7 @@ describe('SettingsComponent backup-only surface', () => {
       supportsManagedBackupRestore: true,
     });
 
-    const component = fixture.componentInstance;
+    const component = section(fixture, ManagedBackupsSettingsComponent);
     component.requestManagedRestore('nightly-backup-1');
     fixture.detectChanges();
 
@@ -1040,7 +1056,7 @@ describe('SettingsComponent backup-only surface', () => {
       supportsManagedBackupRestore: true,
     });
 
-    const component = fixture.componentInstance;
+    const component = section(fixture, ManagedBackupsSettingsComponent);
     component.requestManagedRestore('nightly-backup-1');
     component.confirmManagedRestore();
     component.confirmManagedRestore();
@@ -1085,7 +1101,7 @@ describe('SettingsComponent backup-only surface', () => {
       supportsManagedBackupRestore: true,
     });
 
-    const component = fixture.componentInstance;
+    const component = section(fixture, ManagedBackupsSettingsComponent);
     component.requestManagedRestore('nightly-backup-1');
     component.confirmManagedRestore();
     fixture.detectChanges();
@@ -1120,7 +1136,7 @@ describe('SettingsComponent backup-only surface', () => {
       supportsManagedBackupRestore: true,
     });
 
-    const component = fixture.componentInstance;
+    const component = section(fixture, ManagedBackupsSettingsComponent);
     component.requestManagedRestore('nightly-backup-1');
     component.confirmManagedRestore();
 
@@ -1215,13 +1231,13 @@ describe('SettingsComponent backup-only surface', () => {
     expect(localStorage.getItem('nostos.theme.day')).toBe('sepia');
     expect(document.documentElement.getAttribute('data-palette')).toBe('sepia');
 
-    fixture.componentInstance.setTheme('mist');
+    section(fixture, ThemeSettingsComponent).setTheme('mist');
     fixture.detectChanges();
     expect(slots()).toBeNull();
     expect(document.documentElement.getAttribute('data-palette')).toBe('mist');
 
-    fixture.componentInstance.setTheme('system');
-    fixture.componentInstance.setDayTheme('light');
+    section(fixture, ThemeSettingsComponent).setTheme('system');
+    section(fixture, ThemeSettingsComponent).setDayTheme('light');
     fixture.detectChanges();
     expect(document.documentElement.hasAttribute('data-palette')).toBe(false);
   });
@@ -1233,15 +1249,15 @@ describe('SettingsComponent backup-only surface', () => {
     fixture.detectChanges();
     expect(cards()[1].getAttribute('aria-checked')).toBe('true');
     expect(localStorage.getItem('nostos.theme')).toBe('light');
-    fixture.componentInstance.setTheme('system');
+    section(fixture, ThemeSettingsComponent).setTheme('system');
   });
 
   it('reverts to light and clears the attribute when Light is chosen', () => {
-    fixture.componentInstance.setTheme('dark');
+    section(fixture, ThemeSettingsComponent).setTheme('dark');
     fixture.detectChanges();
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
 
-    fixture.componentInstance.setTheme('light');
+    section(fixture, ThemeSettingsComponent).setTheme('light');
     fixture.detectChanges();
     // Removing the attribute (not setting 'light') keeps `:root` the single
     // owner of the light values.
@@ -1250,8 +1266,8 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps the backup delete question open and busy until the server answers', () => {
-    render();
-    const component = fixture.componentInstance;
+    openManageLibraryPage();
+    const component = section(fixture, LocalBackupSettingsComponent);
     const answer = new Subject<null>();
     backupServiceMock.deleteBackup.mockReturnValueOnce(answer.asObservable());
 
@@ -1273,8 +1289,8 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps the backup restore question open and busy until the server answers', () => {
-    render();
-    const component = fixture.componentInstance;
+    openManageLibraryPage();
+    const component = section(fixture, LocalBackupSettingsComponent);
     const answer = new Subject<{ success: boolean; message: string }>();
     backupServiceMock.restore.mockReturnValueOnce(answer.asObservable());
 
@@ -1624,7 +1640,7 @@ describe('SettingsComponent backup-only surface', () => {
     render();
     openManageLibraryPage();
 
-    const component = fixture.componentInstance;
+    const component = section(fixture, PortableExportSettingsComponent);
     const saveSpy = vi
       .spyOn(
         component as unknown as {
@@ -1696,7 +1712,7 @@ describe('SettingsComponent backup-only surface', () => {
     ) as HTMLElement;
     expect(error.getAttribute('role')).toBe('alert');
     expect(error.textContent).toContain('Your data was not changed');
-    expect(fixture.componentInstance.portableExportBusy()).toBe(false);
+    expect(section(fixture, PortableExportSettingsComponent).portableExportBusy()).toBe(false);
     expect(toastMock.error).toHaveBeenCalledWith('Could not export your Nostos data');
   });
 
@@ -1724,7 +1740,7 @@ describe('SettingsComponent backup-only surface', () => {
     render();
     openManageLibraryPage();
 
-    const component = fixture.componentInstance;
+    const component = section(fixture, NotesExportSettingsComponent);
     const saveSpy = vi
       .spyOn(component as unknown as { saveDownload: (blob: Blob, name: string) => void }, 'saveDownload')
       .mockImplementation(() => {});
@@ -1757,7 +1773,7 @@ describe('SettingsComponent backup-only surface', () => {
     const error = card.querySelector('.portable-export-status.is-error') as HTMLElement;
     expect(error.getAttribute('role')).toBe('alert');
     expect(error.textContent).toContain('Nothing was changed');
-    expect(fixture.componentInstance.notesExportBusy()).toBe(false);
+    expect(section(fixture, NotesExportSettingsComponent).notesExportBusy()).toBe(false);
   });
 
   it('keeps the Cloud voice toggle as product intent instead of provider configuration', () => {
@@ -1919,7 +1935,7 @@ describe('SettingsComponent backup-only surface', () => {
     );
 
     const archive = new File(['archive'], 'library.nostos');
-    await fixture.componentInstance.importFirstRunArchive({
+    await section(fixture, PortableExportSettingsComponent).importFirstRunArchive({
       target: { files: [archive], value: 'selected' },
     } as unknown as Event);
 
@@ -2034,7 +2050,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('asks through ConfirmModal before restoring (no direct restore)', () => {
     openManageLibraryPage();
-    const component = fixture.componentInstance;
+    const component = section(fixture, LocalBackupSettingsComponent);
     backupServiceMock.restore.mockClear();
 
     component.restoreBackup('b1');
@@ -2051,7 +2067,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('cancelling restore performs nothing', () => {
     openManageLibraryPage();
-    const component = fixture.componentInstance;
+    const component = section(fixture, LocalBackupSettingsComponent);
     backupServiceMock.restore.mockClear();
 
     component.restoreBackup('b1');
@@ -2062,7 +2078,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('downloads a backup from a link, without opening a window', () => {
     openManageLibraryPage();
-    const component = fixture.componentInstance;
+    const component = section(fixture, LocalBackupSettingsComponent);
     backupServiceMock.getDownloadUrl.mockReturnValue('/api/backup/download/b1');
     const open = vi.spyOn(window, 'open');
     let clicked: HTMLAnchorElement | null = null;
@@ -2083,7 +2099,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('asks through ConfirmModal before deleting a backup', () => {
     openManageLibraryPage();
-    const component = fixture.componentInstance;
+    const component = section(fixture, LocalBackupSettingsComponent);
     backupServiceMock.deleteBackup.mockClear();
 
     component.deleteBackup('b9');
@@ -2131,7 +2147,7 @@ describe('SettingsComponent backup-only surface', () => {
     await flush();
 
     expect(writeText).toHaveBeenCalledWith(remoteInfo.catalogUrl);
-    expect(fixture.componentInstance.copied()).toBe(true);
+    expect(section(fixture, EreaderAccessSettingsComponent).copied()).toBe(true);
     fixture.detectChanges();
     expect(copyButton()!.textContent).toContain('Copied');
     expect(toastMock.success).toHaveBeenCalled();
@@ -2143,7 +2159,7 @@ describe('SettingsComponent backup-only surface', () => {
     copyButton()!.click();
     await flush();
 
-    expect(fixture.componentInstance.copied()).toBe(false);
+    expect(section(fixture, EreaderAccessSettingsComponent).copied()).toBe(false);
     expect(toastMock.error).toHaveBeenCalled();
     // The address stays on screen, selectable, as the manual fallback.
     expect(catalogUrlText()).toBe(remoteInfo.catalogUrl);
@@ -2263,12 +2279,12 @@ describe('SettingsComponent backup-only surface', () => {
 
     // Regenerating cuts off every reader on the old password, so it asks first.
     expect(opdsServiceMock.rotateManagedPassword).not.toHaveBeenCalled();
-    expect(fixture.componentInstance.pendingOpdsRotate()).toBe(true);
-    fixture.componentInstance.rotateManagedOpdsPassword();
+    expect(section(fixture, EreaderAccessSettingsComponent).pendingOpdsRotate()).toBe(true);
+    section(fixture, EreaderAccessSettingsComponent).rotateManagedOpdsPassword();
     fixture.detectChanges();
 
     expect(opdsServiceMock.rotateManagedPassword).toHaveBeenCalledTimes(1);
-    expect(fixture.componentInstance.pendingOpdsRotate()).toBe(false);
+    expect(section(fixture, EreaderAccessSettingsComponent).pendingOpdsRotate()).toBe(false);
     expect(
       (fixture.nativeElement.querySelector('.managed-opds-password') as HTMLElement).textContent,
     ).toContain(managedRotated.password);
@@ -2286,15 +2302,15 @@ describe('SettingsComponent backup-only surface', () => {
     ) as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    expect(fixture.componentInstance.pendingOpdsRevoke()).toBe(true);
+    expect(section(fixture, EreaderAccessSettingsComponent).pendingOpdsRevoke()).toBe(true);
     expect(opdsServiceMock.revokeManagedAccess).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeTruthy();
 
-    fixture.componentInstance.confirmManagedOpdsRevoke();
+    section(fixture, EreaderAccessSettingsComponent).confirmManagedOpdsRevoke();
     fixture.detectChanges();
 
     expect(opdsServiceMock.revokeManagedAccess).toHaveBeenCalledTimes(1);
-    expect(fixture.componentInstance.pendingOpdsRevoke()).toBe(false);
+    expect(section(fixture, EreaderAccessSettingsComponent).pendingOpdsRevoke()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="managed-opds-disabled"]')).toBeTruthy();
   });
 
@@ -2455,7 +2471,7 @@ describe('SettingsComponent backup-only surface', () => {
     preferences.setAssistantEnabled(false);
 
     // The guard is belt-and-braces behind the disabled control.
-    fixture.componentInstance.setAssistantEnabled({
+    section(fixture, AssistantSettingsComponent).setAssistantEnabled({
       target: { checked: true },
     } as unknown as Event);
 
@@ -2711,8 +2727,8 @@ describe('SettingsComponent backup-only surface', () => {
     expect(input('#ai-alignment-api-key').type).toBe('password');
 
     expect(fixture.nativeElement.querySelector('#ai-alignment-api-style')).not.toBeNull();
-    expect(fixture.componentInstance.aiAlignment().apiStyle).toBe('openai-multipart');
-    expect(fixture.componentInstance.alignmentApiStyleOptions).toEqual([
+    expect(section(fixture, AiProviderSettingsComponent).aiAlignment().apiStyle).toBe('openai-multipart');
+    expect(section(fixture, AiProviderSettingsComponent).alignmentApiStyleOptions).toEqual([
       { value: 'openai-multipart', label: 'OpenAI-compatible (multipart upload)' },
       { value: 'json-base64', label: 'JSON (base64 audio)' },
     ]);
@@ -2771,7 +2787,7 @@ describe('SettingsComponent backup-only surface', () => {
     setInputValue('#ai-alignment-base-url', 'https://alignment.example/v1');
     setInputValue('#ai-alignment-model', 'custom-alignment-model');
 
-    fixture.componentInstance.setAiAlignmentApiStyle('json-base64');
+    section(fixture, AiProviderSettingsComponent).setAiAlignmentApiStyle('json-base64');
     fixture.detectChanges();
 
     const enabled = fixture.nativeElement.querySelector(
@@ -3167,6 +3183,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   /** Re-renders with whatever the mock currently answers. */
   function render(): void {
+    fixture?.destroy();
     fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
   }

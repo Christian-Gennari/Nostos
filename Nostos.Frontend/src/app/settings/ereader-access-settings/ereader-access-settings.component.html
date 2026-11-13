@@ -1,0 +1,213 @@
+      <!-- E-reader access is one product capability with deployment-specific
+           connection models: private-network SelfHosted or managed Cloud credentials. -->
+      <section class="settings-card" data-testid="ereader-access-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>E-reader access</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          @if (opdsFailed() || (managed() && managedOpdsFailed())) {
+            <nostos-empty-state
+              compact
+              error
+              message="Could not read this setting"
+              detail="Nostos could not load your e-reader access details."
+              (retry)="retryEreaderAccess()"
+            />
+          } @else if (opds(); as info) {
+            @if (managed()) {
+              @if (info.enabled && info.catalogUrl) {
+                <div class="setting-row setting-row--stacked">
+                  <div class="setting-label">
+                    <span class="label-text">Catalogue address</span>
+                    <span class="label-desc">Add this catalogue to a compatible e-reader or reading app. Use the separate reader credentials below &mdash; never your Nostos account password.</span>
+                  </div>
+                  <div class="catalog-url-row">
+                    <code class="catalog-url">{{ info.catalogUrl }}</code>
+                  </div>
+                </div>
+
+                @if (managedOpds(); as access) {
+                  @if (access.enabled && access.username) {
+                    <div class="setting-row setting-row--stacked" data-testid="managed-opds-enabled">
+                      <div class="setting-label">
+                        <span class="label-text">Reader credentials</span>
+                        <span class="label-desc">These credentials only connect an e-reader or reading app to your library.</span>
+                      </div>
+
+                      <div class="ereader-credentials">
+                        <div class="ereader-credential-row">
+                          <span class="ereader-credential-label">Username</span>
+                          <code class="catalog-url managed-opds-username">{{ access.username }}</code>
+                        </div>
+
+                        @if (access.password) {
+                          <div class="ereader-credential-row">
+                            <span class="ereader-credential-label">Password</span>
+                            <code class="catalog-url managed-opds-password">{{ access.password }}</code>
+                          </div>
+                          <p appNotice tone="caution" class="catalog-note catalog-note--warning" data-testid="managed-opds-one-time-secret">
+                            <nostos-icon name="warning" [size]="14"></nostos-icon>
+                            <span>Save this password now. Nostos does not store the plaintext password and cannot show it again.</span>
+                          </p>
+                        } @else {
+                          <p class="catalog-note">
+                            The password is not shown again after creation. If you no longer have it, regenerate it below.
+                          </p>
+                        }
+                      </div>
+
+                      <div class="ereader-actions">
+                        @if (access.password) {
+                          <button
+                            type="button"
+                            appButton variant="primary" size="sm"
+                            (click)="copyManagedOpdsConnectionDetails()"
+                            data-testid="copy-managed-opds-details"
+                          >
+                            @if (copied()) {
+                              <nostos-icon name="check" [size]="14"></nostos-icon>
+                              Copied
+                            } @else {
+                              <nostos-icon name="copy" [size]="14"></nostos-icon>
+                              Copy connection details
+                            }
+                          </button>
+                        }
+                        <button
+                          type="button"
+                          appButton variant="secondary" size="sm"
+                          (click)="requestManagedOpdsRotate()"
+                          [disabled]="managedOpdsBusy() !== null"
+                          data-testid="rotate-managed-opds-password"
+                        >
+                          Regenerate password
+                        </button>
+                        <button
+                          type="button"
+                          appButton variant="secondary" size="sm"
+                          (click)="requestManagedOpdsRevoke()"
+                          [disabled]="managedOpdsBusy() !== null"
+                          data-testid="revoke-managed-opds"
+                        >
+                          Disable e-reader access
+                        </button>
+                      </div>
+                      <p class="catalog-note">Regenerating the password immediately disconnects readers still using the old password.</p>
+                    </div>
+                  } @else {
+                    <div class="setting-row" data-testid="managed-opds-disabled">
+                      <div class="setting-label">
+                        <span class="label-text">E-reader access is off</span>
+                        <span class="label-desc">Enable it to create a separate username and one-time password for your e-reader or reading app.</span>
+                      </div>
+                      <button
+                        type="button"
+                        appButton variant="primary" size="sm"
+                        (click)="enableManagedOpds()"
+                        [disabled]="managedOpdsBusy() !== null"
+                        [busy]="managedOpdsBusy() === 'enable'"
+                        data-testid="enable-managed-opds"
+                      >
+                        Enable e-reader access
+                      </button>
+                    </div>
+                  }
+                } @else {
+                  <div class="settings-pane-loading">
+                    <nostos-loading-indicator label="Loading e-reader access" />
+                  </div>
+                }
+              } @else {
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text">E-reader access is unavailable</span>
+                    <span class="label-desc">Nostos did not provide a catalogue address, so no connection details are shown.</span>
+                  </div>
+                </div>
+              }
+            } @else if (privateNetwork()) {
+              @if (info.enabled && info.catalogUrl) {
+                <div class="setting-row setting-row--stacked">
+                  <div class="setting-label">
+                    <span class="label-text">Catalogue address</span>
+                    <span class="label-desc">Give this address to a compatible e-reader or reading app &mdash; it browses and downloads straight from your Nostos library, so nothing is copied and there is no second library to keep in sync.</span>
+                  </div>
+
+                  <div class="catalog-url-row">
+                    <code class="catalog-url">{{ info.catalogUrl }}</code>
+                    <button
+                      type="button"
+                      appButton variant="secondary" size="sm"
+                      (click)="copyCatalogUrl()"
+                      [attr.aria-label]="'Copy catalogue address ' + info.catalogUrl"
+                    >
+                      @if (copied()) {
+                        <nostos-icon name="check" [size]="14"></nostos-icon>
+                        Copied
+                      } @else {
+                        <nostos-icon name="copy" [size]="14"></nostos-icon>
+                        Copy URL
+                      }
+                    </button>
+                  </div>
+
+                  @if (info.localOnly) {
+                    <p appNotice tone="caution" class="catalog-note catalog-note--warning">
+                      <nostos-icon name="warning" [size]="14"></nostos-icon>
+                      <span>This address only works on this computer. Open Nostos from the address your reader will use &mdash; your machine's address on your home network or Tailscale &mdash; and the catalogue address will match it.</span>
+                    </p>
+                  } @else {
+                    <p class="catalog-note">
+                      Your reader has to be able to reach this server: the same home network or Tailscale network you are on now. In the reader's settings, look for &ldquo;catalogue&rdquo; or &ldquo;OPDS catalogue&rdquo; and enter the address above.
+                    </p>
+                  }
+                </div>
+              } @else {
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text">E-reader access is turned off</span>
+                    <span class="label-desc">This server is not publishing a catalogue, so there is no address to connect to. It can be switched on where Nostos is configured, with <code class="inline-code">Opds:Enabled=true</code>.</span>
+                  </div>
+                </div>
+              }
+            }
+          } @else {
+            <div class="settings-pane-loading">
+              <nostos-loading-indicator label="Loading e-reader access" />
+            </div>
+          }
+        </div>
+      </section>
+
+
+    <!-- Regenerating disconnects every reader on the old password, so it asks first. -->
+    @if (managed()) {
+      <app-confirm-modal
+        [isOpen]="pendingOpdsRotate()"
+        heading="Regenerate the e-reader password?"
+        description="Readers still using the old password disconnect immediately. Save the new password when it is shown; it is not shown again."
+        confirmLabel="Regenerate"
+        busyLabel="Regenerating…"
+        icon="arrows-clockwise"
+        [busy]="managedOpdsBusy() === 'rotate'"
+        (confirm)="rotateManagedOpdsPassword()"
+        (cancel)="cancelManagedOpdsRotate()"
+      >
+      </app-confirm-modal>
+
+      <app-confirm-modal
+        [isOpen]="pendingOpdsRevoke()"
+        heading="Disable e-reader access?"
+        description="Readers using these credentials will disconnect immediately. You can enable e-reader access again later with a new password."
+        confirmLabel="Disable access"
+        busyLabel="Disabling…"
+        icon="x"
+        [busy]="managedOpdsBusy() === 'revoke'"
+        (confirm)="confirmManagedOpdsRevoke()"
+        (cancel)="cancelManagedOpdsRevoke()"
+      >
+      </app-confirm-modal>
+    }
