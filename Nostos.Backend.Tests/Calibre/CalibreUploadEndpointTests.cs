@@ -329,6 +329,98 @@ public sealed class CalibreUploadEndpointTests
     }
 
     [Fact]
+    public async Task A_part_whose_hash_does_not_match_is_refused_without_a_receipt()
+    {
+        using var factory = new UploadFactory();
+        var client = factory.CreateClient();
+        var zip = ZipLibrary();
+        var sha = Convert.ToHexStringLower(SHA256.HashData(zip));
+        var created = await CreateAsync(client, zip.Length, sha);
+        var part = zip.AsSpan(0, Math.Min(created.PartBytes, zip.Length)).ToArray();
+
+        var response = await SendPartAsync(
+            client, created.SessionId, 0, part, 0, zip.Length, new string('0', 64));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("calibre_upload_part_hash_mismatch");
+
+        var status = await client.GetFromJsonAsync<CalibreUploadStatus>(
+            $"/api/calibre/upload/{created.SessionId}");
+        status!.ReceivedParts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_part_that_does_not_fit_the_server_owned_range_is_refused()
+    {
+        using var factory = new UploadFactory();
+        var client = factory.CreateClient();
+        var zip = ZipLibrary();
+        var sha = Convert.ToHexStringLower(SHA256.HashData(zip));
+        var created = await CreateAsync(client, zip.Length, sha);
+        var part = zip.AsSpan(0, Math.Min(created.PartBytes, zip.Length)).ToArray();
+
+        // One byte short of the part the server expects for index 0.
+        var shortPart = part.AsSpan(0, part.Length - 1).ToArray();
+        var response = await SendPartAsync(client, created.SessionId, 0, shortPart, 0, zip.Length);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<CalibreUploadErrorBody>();
+        body!.Code.Should().Be(CalibreUploadException.PartRangeInvalid);
+        body.Message.Should().Contain("server-owned part size");
+
+        var status = await client.GetFromJsonAsync<CalibreUploadStatus>(
+            $"/api/calibre/upload/{created.SessionId}");
+        status!.ReceivedParts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_part_body_larger_than_its_declared_range_is_refused()
+    {
+        using var factory = new UploadFactory();
+        var client = factory.CreateClient();
+        var zip = ZipLibrary();
+        var sha = Convert.ToHexStringLower(SHA256.HashData(zip));
+        var created = await CreateAsync(client, zip.Length, sha);
+        var part = zip.AsSpan(0, Math.Min(created.PartBytes, zip.Length)).ToArray();
+        var oversized = part.Append((byte)0x00).ToArray();
+
+        // The range is the one index 0 owns, but one more byte arrived than it names.
+        var response = await SendPartAsync(
+            client,
+            created.SessionId,
+            0,
+            oversized,
+            0,
+            zip.Length,
+            contentRange: $"bytes 0-{part.Length - 1}/{zip.Length}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var body = await response.Content.ReadFromJsonAsync<CalibreUploadErrorBody>();
+        body!.Code.Should().Be(CalibreUploadException.PartRangeInvalid);
+        body.Message.Should().Contain("larger than its declared range");
+    }
+
+    [Fact]
+    public async Task A_part_on_an_expired_upload_is_gone()
+    {
+        using var factory = new UploadFactory();
+        var client = factory.CreateClient();
+        var zip = ZipLibrary();
+        var sha = Convert.ToHexStringLower(SHA256.HashData(zip));
+        var created = await CreateAsync(client, zip.Length, sha);
+        var part = zip.AsSpan(0, Math.Min(created.PartBytes, zip.Length)).ToArray();
+        await ExpireManifestAsync(factory);
+
+        var response = await SendPartAsync(client, created.SessionId, 0, part, 0, zip.Length);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Gone);
+        var body = await response.Content.ReadFromJsonAsync<CalibreUploadErrorBody>();
+        body!.Code.Should().Be(CalibreUploadException.Expired);
+        factory.ScratchIsEmpty.Should().BeTrue("an expired upload is removed, not resumed");
+    }
+
+    [Fact]
     public async Task An_expired_upload_is_removed_and_reported_as_gone()
     {
         using var factory = new UploadFactory();
@@ -384,7 +476,9 @@ public sealed class CalibreUploadEndpointTests
         int index,
         byte[] bytes,
         long offset,
-        long total)
+        long total,
+        string? sha256 = null,
+        string? contentRange = null)
     {
         var request = new HttpRequestMessage(
             HttpMethod.Put,
@@ -394,10 +488,26 @@ public sealed class CalibreUploadEndpointTests
         };
         request.Content.Headers.ContentType = new("application/octet-stream");
         request.Content.Headers.TryAddWithoutValidation(
-            "Content-Range", $"bytes {offset}-{offset + bytes.Length - 1}/{total}");
+            "Content-Range",
+            contentRange ?? $"bytes {offset}-{offset + bytes.Length - 1}/{total}");
         request.Headers.TryAddWithoutValidation(
-            "X-Nostos-Chunk-SHA256", Convert.ToHexStringLower(SHA256.HashData(bytes)));
+            "X-Nostos-Chunk-SHA256",
+            sha256 ?? Convert.ToHexStringLower(SHA256.HashData(bytes)));
         return await client.SendAsync(request);
+    }
+
+    /// <summary>Moves the staged manifest into the past, as if its lifetime had run out.</summary>
+    private static async Task ExpireManifestAsync(UploadFactory factory)
+    {
+        var manifestPath = Directory.EnumerateFiles(
+            factory.UploadRoot, "manifest.json", SearchOption.AllDirectories).Single();
+        var json = await File.ReadAllTextAsync(manifestPath);
+        var manifest = JsonSerializer.Deserialize<CalibreUploadManifest>(
+            json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        manifest.ExpiresAtUtc = DateTime.UtcNow.AddHours(-1);
+        await File.WriteAllTextAsync(
+            manifestPath,
+            JsonSerializer.Serialize(manifest, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
     }
 
     private static async Task<CalibreUploadStatus> CompleteAsync(HttpClient client, Guid sessionId)

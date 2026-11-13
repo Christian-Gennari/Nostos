@@ -840,37 +840,28 @@ public static class BooksEndpoints
         Func<string, string, IFormCollection, Task<T>> run)
     {
         const long maxBytes = 64L * 1024 * 1024;
-        if (!request.HasFormContentType)
-            return Results.BadRequest(new { error = "Expected multipart/form-data with a Goodreads or StoryGraph CSV." });
-
-        var form = await request.ReadFormAsync(request.HttpContext.RequestAborted);
-        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
-        if (file is null)
-            return Results.BadRequest(new { error = "Choose a Goodreads or StoryGraph export to import." });
-        if (file.Length <= 0 || file.Length > maxBytes)
-            return Results.BadRequest(new { error = "The file must be between 1 byte and 64 MB." });
-
-        var directory = Directory.CreateTempSubdirectory("nostos-reading-history-");
         try
         {
-            var name = string.IsNullOrWhiteSpace(file.FileName) ? "export.csv" : Path.GetFileName(file.FileName);
-            var target = Path.Combine(directory.FullName, name);
-            await using (var stream = File.Create(target))
-            await using (var source = file.OpenReadStream())
-            {
-                await source.CopyToAsync(stream, request.HttpContext.RequestAborted);
-            }
+            using var upload = await MultipartTempUpload.ReceiveAsync(
+                request,
+                new MultipartUploadOptions(
+                    MaxBytes: maxBytes,
+                    TempPrefix: "nostos-reading-history-",
+                    ExpectedFormMessage: "Expected multipart/form-data with a Goodreads or StoryGraph CSV.",
+                    MissingFileMessage: "Choose a Goodreads or StoryGraph export to import.",
+                    TooLargeMessage: "The file must be between 1 byte and 64 MB.",
+                    FileNameFallback: "export.csv"),
+                request.HttpContext.RequestAborted);
 
-            return Results.Ok(await run(target, name, form));
+            return Results.Ok(await run(upload.Path, upload.Name, upload.Form));
+        }
+        catch (MultipartUploadRejectedException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
             return Results.BadRequest(new { error = ex.Message });
-        }
-        finally
-        {
-            try { directory.Delete(recursive: true); }
-            catch (IOException) { }
         }
     }
 }

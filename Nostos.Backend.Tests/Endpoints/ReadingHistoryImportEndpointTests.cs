@@ -370,6 +370,45 @@ public sealed class ReadingHistoryImportEndpointTests : IClassFixture<LibraryEnd
         batch.ChangeCount.Should().BeGreaterThan(0);
     }
 
+    [Fact]
+    public async Task An_upload_name_this_server_cannot_store_is_replaced_by_a_safe_one()
+    {
+        using var client = _factory.CreateClient();
+        var book = await CreateBookAsync(client, "The Cartographer's Daughter", "Ada Vance", "9780000000019");
+
+        var result = await CommitAsync(
+            client,
+            Goodreads,
+            ".goodreads_library_export.csv",
+            new ReadingHistoryImportDecision("goodreads:id:101", book.Id));
+
+        result.BatchId.Should().NotBeNull();
+        await using var db = CreateContext(_factory.DatabasePath);
+        var batch = await db.BookImportBatches.AsNoTracking().SingleAsync();
+        batch.Source.Should().Be("goodreads");
+        batch.FileName.Should().Be(
+            "export.csv",
+            "a dot-prefixed upload name is neither written nor recorded");
+    }
+
+    [Fact]
+    public async Task An_import_without_a_multipart_body_or_a_file_is_refused()
+    {
+        using var client = _factory.CreateClient();
+
+        var json = await client.PostAsJsonAsync("/api/books/imports/preview", new { });
+        json.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await json.Content.ReadAsStringAsync())
+            .Should().Contain("Expected multipart/form-data with a Goodreads or StoryGraph CSV.");
+
+        using var empty = new MultipartFormDataContent();
+        empty.Add(new StringContent("[]"), "decisions");
+        var missing = await client.PostAsync("/api/books/imports/preview", empty);
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await missing.Content.ReadAsStringAsync())
+            .Should().Contain("Choose a Goodreads or StoryGraph export to import.");
+    }
+
     private static async Task<ReadingHistoryImportPreview> PreviewAsync(HttpClient client, string path)
     {
         var response = await UploadAsync(client, "preview", path);
@@ -387,14 +426,30 @@ public sealed class ReadingHistoryImportEndpointTests : IClassFixture<LibraryEnd
         return (await response.Content.ReadFromJsonAsync<ReadingHistoryImportResult>())!;
     }
 
+    /// <summary>Commits with a chosen upload name, for the cases the name itself is suspect.</summary>
+    private static async Task<ReadingHistoryImportResult> CommitAsync(
+        HttpClient client,
+        string path,
+        string fileName,
+        params ReadingHistoryImportDecision[] decisions)
+    {
+        var response = await UploadAsync(client, "commit", path, decisions, fileName);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<ReadingHistoryImportResult>())!;
+    }
+
     private static async Task<HttpResponseMessage> UploadAsync(
         HttpClient client,
         string step,
         string path,
-        ReadingHistoryImportDecision[]? decisions = null)
+        ReadingHistoryImportDecision[]? decisions = null,
+        string? fileName = null)
     {
         using var body = new MultipartFormDataContent();
-        body.Add(new ByteArrayContent(await File.ReadAllBytesAsync(path)), "file", Path.GetFileName(path));
+        body.Add(
+            new ByteArrayContent(await File.ReadAllBytesAsync(path)),
+            "file",
+            fileName ?? Path.GetFileName(path));
         if (decisions is not null)
             body.Add(new StringContent(JsonSerializer.Serialize(decisions, JsonSerializerOptions.Web)), "decisions");
         return await client.PostAsync($"/api/books/imports/{step}", body);

@@ -3,6 +3,7 @@ using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -410,68 +411,43 @@ public static class NotesEndpoints
     {
         const long maxBytes = 256L * 1024 * 1024;
         const int maxCompanions = 4;
-        if (!request.HasFormContentType)
-            return Results.BadRequest(new { error = "Expected multipart/form-data with a highlights file." });
-
-        var form = await request.ReadFormAsync(ct);
-        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
-        if (file is null)
-            return Results.BadRequest(new { error = "Choose a highlights file to import." });
-        if (file.Length <= 0 || file.Length > maxBytes)
-            return Results.BadRequest(new { error = "The file must be between 1 byte and 256 MB." });
-
-        var companions = form.Files.GetFiles("companion");
-        if (companions.Count > maxCompanions)
-            return Results.BadRequest(new { error = "Choose at most five files for one import." });
-        if (companions.Any(companion => companion.Length <= 0 || companion.Length > maxBytes))
-            return Results.BadRequest(new { error = "Each file must be between 1 byte and 256 MB." });
-
-        var directory = Directory.CreateTempSubdirectory("nostos-highlight-import-");
         try
         {
-            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            async Task<string> SaveAsync(IFormFile upload, string fallback)
-            {
-                var name = SafeUploadName(upload.FileName) ?? fallback;
-                if (!used.Add(name))
-                    name = $"{fallback}-{used.Count}";
-                used.Add(name);
-                var target = Path.Combine(directory.FullName, name);
-                await using var stream = File.Create(target);
-                await using var source = upload.OpenReadStream();
-                await source.CopyToAsync(stream, ct);
-                return target;
-            }
+            using var upload = await MultipartTempUpload.ReceiveAsync(
+                request,
+                new MultipartUploadOptions(
+                    MaxBytes: maxBytes,
+                    TempPrefix: "nostos-highlight-import-",
+                    ExpectedFormMessage: "Expected multipart/form-data with a highlights file.",
+                    MissingFileMessage: "Choose a highlights file to import.",
+                    TooLargeMessage: "The file must be between 1 byte and 256 MB.",
+                    FileNameFallback: "upload"),
+                ct);
 
-            var path = await SaveAsync(file, "upload");
+            var companions = upload.Form.Files.GetFiles("companion");
+            if (companions.Count > maxCompanions)
+                return Results.BadRequest(new { error = "Choose at most five files for one import." });
+            if (companions.Any(companion => companion.Length <= 0 || companion.Length > maxBytes))
+                return Results.BadRequest(new { error = "Each file must be between 1 byte and 256 MB." });
+
             var companionPaths = new List<string>(companions.Count);
             for (var i = 0; i < companions.Count; i++)
-                companionPaths.Add(await SaveAsync(companions[i], $"companion-{i}"));
+                companionPaths.Add(await upload.SpoolAsync(companions[i], $"companion-{i}", ct));
 
             // A -wal file is read through its database, never on its own.
             companionPaths.RemoveAll(candidate => candidate.EndsWith("-wal", StringComparison.OrdinalIgnoreCase)
                 || candidate.EndsWith("-shm", StringComparison.OrdinalIgnoreCase));
 
-            return Results.Ok(await run(path, companionPaths, Path.GetFileName(file.FileName), form));
+            return Results.Ok(await run(upload.Path, companionPaths, upload.OriginalName, upload.Form));
+        }
+        catch (MultipartUploadRejectedException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
-        finally
-        {
-            try { directory.Delete(recursive: true); }
-            catch (IOException) { }
-        }
-    }
-
-    /// <summary>A plain file name to spool an upload under, or null when it has none worth keeping.</summary>
-    private static string? SafeUploadName(string? fileName)
-    {
-        var name = Path.GetFileName(fileName ?? string.Empty).Trim();
-        if (name.Length is 0 or > 200 || name.StartsWith('.'))
-            return null;
-        return name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ? null : name;
     }
 
     private static string? HeaderValue(HttpRequest request, string name) =>

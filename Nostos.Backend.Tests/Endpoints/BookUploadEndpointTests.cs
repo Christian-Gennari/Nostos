@@ -174,6 +174,85 @@ public sealed class BookUploadEndpointTests
     }
 
     [Fact]
+    public async Task Part_outside_the_server_owned_range_is_refused_without_a_receipt()
+    {
+        using var client = _factory.CreateClient();
+        var book = await CreateBookAsync(client);
+        var bytes = Encoding.ASCII.GetBytes("the range is the server's choice");
+        var created = await CreateSessionAsync(
+            client, book.Id, bytes.Length, "range.txt", Sha256Hex(bytes));
+        var session = await ReadStatusAsync(created);
+
+        // A one-part file must cover exactly its own bytes: a client-chosen
+        // range is refused even when it parses.
+        using var response = await SendPartAsync(
+            client,
+            book.Id,
+            session.SessionId,
+            0,
+            bytes,
+            $"bytes 0-{bytes.Length - 2}/{bytes.Length}");
+        response.StatusCode.Should().Be(HttpStatusCode.RequestedRangeNotSatisfiable);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("book_upload_part_range_invalid");
+
+        var current = await client.GetFromJsonAsync<UploadStatusDto>(
+            $"/api/books/{book.Id}/file/uploads");
+        current!.ReceivedParts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Part_body_larger_than_one_part_is_refused_before_it_is_read()
+    {
+        using var client = _factory.CreateClient();
+        var book = await CreateBookAsync(client);
+        var total = (long)PartBytes + 1;
+        var bytes = new byte[total];
+        new Random(1629).NextBytes(bytes);
+        var created = await CreateSessionAsync(
+            client, book.Id, total, "big.txt", Sha256Hex(bytes));
+        var session = await ReadStatusAsync(created);
+
+        // A body physically larger than one part, whichever range it claims.
+        using var response = await SendPartAsync(
+            client,
+            book.Id,
+            session.SessionId,
+            0,
+            bytes,
+            $"bytes 0-{PartBytes - 1}/{total}");
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("book_upload_invalid_request");
+
+        var current = await client.GetFromJsonAsync<UploadStatusDto>(
+            $"/api/books/{book.Id}/file/uploads");
+        current!.ReceivedParts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Part_on_an_expired_session_is_gone()
+    {
+        using var client = _factory.CreateClient();
+        var book = await CreateBookAsync(client);
+        var bytes = Encoding.ASCII.GetBytes("this session has run out of time");
+        var created = await CreateSessionAsync(
+            client, book.Id, bytes.Length, "expired.txt", Sha256Hex(bytes));
+        var session = await ReadStatusAsync(created);
+
+        await using (var db = OpenDb(_factory.DatabasePath))
+        {
+            var row = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == session.SessionId);
+            row.ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-1);
+            await db.SaveChangesAsync();
+        }
+
+        using var response = await PutPartAsync(client, book.Id, session.SessionId, 0, bytes);
+        response.StatusCode.Should().Be(HttpStatusCode.Gone);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("book_upload_expired");
+    }
+
+    [Fact]
     public async Task Different_file_replaces_an_interrupted_session()
     {
         using var client = _factory.CreateClient();
@@ -801,6 +880,26 @@ public sealed class BookUploadEndpointTests
             "Content-Range",
             $"bytes {offset}-{offset + length - 1}/{allBytes.Length}");
         content.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", partSha);
+        request.Content = content;
+        return await client.SendAsync(request);
+    }
+
+    /// <summary>Sends a part with a hand-written Content-Range, for the cases the range must be wrong.</summary>
+    private static async Task<HttpResponseMessage> SendPartAsync(
+        HttpClient client,
+        Guid bookId,
+        Guid sessionId,
+        int partIndex,
+        byte[] body,
+        string contentRange)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/api/books/{bookId}/file/uploads/{sessionId}/parts/{partIndex}");
+        var content = new ByteArrayContent(body);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        content.Headers.TryAddWithoutValidation("Content-Range", contentRange);
+        content.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", Sha256Hex(body));
         request.Content = content;
         return await client.SendAsync(request);
     }

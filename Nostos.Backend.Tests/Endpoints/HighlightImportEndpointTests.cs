@@ -548,6 +548,53 @@ public sealed class HighlightImportEndpointTests
     }
 
     [Fact]
+    public async Task An_import_without_a_multipart_body_or_a_file_is_refused()
+    {
+        using var client = _factory.CreateClient();
+
+        var json = await client.PostAsJsonAsync("/api/notes/imports/preview", new { });
+        json.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await json.Content.ReadAsStringAsync())
+            .Should().Contain("Expected multipart/form-data with a highlights file.");
+
+        using var empty = new MultipartFormDataContent();
+        empty.Add(new StringContent("[]"), "decisions");
+        var missing = await client.PostAsync("/api/notes/imports/preview", empty);
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await missing.Content.ReadAsStringAsync())
+            .Should().Contain("Choose a highlights file to import.");
+    }
+
+    [Fact]
+    public async Task More_companions_than_an_import_accepts_are_refused()
+    {
+        using var client = _factory.CreateClient();
+        var sidecar = ImportFixtures.KoreaderEpub;
+        var sidecars = Enumerable.Range(0, 5)
+            .Select(index => Path.Combine(_directory, $"companion-{index}.sqlite"))
+            .ToList();
+        foreach (var companion in sidecars)
+            await File.WriteAllBytesAsync(companion, await File.ReadAllBytesAsync(sidecar));
+
+        using var body = new MultipartFormDataContent();
+        body.Add(
+            new ByteArrayContent(await File.ReadAllBytesAsync(sidecar)),
+            "file",
+            Path.GetFileName(sidecar));
+        foreach (var companion in sidecars)
+            body.Add(
+                new ByteArrayContent(await File.ReadAllBytesAsync(companion)),
+                "companion",
+                Path.GetFileName(companion));
+
+        var response = await client.PostAsync("/api/notes/imports/preview", body);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("Choose at most five files for one import.");
+    }
+
+    [Fact]
     public async Task A_file_that_is_neither_source_is_rejected()
     {
         using var client = _factory.CreateClient();
