@@ -7,8 +7,8 @@
  * not one archive.
  */
 
-import { TransferCancelledError } from '../../models/library-transfer.models';
-import { HASH_READ_BLOCK_BYTES } from '../../models/library-transfer.models';
+import { TransferCancelledError } from '../upload.models';
+import { HASH_READ_BLOCK_BYTES } from '../upload.models';
 import { readBlobBytes } from './blob-bytes';
 import { Sha256 } from './sha256';
 

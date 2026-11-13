@@ -51,9 +51,9 @@ import {
   MigrationActivationConflictError,
   MigrationTransportError,
 } from '../services/library-transfer-transport';
-import { sha256ChunkHex } from '../services/hash/chunk-digest';
-import { readBlobBytes } from '../services/hash/blob-bytes';
-import { Sha256 } from '../services/hash/sha256';
+import { sha256ChunkHex } from '../../core/uploads/hash/chunk-digest';
+import { readBlobBytes } from '../../core/uploads/hash/blob-bytes';
+import { Sha256 } from '../../core/uploads/hash/sha256';
 
 export type MockTransportOperation =
   | 'preflight'

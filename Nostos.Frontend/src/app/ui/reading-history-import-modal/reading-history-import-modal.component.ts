@@ -16,6 +16,7 @@ import {
 } from '../../core/services/reading-history-import.service';
 import type { HighlightImportCandidate } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { plural } from '../../core/format';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../button/button.component';
@@ -154,19 +155,19 @@ export class ReadingHistoryImportModal {
   readonly headline = computed(() => {
     if (this.undone() !== null) return 'Import undone';
     const imported = this.imported().length;
-    if (imported > 0) return `${this.count(imported, 'book')} brought in`;
+    if (imported > 0) return `${plural(imported, 'book')} brought in`;
     if (this.unchanged().length > 0) return 'Already up to date';
     return this.failures().length > 0 ? 'Import failed' : 'Nothing was imported';
   });
 
   readonly summary = computed(() => {
     const removed = this.undone();
-    if (removed !== null) return `${this.count(removed, 'row')} taken back out of your library.`;
+    if (removed !== null) return `${plural(removed, 'row')} taken back out of your library.`;
     const imported = this.imported().length;
     const changes = this.changeTotal();
     if (imported > 0) {
-      const values = changes > 0 ? ` and ${this.count(changes, 'value')}` : '';
-      return `Into ${this.count(imported, 'book')}${values}.`;
+      const values = changes > 0 ? ` and ${plural(changes, 'value')}` : '';
+      return `Into ${plural(imported, 'book')}${values}.`;
     }
     if (this.unchanged().length > 0) return 'Every value the file holds is already in Nostos.';
     return '';
@@ -336,9 +337,8 @@ export class ReadingHistoryImportModal {
     }
   }
 
-  countLabel(value: number, noun: string): string {
-    return this.count(value, noun);
-  }
+  /** Shared plural copy, exposed so the template never builds its own. */
+  readonly plural = plural;
 
   // --- Commit -------------------------------------------------------------
 
@@ -426,7 +426,7 @@ export class ReadingHistoryImportModal {
   undoDescription(): string {
     const pending = this.pendingUndo();
     if (!pending) return '';
-    return `The ${this.count(pending.changeCount, 'value')} this import wrote will be taken back. Values you changed since are kept.`;
+    return `The ${plural(pending.changeCount, 'value')} this import wrote will be taken back. Values you changed since are kept.`;
   }
 
   // --- Helpers ------------------------------------------------------------
@@ -439,7 +439,7 @@ export class ReadingHistoryImportModal {
     if (book.message) return book.message;
     if (book.created) return book.bookId ? 'Added as a new book' : 'Added to your reading list';
     if (book.changeCount === 0) return 'Already in Nostos';
-    return `${this.count(book.changeCount, 'value')} updated`;
+    return `${plural(book.changeCount, 'value')} updated`;
   }
 
   private loadRecent(): void {
@@ -487,9 +487,5 @@ export class ReadingHistoryImportModal {
       return (error.error as { error?: string } | null)?.error ?? 'That file could not be read.';
     }
     return 'That file could not be read.';
-  }
-
-  private count(value: number, noun: string): string {
-    return `${value} ${noun}${value === 1 ? '' : 's'}`;
   }
 }

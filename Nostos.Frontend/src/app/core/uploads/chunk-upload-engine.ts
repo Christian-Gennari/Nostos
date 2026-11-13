@@ -7,19 +7,21 @@
  * exponential backoff plus jitter, and reports durable (receipt) progress
  * separately from in-flight bytes.
  *
- * Deliberately framework-light: the coordinator constructs one run per upload
- * and wires it to signals; tests construct it directly against the mock.
+ * Deliberately framework-light and feature-neutral: the library transfer, book
+ * uploads and Calibre uploads construct one run per upload and wire it to
+ * signals; tests construct it directly against a fake.
  */
 
-import { BrowserMigrationChunk, chunkLength } from '../models/migration-http.dtos';
 import {
+  chunkLength,
   DEFAULT_CHUNK_MAX_ATTEMPTS,
   DEFAULT_UPLOAD_CONCURRENCY,
   FileDigest,
   TransferCancelledError,
   TransferProgress,
-} from '../models/library-transfer.models';
-import { MigrationTransportError } from './library-transfer-transport';
+  UploadChunk,
+} from './upload.models';
+import { UploadFailure } from './upload-error';
 import { TransferRateEstimator } from './transfer-rate-estimator';
 
 /**
@@ -43,7 +45,7 @@ export interface ChunkUploadSession {
 export interface ChunkPartTransport {
   uploadPart(
     sessionId: string,
-    chunk: BrowserMigrationChunk,
+    chunk: UploadChunk,
     onProgress: (loaded: number, total: number) => void,
     signal: AbortSignal,
   ): Promise<unknown>;
@@ -54,7 +56,7 @@ export interface ChunkPartUploader {
   uploadChunk(
     jobId: string,
     sessionId: string,
-    request: BrowserMigrationChunk,
+    request: UploadChunk,
     onProgress: (loaded: number, total: number) => void,
     signal: AbortSignal,
   ): Promise<unknown>;
@@ -256,7 +258,7 @@ export class ChunkUploadRun {
       this.emit();
 
       try {
-        const chunk: BrowserMigrationChunk = {
+        const chunk: UploadChunk = {
           index: chunkIndex,
           offsetBytes,
           lengthBytes,
@@ -305,7 +307,7 @@ export class ChunkUploadRun {
   private sendChunk(
     jobId: string | undefined,
     sessionId: string,
-    chunk: BrowserMigrationChunk,
+    chunk: UploadChunk,
     onProgress: (loaded: number, total: number) => void,
     signal: AbortSignal,
   ): Promise<unknown> {
@@ -401,12 +403,12 @@ interface EngineTransportError {
 }
 
 function asTransportError(error: unknown): EngineTransportError {
-  if (error instanceof MigrationTransportError) return error;
+  if (error instanceof UploadFailure) return error;
   if (isRetryableFailure(error)) return error;
   if (error instanceof TransferCancelledError) {
-    return new MigrationTransportError('request_aborted', 0, error.message);
+    return new UploadFailure('request_aborted', 0, error.message);
   }
-  return new MigrationTransportError(
+  return new UploadFailure(
     'network_error',
     0,
     error instanceof Error ? error.message : 'Chunk upload failed.',

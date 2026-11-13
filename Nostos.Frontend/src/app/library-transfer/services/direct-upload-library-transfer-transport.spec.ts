@@ -22,7 +22,7 @@ import {
   LibraryTransferTransport,
   MigrationTransportError,
 } from './library-transfer-transport';
-import { ChunkUploadEngine } from './chunk-upload-engine.service';
+import { ChunkUploadEngine } from '../../core/uploads/chunk-upload-engine';
 import { FileDigest } from '../models/library-transfer.models';
 import {
   BrowserMigrationChunk,

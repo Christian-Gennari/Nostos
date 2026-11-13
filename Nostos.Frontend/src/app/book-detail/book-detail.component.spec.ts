@@ -292,7 +292,7 @@ describe('BookDetail reset progress', () => {
       .expectOne('/api/books/b1/file?replace=true')
       .flush('timeout', { status: 504, statusText: 'Gateway Timeout' });
 
-    expect(errorToast).toHaveBeenCalledWith('The upload timed out. Try again.');
+    expect(errorToast).toHaveBeenCalledWith('The upload timed out. Try the upload again.');
   });
 
   it('uses the resumable contract when the host advertises it', async () => {

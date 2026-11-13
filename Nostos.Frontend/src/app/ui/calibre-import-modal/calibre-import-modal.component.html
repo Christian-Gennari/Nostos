@@ -143,7 +143,7 @@
                 <li class="calibre-row calibre-recent-row">
                   <span class="calibre-row-text">
                     <span class="calibre-row-title">
-                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'file') }}
+                      {{ plural(batch.bookCount, 'book') }}, {{ plural(batch.changeCount, 'file') }}
                     </span>
                     <span class="calibre-row-sub">{{ batch.createdAtUtc | nostosDate: 'datetime' }}</span>
                   </span>
@@ -192,7 +192,7 @@
                 <li class="calibre-row calibre-recent-row">
                   <span class="calibre-row-text">
                     <span class="calibre-row-title">
-                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'file') }}
+                      {{ plural(batch.bookCount, 'book') }}, {{ plural(batch.changeCount, 'file') }}
                     </span>
                     <span class="calibre-row-sub">{{ batch.createdAtUtc | nostosDate: 'datetime' }}</span>
                   </span>
@@ -234,7 +234,7 @@
 
         @if (summary(); as found) {
           <p class="calibre-counts" data-testid="calibre-counts">
-            {{ countLabel(found.books, 'book') }} found ·
+            {{ plural(found.books, 'book') }} found ·
             {{ found.ready }} ready
             @if (found.inLibrary > 0) {
               ({{ found.inLibrary }} already in your library)
@@ -434,7 +434,7 @@
                       } @else {
                         File added to the existing book
                       }
-                      · {{ countLabel(book.fileCount, 'file') }}
+                      · {{ plural(book.fileCount, 'file') }}
                       @if (book.message) {
                         · {{ book.message }}
                       }
@@ -495,7 +495,7 @@
                 <li class="calibre-row calibre-recent-row">
                   <span class="calibre-row-text">
                     <span class="calibre-row-title">
-                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'file') }}
+                      {{ plural(batch.bookCount, 'book') }}, {{ plural(batch.changeCount, 'file') }}
                     </span>
                     <span class="calibre-row-sub">{{ batch.createdAtUtc | nostosDate: 'datetime' }}</span>
                   </span>
@@ -543,7 +543,7 @@
         @if (selectedFormats() === 0) {
           Nothing selected
         } @else {
-          Import {{ countLabel(selectedBooks(), 'book') }}, {{ countLabel(selectedFormats(), 'file') }}
+          Import {{ plural(selectedBooks(), 'book') }}, {{ plural(selectedFormats(), 'file') }}
         }
       </button>
     </app-dialog-actions>

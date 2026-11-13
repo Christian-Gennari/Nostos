@@ -1,4 +1,4 @@
-import { formatAudioTime, formatFileSize, plural } from './format';
+import { formatAudioTime, formatByteProgress, formatFileSize, plural } from './format';
 
 describe('format helpers', () => {
   it('pluralises by count', () => {
@@ -20,5 +20,12 @@ describe('format helpers', () => {
     expect(formatFileSize(2.5 * 1024 ** 3)).toBe('2.5 GB');
     expect(formatFileSize(null)).toBe('');
     expect(formatFileSize(-1)).toBe('');
+  });
+
+  it('formats upload progress as moved bytes of total bytes', () => {
+    expect(formatByteProgress(1536, 25 * 1024 * 1024)).toBe('1.5 KB of 25 MB');
+    expect(formatByteProgress(0, 1024)).toBe('0 B of 1 KB');
+    expect(formatByteProgress(512, 0)).toBe('');
+    expect(formatByteProgress(512, Number.NaN)).toBe('');
   });
 });

@@ -25,7 +25,7 @@ import {
   MigrationPreflightRequestDto,
   MIGRATION_LIMITS,
 } from '../models/migration-http.dtos';
-import { readBlobRange } from './hash/blob-bytes';
+import { readBlobRange } from '../../core/uploads/hash/blob-bytes';
 import { SUPPORTED_PORTABLE_DATA_VERSIONS } from './migration-preflight';
 
 const EOCD_SIGNATURE = 0x06054b50;

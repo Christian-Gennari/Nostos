@@ -9,12 +9,10 @@ import {
 import { BookUploadStatusDto } from '../dtos/book-upload.dtos';
 import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
-import { FileDigestService } from '../../library-transfer/services/file-digest.service';
-import { TransferCancelledError } from '../../library-transfer/models/library-transfer.models';
-import {
-  BookUploadService,
-  describeBookUploadFailure,
-} from './book-upload.service';
+import { FileDigestService } from '../uploads/file-digest.service';
+import { TransferCancelledError } from '../uploads/upload.models';
+import { describeUploadFailure } from '../uploads/upload-error-copy';
+import { BookUploadService } from './book-upload.service';
 
 const BOOK_ID = 'book-1';
 const SESSION_ID = 'session-1';
@@ -235,56 +233,8 @@ describe('BookUploadService', () => {
     } as DeploymentCapabilities);
     expect(service.supportsResumable()).toBe(true);
 
-    expect(describeBookUploadFailure(new Error('odd'))).toContain(
+    expect(describeUploadFailure(new Error('odd'))).toContain(
       'connection was interrupted',
     );
-  });
-});
-
-describe('describeBookUploadFailure', () => {
-  it('shows the server reason when it rejected the file bytes', () => {
-    const copy = describeBookUploadFailure({
-      code: 'book_upload_invalid_file',
-      status: 400,
-      message: 'This file is empty.',
-    });
-    expect(copy).toBe('This file is empty. Choose a different file.');
-  });
-
-  it.each([
-    ['book_upload_expired', 410, 'expired', 'same file'],
-    ['book_upload_file_hash_mismatch', 422, 'changed', 'same file'],
-    ['book_upload_storage_exhausted', 507, 'not enough free storage', null],
-    ['book_upload_unsupported_type', 400, 'file type', null],
-    ['book_upload_in_progress', 409, 'already importing', null],
-    ['book_upload_part_hash_mismatch', 422, 'retry that part', null],
-  ] as const)('maps %s to reader-facing copy', (code, statusCode, phrase, second) => {
-    const copy = describeBookUploadFailure({ code, status: statusCode });
-    expect(copy).toContain(phrase);
-    if (second) expect(copy).toContain(second);
-  });
-
-  it('tells the Add book reader that the row survives a dropped connection', () => {
-    const copy = describeBookUploadFailure(
-      { code: 'network_error', status: 0 },
-      { bookSaved: true },
-    );
-    expect(copy).toContain('connection was interrupted');
-    expect(copy).toContain('Your book is saved');
-    expect(copy).toContain('same file to resume');
-  });
-
-  it('keeps a hosting plan’s own limit wording', () => {
-    const error = Object.assign(new Error('limit'), {
-      cause: {
-        error: {
-          code: 'storage_limit_reached',
-          detail: 'Your library has no room left.',
-        },
-      },
-      code: 'unexpected_error',
-      status: 413,
-    });
-    expect(describeBookUploadFailure(error)).toBe('Your library has no room left.');
   });
 });

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { TransferCancelledError } from '../models/library-transfer.models';
+import { TransferCancelledError } from './upload.models';
 import { FileDigestService } from './file-digest.service';
 import { HASH_WORKER_FACTORY } from './hash/hash-worker';
 import {

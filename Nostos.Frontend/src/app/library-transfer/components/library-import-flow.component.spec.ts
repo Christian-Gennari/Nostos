@@ -22,9 +22,9 @@ import {
 } from '../services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
 import { IMPORT_COMPLETION_NOTICE_KEY } from '../services/import-completion-notice';
-import { FileDigestService } from '../services/file-digest.service';
+import { FileDigestService } from '../../core/uploads/file-digest.service';
 import { FileDigest, PersistedTransferResumeState, TransferFileIdentity, TransferFlowState } from '../models/library-transfer.models';
-import { HASH_WORKER_FACTORY } from '../services/hash/hash-worker';
+import { HASH_WORKER_FACTORY } from '../../core/uploads/hash/hash-worker';
 import { DelegatingTransport } from '../testing/delegating-transport';
 import {
   GatedUploadTransport,

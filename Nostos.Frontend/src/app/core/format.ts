@@ -36,3 +36,13 @@ export function formatFileSize(bytes: number | null | undefined): string {
   }
   return `${unit === 0 ? NUMBER.format(value) : DECIMAL.format(value)} ${SIZE_UNITS[unit]}`;
 }
+
+/**
+ * "1.5 MB of 4 MB" for an upload progress line. Empty when the total is
+ * unknown or zero, so a progress line never claims a size the server did not
+ * give it.
+ */
+export function formatByteProgress(movedBytes: number, totalBytes: number): string {
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0) return '';
+  return `${formatFileSize(movedBytes)} of ${formatFileSize(totalBytes)}`;
+}

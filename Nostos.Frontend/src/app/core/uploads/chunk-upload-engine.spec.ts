@@ -5,10 +5,10 @@ import {
   MigrationPreflightResponseDto,
   MigrationSessionStatusDto,
   MigrationUploadSessionResponseDto,
-} from '../models/migration-http.dtos';
-import { FileDigest, TransferProgress } from '../models/library-transfer.models';
-import { MigrationTransportError } from './library-transfer-transport';
-import { ChunkUploadEngine, ChunkUploadRun } from './chunk-upload-engine.service';
+} from '../../library-transfer/models/migration-http.dtos';
+import { FileDigest, TransferProgress } from './upload.models';
+import { MigrationTransportError } from '../../library-transfer/services/library-transfer-transport';
+import { ChunkUploadEngine, ChunkUploadRun } from './chunk-upload-engine';
 import { sha256ChunkHex } from './hash/chunk-digest';
 
 const CHUNK = 4 * 1024 * 1024;

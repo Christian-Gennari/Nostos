@@ -1,6 +1,6 @@
 import { ChangeDetectorRef, Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
 import { EBOOK_CATEGORY_LABEL, EBOOK_CATEGORY_LABEL_PLURAL } from '../core/book-format';
-import { formatFileSize } from '../core/format';
+import { formatByteProgress, formatFileSize } from '../core/format';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
@@ -43,11 +43,10 @@ import { SearchFieldComponent } from '../ui/search-field/search-field.component'
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
 import { BulkEbookAddComponent } from './bulk-ebook-add.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { planLimitMessage } from '../core/plan-limit-message';
+import { describeUploadFailure } from '../core/uploads/upload-error-copy';
 import {
   BookUploadService,
   BookUploadPhase,
-  describeBookUploadFailure,
   rejectedFileMessage,
 } from '../core/services/book-upload.service';
 
@@ -277,17 +276,14 @@ export class AddBookModal {
   readonly uploadStatusText = computed(() => {
     const percent = this.uploadProgress() ?? 0;
     const bytes = this.uploadByteProgress();
-    const moved =
-      bytes && bytes.total > 0
-        ? ` · ${formatFileSize(bytes.loaded)} of ${formatFileSize(bytes.total)}`
-        : '';
+    const moved = bytes ? formatByteProgress(bytes.loaded, bytes.total) : '';
     switch (this.uploadPhase()) {
       case 'preparing':
         return `Preparing file… ${percent}%`;
       case 'finishing':
         return 'Finishing upload…';
       default:
-        return `Uploading… ${percent}%${moved}`;
+        return `Uploading… ${percent}%${moved ? ` · ${moved}` : ''}`;
     }
   });
   uploadStartTime: number | null = null;
@@ -900,7 +896,9 @@ export class AddBookModal {
         this.isSubmitting.set(false);
         this.detachBeforeUnload();
         if (this.discardRejectedBook(createdBook, error)) return;
-        this.uploadError.set(this.describeUploadFailure(error));
+        this.uploadError.set(
+          describeUploadFailure(error, { bookSaved: true, resumable: false }),
+        );
       },
     });
   }
@@ -942,7 +940,7 @@ export class AddBookModal {
         this.detachBeforeUnload();
         if (this.discardRejectedBook(createdBook, error)) return;
         this.uploadError.set(
-          describeBookUploadFailure(error, { bookSaved: true }),
+          describeUploadFailure(error, { bookSaved: true }),
         );
       });
   }
@@ -988,28 +986,6 @@ export class AddBookModal {
     const createdBook = this.pendingUploadBook();
     if (!createdBook || this.isSubmitting()) return;
     this.handleFileUpload(createdBook);
-  }
-
-  private describeUploadFailure(error: unknown): string {
-    const limit = planLimitMessage(error);
-    if (limit) return limit;
-    const status = (error as { status?: number } | null)?.status;
-    if (status === 0) {
-      return 'The connection was interrupted. Your book is saved; retry the file when you are ready.';
-    }
-    if (status === 408 || status === 504) {
-      return 'The upload timed out. Your book is saved; try the file again.';
-    }
-    if (status === 413) {
-      return 'This file is larger than this server allows. Choose a smaller file to continue.';
-    }
-    if (status === 429) {
-      return 'Too many uploads are running right now. Your book is saved; try again in a moment.';
-    }
-    if (status != null && status >= 400 && status < 500) {
-      return 'The server could not accept this file. Your book is saved; check the file and try again.';
-    }
-    return 'The upload could not be completed. Your book is saved; try the file again.';
   }
 
   uploadCoverIfNeeded(bookId: string) {

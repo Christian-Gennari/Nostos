@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 
-import { FileDigestService } from './file-digest.service';
-import { HASH_WORKER_FACTORY } from './hash/hash-worker';
+import { FileDigestService } from '../../core/uploads/file-digest.service';
+import { HASH_WORKER_FACTORY } from '../../core/uploads/hash/hash-worker';
 import {
   MockLibraryTransferTransport,
   MockLibraryTransferTransportOptions,
@@ -12,7 +12,7 @@ import {
   MigrationTransportError,
 } from './library-transfer-transport';
 import { LibraryTransferCoordinator } from './library-transfer-coordinator.service';
-import { ChunkUploadEngine } from './chunk-upload-engine.service';
+import { ChunkUploadEngine } from '../../core/uploads/chunk-upload-engine';
 import { TransferResumeStore, TRANSFER_RESUME_STORAGE_KEY } from './transfer-resume-store.service';
 import {
   MigrationActivateRequestDto,
