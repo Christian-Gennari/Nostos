@@ -13,6 +13,7 @@ import {
 import { BooksService } from '../../core/services/books.service';
 import { ReadwiseService } from '../../core/services/readwise.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from '../../core/services/deployment-capabilities.testing';
 import { Book, PaginatedResponse } from '../../core/dtos/book.dtos';
 import { StarterDraftService } from '../../writing-studio/starter-draft/starter-draft.service';
 import type { NoteSearchHit } from '../../core/dtos/note.dtos';
@@ -87,7 +88,12 @@ describe('HighlightImportModal', () => {
         provideHttpClientTesting(),
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [], totalCount: 0 })) } },
         // Self-hosted: the beta feedback link goes to GitHub, and no request is left open.
-        { provide: DeploymentCapabilitiesService, useValue: { get: () => of({ deploymentMode: 'SelfHosted' }) } },
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: createDeploymentCapabilitiesServiceMock(
+            { deploymentMode: 'SelfHosted' } as unknown as import('../../core/dtos/deployment-capabilities.dtos').DeploymentCapabilities,
+          ),
+        },
       ],
     }).compileComponents();
 

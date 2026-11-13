@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter, Router } from '@angular/router';
-import { throwError, of } from 'rxjs';
+import { Subject, throwError, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImportDropZoneComponent } from './import-drop-zone.component';
@@ -13,6 +13,8 @@ import { ReadingHistoryImportService } from '../../core/services/reading-history
 import { CalibreImportService } from '../../core/services/calibre-import.service';
 import { PortableArchiveHandoffService } from '../../core/services/portable-archive-handoff.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from '../../core/services/deployment-capabilities.testing';
+import { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
 
 const GOODREADS_HEADER =
   'Book Id,Title,Author,ISBN13,My Rating,Bookshelves,Exclusive Shelf,My Review,Read Count';
@@ -82,7 +84,7 @@ describe('ImportDropZoneComponent', () => {
         provideHttpClientTesting(),
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of(selfHosted), peek: () => selfHosted },
+          useValue: createDeploymentCapabilitiesServiceMock(() => of(selfHosted)),
         },
       ],
     }).compileComponents();
@@ -271,5 +273,42 @@ describe('ImportDropZoneComponent', () => {
 
     (entry.querySelector('[data-testid="import-help-applebooks-open"]') as HTMLButtonElement).click();
     expect(open).toHaveBeenCalledWith('applebooks');
+  });
+
+  it('reactively reveals archive and Calibre help lines once capabilities emit', async () => {
+    const pending = new Subject<DeploymentCapabilities>();
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [ImportDropZoneComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: createDeploymentCapabilitiesServiceMock(() => pending.asObservable()),
+        },
+      ],
+    }).compileComponents();
+
+    const reactiveFixture = TestBed.createComponent(ImportDropZoneComponent);
+    reactiveFixture.detectChanges();
+
+    expect(
+      reactiveFixture.nativeElement.querySelector('[data-testid="import-help-archive"]'),
+    ).toBeNull();
+    expect(
+      reactiveFixture.nativeElement.querySelector('[data-testid="import-help-calibre"]'),
+    ).toBeNull();
+
+    pending.next(selfHosted);
+    reactiveFixture.detectChanges();
+
+    expect(
+      reactiveFixture.nativeElement.querySelector('[data-testid="import-help-archive"]'),
+    ).not.toBeNull();
+    expect(
+      reactiveFixture.nativeElement.querySelector('[data-testid="import-help-calibre"]'),
+    ).not.toBeNull();
   });
 });

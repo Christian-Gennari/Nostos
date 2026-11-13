@@ -12,6 +12,7 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -240,13 +241,19 @@ export class ImportDropZoneComponent {
   readonly dragActive = signal(false);
   readonly routing = signal(false);
   readonly notice = signal<ImportNotice | null>(null);
-  readonly archiveAvailable = signal(false);
-  readonly calibreFolderAvailable = signal(false);
-  readonly calibreUploadAvailable = signal(false);
-  /** Either Calibre path is enough to show the help line. */
-  readonly calibreAvailable = computed(
-    () => this.calibreFolderAvailable() || this.calibreUploadAvailable(),
+  // The archive flow exists on a SelfHosted host through library migration,
+  // and on Cloud through a portable export. Until the server has answered,
+  // the help line stays out rather than promising a flow that is not there.
+  readonly archiveAvailable = computed(
+    () => this.capabilities.supportsLibraryMigration() || this.capabilities.isCloud(),
   );
+  // Two Calibre paths, each with its own registration: a folder the
+  // server reads (#1527) and a zip it accepts (#1572). Neither is
+  // inferred from the deployment mode.
+  readonly calibreFolderAvailable = this.capabilities.supportsCalibreImport;
+  readonly calibreUploadAvailable = this.capabilities.supportsCalibreUpload;
+  /** Either Calibre path is enough to show the help line. */
+  readonly calibreAvailable = this.capabilities.supportsCalibre;
 
   readonly highlightHelp = HIGHLIGHT_HELP;
   readonly historyHelp = HISTORY_HELP;
@@ -285,26 +292,15 @@ export class ImportDropZoneComponent {
   private dragDepth = 0;
 
   constructor() {
-    // The archive flow exists on a SelfHosted host through library migration,
-    // and on Cloud through a portable export. Until the server has answered,
-    // the help line stays out rather than promising a flow that is not there.
-    this.capabilities.get().subscribe({
-      next: (capabilities) => {
-        this.archiveAvailable.set(
-          capabilities.supportsLibraryMigration === true || capabilities.deploymentMode === 'Cloud',
-        );
-        // Two Calibre paths, each with its own registration: a folder the
-        // server reads (#1527) and a zip it accepts (#1572). Neither is
-        // inferred from the deployment mode.
-        this.calibreFolderAvailable.set(capabilities.supportsCalibreImport === true);
-        this.calibreUploadAvailable.set(capabilities.supportsCalibreUpload === true);
-      },
-      error: () => {
-        this.archiveAvailable.set(false);
-        this.calibreFolderAvailable.set(false);
-        this.calibreUploadAvailable.set(false);
-      },
-    });
+    // Ensure the shared capability contract is requested even when this
+    // component is hosted without app bootstrap (e.g. standalone specs).
+    if (
+      this.capabilities.capabilities() === null &&
+      !this.capabilities.loading() &&
+      !this.capabilities.failed()
+    ) {
+      this.capabilities.get().pipe(takeUntilDestroyed()).subscribe({ error: () => {} });
+    }
   }
 
   helpEntryId(id: HelpId): string {
