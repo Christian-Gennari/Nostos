@@ -3,7 +3,6 @@ using System.IO.Compression;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
-using HtmlAgilityPack;
 using Nostos.Backend.Services;
 
 namespace Nostos.Product.BookText;
@@ -120,50 +119,24 @@ internal sealed class EpubCfiWriter
     private const int MinSignature = 6;
 
     private readonly ZipArchive _archive;
-    private readonly string _packageDir;
+    private readonly EpubPackage _package;
     private readonly int _spineNodeIndex;
-    private readonly List<(string IdRef, string? Id)> _itemRefs;
-    private readonly Dictionary<string, string> _manifest;
     private readonly Dictionary<int, XDocument?> _documents = [];
 
-    private EpubCfiWriter(ZipArchive archive, string packageDir, int spineNodeIndex, List<(string, string?)> itemRefs, Dictionary<string, string> manifest)
+    private EpubCfiWriter(ZipArchive archive, EpubPackage package, int spineNodeIndex)
     {
         _archive = archive;
-        _packageDir = packageDir;
+        _package = package;
         _spineNodeIndex = spineNodeIndex;
-        _itemRefs = itemRefs;
-        _manifest = manifest;
     }
 
     public static EpubCfiWriter? Open(ZipArchive archive)
     {
-        var packagePath = EpubBookTextExtractor.ReadPackagePath(archive);
-        var package = XDocument.Parse(EpubBookTextExtractor.ReadEntry(archive, packagePath));
-        var root = package.Root;
-        if (root is null)
+        var package = EpubPackage.Read(archive);
+        if (package.SpineNodeIndex is not { } spineNodeIndex)
             return null;
 
-        var spine = root.Elements().FirstOrDefault(element => element.Name.LocalName == "spine");
-        if (spine is null)
-            return null;
-
-        var manifest = root.Descendants()
-            .Where(item => item.Name.LocalName == "item" && item.Attribute("id") is not null && item.Attribute("href") is not null)
-            .GroupBy(item => item.Attribute("id")!.Value, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First().Attribute("href")!.Value, StringComparer.Ordinal);
-
-        // epub.js counts every itemref; the index counts those with an idref.
-        var itemRefs = spine.Descendants()
-            .Where(item => item.Name.LocalName == "itemref")
-            .Select(item => (item.Attribute("idref")?.Value ?? string.Empty, item.Attribute("id")?.Value))
-            .ToList();
-
-        return new EpubCfiWriter(
-            archive,
-            EpubBookTextExtractor.ZipDirectory(packagePath),
-            root.Elements().ToList().IndexOf(spine),
-            itemRefs,
-            manifest);
+        return new EpubCfiWriter(archive, package, spineNodeIndex);
     }
 
     /// <summary>
@@ -172,16 +145,12 @@ internal sealed class EpubCfiWriter
     /// </summary>
     public string? Point(EpubBookTextSourceLocator locator, int offset, string quoteVisible, bool atEnd)
     {
-        var rawIndex = RawSpineIndex(locator.SpineIndex);
-        if (rawIndex is null)
+        var item = _package.FindByIndexedSpineIndex(locator.SpineIndex);
+        if (item?.ResourceHref is null || !string.Equals(item.ResourceHref, locator.ResourceHref, StringComparison.Ordinal))
             return null;
 
-        var (idRef, itemId) = _itemRefs[rawIndex.Value];
-        if (!_manifest.TryGetValue(idRef, out var href) || !string.Equals(href, locator.ResourceHref, StringComparison.Ordinal))
-            return null;
-
-        var document = Document(rawIndex.Value, href);
-        var body = document?.Root?.Descendants().FirstOrDefault(element => element.Name.LocalName == "body") ?? document?.Root;
+        var document = Document(item.RawIndex, item.ResourceHref);
+        var body = EpubContentHelper.FindBody(document);
         if (body is null)
             return null;
 
@@ -196,21 +165,8 @@ internal sealed class EpubCfiWriter
             return null;
 
         var (node, at) = place.Value;
-        var spineStep = $"/{(_spineNodeIndex + 1) * 2}/{(rawIndex.Value + 1) * 2}{Assertion(itemId)}";
+        var spineStep = $"/{(_spineNodeIndex + 1) * 2}/{(item.RawIndex + 1) * 2}{Assertion(item.ItemId)}";
         return $"epubcfi({spineStep}!{Path(node)}:{(atEnd ? at + 1 : at).ToString(CultureInfo.InvariantCulture)})";
-    }
-
-    private int? RawSpineIndex(int indexed)
-    {
-        var seen = -1;
-        for (var i = 0; i < _itemRefs.Count; i++)
-        {
-            if (string.IsNullOrWhiteSpace(_itemRefs[i].IdRef))
-                continue;
-            if (++seen == indexed)
-                return i;
-        }
-        return null;
     }
 
     private XDocument? Document(int rawIndex, string href)
@@ -218,7 +174,7 @@ internal sealed class EpubCfiWriter
         if (_documents.TryGetValue(rawIndex, out var cached))
             return cached;
 
-        var entry = EpubBookTextExtractor.FindEntry(_archive, EpubBookTextExtractor.ResolvePath(_packageDir, href));
+        var entry = _package.FindResourceEntry(_archive, href);
         XDocument? document = null;
         if (entry is not null)
         {
@@ -232,60 +188,12 @@ internal sealed class EpubCfiWriter
         return document;
     }
 
-    /// <summary>
-    /// The resource as the reader's browser sees it: XHTML parsed as XML with
-    /// every whitespace text node kept. Markup that is not well-formed XML is
-    /// cleaned up through the extractor's HTML parser first.
-    /// </summary>
-    internal static XDocument? ParseXhtml(string text)
-    {
-        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Ignore, XmlResolver = null };
-        try
-        {
-            using var reader = XmlReader.Create(new StringReader(text), settings);
-            return XDocument.Load(reader, LoadOptions.PreserveWhitespace);
-        }
-        catch (XmlException)
-        {
-            var html = new HtmlDocument { OptionFixNestedTags = true, OptionAutoCloseOnEnd = true, OptionOutputAsXml = true };
-            html.LoadHtml(text);
-            using var writer = new StringWriter();
-            html.Save(writer);
-            try
-            {
-                using var reader = XmlReader.Create(new StringReader(writer.ToString()), settings);
-                return XDocument.Load(reader, LoadOptions.PreserveWhitespace);
-            }
-            catch (XmlException)
-            {
-                return null;
-            }
-        }
-    }
-
-    /// <summary>The blocks the extractor indexes, in its order, with their normalized text.</summary>
-    private static IEnumerable<(XElement Block, string Text)> Blocks(XElement body)
-    {
-        foreach (var element in body.Descendants())
-        {
-            if (!EpubBookTextExtractor.BlockTags.Contains(element.Name.LocalName)
-                || element.AncestorsAndSelf().Any(a => EpubBookTextExtractor.IgnoredTags.Contains(a.Name.LocalName))
-                || element.Ancestors().TakeWhile(a => a != body).Any(a => EpubBookTextExtractor.BlockTags.Contains(a.Name.LocalName)))
-            {
-                continue;
-            }
-
-            var text = BookTextNormalization.Normalize(element.Value);
-            if (text.Length > 0)
-                yield return (element, text);
-        }
-    }
+    internal static XDocument? ParseXhtml(string text) => EpubContentHelper.ParseXhtml(text);
 
     /// <summary>The text node and index of the visible character at a resource offset.</summary>
     private static (XText Node, int At)? ByOffset(XElement body, int offset)
     {
-        var start = 0;
-        foreach (var (block, text) in Blocks(body))
+        foreach (var (block, text, start) in EpubContentHelper.EnumerateBlocks(body))
         {
             if (offset < start + text.Length)
             {
@@ -300,8 +208,6 @@ internal sealed class EpubCfiWriter
                 }
                 return Visible(TextNodes(block), before);
             }
-
-            start += text.Length + 1;
         }
 
         return null;
