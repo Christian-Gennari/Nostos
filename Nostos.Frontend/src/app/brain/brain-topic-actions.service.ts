@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 
 import { ToastService } from '../core/services/toast.service';
@@ -23,6 +24,7 @@ export class BrainTopicActionsService {
   private readonly state = inject(BrainStateService);
   private readonly toast = inject(ToastService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Rename, in place.
   readonly renameId = signal<string | null>(null);
@@ -118,7 +120,7 @@ export class BrainTopicActionsService {
 
     this.renaming.set(true);
     this.renameError.set(null);
-    this.topicsService.rename(id, name).subscribe({
+    this.topicsService.rename(id, name).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (survivor) => {
         this.renaming.set(false);
         this.renameId.set(null);
@@ -160,7 +162,7 @@ export class BrainTopicActionsService {
     const target = this.mergeTarget();
     if (!source || !target || this.merging()) return;
     this.merging.set(true);
-    this.topicsService.merge(source.id, target.id).subscribe({
+    this.topicsService.merge(source.id, target.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (survivor) => {
         this.merging.set(false);
         this.mergeSource.set(null);
@@ -188,7 +190,7 @@ export class BrainTopicActionsService {
     const target = this.deleteTarget();
     if (!target || this.deleting()) return;
     this.deleting.set(true);
-    this.topicsService.delete(target.id).subscribe({
+    this.topicsService.delete(target.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.deleting.set(false);
         this.deleteTarget.set(null);
