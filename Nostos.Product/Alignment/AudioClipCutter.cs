@@ -44,7 +44,8 @@ public interface IAudioClipCutter
 /// </summary>
 public sealed class FfmpegAudioClipCutter(
     IBookAssetStorage assets,
-    IServiceProvider services) : IAudioClipCutter
+    IBookTrackStorage? trackStorage = null,
+    ILogger<FfmpegAudioClipCutter>? logger = null) : IAudioClipCutter
 {
     public const int SampleRate = 16000;
     public const int Channels = 1;
@@ -115,8 +116,7 @@ public sealed class FfmpegAudioClipCutter(
 
             // Where a switch between editions spends its time is otherwise
             // invisible: only the transcription call is logged by its client.
-            (services.GetService(typeof(ILogger<FfmpegAudioClipCutter>))
-                as ILogger)?.LogInformation(
+            logger?.LogInformation(
                 "Alignment clip for audio book {AudioBookId} ending at " +
                 "{PositionSeconds} s was cut in {ElapsedMs} ms.",
                 book.Id,
@@ -212,10 +212,7 @@ public sealed class FfmpegAudioClipCutter(
                 "The requested position contains no audio.");
         }
 
-        var storage = services.GetService(typeof(IBookTrackStorage))
-            as IBookTrackStorage;
-
-        if (storage is null)
+        if (trackStorage is null)
         {
             throw new AudioClipException(
                 AudioClipErrorCodes.MediaMissing,
@@ -228,7 +225,7 @@ public sealed class FfmpegAudioClipCutter(
         {
             ct.ThrowIfCancellationRequested();
 
-            var info = await storage.GetTrackInfoAsync(
+            var info = await trackStorage.GetTrackInfoAsync(
                 bookId,
                 segment.TrackNumber,
                 ct);
@@ -242,7 +239,7 @@ public sealed class FfmpegAudioClipCutter(
 
             Task<StoredAssetRead?> Open(
                 StorageByteRange range, CancellationToken token) =>
-                storage.OpenTrackAsync(
+                trackStorage.OpenTrackAsync(
                     bookId,
                     segment.TrackNumber,
                     range,
