@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -8,12 +9,26 @@ using Microsoft.Extensions.Options;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services;
 
+internal sealed record BackupExtractionLimits(int MaxEntries, long MaxEntryBytes, long MaxTotalBytes)
+{
+    public static readonly BackupExtractionLimits Default = new(
+        MaxEntries: 50_000,
+        MaxEntryBytes: 4L * 1024L * 1024L * 1024L,
+        MaxTotalBytes: 16L * 1024L * 1024L * 1024L);
+}
+
 public class BackupService : IBackupService
 {
+    private const long MaxManifestEntryBytes = 1024 * 1024;
+
+    private static readonly ConcurrentDictionary<string, byte> ActiveStagingPaths =
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IFileStorageService _fileStorage;
     private readonly BackupSettingsProvider _settingsProvider;
@@ -23,6 +38,7 @@ public class BackupService : IBackupService
     private BackupSettings Settings => _settingsProvider.Current;
 
     private string LocalBackupDir => _localBackupDir;
+    internal string StagingDir => Path.Combine(_localBackupDir, ".staging");
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -171,10 +187,10 @@ public class BackupService : IBackupService
                     );
                     record.ManifestJson = JsonSerializer.Serialize(manifest, JsonOpts);
 
-                    // Always save a local copy for recoverability
+                    // Always save a local copy for recoverability (same volume rename from .staging).
                     Directory.CreateDirectory(LocalBackupDir);
                     persistentLocalPath = Path.Combine(LocalBackupDir, $"{recordId}.nostos");
-                    File.Copy(archivePath, persistentLocalPath, true);
+                    File.Move(archivePath, persistentLocalPath, overwrite: true);
                     record.LocalArchivePath = persistentLocalPath;
                     record.Provider = BackupProvider.Local;
 
@@ -209,16 +225,23 @@ public class BackupService : IBackupService
                 _logger.LogError(dbEx, "Failed to persist failure status for backup {Id}", recordId);
             }
         }
+        finally
+        {
+            // Clean up temp archive if it was not moved (or failed mid-way).
+            if (archivePath != null)
+            {
+                if (File.Exists(archivePath))
+                {
+                    try { File.Delete(archivePath); } catch { /* cleanup */ }
+                }
+
+                ActiveStagingPaths.TryRemove(Path.GetFullPath(archivePath), out _);
+            }
+        }
 
         _settingsProvider.ClearProgress();
 
         await EnforceMaxBackupsAsync(ct);
-
-        // Clean up temp archive (persistent copy is already in Storage/backups/)
-        if (archivePath != null && File.Exists(archivePath))
-        {
-            try { File.Delete(archivePath); } catch { /* cleanup */ }
-        }
 
         return new TriggerBackupResultDto(recordId, recordStatus, recordSizeBytes, recordCreatedAt);
     }
@@ -381,6 +404,8 @@ public class BackupService : IBackupService
                 var manifestEntry = archive.GetEntry("manifest.json");
                 if (manifestEntry != null)
                 {
+                    if (manifestEntry.Length > MaxManifestEntryBytes)
+                        throw new InvalidDataException($"manifest.json exceeds maximum allowed size ({MaxManifestEntryBytes} bytes).");
                     using var manifestStream = manifestEntry.Open();
                     manifest = await JsonSerializer.DeserializeAsync<BackupManifestDto>(manifestStream, JsonOpts, ct);
                 }
@@ -437,9 +462,12 @@ public class BackupService : IBackupService
 
     private async Task<BuiltArchive> BuildArchiveAsync(Guid backupId, CancellationToken ct)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"nostos-backup-{backupId}");
+        Directory.CreateDirectory(StagingDir);
+        var tempDir = Path.GetFullPath(Path.Combine(StagingDir, $"backup-{backupId:N}"));
+        ActiveStagingPaths.TryAdd(tempDir, 0);
         Directory.CreateDirectory(tempDir);
 
+        string? archivePath = null;
         try
         {
             var dbDir = Path.Combine(tempDir, "database");
@@ -542,10 +570,9 @@ public class BackupService : IBackupService
 
             _settingsProvider.UpdateProgress("Compressing backup", 55, 3, 5);
 
-            var archivePath = Path.Combine(
-                Path.GetTempPath(),
-                $"nostos-backup-{DateTime.UtcNow:yyyy-MM-dd'T'HHmmss}.nostos"
-            );
+            archivePath = Path.GetFullPath(
+                Path.Combine(StagingDir, $"nostos-backup-{backupId:N}-{Guid.NewGuid():N}.nostos"));
+            ActiveStagingPaths.TryAdd(archivePath, 0);
 
             using (var archiveStream = new FileStream(archivePath, FileMode.Create))
             using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create))
@@ -559,11 +586,35 @@ public class BackupService : IBackupService
                 AddDirectoryToArchive(archive, tempDir, "");
             }
 
-            return new BuiltArchive(archivePath, dbFileSize, copiedBookFiles);
+            var built = new BuiltArchive(archivePath, dbFileSize, copiedBookFiles);
+            archivePath = null; // Ownership transferred to CreateBackupAsync.
+            return built;
         }
         finally
         {
-            try { Directory.Delete(tempDir, true); } catch { /* cleanup */ }
+            if (archivePath != null)
+            {
+                if (File.Exists(archivePath))
+                {
+                    try { File.Delete(archivePath); } catch { /* cleanup */ }
+                }
+
+                ActiveStagingPaths.TryRemove(archivePath, out _);
+            }
+
+            try
+            {
+                if (Directory.Exists(tempDir))
+                    Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                /* cleanup */
+            }
+            finally
+            {
+                ActiveStagingPaths.TryRemove(tempDir, out _);
+            }
         }
     }
 
@@ -637,32 +688,244 @@ public class BackupService : IBackupService
         }
     }
 
+    /// <summary>
+    /// Removes orphaned staging directories/files left under <see cref="StagingDir"/>
+    /// from an interrupted backup or restore run. Active in-process staging paths
+    /// are never removed.
+    /// </summary>
+    internal void CleanupOrphanedStaging()
+    {
+        if (!Directory.Exists(StagingDir))
+            return;
+
+        foreach (var dir in Directory.EnumerateDirectories(StagingDir))
+        {
+            var fullDir = Path.GetFullPath(dir);
+            if (ActiveStagingPaths.ContainsKey(fullDir))
+                continue;
+
+            try
+            {
+                Directory.Delete(fullDir, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not remove orphaned backup staging directory {Path}", fullDir);
+            }
+        }
+
+        foreach (var file in Directory.EnumerateFiles(StagingDir))
+        {
+            var fullFile = Path.GetFullPath(file);
+            if (ActiveStagingPaths.ContainsKey(fullFile))
+                continue;
+
+            try
+            {
+                File.Delete(fullFile);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not remove orphaned backup staging file {Path}", fullFile);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts a <c>.nostos</c> ZIP archive into <paramref name="destinationDir"/>
+    /// using an explicit entry loop that rejects Zip Slip path traversal, rooted
+    /// paths, symlinks, and archives exceeding entry count or extracted size bounds.
+    /// </summary>
+    internal static async Task ExtractArchiveSafelyAsync(
+        string archivePath,
+        string destinationDir,
+        BackupExtractionLimits? limits = null,
+        CancellationToken ct = default)
+    {
+        var effectiveLimits = limits ?? BackupExtractionLimits.Default;
+        var fullDestRoot = Path.GetFullPath(destinationDir)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        using var archive = ZipFile.OpenRead(archivePath);
+        var entryCount = 0;
+        long totalBytes = 0;
+        var buffer = new byte[81_920];
+
+        foreach (var entry in archive.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            entryCount++;
+            if (entryCount > effectiveLimits.MaxEntries)
+            {
+                throw new InvalidDataException(
+                    $"Backup archive exceeds the maximum entry count of {effectiveLimits.MaxEntries}.");
+            }
+
+            var fullName = entry.FullName;
+            if (string.IsNullOrEmpty(fullName) || fullName.Contains('\0'))
+            {
+                throw new InvalidDataException("Backup archive contains an entry with an invalid name.");
+            }
+
+            if (fullName.StartsWith('/')
+                || fullName.StartsWith('\\')
+                || Path.IsPathRooted(fullName)
+                || (fullName.Length >= 2 && fullName[1] == ':'))
+            {
+                throw new InvalidDataException(
+                    $"Backup archive contains a rooted entry path '{fullName}', which is not permitted.");
+            }
+
+            var unixMode = (entry.ExternalAttributes >> 16) & 0xFFFF;
+            if ((unixMode & 0xF000) == 0xA000
+                || (entry.ExternalAttributes & (int)FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException(
+                    $"Backup archive contains a symbolic link entry '{fullName}', which is not permitted.");
+            }
+
+            var normalized = fullName.Replace('\\', '/');
+            var isDirectory = normalized.EndsWith('/')
+                || (entry.ExternalAttributes & (int)FileAttributes.Directory) != 0;
+
+            var trimmed = normalized.TrimEnd('/');
+            if (trimmed.Length == 0)
+            {
+                throw new InvalidDataException($"Backup archive contains an empty entry path '{fullName}'.");
+            }
+
+            foreach (var segment in trimmed.Split('/'))
+            {
+                if (segment.Length == 0 || segment is "." or "..")
+                {
+                    throw new InvalidDataException(
+                        $"Backup archive contains an unsafe entry path '{fullName}'.");
+                }
+            }
+
+            var relativePlatformPath = Path.DirectorySeparatorChar == '/'
+                ? trimmed
+                : trimmed.Replace('/', Path.DirectorySeparatorChar);
+            var targetPath = Path.GetFullPath(Path.Combine(fullDestRoot, relativePlatformPath));
+            if (!targetPath.StartsWith(fullDestRoot, comparison))
+            {
+                throw new InvalidDataException(
+                    $"Backup archive entry '{fullName}' escapes the extraction directory.");
+            }
+
+            if (isDirectory)
+            {
+                Directory.CreateDirectory(targetPath);
+                continue;
+            }
+
+            if (entry.Length < 0 || entry.Length > effectiveLimits.MaxEntryBytes)
+            {
+                throw new InvalidDataException(
+                    $"Backup archive entry '{fullName}' exceeds the maximum allowed entry size of {effectiveLimits.MaxEntryBytes} bytes.");
+            }
+
+            if (entry.Length > effectiveLimits.MaxTotalBytes - totalBytes)
+            {
+                throw new InvalidDataException(
+                    $"Backup archive exceeds the maximum total extracted size of {effectiveLimits.MaxTotalBytes} bytes.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+
+            await using var entryStream = entry.Open();
+            await using var destStream = new FileStream(
+                targetPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                buffer.Length,
+                useAsync: true);
+
+            long entryBytesWritten = 0;
+            int read;
+            while ((read = await entryStream.ReadAsync(buffer, ct)) > 0)
+            {
+                entryBytesWritten = checked(entryBytesWritten + read);
+                if (entryBytesWritten > effectiveLimits.MaxEntryBytes)
+                {
+                    throw new InvalidDataException(
+                        $"Backup archive entry '{fullName}' exceeds the maximum allowed entry size of {effectiveLimits.MaxEntryBytes} bytes.");
+                }
+
+                totalBytes = checked(totalBytes + read);
+                if (totalBytes > effectiveLimits.MaxTotalBytes)
+                {
+                    throw new InvalidDataException(
+                        $"Backup archive exceeds the maximum total extracted size of {effectiveLimits.MaxTotalBytes} bytes.");
+                }
+
+                await destStream.WriteAsync(buffer.AsMemory(0, read), ct);
+            }
+        }
+    }
+
     /// <returns>The file name of the safety copy of the previous database, or null when none was made.</returns>
     private async Task<string?> RestoreFromArchiveAsync(string archivePath, CancellationToken ct)
     {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"nostos-restore-{Guid.NewGuid()}");
+        Directory.CreateDirectory(StagingDir);
+        var tempDir = Path.GetFullPath(Path.Combine(StagingDir, $"restore-{Guid.NewGuid():N}"));
+        ActiveStagingPaths.TryAdd(tempDir, 0);
         Directory.CreateDirectory(tempDir);
         string? safetyCopyName = null;
 
         try
         {
-            ZipFile.ExtractToDirectory(archivePath, tempDir);
+            await ExtractArchiveSafelyAsync(archivePath, tempDir, BackupExtractionLimits.Default, ct);
 
             var dbPath = Path.Combine(tempDir, "database", "nostos.db");
             if (File.Exists(dbPath))
             {
-                var activeDbPath = ResolveActiveDatabasePath();
-                var preRestoreBackup = $"{activeDbPath}.pre-restore-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                // Verify the extracted database passes SQLite integrity checks
+                // before touching the live database file.
+                SelfHostedSqliteFile.VerifyIntegrity(dbPath);
+                SelfHostedSqliteFile.ClearPools();
 
+                var activeDbPath = ResolveActiveDatabasePath();
+                var activeDir = Path.GetDirectoryName(activeDbPath)!;
+                Directory.CreateDirectory(activeDir);
+
+                // Clean up any leftover temp staging files from an interrupted restore.
+                var activeFileName = Path.GetFileName(activeDbPath);
+                foreach (var leftover in Directory.GetFiles(activeDir, $"{activeFileName}.restoring-*.tmp")
+                    .Concat(Directory.GetFiles(activeDir, $"{activeFileName}.restore-safety-*.tmp")))
+                {
+                    try { File.Delete(leftover); } catch { /* best effort */ }
+                }
+
+                SelfHostedSqliteFile.QuiesceForReplacement(activeDbPath, _logger);
+
+                var preRestoreBackup = $"{activeDbPath}.pre-restore-{DateTime.UtcNow:yyyyMMddHHmmss}";
                 if (File.Exists(activeDbPath))
                 {
-                    File.Copy(activeDbPath, preRestoreBackup, true);
-                    safetyCopyName = Path.GetFileName(preRestoreBackup);
+                    var preRestoreTemp = $"{activeDbPath}.restore-safety-{Guid.NewGuid():N}.tmp";
+                    try
+                    {
+                        File.Copy(activeDbPath, preRestoreTemp, overwrite: true);
+                        File.Move(preRestoreTemp, preRestoreBackup, overwrite: true);
+                        safetyCopyName = Path.GetFileName(preRestoreBackup);
+                    }
+                    finally
+                    {
+                        if (File.Exists(preRestoreTemp))
+                        {
+                            try { File.Delete(preRestoreTemp); } catch { /* best effort */ }
+                        }
+                    }
 
                     // Keep only the latest safety copy; older ones are never
                     // shown anywhere and would pile up beside the database.
-                    var dir = Path.GetDirectoryName(activeDbPath)!;
-                    foreach (var old in Directory.GetFiles(dir, $"{Path.GetFileName(activeDbPath)}.pre-restore-*"))
+                    foreach (var old in Directory.GetFiles(activeDir, $"{activeFileName}.pre-restore-*"))
                     {
                         if (!string.Equals(old, preRestoreBackup, StringComparison.Ordinal))
                         {
@@ -671,11 +934,56 @@ public class BackupService : IBackupService
                     }
                 }
 
-                SqliteConnection.ClearAllPools();
-                await Task.Delay(200, ct);
+                // Stage the new DB next to activeDbPath and remove any pre-existing
+                // -wal / -shm / -journal sidecars before swapping it into place.
+                var stagedLivePath = $"{activeDbPath}.restoring-{Guid.NewGuid():N}.tmp";
+                var replacedLive = false;
+                try
+                {
+                    File.Copy(dbPath, stagedLivePath, overwrite: true);
+                    SelfHostedSqliteFile.DeleteSidecars(stagedLivePath);
 
-                File.Copy(dbPath, activeDbPath, true);
-                await RenewCoverVersionsAsync(activeDbPath, ct);
+                    SelfHostedSqliteFile.ClearPools();
+                    SelfHostedSqliteFile.DeleteSidecars(activeDbPath);
+
+                    File.Move(stagedLivePath, activeDbPath, overwrite: true);
+                    replacedLive = true;
+
+                    await RenewCoverVersionsAsync(activeDbPath, ct);
+
+                    SelfHostedSqliteFile.ClearPools();
+                    SelfHostedSqliteFile.VerifyIntegrity(activeDbPath);
+                    SelfHostedSqliteFile.ClearPools();
+                }
+                catch
+                {
+                    if (replacedLive && safetyCopyName is not null && File.Exists(preRestoreBackup))
+                    {
+                        try
+                        {
+                            SelfHostedSqliteFile.ClearPools();
+                            SelfHostedSqliteFile.DeleteSidecars(activeDbPath);
+                            File.Copy(preRestoreBackup, activeDbPath, overwrite: true);
+                            SelfHostedSqliteFile.ClearPools();
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            _logger.LogError(
+                                rollbackEx,
+                                "Failed to roll back live database from safety copy {SafetyCopy}",
+                                preRestoreBackup);
+                        }
+                    }
+
+                    throw;
+                }
+                finally
+                {
+                    if (File.Exists(stagedLivePath))
+                    {
+                        try { File.Delete(stagedLivePath); } catch { /* best effort */ }
+                    }
+                }
             }
 
             var booksSrcDir = Path.Combine(tempDir, "books");
@@ -701,7 +1009,19 @@ public class BackupService : IBackupService
         }
         finally
         {
-            try { Directory.Delete(tempDir, true); } catch { /* cleanup */ }
+            try
+            {
+                if (Directory.Exists(tempDir))
+                    Directory.Delete(tempDir, true);
+            }
+            catch
+            {
+                /* cleanup */
+            }
+            finally
+            {
+                ActiveStagingPaths.TryRemove(tempDir, out _);
+            }
         }
 
         return safetyCopyName;
