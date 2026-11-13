@@ -56,8 +56,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
     private const long MaxEbookBytes = 96L * 1024 * 1024;
 
-    private readonly HttpClient _http;
-    private readonly HttpClient _snapshotHttp;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<GutenbergProvider> _logger;
     private readonly GutenbergSnapshotLimits _snapshotLimits;
     private readonly GutenbergSnapshotDownloadOptions _snapshotDownloadOptions;
@@ -76,8 +75,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
         GutenbergSnapshotLimits? snapshotLimits,
         GutenbergSnapshotDownloadOptions? snapshotDownloadOptions)
     {
-        _http = httpClientFactory.CreateClient(HttpClientName);
-        _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
         _snapshotLimits = snapshotLimits ?? new GutenbergSnapshotLimits();
         _snapshotDownloadOptions = snapshotDownloadOptions ?? new GutenbergSnapshotDownloadOptions();
@@ -192,11 +190,12 @@ public sealed partial class GutenbergProvider : IContentProvider,
         using var probe = new HttpRequestMessage(HttpMethod.Head, GutenbergCatalog.SnapshotPath);
         ApplyValidators(probe, request);
 
+        var snapshotClient = ProviderHttp.Client(_httpClientFactory, SnapshotHttpClientName);
         using var response = await ProviderHttp.ExecuteAsync(Id, ct, async token =>
         {
             using var probeTimeout = new CancellationTokenSource(_snapshotDownloadOptions.MaxDuration);
             using var probeCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, probeTimeout.Token);
-            return await _snapshotHttp.SendAsync(
+            return await snapshotClient.SendAsync(
                 probe,
                 HttpCompletionOption.ResponseHeadersRead,
                 probeCancellation.Token);
@@ -305,13 +304,15 @@ public sealed partial class GutenbergProvider : IContentProvider,
         CancellationToken ct,
         IReadOnlyList<TimeSpan>? retryDelays = null)
     {
+        var client = ProviderHttp.Client(_httpClientFactory, HttpClientName);
+
         for (var attempt = 0; ; attempt++)
         {
-            using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
+            using var response = await ProviderHttp.GetHeadersAsync(client, Id, path, ct);
 
             // The catalogue answers 404 for an unknown ebook; that is an ordinary
             // "no such item", not a source failure.
-            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+            if (ProviderHttp.IsMissing(response))
                 return null;
 
             if (response.StatusCode is HttpStatusCode.BadGateway
@@ -327,23 +328,9 @@ public sealed partial class GutenbergProvider : IContentProvider,
                 continue;
             }
 
-            if (!response.IsSuccessStatusCode)
-                throw ProviderException.UnavailableFor(Id, $"the catalogue answered HTTP {(int)response.StatusCode}");
+            ProviderHttp.EnsureSuccess(response, Id, "the catalogue");
 
-            return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-            {
-                try
-                {
-                    await using var stream = await response.Content.ReadAsStreamAsync(token);
-                    return await XDocument.LoadAsync(stream, LoadOptions.None, token);
-                }
-                catch (XmlException ex)
-                {
-                    // A maintenance page or an HTML error document: worth reporting as a
-                    // source problem, never worth passing off as an empty catalogue.
-                    throw ProviderException.InvalidResponse(Id, ex.Message);
-                }
-            });
+            return await ProviderHttp.ReadXmlAsync(response, Id, ct);
         }
     }
 
@@ -553,7 +540,8 @@ public sealed partial class GutenbergProvider : IContentProvider,
         HttpResponseMessage response;
         try
         {
-            response = await _snapshotHttp.SendAsync(
+            var snapshotClient = ProviderHttp.Client(_httpClientFactory, SnapshotHttpClientName);
+            response = await snapshotClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 downloadToken);

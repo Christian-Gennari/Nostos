@@ -498,6 +498,70 @@ public sealed class GutenbergProviderTests
         handler.RecordedRequests.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task Search_SendsTheProductUserAgent()
+    {
+        // Pinned: every catalogue request carries the product identity, whichever
+        // IHttpClientFactory the provider runs against.
+        string? userAgent = null;
+        var handler = new StubHttpMessageHandler().Register(
+            "/ebooks/search.opds/?query=pride",
+            request =>
+            {
+                userAgent = request.Headers.UserAgent.ToString();
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        LoadFixture("search-no-records.opds"),
+                        System.Text.Encoding.UTF8,
+                        "application/atom+xml")
+                };
+            });
+        var (provider, _) = CreateProvider(handler);
+
+        await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        userAgent.Should().Be("Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+    }
+
+    [Fact]
+    public async Task Search_OnANonSuccessStatus_IsUnavailableAndNamesTheStatus()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(
+            "/ebooks/search.opds/?query=pride",
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain("the catalogue answered HTTP 503");
+    }
+
+    [Fact]
+    public async Task EachOperationResolvesTheNamedClientInsteadOfCachingOne()
+    {
+        // A singleton must not pin an HttpClient (and with it a DNS entry); each
+        // operation asks the factory for the named client instead.
+        var handler = new StubHttpMessageHandler();
+        handler.SetFallback(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                LoadFixture("search-no-records.opds"),
+                System.Text.Encoding.UTF8,
+                "application/atom+xml")
+        });
+        var factory = new StubHttpClientFactory(handler);
+        var provider = new GutenbergProvider(factory, NullLogger<GutenbergProvider>.Instance);
+
+        await provider.SearchAsync(new ProviderSearchQuery("one"), CancellationToken.None);
+        await provider.SearchAsync(new ProviderSearchQuery("two"), CancellationToken.None);
+
+        factory.RequestedClientNames.Should().HaveCount(2)
+            .And.OnlyContain(name => name == GutenbergProvider.HttpClientName);
+    }
+
     [Theory]
     [InlineData(typeof(HttpRequestException))]
     [InlineData(typeof(IOException))]

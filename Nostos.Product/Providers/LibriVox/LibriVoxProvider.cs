@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Text.Json;
 using Nostos.Backend.Providers.Contracts;
 
@@ -65,8 +64,7 @@ public sealed class LibriVoxProvider : IContentProvider,
     private const int PageSize = 20;
     private const int MaxPageSize = 100;
 
-    private readonly HttpClient _http;
-    private readonly HttpClient _snapshotHttp;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<LibriVoxProvider> _logger;
     private readonly TimeProvider _clock;
 
@@ -75,8 +73,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         ILogger<LibriVoxProvider> logger,
         TimeProvider? clock = null)
     {
-        _http = httpClientFactory.CreateClient(HttpClientName);
-        _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
     }
@@ -211,7 +208,7 @@ public sealed class LibriVoxProvider : IContentProvider,
             await Task.Delay(SnapshotPageDelay, _clock, ct);
 
         var document = await LoadJsonAsync(
-            _snapshotHttp,
+            SnapshotHttpClientName,
             LibriVoxCatalog.SnapshotPagePath(cursor.Offset, cursor.Since ? cursor.SinceUnixSeconds : null),
             ct);
 
@@ -452,7 +449,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         var value = Uri.EscapeDataString($"^{text}");
         var path = $"{LibriVoxCatalog.ApiPath}?{field}={value}&format=json&extended=1&limit={limit}&offset={offset}";
 
-        using var document = await LoadJsonAsync(_http, path, ct);
+        using var document = await LoadJsonAsync(HttpClientName, path, ct);
         if (document is null)
             return [];
 
@@ -480,7 +477,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         if (!LibriVoxCatalog.IsValidId(id))
             return null;
 
-        using var document = await LoadJsonAsync(_http, $"{LibriVoxCatalog.ApiPath}?id={id}&format=json&extended=1", ct);
+        using var document = await LoadJsonAsync(HttpClientName, $"{LibriVoxCatalog.ApiPath}?id={id}&format=json&extended=1", ct);
         if (document is null)
             return null;
 
@@ -493,32 +490,24 @@ public sealed class LibriVoxProvider : IContentProvider,
     }
 
     /// <summary>
-    /// Fetches and parses a feed document with the given client. A 404 is the
+    /// Fetches and parses a feed document from the named client. A 404 is the
     /// catalogue's way of saying "nothing matched" — an ordinary empty result,
     /// not a failure. A body that is not the expected JSON is a source problem
     /// and is reported as one, never passed off as an empty catalogue.
     /// </summary>
-    private async Task<JsonDocument?> LoadJsonAsync(HttpClient client, string path, CancellationToken ct)
+    private async Task<JsonDocument?> LoadJsonAsync(
+        string clientName,
+        string path,
+        CancellationToken ct)
     {
+        var client = ProviderHttp.Client(_httpClientFactory, clientName);
         using var response = await ProviderHttp.GetHeadersAsync(client, Id, path, ct);
 
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+        if (ProviderHttp.IsMissing(response))
             return null;
 
-        if (!response.IsSuccessStatusCode)
-            throw ProviderException.UnavailableFor(Id, $"the catalogue answered HTTP {(int)response.StatusCode}");
+        ProviderHttp.EnsureSuccess(response, Id, "the catalogue");
 
-        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                return await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            }
-            catch (JsonException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        return await ProviderHttp.ReadJsonAsync(response, Id, ct);
     }
 }

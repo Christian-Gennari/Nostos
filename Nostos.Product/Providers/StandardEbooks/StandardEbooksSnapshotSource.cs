@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using System.Xml;
 using System.Xml.Linq;
 using Nostos.Backend.Providers.Contracts;
 
@@ -68,25 +67,9 @@ public sealed partial class StandardEbooksProvider
                 lastModified: response.Content.Headers.LastModified ?? request.IfModifiedSince);
         }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw ProviderException.UnavailableFor(
-                ProviderIdentifier,
-                $"the OPDS catalog answered HTTP {(int)response.StatusCode}");
-        }
+        ProviderHttp.EnsureSuccess(response, ProviderIdentifier, "the OPDS catalog");
 
-        var feed = await ProviderHttp.ExecuteAsync(ProviderIdentifier, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                return await XDocument.LoadAsync(stream, LoadOptions.None, token);
-            }
-            catch (XmlException ex)
-            {
-                throw ProviderException.InvalidResponse(ProviderIdentifier, ex.Message);
-            }
-        });
+        var feed = await ProviderHttp.ReadXmlAsync(response, ProviderIdentifier, ct);
 
         if (!StandardEbooksCatalog.IsFeed(feed))
         {
@@ -155,7 +138,8 @@ public sealed partial class StandardEbooksProvider
                 if (useValidators)
                     ApplyValidators(message, etag, ifModifiedSince);
 
-                response = await _snapshotHttp.SendAsync(
+                var http = CreateFeedClient(SnapshotHttpClientName);
+                response = await http.SendAsync(
                     message,
                     HttpCompletionOption.ResponseHeadersRead,
                     ct);
