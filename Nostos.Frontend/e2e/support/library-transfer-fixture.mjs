@@ -370,21 +370,18 @@ function makePdf(title, line) {
   return Buffer.from(pdf, 'latin1');
 }
 
-/** Deterministic pseudo-random bytes (xorshift32) for media payloads. */
-function pseudoRandomBytes(size, seedText) {
-  const buffer = Buffer.alloc(size);
-  let state = 0x9e3779b9;
-  for (let i = 0; i < seedText.length; i += 1) {
-    state = (state ^ seedText.charCodeAt(i)) >>> 0;
-    state = Math.imul(state, 0x85ebca6b) >>> 0;
-  }
-  for (let i = 0; i < size; i += 1) {
-    state ^= state << 13;
-    state >>>= 0;
-    state ^= state >>> 17;
-    state ^= state << 5;
-    state >>>= 0;
-    buffer[i] = state & 0xff;
+/**
+ * Silent MPEG-1 Layer III frames (128 kbps, 44.1 kHz, joint stereo, 417 B/frame)
+ * padded to at least `minBytes` so BookFileValidator / ATL.Track parses
+ * Duration > 0 and Bitrate > 0 while preserving the multi-chunk payload size.
+ */
+function makeMp3(minBytes) {
+  const frameHeader = Buffer.from([0xff, 0xfb, 0x90, 0x64]);
+  const frameBytes = 417;
+  const frameCount = Math.ceil(minBytes / frameBytes);
+  const buffer = Buffer.alloc(frameCount * frameBytes);
+  for (let offset = 0; offset < buffer.length; offset += frameBytes) {
+    frameHeader.copy(buffer, offset);
   }
   return buffer;
 }
@@ -489,7 +486,7 @@ function makeMedia(kind, def, fixture) {
     return makePdf('Field Notes on Static', 'Static is the signal.');
   }
   if (kind === 'tide') {
-    return pseudoRandomBytes(fixture.bigMediaBytes, 'tidewater-sessions');
+    return makeMp3(fixture.bigMediaBytes);
   }
   throw new Error(`No synthetic media for book '${kind}'`);
 }
