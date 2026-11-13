@@ -1,0 +1,70 @@
+@if (isOpen()) {
+  <app-modal-shell
+    closeLabel="Close move dialog"
+    [isOpen]="true"
+    variant="dialog"
+    [maxWidth]="'440px'"
+    [maxHeight]="'min(600px, calc(100dvh - 2rem))'"
+    [busy]="busy()"
+    ariaLabelledBy="move-sheet-title"
+    ariaDescribedBy="move-sheet-subtitle"
+    (closed)="close()"
+  >
+    <header class="move-sheet-header" shellHeader>
+      <h2 id="move-sheet-title">Move to…</h2>
+      <p class="move-sheet-subtitle" id="move-sheet-subtitle">
+        <span class="move-sheet-title-name">{{ documentName() }}</span>
+        · currently {{ locationLabel() }}
+      </p>
+    </header>
+
+    <ul
+      class="move-list"
+      data-testid="studio-move-list"
+      aria-label="Destination folders"
+      [class.is-busy]="busy()"
+    >
+      @for (row of rows(); track row.key) {
+        <li>
+          <button
+            appButton
+            variant="ghost"
+            type="button"
+            class="move-row"
+            [class.is-current]="row.current"
+            [class.is-nested]="row.level > 0"
+            [class.is-pending]="pendingKey() === row.key"
+            [style.--depth]="row.level"
+            [attr.data-testid]="row.parentId === null ? 'studio-move-top' : 'studio-move-folder'"
+            [attr.data-move-row]="row.key"
+            [attr.aria-current]="row.current ? 'true' : null"
+            [attr.aria-disabled]="row.current || busy() ? 'true' : null"
+            [attr.aria-busy]="pendingKey() === row.key ? 'true' : null"
+            [attr.aria-label]="row.current ? row.name + ', current location' : null"
+            [attr.cdkFocusInitial]="row.key === initialFocusKey() ? '' : null"
+            (click)="chooseMove(row)"
+            (keydown)="onMoveRowKeydown($event, row)"
+          >
+            <nostos-icon class="move-row__icon" name="folder" [size]="16"></nostos-icon>
+            <span class="move-row__name">{{ row.name }}</span>
+            @if (pendingKey() === row.key) {
+              <span class="move-row__status">
+                <nostos-loading-indicator size="sm" label="Moving writing" decorative></nostos-loading-indicator>
+                Moving…
+              </span>
+            } @else if (row.current) {
+              <span class="move-row__status move-row__status--current">
+                <nostos-icon name="check" [size]="13"></nostos-icon>
+                Current
+              </span>
+            }
+          </button>
+        </li>
+      }
+    </ul>
+
+    @if (!hasDestination()) {
+      <p class="move-empty">No folders yet. Create one in Files, then move this writing into it.</p>
+    }
+  </app-modal-shell>
+}

@@ -1,4 +1,4 @@
-/* --- LAYOUT FUNDAMENTALS (Restored from your working version) --- */
+/* --- LAYOUT FUNDAMENTALS --- */
 .studio-layout {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -18,6 +18,7 @@
   overflow: hidden;
   box-sizing: border-box;
 }
+
 @media (min-width: 769px) {
   .sidebar-left {
     position: relative;
@@ -25,12 +26,10 @@
     min-width: 220px;
     max-width: 420px;
     border-right: 1px solid var(--border-color);
-    /* Width follows the pointer directly. Animating it adds lag and makes the
-       divider feel detached from the hand. */
     transition: opacity var(--motion-base) ease;
   }
   .sidebar-right {
-    width: 360px; /* Expansive reference companion */
+    width: 360px;
     border-left: 1px solid var(--border-color);
     transition:
       width var(--motion-slow) var(--ease-standard),
@@ -46,222 +45,35 @@
     opacity: 0;
     border-left: none;
   }
-  /* Keep each panel's contents usable at its own minimum. The left pane is
-     intentionally allowed below the reference pane's old 260px floor. */
   .sidebar-left > * {
     min-width: 220px;
   }
-
   .sidebar-right > * {
     min-width: 260px;
   }
 }
 
-/* --- SIDEBAR COMPONENTS --- */
-.sidebar-header {
-  padding: 1.15rem 1.15rem 0.5rem;
-  flex-shrink: 0;
-}
-.sidebar-header.compact {
-  padding-bottom: 0;
-}
-
-.sidebar-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.35rem;
-}
-
-.sidebar-left .sidebar-header h2,
-.sidebar-right .sidebar-header h2,
-.sidebar-title-row h2 {
-  font-family: 'Newsreader', serif;
-  font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--color-text-main);
-  text-transform: none;
-  letter-spacing: -0.01em;
-  margin: 0;
-}
-
-.sidebar-header .section-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-muted);
-  padding: 0.25rem 0 0.25rem;
-  margin-bottom: 0.15rem;
-}
-
-/* Tabs — the app's shared segmented control.
-   Ported to the same track recipe as Library `.control-group`, Brain
-   `.view-mode-control` and Settings `.theme-choice`, all four of which are now
-   `--bg-hover` / 3px / `--radius-segment` / 2px gap with NO border. This one had drifted
-   by adding a border, which made the group read as a boxed widget rather than a
-   raised track. All four are the same control; they should not differ. */
-.sidebar-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--bg-hover);
-  border-radius: var(--radius-segment);
-  margin-bottom: 0.85rem;
-}
-
-/* Studio keeps native tab semantics; .toggle-opt owns the shared segmented chrome. */
-.tab-btn {
-  flex: 1;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.82rem;
-  font-family: 'Hanken Grotesk', sans-serif;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  gap: 6px;
-  transition:
-    color var(--motion-fast),
-    background-color var(--motion-fast);
-}
-
-@media (pointer: coarse), (hover: none) {
-  .reference-mode-switch .tab-btn {
-    min-height: 44px;
-  }
-}
-
-.tab-btn.active {
-  /* Text labels keep weight as a secondary active cue on top of the shared recipe. */
-  font-weight: 600;
-}
-
-.actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.actions .icon-btn {
-  border-radius: var(--radius-lg);
-  color: var(--color-text-muted);
-}
-
-.actions .icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-/* Icon-button geometry comes from appIconButton; Studio only owns active ink. */
 .icon-btn {
   color: var(--color-text-muted);
 }
+
 .icon-btn.active,
 .icon-btn:hover {
   background: var(--bg-hover);
   color: var(--color-text-main);
 }
 
-/* <nostos-search-field>: the panel only places it. */
-.search-box {
-  margin: 0 1.15rem 1rem;
-  box-sizing: border-box;
-  width: calc(100% - 2.3rem);
-}
-
-/* Lists & Items */
-.brain-content,
-.file-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 0.65rem 5.5rem;
-}
-
-/* Books are appChoiceRow, spaced as the Editions dialog's list, and inset to
-   the search field's edges above them. */
-.book-choice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding-inline: 0.5rem;
-}
-
-.book-choice-format {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-/* Detail Headers */
-.brain-detail-header {
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.inspected-source-panel {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 0.35rem 0.65rem 1rem;
-  white-space: normal;
-}
-
-/* Source inspection is a child view of the active Reference surface, not a
-   second document stacked above its parent list. The breadcrumb is therefore
-   the strong hierarchy cue and the panel owns the remaining scroll area. */
-.inspected-source-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.7rem;
-  padding: 0 0.25rem 0.65rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.inspected-source-back {
-  min-width: 0;
-  max-width: 75%;
-  justify-content: flex-start;
-}
-
-.inspected-source-context {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.source-insertion-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  min-width: 0;
-  padding: 0.65rem 0.5rem 0;
-}
-
-/* Kept sources (issue #491) */
-.kept-sources-content {
-  padding-top: 0.5rem;
-}
-
 /* --- EDITOR PANE (frameless seamless desk) --- */
 .editor-pane {
+  --studio-dock-clearance: 96px;
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  /* The stage (.editor-wrapper) owns the dock clearance. Padding here too
-     doubled it: pane 128px + wrapper 122px reserved 250px under the toolbar
-     and left ~150px of dead desk below the word count. */
   padding-bottom: 0;
-  background-color: var(--bg-surface);
+  background-color: var(--manuscript-paper);
   overflow: hidden;
 }
 
@@ -269,26 +81,44 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  padding: 0.65rem 1.25rem;
   display: flex;
+  flex: 0 0 52px;
   align-items: center;
-  justify-content: space-between;
-  background-color: var(--bg-surface);
-  border-bottom: 1px solid var(--border-color);
+  justify-content: flex-start;
+  gap: 0.5rem;
+  height: 52px;
+  min-width: 0;
+  padding: 0 1.25rem;
+  overflow: hidden;
+  white-space: nowrap;
+  background-color: var(--manuscript-paper);
+  border-bottom: 1px solid transparent;
+}
+
+.editor-header > .icon-btn,
+.doc-actions .icon-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
 }
 
 .header-doc-meta {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 0.5rem;
   overflow: hidden;
 }
 
 .header-doc-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
   font-family: 'Newsreader', serif;
-  font-size: 1.1rem;
+  font-size: var(--text-md);
   font-weight: 500;
-  color: var(--color-text-main);
+  color: var(--manuscript-ink-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -317,6 +147,11 @@
   border-radius: 2px;
 }
 
+.header-doc-title-blank {
+  color: var(--manuscript-ink-faint);
+  font-style: italic;
+}
+
 .header-doc-rename {
   display: block;
   width: min(24rem, 50vw);
@@ -324,6 +159,8 @@
 }
 
 .header-save-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-family: 'Hanken Grotesk', sans-serif;
   font-size: var(--text-xs);
   color: var(--color-text-light);
@@ -334,21 +171,54 @@
   color: var(--color-brand-accent);
 }
 
-/* Document-action cluster: sits at the editor pane's upper-right. */
 .doc-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  flex: 0 0 auto;
   flex-shrink: 0;
 }
 
-/*
- * The stage owns safe padding around the manuscript.
- * The manuscript flows as a seamless, frameless desk surface.
- */
-/* The empty Studio's offer of a starter draft (issue #1220): one line of
-   plain text above the page, in the page's own measure. No card. */
+.editor-header .header-rail-toggle.active,
+.editor-header .page-settings-toggle.active,
+.editor-header .zen-toggle.active {
+  color: var(--color-text-main);
+  background: var(--bg-hover);
+}
+
+.editor-header .icon-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.editor-header .header-rail-toggle,
+.editor-header .page-settings-toggle,
+.editor-header .zen-toggle,
+.editor-header .touch-undo,
+.header-doc-meta {
+  opacity: 0.55;
+  transition: opacity var(--motion-base) ease;
+}
+
+.editor-header:hover .header-rail-toggle,
+.editor-header:hover .page-settings-toggle,
+.editor-header:hover .zen-toggle,
+.editor-header:hover .header-doc-meta,
+.editor-header :focus-visible {
+  opacity: 1;
+}
+
+.touch-undo {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-undo {
+    display: inline-flex;
+  }
+}
+
 .starter-offer {
   display: flex;
   flex-wrap: wrap;
@@ -379,10 +249,6 @@
 .editor-wrapper {
   --studio-inline-gutter: 0px;
   --studio-top-gutter: 0px;
-  /* Dock is 65px tall and floats 24px off the viewport bottom, so 96px clears
-     it by 7px. (89e9380 set 122px against an assumed 82px dock; the dock has
-     since shrunk, which is where the surplus stack below the word count came
-     from.) */
   --studio-dock-clearance: 96px;
 
   position: relative;
@@ -400,23 +266,11 @@
     var(--studio-top-gutter)
     var(--studio-inline-gutter)
     var(--studio-dock-clearance);
-  /* Generous dock clearance so the floating dock never covers the text.
-     Single source of truth: the dock is 65px tall and floats 24px above the
-     viewport bottom (app-dock.component.ts), so 96px clears it by 7px. The
-     pane used to carry a second, independent 8rem pad on top of this one. */
   padding-bottom: var(--studio-dock-clearance);
-
   overflow: visible;
 }
 
-/*
- * The manuscript sheet: app-markdown-editor fills the desk space seamlessly.
- * The reading measure (max-width: 820px) is owned by the editor's page body, so
- * the scrollbar naturally hugs the viewport edge rather than floating beside prose.
- */
 .editor-wrapper app-markdown-editor {
-  /* A column: the toolbar on top and the page's own scroller filling the
-     rest, so the page scrolls inside the sheet instead of growing past it. */
   display: flex;
   flex-direction: column;
   position: relative;
@@ -433,46 +287,73 @@
   box-shadow: none;
 }
 
-/* --- Desk telemetry (grounded typography) ---
-   Word count sits quietly on the desk baseline, raw typography without pills or shadows. */
+.editor-wrapper app-markdown-editor {
+  background: var(--manuscript-paper);
+}
+
+.editor-footer {
+  display: flex;
+  flex: 0 0 1.25rem;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 1.25rem;
+  margin: 0 2.5rem var(--studio-dock-clearance);
+  pointer-events: none;
+  line-height: 1;
+}
+
 .editor-desk-telemetry {
-  position: absolute;
-  /* Its baseline rides the editor surface's own bottom edge: with the pane
-     padding removed, the old detached 5.5rem parked the count level with the
-     dock's top line instead of above it. Sharing the token keeps it correct
-     across the mobile/zen clearance overrides. */
-  bottom: var(--studio-dock-clearance);
-  right: 2.5rem;
-  z-index: 10;
+  position: static;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  margin-left: auto;
 
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
 
+  padding: 4px 6px;
+  color: var(--manuscript-ink-faint);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 4px);
   font-family: 'Hanken Grotesk', system-ui, sans-serif;
   font-size: 0.78rem;
   font-weight: 400;
   line-height: 1;
-  color: var(--color-text-light);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  pointer-events: none;
+  opacity: 0.7;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity var(--motion-base) ease;
+}
+
+.editor-desk-telemetry:hover,
+.editor-desk-telemetry:focus-visible {
+  opacity: 1;
 }
 
 :host-context(body.nostos-zen) .editor-desk-telemetry {
   opacity: 0;
 }
 
-/* On touch it is a control like any other: a 44px target. */
 @media (pointer: coarse) {
   .editor-desk-telemetry {
     min-width: 44px;
     min-height: 44px;
   }
+
+  .editor-header .icon-btn {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
 }
 
 /* --- MOBILE OVERRIDES --- */
 .backdrop {
-  /* Position, layer and dim come from the shared `.drawer-scrim` (styles.css). */
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s;
@@ -531,13 +412,7 @@
     height: 52px;
   }
 
-  /* Touch targets. The three header controls (open files, open reference,
-     focus mode) are 40px and the drawer's own close button is 36px — and the
-     close button is the only way out of a drawer that covers 84vw. 44px is the
-     contract the dock and Brain rows already meet. The header is a fixed 52px
-     tall, so a 44px control still fits without growing the strip. */
-  .doc-actions .icon-btn,
-  .sidebar-header .icon-btn {
+  .doc-actions .icon-btn {
     width: 44px;
     height: 44px;
   }
@@ -547,31 +422,15 @@
     max-width: 160px;
   }
 
-  .source-insertion-actions .nostos-button {
-    min-height: 44px;
-  }
-
   .editor-desk-telemetry {
     right: 1.25rem;
   }
 }
 
-.sidebar-left input {
-  color: var(--color-text-main) !important;
-  background: var(--bg-surface) !important;
-}
-
-/*
- * Mobile (<=700px): no room for a detached sheet. The paper goes edge-to-edge,
- * the radius and the large outer shadow are dropped, and the sliding toolbar
- * stays a single row inside the full-width frame.
- */
 @media (max-width: 700px) {
   .editor-wrapper {
     --studio-inline-gutter: 0px;
     --studio-top-gutter: 0px;
-    /* Mobile dock is flush to the bottom, so the clearance is its own height
-       plus the safe-area inset the dock pads for. */
     --studio-dock-clearance: 76px;
     padding-bottom: var(--studio-dock-clearance);
   }
@@ -584,13 +443,24 @@
     border-radius: 0;
     box-shadow: none;
   }
+
+  .sidebar-right,
+  .sidebar-right:not(.open) {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+
+  .editor-pane,
+  .editor-wrapper {
+    --studio-dock-clearance: 76px;
+  }
+
+  .editor-footer {
+    margin-bottom: var(--studio-dock-clearance);
+  }
 }
 
 /* --- ZEN (FOCUS) MODE — issue #49 --- */
-/* True immersion: the studio host covers the whole viewport, the grid
-   collapses to a single track, and every piece of chrome is hidden. The app
-   dock is hidden via a global rule in styles.css (it lives outside this
-   component's shadow). */
 :host-context(body.nostos-zen) {
   position: fixed;
   inset: 0;
@@ -599,8 +469,6 @@
   z-index: 100;
 }
 
-/* THE root-cause fix: hiding the two auto-width sidebars used to leave the
-   editor auto-placed in the first narrow column with an empty 1fr track. */
 :host-context(body.nostos-zen) .studio-layout {
   display: grid;
   grid-template-columns: 1fr;
@@ -608,47 +476,42 @@
 
 :host-context(body.nostos-zen) .sidebar-left,
 :host-context(body.nostos-zen) .sidebar-right {
-  /* Zen outranks the closed slide-over rules below
-     (`.studio-layout.drawer-files .sidebar-left:not(.open)`), which are more
-     specific and would otherwise leave the files rail displayed off-screen. */
   display: none !important;
 }
 
-/* Document header / action strip is chrome in zen; the fixed Exit-zen
-   control replaces it. */
 :host-context(body.nostos-zen) .editor-header {
   display: none;
 }
 
-/* The editor's formatting toolbar is hidden in zen. Editing stays available
-   via keyboard shortcuts and Markdown input rules. */
 :host-context(body.nostos-zen) ::ng-deep app-markdown-editor .editor-toolbar {
   display: none !important;
 }
 
-/* Zen sizing: seamless full-width editorial desk */
 :host-context(body.nostos-zen) .editor-wrapper {
   --studio-inline-gutter: 0px;
   --studio-top-gutter: 0px;
   --studio-dock-clearance: 24px;
-  /* The dock is hidden in zen, so drop the generous dock clearance. */
   padding-bottom: var(--studio-dock-clearance);
 }
 
 :host-context(body.nostos-zen) .editor-pane {
-  /* No dock in zen: let the paper use the full height. */
   padding-bottom: 0;
 }
 
-:host-context(body.nostos-zen)
-.editor-wrapper app-markdown-editor {
+:host-context(body.nostos-zen) .editor-wrapper app-markdown-editor {
   width: 100%;
   max-width: 100%;
   height: 100%;
 }
 
-/* Fixed Exit-zen control: one subdued, always-visible escape hatch (Esc also
-   exits, but the visible button is required for accessibility). */
+:host-context(body.nostos-zen) .editor-pane > .editor-header {
+  display: none;
+}
+
+:host-context(body.nostos-zen) .editor-footer {
+  display: none;
+}
+
 .zen-exit {
   position: fixed;
   top: 0.75rem;
@@ -698,8 +561,6 @@
     min-width: 0;
   }
 
-  /* Remove an auto track with its rail so a closed panel cannot leave a blank
-     column at the edge of the writing surface. */
   .studio-layout.files-collapsed {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -723,118 +584,6 @@
   height: auto;
   min-height: 0;
   padding: 0;
-}
-
-.editor-footer {
-  display: flex;
-  flex: 0 0 1.25rem;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 1.25rem;
-  margin: 0 2.5rem var(--studio-dock-clearance);
-  pointer-events: none;
-}
-
-.editor-desk-telemetry {
-  position: static;
-  right: auto;
-  bottom: auto;
-  z-index: auto;
-  margin-left: auto;
-}
-
-.editor-header {
-  display: flex;
-  flex: 0 0 52px;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 0.5rem;
-  height: 52px;
-  min-width: 0;
-  padding: 0 1.25rem;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.editor-header > .icon-btn,
-.doc-actions .icon-btn {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-}
-
-.header-doc-meta {
-  flex: 1 1 auto;
-  align-items: center;
-  min-width: 0;
-  gap: 0.5rem;
-}
-
-.header-doc-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: none;
-}
-
-.header-save-status {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
-.doc-actions {
-  flex: 0 0 auto;
-  gap: 0.25rem;
-}
-
-.editor-header .header-rail-toggle.active,
-.editor-header .page-settings-toggle.active,
-.editor-header .zen-toggle.active {
-  color: var(--color-text-main);
-  background: var(--bg-hover);
-}
-
-.editor-header .icon-btn:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.sidebar-title-row {
-  gap: 0.35rem;
-}
-
-.sidebar-left .sidebar-title-row .actions {
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-}
-
-.sidebar-left .files-new-document {
-  min-height: 32px;
-  padding: 5px 8px;
-}
-
-.sidebar-header .icon-btn {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 32px;
-}
-
-.editor-footer,
-.editor-footer .editor-desk-telemetry {
-  line-height: 1;
-}
-
-:host-context(body.nostos-zen) .editor-wrapper {
-  --studio-dock-clearance: 24px;
-  padding-bottom: var(--studio-dock-clearance);
-}
-
-:host-context(body.nostos-zen) .editor-pane > .editor-header {
-  display: none;
-}
-
-:host-context(body.nostos-zen) .editor-footer {
-  display: none;
 }
 
 @media (max-width: 900px), (max-height: 500px) {
@@ -908,25 +657,17 @@
     margin-left: 1.25rem;
   }
 
-  .sidebar-title-row {
-    margin-bottom: 0.35rem;
-  }
-}
-
-@media (max-width: 700px) {
-  .sidebar-right,
+  .sidebar-left:not(.open),
   .sidebar-right:not(.open) {
-    width: 100vw !important;
-    max-width: 100vw;
+    visibility: hidden;
+    transition:
+      transform var(--motion-base) var(--ease-standard),
+      visibility 0s linear var(--motion-base);
   }
 
-  .editor-pane,
-  .editor-wrapper {
-    --studio-dock-clearance: 76px;
-  }
-
-  .editor-footer {
-    margin-bottom: var(--studio-dock-clearance);
+  .sidebar-left.open,
+  .sidebar-right.open {
+    visibility: visible;
   }
 }
 
@@ -938,528 +679,7 @@
   }
 }
 
-@media (pointer: coarse) {
-  .editor-header .icon-btn,
-  .sidebar-header .icon-btn {
-    flex-basis: 44px;
-    width: 44px;
-    height: 44px;
-  }
-
-  .sidebar-left .files-new-document {
-    min-height: 44px;
-  }
-
-  .sidebar-right .search-box .nostos-form-control {
-    min-height: 44px;
-  }
-
-  .sidebar-right .brain-detail-header .goto-btn,
-  .inspected-source-back {
-    min-height: 44px;
-  }
-}
-
-/* --- S2 Reference sidebar content: compact rows and explicit action hierarchy --- */
-/* The Library's Topics/Books choice is a FILTER on the Library surface, not a
-   second tab bar. It used to be drawn as the same full-width tray as the
-   "For this writing / Library" switch directly above it, so the panel opened
-   with two identical tab bars stacked. It keeps its tab semantics and the
-   shared `.toggle-opt` class, and drops the tray: two compact options on the
-   left, the selected one a flat fill. No underline either, which would compete
-   with the switch above in a different way. */
-.sidebar-tabs.library-tabs {
-  justify-content: flex-start;
-  gap: 4px;
-  margin: 0.2rem 0 0.75rem;
-  padding: 0;
-  background: transparent;
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt {
-  flex: 0 0 auto;
-  min-height: 30px;
-  padding: 0.25rem 0.7rem;
-  border-radius: var(--radius-action);
-  font-size: 0.8rem;
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt:hover {
-  color: var(--color-text-main);
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt.active {
-  /* The switch's own selected fill, without its shadow and ring. --bg-hover is
-     within a shade of the sidebar on light and the selection vanished. */
-  background: var(--control-active-fill);
-  color: var(--color-text-main);
-  box-shadow: none;
-  outline: 0;
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-@media (pointer: coarse), (hover: none) {
-  .sidebar-tabs.library-tabs .tab-btn.toggle-opt {
-    min-height: 44px;
-  }
-}
-
-.reference-action-notice {
-  margin: 0.05rem 1.15rem 0.5rem;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  line-height: 1.4;
-  white-space: normal;
-}
-
-.reference-list-scroll {
-  min-height: 0;
-  white-space: normal;
-  scrollbar-width: thin;
-}
-
-.reference-empty-link {
-  min-height: 36px;
-  padding-inline: 0;
-  color: var(--color-brand-accent);
-  gap: 0.3rem;
-}
-
-/* A pane's wait: the shared indicator, centred where the list will be. */
-.reference-loading {
-  display: flex;
-  padding: 1.5rem 0;
-}
-
-.reference-source-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.4rem 0.3rem 0.4rem 0.55rem;
-  border-radius: var(--radius-row);
-  white-space: normal;
-  transition: background-color var(--motion-fast);
-}
-
-/* The ROW is the hover surface. The highlight used to sit on the text button
-   alone, between two hairlines and short of the bookmark, so it read as a
-   stray blob inside the row rather than as the row being picked. */
-.reference-source-row + .reference-source-row {
-  margin-top: 2px;
-}
-
-.reference-source-row:hover,
-.reference-source-row:has(.reference-source-row-main:focus-visible) {
-  /* A mix of the ink, not --bg-hover, which is nearly the sidebar's own grey
-     on light. */
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-}
-
-.reference-source-row-main {
-  display: flex;
-  min-width: 0;
-  min-height: 48px;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  gap: 0.3rem;
-  padding: 0.1rem 0.35rem 0.1rem 0.1rem;
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--radius-row);
-  background: transparent;
-  color: var(--color-text-main);
-  cursor: pointer;
-  text-align: left;
-  white-space: normal;
-}
-
-/* Out-specifies the ghost button's own hover fill, which would draw a second,
-   smaller box inside the highlighted row. */
-.reference-source-row .reference-source-row-main.nostos-button,
-.reference-source-row .reference-source-row-main.nostos-button:hover:not(:disabled) {
-  background: transparent;
-  box-shadow: none;
-}
-
-.reference-source-row-main:focus-visible,
-.reference-row-action:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* A passage row (issue #1021) leads with its title; its opening follows,
-   quieter, on one line. */
-.reference-source-passage {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: 0.95rem;
-  font-weight: 500;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reference-source-passage nostos-icon {
-  flex-shrink: 0;
-  color: var(--color-text-muted);
-}
-
-.reference-source-passage + .reference-source-preview {
-  color: var(--color-text-muted);
-  -webkit-line-clamp: 1;
-}
-
-.reference-source-preview:not(.is-quote) {
-  display: -webkit-box;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-main);
-  font-size: 0.84rem;
-  line-height: 1.38;
-  overflow-wrap: anywhere;
-  text-overflow: ellipsis;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-/* A quotation is the shared quote block (ui/quote-block), in its pen when
-   the row knows it; its rail sits on the row's own text inset. */
-.reference-source-preview.is-quote {
-  white-space: normal;
-}
-
-/* How a source is used in the open writing (issue #1162): its topics as
-   topic chips, or a muted "Kept, not cited". Under the row, both columns. */
-.reference-source-use {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  /* Lines up with the row's text, which sits inside its button's padding. */
-  padding: 0 0.35rem 0.1rem 0.55rem;
-}
-
-.reference-source-use.is-uncited {
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
-.reference-source-removed {
-  margin: 0.35rem 0 0;
-  padding: 0 0.55rem;
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  line-height: 1.4;
-}
-
-/* One quiet line under the sources: what the writing touches. */
-.writing-touches {
-  margin: 0.75rem 0.55rem 0.5rem 1.1rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--border-light);
-}
-
-.writing-touches-line {
-  margin: 0;
-  color: var(--color-text-main);
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
-.writing-touches-note {
-  margin: 0.15rem 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
-.reference-source-provenance {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.reference-row-action.icon-btn {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  align-self: center;
-  justify-self: end;
-  color: var(--color-text-muted);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-lg);
-}
-
-.reference-row-action.icon-btn:hover,
-.reference-row-action.icon-btn:focus-visible {
-  /* A step past the row's own hover fill. */
-  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-  color: var(--color-text-main);
-}
-
-.reference-row-action.icon-btn.active:not(:hover):not(:focus-visible) {
-  color: var(--color-brand-accent);
-  background: transparent;
-}
-
-.brain-detail-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0.1rem;
-  padding: 0.15rem 0 0.5rem;
-  margin: 0 0 0.35rem;
-  border-bottom: 0;
-  background: var(--bg-sidebar);
-}
-
-/* Names what the list below belongs to; the back button alone said only where
-   you came from. */
-.reference-detail-title {
-  margin: 0;
-  padding: 0 0.55rem;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: 1.1rem;
-  font-weight: 600;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The shared `.back-link` (styles.css): appButton ghost sm, 14px arrow. */
-
-.inspected-source-panel {
-  padding: 0.35rem 0.65rem 9rem;
-}
-
-.inspected-source-nav {
-  justify-content: flex-start;
-  margin-bottom: 0.65rem;
-}
-
-.inspected-source-back {
-  max-width: 100%;
-}
-
-/* The note sits on the panel itself, as it does in the Brain: no box. The
-   provenance line under it is its meta, so the item's closing hairline and
-   bottom space give way to it. */
-.inspected-source-card {
-  min-width: 0;
-  padding: 0.35rem 0.3rem 0.45rem;
-  border-bottom: 0;
-}
-
-.inspected-source-provenance {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-  padding: 0.55rem 0.3rem 0.2rem;
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  line-height: 1.35;
-}
-
-.inspected-source-source-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@media (pointer: coarse) {
-  .reference-row-action.icon-btn {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-  }
-}
-
-.inspected-source-open {
-  flex: 0 0 auto;
-}
-
-.source-insertion-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.25rem;
-  padding: 0.3rem 0.2rem 0;
-}
-
-.source-action-primary-row {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.source-action-primary-row .nostos-button {
-  min-height: 38px;
-}
-
-.source-kept-state {
-  display: inline-flex;
-  min-height: 36px;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0 0.45rem;
-  color: var(--color-brand-accent);
-  font-size: 0.78rem;
-  white-space: normal;
-}
-
-.source-more-trigger {
-  gap: 0.25rem;
-}
-
-.source-action-disabled-reason {
-  margin: 0.15rem 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.74rem;
-  line-height: 1.4;
-  white-space: normal;
-}
-
-@media (pointer: coarse) {
-  .reference-row-action {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-  }
-
-  .source-action-primary-row .nostos-button,
-  .inspected-source-open,
-  .reference-empty-link {
-    min-height: 44px;
-  }
-
-  :host ::ng-deep .sidebar-left app-flat-tree .toggle-btn {
-    width: 44px;
-    height: 44px;
-    left: calc(var(--depth, 0) * var(--indent-step) - 10px);
-    justify-content: flex-start;
-    padding-left: 10px;
-  }
-
-  :host ::ng-deep .sidebar-left app-flat-tree .action-mini {
-    width: 44px;
-    height: 44px;
-  }
-
-  :host ::ng-deep .sidebar-left app-flat-tree .tree-row {
-    --actions-w: 140px;
-  }
-}
-
-/* =====================================================================
-   THE PAGE FIRST (issue #1040)
-   The Studio opens on the page. The file list and (unless pinned) the
-   Reference rail slide over it, the header is quiet, and the chrome fades
-   while words are going down.
-   ===================================================================== */
-
-.editor-pane,
-.editor-wrapper app-markdown-editor {
-  background: var(--manuscript-paper);
-}
-
-/* A quiet header: on the paper, no rule under it, faint until wanted. */
-.editor-header {
-  background-color: var(--manuscript-paper);
-  border-bottom-color: transparent;
-}
-
-.header-doc-title {
-  color: var(--manuscript-ink-soft);
-  font-size: var(--text-md);
-}
-
-.header-doc-title-blank {
-  color: var(--manuscript-ink-faint);
-  font-style: italic;
-}
-
-.editor-header .header-rail-toggle,
-.editor-header .page-settings-toggle,
-.editor-header .zen-toggle,
-.editor-header .touch-undo,
-.header-doc-meta {
-  opacity: 0.55;
-  transition: opacity var(--motion-base) ease;
-}
-
-.editor-header:hover .header-rail-toggle,
-.editor-header:hover .page-settings-toggle,
-.editor-header:hover .zen-toggle,
-.editor-header:hover .header-doc-meta,
-.editor-header :focus-visible {
-  opacity: 1;
-}
-
-/* Undo in the header is for touch screens only; a keyboard has Ctrl+Z. */
-.touch-undo {
-  display: none;
-}
-
-@media (pointer: coarse) {
-  .touch-undo {
-    display: inline-flex;
-  }
-}
-
-/* The stat corner: low-opacity text that cycles on click. */
-.editor-desk-telemetry {
-  padding: 4px 6px;
-  color: var(--manuscript-ink-faint);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm, 4px);
-  font-variant-numeric: tabular-nums;
-  opacity: 0.7;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: opacity var(--motion-base) ease;
-}
-
-.editor-desk-telemetry:hover,
-.editor-desk-telemetry:focus-visible {
-  opacity: 1;
-}
-
-:host-context(body.nostos-zen) .editor-desk-telemetry {
-  opacity: 0;
-}
-
-/* While typing, everything that is not the page fades away. A real pointer
-   movement or Esc brings it back (the Studio clears .is-typing). */
+/* While typing, everything that is not the page fades away. */
 .studio-layout.is-typing .editor-header,
 .studio-layout.is-typing .editor-footer {
   opacity: 0;
@@ -1472,8 +692,6 @@
   transition: opacity 200ms ease;
 }
 
-/* Wide screens: the file list (always) and Reference (unless pinned) slide
-   over the page instead of taking a column. Narrow screens already did. */
 @media (min-width: 901px) and (min-height: 501px) {
   .studio-layout.drawer-files.drawer-reference {
     grid-template-columns: minmax(0, 1fr);
@@ -1492,8 +710,6 @@
     height: auto;
     opacity: 1;
     z-index: var(--layer-drawer);
-    /* The hairline edge and the scrim separate a slide-over from the page;
-       a long soft shadow over the page read as a smudge. */
     box-shadow: none;
     visibility: hidden;
     transition:
@@ -1527,30 +743,11 @@
     display: flex;
   }
 
-  /* The stage no longer shares the row with a rail column. */
   .studio-layout.drawer-files .editor-pane {
     grid-column: 1;
   }
 }
 
-/* A closed slide-over is gone, not parked off-screen: its shadow no longer
-   bleeds in at the screen edge and nothing in it can be reached. */
-@media (max-width: 900px), (max-height: 500px) {
-  .sidebar-left:not(.open),
-  .sidebar-right:not(.open) {
-    visibility: hidden;
-    transition:
-      transform var(--motion-base) var(--ease-standard),
-      visibility 0s linear var(--motion-base);
-  }
-
-  .sidebar-left.open,
-  .sidebar-right.open {
-    visibility: visible;
-  }
-}
-
-/* The keyboard shortcut sheet. */
 .shortcut-sheet-header {
   display: flex;
   align-items: center;
@@ -1565,185 +762,6 @@
   font-size: var(--text-xl);
   font-weight: 500;
   line-height: 1.25;
-}
-
-/* The "Move to…" dialog: a compact folder picker.
-   ------------------------------------------------------------------
-   Rows, not cards. The card is the only bordered surface in this dialog;
-   a second border around every destination is what made the old list read
-   as a stack of form buttons. The current folder is the one raised row,
-   with a "Current" chip and an inert click; every other row stays flat
-   until hover or focus. Indentation is one custom property (`--depth`),
-   set from the same tree order the file explorer uses. */
-.move-sheet-header h2 {
-  margin: 0;
-  color: var(--color-text-main);
-  font-family: 'Newsreader', serif;
-  font-size: var(--text-xl);
-  font-weight: 500;
-  line-height: 1.25;
-}
-
-.move-sheet-subtitle {
-  margin: 0.3rem 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.move-sheet-title-name {
-  color: var(--color-text-main);
-  font-weight: 600;
-}
-
-.move-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0.4rem 0.75rem 0.6rem;
-  list-style: none;
-}
-
-.move-list li {
-  min-width: 0;
-}
-
-/* appButton's ghost rung owns the ink, hover ground and focus-visible ring.
-   These rules own the row geometry. The left padding is deliberately the
-   header's 1.5rem gutter (list 0.75rem + row 0.75rem) at depth 0, so the
-   first folder icon lines up with the dialog title instead of drifting. */
-.move-list .move-row {
-  position: relative;
-  width: 100%;
-  min-height: 40px;
-  justify-content: flex-start;
-  gap: 0.65rem;
-  padding: 0 0.75rem 0 calc(0.75rem + var(--depth, 0) * 14px);
-  border-radius: var(--radius-row);
-  color: var(--color-text-muted);
-  font-size: 0.88rem;
-  font-weight: 500;
-  text-align: left;
-  white-space: nowrap;
-  /* appButton's press scale on a full-width row reads as a jolt. */
-  transform: none;
-}
-
-.move-row__icon {
-  flex: 0 0 auto;
-  color: var(--color-text-light);
-  transition: color var(--motion-fast);
-}
-
-.move-row__name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.move-row__status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0.3rem;
-  margin-left: auto;
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.move-row__status--current {
-  padding: 0.18rem 0.45rem 0.18rem 0.4rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface);
-}
-
-.move-row__status--current nostos-icon {
-  color: var(--color-primary);
-}
-
-/* Nesting guide: one hairline per nested row, drawn at the parent's icon
-   centre. Same idea as the file tree's guide, one step quieter. */
-.move-list .move-row.is-nested::before {
-  content: '';
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: calc(0.75rem + (var(--depth, 0) - 1) * 14px + 8px);
-  width: 1px;
-  background: var(--border-color);
-  pointer-events: none;
-}
-
-@media (hover: hover) {
-  .move-list .move-row:hover:not(.is-current):not(:disabled) {
-    background: var(--bg-hover);
-    color: var(--color-text-main);
-  }
-
-  .move-list .move-row:hover:not(.is-current):not(:disabled) .move-row__icon {
-    color: var(--color-text-main);
-  }
-}
-
-/* The location you are already in: readable, raised, and not a destination. */
-.move-list .move-row.is-current {
-  background: var(--bg-surface-alt);
-  color: var(--color-text-main);
-  cursor: default;
-}
-
-.move-list .move-row.is-current:hover {
-  background: var(--bg-surface-alt);
-  color: var(--color-text-main);
-}
-
-.move-list .move-row.is-current .move-row__icon {
-  color: var(--color-text-muted);
-}
-
-/* In flight: the chosen row keeps its place and says so; the rest recede.
-   appButton hides a direct child icon while `aria-busy` (its spinner input's
-   convention), so the folder glyph is pinned back: the row must not lose its
-   indent and jump sideways halfway through the move. */
-.move-list .move-row[aria-busy='true'] > nostos-icon {
-  display: inline-flex;
-}
-
-.move-list .move-row.is-pending {
-  background: var(--bg-surface-alt);
-  color: var(--color-text-main);
-}
-
-.move-list.is-busy .move-row:not(.is-pending) {
-  opacity: 0.55;
-}
-
-.move-list .move-row:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.move-list .move-row:active:not(.is-current) {
-  transform: none;
-}
-
-.move-empty {
-  margin: 0;
-  padding: 0.25rem 1.5rem 1rem;
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-@media (pointer: coarse) {
-  .move-list .move-row {
-    min-height: var(--control-h-touch);
-  }
 }
 
 .shortcut-list {

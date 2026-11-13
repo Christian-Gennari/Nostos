@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { Component, input, output, Input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
-import { Component, input, output, Input, signal } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { By } from '@angular/platform-browser';
@@ -9,6 +9,10 @@ import { StudioPreferencesService } from './page-settings/studio-preferences.ser
 import { CitationService } from './citations/citation.service';
 
 import { WritingStudio, titleFromMarkdown } from './writing-studio.component';
+import { DeleteWritingModalComponent } from './tree/delete-writing-modal.component';
+import { MoveWritingDialogComponent } from './tree/move-writing-dialog.component';
+import { StudioFilesSidebarComponent } from './tree/studio-files-sidebar.component';
+import { StudioReferenceDrawerComponent } from './reference-drawer/studio-reference-drawer.component';
 import { normalizeStudioPreferences } from './page-settings/studio-preferences.service';
 import { ThemeService } from '../core/services/theme.service';
 import { RecentItemsService } from '../ui/command-palette/recent-items.service';
@@ -96,6 +100,21 @@ class NoteItemStub {
   @Input() passageViewerOptions: unknown = null;
 }
 
+function overrideStudioComponents(): void {
+  TestBed.overrideComponent(WritingStudio, {
+    remove: { imports: [MarkdownEditorComponent] },
+    add: { imports: [MarkdownEditorStub] },
+  });
+  TestBed.overrideComponent(StudioFilesSidebarComponent, {
+    remove: { imports: [FlatTreeComponent] },
+    add: { imports: [FlatTreeStub] },
+  });
+  TestBed.overrideComponent(StudioReferenceDrawerComponent, {
+    remove: { imports: [NoteItemComponent] },
+    add: { imports: [NoteItemStub] },
+  });
+}
+
 describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§5)', () => {
   let fixture: ComponentFixture<WritingStudio>;
   let component: WritingStudio;
@@ -114,10 +133,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
       .join('\n');
 
   beforeEach(async () => {
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
 
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
@@ -946,10 +962,7 @@ describe('WritingStudio typewriter mode', () => {
 
   beforeEach(async () => {
     localStorage.clear();
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
 
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
@@ -1059,10 +1072,7 @@ describe('WritingStudio delete (no window.confirm)', () => {
   let component: WritingStudio;
 
   beforeEach(async () => {
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
 
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
@@ -1359,10 +1369,7 @@ describe('WritingStudio kept sources (#491)', () => {
       show: vi.fn(),
     };
 
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
 
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
@@ -2742,10 +2749,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
     };
     toastService = { error: vi.fn(), success: vi.fn() };
 
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
 
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
@@ -2951,10 +2955,7 @@ describe('WritingStudio export menu (issue #1164)', () => {
   let component: WritingStudio;
 
   beforeEach(async () => {
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
 
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
@@ -3314,10 +3315,7 @@ describe('WritingStudio: what the writing touches (issue #1162)', () => {
         createdAt: '2026-10-01T00:00:00Z',
       }))));
 
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
     await TestBed.configureTestingModule({
       imports: [WritingStudio],
       providers: [
@@ -3474,10 +3472,7 @@ describe('WritingStudio: a starter draft on an empty Studio (issue #1220)', () =
   const draft: WritingContentDto = { id: 'w-new', name: 'Walden', content: 'Three passages…', updatedAt: '2026-10-24T00:00:00Z' };
 
   async function open(existing: unknown[] = [], imported: unknown[] = [passage]): Promise<void> {
-    TestBed.overrideComponent(WritingStudio, {
-      remove: { imports: [FlatTreeComponent, NoteItemComponent, MarkdownEditorComponent] },
-      add: { imports: [FlatTreeStub, NoteItemStub, MarkdownEditorStub] },
-    });
+    overrideStudioComponents();
     starter = starterStub();
     starter.passages.mockResolvedValue(imported);
     writings = {
@@ -3569,5 +3564,67 @@ describe('WritingStudio: a starter draft on an empty Studio (issue #1220)', () =
     await open([], []);
     expect(starter.passages).toHaveBeenCalled();
     expect(offer()).toBeNull();
+  });
+});
+
+describe('WritingStudio architecture guarantees (#1615)', () => {
+  it('configures ChangeDetectionStrategy.OnPush on WritingStudio and extracted subcomponents', () => {
+    for (const cmp of [
+      WritingStudio,
+      StudioFilesSidebarComponent,
+      StudioReferenceDrawerComponent,
+      MoveWritingDialogComponent,
+      DeleteWritingModalComponent,
+    ]) {
+      const def = (cmp as unknown as { ɵcmp?: { onPush?: boolean } }).ɵcmp;
+      expect(def?.onPush).toBe(true);
+    }
+  });
+
+  it('unsubscribes active list streams and cleans up body classes & timers on destroy', async () => {
+    overrideStudioComponents();
+    const listSubject = new Subject<WritingDto[]>();
+    const listMock = vi.fn(() => listSubject.asObservable());
+
+    await TestBed.configureTestingModule({
+      imports: [WritingStudio],
+      providers: [
+        {
+          provide: WritingsService,
+          useValue: {
+            list: listMock,
+            get: vi.fn(() => of({ id: 'd1', name: 'Draft', content: 'hi', updatedAt: '2026-01-01T00:00:00Z' })),
+            create: vi.fn(() => of({})),
+            update: vi.fn(() => of({})),
+            delete: vi.fn(() => of({})),
+            move: vi.fn(() => of({})),
+            listSources: vi.fn(() => of([])),
+            addSource: vi.fn(() => of({})),
+            removeSource: vi.fn(() => of({})),
+          },
+        },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info: vi.fn(), show: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn(() => of({ notes: [] })) } },
+        { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(WritingStudio);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    component.enterZen();
+    component.onEditorChange('typing');
+    expect(document.body.classList.contains('nostos-zen')).toBe(true);
+    expect(document.body.classList.contains('nostos-studio-typing')).toBe(true);
+    expect(listSubject.observed).toBe(true);
+
+    fixture.destroy();
+
+    expect(listSubject.observed).toBe(false);
+    expect(document.body.classList.contains('nostos-zen')).toBe(false);
+    expect(document.body.classList.contains('nostos-studio-typing')).toBe(false);
   });
 });

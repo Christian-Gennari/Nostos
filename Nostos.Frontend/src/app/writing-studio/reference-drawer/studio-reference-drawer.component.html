@@ -1,0 +1,533 @@
+<div class="sidebar-header compact">
+  <div class="sidebar-title-row">
+    <h2>Reference</h2>
+    <button
+      appIconButton
+      size="xs"
+      class="reference-rail-collapse"
+      icon="sidebar-simple"
+      [glyphSize]="16"
+      weight="thin"
+      (click)="collapseRail.emit()"
+      [title]="railLabel()"
+      [attr.aria-label]="railLabel()"
+      [attr.aria-expanded]="isOpen()"
+      [attr.aria-pressed]="isOpen()"
+    ></button>
+  </div>
+
+  <!-- Top-level reference mode switch: "For this document" vs "Library" (issue #491) -->
+  <div class="sidebar-tabs reference-mode-switch" role="tablist" aria-label="Reference surfaces">
+    <!-- design-allow raw-button: segmented reference tab preserves native tab semantics matching writing-studio -->
+    <button
+      class="tab-btn toggle-opt"
+      role="tab"
+      [attr.aria-selected]="referenceMode() === 'writing'"
+      [class.active]="referenceMode() === 'writing'"
+      (click)="referenceModeChanged.emit('writing')"
+    >
+      <span>For this document</span>
+    </button>
+    <!-- design-allow raw-button: segmented reference tab preserves native tab semantics matching writing-studio -->
+    <button
+      class="tab-btn toggle-opt"
+      role="tab"
+      [attr.aria-selected]="referenceMode() === 'library'"
+      [class.active]="referenceMode() === 'library'"
+      (click)="referenceModeChanged.emit('library')"
+    >
+      <span>Library</span>
+    </button>
+  </div>
+
+  @if (referenceMode() === 'library') {
+    <div class="sidebar-tabs library-tabs" role="tablist" aria-label="Library browsing">
+      <!-- design-allow raw-button: segmented reference tab preserves native tab semantics matching writing-studio -->
+      <button
+        class="tab-btn toggle-opt"
+        role="tab"
+        [attr.aria-selected]="activeSidebarTab() === 'brain'"
+        [class.active]="activeSidebarTab() === 'brain'"
+        (click)="libraryTabChanged.emit('brain')"
+      >
+        <nostos-icon name="hash" [size]="14" weight="light"></nostos-icon>
+        <span>Topics</span>
+      </button>
+      <!-- design-allow raw-button: segmented reference tab preserves native tab semantics matching writing-studio -->
+      <button
+        class="tab-btn toggle-opt"
+        role="tab"
+        [attr.aria-selected]="activeSidebarTab() === 'notes'"
+        [class.active]="activeSidebarTab() === 'notes'"
+        (click)="libraryTabChanged.emit('notes')"
+      >
+        <nostos-icon name="book" [size]="14" weight="light"></nostos-icon>
+        <span>Books</span>
+      </button>
+    </div>
+  }
+</div>
+
+@if (inspectedSource(); as source) {
+  <section class="inspected-source-panel" aria-label="Inspected source">
+    <div class="inspected-source-nav">
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        class="back-link inspected-source-back"
+        (click)="inspectedSourceClosed.emit()"
+        [attr.aria-label]="'Back to ' + inspectionReturnLabel()"
+        [title]="'Back to ' + inspectionReturnLabel()"
+      >
+        <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
+        <span class="inspected-source-context">Back to {{ inspectionReturnLabel() }}</span>
+      </button>
+    </div>
+
+    @if (inspectedSourceItem(); as item) {
+      <app-note-item
+        class="inspected-source-card"
+        [note]="item"
+        [topicMap]="topicMap()"
+        [passageViewerOptions]="passageViewerOptions() ?? null"
+        [readOnly]="true"
+        [showMeta]="false"
+      />
+    }
+
+    <div class="inspected-source-provenance">
+      <span class="inspected-source-source-label">{{ inspectedSourceProvenance() }}</span>
+      @if (source.bookId) {
+        <button
+          appButton
+          variant="link"
+          size="sm"
+          type="button"
+          class="inspected-source-open"
+          (click)="sourceOpened.emit(source)"
+        >
+          Open in book <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
+        </button>
+      }
+    </div>
+
+    <div class="source-insertion-actions" role="group" aria-label="Source actions">
+      <div class="source-action-primary-row">
+        @if (isPassageSource(source)) {
+          <button
+            appButton
+            variant="primary"
+            size="sm"
+            data-testid="studio-quote-from-passage"
+            [disabled]="!!sourceActionDisabledReason()"
+            [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+            [title]="sourceActionDisabledReason() || ''"
+            (click)="passageRead.emit(source)"
+          >
+            <nostos-icon concept="passage" [size]="16"></nostos-icon>
+            Quote from passage
+          </button>
+        } @else if (canInsertQuote(source)) {
+          <button
+            appButton
+            variant="primary"
+            size="sm"
+            [disabled]="!!sourceActionDisabledReason()"
+            [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+            [title]="sourceActionDisabledReason() || ''"
+            (click)="quoteInserted.emit(source)"
+          >
+            Insert quote
+          </button>
+        } @else if (canInsertNote(source)) {
+          <button
+            appButton
+            variant="primary"
+            size="sm"
+            [disabled]="!!sourceActionDisabledReason()"
+            [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+            [title]="sourceActionDisabledReason() || ''"
+            (click)="noteInserted.emit(source)"
+          >
+            Insert as note
+          </button>
+        }
+
+        @if (referenceMode() === 'library' && !keptNoteIds().has(source.id)) {
+          <button
+            appButton
+            variant="secondary"
+            size="sm"
+            [disabled]="!hasActiveItem() || keepingNoteIds().has(source.id)"
+            [attr.aria-describedby]="!hasActiveItem() ? 'source-action-disabled-reason' : null"
+            [title]="keepActionLabel(source.id)"
+            [attr.aria-label]="keepActionLabel(source.id)"
+            (click)="noteKept.emit(source.id)"
+          >
+            <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
+            Keep in a document
+          </button>
+        } @else if (keptNoteIds().has(source.id)) {
+          <span class="source-kept-state">
+            <nostos-icon name="bookmark-simple" [size]="16" weight="fill"></nostos-icon>
+            Kept in this document
+          </span>
+        }
+
+        @if (canInsertReference(source) || (canInsertQuote(source) && canInsertNote(source)) || keptNoteIds().has(source.id)) {
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="source-more-trigger"
+            aria-label="More source actions"
+            [nostosMenuTriggerFor]="sourceMoreMenu"
+          >
+            More
+            <nostos-icon name="caret-down" [size]="14"></nostos-icon>
+          </button>
+          <ng-template #sourceMoreMenu>
+            <nostos-menu aria-label="More source actions">
+              @if (canInsertQuote(source) && canInsertNote(source)) {
+                <button
+                  nostosMenuItem
+                  icon="note"
+                  [disabled]="!!sourceActionDisabledReason()"
+                  (triggered)="noteInserted.emit(source)"
+                >Insert as note</button>
+              }
+              @if (canInsertReference(source)) {
+                <button
+                  nostosMenuItem
+                  icon="link-simple"
+                  [disabled]="!!sourceActionDisabledReason()"
+                  (triggered)="referenceInserted.emit(source)"
+                >Insert as reference</button>
+              }
+              @if (keptNoteIds().has(source.id)) {
+                @if (canInsertReference(source) || (canInsertQuote(source) && canInsertNote(source))) {
+                  <hr nostosMenuSeparator />
+                }
+                <button
+                  nostosMenuItem
+                  icon="bookmark-simple"
+                  class="remove-source-action"
+                  (triggered)="keptSourceRemoved.emit(source.id)"
+                >Remove from this document</button>
+              }
+            </nostos-menu>
+          </ng-template>
+        }
+      </div>
+
+      @if (sourceActionDisabledReason(); as disabledReason) {
+        @if (!hasActiveItem() || (editorWordCount() === null && (canInsertQuote(source) || canInsertNote(source) || canInsertReference(source)))) {
+          <p class="source-action-disabled-reason" id="source-action-disabled-reason">{{ disabledReason }}</p>
+        }
+      }
+    </div>
+  </section>
+}
+
+@if (!inspectedSource() && referenceMode() === 'writing') {
+  <div
+    class="brain-content kept-sources-content reference-list-scroll"
+    data-reference-scroll="writing"
+    (scroll)="captureReferenceScroll($event)"
+  >
+    @if (!hasActiveItem()) {
+      <nostos-empty-state class="reference-empty-state" compact message="Keep notes here from Library or from Brain with Keep in a document. Open a document to keep or insert sources.">
+        <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="referenceModeChanged.emit('library')">
+          Browse Library
+          <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
+        </button>
+      </nostos-empty-state>
+    } @else if (keptSourcesState() === 'loading') {
+      <nostos-loading-indicator class="reference-loading" label="Loading kept sources" />
+    } @else if (keptSourcesState() === 'error') {
+      <nostos-empty-state compact error message="Kept sources could not be loaded." (retry)="retryKeptSources.emit()" />
+    } @else if (keptNotes().length === 0 && citedOnlyNotes().length === 0 && removedCitedCount() === 0) {
+      <nostos-empty-state class="reference-empty-state" compact message="No sources are kept in this document yet. Keep notes here from Library or from Brain with Keep in a document.">
+        <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="referenceModeChanged.emit('library')">
+          Browse Library
+          <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
+        </button>
+      </nostos-empty-state>
+    } @else {
+      <div class="notes-list kept-notes-list">
+        @for (note of keptNotes(); track note.id) {
+          <div class="reference-source-row">
+            <ng-container
+              *ngTemplateOutlet="sourceRowMain; context: { $implicit: note, meta: keptNotesMeta().get(note.id) }"
+            ></ng-container>
+            <button
+              appIconButton
+              class="reference-row-action"
+              icon="x"
+              [glyphSize]="16"
+              (click)="onRemoveKeptClick(note.id, $event)"
+              title="Remove from this document"
+              aria-label="Remove from this document"
+            ></button>
+            <ng-container *ngTemplateOutlet="sourceUse; context: { $implicit: note }"></ng-container>
+          </div>
+        }
+        @for (note of citedOnlyNotes(); track note.id) {
+          <div class="reference-source-row is-cited-only">
+            <ng-container
+              *ngTemplateOutlet="sourceRowMain; context: { $implicit: note, meta: citedOnlyNotesMeta().get(note.id) }"
+            ></ng-container>
+            <span></span>
+            <ng-container *ngTemplateOutlet="sourceUse; context: { $implicit: note }"></ng-container>
+          </div>
+        }
+        @if (removedCitedCount(); as removed) {
+          <p class="reference-source-removed" data-testid="studio-removed-sources">
+            {{ removed === 1 ? 'A cited source was removed.' : removed + ' cited sources were removed.' }}
+            The citation text stays as written.
+          </p>
+        }
+      </div>
+      @if (touchedTopics().length) {
+        <div class="writing-touches" data-testid="writing-touches">
+          <p class="writing-touches-line">Touches {{ touchedTopics().join(' · ') }}</p>
+          <p class="writing-touches-note">From the sources above.</p>
+        </div>
+      }
+    }
+  </div>
+}
+
+@if (!inspectedSource() && referenceMode() === 'library') {
+  @if (activeSidebarTab() === 'brain') {
+    @if (!selectedTopicId()) {
+      <nostos-search-field class="search-box" size="sm">
+        <input
+          appInput
+          controlSize="compact"
+          type="search"
+          placeholder="Search topics…"
+          aria-label="Search topics"
+          [ngModel]="brainQuery()"
+          (ngModelChange)="brainQueryChanged.emit($event)"
+        />
+      </nostos-search-field>
+    }
+    @if (!hasActiveItem()) {
+      <p class="reference-action-notice">Open a document to keep or insert sources.</p>
+    }
+
+    <div
+      class="brain-content reference-list-scroll"
+      [attr.data-reference-scroll]="selectedTopicId() ? 'topicNotes' : 'topics'"
+      (scroll)="captureReferenceScroll($event)"
+    >
+      @if (!selectedTopicId()) {
+        @if (topicIndexState() === 'loading') {
+          <nostos-loading-indicator class="reference-loading" label="Loading topics" />
+        } @else if (topicIndexState() === 'error') {
+          <nostos-empty-state compact error message="Topics could not be loaded." (retry)="retryTopicIndex.emit()" />
+        } @else {
+          <div class="index-list">
+            @for (c of filteredTopics(); track c.id) {
+              <button type="button" appTopicOption [name]="c.name" [count]="c.usageCount" (click)="topicSelected.emit(c.id)"></button>
+            }
+            @if (filteredTopics().length === 0) {
+              <nostos-empty-state compact [message]="brainQuery().trim() ? noTopicsMatch : noTopics" />
+            }
+          </div>
+        }
+      } @else {
+        <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Topics', back: backToTopicsAction }"></ng-container>
+
+        @if (topicNotesState() === 'loading') {
+          <nostos-loading-indicator class="reference-loading" label="Loading topic notes" />
+        } @else if (topicNotesState() === 'error') {
+          <nostos-empty-state compact error message="Notes for this topic could not be loaded." (retry)="retryTopicNotes.emit()" />
+        } @else {
+          <div class="notes-list reference-note-list">
+            @for (note of selectedTopicNotes(); track note.id) {
+              <div class="reference-source-row">
+                <ng-container
+                  *ngTemplateOutlet="sourceRowMain; context: { $implicit: note, meta: selectedTopicNotesMeta().get(note.id) }"
+                ></ng-container>
+                <ng-container *ngTemplateOutlet="sourceKeepAction; context: { $implicit: note }"></ng-container>
+              </div>
+            }
+            @if (selectedTopicNotes().length === 0) {
+              <nostos-empty-state compact message="No notes linked to this topic." />
+            }
+          </div>
+        }
+      }
+    </div>
+  }
+  @if (activeSidebarTab() === 'notes') {
+    @if (!selectedBookId()) {
+      <nostos-search-field class="search-box" size="sm">
+        <input
+          appInput
+          controlSize="compact"
+          type="search"
+          placeholder="Search books…"
+          aria-label="Search books"
+          [ngModel]="bookQuery()"
+          (ngModelChange)="bookQueryChanged.emit($event)"
+        />
+      </nostos-search-field>
+    }
+    @if (!hasActiveItem()) {
+      <p class="reference-action-notice">Open a document to keep or insert sources.</p>
+    }
+
+    <div
+      class="brain-content reference-list-scroll"
+      [attr.data-reference-scroll]="selectedBookId() ? 'bookNotes' : 'books'"
+      (scroll)="captureReferenceScroll($event)"
+    >
+      @if (!selectedBookId()) {
+        @if (bookIndexState() === 'loading') {
+          <nostos-loading-indicator class="reference-loading" label="Loading books" />
+        } @else if (bookIndexState() === 'error') {
+          <nostos-empty-state compact error message="Books could not be loaded." (retry)="retryBookIndex.emit()" />
+        } @else {
+          <div class="index-list book-choice-list">
+            @for (book of filteredBooks(); track book.id) {
+              <button type="button" appChoiceRow class="book-choice" (click)="bookSelected.emit(book.id)">
+                <span class="nostos-choice-row__text">
+                  <span class="nostos-choice-row__title">{{ book.title }}</span>
+                  <span class="nostos-choice-row__sub">{{ book.author || unknownAuthor }}</span>
+                  <span class="book-choice-format nostos-choice-row__meta">
+                    @for (edition of bookEditions(book); track edition.id; let last = $last) {
+                      <nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true"></nostos-icon>
+                      {{ edition.label }}{{ last ? '' : ',' }}
+                    } @empty {
+                      <nostos-icon [concept]="bookFormat(book)" [size]="12" aria-hidden="true"></nostos-icon>
+                      {{ formatLabel[bookFormat(book)] }}
+                    }
+                  </span>
+                </span>
+              </button>
+            }
+            @if (filteredBooks().length === 0) {
+              <nostos-empty-state compact message="No books match this search." />
+            }
+          </div>
+        }
+      } @else {
+        <ng-container *ngTemplateOutlet="referenceDetailHeader; context: { label: 'Books', back: backToBooksAction }"></ng-container>
+        @if (selectedEditionOptions().length > 1) {
+          <app-dropdown
+            class="book-edition-select"
+            appearance="subtle"
+            controlSize="compact"
+            ariaLabel="Edition"
+            [options]="selectedEditionOptions()"
+            [value]="selectedBookId() ?? ''"
+            (valueChange)="bookSelected.emit($event)"
+          />
+        }
+
+        @if (bookNotesState() === 'loading') {
+          <nostos-loading-indicator class="reference-loading" label="Loading book notes" />
+        } @else if (bookNotesState() === 'error') {
+          <nostos-empty-state compact error message="Notes for this book could not be loaded." (retry)="retryBookNotes.emit()" />
+        } @else {
+          <div class="notes-list reference-note-list">
+            @for (note of selectedBookNotes(); track note.id) {
+              <div class="reference-source-row">
+                <ng-container
+                  *ngTemplateOutlet="sourceRowMain; context: { $implicit: note, meta: selectedBookNotesMeta().get(note.id) }"
+                ></ng-container>
+                <ng-container *ngTemplateOutlet="sourceKeepAction; context: { $implicit: note }"></ng-container>
+              </div>
+            }
+            @if (selectedBookNotes().length === 0) {
+              <nostos-empty-state compact message="No notes found in this book." />
+            }
+          </div>
+        }
+      }
+    </div>
+  }
+}
+
+<ng-template #sourceRowMain let-note let-meta="meta">
+  <button
+    appButton
+    variant="ghost"
+    size="sm"
+    class="reference-source-row-main"
+    [attr.aria-label]="meta?.rowLabel ?? ''"
+    (click)="sourceInspected.emit(note)"
+  >
+    @if (passageRowTitle(note); as title) {
+      <span class="reference-source-passage" data-testid="studio-passage-row">
+        <nostos-icon concept="passage" [size]="14"></nostos-icon>{{ title }}
+      </span>
+    }
+    @if (meta?.hasQuotePreview) {
+      <span
+        appQuote
+        size="sm"
+        class="reference-source-preview is-quote"
+        [pen]="quotePen(note)"
+        [lines]="passageRowTitle(note) ? 1 : 2"
+      >{{ meta?.preview }}</span>
+    } @else {
+      <span class="reference-source-preview">{{ meta?.preview }}</span>
+    }
+    <span class="reference-source-provenance">{{ meta?.provenance }}</span>
+  </button>
+</ng-template>
+
+<ng-template #sourceUse let-note>
+  @if (isCited(note.id)) {
+    @if (citedTopics(note.id); as topics) {
+      @if (topics.length) {
+        <span class="reference-source-use" role="list" aria-label="Topics of this source">
+          @for (topic of topics; track topic) {
+            <span role="listitem">
+              <app-topic-chip
+                class="reference-source-topic"
+                [name]="topic"
+                [actionable]="!!topicIdFor(topic)"
+                [title]="topicIdFor(topic) ? 'Open ' + topic + ' in the Brain' : null"
+                (activated)="topicActivated.emit(topic)"
+              />
+            </span>
+          }
+        </span>
+      }
+    }
+  } @else {
+    <span class="reference-source-use is-uncited">Kept, not cited</span>
+  }
+</ng-template>
+
+<ng-template #sourceKeepAction let-note>
+  <button
+    appIconButton
+    class="reference-row-action library-keep-action"
+    icon="bookmark-simple"
+    [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
+    [glyphSize]="16"
+    [class.active]="keptNoteIds().has(note.id)"
+    [disabled]="!hasActiveItem() || keepingNoteIds().has(note.id)"
+    (click)="onKeepClick(note.id, $event)"
+    [title]="keepActionLabel(note.id)"
+    [attr.aria-label]="keepActionLabel(note.id)"
+  ></button>
+</ng-template>
+
+<ng-template #referenceDetailHeader let-label="label" let-back="back">
+  <div class="brain-detail-header">
+    <button appButton variant="ghost" size="sm" class="back-link goto-btn" (click)="back()">
+      <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
+      <span>Back to {{ label }}</span>
+    </button>
+    <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
+  </div>
+</ng-template>
