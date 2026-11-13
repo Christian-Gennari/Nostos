@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -159,13 +160,9 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
                 return true;
             }
 
-            // The product assembly has no Npgsql reference; read SqlState from
-            // the provider exception by reflection so both providers are
-            // recognized without adding a database-provider dependency.
-            var sqlState = current.GetType()
-                .GetProperty("SqlState")
-                ?.GetValue(current) as string;
-            if (string.Equals(sqlState, PostgresUniqueViolation, StringComparison.Ordinal))
+            // Provider-neutral SqlState inspection avoids adding an Npgsql
+            // dependency to Nostos.Product while avoiding reflection.
+            if (current is DbException db && db.SqlState == PostgresUniqueViolation)
                 return true;
         }
 
