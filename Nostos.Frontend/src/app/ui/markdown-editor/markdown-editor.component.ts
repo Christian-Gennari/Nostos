@@ -1,5 +1,6 @@
 import {
   AfterViewInit,
+  ChangeDetectionStrategy,
   Component,
   ElementRef,
   OnDestroy,
@@ -10,27 +11,33 @@ import {
   input,
   output,
   signal,
-  ChangeDetectionStrategy,
 } from '@angular/core';
 import { Editor, Range, createDocument } from '@tiptap/core';
-import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state';
+import { EditorState, type Transaction } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Typography from '@tiptap/extension-typography';
 import Image from '@tiptap/extension-image';
 import { TableKit } from '@tiptap/extension-table';
 import BubbleMenu from '@tiptap/extension-bubble-menu';
+import { exitSuggestion } from '@tiptap/suggestion';
 
-import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { htmlToMarkdown, markdownToHtml } from './markdown-conversion';
-import { SOURCE_SUGGESTION_KEY, SOURCE_SUGGESTION_PREFIXES, SourceSuggestion } from './source-suggestion.extension';
+import { SourceSuggestion } from './source-suggestion.extension';
 import { FootnoteRef, tidyFootnotes } from './footnote.extension';
 import { FootnoteAuthoring, insertFootnoteAtSelection, insertFootnoteIn } from './footnote-authoring';
 import { Citation } from './citation.extension';
 import { CitationRenderer, bodyEndPosition, citationBooks, citationSignature, footnoteInsertPosition, refreshCitations } from './live-citations';
-import { SoundPack, TypewriterSounds, soundForInput } from './typewriter-sounds';
-import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, BlockMenuItem, filterBlockMenu } from './block-menu';
-import { exitSuggestion } from '@tiptap/suggestion';
+import { SoundPack } from './typewriter-sounds';
+import { BLOCK_MENU_KEY, BlockMenu, BlockMenuAction, filterBlockMenu } from './block-menu';
+import { BlockKind, EditorSelectionBubbleComponent } from './editor-selection-bubble.component';
+import { BlockMenuOverlayState, EditorBlockMenuComponent, computeBlockMenuPlacement } from './editor-block-menu.component';
+import { EditorSourceSuggestionComponent, SourceSuggestionState } from './editor-source-suggestion.component';
+import { TypewriterScrollDirective } from './typewriter-scroll.directive';
+import { TypewriterSoundDirective } from './typewriter-sound.directive';
+
+export type { SourceSuggestionState } from './editor-source-suggestion.component';
+export { caretScrollDelta } from './typewriter-scroll.directive';
 
 /** A footnote that goes in with an insertion: its number and the note's Markdown. */
 export interface InsertedFootnote {
@@ -58,19 +65,14 @@ export interface MarkdownEditorTransientState {
   at?: 'body-end';
 }
 
-/** What has been typed after `@`, and where on screen (issue #1039). */
-export interface SourceSuggestionState {
-  query: string;
-  rect: { top: number; bottom: number; left: number; right: number } | null;
-}
-
 interface PendingTransientRestore {
   state: MarkdownEditorTransientState;
   expectedMarkdown: string;
   resolve: (restored: boolean) => void;
 }
 
-type BlockKind = 'paragraph' | 'h1' | 'h2' | 'h3' | 'blockquote' | 'codeBlock';
+/** The events through which a writer's keyboard changes the page. */
+const KEY_INPUT_EVENTS = ['keydown', 'beforeinput', 'input', 'compositionupdate'] as const;
 
 /**
  * The Studio's page: a TipTap editor that reads and writes Markdown
@@ -89,19 +91,21 @@ type BlockKind = 'paragraph' | 'h1' | 'h2' | 'h3' | 'blockquote' | 'codeBlock';
  * Only formatting that survives a save is offered: Markdown has no underline,
  * so there is none. Tables load, edit and save as GFM pipe tables.
  */
-/** The events through which a writer's keyboard changes the page. */
-const KEY_INPUT_EVENTS = ['keydown', 'beforeinput', 'input', 'compositionupdate'] as const;
-
 @Component({
   selector: 'app-markdown-editor',
   standalone: true,
-  imports: [IconButtonComponent],
+  imports: [
+    EditorSelectionBubbleComponent,
+    EditorBlockMenuComponent,
+    EditorSourceSuggestionComponent,
+    TypewriterScrollDirective,
+    TypewriterSoundDirective,
+  ],
   templateUrl: './markdown-editor.component.html',
   styleUrl: './markdown-editor.component.css',
   // ProseMirror renders the page's nodes itself, so emulated encapsulation
-  // could never reach them. Every rule is scoped under `.nostos-manuscript`
-  // or `.editor-toolbar` instead.
-  changeDetection: ChangeDetectionStrategy.Eager,
+  // could never reach them. Every rule is scoped under `app-markdown-editor`.
+  changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
 })
 export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
@@ -125,9 +129,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   /** Which recordings play (#1065). */
   soundPack = input<SoundPack>('typewriter');
 
-  private typewriterSounds: TypewriterSounds | null = null;
-  /** Whether the key behind the coming edit is auto-repeating (no sound). */
-  private keyRepeating = false;
   /** The `@` query while one is open, and null when it closes. */
   sourceSuggestion = output<SourceSuggestionState | null>();
   /** "Bibliography" from the `/` menu (issue #1109): the Studio builds it and inserts it here. */
@@ -145,17 +146,23 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('mount', { static: true }) private mount!: ElementRef<HTMLElement>;
   @ViewChild('scroller', { static: true }) private scroller!: ElementRef<HTMLElement>;
-  @ViewChild('urlInput') private urlInput?: ElementRef<HTMLInputElement>;
-  @ViewChild('bubble', { static: true }) private bubble!: ElementRef<HTMLElement>;
+  @ViewChild('scroller', { static: true, read: TypewriterScrollDirective }) private typewriterScroll!: TypewriterScrollDirective;
+  @ViewChild('scroller', { static: true, read: TypewriterSoundDirective }) private typewriterSound!: TypewriterSoundDirective;
+  @ViewChild('bubble', { static: true, read: ElementRef }) private bubble!: ElementRef<HTMLElement>;
+  @ViewChild('bubble', { static: true }) private bubbleComponent!: EditorSelectionBubbleComponent;
+  @ViewChild('blockMenuHost', { static: true }) private blockMenuHost!: EditorBlockMenuComponent;
+  @ViewChild('sourceSuggestionHost', { static: true }) private sourceSuggestionHost!: EditorSourceSuggestionComponent;
 
-  /** The editor's contenteditable element, once it exists. */
-  private readonly editorDom = signal<HTMLElement | null>(null);
+  /** The editor's contenteditable element and instance, once they exist. */
+  readonly editorDom = signal<HTMLElement | null>(null);
+  readonly editorInstance = signal<Editor | null>(null);
+  readonly sourceSuggestionOpen = signal(false);
 
   /** True until the editor exists, so the empty page never flashes a caret. */
   readonly editorStarting = signal(true);
 
   /** The `/` menu while open (issue #1043). */
-  readonly blockMenu = signal<{ items: BlockMenuItem[]; rect: SourceSuggestionState['rect'] } | null>(null);
+  readonly blockMenu = signal<BlockMenuOverlayState | null>(null);
   readonly blockMenuActive = signal(0);
   /** The menu's second step for Image: the address field. */
   readonly blockMenuImage = signal(false);
@@ -167,33 +174,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * field and mapped through every change so it never points at other text.
    */
   private blockImageRange: Range | null = null;
-  @ViewChild('blockImageInput') private blockImageInput?: ElementRef<HTMLInputElement>;
-  /** Unique per editor, so the address field's label finds its own input. */
-  readonly blockImageInputId = `block-image-url-${++blockImageInputs}`;
-  /** Where the menu sits: under the line, or above it when the page has no room below. */
-  readonly blockMenuPlacement = computed(() => {
-    const rect = this.blockMenu()?.rect;
-    if (!rect) return null;
-    // The visual viewport is what is on screen: with the soft keyboard up it is
-    // shorter than the window, and the menu must fit above the keyboard.
-    const vv = typeof window === 'undefined' ? null : window.visualViewport;
-    const layoutHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
-    const layoutWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
-    const viewTop = vv?.offsetTop ?? 0;
-    const viewBottom = vv ? vv.offsetTop + vv.height : layoutHeight;
-    const viewLeft = vv?.offsetLeft ?? 0;
-    const viewWidth = vv?.width ?? layoutWidth;
-    const below = viewBottom - rect.bottom - 12;
-    const above = rect.top - viewTop - 12;
-    const cap = Math.min(360, (viewBottom - viewTop) * 0.55);
-    // The menu is `min(300px, 100vw - 24px)` wide (see the stylesheet): keep all of it on screen.
-    const width = Math.min(300, viewWidth - 24);
-    const left = Math.max(viewLeft + 12, Math.min(rect.left, viewLeft + viewWidth - width - 12));
-    if (below < Math.min(cap, 240) && above > below) {
-      return { top: null, bottom: layoutHeight - rect.top + 6, left, maxHeight: Math.min(cap, above) };
-    }
-    return { top: rect.bottom + 6, bottom: null, left, maxHeight: Math.min(cap, below) };
-  });
+  readonly blockMenuPlacement = computed(() => computeBlockMenuPlacement(this.blockMenu()?.rect));
 
   /** Selection-bubble state, refreshed on every transaction. */
   readonly activeBlock = signal<BlockKind>('paragraph');
@@ -216,26 +197,9 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   private lastEmittedMarkdown: string | null = null;
   private destroyed = false;
   private lastExternalMarkdownApplied: string | null = null;
-  /** The text of the open `@` query (the `@` included), or null. */
-  private suggestionRange: Range | null = null;
-  private suggestionQuery = '';
-  /** How many characters the shortcut typed (`@` or ` @`), or 0. */
-  private shortcutInserted = 0;
   private pendingTransientRestore: PendingTransientRestore | null = null;
 
   constructor() {
-    // Turning sounds on fetches the samples (nothing is loaded before that);
-    // turning them off releases the audio context.
-    effect(() => {
-      if (this.sounds()) {
-        this.soundPlayer().setPack(this.soundPack());
-        void this.soundPlayer().prefetch();
-      } else if (this.typewriterSounds) {
-        this.typewriterSounds.dispose();
-        this.typewriterSounds = null;
-      }
-    });
-
     // Spell check is one of the view's attributes, so ProseMirror itself keeps
     // it on every redraw; a transaction asks it to read the setting again.
     effect(() => {
@@ -244,29 +208,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       if (editor && !editor.isDestroyed && this.editorDom()) {
         editor.view.dispatch(editor.state.tr.setMeta('nostosSpellcheck', true).setMeta('addToHistory', false));
       }
-    });
-
-    // The page is the palette's combobox: it owns focus, and the list is
-    // announced through these while an `@` query is open.
-    effect(() => {
-      const activeId = this.sourceSuggestionActiveId();
-      const dom = this.editorDom();
-      if (!dom) return;
-      if (activeId) {
-        dom.setAttribute('aria-activedescendant', activeId);
-        dom.setAttribute('aria-controls', 'source-palette-list');
-        dom.setAttribute('aria-expanded', 'true');
-      } else {
-        dom.removeAttribute('aria-activedescendant');
-        dom.removeAttribute('aria-controls');
-        dom.setAttribute('aria-expanded', 'false');
-      }
-    });
-
-    effect(() => {
-      const on = this.typewriter();
-      this.toggleTypewriterLayout(on);
-      if (on) queueMicrotask(() => this.followCaret());
     });
 
     // External content (opening another document) replaces the page only when
@@ -327,12 +268,16 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
             flip: true,
             shift: { padding: 8 },
             scrollTarget: this.scroller.nativeElement,
+            onHide: () => {
+              this.urlPrompt.set(null);
+              this.bubbleComponent.clearFocusTimer();
+            },
           },
           // Never over an open @ query, an image or a code block.
           shouldShow: ({ editor, from, to, element }) => {
             if (editor.isDestroyed) return false;
             if (element.contains(element.ownerDocument.activeElement)) return true;
-            if (from === to || !editor.isFocused || this.suggestionRange) return false;
+            if (from === to || !editor.isFocused || this.sourceSuggestionHost.isOpen()) return false;
             return !editor.isActive('codeBlock') && !editor.isActive('image');
           },
         }),
@@ -341,7 +286,10 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
             this.blockMenuRange = state?.range ?? null;
             if (!state) {
               // The address step keeps the menu up while its field has focus.
-              if (!this.blockMenuImage()) this.blockMenu.set(null);
+              if (!this.blockMenuImage()) {
+                this.blockMenuHost.clearFocusTimer();
+                this.blockMenu.set(null);
+              }
               return;
             }
             const items = filterBlockMenu(state.query);
@@ -352,18 +300,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
           },
           onKeyDown: (event) => this.blockMenuKey(event),
         }),
-        SourceSuggestion.configure({
-          onChange: (state) => {
-            if (!state) this.dropShortcutAt();
-            this.suggestionRange = state?.range ?? null;
-            this.suggestionQuery = state?.query ?? '';
-            this.sourceSuggestion.emit(
-              state ? { query: state.query, rect: state.rect ? plainRect(state.rect) : null } : null,
-            );
-          },
-          onKeyDown: (event) => this.sourceSuggestionKeyDown()?.(event) ?? false,
-          onOpenShortcut: () => this.openSourceQuery(),
-        }),
+        SourceSuggestion.configure(this.sourceSuggestionHost.extensionOptions()),
       ],
       content: markdownToHtml(markdown),
       editorProps: {
@@ -382,9 +319,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
         // writer pauses. Everything else (an insertion, a paste) reports now.
         if (this.isTypingTransaction(transaction)) this.scheduleChangeReport();
         else this.flushPendingChange(true);
-        this.followCaret();
       },
-      onSelectionUpdate: () => this.followCaret(),
       onTransaction: ({ transaction }) => {
         if (this.blockImageRange && transaction.docChanged) {
           const { from, to } = this.blockImageRange;
@@ -400,11 +335,12 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     });
 
     this.lastExternalMarkdownApplied ??= markdown;
-    this.editorDom.set(this.editor.view.dom as HTMLElement);
     const dom = this.editor.view.dom as HTMLElement;
-    dom.addEventListener('keydown', this.onSoundKeydown);
-    dom.addEventListener('keyup', this.onSoundKeyup);
-    dom.addEventListener('beforeinput', this.onSoundInput);
+    this.sourceSuggestionHost.attachEditor(this.editor);
+    this.typewriterScroll.attachEditor(this.editor);
+    this.typewriterSound.attachTarget(dom);
+    this.editorInstance.set(this.editor);
+    this.editorDom.set(dom);
     for (const type of KEY_INPUT_EVENTS) this.scroller.nativeElement.addEventListener(type, this.onKeyInputCapture, true);
     this.scroller.nativeElement.addEventListener('scroll', this.followBlockMenu, { passive: true });
     this.editorStarting.set(false);
@@ -418,14 +354,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.destroyed = true;
     this.pendingTransientRestore?.resolve(false);
     this.pendingTransientRestore = null;
+    this.bubbleComponent?.clearFocusTimer();
+    this.blockMenuHost?.clearFocusTimer();
     this.bubble?.nativeElement.remove();
-    this.typewriterSounds?.dispose();
-    this.typewriterSounds = null;
+    this.typewriterScroll?.attachEditor(null);
+    this.typewriterSound?.attachTarget(null);
+    this.sourceSuggestionHost?.attachEditor(null);
     if (this.editor) {
-      const dom = this.editor.view.dom as HTMLElement;
-      dom.removeEventListener('keydown', this.onSoundKeydown);
-      dom.removeEventListener('keyup', this.onSoundKeyup);
-      dom.removeEventListener('beforeinput', this.onSoundInput);
       this.scroller.nativeElement.removeEventListener('scroll', this.followBlockMenu);
       for (const type of KEY_INPUT_EVENTS) this.scroller.nativeElement.removeEventListener(type, this.onKeyInputCapture, true);
       // The last keystrokes may still be inside the debounce window upstream.
@@ -433,6 +368,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       this.emitMarkdown();
       this.editor.destroy();
       this.editor = null;
+      this.editorInstance.set(null);
     }
   }
 
@@ -462,46 +398,21 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * is never split; an inline reference takes the query's place.
    */
   replaceSourceQuery(markdown: string, placement: 'block' | 'inline', footnote: InsertedFootnote | null = null): boolean {
-    const editor = this.editor;
-    const range = this.suggestionRange;
     const snippet = markdown.trim();
-    if (!editor || editor.isDestroyed || !range || !snippet) return false;
-    return this.withFootnote(footnote, () => this.replaceQueryWith(editor, range, snippet, placement));
-  }
-
-  private replaceQueryWith(editor: Editor, range: Range, snippet: string, placement: 'block' | 'inline'): boolean {
-    this.shortcutInserted = 0;
-    editor.chain().focus().deleteRange(range).run();
-    this.suggestionRange = null;
-    if (placement === 'inline') {
-      // Unwrap the paragraph Markdown puts around a lone line, so the
-      // reference joins the sentence instead of starting a new one.
-      const inline = markdownToHtml(snippet).trim().replace(/^<p>([\s\S]*)<\/p>$/, '$1');
-      editor.chain().focus().insertContent(inline).run();
-      // The reference is italic; the sentence that goes on after it is not.
-      editor.view.dispatch(editor.state.tr.setStoredMarks([]));
-    } else {
-      this.insertBlockAtCaret(markdownToHtml(snippet));
-    }
-    return true;
+    if (!this.sourceSuggestionHost.canReplace(snippet)) return false;
+    return this.withFootnote(footnote, () =>
+      this.sourceSuggestionHost.replaceQuery(snippet, placement, (html) => this.insertBlockAtCaret(html)),
+    );
   }
 
   /** Close the open `@` query and leave its text as typed. */
   closeSourceQuery(): void {
-    const editor = this.editor;
-    if (!editor || editor.isDestroyed || !this.suggestionRange) return;
-    exitSuggestion(editor.view, SOURCE_SUGGESTION_KEY);
+    this.sourceSuggestionHost.closeQuery();
   }
 
   /** Remove the open `@` query and leave the caret where it was typed. */
   clearSourceQuery(): boolean {
-    const editor = this.editor;
-    const range = this.suggestionRange;
-    if (!editor || editor.isDestroyed || !range) return false;
-    this.shortcutInserted = 0;
-    editor.chain().deleteRange(range).run();
-    this.suggestionRange = null;
-    return true;
+    return this.sourceSuggestionHost.clearQuery();
   }
 
   /**
@@ -511,26 +422,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
    * quoting loses nothing.
    */
   holdSourceQuery(): boolean {
-    const editor = this.editor;
-    const range = this.suggestionRange;
-    if (!editor || editor.isDestroyed || !range) return false;
-    this.heldQuery = { from: range.from, to: range.to, text: editor.state.doc.textBetween(range.from, range.to, ' ', ' ') };
-    exitSuggestion(editor.view, SOURCE_SUGGESTION_KEY);
-    return true;
+    return this.sourceSuggestionHost.holdQuery();
   }
 
   /** Remove the held `@` query, if the page still holds exactly those words there. */
   releaseHeldQuery(): void {
-    const editor = this.editor;
-    const held = this.heldQuery;
-    this.heldQuery = null;
-    if (!editor || editor.isDestroyed || !held) return;
-    const size = editor.state.doc.content.size;
-    if (held.to > size || editor.state.doc.textBetween(held.from, held.to, ' ', ' ') !== held.text) return;
-    editor.chain().deleteRange({ from: held.from, to: held.to }).run();
+    this.sourceSuggestionHost.releaseHeldQuery();
   }
-
-  private heldQuery: { from: number; to: number; text: string } | null = null;
 
   /** Insert Markdown as blocks after the caret's paragraph, never inside it. */
   insertBlockMarkdown(markdown: string, footnote: InsertedFootnote | null = null): boolean {
@@ -635,40 +533,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   /** Start an `@` query at the caret, as the keyboard shortcut does. */
   openSourceQuery(): boolean {
-    const editor = this.editor;
-    if (!editor || editor.isDestroyed) return false;
-    const { selection } = editor.state;
-    if (selection.$from.parent.type.spec.code) return false;
-    // Never replace a selection: the query starts after it, in the nearest
-    // text (a whole-document selection ends outside any paragraph).
-    const end = TextSelection.near(editor.state.doc.resolve(selection.to), -1);
-    const $at = end.$to;
-    if (!$at.parent.isTextblock) return false;
-    const before = $at.parent.textBetween(0, $at.parentOffset, ' ', ' ');
-    const last = before.slice(-1);
-    const needsSpace = last !== '' && !/\s/.test(last) && !SOURCE_SUGGESTION_PREFIXES.includes(last);
-    const text = needsSpace ? ' @' : '@';
-    editor.chain().focus().setTextSelection($at.pos).insertContent(text).run();
-    this.shortcutInserted = text.length;
-    return true;
-  }
-
-  /**
-   * A palette opened with the shortcut and closed with nothing typed leaves
-   * no stray `@`: the shortcut typed it, so closing takes it back.
-   */
-  private dropShortcutAt(): void {
-    const inserted = this.shortcutInserted;
-    this.shortcutInserted = 0;
-    const editor = this.editor;
-    const range = this.suggestionRange;
-    if (!inserted || !editor || !range || this.suggestionQuery !== '') return;
-    const from = range.to - inserted;
-    const typed = inserted === 2 ? ' @' : '@';
-    queueMicrotask(() => {
-      if (editor.isDestroyed || editor.state.doc.textBetween(from, range.to) !== typed) return;
-      editor.chain().deleteRange({ from, to: range.to }).run();
-    });
+    return this.sourceSuggestionHost.openQuery();
   }
 
   /** The page's current Markdown, straight from the editor. */
@@ -822,7 +687,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
       this.blockImageRange = range;
       this.blockMenuImage.set(true);
       this.blockMenuImageUrl.set('');
-      setTimeout(() => this.blockImageInput?.nativeElement.focus());
       return;
     }
     if (action === 'footnote') {
@@ -881,6 +745,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.blockImageRange = null;
     const url = this.blockMenuImageUrl().trim();
     this.blockMenuImage.set(false);
+    this.blockMenuHost?.clearFocusTimer();
     if (editor && url) {
       // Replace the "/query" if it is still there; otherwise insert at the caret.
       const intact = range && editor.state.doc.textBetween(range.from, range.to).startsWith('/');
@@ -917,6 +782,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
   };
 
   private closeBlockMenu(): void {
+    this.blockMenuHost?.clearFocusTimer();
     this.blockMenu.set(null);
     this.blockMenuActive.set(0);
     if (this.editor && !this.editor.isDestroyed && this.blockMenuRange) {
@@ -989,15 +855,13 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     const current = kind === 'link' ? (this.editor?.getAttributes('link')['href'] ?? '') : '';
     this.urlValue.set(current);
     this.urlPrompt.set(kind);
-    // The field is created by this change; focus it once it exists, or the
-    // next keystrokes would land in (and overwrite) the selected text.
-    setTimeout(() => this.urlInput?.nativeElement.focus());
   }
 
   applyUrl(): void {
     const kind = this.urlPrompt();
     const url = this.urlValue().trim();
     this.urlPrompt.set(null);
+    this.bubbleComponent?.clearFocusTimer();
     const chain = this.editor?.chain().focus();
     if (!chain || !kind) return;
 
@@ -1019,6 +883,7 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
 
   cancelUrl(): void {
     this.urlPrompt.set(null);
+    this.bubbleComponent?.clearFocusTimer();
     this.editor?.commands.focus();
   }
 
@@ -1080,45 +945,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     }
     chain.setTextSelection(after + 1).scrollIntoView().run();
   }
-
-  /** When a keydown last made the sound itself, so its beforeinput does not again. */
-  private keydownSoundAt = 0;
-
-  private soundPlayer(): TypewriterSounds {
-    this.typewriterSounds ??= new TypewriterSounds();
-    return this.typewriterSounds;
-  }
-
-  private readonly onSoundKeyup = () => {
-    this.keyRepeating = false;
-  };
-
-  private readonly onSoundKeydown = (event: KeyboardEvent) => {
-    this.keyRepeating = event.repeat;
-    // ProseMirror takes Enter and Backspace on keydown and cancels them, so no
-    // beforeinput follows on a hardware keyboard: their sounds start here.
-    if (!this.sounds() || event.repeat || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-    const sound = event.key === 'Enter' ? 'return' : event.key === 'Backspace' ? 'backspace' : null;
-    if (!sound) return;
-    // Enter picking from the @ palette or the / menu changes no text: no carriage.
-    if (sound === 'return' && (this.suggestionRange || this.blockMenu())) return;
-    this.soundPlayer().play(sound, this.soundVolume());
-    this.keydownSoundAt = performance.now();
-  };
-
-  /**
-   * Sounds follow what the keyboard did to the text (beforeinput), not key
-   * codes: Android soft keyboards report every key as "Unidentified". Edits
-   * the Studio makes itself (an inserted quote) fire no beforeinput, and an
-   * IME composition in progress makes no sound until it is committed.
-   */
-  private readonly onSoundInput = (event: InputEvent) => {
-    if (!this.sounds() || event.isComposing || this.keyRepeating) return;
-    const sound = soundForInput(event.inputType, event.data);
-    if (!sound) return;
-    if ((sound === 'return' || sound === 'backspace') && performance.now() - this.keydownSoundAt < 100) return;
-    this.soundPlayer().play(sound, this.soundVolume(), event.data?.charCodeAt(0) ?? 0);
-  };
 
   /**
    * How long the writer must pause before the page is reported upstream, and
@@ -1209,31 +1035,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.citationsChange.emit(signature);
   }
 
-  /**
-   * Typewriter mode adds scroll runway above the page. Keep the caret where it
-   * is on screen while the runway appears or goes, so the toggle never jumps.
-   */
-  private toggleTypewriterLayout(on: boolean): void {
-    const scroller = this.scroller?.nativeElement;
-    if (!scroller) return;
-    const before = this.caretTop();
-    scroller.classList.toggle('typewriter', on);
-    const after = this.caretTop();
-    if (before !== null && after !== null && after !== before) {
-      scroller.scrollBy?.({ top: after - before });
-    }
-  }
-
-  private caretTop(): number | null {
-    const editor = this.editor;
-    if (!editor || editor.isDestroyed) return null;
-    try {
-      return editor.view.coordsAtPos(editor.state.selection.head).top;
-    } catch {
-      return null;
-    }
-  }
-
   private emitWordCount(): void {
     const editor = this.editor;
     if (!editor) return;
@@ -1259,33 +1060,6 @@ export class MarkdownEditorComponent implements AfterViewInit, OnDestroy {
     this.editor.chain().focus().insertContent(markdownToHtml(text, { breaks: true })).run();
     return true;
   }
-
-  /**
-   * Typewriter scroll: keep the caret line near 45% of the page.
-   */
-  private followCaret(): void {
-    const editor = this.editor;
-    if (!this.typewriter() || !editor || editor.isDestroyed) return;
-    try {
-      const scroller = this.scroller.nativeElement;
-      const caret = editor.view.coordsAtPos(editor.state.selection.head);
-      const rectTop = caret.top - scroller.getBoundingClientRect().top;
-      const delta = caretScrollDelta(rectTop, scroller.clientHeight);
-      if (delta !== null) scroller.scrollBy?.({ top: delta });
-    } catch {
-      // Caret geometry is best-effort — never break typing over it.
-    }
-  }
-}
-
-/**
- * Pixels to scroll so a caret at `rectTop` lands at 45% of `viewportHeight`,
- * or null inside a roughly one-line deadband / for invalid viewports.
- */
-export function caretScrollDelta(rectTop: number, viewportHeight: number): number | null {
-  if (!isFinite(rectTop) || !isFinite(viewportHeight) || viewportHeight <= 0) return null;
-  const delta = rectTop - viewportHeight * 0.45;
-  return Math.abs(delta) < 32 ? null : Math.round(delta);
 }
 
 /** Words as a reader counts them: runs of letters or digits, any script. */
@@ -1309,8 +1083,6 @@ function selectionBookmark(value: unknown): { from: number; to: number } | null 
   if (!Number.isInteger(from) || !Number.isInteger(to)) return null;
   return { from, to };
 }
-
-let blockImageInputs = 0;
 
 function plainRect(rect: DOMRect): SourceSuggestionState['rect'] {
   return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
