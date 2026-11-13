@@ -918,14 +918,19 @@ public sealed class BookUploadEndpointTests
     private sealed class FaultingBookRepository(IBookRepository inner, UploadFaults faults)
         : IBookRepository
     {
-        public Task<BookModel?> GetByIdAsync(Guid id) => inner.GetByIdAsync(id);
+        public Task<BookModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            inner.GetByIdAsync(id, cancellationToken);
 
-        public Task<int> CountBooksWithFilesAsync() => inner.CountBooksWithFilesAsync();
+        public Task<int> CountBooksWithFilesAsync(CancellationToken cancellationToken = default) =>
+            inner.CountBooksWithFilesAsync(cancellationToken);
 
-        public Task<List<BookModel>> GetBooksWithFilesPageAsync(int skip, int take) =>
-            inner.GetBooksWithFilesPageAsync(skip, take);
+        public Task<List<BookModel>> GetBooksWithFilesPageAsync(
+            int skip,
+            int take,
+            CancellationToken cancellationToken = default) =>
+            inner.GetBooksWithFilesPageAsync(skip, take, cancellationToken);
 
-        public Task UpdateAsync(BookModel book)
+        public Task UpdateAsync(BookModel book, CancellationToken cancellationToken = default)
         {
             faults.RowUpdates += 1;
             if (faults.FailRowUpdates > 0)
@@ -934,7 +939,7 @@ public sealed class BookUploadEndpointTests
                 throw new IOException("Injected row update failure.");
             }
 
-            return inner.UpdateAsync(book);
+            return inner.UpdateAsync(book, cancellationToken);
         }
     }
 }

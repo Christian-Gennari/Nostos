@@ -8,32 +8,33 @@ public interface ITopicRepository
     /// <summary>
     /// Returns all topics with their usage count, ordered by usage desc then name asc.
     /// </summary>
-    Task<List<TopicDto>> GetAllWithUsageCountAsync();
+    Task<List<TopicDto>> GetAllWithUsageCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns topics whose linked notes match the given term in Content, SelectedText, or Book Title.
     /// </summary>
-    Task<List<TopicDto>> SearchByNoteTextAsync(string term);
+    Task<List<TopicDto>> SearchByNoteTextAsync(string term, CancellationToken cancellationToken = default);
     Task<List<TopicDto>> SearchByNoteTextAsync(
         string term,
         IReadOnlyList<Guid>? bookIds,
-        int limit = 50);
+        int limit = 50,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns aggregate topic and reference counts in a single database query.
     /// </summary>
-    Task<TopicStatsDto> GetStatsAsync();
+    Task<TopicStatsDto> GetStatsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns topics that share notes with the requested topic.
     /// </summary>
-    Task<List<RelatedTopicDto>> GetRelatedAsync(Guid id);
+    Task<List<RelatedTopicDto>> GetRelatedAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the complete topic co-occurrence graph: all topics as nodes
     /// and one undirected edge for every pair that co-occur in at least one note.
     /// </summary>
-    Task<TopicGraphDto> GetGraphAsync();
+    Task<TopicGraphDto> GetGraphAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The writings that cite the topic's notes (issue #1162), newest first and
@@ -49,30 +50,33 @@ public interface ITopicRepository
     /// Gets a topic with its linked notes (deep includes for Book and Note data).
     /// Returns null if not found.
     /// </summary>
-    Task<TopicModel?> GetByIdWithNotesAsync(Guid id);
+    Task<TopicModel?> GetByIdWithNotesAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Renames a topic, merging its links into an existing target name when necessary.
     /// Returns the surviving topic, or null when the source is not found.
     /// </summary>
-    Task<TopicModel?> RenameAsync(Guid id, string name);
+    Task<TopicModel?> RenameAsync(Guid id, string name, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Merges the source topic into the target topic and returns the survivor.
     /// Returns null when either topic is not found.
     /// </summary>
-    Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId);
+    Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sets the topic's description, or clears it when empty. Returns the topic,
     /// or null when it is not found.
     /// </summary>
-    Task<TopicModel?> SetDescriptionAsync(Guid id, string? description);
+    Task<TopicModel?> SetDescriptionAsync(
+        Guid id,
+        string? description,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes a topic and its note links. Returns false when it is not found.
     /// </summary>
-    Task<bool> DeleteAsync(Guid id);
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     // --- Methods for NoteProcessorService ---
 
@@ -80,7 +84,9 @@ public interface ITopicRepository
     /// Finds existing topics whose names match any in the given list, in any
     /// case (by <see cref="TopicModel.NormalizedName"/>).
     /// </summary>
-    Task<List<TopicModel>> GetByNamesAsync(IEnumerable<string> names);
+    Task<List<TopicModel>> GetByNamesAsync(
+        IEnumerable<string> names,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stages new topics for insertion (does NOT call SaveChanges).
@@ -93,7 +99,9 @@ public interface ITopicRepository
     /// older data, imports), so the processor can keep them.
     /// Loads then removes so changes stay in the current unit-of-work.
     /// </summary>
-    Task<IReadOnlyList<string>> ClearNoteLinksAsync(NoteModel note);
+    Task<IReadOnlyList<string>> ClearNoteLinksAsync(
+        NoteModel note,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Stages a single note–topic link for insertion (does NOT call SaveChanges).
