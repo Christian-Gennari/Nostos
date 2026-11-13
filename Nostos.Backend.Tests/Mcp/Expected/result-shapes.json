@@ -1,0 +1,516 @@
+{
+  "search(notes)": {
+    "results": [
+      {
+        "id": "string",
+        "kind": "string",
+        "title": "string",
+        "text": "string",
+        "url": "string",
+        "citation": {
+          "book": "string",
+          "author": "string",
+          "year": "string",
+          "location": "string",
+          "url": "string",
+          "link": "string",
+          "markdown": "string"
+        },
+        "topics": [
+          "string"
+        ]
+      }
+    ]
+  },
+  "search(topics)": {
+    "results": [
+      {
+        "id": "string",
+        "kind": "string",
+        "title": "string",
+        "text": "string",
+        "url": "string"
+      }
+    ]
+  },
+  "search(book_text)": {
+    "results": [
+      {
+        "id": "string",
+        "kind": "string",
+        "title": "string",
+        "text": "string",
+        "url": "string",
+        "citation": {
+          "book": "string",
+          "author": "string",
+          "year": "string",
+          "location": "string",
+          "url": "string",
+          "link": "string",
+          "markdown": "string"
+        }
+      }
+    ]
+  },
+  "search(all)": {
+    "results": [
+      {
+        "id": "string",
+        "kind": "string",
+        "title": "string",
+        "text": "string",
+        "url": "string",
+        "citation": {
+          "book": "string",
+          "author": "string",
+          "year": "string",
+          "location": "string",
+          "url": "string",
+          "link": "string",
+          "markdown": "string"
+        }
+      }
+    ]
+  },
+  "fetch(note)": {
+    "id": "string",
+    "kind": "string",
+    "title": "string",
+    "text": "string",
+    "url": "string",
+    "citation": {
+      "book": "string",
+      "author": "string",
+      "year": "string",
+      "location": "string",
+      "url": "string",
+      "link": "string",
+      "markdown": "string"
+    },
+    "metadata": {
+      "bookId": "string",
+      "quote": "string",
+      "note": "string",
+      "topics": [
+        "string"
+      ],
+      "createdAt": "string"
+    }
+  },
+  "fetch(topic)": {
+    "id": "string",
+    "kind": "string",
+    "title": "string",
+    "text": "string",
+    "url": "string",
+    "metadata": {
+      "notes": "number"
+    }
+  },
+  "fetch(book_text)": {
+    "id": "string",
+    "kind": "string",
+    "title": "string",
+    "text": "string",
+    "url": "string",
+    "citation": {
+      "book": "string",
+      "author": "string",
+      "year": "string",
+      "location": "string",
+      "url": "string",
+      "link": "string",
+      "markdown": "string"
+    },
+    "metadata": {
+      "bookId": "string",
+      "headings": [
+        "string"
+      ]
+    }
+  },
+  "find_quote": {
+    "status": "string",
+    "message": "string",
+    "totalMatches": "number",
+    "candidates": [
+      {
+        "number": "number",
+        "quoteRef": "string",
+        "source": "string",
+        "chapter": "string",
+        "positionPercent": "number",
+        "words": "number",
+        "text": "string",
+        "preview": "null",
+        "citation": {
+          "book": "string",
+          "author": "string",
+          "year": "string",
+          "location": "string",
+          "url": "string",
+          "link": "string",
+          "markdown": "string"
+        }
+      }
+    ]
+  },
+  "overview": {
+    "library": {
+      "totalBooks": "number",
+      "books": [
+        {
+          "id": "string",
+          "title": "string",
+          "author": "string",
+          "type": "string",
+          "collectionIds": []
+        }
+      ],
+      "collections": [],
+      "statusAndFormatCounts": {
+        "all": "number",
+        "notStarted": "number",
+        "reading": "number",
+        "favorites": "number",
+        "finished": "number",
+        "unsorted": "number",
+        "audiobooks": "number",
+        "ebooks": "number",
+        "pdfs": "number"
+      },
+      "countsNote": "string"
+    },
+    "brain": {
+      "notes": "number",
+      "unsortedNotes": "number",
+      "topics": "number",
+      "topTopics": [
+        {
+          "name": "string",
+          "count": "number",
+          "id": "string"
+        }
+      ],
+      "booksWithMostNotes": [
+        {
+          "name": "string",
+          "count": "number",
+          "id": "string"
+        }
+      ]
+    }
+  },
+  "list_books(search)": {
+    "books": [
+      {
+        "id": "string",
+        "title": "string",
+        "author": "string",
+        "year": "string",
+        "type": "string",
+        "progressPercent": "number",
+        "url": "string"
+      }
+    ],
+    "total": "number",
+    "page": "number"
+  },
+  "list_books(isbn)": {
+    "books": [
+      {
+        "id": "string",
+        "title": "string",
+        "author": "string",
+        "year": "string",
+        "type": "string",
+        "progressPercent": "number",
+        "url": "string"
+      }
+    ],
+    "total": "number",
+    "page": "number"
+  },
+  "get_book": {
+    "id": "string",
+    "title": "string",
+    "author": "string",
+    "year": "string",
+    "type": "string",
+    "isbn": "string",
+    "progressPercent": "number",
+    "url": "string",
+    "citation": {
+      "book": "string",
+      "author": "string",
+      "year": "string",
+      "url": "string",
+      "link": "string"
+    }
+  },
+  "list_notes": {
+    "book": "string",
+    "notes": [
+      {
+        "id": "string",
+        "kind": "string",
+        "quote": "string",
+        "note": "string",
+        "createdAt": "string",
+        "citation": {
+          "book": "string",
+          "author": "string",
+          "year": "string",
+          "location": "string",
+          "url": "string",
+          "link": "string",
+          "markdown": "string"
+        }
+      }
+    ],
+    "total": "number"
+  },
+  "list_topics": {
+    "topics": [
+      {
+        "id": "string",
+        "name": "string",
+        "notes": "number",
+        "url": "string"
+      }
+    ]
+  },
+  "list_topics(search)": {
+    "topics": [
+      {
+        "id": "string",
+        "name": "string",
+        "notes": "number",
+        "url": "string"
+      }
+    ]
+  },
+  "get_topic": {
+    "id": "string",
+    "name": "string",
+    "notes": "number",
+    "url": "string",
+    "linkedNotes": [
+      {
+        "id": "string",
+        "kind": "string",
+        "note": "string",
+        "createdAt": "string",
+        "citation": {
+          "book": "string",
+          "author": "string",
+          "year": "string",
+          "url": "string",
+          "link": "string",
+          "markdown": "string"
+        }
+      }
+    ]
+  },
+  "list_drafts": {
+    "total": "number",
+    "items": [
+      {
+        "id": "string",
+        "name": "string",
+        "type": "string",
+        "parentId": "string",
+        "path": "string",
+        "updatedAt": "string",
+        "link": "string"
+      }
+    ]
+  },
+  "list_drafts(folders)": {
+    "total": "number",
+    "items": [
+      {
+        "id": "string",
+        "name": "string",
+        "type": "string",
+        "parentId": "null",
+        "path": "string",
+        "updatedAt": "string",
+        "link": "null"
+      }
+    ]
+  },
+  "read_draft": {
+    "id": "string",
+    "name": "string",
+    "parentId": "string",
+    "path": "string",
+    "updatedAt": "string",
+    "link": "string",
+    "characters": "number",
+    "truncated": "boolean",
+    "content": "string"
+  },
+  "add_to_reading_list": {
+    "duplicate": "boolean",
+    "link": "string",
+    "entry": {
+      "id": "string",
+      "title": "string",
+      "author": "string",
+      "isbn": "null",
+      "publishedDate": "null",
+      "why": "string",
+      "recommendedBy": "null",
+      "shelf": "string",
+      "nextPosition": "number",
+      "ownedBookId": "null",
+      "addedAt": "string"
+    }
+  },
+  "add_to_reading_list(again)": {
+    "duplicate": "boolean",
+    "link": "string",
+    "entry": {
+      "id": "string",
+      "title": "string",
+      "author": "string",
+      "isbn": "null",
+      "publishedDate": "null",
+      "why": "string",
+      "recommendedBy": "null",
+      "shelf": "string",
+      "nextPosition": "number",
+      "ownedBookId": "null",
+      "addedAt": "string"
+    }
+  },
+  "reading_list": {
+    "total": "number",
+    "nextUpCount": "number",
+    "returned": "number",
+    "link": "string",
+    "entries": [
+      {
+        "id": "string",
+        "title": "string",
+        "author": "string",
+        "isbn": "null",
+        "publishedDate": "null",
+        "why": "string",
+        "recommendedBy": "null",
+        "shelf": "string",
+        "nextPosition": "number",
+        "ownedBookId": "null",
+        "addedAt": "string"
+      }
+    ]
+  },
+  "save_note": {
+    "id": "string",
+    "book": "string",
+    "url": "string",
+    "citation": {
+      "book": "string",
+      "author": "string",
+      "year": "string",
+      "url": "string",
+      "link": "string",
+      "markdown": "string"
+    }
+  },
+  "create_draft": {
+    "id": "string",
+    "name": "string",
+    "parentId": "null",
+    "path": "string",
+    "link": "string",
+    "citations": "number",
+    "characters": "number"
+  },
+  "create_draft(replay)": {
+    "id": "string",
+    "name": "string",
+    "parentId": "null",
+    "path": "string",
+    "updatedAt": "string",
+    "link": "string",
+    "characters": "number",
+    "truncated": "boolean",
+    "content": "string",
+    "duplicate": "boolean"
+  },
+  "add_book": {
+    "outcome": "string",
+    "duplicate": "boolean",
+    "book": {
+      "id": "string",
+      "title": "string",
+      "author": "string",
+      "year": "string",
+      "type": "string",
+      "progressPercent": "number",
+      "url": "string"
+    }
+  },
+  "add_book(matched)": {
+    "outcome": "string",
+    "duplicate": "boolean",
+    "book": {
+      "id": "string",
+      "title": "string",
+      "author": "string",
+      "year": "string",
+      "type": "string",
+      "progressPercent": "number",
+      "url": "string"
+    },
+    "message": "string"
+  },
+  "add_book(choose)": {
+    "outcome": "string",
+    "duplicate": "boolean",
+    "candidates": [
+      {
+        "id": "string",
+        "title": "string",
+        "author": "string",
+        "isbn": "string",
+        "url": "string"
+      }
+    ],
+    "message": "string"
+  },
+  "update_book": {
+    "id": "string",
+    "title": "string",
+    "url": "string",
+    "changed": [
+      {
+        "field": "string",
+        "to": "string"
+      }
+    ],
+    "undo": {
+      "bookId": "string",
+      "replace": "boolean",
+      "description": "string"
+    },
+    "message": "string"
+  },
+  "update_book(kept)": {
+    "id": "string",
+    "title": "string",
+    "url": "string",
+    "changed": [],
+    "kept": [
+      {
+        "field": "string",
+        "value": "string",
+        "given": "string"
+      }
+    ],
+    "message": "string"
+  }
+}
