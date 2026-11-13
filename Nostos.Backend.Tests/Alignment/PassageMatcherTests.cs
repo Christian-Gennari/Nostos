@@ -2,7 +2,7 @@ using Nostos.Product.BookText;
 using Nostos.Product.Alignment;
 using Xunit;
 
-namespace Nostos.Alignment.Spike.Tests;
+namespace Nostos.Backend.Tests.Alignment;
 
 public sealed class PassageMatcherTests
 {
