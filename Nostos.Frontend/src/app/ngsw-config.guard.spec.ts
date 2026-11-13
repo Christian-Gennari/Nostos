@@ -17,7 +17,11 @@ interface NgswConfig {
 }
 
 const configPath = path.resolve(process.cwd(), 'ngsw-config.json');
-const backendProgramPath = path.resolve(process.cwd(), '../Nostos.Backend/Program.cs');
+// The SPA fallback moved out of Program.cs into the composition modules (#1678).
+const backendFallbackPath = path.resolve(
+  process.cwd(),
+  '../Nostos.Backend/Composition/SelfHostedHttpPipeline.cs',
+);
 
 const REQUIRED_DEFAULTS = ['/**', '!/**/*.*', '!/**/*__*', '!/**/*__*/**'];
 const BACKEND_NON_SPA_PREFIXES = ['/api', '/opds', '/mcp', '/oauth', '/.well-known'];
@@ -42,10 +46,10 @@ describe('ngsw-config.json navigationUrls', () => {
     expect(urls).toContain(`!${prefix}/**`);
   });
 
-  it('stays in sync with literal SPA fallback exclusions in Nostos.Backend/Program.cs', () => {
-    if (!existsSync(backendProgramPath)) return;
-    const program = readFileSync(backendProgramPath, 'utf8');
-    const fallbackMatch = program.match(/RequestDelegate\s+serveClientRoute[\s\S]*?app\.MapFallback/);
+  it('stays in sync with literal SPA fallback exclusions in the backend ServeClientRoute', () => {
+    if (!existsSync(backendFallbackPath)) return;
+    const pipeline = readFileSync(backendFallbackPath, 'utf8');
+    const fallbackMatch = pipeline.match(/Task\s+ServeClientRoute\([\s\S]*?index\.html/);
     expect(fallbackMatch).not.toBeNull();
 
     const literalPrefixes = Array.from(
