@@ -98,6 +98,7 @@ public sealed class StubHttpClientFactory : IHttpClientFactory
 {
     private readonly StubHttpMessageHandler _handler;
     private readonly Uri _baseAddress;
+    private readonly Action<HttpClient>? _configureClient;
     private readonly ConcurrentDictionary<string, StubHttpMessageHandler> _handlersByName = new(StringComparer.Ordinal);
     private readonly ConcurrentBag<string> _requestedClientNames = new();
 
@@ -106,10 +107,18 @@ public sealed class StubHttpClientFactory : IHttpClientFactory
     /// <summary>Every client name a host asked for, so tests can pin the named-client contract.</summary>
     public IReadOnlyList<string> RequestedClientNames => _requestedClientNames.ToArray();
 
-    public StubHttpClientFactory(StubHttpMessageHandler? handler = null, Uri? baseAddress = null)
+    /// <param name="configureClient">
+    /// Applied to every client the factory hands out, which is how tests reproduce the
+    /// headers the product composition puts on a named client.
+    /// </param>
+    public StubHttpClientFactory(
+        StubHttpMessageHandler? handler = null,
+        Uri? baseAddress = null,
+        Action<HttpClient>? configureClient = null)
     {
         _handler = handler ?? new StubHttpMessageHandler();
         _baseAddress = baseAddress ?? new Uri("https://www.gutenberg.org");
+        _configureClient = configureClient;
     }
 
     /// <summary>Routes one named client to its own handler; other names keep the shared one.</summary>
@@ -123,9 +132,11 @@ public sealed class StubHttpClientFactory : IHttpClientFactory
     {
         _requestedClientNames.Add(name);
         var handler = _handlersByName.TryGetValue(name, out var registered) ? registered : _handler;
-        return new HttpClient(handler, disposeHandler: false)
+        var client = new HttpClient(handler, disposeHandler: false)
         {
             BaseAddress = _baseAddress
         };
+        _configureClient?.Invoke(client);
+        return client;
     }
 }

@@ -33,7 +33,7 @@ public sealed class WikisourceProvider : IContentProvider,
     /// </summary>
     public static readonly TimeSpan CatalogFreshFor = TimeSpan.FromHours(6);
 
-    private readonly HttpClient _http;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _clock;
     private readonly object _catalogGate = new();
     private CatalogSnapshot? _catalog;
@@ -41,7 +41,7 @@ public sealed class WikisourceProvider : IContentProvider,
 
     public WikisourceProvider(IHttpClientFactory httpClientFactory, TimeProvider? clock = null)
     {
-        _http = httpClientFactory.CreateClient(HttpClientName);
+        _httpClientFactory = httpClientFactory;
         _clock = clock ?? TimeProvider.System;
     }
 
@@ -125,7 +125,8 @@ public sealed class WikisourceProvider : IContentProvider,
         if (request.IfModifiedSince is { } ifModifiedSince)
             httpRequest.Headers.IfModifiedSince = ifModifiedSince;
 
-        using var response = await ProviderHttp.SendHeadersAsync(_http, Id, httpRequest, ct);
+        var client = ProviderHttp.Client(_httpClientFactory, HttpClientName);
+        using var response = await ProviderHttp.SendHeadersAsync(client, Id, httpRequest, ct);
 
         if (response.StatusCode == HttpStatusCode.NotModified)
         {
@@ -134,21 +135,9 @@ public sealed class WikisourceProvider : IContentProvider,
                 lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
         }
 
-        if (!response.IsSuccessStatusCode)
-            throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
+        ProviderHttp.EnsureSuccess(response, Id, "WS Export");
 
-        var document = await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                return await XDocument.LoadAsync(stream, LoadOptions.None, token);
-            }
-            catch (XmlException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        var document = await ProviderHttp.ReadXmlAsync(response, Id, ct);
 
         if (!WikisourceCatalog.IsAtomDocument(document))
             throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
@@ -271,30 +260,19 @@ public sealed class WikisourceProvider : IContentProvider,
 
     private async Task<XDocument?> LoadAsync(string path, CancellationToken ct)
     {
-        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
+        var client = ProviderHttp.Client(_httpClientFactory, HttpClientName);
+        using var response = await ProviderHttp.GetHeadersAsync(client, Id, path, ct);
 
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+        if (ProviderHttp.IsMissing(response))
             return null;
 
-        if (!response.IsSuccessStatusCode)
-            throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
+        ProviderHttp.EnsureSuccess(response, Id, "WS Export");
 
-        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                var document = await XDocument.LoadAsync(stream, LoadOptions.None, token);
-                if (!WikisourceCatalog.IsAtomDocument(document))
-                    throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
+        var document = await ProviderHttp.ReadXmlAsync(response, Id, ct);
+        if (!WikisourceCatalog.IsAtomDocument(document))
+            throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
 
-                return document;
-            }
-            catch (XmlException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        return document;
     }
 
     private static bool Matches(WikisourceBook book, IReadOnlyList<string> terms)

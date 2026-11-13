@@ -329,6 +329,63 @@ public sealed class StandardEbooksProviderTests
         exception.Which.Code.Should().Be(ProviderException.AssetUnavailable);
     }
 
+    [Fact]
+    public async Task Search_SendsOneApprovedUserAgentAndAccept_WhenTheClientAlreadyCarriesThem()
+    {
+        // Product composition already sets these; re-applying them inside the
+        // provider must replace, never append.
+        string? userAgent = null;
+        string[] accept = [];
+        var handler = new StubHttpMessageHandler();
+        handler.SetFallback(request =>
+        {
+            userAgent = request.Headers.UserAgent.ToString();
+            accept = request.Headers.Accept
+                .Select(value => value.MediaType ?? string.Empty)
+                .ToArray();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    PrideFeed,
+                    System.Text.Encoding.UTF8,
+                    "application/atom+xml")
+            };
+        });
+        var factory = new StubHttpClientFactory(
+            handler,
+            new Uri("https://standardebooks.org"),
+            client =>
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(StandardEbooksProvider.ApprovedUserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd(StandardEbooksProvider.OpdsAccept);
+            });
+        var provider = new StandardEbooksProvider(
+            factory,
+            NullLogger<StandardEbooksProvider>.Instance);
+
+        await provider.SearchAsync(new ProviderSearchQuery("pride prejudice"), CancellationToken.None);
+
+        userAgent.Should().Be(StandardEbooksProvider.ApprovedUserAgent);
+        accept.Should().ContainSingle().Which.Should().Be(StandardEbooksProvider.OpdsAccept);
+    }
+
+    [Fact]
+    public async Task Search_OnAnUnexpectedStatus_IsUnavailableAndNamesTheFeedStatus()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(
+            "/feeds/opds/all?query=pride&per-page=20&page=1",
+            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+
+        var act = () => provider.SearchAsync(
+            new ProviderSearchQuery("pride"),
+            CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain("the OPDS feed answered HTTP 500");
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized)]
     [InlineData(HttpStatusCode.Forbidden)]

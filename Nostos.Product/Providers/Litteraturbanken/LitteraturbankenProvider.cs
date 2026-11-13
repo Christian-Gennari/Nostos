@@ -43,17 +43,13 @@ public sealed class LitteraturbankenProvider : IContentProvider,
     private static readonly JsonSerializerOptions JsonOptions =
         new() { PropertyNameCaseInsensitive = true };
 
-    private readonly HttpClient _http;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly SemaphoreSlim _rightsGate = new(1, 1);
     private RightsCatalog? _rightsCatalog;
 
     public LitteraturbankenProvider(IHttpClientFactory httpClientFactory)
     {
-        _http = httpClientFactory.CreateClient(HttpClientName);
-        _http.DefaultRequestHeaders.UserAgent.Clear();
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
-        _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        _httpClientFactory = httpClientFactory;
     }
 
     public string Id => ProviderIdentifier;
@@ -345,35 +341,20 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         });
         var queryString = await form.ReadAsStringAsync(ct);
 
-        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, CatalogPath + "?" + queryString, ct);
+        using var response = await ProviderHttp.GetHeadersAsync(
+            ProviderHttp.Client(_httpClientFactory, HttpClientName, accept: ProviderHttp.JsonMediaType),
+            Id,
+            CatalogPath + "?" + queryString,
+            ct);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw ProviderException.UnavailableFor(
-                Id,
-                "the public catalog answered HTTP " + (int)response.StatusCode);
-        }
+        ProviderHttp.EnsureSuccess(response, Id, "the public catalog");
 
-        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                var result = await JsonSerializer.DeserializeAsync<CatalogPage>(
-                    stream,
-                    JsonOptions,
-                    token);
+        var result = await ProviderHttp.ReadJsonAsync<CatalogPage>(response, Id, JsonOptions, ct);
 
-                if (result?.Data is null)
-                    throw ProviderException.InvalidResponse(Id, "the catalog omitted its data list");
+        if (result?.Data is null)
+            throw ProviderException.InvalidResponse(Id, "the catalog omitted its data list");
 
-                return result;
-            }
-            catch (JsonException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        return result;
     }
 
     private async Task<RightsCatalog> GetRightsCatalogAsync(CancellationToken ct)
@@ -400,54 +381,30 @@ public sealed class LitteraturbankenProvider : IContentProvider,
 
     private async Task<T> GetJsonAsync<T>(string path, CancellationToken ct)
     {
-        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
+        using var response = await ProviderHttp.GetHeadersAsync(
+            ProviderHttp.Client(_httpClientFactory, HttpClientName, accept: ProviderHttp.JsonMediaType),
+            Id,
+            path,
+            ct);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw ProviderException.UnavailableFor(
-                Id,
-                "rights metadata answered HTTP " + (int)response.StatusCode);
-        }
+        ProviderHttp.EnsureSuccess(response, Id, "rights metadata");
 
-        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, token)
-                    ?? throw ProviderException.InvalidResponse(Id, "rights metadata was empty");
-            }
-            catch (JsonException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        return await ProviderHttp.ReadJsonAsync<T>(response, Id, JsonOptions, ct)
+            ?? throw ProviderException.InvalidResponse(Id, "rights metadata was empty");
     }
 
     private async Task<JsonElement> GetJsonElementAsync(string path, CancellationToken ct)
     {
-        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
+        using var response = await ProviderHttp.GetHeadersAsync(
+            ProviderHttp.Client(_httpClientFactory, HttpClientName, accept: ProviderHttp.JsonMediaType),
+            Id,
+            path,
+            ct);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw ProviderException.UnavailableFor(
-                Id,
-                "provenance metadata answered HTTP " + (int)response.StatusCode);
-        }
+        ProviderHttp.EnsureSuccess(response, Id, "provenance metadata");
 
-        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-                return document.RootElement.Clone();
-            }
-            catch (JsonException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        using var document = await ProviderHttp.ReadJsonAsync(response, Id, ct);
+        return document.RootElement.Clone();
     }
 
     private WorkBundle? BuildWork(IEnumerable<CatalogRecord> sourceRecords, RightsCatalog rights)

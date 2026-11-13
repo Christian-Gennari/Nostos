@@ -1,5 +1,4 @@
 using System.Net;
-using System.Xml;
 using System.Xml.Linq;
 using Nostos.Backend.Providers.Contracts;
 
@@ -37,8 +36,7 @@ public sealed partial class StandardEbooksProvider : IContentProvider,
     private const int DetailSearchPageSize = 24;
     private const long MaxEbookBytes = 128L * 1024 * 1024;
 
-    private readonly HttpClient _http;
-    private readonly HttpClient _snapshotHttp;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<StandardEbooksProvider> _logger;
     private readonly TimeProvider _clock;
 
@@ -47,28 +45,22 @@ public sealed partial class StandardEbooksProvider : IContentProvider,
         ILogger<StandardEbooksProvider> logger,
         TimeProvider? clock = null)
     {
-        _http = httpClientFactory.CreateClient(HttpClientName);
-        _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
-
-        // The feed is whitelisted by this exact project identity. Set it here,
-        // inside the provider boundary, as well as in product composition so a
-        // custom/test IHttpClientFactory cannot accidentally turn approved access
-        // into an anonymous 401.
-        _http.DefaultRequestHeaders.UserAgent.Clear();
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd(ApprovedUserAgent);
-        _http.DefaultRequestHeaders.Accept.Clear();
-        _http.DefaultRequestHeaders.Accept.ParseAdd(OpdsAccept);
-
-        // Snapshot reads use a dedicated client with a bulk-feed timeout. Set
-        // the exact allowlisted identity here too, so custom/test factories
-        // cannot accidentally make the source request access anonymously.
-        _snapshotHttp.DefaultRequestHeaders.UserAgent.Clear();
-        _snapshotHttp.DefaultRequestHeaders.UserAgent.ParseAdd(ApprovedUserAgent);
-        _snapshotHttp.DefaultRequestHeaders.Accept.Clear();
-        _snapshotHttp.DefaultRequestHeaders.Accept.ParseAdd(OpdsAccept);
     }
+
+    /// <summary>
+    /// The feed is whitelisted by this exact project identity. The headers are
+    /// applied when the per-operation client is created, so a custom/test
+    /// <see cref="IHttpClientFactory"/> cannot accidentally turn approved access
+    /// into an anonymous 401.
+    /// </summary>
+    private HttpClient CreateFeedClient(string clientName) => ProviderHttp.Client(
+        _httpClientFactory,
+        clientName,
+        ApprovedUserAgent,
+        OpdsAccept);
 
     public string Id => ProviderIdentifier;
 
@@ -203,9 +195,10 @@ public sealed partial class StandardEbooksProvider : IContentProvider,
 
     private async Task<XDocument?> LoadFeedAsync(string path, CancellationToken ct)
     {
-        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
+        var http = CreateFeedClient(HttpClientName);
+        using var response = await ProviderHttp.GetHeadersAsync(http, Id, path, ct);
 
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+        if (ProviderHttp.IsMissing(response))
             return null;
 
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
@@ -215,25 +208,9 @@ public sealed partial class StandardEbooksProvider : IContentProvider,
                 "Standard Ebooks rejected the approved Nostos OPDS User-Agent");
         }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw ProviderException.UnavailableFor(
-                Id,
-                $"the OPDS feed answered HTTP {(int)response.StatusCode}");
-        }
+        ProviderHttp.EnsureSuccess(response, Id, "the OPDS feed");
 
-        var document = await ProviderHttp.ExecuteAsync(Id, ct, async token =>
-        {
-            try
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(token);
-                return await XDocument.LoadAsync(stream, LoadOptions.None, token);
-            }
-            catch (XmlException ex)
-            {
-                throw ProviderException.InvalidResponse(Id, ex.Message);
-            }
-        });
+        var document = await ProviderHttp.ReadXmlAsync(response, Id, ct);
 
         if (!StandardEbooksCatalog.IsFeed(document))
         {

@@ -358,6 +358,45 @@ public sealed class LibriVoxProviderTests
         found!.Id.Should().Be("librivox");
     }
 
+    [Fact]
+    public async Task Search_SendsTheProductUserAgent()
+    {
+        string? userAgent = null;
+        var handler = new StubHttpMessageHandler().Register(
+            "/api/feed/audiobooks/?title=%5EPride&format=json&extended=1&limit=20&offset=0",
+            request =>
+            {
+                userAgent = request.Headers.UserAgent.ToString();
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        LoadFixture("search-empty.json"),
+                        System.Text.Encoding.UTF8,
+                        "application/json")
+                };
+            });
+        var (provider, _) = CreateProvider(handler);
+
+        await provider.SearchAsync(new ProviderSearchQuery("Pride"), CancellationToken.None);
+
+        userAgent.Should().Be("Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+    }
+
+    [Fact]
+    public async Task Search_OnANonSuccessStatus_IsUnavailableAndNamesTheStatus()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(
+            "/api/feed/audiobooks/?title=%5EPride&format=json&extended=1&limit=20&offset=0",
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("Pride"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain("the catalogue answered HTTP 503");
+    }
+
     [Theory]
     [InlineData(typeof(HttpRequestException))]
     [InlineData(typeof(IOException))]

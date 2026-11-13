@@ -249,6 +249,76 @@ public sealed class LitteraturbankenProviderTests
     }
 
     [Fact]
+    public async Task Search_SendsTheProductUserAgentAndASingleJsonAccept()
+    {
+        // The client already carries the product headers, as product composition
+        // configures it; the provider must not append a second Accept.
+        const string userAgentText = "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)";
+        string? userAgent = null;
+        string[] accept = [];
+        var handler = new StubHttpMessageHandler();
+        handler.SetFallback(request =>
+        {
+            userAgent = request.Headers.UserAgent.ToString();
+            accept = request.Headers.Accept
+                .Select(value => value.MediaType ?? string.Empty)
+                .ToArray();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"hits":0,"data":[]}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var factory = new StubHttpClientFactory(
+            handler,
+            new Uri(LitteraturbankenProvider.BaseUrl),
+            client =>
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(userAgentText);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            });
+        var provider = new LitteraturbankenProvider(factory);
+
+        await provider.SearchAsync(new ProviderSearchQuery("Kåtornas folk"), CancellationToken.None);
+
+        userAgent.Should().Be(userAgentText);
+        accept.Should().ContainSingle().Which.Should().Be("application/json");
+    }
+
+    [Fact]
+    public async Task Search_SourceFailure_NamesTheStatus()
+    {
+        var (provider, _) = CreateProvider(_ =>
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        var act = () => provider.SearchAsync(
+            new ProviderSearchQuery("Kåtornas folk"),
+            CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain("the public catalog answered HTTP 503");
+    }
+
+    [Fact]
+    public async Task Search_MalformedCatalogJson_IsReportedAsResponseInvalid()
+    {
+        var (provider, _) = CreateProvider(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("<html>not the catalog</html>", System.Text.Encoding.UTF8, "application/json")
+        });
+
+        var act = () => provider.SearchAsync(
+            new ProviderSearchQuery("Kåtornas folk"),
+            CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.ResponseInvalid);
+    }
+
+    [Fact]
     public async Task Search_ReportsSourceFailureAsProviderUnavailable()
     {
         var (provider, _) = CreateProvider(_ =>

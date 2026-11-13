@@ -434,6 +434,43 @@ public sealed class WikisourceProviderTests
         CatalogRequests(handler).Should().Be(1, "the abandoned search's download was reused");
     }
 
+    [Fact]
+    public async Task Search_SendsTheProductUserAgent()
+    {
+        string? userAgent = null;
+        var handler = new StubHttpMessageHandler().Register(
+            CatalogPath,
+            request =>
+            {
+                userAgent = request.Headers.UserAgent.ToString();
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        LoadFixture("ready-for-export.xml"),
+                        System.Text.Encoding.UTF8,
+                        "application/atom+xml")
+                };
+            });
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler));
+
+        await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        userAgent.Should().Be("Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+    }
+
+    [Fact]
+    public async Task Search_OnANonSuccessStatus_IsUnavailableAndNamesTheStatus()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain("WS Export answered HTTP 503");
+    }
+
     [Theory]
     [InlineData(typeof(HttpRequestException))]
     [InlineData(typeof(IOException))]
