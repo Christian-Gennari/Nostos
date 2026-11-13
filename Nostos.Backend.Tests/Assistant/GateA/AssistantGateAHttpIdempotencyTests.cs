@@ -29,13 +29,29 @@ namespace Nostos.Backend.Tests.Assistant.GateA;
 /// in production, so a retry that arrives as a brand-new HTTP request still
 /// hits the same canonical receipts.
 /// </summary>
-public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
+public sealed class AssistantGateAHttpIdempotencyTests
+    : IClassFixture<AssistantGateAHttpIdempotencyTests.GateAIdempotencyHostFactory>, IAsyncLifetime
 {
     private const string TokenVariable = "NOSTOS_GATE_A_HTTP_TEST_TOKEN";
     private const string TokenValue = "gate-a-sentinel-key-value";
 
-    public void Dispose() =>
+    private readonly GateAIdempotencyHostFactory _factory;
+
+    public AssistantGateAHttpIdempotencyTests(GateAIdempotencyHostFactory factory) =>
+        _factory = factory;
+
+    public Task InitializeAsync()
+    {
         Environment.SetEnvironmentVariable(TokenVariable, null);
+        _factory.Configure(new FakeLlmProvider());
+        return _factory.ResetStateAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        Environment.SetEnvironmentVariable(TokenVariable, null);
+        return Task.CompletedTask;
+    }
 
     [Fact]
     public async Task Lost_response_retry_reuses_the_same_TurnId_for_capture()
@@ -46,9 +62,8 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             .CallsTool("notes_capture", """{"content":"Gate A thought"}""")
             .Returns("Saved.");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var _ = KeepToken();
@@ -79,7 +94,7 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         // Gate A case 1 (same TurnId identity) and case 2 (no duplicate
         // capture): the retry replays the canonical receipt.
         retryBody.CapturedNoteId.Should().Be(firstBody.CapturedNoteId);
-        (await NoteCountAsync(factory)).Should().Be(1);
+        (await NoteCountAsync(_factory)).Should().Be(1);
     }
 
     [Fact]
@@ -91,9 +106,8 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             .CallsTool("library_create_collection", """{"name":"Gate A shelf"}""")
             .Returns("Created.");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         using var _ = KeepToken();
 
@@ -117,7 +131,7 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         var retryBody = (await retry.Content.ReadFromJsonAsync<AssistantTurnResponse>())!;
         firstBody.Changeset!.Status.Should().Be("applied");
         retryBody.Changeset!.ChangesetId.Should().Be(firstBody.Changeset.ChangesetId);
-        (await CollectionCountAsync(factory, "Gate A shelf")).Should().Be(1);
+        (await CollectionCountAsync(_factory, "Gate A shelf")).Should().Be(1);
     }
 
     [Fact]
@@ -127,10 +141,9 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         var provider = new FakeLlmProvider()
             .CallsTool("library_delete_collection", JsonSerializer.Serialize(new { collection = target }));
 
-        using var factory = new LibraryEndpointFactory();
-        await SeedCollectionAsync(factory, target, "Gate A doomed", withBook: true);
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        await SeedCollectionAsync(_factory, target, "Gate A doomed", withBook: true);
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         using var _ = KeepToken();
 
@@ -147,7 +160,7 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         turn.StatusCode.Should().Be(HttpStatusCode.OK);
         var review = (await turn.Content.ReadFromJsonAsync<AssistantTurnResponse>())!.Changeset;
         review!.Status.Should().Be("review");
-        (await CollectionCountAsync(factory, "Gate A doomed")).Should().Be(1, "a review applies nothing");
+        (await CollectionCountAsync(_factory, "Gate A doomed")).Should().Be(1, "a review applies nothing");
 
         var apply = new AssistantChangesetApplyRequest(review.ActionToken, null, review.DiffHash);
         var applied = await client.PostAsJsonAsync(ChangesetRoute(review, "apply"), apply);
@@ -162,14 +175,14 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         var replayBody = (await replay.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!;
         replayBody.Success.Should().BeTrue();
         replayBody.Changeset!.Status.Should().Be("applied");
-        (await CollectionCountAsync(factory, "Gate A doomed")).Should().Be(0);
+        (await CollectionCountAsync(_factory, "Gate A doomed")).Should().Be(0);
 
         var undone = await client.PostAsJsonAsync(
             ChangesetRoute(review, "undo"), new AssistantChangesetTokenRequest(review.ActionToken));
         undone.StatusCode.Should().Be(HttpStatusCode.OK);
         (await undone.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!.Changeset!.Status
             .Should().Be("undone");
-        (await CollectionCountAsync(factory, "Gate A doomed")).Should().Be(1);
+        (await CollectionCountAsync(_factory, "Gate A doomed")).Should().Be(1);
     }
 
     [Fact]
@@ -183,11 +196,10 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             .CallsTool("library_delete_collection", JsonSerializer.Serialize(new { collection = secondTarget }))
             .Returns("Prepared.");
 
-        using var factory = new LibraryEndpointFactory();
-        await SeedCollectionAsync(factory, firstTarget, "Gate A first", withBook: true);
-        await SeedCollectionAsync(factory, secondTarget, "Gate A second", withBook: true);
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        await SeedCollectionAsync(_factory, firstTarget, "Gate A first", withBook: true);
+        await SeedCollectionAsync(_factory, secondTarget, "Gate A second", withBook: true);
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         using var _ = KeepToken();
 
@@ -218,8 +230,8 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         var refusedBody = (await refused.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!;
         refusedBody.Success.Should().BeFalse();
         refusedBody.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetNotReviewable);
-        (await CollectionCountAsync(factory, "Gate A first")).Should().Be(1);
-        (await CollectionCountAsync(factory, "Gate A second")).Should().Be(1);
+        (await CollectionCountAsync(_factory, "Gate A first")).Should().Be(1);
+        (await CollectionCountAsync(_factory, "Gate A second")).Should().Be(1);
 
         var wrongToken = await client.PostAsJsonAsync(ChangesetRoute(current, "apply"),
             new AssistantChangesetApplyRequest(stale.ActionToken, null, null));
@@ -229,8 +241,8 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             new AssistantChangesetApplyRequest(current.ActionToken, null, current.DiffHash));
         executed.StatusCode.Should().Be(HttpStatusCode.OK);
         (await executed.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!.Success.Should().BeTrue();
-        (await CollectionCountAsync(factory, "Gate A first")).Should().Be(1);
-        (await CollectionCountAsync(factory, "Gate A second")).Should().Be(0);
+        (await CollectionCountAsync(_factory, "Gate A first")).Should().Be(1);
+        (await CollectionCountAsync(_factory, "Gate A second")).Should().Be(0);
     }
 
     private static string ChangesetRoute(AssistantChangesetDto changeset, string action) =>
@@ -341,12 +353,15 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             Environment.SetEnvironmentVariable(TokenVariable, null);
     }
 
-    private static WebApplicationFactory<Program> CreateHost(
-        LibraryEndpointFactory factory,
-        FakeLlmProvider provider)
+    public sealed class GateAIdempotencyHostFactory : LibraryEndpointFactory
     {
-        return factory.WithWebHostBuilder(builder =>
+        private ILlmProvider _provider = new FakeLlmProvider();
+
+        public void Configure(ILlmProvider provider) => _provider = provider;
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
+            base.ConfigureWebHost(builder);
             builder.UseSetting("Assistant:Enabled", "true");
             builder.UseSetting("Assistant:BaseUrl", "http://assistant.invalid/v1");
             builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", TokenVariable);
@@ -355,8 +370,16 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<ILlmProvider>();
-                services.AddSingleton<ILlmProvider>(provider);
+                services.AddSingleton<ILlmProvider>(new DelegatingLlmProvider(this));
             });
-        });
+        }
+
+        private sealed class DelegatingLlmProvider(GateAIdempotencyHostFactory owner) : ILlmProvider
+        {
+            public Task<LlmCompletion> CompleteAsync(
+                LlmCompletionRequest request,
+                CancellationToken ct = default) =>
+                owner._provider.CompleteAsync(request, ct);
+        }
     }
 }

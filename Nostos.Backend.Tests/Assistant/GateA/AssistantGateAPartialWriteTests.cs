@@ -28,14 +28,29 @@ namespace Nostos.Backend.Tests.Assistant.GateA;
 /// failure contract and the persisted note receipt are all exercised. No model
 /// is called.
 /// </summary>
-public sealed class AssistantGateAPartialWriteTests : IDisposable
+public sealed class AssistantGateAPartialWriteTests
+    : IClassFixture<AssistantGateAPartialWriteTests.PartialWriteHostFactory>, IAsyncLifetime
 {
     private const string TokenVariable = "NOSTOS_GATE_A_PARTIAL_WRITE_TOKEN";
     private const string TokenValue = "gate-a-partial-write-sentinel";
     private const string FailureMessage = "The AI service could not complete this turn. Try again.";
 
-    public void Dispose() =>
+    private readonly PartialWriteHostFactory _factory;
+
+    public AssistantGateAPartialWriteTests(PartialWriteHostFactory factory) => _factory = factory;
+
+    public Task InitializeAsync()
+    {
         Environment.SetEnvironmentVariable(TokenVariable, null);
+        _factory.Configure(new FakeLlmProvider());
+        return _factory.ResetStateAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        Environment.SetEnvironmentVariable(TokenVariable, null);
+        return Task.CompletedTask;
+    }
 
     /// <summary>
     /// Call 1 saves the note; call 2 is the provider failing after the write.
@@ -67,9 +82,8 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
     [Fact]
     public async Task A_capture_that_committed_before_the_provider_failed_is_in_the_turn_failure_body()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, Provider());
-        using var client = host.CreateClient();
+        _factory.Configure(Provider());
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var _token = KeepToken();
@@ -90,7 +104,7 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
         var noteId = committed.GetProperty("capturedNoteId").GetString();
         noteId.Should().NotBeNullOrWhiteSpace();
         committed.GetProperty("acknowledgement").GetString().Should().NotBeNullOrWhiteSpace();
-        (await NoteCountAsync(factory)).Should().Be(1);
+        (await NoteCountAsync(_factory)).Should().Be(1);
 
         // The client retries the same logical turn. The model repeats its call,
         // the receipt replays, and the second delivery reports the same note.
@@ -101,15 +115,14 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
         retry.StatusCode.Should().Be(HttpStatusCode.OK);
         var retried = (await retry.Content.ReadFromJsonAsync<AssistantTurnResponse>())!;
         retried.CapturedNoteId.Should().Be(noteId);
-        (await NoteCountAsync(factory)).Should().Be(1, "a retry of the same TurnId never writes a second note");
+        (await NoteCountAsync(_factory)).Should().Be(1, "a retry of the same TurnId never writes a second note");
     }
 
     [Fact]
     public async Task The_streamed_failure_event_carries_the_capture_so_the_panel_can_report_it()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, Provider());
-        using var client = host.CreateClient();
+        _factory.Configure(Provider());
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var _token = KeepToken();
@@ -133,7 +146,7 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
         committed.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
         committed.Acknowledgement.Should().NotBeNullOrWhiteSpace();
         committed.Changeset.Should().BeNull("staged changes were never applied, so they are not reported");
-        (await NoteCountAsync(factory)).Should().Be(1);
+        (await NoteCountAsync(_factory)).Should().Be(1);
 
         var retry = await client.PostAsJsonAsync(
             AssistantEndpoints.StreamTurnRoute,
@@ -144,7 +157,7 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
 
         completed.Kind.Should().Be(AssistantTurnEventKinds.Completed);
         completed.Response!.CapturedNoteId.Should().Be(committed.CapturedNoteId);
-        (await NoteCountAsync(factory)).Should().Be(1, "the retry replays the receipt, never a second write");
+        (await NoteCountAsync(_factory)).Should().Be(1, "the retry replays the receipt, never a second write");
     }
 
     [Fact]
@@ -155,9 +168,8 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
             Responder = _ => throw LlmException.ProviderFailure("upstream says no"),
         };
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var _token = KeepToken();
@@ -171,7 +183,7 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
         problem.GetProperty("title").GetString().Should().Be(LlmErrorCodes.Provider);
         problem.TryGetProperty("committed", out _).Should().BeFalse(
             "the optional field is only present when a write survived the failure");
-        (await NoteCountAsync(factory)).Should().Be(0);
+        (await NoteCountAsync(_factory)).Should().Be(0);
     }
 
     // ------------------------------------------------------------------
@@ -243,11 +255,15 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
             Environment.SetEnvironmentVariable(TokenVariable, null);
     }
 
-    private static WebApplicationFactory<Program> CreateHost(
-        LibraryEndpointFactory factory,
-        FakeLlmProvider provider) =>
-        factory.WithWebHostBuilder(builder =>
+    public sealed class PartialWriteHostFactory : LibraryEndpointFactory
+    {
+        private ILlmProvider _provider = new FakeLlmProvider();
+
+        public void Configure(ILlmProvider provider) => _provider = provider;
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
+            base.ConfigureWebHost(builder);
             builder.UseSetting("Assistant:Enabled", "true");
             builder.UseSetting("Assistant:BaseUrl", "http://assistant.invalid/v1");
             builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", TokenVariable);
@@ -256,7 +272,16 @@ public sealed class AssistantGateAPartialWriteTests : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<ILlmProvider>();
-                services.AddSingleton<ILlmProvider>(provider);
+                services.AddSingleton<ILlmProvider>(new DelegatingLlmProvider(this));
             });
-        });
+        }
+
+        private sealed class DelegatingLlmProvider(PartialWriteHostFactory owner) : ILlmProvider
+        {
+            public Task<LlmCompletion> CompleteAsync(
+                LlmCompletionRequest request,
+                CancellationToken ct = default) =>
+                owner._provider.CompleteAsync(request, ct);
+        }
+    }
 }

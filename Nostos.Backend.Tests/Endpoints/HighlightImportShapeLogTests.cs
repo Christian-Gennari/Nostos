@@ -16,23 +16,34 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// that fails to parse, loses an optional column, or holds entries the parser
 /// does not recognise, carrying structure alone.
 /// </summary>
-public sealed class HighlightImportShapeLogTests : IDisposable
+public sealed class HighlightImportShapeLogTests
+    : IClassFixture<HighlightImportShapeLogTests.ShapeLogFactory>, IAsyncLifetime, IDisposable
 {
+    private readonly ShapeLogFactory _factory;
     private readonly string _directory =
         Directory.CreateTempSubdirectory("nostos-import-shape-log-").FullName;
+
+    public HighlightImportShapeLogTests(ShapeLogFactory factory) => _factory = factory;
+
+    public async Task InitializeAsync()
+    {
+        await _factory.ResetStateAsync();
+        _factory.Logs.Clear();
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     public void Dispose() => Directory.Delete(_directory, recursive: true);
 
     [Fact]
     public async Task A_file_that_is_not_an_export_logs_its_shape_and_an_unknown_source()
     {
-        using var factory = new ShapeLogFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await UploadAsync(client, "preview", Write("notes.txt", "This is not an export."));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var line = ShapeLines(factory).Single();
+        var line = ShapeLines(_factory).Single();
         line.Should().Contain("Outcome=parse-failed");
         line.Should().Contain("Source=unknown");
         line.Should().Contain("Shape=lines 1; separators 0");
@@ -44,13 +55,12 @@ public sealed class HighlightImportShapeLogTests : IDisposable
     [Fact]
     public async Task A_kobo_database_without_an_optional_column_logs_which_one_went_missing()
     {
-        using var factory = new ShapeLogFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await UploadAsync(client, "preview", CreateKoboDatabase());
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var line = ShapeLines(factory).Single();
+        var line = ShapeLines(_factory).Single();
         line.Should().Contain("Source=kobo");
         line.Should().Contain("Outcome=missing-optional-columns");
         line.Should().Contain("Shape=tables: Bookmark, content");
@@ -61,8 +71,7 @@ public sealed class HighlightImportShapeLogTests : IDisposable
     [Fact]
     public async Task A_preview_that_skips_unrecognised_kindle_entries_logs_their_masked_format()
     {
-        using var factory = new ShapeLogFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var path = Write(
             "My Clippings.txt",
             """
@@ -84,7 +93,7 @@ public sealed class HighlightImportShapeLogTests : IDisposable
         var preview = (await response.Content.ReadFromJsonAsync<HighlightImportPreview>())!;
         preview.Skipped.Should().ContainSingle(skip => skip.Reason == KindleClippingsParser.UnrecognisedReason);
 
-        var line = ShapeLines(factory).Single();
+        var line = ShapeLines(_factory).Single();
         line.Should().Contain("Outcome=unrecognised-entries");
         line.Should().Contain("Source=kindle");
         line.Should().Contain("unrecognised patterns: - Xxxxxxxx Xxxxx 12 | Xxxx 34");
@@ -99,42 +108,39 @@ public sealed class HighlightImportShapeLogTests : IDisposable
     [Fact]
     public async Task A_clean_readwise_export_logs_nothing()
     {
-        using var factory = new ShapeLogFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await UploadAsync(
             client, "preview", ImportFixtures.ReadwiseExport);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        ShapeLines(factory).Should().BeEmpty();
+        ShapeLines(_factory).Should().BeEmpty();
     }
 
     [Fact]
     public async Task A_commit_does_not_log_the_missing_columns_its_preview_already_logged()
     {
-        using var factory = new ShapeLogFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var path = CreateKoboDatabase();
 
         (await UploadAsync(client, "preview", path)).StatusCode.Should().Be(HttpStatusCode.OK);
         var response = await UploadAsync(client, "commit", path, decisions: "[]");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        ShapeLines(factory).Should().ContainSingle();
+        ShapeLines(_factory).Should().ContainSingle();
     }
 
     [Fact]
     public async Task A_koreader_sidecar_the_plugin_sends_that_does_not_parse_logs_its_shape()
     {
-        using var factory = new ShapeLogFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         using var body = new MultipartFormDataContent();
         body.Add(new StringContent("return { [\"doc_props\"] = { title = \"Secret Title\" "), "file", "metadata.lua");
 
         var response = await client.PostAsync("/api/notes/import/koreader", body);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var line = ShapeLines(factory).Single();
+        var line = ShapeLines(_factory).Single();
         line.Should().Contain("Outcome=parse-failed");
         line.Should().NotContain("Secret Title");
     }
@@ -219,7 +225,7 @@ public sealed class HighlightImportShapeLogTests : IDisposable
         return path;
     }
 
-    private sealed class ShapeLogFactory : LibraryEndpointFactory
+    public sealed class ShapeLogFactory : LibraryEndpointFactory
     {
         public CapturingLoggerProvider Logs { get; } = new();
 

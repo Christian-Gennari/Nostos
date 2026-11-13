@@ -24,7 +24,8 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// free pool is never called here. The only tests that exercise the real
 /// provider are the "unconfigured" ones, and those never reach the network.
 /// </summary>
-public sealed class AssistantEndpointTests : IDisposable
+public sealed class AssistantEndpointTests
+    : IClassFixture<AssistantEndpointTests.AssistantHostFactory>, IAsyncLifetime
 {
     // A variable owned solely by this class: the provider tests set a variable
     // with the same name, and the process-wide environment is shared, so a
@@ -32,16 +33,27 @@ public sealed class AssistantEndpointTests : IDisposable
     private const string TokenVariable = "NOSTOS_ASSISTANT_ENDPOINT_TEST_TOKEN";
     private const string TokenValue = "sentinel-assistant-key-value";
 
+    private readonly AssistantHostFactory _factory;
+
+    public AssistantEndpointTests(AssistantHostFactory factory) => _factory = factory;
+
     /// <summary>
     /// A configured key for the duration of every test, so the availability gate
     /// is satisfied by default; tests about the unconfigured state clear it
     /// explicitly. Cleared on dispose.
     /// </summary>
-    public AssistantEndpointTests() =>
+    public Task InitializeAsync()
+    {
         Environment.SetEnvironmentVariable(TokenVariable, TokenValue);
+        _factory.Configure(new FakeLlmProvider());
+        return _factory.ResetStateAsync();
+    }
 
-    public void Dispose() =>
+    public Task DisposeAsync()
+    {
         Environment.SetEnvironmentVariable(TokenVariable, null);
+        return Task.CompletedTask;
+    }
 
     // ------------------------------------------------------------------
     // Turn
@@ -52,9 +64,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider().Returns("Hello from the assistant.");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         Environment.SetEnvironmentVariable(TokenVariable, TokenValue);
         try
@@ -88,9 +99,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider().Returns("Noted.");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         // History is an appended positional member: this proves the JSON field
         // binds to AssistantTurnRequest.History (issue #286).
@@ -118,9 +128,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, enabled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, enabled: false);
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             AssistantEndpoints.TurnRoute,
@@ -134,17 +143,10 @@ public sealed class AssistantEndpointTests : IDisposable
     [Fact]
     public async Task An_unconfigured_key_is_a_typed_error_not_a_500()
     {
-        using var factory = new LibraryEndpointFactory();
-
         // The REAL provider, enabled, with no credential configured: it must
         // fail typed before any outbound request.
-        using var host = factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Assistant:Enabled", "true");
-            builder.UseSetting("Assistant:BaseUrl", "http://assistant.invalid/v1");
-            builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", TokenVariable);
-        });
-        using var client = host.CreateClient();
+        _factory.Configure(provider: null);
+        using var client = _factory.CreateClient();
 
         Environment.SetEnvironmentVariable(TokenVariable, null);
 
@@ -161,9 +163,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider().Returns("Hello from the stream.");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             AssistantEndpoints.StreamTurnRoute,
@@ -194,9 +195,8 @@ public sealed class AssistantEndpointTests : IDisposable
         var provider = new FakeLlmProvider().Returns("must not run");
         var access = new BlockingManagedAiAccessPolicy();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, accessPolicy: access);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, accessPolicy: access);
+        using var client = _factory.CreateClient();
 
         var request = new AssistantTurnRequest(
             "conversation-start-race",
@@ -262,9 +262,8 @@ public sealed class AssistantEndpointTests : IDisposable
             .CallsTool("knowledge_search", """{"query":"private-needle"}""")
             .Returns("I could not find it.");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             AssistantEndpoints.StreamTurnRoute,
@@ -311,9 +310,8 @@ public sealed class AssistantEndpointTests : IDisposable
                 : LlmException.RateLimited(),
         };
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             AssistantEndpoints.StreamTurnRoute,
@@ -344,12 +342,10 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider().Returns("must not run");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(
-            factory,
+        _factory.Configure(
             provider,
             usageBlockReason: AiUsageBlockReason.LimitReached);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             AssistantEndpoints.StreamTurnRoute,
@@ -373,14 +369,8 @@ public sealed class AssistantEndpointTests : IDisposable
     [Fact]
     public async Task Streamed_selfhosted_not_configured_is_a_terminal_product_failure()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Assistant:Enabled", "true");
-            builder.UseSetting("Assistant:BaseUrl", "http://assistant.invalid/v1");
-            builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", TokenVariable);
-        });
-        using var client = host.CreateClient();
+        _factory.Configure(provider: null);
+        using var client = _factory.CreateClient();
 
         Environment.SetEnvironmentVariable(TokenVariable, null);
 
@@ -414,9 +404,8 @@ public sealed class AssistantEndpointTests : IDisposable
 
         var provider = new FakeLlmProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync(AssistantEndpoints.StatusRoute);
 
@@ -436,9 +425,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync(AssistantEndpoints.StatusRoute);
 
@@ -455,9 +443,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, enabled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, enabled: false);
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync(AssistantEndpoints.StatusRoute);
 
@@ -475,9 +462,8 @@ public sealed class AssistantEndpointTests : IDisposable
 
         var provider = new FakeLlmProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var status = await client.GetFromJsonAsync<JsonElement>(AssistantEndpoints.StatusRoute);
         status.GetProperty("available").GetBoolean().Should().BeFalse();
@@ -511,9 +497,8 @@ public sealed class AssistantEndpointTests : IDisposable
                 : new LlmCompletion("Saved.", "stop", []),
         };
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var book = await CreateBookAsync(client);
         bookId = book.Id;
@@ -545,9 +530,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider().Returns("must not run");
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, entitled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, entitled: false);
+        using var client = _factory.CreateClient();
 
         var status = await client.GetFromJsonAsync<JsonElement>(AssistantEndpoints.StatusRoute);
         status.GetProperty("available").GetBoolean().Should().BeFalse();
@@ -570,9 +554,8 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         var provider = new FakeLlmProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             "/api/assistant/changesets/does-not-exist/apply",
@@ -589,8 +572,9 @@ public sealed class AssistantEndpointTests : IDisposable
     {
         // Applying, discarding and undoing touch only the library; a review
         // must never be stranded because the model became unavailable.
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        Environment.SetEnvironmentVariable(TokenVariable, null);
+        _factory.Configure(provider: null, enabled: false);
+        using var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
             "/api/assistant/changesets/does-not-exist/undo",
@@ -662,47 +646,108 @@ public sealed class AssistantEndpointTests : IDisposable
             $"{dtoType.Name} must never carry the provider credential (found: {string.Join(", ", suspicious)})");
     }
 
-    private static WebApplicationFactory<Program> CreateHost(
-        LibraryEndpointFactory factory,
-        FakeLlmProvider provider,
-        bool enabled = true,
-        bool entitled = true,
-        AiUsageBlockReason? usageBlockReason = null,
-        IAiAccessPolicy? accessPolicy = null)
+    public sealed class AssistantHostFactory : LibraryEndpointFactory
     {
-        return factory.WithWebHostBuilder(builder =>
+        private ILlmProvider? _provider;
+        private IAiAccessPolicy _accessPolicy = AllowAllPolicy;
+        private IAiUsageAccountingService _usage = NoOpAiUsageAccountingService.Instance;
+
+        public void Configure(
+            ILlmProvider? provider,
+            bool enabled = true,
+            bool entitled = true,
+            AiUsageBlockReason? usageBlockReason = null,
+            IAiAccessPolicy? accessPolicy = null)
         {
+            _provider = provider;
+            _accessPolicy = accessPolicy
+                ?? (entitled ? AllowAllPolicy : DenyPolicy);
+            _usage = usageBlockReason is { } reason
+                ? new BlockingUsageAccountingService(reason)
+                : NoOpAiUsageAccountingService.Instance;
+
+            Services.GetRequiredService<AssistantOptions>().Enabled = enabled;
+        }
+
+        private static readonly IAiAccessPolicy AllowAllPolicy = new AllowAllAiAccessPolicy();
+        private static readonly IAiAccessPolicy DenyPolicy = new DenyManagedAiAccessPolicy();
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+
             // UseSetting (host configuration) reaches the top-level Program.cs
             // read of builder.Configuration, exactly like the Speech tests.
-            builder.UseSetting("Assistant:Enabled", enabled ? "true" : "false");
+            builder.UseSetting("Assistant:Enabled", "true");
             builder.UseSetting("Assistant:BaseUrl", "http://assistant.invalid/v1");
             builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", TokenVariable);
             builder.UseSetting("Assistant:MaxToolIterations", "6");
 
             builder.ConfigureServices(services =>
             {
+                services.AddSingleton<OpenAiCompatibleLlmProvider>();
                 services.RemoveAll<ILlmProvider>();
-                services.AddSingleton<ILlmProvider>(provider);
+                services.AddSingleton<ILlmProvider>(sp =>
+                    new DelegatingLlmProvider(
+                        this,
+                        sp.GetRequiredService<OpenAiCompatibleLlmProvider>()));
 
-                if (accessPolicy is not null)
-                {
-                    services.RemoveAll<IAiAccessPolicy>();
-                    services.AddSingleton(accessPolicy);
-                }
-                else if (!entitled)
-                {
-                    services.RemoveAll<IAiAccessPolicy>();
-                    services.AddSingleton<IAiAccessPolicy, DenyManagedAiAccessPolicy>();
-                }
+                services.RemoveAll<IAiAccessPolicy>();
+                services.AddSingleton<IAiAccessPolicy>(new DelegatingAccessPolicy(this));
 
-                if (usageBlockReason is { } blockReason)
-                {
-                    services.RemoveAll<IAiUsageAccountingService>();
-                    services.AddSingleton<IAiUsageAccountingService>(
-                        new BlockingUsageAccountingService(blockReason));
-                }
+                services.RemoveAll<IAiUsageAccountingService>();
+                services.AddSingleton<IAiUsageAccountingService>(new DelegatingUsageAccounting(this));
             });
-        });
+        }
+
+        private sealed class DelegatingLlmProvider(
+            AssistantHostFactory owner,
+            OpenAiCompatibleLlmProvider realProvider) : ILlmProvider
+        {
+            public Task<LlmCompletion> CompleteAsync(
+                LlmCompletionRequest request,
+                CancellationToken ct = default) =>
+                (owner._provider ?? realProvider).CompleteAsync(request, ct);
+        }
+
+        private sealed class DelegatingAccessPolicy(AssistantHostFactory owner) : IAiAccessPolicy
+        {
+            public Task<bool> IsAllowedAsync(CancellationToken ct = default) =>
+                owner._accessPolicy.IsAllowedAsync(ct);
+        }
+
+        private sealed class DelegatingUsageAccounting(AssistantHostFactory owner)
+            : IAiUsageAccountingService
+        {
+            public Task<AiUsageLease?> BeginLlmTurnAsync(CancellationToken cancellationToken = default) =>
+                owner._usage.BeginLlmTurnAsync(cancellationToken);
+
+            public Task CompleteLlmTurnAsync(
+                AiUsageLease? lease,
+                LlmProviderUsage usage,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.CompleteLlmTurnAsync(lease, usage, cancellationToken);
+
+            public Task<AiUsageLease?> BeginSttAsync(CancellationToken cancellationToken = default) =>
+                owner._usage.BeginSttAsync(cancellationToken);
+
+            public Task CompleteSttAsync(
+                AiUsageLease? lease,
+                TranscriptionUsage usage,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.CompleteSttAsync(lease, usage, cancellationToken);
+
+            public Task<AiUsageLease?> BeginTtsAsync(
+                int characters,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.BeginTtsAsync(characters, cancellationToken);
+
+            public Task CompleteTtsAsync(
+                AiUsageLease? lease,
+                SpeechSynthesisUsage usage,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.CompleteTtsAsync(lease, usage, cancellationToken);
+        }
     }
 
     private sealed class BlockingUsageAccountingService(

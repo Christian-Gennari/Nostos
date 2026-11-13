@@ -26,7 +26,20 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// is rationed.
 /// </summary>
 public sealed class TranscriptionEndpointTests
+    : IClassFixture<TranscriptionEndpointTests.TranscriptionHostFactory>, IAsyncLifetime
 {
+    private readonly TranscriptionHostFactory _factory;
+
+    public TranscriptionEndpointTests(TranscriptionHostFactory factory) => _factory = factory;
+
+    public Task InitializeAsync()
+    {
+        _factory.Configure(new FakeSttProvider());
+        return _factory.ResetStateAsync();
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     // ------------------------------------------------------------------
     // Happy path
     // ------------------------------------------------------------------
@@ -39,9 +52,8 @@ public sealed class TranscriptionEndpointTests
             Result = new SttResult("the magic mountain", "en", 6.9),
         };
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(256), language: "en");
 
@@ -61,9 +73,8 @@ public sealed class TranscriptionEndpointTests
     public async Task The_language_part_is_forwarded_to_the_provider_when_present()
     {
         var provider = new FakeSttProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         await PostAsync(client, Audio(64));
 
@@ -78,9 +89,8 @@ public sealed class TranscriptionEndpointTests
     public async Task A_missing_file_is_a_typed_400()
     {
         var provider = new FakeSttProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent("en"), "language");
@@ -95,9 +105,8 @@ public sealed class TranscriptionEndpointTests
     public async Task An_oversized_upload_is_rejected_as_data()
     {
         var provider = new FakeSttProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, maxUploadBytes: 32);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, maxUploadBytes: 32);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(4096));
 
@@ -114,9 +123,8 @@ public sealed class TranscriptionEndpointTests
     public async Task A_disabled_config_is_a_typed_error_not_a_500()
     {
         var provider = new FakeSttProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, enabled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, enabled: false);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(128));
 
@@ -129,9 +137,8 @@ public sealed class TranscriptionEndpointTests
     public async Task An_enabled_but_unconfigured_surface_is_a_typed_503_not_a_500()
     {
         var provider = new FakeSttProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, configured: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, configured: false);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(128));
 
@@ -148,9 +155,8 @@ public sealed class TranscriptionEndpointTests
             Failure = new SttException(SttErrorCodes.Provider, "the gateway is down"),
         };
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(128));
 
@@ -166,9 +172,8 @@ public sealed class TranscriptionEndpointTests
             Result = new SttResult("too long", "en", 601),
         };
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, maxDurationSeconds: 300);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, maxDurationSeconds: 300);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(128));
 
@@ -181,9 +186,8 @@ public sealed class TranscriptionEndpointTests
     {
         var provider = new FakeSttProvider();
 
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, entitled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, entitled: false);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, Audio(128));
 
@@ -205,9 +209,8 @@ public sealed class TranscriptionEndpointTests
         var audio = Audio(512);
 
         var provider = new FakeSttProvider { Result = new SttResult("hello", "en", 0.5) };
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var tempRoot = Path.GetTempPath();
 
@@ -268,65 +271,82 @@ public sealed class TranscriptionEndpointTests
         return document.GetProperty("title").GetString();
     }
 
-    private static WebApplicationFactory<Program> CreateHost(
-        LibraryEndpointFactory factory,
-        FakeSttProvider provider,
-        bool enabled = true,
-        bool configured = true,
-        long maxUploadBytes = 26_214_400,
-        double maxDurationSeconds = 300,
-        bool entitled = true)
+    public sealed class TranscriptionHostFactory : LibraryEndpointFactory
     {
-        return factory.WithWebHostBuilder(builder =>
+        private readonly StubAiProviderConfigResolver _resolver = new();
+        private FakeSttProvider _provider = new();
+        private bool _entitled = true;
+
+        public void Configure(
+            FakeSttProvider provider,
+            bool enabled = true,
+            bool configured = true,
+            long maxUploadBytes = 26_214_400,
+            double maxDurationSeconds = 300,
+            bool entitled = true)
         {
+            _provider = provider;
+            _entitled = entitled;
+            _resolver.Stt = new EffectiveAiProviderConfig(
+                Enabled: enabled,
+                BaseUrl: "http://stt.invalid",
+                Model: "groq/whisper-large-v3-turbo",
+                ApiKeyEnvironmentVariable: "NOSTOS_STT_ENDPOINT_TEST_TOKEN",
+                ApiKey: configured ? "sentinel-stt-key-value" : null,
+                KeyFromServerEnv: configured);
+
+            var options = Services.GetRequiredService<Nostos.Backend.Configuration.SpeechOptions>();
+            options.Enabled = enabled;
+            options.MaxUploadBytes = maxUploadBytes;
+            options.MaxDurationSeconds = maxDurationSeconds;
+        }
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+
             // UseSetting (host configuration), not ConfigureAppConfiguration:
             // with the minimal-hosting model, UseSetting is what reaches a
             // top-level `Program.cs` read like `builder.Configuration.GetSection`.
-            builder.UseSetting("Speech:Enabled", enabled ? "true" : "false");
+            builder.UseSetting("Speech:Enabled", "true");
             builder.UseSetting("Speech:BaseUrl", "http://stt.invalid");
             builder.UseSetting("Speech:Model", "groq/whisper-large-v3-turbo");
             builder.UseSetting("Speech:ApiKeyEnvironmentVariable", "NOSTOS_STT_ENDPOINT_TEST_TOKEN");
-            builder.UseSetting(
-                "Speech:MaxUploadBytes",
-                maxUploadBytes.ToString(CultureInfo.InvariantCulture));
-            builder.UseSetting(
-                "Speech:MaxDurationSeconds",
-                maxDurationSeconds.ToString(CultureInfo.InvariantCulture));
+            builder.UseSetting("Speech:MaxUploadBytes", 26_214_400.ToString(CultureInfo.InvariantCulture));
+            builder.UseSetting("Speech:MaxDurationSeconds", 300d.ToString(CultureInfo.InvariantCulture));
 
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<ISTtProvider>();
-                services.AddSingleton<ISTtProvider>(provider);
+                services.AddSingleton<ISTtProvider>(new DelegatingSttProvider(this));
 
                 // This suite tests the HTTP/STT endpoint contract, not the
                 // database/environment settings resolver. Keep availability
                 // deterministic per test so parallel provider-settings tests
                 // cannot turn an expected 422 into a spurious 503.
-                var resolver = new StubAiProviderConfigResolver
-                {
-                    Stt = new EffectiveAiProviderConfig(
-                        Enabled: enabled,
-                        BaseUrl: "http://stt.invalid",
-                        Model: "groq/whisper-large-v3-turbo",
-                        ApiKeyEnvironmentVariable: "NOSTOS_STT_ENDPOINT_TEST_TOKEN",
-                        ApiKey: configured ? "sentinel-stt-key-value" : null,
-                        KeyFromServerEnv: configured),
-                };
                 services.RemoveAll<IAiProviderConfigResolver>();
-                services.AddSingleton<IAiProviderConfigResolver>(resolver);
+                services.AddSingleton<IAiProviderConfigResolver>(_resolver);
 
-                if (!entitled)
-                {
-                    services.RemoveAll<IAiAccessPolicy>();
-                    services.AddSingleton<IAiAccessPolicy, DenyManagedAiAccessPolicy>();
-                }
+                services.RemoveAll<IAiAccessPolicy>();
+                services.AddSingleton<IAiAccessPolicy>(new DelegatingAccessPolicy(this));
             });
-        });
-    }
+        }
 
-    private sealed class DenyManagedAiAccessPolicy : IAiAccessPolicy
-    {
-        public Task<bool> IsAllowedAsync(CancellationToken ct = default) =>
-            Task.FromResult(false);
+        private sealed class DelegatingSttProvider(TranscriptionHostFactory owner) : ISTtProvider
+        {
+            public Task<SttResult> TranscribeAsync(
+                Stream audio,
+                string fileName,
+                string? contentType,
+                string? languageHint = null,
+                CancellationToken cancellationToken = default) =>
+                owner._provider.TranscribeAsync(audio, fileName, contentType, languageHint, cancellationToken);
+        }
+
+        private sealed class DelegatingAccessPolicy(TranscriptionHostFactory owner) : IAiAccessPolicy
+        {
+            public Task<bool> IsAllowedAsync(CancellationToken ct = default) =>
+                Task.FromResult(owner._entitled);
+        }
     }
 }
