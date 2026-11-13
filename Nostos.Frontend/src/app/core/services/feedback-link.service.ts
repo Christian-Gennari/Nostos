@@ -3,7 +3,6 @@ import { NavigationEnd, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 
-import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
 
 /**
@@ -24,7 +23,7 @@ export type FeedbackOrigin =
  * then stands unchanged.
  */
 export function feedbackOriginForUrl(url: string): FeedbackOrigin | null {
-  const path = url.split(/[?#]/, 1)[0];
+  const path = (url ?? '').split(/[?#]/, 1)[0];
   if (path === '/library' || path.startsWith('/library/')) return 'library';
   if (path.startsWith('/read/')) return 'reader';
   if (path === '/brain' || path.startsWith('/brain/')) return 'brain';
@@ -57,18 +56,16 @@ export class FeedbackLinkService {
   private readonly router = inject(Router);
   private readonly deploymentCapabilities = inject(DeploymentCapabilitiesService);
 
-  private readonly currentUrl = signal(this.router.url);
-  private readonly capabilities = signal<DeploymentCapabilities | null>(null);
+  private readonly currentUrl = signal(this.router.url ?? '');
 
   /** The Cloud feedback destination for the current area, or null otherwise. */
   readonly url = computed(() => {
-    const capabilities = this.capabilities();
-    if (capabilities?.deploymentMode !== 'Cloud' || !capabilities.feedbackUrl) return null;
+    if (!this.deploymentCapabilities.isCloud()) return null;
+    const feedbackUrl = this.deploymentCapabilities.feedbackUrl();
+    if (!feedbackUrl) return null;
 
     const origin = feedbackOriginForUrl(this.currentUrl());
-    return origin
-      ? withFeedbackOrigin(capabilities.feedbackUrl, origin)
-      : capabilities.feedbackUrl;
+    return origin ? withFeedbackOrigin(feedbackUrl, origin) : feedbackUrl;
   });
 
   constructor() {
@@ -77,11 +74,16 @@ export class FeedbackLinkService {
         filter((event): event is NavigationEnd => event instanceof NavigationEnd),
         takeUntilDestroyed(),
       )
-      .subscribe(() => this.currentUrl.set(this.router.url));
+      .subscribe(() => this.currentUrl.set(this.router.url ?? ''));
 
-    this.deploymentCapabilities.get().subscribe({
-      next: (capabilities) => this.capabilities.set(capabilities),
-      error: () => this.capabilities.set(null),
-    });
+    // Ensure the shared capability contract is requested even when this service
+    // is mounted outside app bootstrap (e.g. standalone component specs).
+    if (
+      this.deploymentCapabilities.capabilities() === null &&
+      !this.deploymentCapabilities.loading() &&
+      !this.deploymentCapabilities.failed()
+    ) {
+      this.deploymentCapabilities.get().pipe(takeUntilDestroyed()).subscribe({ error: () => {} });
+    }
   }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.StandardEbooks;
 using Nostos.Backend.Tests.Support;
@@ -380,5 +381,82 @@ public sealed class StandardEbooksProviderTests
 
         var exception = await act.Should().ThrowAsync<ProviderException>();
         exception.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+    }
+
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task SearchGetItemAndPlan_MapTransientTransportFailureToProviderUnavailable(Type exceptionType)
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ =>
+            throw (Exception)Activator.CreateInstance(exceptionType, "socket failure")!);
+
+        var searchAct = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        var searchError = (await searchAct.Should().ThrowAsync<ProviderException>()).Which;
+        searchError.Code.Should().Be(ProviderException.Unavailable);
+        searchError.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+
+        var itemAct = () => provider.GetItemAsync("jane-austen~pride-and-prejudice", CancellationToken.None);
+        var itemError = (await itemAct.Should().ThrowAsync<ProviderException>()).Which;
+        itemError.Code.Should().Be(ProviderException.Unavailable);
+        itemError.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+
+        var planAct = () => provider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("jane-austen~pride-and-prejudice", AssetId: null),
+            CancellationToken.None);
+        var planError = (await planAct.Should().ThrowAsync<ProviderException>()).Which;
+        planError.Code.Should().Be(ProviderException.Unavailable);
+        planError.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Search_MapsMidStreamIOExceptionToProviderUnavailable()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ => TransientHttpTestHelpers.ChunkThenThrowXmlResponse(
+            "<?xml version=\"1.0\"?><feed>",
+            () => new IOException("connection dropped mid-body")));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task SearchAndPlan_MapClientTimeoutToProviderUnavailable_WhilePreservingCallerCancellation()
+    {
+        var timeoutProvider = new StandardEbooksProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri("https://standardebooks.org"),
+                TimeSpan.FromMilliseconds(25)),
+            NullLogger<StandardEbooksProvider>.Instance);
+
+        var searchTimeoutAct = () => timeoutProvider.SearchAsync(
+            new ProviderSearchQuery("pride"),
+            CancellationToken.None);
+        var searchError = (await searchTimeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        searchError.Code.Should().Be(ProviderException.Unavailable);
+        searchError.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+
+        var planTimeoutAct = () => timeoutProvider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("jane-austen~pride-and-prejudice", AssetId: null),
+            CancellationToken.None);
+        var planError = (await planTimeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        planError.Code.Should().Be(ProviderException.Unavailable);
+        planError.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+
+        var (cancelProvider, handler) = CreateProvider();
+        using var cts = new CancellationTokenSource();
+        handler.SetFallback(_ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        var cancelAct = () => cancelProvider.SearchAsync(new ProviderSearchQuery("pride"), cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
     }
 }

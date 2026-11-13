@@ -43,48 +43,74 @@ internal sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext>
             if (prior is not null)
                 return Deserialize(prior.ResponseJson) with { Duplicate = true };
 
-            await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            var outcome = await command(db, ct);
-            // Commands commit their own successful saves; when a command
-            // reports no change it may still have left tracked mutations
-            // behind (e.g. a rejected update). Discard them so the receipt
-            // save below can never flush half-applied changes.
-            if (!outcome.DidChange)
-                db.ChangeTracker.Clear();
-            var state = db.ChangeTracker.Entries<LibraryState>().Select(x => x.Entity).SingleOrDefault()
-                ?? await db.LibraryStates.AsNoTracking().SingleOrDefaultAsync(ct);
-            // LibraryRevision is the only writer of the revision: the command's
-            // own save (or this call, when the command changed state without a
-            // portable save) has already advanced it inside this transaction.
-            var version = outcome.DidChange
-                ? await LibraryRevision.AdvanceAndGetAsync(db, ct)
-                : state?.StateVersion ?? outcome.Result.StateVersion;
-
-            var result = outcome.Result with { StateVersion = version, Duplicate = false };
-            db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
-            {
-                ClientId = clientId,
-                IdempotencyKey = idempotencyKey,
-                CommandKind = commandKind,
-                ResponseJson = Serialize(result),
-                CreatedAt = Now,
-            });
-
+            var transaction = await db.Database.BeginTransactionAsync(ct);
             try
             {
-                await db.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
-                return result;
+                var outcome = await command(db, ct);
+                // Commands commit their own successful saves; when a command
+                // reports no change it may have left tracked mutations behind
+                // (e.g. a rejected update) or already flushed intermediate
+                // SaveChangesAsync writes. Roll back the command transaction
+                // and clear the tracker before saving the receipt in a fresh
+                // transaction so no partial SQL writes can ever commit.
+                if (!outcome.DidChange)
+                {
+                    var commandTx = transaction;
+                    transaction = null;
+                    try
+                    {
+                        await commandTx.RollbackAsync(ct);
+                    }
+                    finally
+                    {
+                        await commandTx.DisposeAsync();
+                    }
+
+                    db.ChangeTracker.Clear();
+                    db.ClearLibraryRevisionCache();
+                    transaction = await db.Database.BeginTransactionAsync(ct);
+                }
+
+                var state = db.ChangeTracker.Entries<LibraryState>().Select(x => x.Entity).SingleOrDefault()
+                    ?? await db.LibraryStates.AsNoTracking().SingleOrDefaultAsync(ct);
+                // LibraryRevision is the only writer of the revision: the command's
+                // own save (or this call, when the command changed state without a
+                // portable save) has already advanced it inside this transaction.
+                var version = outcome.DidChange
+                    ? await LibraryRevision.AdvanceAndGetAsync(db, ct)
+                    : state?.StateVersion ?? outcome.Result.StateVersion;
+
+                var result = outcome.Result with { StateVersion = version, Duplicate = false };
+                db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
+                {
+                    ClientId = clientId,
+                    IdempotencyKey = idempotencyKey,
+                    CommandKind = commandKind,
+                    ResponseJson = Serialize(result),
+                    CreatedAt = Now,
+                });
+
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return result;
+                }
+                catch (DbUpdateException)
+                {
+                    await transaction.RollbackAsync(ct);
+                    await using var retryDb = await _contexts.CreateDbContextAsync(ct);
+                    var raced = await retryDb.LibraryCommandReceipts.AsNoTracking()
+                        .SingleOrDefaultAsync(x => x.ClientId == clientId && x.IdempotencyKey == idempotencyKey, ct);
+                    if (raced is not null)
+                        return Deserialize(raced.ResponseJson) with { Duplicate = true };
+                    throw;
+                }
             }
-            catch (DbUpdateException)
+            finally
             {
-                await transaction.RollbackAsync(ct);
-                await using var retryDb = await _contexts.CreateDbContextAsync(ct);
-                var raced = await retryDb.LibraryCommandReceipts.AsNoTracking()
-                    .SingleOrDefaultAsync(x => x.ClientId == clientId && x.IdempotencyKey == idempotencyKey, ct);
-                if (raced is not null)
-                    return Deserialize(raced.ResponseJson) with { Duplicate = true };
-                throw;
+                if (transaction is not null)
+                    await transaction.DisposeAsync();
             }
         }
         finally

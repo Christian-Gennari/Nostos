@@ -258,6 +258,74 @@ internal static class SelfHostedSqliteFile
     }
 
     /// <summary>
+    /// Quiesces a live database path before in-place replacement during local
+    /// backup restore: clears connection pools, checkpoints any WAL if the
+    /// live database is readable, fails closed when another connection pins it,
+    /// and clears pools again.
+    /// </summary>
+    internal static void QuiesceForReplacement(string databasePath, ILogger? logger = null)
+    {
+        ClearPools();
+        if (File.Exists(databasePath))
+        {
+            try
+            {
+                using var connection = Open(databasePath, readOnly: false);
+                var busy = CheckpointTruncate(connection);
+                if (busy != 0)
+                {
+                    throw Busy("The live SQLite WAL could not be fully checkpointed. The library is busy; retry restore later.");
+                }
+            }
+            catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+            {
+                throw Busy("The live SQLite database is busy. Retry restore later.");
+            }
+            catch (SqliteException exception)
+            {
+                // A user may trigger a backup restore specifically to recover
+                // from a damaged live database; log and allow replacement.
+                logger?.LogWarning(
+                    exception,
+                    "Could not checkpoint active database '{Database}' before restore; proceeding with sidecar cleanup.",
+                    Path.GetFileName(databasePath));
+            }
+        }
+
+        ClearPools();
+    }
+
+    /// <summary>
+    /// Deletes SQLite journal and WAL sidecar files beside <paramref name="databasePath"/>
+    /// so stale frames from a replaced database cannot be replayed onto the new file.
+    /// </summary>
+    internal static void DeleteSidecars(string databasePath)
+    {
+        foreach (var suffix in new[] { "-wal", "-shm", "-journal" })
+        {
+            var sidecar = databasePath + suffix;
+            if (File.Exists(sidecar))
+            {
+                File.Delete(sidecar);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies <paramref name="databasePath"/> passes SQLite's <c>PRAGMA integrity_check;</c>.
+    /// </summary>
+    internal static void VerifyIntegrity(string databasePath)
+    {
+        using var connection = Open(databasePath, readOnly: false);
+        var integrity = QueryStrings(connection, "PRAGMA integrity_check;");
+        if (integrity.Count != 1 || !string.Equals(integrity[0], "ok", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"SQLite integrity check failed for '{Path.GetFileName(databasePath)}': {string.Join("; ", integrity)}");
+        }
+    }
+
+    /// <summary>
     /// Copies a stream to a file while computing its SHA-256, enforcing the
     /// declared length and rejecting descriptor mismatches. Used only inside the
     /// candidate area.

@@ -1390,7 +1390,7 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     page.className = 'page';
     page.setAttribute('data-page-number', '3');
     page.innerHTML = '<div class="textLayer"></div>';
-    document.body.appendChild(page);
+    fixture.nativeElement.appendChild(page);
     try {
       component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
       expect(paint.mock.lastCall?.[1]).toEqual([
@@ -1473,3 +1473,362 @@ describe('PDF passage helpers for another edition (#844)', () => {
     ).toBe(true);
   });
 });
+
+describe('PdfReader book-change reset, timer cancellation, and host-scoped DOM (#1609)', () => {
+  let fixture: ComponentFixture<PdfReader>;
+  let themeService: ThemeService;
+  let pdfSearch: {
+    find: ReturnType<typeof vi.fn>;
+    findNext: ReturnType<typeof vi.fn>;
+    findPrevious: ReturnType<typeof vi.fn>;
+  };
+  let annotationManager: {
+    paint: ReturnType<typeof vi.fn>;
+    paintReadAloudMark: ReturnType<typeof vi.fn>;
+    captureHighlight: ReturnType<typeof vi.fn>;
+    captureSelectionText: ReturnType<typeof vi.fn>;
+    captureNoteLocation: ReturnType<typeof vi.fn>;
+    quoteRects: ReturnType<typeof vi.fn>;
+    hitTest: ReturnType<typeof vi.fn>;
+  };
+  let booksService: { updateProgress: ReturnType<typeof vi.fn> };
+  let notesService: {
+    list: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    setLocation: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(async () => {
+    localStorage.clear();
+    pdfSearch = {
+      find: vi.fn(() => [Promise.resolve(1)]),
+      findNext: vi.fn(() => true),
+      findPrevious: vi.fn(() => true),
+    };
+    annotationManager = {
+      paint: vi.fn(),
+      paintReadAloudMark: vi.fn(),
+      captureHighlight: vi.fn(() => ({
+        status: 'captured',
+        pageNumber: 3,
+        rects: [{ left: 0.1, top: 0.2, width: 0.3, height: 0.04 }],
+        selectedText: 'captured text',
+      })),
+      captureSelectionText: vi.fn(() => null),
+      captureNoteLocation: vi.fn(() => null),
+      quoteRects: vi.fn(() => [{ left: 0.1, top: 0.1, width: 0.2, height: 0.02 }]),
+      hitTest: vi.fn(() => []),
+    };
+    booksService = { updateProgress: vi.fn(() => of(null)) };
+    notesService = {
+      list: vi.fn(() => of([])),
+      create: vi.fn(() => of({ id: 'created-1' })),
+      setLocation: vi.fn(() => of({ id: 'q-1', cfiRange: JSON.stringify({ pageNumber: 4, rects: [] }) })),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [PdfReader],
+      providers: [
+        { provide: NotesService, useValue: notesService },
+        { provide: BooksService, useValue: booksService },
+        { provide: NgxExtendedPdfViewerService, useValue: pdfSearch },
+        { provide: PdfAnnotationManager, useValue: annotationManager },
+      ],
+    })
+      .overrideComponent(PdfReader, {
+        remove: { imports: [NgxExtendedPdfViewerModule] },
+        add: { imports: PDF_READER_TEST_IMPORTS },
+      })
+      .compileComponents();
+
+    themeService = TestBed.inject(ThemeService);
+    themeService.setChoice('dark');
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    themeService.setChoice('light');
+  });
+
+  function setup(bookId = 'book-1') {
+    fixture = TestBed.createComponent(PdfReader);
+    fixture.componentRef.setInput('bookId', bookId);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  it('resets all per-book state and reloads zoom/scroll/inversion when bookId changes', () => {
+    localStorage.setItem('nostos.pdf-zoom.book-1', JSON.stringify(160));
+    localStorage.setItem('nostos.pdf-scroll.book-1', 'page');
+    localStorage.setItem('nostos.pdf-invert.book-1', 'false');
+
+    localStorage.setItem('nostos.pdf-zoom.book-2', JSON.stringify('page-fit'));
+    localStorage.setItem('nostos.pdf-scroll.book-2', 'scroll');
+    localStorage.setItem('nostos.pdf-invert.book-2', 'true');
+
+    const component = setup('book-1') as any;
+    expect(component.zoomLevel()).toBe(160);
+    expect(component.scrollMode()).toBe(ScrollModeType.page);
+    expect(component.pageInverted()).toBe(false);
+
+    // Populate transient state for book-1.
+    fixture.componentRef.setInput('notes', [
+      {
+        id: 'n-1',
+        bookId: 'book-1',
+        content: 'margin',
+        createdAt: '2026-01-01T00:00:00Z',
+        cfiRange: JSON.stringify({ pageNumber: 2, rects: [{ left: 0.1, top: 0.1, width: 0.2, height: 0.02 }] }),
+      },
+      {
+        id: 'q-1',
+        bookId: 'book-1',
+        content: '',
+        createdAt: '2026-01-01T00:00:00Z',
+        selectedText: 'quoted words',
+        captureSource: 'text',
+        sourceAnchorKind: 'pdf_page',
+        sourceAnchorValue: '4',
+        cfiRange: JSON.stringify({ pageNumber: 4, yPercent: 0, rects: [] }),
+      },
+    ]);
+    fixture.detectChanges();
+
+    component.onPagesLoaded({ pagesCount: 50 } as any);
+    component.goTo(12);
+    component.rotateClockwise();
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    component.initialLoadComplete = true;
+
+    expect(component.savedHighlights.length).toBe(2);
+    expect(component.notesSeen.size).toBe(2);
+    expect(component.quotesByPage.size).toBe(1);
+    expect(component.pendingHighlight).not.toBeNull();
+    expect(component.currentPage).toBe(12);
+    expect(component.totalPages).toBe(50);
+    expect(component.rotation()).toBe(90);
+
+    // Switch bookId to book-2.
+    fixture.componentRef.setInput('bookId', 'book-2');
+    fixture.detectChanges();
+
+    expect(component.initialLoadComplete).toBe(false);
+    expect(component.notesSeen.size).toBe(0);
+    expect(component.savedHighlights).toEqual([]);
+    expect(component.pendingHighlight).toBeNull();
+    expect(component.quotesByPage.size).toBe(0);
+    expect(component.currentPage).toBe(1);
+    expect(component.totalPages).toBe(0);
+    expect(component.rotation()).toBe(0);
+    expect(component.toc()).toEqual([]);
+    expect(component.progress()).toEqual({ label: '', percentage: 0 });
+    expect(component.textCapability()).toBe('unknown');
+    expect(component.searchAvailable()).toBe(false);
+
+    // Per-book preferences reloaded for book-2.
+    expect(component.zoomLevel()).toBe('page-fit');
+    expect(component.scrollMode()).toBe(ScrollModeType.vertical);
+    expect(component.pageInverted()).toBe(true);
+
+    // Switching to book-3 with no saved settings resets preferences to defaults,
+    // rather than leaking book-2's values.
+    fixture.componentRef.setInput('bookId', 'book-3');
+    fixture.detectChanges();
+    expect(component.zoomLevel()).toBe('page-width');
+    expect(component.scrollMode()).toBe(ScrollModeType.vertical);
+    expect(component.pageInverted()).toBe(true);
+  });
+
+  it('updates bound viewer [page] under OnPush when currentPage changes', () => {
+    const component = setup('book-1');
+    const viewer = fixture.debugElement.query(By.directive(PdfViewerStub))
+      .componentInstance as PdfViewerStub;
+
+    component.onPagesLoaded({ pagesCount: 30 } as any);
+    component.goTo(7);
+    fixture.detectChanges();
+    expect(viewer.page()).toBe(7);
+
+    fixture.componentRef.setInput('bookId', 'book-2');
+    fixture.detectChanges();
+    expect(viewer.page()).toBe(1);
+  });
+
+  it('cancels all active timers and debounced progress updates on bookId change', async () => {
+    vi.useFakeTimers();
+    const component = setup('book-1') as any;
+    const dismissed = vi.fn();
+    const captured = vi.fn();
+    component.selectionDismissed.subscribe(dismissed);
+    component.selectionCaptured.subscribe(captured);
+
+    // Prepare host DOM for scrollToWithinPage.
+    const viewerContainer = document.createElement('div');
+    viewerContainer.id = 'viewerContainer';
+    viewerContainer.scrollTo = vi.fn();
+    const pageEl = document.createElement('div');
+    pageEl.className = 'page';
+    pageEl.setAttribute('data-page-number', '5');
+    viewerContainer.appendChild(pageEl);
+    fixture.nativeElement.appendChild(viewerContainer);
+
+    // Start multiple deferred timers on book-1.
+    component.onPagesLoaded({ pagesCount: 25 } as any); // schedules 500ms initialLoadComplete
+    component.initialLoadComplete = true;
+    component.updateProgressState(5); // schedules 1000ms debounced progress update
+    component.goTo(JSON.stringify({ pageNumber: 5, yPercent: 0.4 })); // schedules 140ms scrollToWithinPage
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    captured.mockClear();
+    annotationManager.captureHighlight.mockReturnValue({
+      status: 'captured',
+      pageNumber: 3,
+      rects: [{ left: 0.1, top: 0.2, width: 0.3, height: 0.04 }],
+      selectedText: 'updated touch selection',
+    });
+    component.onSurfaceClick({ clientX: 10, clientY: 10, target: null, currentTarget: null } as unknown as MouseEvent); // schedules 0ms selectionDismissed
+    component.onSurfacePointerDown({ pointerType: 'touch' } as PointerEvent);
+    component.onNativeSelectionChange(); // schedules 300ms touchSelection
+    component.highlightSourcePassage('one two three four five six'); // schedules 500ms sourceHighlight poll
+    component.readAloudBridge.goToPage(6); // schedules 400ms readAloudMoves decrement
+
+    expect(component.timers.hasPending()).toBe(true);
+    pdfSearch.find.mockClear();
+
+    // Switch bookId before any timer fires.
+    fixture.componentRef.setInput('bookId', 'book-2');
+    fixture.detectChanges();
+
+    expect(component.timers.hasPending()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(component.initialLoadComplete).toBe(false);
+    expect(booksService.updateProgress).not.toHaveBeenCalled();
+    expect(viewerContainer.scrollTo).not.toHaveBeenCalled();
+    expect(dismissed).not.toHaveBeenCalled();
+    expect(captured).not.toHaveBeenCalled();
+    expect(pdfSearch.find).not.toHaveBeenCalled();
+  });
+
+  it('cancels all active timers and read-aloud polling on ngOnDestroy', async () => {
+    vi.useFakeTimers();
+    const component = setup('book-1') as any;
+    const dismissed = vi.fn();
+    component.selectionDismissed.subscribe(dismissed);
+
+    component.onPagesLoaded({ pagesCount: 15 } as any);
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    component.onSurfaceClick({ clientX: 10, clientY: 10, target: null, currentTarget: null } as unknown as MouseEvent);
+    component.highlightSourcePassage('one two three four five six');
+    component.goTo(JSON.stringify({ pageNumber: 3, yPercent: 0.5 }));
+    component.readAloudBridge.goToPage(4);
+
+    expect(component.timers.hasPending()).toBe(true);
+    pdfSearch.find.mockClear();
+
+    fixture.destroy();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(component.timers.hasPending()).toBe(false);
+    expect(dismissed).not.toHaveBeenCalled();
+    expect(pdfSearch.find).not.toHaveBeenCalled();
+  });
+
+  it('scopes textLayer and viewerContainer DOM queries to the component host', () => {
+    vi.useFakeTimers();
+    const component = setup('book-1') as any;
+
+    // Create decoy elements in document.body outside this component's host.
+    const decoyContainer = document.createElement('div');
+    decoyContainer.id = 'viewerContainer';
+    decoyContainer.scrollTo = vi.fn();
+    const decoyPage = document.createElement('div');
+    decoyPage.className = 'page';
+    decoyPage.setAttribute('data-page-number', '3');
+    const decoyLayer = document.createElement('div');
+    decoyLayer.className = 'textLayer';
+    decoyLayer.textContent = 'decoy text';
+    decoyPage.appendChild(decoyLayer);
+    decoyContainer.appendChild(decoyPage);
+    document.body.appendChild(decoyContainer);
+
+    // Create host-local viewerContainer and page/textLayer.
+    const hostContainer = document.createElement('div');
+    hostContainer.id = 'viewerContainer';
+    hostContainer.scrollTo = vi.fn();
+    Object.defineProperty(hostContainer, 'clientHeight', { configurable: true, value: 600 });
+    hostContainer.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 600, left: 0, right: 400, width: 400, height: 600, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    const hostPage = document.createElement('div');
+    hostPage.className = 'page';
+    hostPage.setAttribute('data-page-number', '3');
+    hostPage.getBoundingClientRect = () =>
+      ({ top: 100, bottom: 900, left: 0, right: 400, width: 400, height: 800, x: 0, y: 100, toJSON() {} }) as DOMRect;
+    const hostLayer = document.createElement('div');
+    hostLayer.className = 'textLayer';
+    hostLayer.textContent = 'host text';
+    hostPage.appendChild(hostLayer);
+    hostContainer.appendChild(hostPage);
+    fixture.nativeElement.appendChild(hostContainer);
+
+    try {
+      // 1. repaintPage paints hostLayer, never decoyLayer.
+      component.savedHighlights = [
+        { id: 'h-1', pageNumber: 3, rects: [{ left: 0.1, top: 0.1, width: 0.2, height: 0.02 }] },
+      ];
+      component.repaintPage(3);
+      expect(annotationManager.paint).toHaveBeenCalledWith(
+        hostLayer,
+        expect.any(Array),
+        expect.any(String),
+      );
+      expect(annotationManager.paint).not.toHaveBeenCalledWith(
+        decoyLayer,
+        expect.any(Array),
+        expect.any(String),
+      );
+
+      // 2. scrollToWithinPage scrolls hostContainer, never decoyContainer.
+      component.totalPages = 10;
+      component.goTo(JSON.stringify({ pageNumber: 3, yPercent: 0.5 }));
+      vi.advanceTimersByTime(150);
+      expect(hostContainer.scrollTo).toHaveBeenCalled();
+      expect(decoyContainer.scrollTo).not.toHaveBeenCalled();
+
+      // 3. read-aloud mark painting targets hostLayer, never decoyLayer.
+      component.readAloudBridge.showMark(3, [{ left: 0.1, top: 0.2, width: 0.3, height: 0.03 }]);
+      expect(annotationManager.paintReadAloudMark).toHaveBeenCalledWith(
+        hostLayer,
+        [{ left: 0.1, top: 0.2, width: 0.3, height: 0.03 }],
+      );
+      expect(annotationManager.paintReadAloudMark).not.toHaveBeenCalledWith(
+        decoyLayer,
+        expect.any(Array),
+      );
+
+      // 4. waitForQuotes queries hostLayer, never decoyLayer.
+      fixture.componentRef.setInput('notes', [
+        {
+          id: 'q-host',
+          bookId: 'book-1',
+          content: '',
+          createdAt: '2026-01-01T00:00:00Z',
+          selectedText: 'host text',
+          captureSource: 'text',
+          sourceAnchorKind: 'pdf_page',
+          sourceAnchorValue: '3',
+          cfiRange: JSON.stringify({ pageNumber: 3, yPercent: 0, rects: [] }),
+        },
+      ]);
+      fixture.detectChanges();
+      expect(annotationManager.quoteRects).toHaveBeenCalledWith(hostLayer, 'host text');
+      expect(annotationManager.quoteRects).not.toHaveBeenCalledWith(decoyLayer, expect.any(String));
+    } finally {
+      decoyContainer.remove();
+      hostContainer.remove();
+    }
+  });
+});
+

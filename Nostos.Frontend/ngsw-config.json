@@ -40,6 +40,10 @@
     "!/opds",
     "!/opds/**",
     "!/mcp",
-    "!/mcp/**"
+    "!/mcp/**",
+    "!/oauth",
+    "!/oauth/**",
+    "!/.well-known",
+    "!/.well-known/**"
   ]
 }

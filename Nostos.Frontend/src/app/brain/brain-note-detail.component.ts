@@ -10,6 +10,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 
@@ -75,6 +76,7 @@ export class BrainNoteDetailComponent {
   protected readonly noteActions = inject(BrainNoteActionsService);
   protected readonly suggestions = inject(BrainTopicSuggestionsService);
   private readonly topicsService = inject(TopicsService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly related = signal<readonly RelatedNote[]>([]);
   readonly cited = signal<readonly CitingWriting[]>([]);
@@ -111,7 +113,7 @@ export class BrainNoteDetailComponent {
       this.state.topicsRewritten();
       untracked(() => this.loadContext(note));
     });
-    inject(DestroyRef).onDestroy(() => this.contextSeq++);
+    this.destroyRef.onDestroy(() => this.contextSeq++);
   }
 
   private loadContext(note: NoteSearchHit): void {
@@ -136,7 +138,7 @@ export class BrainNoteDetailComponent {
       usage: this.topicsService.getWritingUsage(topic.id, USAGE_LIMIT).pipe(
         catchError(() => of(null)),
       ),
-    }))).subscribe({
+    }))).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (contexts: TopicContext[]) => {
         if (seq !== this.contextSeq) return;
         const notes: TopicNotes[] = contexts.map((context) => ({

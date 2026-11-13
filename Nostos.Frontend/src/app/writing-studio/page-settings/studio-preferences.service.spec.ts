@@ -73,6 +73,24 @@ describe('Studio page preferences (issue #1041)', () => {
     expect(JSON.parse(localStorage.getItem(STUDIO_PREFERENCES_KEY)!).fontSize).toBe(22);
   });
 
+  it('removes the window pagehide listener when the injector is destroyed', () => {
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    try {
+      const service = TestBed.inject(StudioPreferencesService);
+      service.update({ fontSize: 24 });
+      TestBed.tick();
+
+      TestBed.resetTestingModule();
+
+      expect(removeSpy).toHaveBeenCalledWith('pagehide', expect.any(Function));
+      localStorage.clear();
+      window.dispatchEvent(new Event('pagehide'));
+      expect(localStorage.getItem(STUDIO_PREFERENCES_KEY)).toBeNull();
+    } finally {
+      removeSpy.mockRestore();
+    }
+  });
+
   it('carries the old typewriter flag over once and removes it', () => {
     localStorage.setItem('nostos.typewriter', '1');
     expect(TestBed.inject(StudioPreferencesService).preferences().typewriter).toBe(true);

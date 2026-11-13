@@ -3,6 +3,7 @@ import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 import {
   AfterViewInit,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -14,6 +15,7 @@ import {
   signal,
   ChangeDetectionStrategy,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
@@ -111,6 +113,17 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      if (this.focusTimer !== null) {
+        clearTimeout(this.focusTimer);
+        this.focusTimer = null;
+      }
+    });
+  }
 
   ngOnInit(): void {
     this.loadDestinations();
@@ -124,7 +137,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
     this.loadingDestinations.set(true);
     this.destinationError.set(false);
 
-    this.writingsService.list().subscribe({
+    this.writingsService.list().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (items) => {
         this.destinations.set(items);
         this.loadingDestinations.set(false);
@@ -149,15 +162,18 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
     this.selectedWritingId.set(null);
     this.newWritingMode.set(true);
     afterNextRender(
-      () =>
-        setTimeout(() => {
+      () => {
+        if (this.focusTimer !== null) clearTimeout(this.focusTimer);
+        this.focusTimer = setTimeout(() => {
+          this.focusTimer = null;
           if (this.newWritingMode() && !this.saving()) {
             const titleInput = this.host.nativeElement.querySelector(
               '.title-field input'
             ) as HTMLInputElement | null;
             titleInput?.focus({ preventScroll: true });
           }
-        }),
+        });
+      },
       { injector: this.injector }
     );
   }
@@ -191,6 +207,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
           type: 'Document',
           parentId: null,
         })
+        .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (writing) => {
             // A partial source failure must retry against this same document,
@@ -221,7 +238,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
   }
 
   private addToWriting(writing: WritingDto, noteIds: string[]): void {
-    this.writingsService.listSources(writing.id).subscribe({
+    this.writingsService.listSources(writing.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (existingSources) => {
         const existingIds = new Set(existingSources.map((source) => source.id));
         const alreadyKept = noteIds.filter((noteId) => existingIds.has(noteId));
@@ -239,7 +256,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
               catchError(() => of({ noteId, ok: false as const }))
             )
           )
-        ).subscribe((results) => {
+        ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe((results) => {
           const added = results.filter((result) => result.ok).map((result) => result.noteId);
           const failed = results.filter((result) => !result.ok).map((result) => result.noteId);
           this.finishAttempt(writing, alreadyKept, added, failed, alreadyKept.length);

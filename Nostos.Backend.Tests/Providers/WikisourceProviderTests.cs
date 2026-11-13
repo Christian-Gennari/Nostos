@@ -433,4 +433,72 @@ public sealed class WikisourceProviderTests
         page.Items.Should().ContainSingle();
         CatalogRequests(handler).Should().Be(1, "the abandoned search's download was reused");
     }
+
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task SearchAndPlan_MapTransientTransportFailureToProviderUnavailable(Type exceptionType)
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ =>
+            throw (Exception)Activator.CreateInstance(exceptionType, "socket failure")!);
+
+        var searchAct = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        var searchError = (await searchAct.Should().ThrowAsync<ProviderException>()).Which;
+        searchError.Code.Should().Be(ProviderException.Unavailable);
+        searchError.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+
+        var planAct = () => provider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("Pride and Prejudice", AssetId: null),
+            CancellationToken.None);
+        var planError = (await planAct.Should().ThrowAsync<ProviderException>()).Which;
+        planError.Code.Should().Be(ProviderException.Unavailable);
+        planError.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Search_MapsMidStreamIOExceptionToProviderUnavailable()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ => TransientHttpTestHelpers.ChunkThenThrowXmlResponse(
+            "<?xml version=\"1.0\"?><feed>",
+            () => new IOException("connection dropped mid-body")));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task SearchAndPlan_MapClientTimeoutToProviderUnavailable_WhilePreservingCallerCancellation()
+    {
+        var timeoutProvider = new WikisourceProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri("https://ws-export.wmcloud.org"),
+                TimeSpan.FromMilliseconds(25)));
+
+        var searchTimeoutAct = () => timeoutProvider.SearchAsync(
+            new ProviderSearchQuery("pride"),
+            CancellationToken.None);
+        var searchError = (await searchTimeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        searchError.Code.Should().Be(ProviderException.Unavailable);
+        searchError.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+
+        var planTimeoutAct = () => timeoutProvider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("Pride and Prejudice", AssetId: null),
+            CancellationToken.None);
+        var planError = (await planTimeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        planError.Code.Should().Be(ProviderException.Unavailable);
+        planError.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+
+        var (cancelProvider, handler) = CreateProvider();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var cancelAct = () => cancelProvider.SearchAsync(new ProviderSearchQuery("pride"), cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
+        handler.RecordedRequests.Should().BeEmpty();
+    }
 }

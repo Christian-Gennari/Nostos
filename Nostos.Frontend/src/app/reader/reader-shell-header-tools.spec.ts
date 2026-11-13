@@ -11,6 +11,7 @@ import { NotesService } from '../core/services/notes.service';
 import { TopicsService } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from '../core/services/deployment-capabilities.testing';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { AssistantService } from '../ui/assistant/assistant.service';
 import { BrainStateService } from '../brain/brain-state.service';
@@ -165,7 +166,7 @@ describe('ReaderShell header tools', () => {
         },
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of(capabilities) },
+          useValue: createDeploymentCapabilitiesServiceMock(() => of(capabilities)),
         },
       ],
     }).compileComponents();

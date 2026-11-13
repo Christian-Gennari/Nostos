@@ -236,6 +236,65 @@ public sealed class StandardEbooksSnapshotSourceTests
         error.Which.Code.Should().Be(ProviderException.Unavailable);
     }
 
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task Read_maps_transient_transport_failure_to_provider_unavailable(Type exceptionType)
+    {
+        var (provider, _, handler, _) = CreateProvider();
+        handler.Register(AllEbooksPath, _ =>
+            throw (Exception)Activator.CreateInstance(exceptionType, "socket failure")!);
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Read_maps_mid_stream_io_exception_to_provider_unavailable()
+    {
+        var (provider, _, handler, _) = CreateProvider();
+        handler.Register(AllEbooksPath, _ => TransientHttpTestHelpers.ChunkThenThrowXmlResponse(
+            "<?xml version=\"1.0\"?><feed>",
+            () => new IOException("connection dropped mid-body")));
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Read_maps_client_timeout_to_provider_unavailable_while_preserving_caller_cancellation()
+    {
+        var timeoutProvider = new StandardEbooksProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri("https://standardebooks.org"),
+                TimeSpan.FromMilliseconds(25)),
+            NullLogger<StandardEbooksProvider>.Instance);
+
+        var timeoutAct = () => timeoutProvider.ReadAsync(
+            new ProviderSnapshotRequest(),
+            CancellationToken.None);
+        var error = (await timeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(StandardEbooksProvider.ProviderIdentifier);
+
+        var (cancelProvider, _, handler, _) = CreateProvider();
+        using var cts = new CancellationTokenSource();
+        handler.Register(AllEbooksPath, _ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        var cancelAct = () => cancelProvider.ReadAsync(new ProviderSnapshotRequest(), cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private sealed class RecordingTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public List<TimeSpan> Delays { get; } = [];
