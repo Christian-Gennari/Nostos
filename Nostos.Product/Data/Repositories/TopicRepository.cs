@@ -16,23 +16,29 @@ public class TopicRepository : ITopicRepository
         _db = db;
     }
 
-    public async Task<List<TopicDto>> GetAllWithUsageCountAsync()
+    public async Task<List<TopicDto>> GetAllWithUsageCountAsync(
+        CancellationToken cancellationToken = default)
     {
         return await _db
             .Topics.OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
             .Select(c => new TopicDto(c.Id, c.Topic, c.NoteTopics.Count(), 0, null, c.Description))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public Task<List<TopicDto>> SearchByNoteTextAsync(string term) =>
-        SearchByNoteTextAsync(term, bookIds: null, limit: 50);
+    public Task<List<TopicDto>> SearchByNoteTextAsync(
+        string term,
+        CancellationToken cancellationToken = default) =>
+        SearchByNoteTextAsync(term, bookIds: null, limit: 50, cancellationToken: cancellationToken);
 
     public async Task<List<TopicDto>> SearchByNoteTextAsync(
         string term,
         IReadOnlyList<Guid>? bookIds,
-        int limit = 50)
+        int limit = 50,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var variants = LexicalQueryPlanner.Build(term);
         if (variants.Count == 0 || bookIds is { Count: 0 })
             return [];
@@ -42,7 +48,11 @@ public class TopicRepository : ITopicRepository
 
         foreach (var variant in variants)
         {
-            var partial = await SearchSingleVariantAsync(variant.Text, bookIds, take);
+            var partial = await SearchSingleVariantAsync(
+                variant.Text,
+                bookIds,
+                take,
+                cancellationToken);
             for (var rank = 0; rank < partial.Count; rank++)
             {
                 var topic = partial[rank];
@@ -89,9 +99,10 @@ public class TopicRepository : ITopicRepository
     private async Task<List<TopicDto>> SearchSingleVariantAsync(
         string cleanTerm,
         IReadOnlyList<Guid>? bookIds,
-        int limit)
+        int limit,
+        CancellationToken cancellationToken)
     {
-        var pattern = $"%{Escape(cleanTerm)}%";
+        var pattern = SqlLikePatternHelper.Contains(cleanTerm);
 
         var rows = _db.NoteTopics
             .AsNoTracking()
@@ -102,10 +113,12 @@ public class TopicRepository : ITopicRepository
 
         var matchingRows = await rows
             .Where(nc =>
-                EF.Functions.Like(nc.Topic.Topic, pattern, "\\")
-                || EF.Functions.Like(nc.Note.Content, pattern, "\\")
-                || (nc.Note.SelectedText != null && EF.Functions.Like(nc.Note.SelectedText, pattern, "\\"))
-                || (nc.Note.Book != null && EF.Functions.Like(nc.Note.Book.Title, pattern, "\\")))
+                EF.Functions.Like(nc.Topic.Topic, pattern, SqlLikePatternHelper.EscapeChar)
+                || EF.Functions.Like(nc.Note.Content, pattern, SqlLikePatternHelper.EscapeChar)
+                || (nc.Note.SelectedText != null
+                    && EF.Functions.Like(nc.Note.SelectedText, pattern, SqlLikePatternHelper.EscapeChar))
+                || (nc.Note.Book != null
+                    && EF.Functions.Like(nc.Note.Book.Title, pattern, SqlLikePatternHelper.EscapeChar)))
             .Select(nc => new
             {
                 nc.TopicId,
@@ -118,7 +131,7 @@ public class TopicRepository : ITopicRepository
                 BookTitle = nc.Note.Book != null ? nc.Note.Book.Title : null,
                 nc.Note.CreatedAt
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (matchingRows.Count == 0)
             return [];
@@ -158,9 +171,6 @@ public class TopicRepository : ITopicRepository
             return null;
         return CreateSnippet(text, term);
     }
-
-    private static string Escape(string value) =>
-        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     private sealed record TopicFusionCandidate(
         TopicDto Best,
@@ -235,7 +245,7 @@ public class TopicRepository : ITopicRepository
         return $"{(truncatedStart ? "…" : "")}{fragment}{(truncatedEnd ? "…" : "")}";
     }
 
-    public async Task<TopicStatsDto> GetStatsAsync()
+    public async Task<TopicStatsDto> GetStatsAsync(CancellationToken cancellationToken = default)
     {
         var stats = await _db
             .Topics.Select(c => new
@@ -255,17 +265,19 @@ public class TopicRepository : ITopicRepository
                     .FirstOrDefault(),
                 group.Max(c => c.UsageCount)
             ))
-            .SingleOrDefaultAsync();
+            .SingleOrDefaultAsync(cancellationToken);
 
         return stats ?? new TopicStatsDto(0, 0, 0, null, 0);
     }
 
-    public async Task<List<RelatedTopicDto>> GetRelatedAsync(Guid id)
+    public async Task<List<RelatedTopicDto>> GetRelatedAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
         var noteIds = await _db
             .NoteTopics.Where(nc => nc.TopicId == id)
             .Select(nc => nc.NoteId)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (noteIds.Count == 0)
             return [];
@@ -281,7 +293,7 @@ public class TopicRepository : ITopicRepository
                 Name = nc.Topic.Topic,
                 nc.NoteId,
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return relatedRows
             .GroupBy(row => new { row.TopicId, row.Name })
@@ -305,19 +317,19 @@ public class TopicRepository : ITopicRepository
             .ToList();
     }
 
-    public async Task<TopicGraphDto> GetGraphAsync()
+    public async Task<TopicGraphDto> GetGraphAsync(CancellationToken cancellationToken = default)
     {
         // All topics as nodes, including isolates (0 note links).
         var nodes = await _db
             .Topics.OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
             .Select(c => new TopicGraphNodeDto(c.Id, c.Topic, c.NoteTopics.Count()))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         // All note-topic pairs (note → topic id) in one query.
         var pairs = await _db.NoteTopics
             .Select(nc => new { nc.NoteId, nc.TopicId })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         // Group by note to find co-occurring pairs, then aggregate edge weights.
         var byNote = pairs.GroupBy(p => p.NoteId);
@@ -386,7 +398,9 @@ public class TopicRepository : ITopicRepository
         return new TopicWritingUsageDto(total, shown, perNote);
     }
 
-    public async Task<TopicModel?> GetByIdWithNotesAsync(Guid id)
+    public async Task<TopicModel?> GetByIdWithNotesAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
         var row = await _db.Topics.AsNoTracking()
             .Where(c => c.Id == id)
@@ -399,7 +413,7 @@ public class TopicRepository : ITopicRepository
                     .Select(BookReadShapes.NoteWithBookHeadline)
                     .ToList(),
             })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
         if (row is null)
             return null;
 
@@ -415,9 +429,12 @@ public class TopicRepository : ITopicRepository
         return row.Topic;
     }
 
-    public async Task<TopicModel?> RenameAsync(Guid id, string name)
+    public async Task<TopicModel?> RenameAsync(
+        Guid id,
+        string name,
+        CancellationToken cancellationToken = default)
     {
-        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id);
+        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
         if (source is null)
             return null;
@@ -426,31 +443,34 @@ public class TopicRepository : ITopicRepository
         var key = TopicModel.NormalizeName(name);
         var target = await _db
             .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id != id && c.NormalizedName == key);
+            .FirstOrDefaultAsync(c => c.Id != id && c.NormalizedName == key, cancellationToken);
 
         if (target is not null)
-            return await MergeIntoAsync(source, target);
+            return await MergeIntoAsync(source, target, cancellationToken);
 
         // A note's body is what every later save re-derives its links from, so
         // the body follows the rename; otherwise the old name comes back on the
         // note's next edit.
         RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, name));
         source.Topic = name;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
         return source;
     }
 
-    public async Task<TopicModel?> MergeAsync(Guid sourceId, Guid targetId)
+    public async Task<TopicModel?> MergeAsync(
+        Guid sourceId,
+        Guid targetId,
+        CancellationToken cancellationToken = default)
     {
-        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == sourceId);
+        var source = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == sourceId, cancellationToken);
         var target = await _db
             .Topics.Include(c => c.NoteTopics)
-            .FirstOrDefaultAsync(c => c.Id == targetId);
+            .FirstOrDefaultAsync(c => c.Id == targetId, cancellationToken);
 
         if (source is null || target is null)
             return null;
 
-        return await MergeIntoAsync(source, target);
+        return await MergeIntoAsync(source, target, cancellationToken);
     }
 
     /// <summary>
@@ -458,14 +478,22 @@ public class TopicRepository : ITopicRepository
     /// and links, and removes the source: a merge, or a rename onto a name that
     /// is already a topic.
     /// </summary>
-    private async Task<TopicModel> MergeIntoAsync(TopicModel source, TopicModel target)
+    private async Task<TopicModel> MergeIntoAsync(
+        TopicModel source,
+        TopicModel target,
+        CancellationToken cancellationToken = default)
+    {
+        ApplyMerge(source, target);
+        await _db.SaveChangesAsync(cancellationToken);
+        return target;
+    }
+
+    private void ApplyMerge(TopicModel source, TopicModel target)
     {
         RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target.Topic));
         MoveLinks(source, target);
         target.Description = MergeDescriptions(target.Description, source.Description);
         _db.Topics.Remove(source);
-        await _db.SaveChangesAsync();
-        return target;
     }
 
     /// <summary>
@@ -473,9 +501,9 @@ public class TopicRepository : ITopicRepository
     /// text into plain words, so the topic stays deleted when a note is next
     /// saved.
     /// </summary>
-    public async Task<bool> DeleteAsync(Guid id)
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var topic = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id);
+        var topic = await WithLinkedNotes().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
         if (topic is null)
             return false;
@@ -483,7 +511,7 @@ public class TopicRepository : ITopicRepository
         RewriteReferences(topic, content => TopicReferences.Remove(content, topic.Topic));
         _db.NoteTopics.RemoveRange(topic.NoteTopics);
         _db.Topics.Remove(topic);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -509,13 +537,16 @@ public class TopicRepository : ITopicRepository
     /// Sets or clears a topic's description. Returns the topic, or null when it
     /// is not found.
     /// </summary>
-    public async Task<TopicModel?> SetDescriptionAsync(Guid id, string? description)
+    public async Task<TopicModel?> SetDescriptionAsync(
+        Guid id,
+        string? description,
+        CancellationToken cancellationToken = default)
     {
-        var topic = await _db.Topics.Include(c => c.NoteTopics).FirstOrDefaultAsync(c => c.Id == id);
+        var topic = await _db.Topics.Include(c => c.NoteTopics).FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
         if (topic is null)
             return null;
         topic.Description = TopicModel.NormalizeDescription(description);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
         return topic;
     }
 
@@ -554,13 +585,19 @@ public class TopicRepository : ITopicRepository
 
     // --- Methods for NoteProcessorService ---
 
-    public async Task<List<TopicModel>> GetByNamesAsync(IEnumerable<string> names)
+    public async Task<List<TopicModel>> GetByNamesAsync(
+        IEnumerable<string> names,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var keys = names.Select(TopicModel.NormalizeName).Distinct(StringComparer.Ordinal).ToList();
         if (keys.Count == 0)
             return [];
 
-        var stored = await _db.Topics.Where(c => keys.Contains(c.NormalizedName)).ToListAsync();
+        var stored = await _db.Topics
+            .Where(c => keys.Contains(c.NormalizedName))
+            .ToListAsync(cancellationToken);
 
         // Topics created earlier in this same unit of work are not in the
         // database yet. Linking one new topic to several notes at once must
@@ -595,6 +632,7 @@ public class TopicRepository : ITopicRepository
     public async Task<int> MergeCaseVariantsAsync(CancellationToken ct = default)
     {
         var rows = await _db.Topics
+            .AsNoTracking()
             .Select(c => new { c.Id, c.Topic, c.NormalizedName, Links = c.NoteTopics.Count() })
             .ToListAsync(ct);
         var stale = rows
@@ -604,10 +642,22 @@ public class TopicRepository : ITopicRepository
         if (stale.Count == 0)
             return 0;
 
-        var merged = 0;
-        foreach (var group in rows
+        var staleGroups = rows
             .GroupBy(row => TopicModel.NormalizeName(row.Topic), StringComparer.Ordinal)
-            .Where(group => stale.Contains(group.Key)))
+            .Where(group => stale.Contains(group.Key))
+            .ToList();
+
+        var topicIds = staleGroups.SelectMany(group => group.Select(row => row.Id)).ToList();
+        var topicsById = (await WithLinkedNotes()
+                .Where(c => topicIds.Contains(c.Id))
+                .ToListAsync(ct))
+            .ToDictionary(c => c.Id);
+
+        var merged = 0;
+        var deletedKeys = new HashSet<string>(StringComparer.Ordinal);
+        var pendingSurvivorKeys = new List<(TopicModel Survivor, string Key, string OriginalKey)>();
+
+        foreach (var group in staleGroups)
         {
             // The variant on the most notes keeps its name, then the first in
             // ordinal order (capitals first), so every run picks the same one.
@@ -615,20 +665,77 @@ public class TopicRepository : ITopicRepository
                 .OrderByDescending(row => row.Links)
                 .ThenBy(row => row.Topic, StringComparer.Ordinal)
                 .ToList();
+            var survivor = topicsById[ordered[0].Id];
+
             foreach (var variant in ordered.Skip(1))
             {
-                var source = await WithLinkedNotes().FirstAsync(c => c.Id == variant.Id, ct);
-                var target = await _db.Topics.Include(c => c.NoteTopics).FirstAsync(c => c.Id == ordered[0].Id, ct);
-                await MergeIntoAsync(source, target);
+                var source = topicsById[variant.Id];
+                ApplyMerge(source, survivor);
+                deletedKeys.Add(source.NormalizedName);
                 merged++;
             }
 
-            // Every other variant is gone, so the survivor's key is free to take.
-            var survivor = await _db.Topics.FirstAsync(c => c.Id == ordered[0].Id, ct);
-            survivor.NormalizedName = group.Key;
-            await _db.SaveChangesAsync(ct);
+            if (survivor.NormalizedName != group.Key)
+                pendingSurvivorKeys.Add((survivor, group.Key, survivor.NormalizedName));
         }
+
+        // Apply non-colliding survivor keys in the same SaveChangesAsync batch.
+        // If a deleted variant still holds the survivor's target key in the DB,
+        // flush deletions first inside one transaction so the unique index on
+        // NormalizedName is never violated regardless of EF command ordering,
+        // while keeping a single LibraryRevision advance for the transaction.
+        var colliding = new List<(TopicModel Survivor, string Key, string OriginalKey)>();
+        foreach (var item in pendingSurvivorKeys)
+        {
+            if (deletedKeys.Contains(item.Key))
+                colliding.Add(item);
+            else
+                item.Survivor.NormalizedName = item.Key;
+        }
+
+        if (colliding.Count == 0)
+        {
+            await _db.SaveChangesAsync(ct);
+            return merged;
+        }
+
+        await SaveWithKeyCollisionsAsync(colliding, ct);
         return merged;
+    }
+
+    private async Task SaveWithKeyCollisionsAsync(
+        List<(TopicModel Survivor, string Key, string OriginalKey)> colliding,
+        CancellationToken ct)
+    {
+        if (_db.Database.CurrentTransaction is not null)
+        {
+            await _db.SaveChangesAsync(ct);
+            foreach (var (survivor, key, _) in colliding)
+                survivor.NormalizedName = key;
+            await _db.SaveChangesAsync(ct);
+            return;
+        }
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+            try
+            {
+                await _db.SaveChangesAsync(ct);
+                foreach (var (survivor, key, _) in colliding)
+                    survivor.NormalizedName = key;
+                await _db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
+            catch
+            {
+                foreach (var (survivor, _, originalKey) in colliding)
+                    survivor.NormalizedName = originalKey;
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        });
     }
 
     public void AddRange(IEnumerable<TopicModel> topics)
@@ -636,12 +743,14 @@ public class TopicRepository : ITopicRepository
         _db.Topics.AddRange(topics);
     }
 
-    public async Task<IReadOnlyList<string>> ClearNoteLinksAsync(NoteModel note)
+    public async Task<IReadOnlyList<string>> ClearNoteLinksAsync(
+        NoteModel note,
+        CancellationToken cancellationToken = default)
     {
         var currentLinks = await _db.NoteTopics
             .Include(link => link.Topic)
             .Where(nc => nc.NoteId == note.Id)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         if (currentLinks.Count == 0)
             return [];
