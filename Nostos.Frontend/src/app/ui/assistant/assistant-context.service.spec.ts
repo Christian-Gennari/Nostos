@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import { EMPTY, of } from 'rxjs';
+import { NavigationEnd, Router } from '@angular/router';
+import { EMPTY, Observable, Subject, of } from 'rxjs';
 
 import {
   AssistantContext,
@@ -131,6 +131,88 @@ describe('AssistantContextService', () => {
 
     expect(service.context().bookTitle).toBe('Pride and Prejudice');
     expect(service.context().bookFormat).toBe('ebook');
+  });
+
+  it('ignores an in-flight books.get response and unsubscribes when routeBookId switches to a new book', () => {
+    const events = new Subject<NavigationEnd>();
+    const observers = new Map<string, { next: (book: Book) => void }>();
+    const unsubscribed: string[] = [];
+
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Router, useValue: { url: '/read/old-book', events } },
+        {
+          provide: BooksService,
+          useValue: {
+            get: vi.fn(
+              (id: string) =>
+                ({
+                  subscribe(observer: { next?: (book: Book) => void }) {
+                    observers.set(id, { next: (book) => observer.next?.(book) });
+                    return {
+                      unsubscribe: () => {
+                        unsubscribed.push(id);
+                      },
+                    };
+                  },
+                }) as unknown as Observable<Book>,
+            ),
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(AssistantContextService);
+    TestBed.flushEffects();
+    expect(observers.has('old-book')).toBe(true);
+
+    events.next(new NavigationEnd(1, '/read/new-book', '/read/new-book'));
+    TestBed.flushEffects();
+
+    expect(unsubscribed).toEqual(['old-book']);
+    expect(observers.has('new-book')).toBe(true);
+
+    // Late response for the previous book must be ignored even before the new book resolves.
+    observers
+      .get('old-book')!
+      .next({ id: 'old-book', title: 'Old Book', type: 'ebook' } as unknown as Book);
+    expect(service.context().bookTitle).toBeNull();
+
+    // New book resolves, and a subsequent late emission from the old book cannot overwrite it.
+    observers
+      .get('new-book')!
+      .next({ id: 'new-book', title: 'New Book', type: 'audiobook' } as unknown as Book);
+    expect(service.context().bookTitle).toBe('New Book');
+    expect(service.context().bookFormat).toBe('audiobook');
+
+    observers
+      .get('old-book')!
+      .next({ id: 'old-book', title: 'Old Book', type: 'ebook' } as unknown as Book);
+    expect(service.context().bookTitle).toBe('New Book');
+    expect(service.context().bookFormat).toBe('audiobook');
+  });
+
+  it('cleans up router.events and in-flight books.get subscriptions on injector destroy', () => {
+    const events = new Subject<NavigationEnd>();
+    const book$ = new Subject<Book>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Router, useValue: { url: '/read/book-1', events } },
+        { provide: BooksService, useValue: { get: () => book$ } },
+      ],
+    });
+
+    TestBed.inject(AssistantContextService);
+    TestBed.flushEffects();
+
+    expect(events.observed).toBe(true);
+    expect(book$.observed).toBe(true);
+
+    TestBed.resetTestingModule();
+
+    expect(events.observed).toBe(false);
+    expect(book$.observed).toBe(false);
   });
 });
 

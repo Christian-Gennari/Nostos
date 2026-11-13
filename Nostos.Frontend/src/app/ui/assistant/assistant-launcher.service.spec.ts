@@ -107,6 +107,25 @@ describe('AssistantLauncherService', () => {
       expect(launcher.takePendingToggle()).toBe(false);
     });
 
+    it('removes the document keydown listener when the injector is destroyed', () => {
+      makeAvailable();
+      const removeSpy = vi.spyOn(document, 'removeEventListener');
+      try {
+        launcher.start();
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
+        expect(launcher.takePendingToggle()).toBe(true);
+
+        TestBed.resetTestingModule();
+
+        expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
+        expect(launcher.takePendingToggle()).toBe(false);
+      } finally {
+        removeSpy.mockRestore();
+      }
+    });
+
     it('keeps a surface open request until the shell attaches', () => {
       const assistant = TestBed.inject(AssistantService);
       makeAvailable();
