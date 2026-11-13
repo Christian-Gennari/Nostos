@@ -1,7 +1,10 @@
 # Ask Nostos — polish plan (#1464)
 
+> **Archived 2026-11-13.** The plan produced by the archived assessment; its
+> items were filed as issues and are tracked there, not here.
+
 Status: **proposed** · Base: `main` @ `f200e10c` · Date: 2026-11-11
-Evidence: `docs/ask-nostos-assessment.md` and `docs/ask-nostos-assessment/`.
+Evidence: `docs/archive/ask-nostos-assessment.md` and `docs/archive/ask-nostos-assessment/`.
 
 The assessment found no missing capability worth building. The work is to make
 the existing one visible, honest and consistent. Every item below names the files

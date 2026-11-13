@@ -1,5 +1,9 @@
 # Ask Nostos — redesign
 
+> **Archived 2026-11-13.** Kept as the record of the shipped changeset design.
+> The live contract is `docs/ask-nostos-library-changes.md` and
+> `Nostos.Shared/Dtos/AssistantDtos.cs`.
+
 Status: **implemented** (see §11) · Owner: maintainer · Date: 2026-10-14
 
 Ask Nostos should do the library and reading work that is tedious by hand, and
@@ -55,8 +59,9 @@ What already works and **is kept**:
 - No new outbound capabilities: no web fetch, email or external APIs.
   Keeping the assistant closed to the outside world is a deliberate guardrail
   (§6.4).
-- No changes to the frozen MCP contract (`docs/library-mcp-contracts.md`).
-  MCP benefits from the change feed but keeps its tool signatures.
+- No changes to the frozen MCP tool signatures (the live MCP contract is
+  documented in `docs/api-reference.md`). MCP benefits from the change feed but
+  keeps its tool signatures.
 - No change to provider configuration or the BYOK/Cloud usage policy.
 
 ## 3. The four jobs

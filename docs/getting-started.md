@@ -38,7 +38,7 @@ cd Nostos.Backend
 dotnet run
 ```
 
-The API starts on `http://localhost:5099`. The database (`nostos.db`) is auto-created and migrated on first run using an absolute path relative to the content root.
+The API starts on `http://localhost:5099`. The database (`nostos.db`) is auto-created and migrated on first run; `Persistence:DatabasePath` moves it (see [Configuration](#configuration)).
 
 ### Terminal 2 — Frontend Dev Server
 
@@ -95,11 +95,22 @@ cd publish
 | `CalibreUpload:RootPath`   | `<transfer root>/calibre-uploads` | Scratch for a zipped Calibre library received through the resumable upload. Absolute, or relative to the content root. See [Calibre import](calibre-import.md) |
 | `ReadAloud:Enabled`, `ReadAloud:BaseUrl` | off, not set | Connects a speech server so books are read aloud with a natural voice. Also settable in Settings → AI connections. See [Read aloud](read-aloud.md) |
 
-The SQLite database file path is resolved in `Program.cs` using `Path.Combine(builder.Environment.ContentRootPath, "nostos.db")` to ensure an absolute path is used regardless of the working directory.
+The SQLite file is resolved by `Nostos.Backend/Configuration/PersistenceRegistration.cs`:
+`Persistence:DatabasePath` (environment variable `Persistence__DatabasePath`)
+wins when set — absolute for a dedicated volume such as `/data/nostos.db`,
+relative to the content root otherwise — and unset falls back to
+`<content root>/nostos.db`. The database's parent directory is created on
+startup, and the same path is used by backup settings, backup restore and the
+library import/replace flows.
 
 ### Upload Limits
 
-Kestrel and form options are configured for up to **100 GB** file uploads to support large library archives and audiobooks.
+Kestrel's maximum request body and the multipart form limit are both **4 GB**
+(`4L * 1024 * 1024 * 1024`, `Nostos.Backend/Composition/SelfHostedHttpPipeline.cs`).
+That is the ceiling for one upload; larger books use the resumable part upload,
+whose fixed part size the server owns (`BookUploadLimits`). The cap is
+deliberately one declaration, because a second `ConfigureKestrel` call would
+silently replace the first.
 
 ### Frontend Proxy (`src/proxy.conf.json`)
 
@@ -114,23 +125,37 @@ Kestrel and form options are configured for up to **100 GB** file uploads to sup
 
 | Path                            | Purpose                                  |
 | ------------------------------- | ---------------------------------------- |
-| `Nostos.Backend/`               | .NET 10 Web API                          |
+| `Nostos.Product/`               | Shared product: DbContext and model, endpoints, services |
+| `Nostos.Backend/`               | .NET 10 SelfHosted host executable       |
+| `Nostos.Backend.Tests/`         | xUnit suite for the backend and product  |
 | `Nostos.Frontend/`              | Angular 22 SPA                           |
 | `Nostos.Shared/`                | Shared DTOs/Enums between backend layers |
-| `Nostos.Backend/Storage/books/` | Book file storage (not committed)        |
-| `Nostos.Backend/nostos.db`      | SQLite database (auto-created)           |
+| `Nostos.Backend/Storage/books/` | Book file storage (default `Storage:BooksRoot`, not committed) |
+| `Nostos.Backend/nostos.db`      | SQLite database (default `Persistence:DatabasePath`, auto-created) |
 
 ## Database Migrations
 
-Migrations run automatically on startup. To create a new migration:
+The schema is created and migrated automatically on startup by
+`DatabaseBootstrapService`: a truly empty database gets the complete current
+schema plus an accurate migration-history baseline in one transaction, and an
+existing database goes through the ordinary EF migration path. No manual step is
+needed for deployment.
+
+To create a new migration, run it from the backend project (which is also the
+startup project):
 
 ```bash
-cd Nostos.Backend
-dotnet ef migrations add <MigrationName>
+dotnet ef migrations add <MigrationName> \
+  --project Nostos.Backend --startup-project Nostos.Backend
 ```
 
-To apply manually:
+Let `dotnet ef` create the file; never invent a migration filename. To apply
+migrations manually:
 
 ```bash
-dotnet ef database update
+dotnet ef database update \
+  --project Nostos.Backend --startup-project Nostos.Backend
 ```
+
+Note that the test suite uses `EnsureCreated` and never executes migrations, so
+a hand-written backfill or guard is only proven on a migrated database copy.

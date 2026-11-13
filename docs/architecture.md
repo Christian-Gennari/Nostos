@@ -1,10 +1,11 @@
 # Nostos — Architecture Overview
 
-> **Status note (2026-08-12):** this overview predates the issue #34 library
-> service. The **Library service** section below is the current reference
-> for the canonical library service; decision 1's fallback description has been
-> corrected to the shipped method-constrained fallback. The remaining
-> sections are historical and largely unchanged.
+> **Status note (reconciled 2026-11-13):** the solution layout and technology
+> table below were checked against `Nostos.sln`, `Nostos.Frontend/package.json`
+> and the `.csproj` files. The **Library service** section is the current
+> reference for the canonical library service; decision 1's fallback
+> description matches the shipped method-constrained fallback. The numbered
+> decisions remain the durable architecture and are not versioned pins.
 
 ## System Overview
 
@@ -30,17 +31,38 @@ Nostos is a self-hosted personal library and knowledge management platform. It c
 
 ```
 Nostos.sln
-├── Nostos.Backend/          # ASP.NET Core 10 Web API
-│   ├── Data/                # EF Core DbContext, Models, Repositories
+├── Nostos.Product/          # Shared product: model, endpoints, services, integrations
+│   ├── Data/                # EF DbContext, models, configurations, repositories
 │   ├── Endpoints/           # Minimal API endpoint groups
-│   ├── Services/            # Business logic services
+│   ├── Services/            # Library, notes, topics, AI, uploads, portability
 │   ├── Mapping/             # DTO ↔ Model mapping extensions
+│   ├── Composition/         # AddNostosProduct / MapNostosProductEndpoints
+│   ├── Integrations/        # MCP server
+│   ├── Alignment/           # Audio ↔ text alignment
+│   ├── BookText/            # Indexed book text for search and grounding
+│   ├── Search/              # Library and note search
+│   ├── Providers/           # External content providers
+│   └── Health/              # Health checks
+│
+├── Nostos.Backend/          # SelfHosted host executable
+│   ├── Composition/         # Host pipeline, persistence, storage, workers
+│   ├── Configuration/       # PersistenceRegistration, storage options
+│   ├── Data/                # DatabaseBootstrapService
+│   ├── Endpoints/           # Backup, external media, MCP credentials
+│   ├── Services/            # Backup/restore, file storage, portability, MCP OAuth
+│   ├── Middleware/          # Maintenance-mode lease middleware
+│   ├── Migrations/          # EF Core migrations (SQLite)
 │   ├── Workers/             # Background services
-│   ├── Migrations/          # EF Core migrations
-│   ├── Storage/             # File storage root
+│   ├── Storage/             # File storage root (not committed)
 │   │   ├── books/           #   Book files and covers
 │   │   └── backups/         #   Backup archives (.nostos files)
+│   ├── _docs/               # Backend developer reference
 │   └── wwwroot/             # Built Angular app (production)
+│
+├── Nostos.Backend.Tests/    # xUnit suite for the backend and the product
+├── Nostos.Shared/           # Shared DTOs & Enums (.NET class library)
+│   ├── Dtos/                # Record types shared between backend layers
+│   └── Enums/               # BookFilter, BookSort, BookStatus
 │
 ├── Nostos.Frontend/         # Angular 22 SPA
 │   └── src/app/
@@ -52,31 +74,41 @@ Nostos.sln
 │       ├── reader/          # Multi-format reader (epub, pdf, audio)
 │       ├── brain/           # The Brain: places, topics, the sorter, the map (docs/brain.md)
 │       ├── writing-studio/  # Markdown writing environment
+│       ├── settings/        # Settings surfaces (assistant, providers, connected apps)
+│       ├── library-transfer/ # Import/replace and backup/restore flows
 │       ├── add-book-modal/  # Book create/edit modal
-│       └── home/            # Landing page
+│       ├── pair/            # Carrel device pairing
+│       └── cloud-entry/     # Entry points used only by the hosted deployment
 │
-└── Nostos.Shared/           # Shared DTOs & Enums (.NET class library)
-    ├── Dtos/                # Record types shared between backend layers
-    └── Enums/               # BookFilter, BookSort enums
+└── tools/                   # Support projects outside the product (ReadwiseCanary, alignment spike)
 ```
+
+`Nostos.Backend` is the product's only executable; `Nostos.Product` is the library
+it composes, so a hosted build of the same product shares every endpoint and
+service and supplies only its own persistence, identity and hosting decisions.
 
 ## Technology Stack
 
+Versions move; the exact pins are in `Nostos.Frontend/package.json` and the
+`.csproj` files. This table is the layer → technology map, with the version
+family rather than every patch.
+
 | Layer                  | Technology              | Version    |
 | ---------------------- | ----------------------- | ---------- |
-| **Frontend Framework** | Angular                 | 21         |
-| **UI Icons**           | Lucide Angular          | 0.555+     |
+| **Frontend Framework** | Angular                 | 22         |
+| **UI Icons**           | Phosphor (`@phosphor-icons/core`) | 2.1 |
 | **Epub Reader**        | epub.js                 | 0.3.93     |
-| **PDF Reader**         | ngx-extended-pdf-viewer | 25.6+      |
+| **PDF Reader**         | ngx-extended-pdf-viewer | 32         |
 | **Audio Player**       | Howler.js               | 2.2.4      |
 | **Page OCR**           | Tesseract.js (on device, lazy) | 7.0 |
-| **Text Editor**        | TipTap                  | 3.31       |
-| **Markdown**           | marked + Turndown       | 17.0 / 7.2 |
-| **Drag & Drop**        | @angular/cdk            | 21+        |
+| **Text Editor**        | TipTap                  | 3.33       |
+| **Markdown**           | marked + Turndown       | 18.1 / 7.2 |
+| **Drag & Drop**        | @angular/cdk            | 22.2       |
+| **Graph**              | Sigma.js + Graphology   | —          |
 | **Backend Framework**  | ASP.NET Core            | 10.0       |
 | **ORM**                | Entity Framework Core   | 10.0       |
 | **Database**           | SQLite                  | —          |
-| **Audio Metadata**     | ATL.NET (z440.atl.core) | 7.9        |
+| **Audio Metadata**     | ATL.NET (z440.atl.core) | 7.19       |
 | **Target Runtime**     | .NET 10                 | —          |
 
 ## Key Architectural Decisions

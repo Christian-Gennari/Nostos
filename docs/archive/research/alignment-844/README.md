@@ -108,7 +108,7 @@ local Whisper over a pipe (no network listener), and anchors live in memory.
 
 ```sh
 python3 -m venv venv && venv/bin/pip install faster-whisper   # plus CUDA libraries for a GPU
-dotnet build docs/research/alignment-844/harness -c Release -o out
+dotnet build docs/archive/research/alignment-844/harness -c Release -o out
 export ALIGNMENT_PYTHON=$PWD/venv/bin/python
 
 # both directions, 30 positions each
@@ -116,7 +116,7 @@ dotnet out/Harness.dll carol.mp3 carol.epub en both 30 carol.json
 
 # a scanned PDF: page excerpts as the reader would send them
 npm install pdfjs-dist
-node docs/research/alignment-844/harness/pdf-excerpts.mjs scan.pdf 30 excerpts.json
+node docs/archive/research/alignment-844/harness/pdf-excerpts.mjs scan.pdf 30 excerpts.json
 dotnet out/Harness.dll carol.mp3 scan.pdf en both 30 scan.json excerpts.json
 
 # audio of a different book: every answer must be a decline
