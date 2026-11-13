@@ -48,6 +48,22 @@ Table-per-hierarchy (TPH) with discriminator column `BookType`.
 | `EBookModel`        | `"ebook"`     | `Isbn`, `PageCount`            |
 | `AudioBookModel`    | `"audiobook"` | `Asin`, `Duration`, `Narrator` |
 
+**A physical book has no file.** `FileInfoDetails.HasFile` must be false for a
+`PhysicalBookModel`: it is a metadata-only record, and uploads to one are refused
+(#332). The rule is enforced at save time in `NostosDbContext`, so any code path
+that would create the shape fails instead of writing a row that shows paper
+controls beside a working Read button. Only the ebook and audiobook models carry
+a file. A physical book is a claim the reader makes about a copy they own; it is
+never the default for a book that arrived with a file (see `BookLookupService`,
+which leaves the format empty, and Add Book, which takes it from the file).
+
+Rows created before #332 could still hold both; `ConvertLegacyPhysicalBooksWithFiles`
+converts them by the file's extension (`LegacyPhysicalFileBook`, shared with the
+portable import), moving `PhysicalBookModel_Isbn` / `PhysicalBookModel_PageCount`
+into the ebook columns and leaving a row alone when its saved position is the
+paper reader's `{"page":N}`. See
+`docs/runbooks/legacy-physical-books-with-files.md`.
+
 ### BookMetadata (Owned)
 
 | Property             | Type      | Description                  |

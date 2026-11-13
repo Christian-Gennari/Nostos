@@ -4,6 +4,13 @@
 
 Nostos uses **SQLite** via Entity Framework Core 10. The database file is `nostos.db` in the backend's working directory.
 
+SQLite is the only runtime provider with a migration chain in this repository.
+The hosted product (PostgreSQL) lives in its own repository and owns its
+migration history; the SQL in migrations here is nevertheless written to be
+valid on both SQLite and PostgreSQL wherever the two agree, so a hosted copy of a
+data fix stays a translation rather than a rewrite. `PostgreSqlCompatibilitySpikeTests`
+keeps the model itself portable.
+
 ### Connection String
 
 Configured in `Program.cs` to ensure an absolute path is used regardless of the application's working directory:
