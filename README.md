@@ -202,7 +202,8 @@ Nostos/
 ├── Nostos.Backend/    # the SelfHosted host: SQLite, local files, backups, your own AI keys
 ├── Nostos.Shared/     # shared DTOs and contracts
 ├── Nostos.Frontend/   # the Angular app, shared by SelfHosted and Cloud
-└── docs/              # product, architecture and operations docs
+├── Nostos.Backend.Tests/ # the backend and product test suite
+└── docs/              # product, architecture and operations docs (history in docs/archive/)
 ```
 
 **Stack:** [.NET 10](https://dotnet.microsoft.com/) Minimal APIs, EF Core 10 and SQLite · [Angular 22](https://angular.dev/) with Signals · epub.js · ngx-extended-pdf-viewer · Howler.js · Sigma.js and Graphology · TipTap with marked and Turndown · Phosphor icons · Newsreader and Hanken Grotesk.
@@ -217,6 +218,7 @@ Nostos/
 - **[Releases](https://github.com/Christian-Gennari/Nostos/releases):** what's new. How releases are made: [docs/releases.md](docs/releases.md).
 - **Guides in this repo:** [External media](docs/external-media.md) · [Calibre import](docs/calibre-import.md) · [Read aloud](docs/read-aloud.md) · [Content providers](docs/content-providers.md) · [Library portability](docs/cloud/portability.md) · [SelfHosted activation & recovery](docs/selfhosted-activation-recovery.md)
 - **For developers and agents:** [REST API](Nostos.Backend/_docs/endpoints.md) · [Library skill for agents](.agents/skills/nostos-library/SKILL.md) · [Deployment capabilities](docs/cloud/deployment-modes.md) · [PostgreSQL compatibility](docs/cloud/postgresql-compatibility-spike.md)
+- **History:** completed designs, point-in-time assessments and spikes are kept in [docs/archive](docs/archive/README.md), separate from current docs.
 - **[Security policy](SECURITY.md):** how to report a vulnerability.
 
 Work in progress is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues). Before your first pull request is merged, a bot asks you to accept the [Contributor License Agreement](CLA.md) with one comment.

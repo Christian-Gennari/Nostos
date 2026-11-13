@@ -2,25 +2,80 @@
 
 ## Overview
 
-The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized as static extension methods that register route groups. The product groups are mapped by `MapNostosProductEndpoints` in `Nostos.Product/Composition/NostosProductComposition.cs`; `Program.cs` adds only the host-specific groups:
+The backend uses ASP.NET Core **Minimal API** pattern. Endpoints are organized as static extension methods that register route groups. The product groups are mapped by `MapNostosProductEndpoints` in `Nostos.Product/Composition/NostosProductComposition.cs`; the SelfHosted executable (`Nostos.Backend/Composition/SelfHostedHttpPipeline.cs`) adds only the host-specific groups.
 
 ```csharp
-// NostosProductComposition.cs — the product API
+// NostosProductComposition.cs — the shared product API
 api.MapBooksEndpoints(policies);
+if (policies.MapResumableBookUploadEndpoints) api.MapBookUploadEndpoints(policies);
+api.MapAlignmentEndpoints(policies);
+api.MapProviderEndpoints(policies);
+api.MapProviderSettingsEndpoints();
+api.MapImportEndpoints();
+if (policies.MapCalibreImportEndpoints) api.MapCalibreEndpoints(...);
+api.MapLibraryChangesEndpoints();
 api.MapNotesEndpoints();
+api.MapNoteProcessingEndpoints();
 api.MapCollectionsEndpoints();
+api.MapReadingListEndpoints();
 api.MapTopicsEndpoints();
 api.MapWritingsEndpoints();
-api.MapOpdsEndpoints(opds, policies.OpdsAuthorizationPolicy, policies.LargeTransferRateLimitPolicy);
+api.MapTranscriptionEndpoints();
+api.MapReadAloudEndpoints();
+api.MapAssistantEndpoints();
+api.MapAiProviderSettingsEndpoints();
+api.MapDeploymentCapabilitiesEndpoints();
+api.MapMcpConnectedAppsEndpoints();
+routes.MapCarrelProtocolEndpoints(...);
+api.MapCarrelManagementEndpoints(...);
+api.MapManagedBackupEndpoints(...);
+api.MapPortabilityEndpoints(policies);
+api.MapMigrationEndpoints(policies);
+api.MapOpdsEndpoints(...);
+routes.MapNostosMcp(...);        // outside the revision filter: JSON-RPC
 
-// Program.cs — SelfHosted host groups
+// SelfHostedHttpPipeline.cs — the host
 app.MapBackupEndpoints();
 app.MapExternalMediaEndpoints();
 app.MapMcpAccessTokenEndpoints();
 app.MapMcpOAuthEndpoints();
 ```
 
+Some groups are mapped only when the host registers what they need:
+resumable uploads, Calibre import, Carrel sync, managed backups, migration and
+MCP all depend on a policy or service the host supplies.
+
 ## Endpoint Groups
+
+| Group | Prefix | Notes |
+| --- | --- | --- |
+| Books | `/api/books` | Metadata, progress, locations, file, cover, ISBN lookup, reading-history import (`/api/books/imports`) and alignment anchors |
+| Resumable book uploads | `/api/books` | Part-based upload for a book whose file is large; host-gated |
+| Providers | `/api/providers` | Browse external catalogues and start an acquisition |
+| Provider settings | `/api/settings/providers` | Enable/disable sources, including disabled ones |
+| Imports | `/api/imports` | "Imports in progress" feed |
+| Calibre | `/api/calibre` | Read-only Calibre library import and its resumable upload |
+| Library changes | `/api/library/changes` | Change feed that lets every open screen update live |
+| Notes | `/api` | `books/{bookId}/notes` and `notes/{id}`, including passages |
+| Note processing | `/api/notes` | Reprocess a note from its raw capture, and restore that capture |
+| Collections | `/api/collections` | Flat list plus rename/move/delete |
+| Reading list | `/api/reading-list` | "Next up" shelf for books not owned yet |
+| Topics | `/api/topics`, `/api/concepts` | Same routes under both prefixes; `/api/concepts` is the pre-rename alias |
+| Writings | `/api/writings` | Writing Studio files, folders and sources |
+| Assistant | `/api/assistant` | Ask Nostos turns, streaming, changesets and transcription |
+| Read aloud | `/api/read-aloud` | Status and speech for the configured speech server |
+| AI provider settings | `/api/settings/ai-provider` | Server-wide BYOK provider overrides |
+| Runtime capabilities | `/api/runtime/capabilities` | What this deployment can do |
+| MCP connected apps | `/api/mcp/apps` | Settings → Connected apps |
+| Carrel | `/carrel/v1`, `/api/carrel` | Device sync protocol and its pairing/management routes |
+| Managed backups | `/api/managed-backups` | Read-only hosted backup history; `501` without a provider |
+| Portability | `/api/portability` | Portable export, Markdown export and import |
+| Migration | `/api/portability/migration` | Preflight, jobs, resumable transfer, activation and recovery |
+| OPDS | `/opds`, `/api/opds` | Catalogue feed and its Settings info route |
+| MCP | `/mcp` | Model Context Protocol (Streamable HTTP) |
+| Backup (host) | `/api/backup` | SelfHosted backup and restore |
+| External media (host) | `/api/external-media` | Books read in place from a mounted folder |
+| MCP access tokens / OAuth (host) | `/api/mcp/tokens`, `/oauth/*`, `/api/mcp/oauth` | SelfHosted credentials, sign-in for web AI apps, and the owner's approve/deny side |
 
 ### BooksEndpoints (`/api/books`)
 
@@ -52,9 +107,10 @@ otherwise a book is created (`201 Created` with `Location: /api/books/{id}`,
 `outcome: created`). Ambiguity creates rather than asks — the strict
 confirmation flow is used only by Ask Nostos. `PUT /{id}/progress` validates the
 percentage 0–100 and aligns `FinishedAt` with the finished state. `DELETE
-/{id}` returns `409 book_in_use` when the book is referenced by a training
-assignment or a note, and storage files are removed only after the database
-row is gone.
+/{id}` returns `409 book_in_use` when a foreign key still references the book
+(notes, for example): the row is deleted first and storage files are removed
+only after the database row is gone, so a refused delete leaves the file in
+place.
 
 Errors are mapped by `LibraryHttpMapper` to Problem Details: `invalid_*` →
 400, `*_not_found` → 404, the conflict family (`identity_conflict`,

@@ -1,5 +1,8 @@
 # Manage library — slice 1 design
 
+> **Archived 2026-11-13.** Design of the shipped Manage library page
+> (`/settings/library`), kept as the record of why it is shaped this way.
+
 ## Intent and entry point
 
 Group whole-library tasks by what a person wants to do: move a library to

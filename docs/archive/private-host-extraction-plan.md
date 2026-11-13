@@ -1,5 +1,10 @@
 # Public product and private hosted-service handoff
 
+> **Archived 2026-11-13.** The #438/#462 cutover is complete. The live boundary
+> is `docs/adr/cloud-public-private-boundary.md` and
+> `docs/cloud/deployment-modes.md`; this plan is kept as the record of the
+> handoff.
+
 Tracking: #438 and #462. The repository boundary is recorded in the
 [public/private boundary ADR](../adr/cloud-public-private-boundary.md).
 
@@ -36,7 +41,10 @@ exact public pin and rejects copied canonical product source outside its submodu
 
 ## Cutover state
 
-The private host authority promotion is represented by #462. Isolated
-provider-backed staging parity/security evidence remains a prerequisite before
-the hosted release is operationally promoted. Keep the last known-good hosted
-artifact available for rollback during the transition. This work does not include production infrastructure changes. The private host now owns those decisions; the current paid-production direction keeps PostgreSQL on Neon rather than depending on a later provider migration.
+#462 carried the private host authority promotion. Isolated provider-backed
+staging parity/security evidence was the prerequisite before the hosted release
+was operationally promoted, and the last known-good hosted artifact stayed
+available for rollback during that transition. That work did not include
+production infrastructure changes. The private host now owns those decisions;
+the paid-production direction keeps PostgreSQL on Neon rather than depending on
+a later provider migration.

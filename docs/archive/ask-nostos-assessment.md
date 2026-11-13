@@ -1,8 +1,11 @@
 # Ask Nostos — assessment (#1464)
 
+> **Archived 2026-11-13.** Point-in-time evidence (screenshots and measurements)
+> taken for the #1464 polish plan; it is not a description of the app today.
+
 Status: **assessment complete; live-model parts pending** · Base: `main` @ `f200e10c` · Date: 2026-11-11
 
-This is the evidence for the polish plan in `docs/ask-nostos-polish-plan.md`. It
+This is the evidence for the polish plan in `docs/archive/ask-nostos-polish-plan.md`. It
 covers what Ask Nostos can do, what it says it can do, how it fails, and what it
 looks like. The concrete fixes and the ready-to-file sub-issues live in the plan.
 
@@ -193,7 +196,7 @@ Method: the real production bundle from this worktree, served by the real
 backend, at 1440×900 and 390×844, light and dark, device scale 1. The capture is
 reproducible with `Nostos.Frontend/e2e/support/ask-nostos-assessment-shots.mjs`
 (not a `*.spec.ts`, so CI does not run it). All 29 images are in
-`docs/ask-nostos-assessment/`; `measurements.json` holds the computed values
+`docs/archive/ask-nostos-assessment/`; `measurements.json` holds the computed values
 quoted below. They were checked at 1:1.
 
 ### 4.1 Entry points

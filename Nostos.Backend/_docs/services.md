@@ -2,7 +2,7 @@
 
 ## Overview
 
-Business logic services handle operations that go beyond simple CRUD. They are registered as scoped or singleton services in `Program.cs`.
+Business logic services handle operations that go beyond simple CRUD. They are registered as scoped or singleton services by the composition modules: the shared product services in `Nostos.Product/Composition/`, the SelfHosted ones in `Nostos.Backend/Composition/`.
 
 ---
 
@@ -33,8 +33,8 @@ Both calls are fire-and-forget on failure — individual API errors are caught a
 
 ## FileStorageService
 
-**Registration:** `builder.Services.AddSingleton<IFileStorageService, FileStorageService>()`  
-**Storage Root:** `{ContentRootPath}/Storage/books/`
+**Registration:** `AddSingleton<IFileStorageService>` in `Nostos.Backend/Composition/SelfHostedPathsAndStorageComposition.cs`  
+**Storage Root:** `Storage:BooksRoot` (default `{ContentRootPath}/Storage/books/`)
 
 Manages on-disk file storage for book files and covers.
 
@@ -145,8 +145,8 @@ zero linked notes and no description).
 
 ## BackupSettingsProvider
 
-**Registration:** `builder.Services.AddSingleton<BackupSettingsProvider>()`  
-**Persistence:** `{ContentRootPath}/backup-settings.json`
+**Registration:** `AddSingleton<BackupSettingsProvider>()` in `Nostos.Backend/Composition/SelfHostedPathsAndStorageComposition.cs`  
+**Persistence:** `backup-settings.json` beside the active database (so it survives a container being recreated); a file left in the content root is migrated once
 
 A thread-safe singleton that manages the application's backup configuration and runtime state.
 
@@ -159,8 +159,8 @@ A thread-safe singleton that manages the application's backup configuration and 
 
 ## BackupService
 
-**Registration:** `builder.Services.AddScoped<IBackupService, BackupService>()`  
-**Backups Root:** `{ContentRootPath}/Storage/backups/`
+**Registration:** `AddScoped<IBackupService, BackupService>()` in `Nostos.Backend/Composition/SelfHostedPathsAndStorageComposition.cs`  
+**Backups Root:** `Storage:BackupsRoot` (default `backups` beside the resolved books root)
 
 The core orchestrator for library preservation and recovery.
 
@@ -172,9 +172,21 @@ The core orchestrator for library preservation and recovery.
 5. **Finalizing:** Moves the archive to permanent storage and updates the database record.
 
 ### Restore Workflow (3 Steps)
-1. **Verifying:** Validates ZIP structure and checks manifest checksums.
+1. **Verifying:** Computes the archive file's SHA-256 and compares it with the
+   `Checksum` held in the backup's `BackupRecord.ManifestJson` in SQLite (the
+   `manifest.json` *inside* the archive carries `Checksum: ""` — the archive's
+   own digest cannot exist until the archive has been written, so the database
+   record is what keeps it). A mismatch refuses the restore before anything is
+   replaced. Extraction then applies entry-name, size and ZIP-structure guards.
 2. **Restoring Data:** Acquires exclusive library maintenance after request/worker scopes drain, takes a safety snapshot of the current DB, and overwrites with backup content. Drain timeout fails before replacement; a fixed delay is not used for drain proof.
 3. **Completing:** Cleans up temporary files and exits maintenance mode.
+
+The replaced database is whatever the runtime context is actually using:
+`ResolveActiveDatabasePath` reads `NostosDbContext`'s connection `DataSource`,
+so `Persistence:DatabasePath` is honoured (with the `<contentRoot>/nostos.db`
+default). Restore deletes `-wal`/`-shm`/`-journal` sidecars before the swap and
+verifies SQLite integrity afterwards; the newest safety copy is kept beside the
+active database.
 
 ### Storage Scanning
 The `ImportExistingBackupsAsync` method allows users to manually copy `.nostos` files into the storage directory and register them in the app history after verification.

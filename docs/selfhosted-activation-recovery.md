@@ -421,9 +421,14 @@ the Linux/Windows policy above makes that limit explicit. Unique temporary names
 replace the illustrative fixed `.tmp`, avoiding stale-temp overwrite. Resolved
 terminal envelopes are an additional lifecycle rule to prevent historical replay.
 
-Legacy backup restore still hardcodes `<ContentRoot>/nostos.db` and does not
-explicitly manage `-wal`/`-shm` siblings. Activation path resolution never copies
-that limitation; its host tests deliberately separate DB/media from content root.
+Legacy backup restore resolves the active database the same way the runtime
+does — from `NostosDbContext`'s connection `DataSource` — so it replaces the file
+`Persistence:DatabasePath` names, not a hardcoded `<ContentRoot>/nostos.db`. It
+also deletes any `-wal`/`-shm`/`-journal` sidecars before the swap, keeps the
+newest pre-restore safety copy beside the active database, and verifies SQLite
+integrity afterwards (`BackupService.ResolveActiveDatabasePath` and
+`RestoreFromArchiveAsync`). Activation path resolution never copies that
+limitation; its host tests deliberately separate DB/media from content root.
 
 ## Real-host failure drills (issue #681, Slice 11)
 

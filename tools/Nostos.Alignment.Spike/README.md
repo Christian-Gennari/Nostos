@@ -71,13 +71,13 @@ success says nothing about audiobook feasibility.
 
 The owner-approved 2026-10-10 pilot uses **machine-assisted references**, because
 this session cannot ingest audio. Its exact manifest and reference evidence live
-in `docs/research/alignment-step1/assisted-2026-10-10/`. Download the ten recorded
+in `docs/archive/research/alignment-step1/assisted-2026-10-10/`. Download the ten recorded
 source files; four Pride and Prejudice introductions use the first LibriVox
 edition at endpoints 20s (chapters 1–3) and 25s (chapters 4–5), replacing candidate
 clips that contained story text. No silence padding or threshold changes.
 
 ```sh
-python3 tools/Nostos.Alignment.Spike/benchmark.py materialize "$ALIGNMENT_DATA" "$ALIGNMENT_DLL" docs/research/alignment-step1/assisted-2026-10-10/manifest.json
+python3 tools/Nostos.Alignment.Spike/benchmark.py materialize "$ALIGNMENT_DATA" "$ALIGNMENT_DLL" docs/archive/research/alignment-step1/assisted-2026-10-10/manifest.json
 ```
 
 This regenerates extraction/clips and validates source, clip and reference hashes.

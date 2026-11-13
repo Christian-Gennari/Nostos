@@ -1,5 +1,9 @@
 # LibriVox acquisition performance spike (#773)
 
+> **Archived 2026-11-13.** A measurement spike from one machine, kept as the
+> record of the numbers. The scratch paths, ports and host notes below describe
+> that machine at the time, not a supported setup.
+
 Measurement-first spike for
 <https://github.com/Christian-Gennari/Nostos/issues/773>. It reproduces the
 current LibriVox → single chaptered M4B acquisition path against real,
@@ -29,13 +33,14 @@ environment was not exercised.
 
 ## Safety and isolation
 
-- No production service was called; the running production backend on :5214
-  was never touched.
-- All benchmark data lives under
-  `/home/dev/.hermes/cache/scratch/librivox-import/` (worktree
-  `Nostos.Backend/Storage` is a symlink to production storage). The harness
-  refuses any `--out-root` inside a `Nostos.Backend/Storage` directory or its
-  symlink target, and only accepts the two allowed scratch roots.
+- No production service was called; the machine's production backend was never
+  touched.
+- All benchmark data lived under one scratch root on the measuring machine
+  (worktree `Nostos.Backend/Storage` was a symlink to production storage). The
+  harness refuses any `--out-root` inside a `Nostos.Backend/Storage` directory
+  or its symlink target, and only accepts the two allowed scratch roots; the
+  helper scripts default to that machine's root and must be pointed elsewhere
+  before reuse.
 - The isolated backend helper copies the worktree’s SQLite database into
   scratch and overrides `Persistence__DatabasePath`, `Storage__BooksRoot`,
   `Storage__BackupsRoot` and `Acquisition__WorkingRoot`; it was not run in this
@@ -217,12 +222,12 @@ renders as a constant 72 %.
 Validated commands (already run; `short-1601` and `long-donquixote`):
 
 ```bash
-python3 docs/performance/librivox-import/scripts/bench_librivox_import.py \
-  --out-root /home/dev/.hermes/cache/scratch/librivox-import \
+python3 docs/archive/performance/librivox-import/scripts/bench_librivox_import.py \
+  --out-root <scratch-root>/librivox-import \
   run --id 2469 --label short-1601 --instrumentation-check
 
-python3 docs/performance/librivox-import/scripts/bench_librivox_import.py \
-  --out-root /home/dev/.hermes/cache/scratch/librivox-import \
+python3 docs/archive/performance/librivox-import/scripts/bench_librivox_import.py \
+  --out-root <scratch-root>/librivox-import \
   run --id 11035 --label long-donquixote
 ```
 
@@ -240,8 +245,8 @@ only syntax-checked here.
   `evidence/long-donquixote-ffmpeg-samples-downsampled.csv`.
 - `evidence/many-mobydick-attempt1.log.txt`, `many-mobydick-attempt2.log.txt`,
   `many-mobydick-observed-state.txt` — 502/500 evidence and stopped state.
-- Full-run scratch data (including every ffmpeg progress line) remains under
-  `/home/dev/.hermes/cache/scratch/librivox-import/` on this host.
+- Full-run scratch data (including every ffmpeg progress line) remains on the
+  measuring machine's scratch root, not in the repository.
 
 Measurement commit: `36aa6ec014f63fa3e34ab53da17dc6005cc993ba`
 (branch `spike/librivox-performance`).
