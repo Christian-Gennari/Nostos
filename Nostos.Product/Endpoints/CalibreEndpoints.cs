@@ -1,6 +1,6 @@
-using Microsoft.AspNetCore.Http.Features;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.Library.Imports;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -251,13 +251,7 @@ public static class CalibreEndpoints
             CalibreUploadService service,
             CancellationToken ct) =>
         {
-            if (!MigrationChunkHeaders.TryParseContentRange(
-                    request.Headers["Content-Range"],
-                    out var start,
-                    out var end,
-                    out var total)
-                || !MigrationChunkHeaders.IsSha256(
-                    request.Headers[MigrationChunkHeaders.ChunkHashHeaderName]))
+            if (!ResumableChunkRequest.TryRead(request, out var chunk, out var sha256))
             {
                 return CalibreUploadHttpErrors.From(
                     CalibreUploadException.Error(
@@ -266,8 +260,8 @@ public static class CalibreEndpoints
             }
 
             var effective = service.CurrentLimits;
-            var length = effective.PartLengthFor(total, partIndex);
-            if (length <= 0 || end - start + 1 != length)
+            var length = effective.PartLengthFor(chunk.Total, partIndex);
+            if (length <= 0 || chunk.Length != length)
             {
                 return CalibreUploadHttpErrors.From(
                     CalibreUploadException.Error(
@@ -275,7 +269,7 @@ public static class CalibreEndpoints
                         "That part does not match the upload's server-owned part size."));
             }
 
-            if (request.ContentLength > length)
+            if (ResumableChunkRequest.DeclaresMoreThan(request, length))
             {
                 return CalibreUploadHttpErrors.From(
                     CalibreUploadException.Error(
@@ -283,25 +277,23 @@ public static class CalibreEndpoints
                         "That part is larger than its declared range."));
             }
 
-            var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
-            if (bodySize is { IsReadOnly: false })
-                bodySize.MaxRequestBodySize = effective.PartBytes;
+            ResumableChunkRequest.LimitBodySize(request, effective.PartBytes);
 
             try
             {
                 var receipt = await service.UploadPartAsync(
                     sessionId,
                     partIndex,
-                    start,
-                    end,
-                    total,
-                    request.Headers[MigrationChunkHeaders.ChunkHashHeaderName].ToString(),
+                    chunk.Start,
+                    chunk.End,
+                    chunk.Total,
+                    sha256,
                     request.Body,
                     ct);
                 return Results.Ok(receipt);
             }
             catch (BadHttpRequestException exception)
-                when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+                when (ResumableChunkRequest.IsPayloadTooLarge(exception))
             {
                 return CalibreUploadHttpErrors.From(
                     CalibreUploadException.Error(

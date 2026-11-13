@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Uploads;
 
 namespace Nostos.Backend.Services.Library.Imports;
 
@@ -172,44 +173,22 @@ public sealed class FileCalibreUploadStore : ICalibreUploadStore
         }
 
         var temp = PartPath(directory, partIndex) + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var outcome = await ResumablePartReceiver.ReceiveIntoAsync(
+            () => new FileStream(
+                temp, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                ResumablePartReceiver.BufferBytes, FileOptions.Asynchronous),
+            () => TryDelete(temp),
+            content,
+            expectedLength,
+            expectedSha256,
+            ct);
+        if (outcome == ResumablePartOutcome.RangeInvalid)
+            throw CalibreUploadException.Error(CalibreUploadException.PartRangeInvalid);
+        if (outcome == ResumablePartOutcome.HashMismatch)
+            throw CalibreUploadException.Error(CalibreUploadException.PartHashMismatch);
+
         try
         {
-            await using (var output = new FileStream(
-                temp, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                CopyBufferBytes, FileOptions.Asynchronous))
-            {
-                using var buffer = new PortableArchiveBufferBudget(CopyBufferBytes)
-                    .Rent(CopyBufferBytes, ct);
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-                long received = 0;
-                while (true)
-                {
-                    // Read at most expected+1: an oversized body is refused
-                    // without draining it into scratch.
-                    var count = (int)Math.Min(buffer.Length, expectedLength - received + 1);
-                    var read = await content.ReadAsync(buffer.Memory[..count], ct);
-                    if (read == 0)
-                        break;
-                    received += read;
-                    if (received > expectedLength)
-                        throw CalibreUploadException.Error(CalibreUploadException.PartRangeInvalid);
-                    hash.AppendData(buffer.Memory.Span[..read]);
-                    await output.WriteAsync(buffer.Memory[..read], ct);
-                }
-
-                if (received != expectedLength)
-                    throw CalibreUploadException.Error(CalibreUploadException.PartRangeInvalid);
-                if (!string.Equals(
-                        Convert.ToHexStringLower(hash.GetHashAndReset()),
-                        expectedSha256,
-                        StringComparison.Ordinal))
-                {
-                    throw CalibreUploadException.Error(CalibreUploadException.PartHashMismatch);
-                }
-
-                await output.FlushAsync(ct);
-            }
-
             File.Move(temp, partPath, overwrite: false);
         }
         catch

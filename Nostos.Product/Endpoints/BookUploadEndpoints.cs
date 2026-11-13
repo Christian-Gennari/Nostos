@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Http.Features;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Product.Composition;
 using Nostos.Product.Http;
@@ -109,26 +108,16 @@ public static class BookUploadEndpoints
                 ILoggerFactory loggerFactory,
                 CancellationToken ct) =>
             {
-                if (!MigrationChunkHeaders.TryParseContentRange(
-                        request.Headers["Content-Range"],
-                        out var start,
-                        out var end,
-                        out var total)
-                    || !MigrationChunkHeaders.IsSha256(
-                        request.Headers[MigrationChunkHeaders.ChunkHashHeaderName]))
-                {
+                if (!ResumableChunkRequest.TryRead(request, out var chunk, out var sha256))
                     return BookUploadHttpErrors.InvalidRequest();
-                }
 
                 // One part is the largest body this route accepts. A declared
                 // oversize body is refused before a byte is read; a chunked
                 // body that grows past the limit makes Kestrel throw 413.
-                if (request.ContentLength > BookUploadLimits.PartBytes)
+                if (ResumableChunkRequest.DeclaresMoreThan(request, BookUploadLimits.PartBytes))
                     return BookUploadHttpErrors.PartTooLarge();
 
-                var bodySize = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
-                if (bodySize is { IsReadOnly: false })
-                    bodySize.MaxRequestBodySize = BookUploadLimits.PartBytes;
+                ResumableChunkRequest.LimitBodySize(request, BookUploadLimits.PartBytes);
 
                 var logger = loggerFactory.CreateLogger("Nostos.BookUpload");
                 var counting = new CountingRequestBodyStream(request.Body);
@@ -140,16 +129,16 @@ public static class BookUploadEndpoints
                         bookId,
                         sessionId,
                         partIndex,
-                        start,
-                        end,
-                        total,
-                        request.Headers[MigrationChunkHeaders.ChunkHashHeaderName].ToString(),
+                        chunk.Start,
+                        chunk.End,
+                        chunk.Total,
+                        sha256,
                         counting,
                         ct);
                     return Results.Ok(result);
                 }
                 catch (BadHttpRequestException exception)
-                    when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+                    when (ResumableChunkRequest.IsPayloadTooLarge(exception))
                 {
                     return BookUploadHttpErrors.PartTooLarge();
                 }

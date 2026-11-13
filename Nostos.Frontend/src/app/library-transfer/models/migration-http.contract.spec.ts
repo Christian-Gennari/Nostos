@@ -42,6 +42,7 @@ const backendSources = import.meta.glob(
     '../../../../../Nostos.Product/Services/BookUpload/BookUploadContracts.cs',
     '../../../../../Nostos.Product/Endpoints/BookUploadHttpContracts.cs',
     '../../../../../Nostos.Product/Endpoints/BookUploadEndpoints.cs',
+    '../../../../../Nostos.Product/Http/ResumableChunkRequest.cs',
   ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
@@ -61,6 +62,7 @@ const MIDDLEWARE = backendSource('LibraryMaintenanceMiddleware.cs');
 const BOOK_CONTRACTS = backendSource('BookUploadContracts.cs');
 const BOOK_HTTP_CONTRACTS = backendSource('BookUploadHttpContracts.cs');
 const BOOK_ENDPOINTS = backendSource('BookUploadEndpoints.cs');
+const CHUNK_REQUEST = backendSource('ResumableChunkRequest.cs');
 
 const BOOK_DTO_SOURCE =
   Object.entries(appSources).find(([path]) => path.endsWith('/book-upload.dtos.ts'))?.[1] ?? '';
@@ -363,7 +365,9 @@ describe('resumable book upload contract parity with the backend source (#1266)'
     expect(BOOK_ENDPOINTS).toContain('/parts/{partIndex:int}');
     expect(BOOK_ENDPOINTS).toContain('/complete');
     expect(BOOK_ENDPOINTS).toContain('/pause');
-    expect(BOOK_ENDPOINTS).toContain('MigrationChunkHeaders.ChunkHashHeaderName');
+    // The part route reads its headers through the shared chunk parser (#1629).
+    expect(BOOK_ENDPOINTS).toContain('ResumableChunkRequest.TryRead');
+    expect(CHUNK_REQUEST).toContain('MigrationChunkHeaders.ChunkHashHeaderName');
     expect(BOOK_HTTP_CONTRACTS).toContain('BookUploadErrorResponse');
   });
 });
