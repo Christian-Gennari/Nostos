@@ -49,10 +49,10 @@ public sealed class McpCitationsTests
     [Fact]
     public void The_same_note_resent_has_the_same_key_and_a_different_note_does_not()
     {
-        var key = NostosMcpTools.IdempotencyKey(Book, "A  thought", null, null, ["Time", "memory"]);
+        var key = McpToolKeys.IdempotencyKey(Book, "A  thought", null, null, ["Time", "memory"]);
 
-        NostosMcpTools.IdempotencyKey(Book, " A thought ", null, null, ["Memory", "time"]).Should().Be(key);
-        NostosMcpTools.IdempotencyKey(Book, "Another thought", null, null, ["Time", "memory"]).Should().NotBe(key);
-        NostosMcpTools.IdempotencyKey(Guid.NewGuid(), "A thought", null, null, ["Time", "memory"]).Should().NotBe(key);
+        McpToolKeys.IdempotencyKey(Book, " A thought ", null, null, ["Memory", "time"]).Should().Be(key);
+        McpToolKeys.IdempotencyKey(Book, "Another thought", null, null, ["Time", "memory"]).Should().NotBe(key);
+        McpToolKeys.IdempotencyKey(Guid.NewGuid(), "A thought", null, null, ["Time", "memory"]).Should().NotBe(key);
     }
 }

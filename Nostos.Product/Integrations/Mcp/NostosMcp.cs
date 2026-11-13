@@ -100,7 +100,17 @@ public static class NostosMcp
                 options.ServerInstructions = Instructions;
             })
             .WithHttpTransport()
-            .WithTools<NostosMcpTools>(Json)
+            // One tool class per feature (issue #1599): discovery is the same
+            // attribute scan the single class used, over every registered type.
+            .WithTools(
+            [
+                typeof(McpSearchTools),
+                typeof(McpBookTools),
+                typeof(McpNoteTools),
+                typeof(McpTopicTools),
+                typeof(McpWritingTools),
+                typeof(McpReadingListTools),
+            ], Json)
             // Writes need the nostos:write scope; see McpScopes.
             .WithRequestFilters(filters => filters.AddCallToolFilter(McpScopes.Enforce));
         return services;
