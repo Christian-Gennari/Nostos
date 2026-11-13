@@ -41,7 +41,7 @@ public class LibraryReceiptRetentionWorker(
     public async Task ScanOnceAsync(CancellationToken cancellationToken = default)
     {
         await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(cancellationToken);
-        using var scope = scopeFactory.CreateScope();
+        await using var scope = scopeFactory.CreateAsyncScope();
         var service = scope.ServiceProvider.GetRequiredService<LibraryReceiptRetentionService>();
         await service.PruneAsync(cancellationToken);
         await service.PruneNoteReceiptsAsync(cancellationToken);
@@ -67,6 +67,11 @@ public class LibraryReceiptRetentionWorker(
                 try
                 {
                     await ScanOnceAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Host shutdown in the middle of a scan is not a failure.
+                    break;
                 }
                 catch (Exception ex)
                 {
