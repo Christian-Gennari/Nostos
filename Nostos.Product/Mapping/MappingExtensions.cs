@@ -292,7 +292,9 @@ public static class MappingExtensions
     // ------------------------------
     public static BookModel ToModel(this CreateBookDto dto)
     {
-        // Factory Pattern: Create the correct subclass based on the "Type" string
+        // Factory Pattern: Create the correct subclass based on the "Type" string.
+        // Anything else falls back to a digital book: a paper copy is something
+        // someone says they own, never the shape an unlabelled row gets.
         BookModel model = dto.Type?.ToLower() switch
         {
             "audiobook" => new AudioBookModel
@@ -301,12 +303,12 @@ public static class MappingExtensions
                 Duration = dto.Duration,
                 Narrator = dto.Narrator,
             },
-            "ebook" => new EBookModel { Isbn = dto.Isbn, PageCount = dto.PageCount },
-            _ => new PhysicalBookModel // Default fallback
+            "physical" => new PhysicalBookModel
             {
                 Isbn = dto.Isbn,
                 PageCount = dto.PageCount,
             },
+            _ => new EBookModel { Isbn = dto.Isbn, PageCount = dto.PageCount },
         };
 
         // 1. Map Shared Root Fields

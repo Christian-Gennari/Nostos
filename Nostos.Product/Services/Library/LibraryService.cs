@@ -333,7 +333,12 @@ public sealed partial class LibraryService : ILibraryService
         // check runs first; identifier/type consistency runs AFTER identity
         // resolution so exact identifier matches (and identity_conflict) stay
         // reachable.
-        var normalizedType = string.IsNullOrWhiteSpace(request.Type) ? "physical" : request.Type.Trim().ToLowerInvariant();
+        //
+        // No type means no evidence of a paper copy: it is a metadata-only
+        // digital book, never the other way round. A physical book is a claim
+        // someone makes, not a default (see BookLookupService, which no longer
+        // supplies one).
+        var normalizedType = string.IsNullOrWhiteSpace(request.Type) ? "ebook" : request.Type.Trim().ToLowerInvariant();
         if (normalizedType is not ("physical" or "ebook" or "audiobook"))
             return NoChange(Failure("invalid_book_identity",
                 $"Unknown book type: {request.Type}. Use physical, ebook, or audiobook.", state.StateVersion));
