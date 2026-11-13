@@ -97,7 +97,20 @@ public sealed record NostosProductEndpointPolicies(
     /// (<c>/api/carrel</c>). A host with accounts passes its customer policy;
     /// SelfHosted has one local owner and passes null.
     /// </summary>
-    string? CarrelManagementAuthorizationPolicy = null)
+    string? CarrelManagementAuthorizationPolicy = null,
+    /// <summary>
+    /// Rate-limit policy for the device routes (<c>/carrel/v1</c>), which are
+    /// reachable without a signed-in person. A host with accounts passes a
+    /// policy that partitions by client address; SelfHosted passes null.
+    /// </summary>
+    string? CarrelProtocolRateLimitPolicy = null,
+    /// <summary>
+    /// Rate-limit policy for the signed-in pairing and devices routes
+    /// (<c>/api/carrel</c>). Approving a code is guessable by anyone with an
+    /// account, so a host with accounts passes a policy that partitions by
+    /// account; SelfHosted passes null.
+    /// </summary>
+    string? CarrelManagementRateLimitPolicy = null)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -548,8 +561,10 @@ public static class NostosProductComposition
         // Carrel Sync Protocol v1 (WP8): /carrel/v1 for paired devices, and the
         // signed-in pairing/device routes. Both map only on a host that
         // registered the feature.
-        routes.MapCarrelProtocolEndpoints();
-        api.MapCarrelManagementEndpoints(policies.CarrelManagementAuthorizationPolicy);
+        routes.MapCarrelProtocolEndpoints(policies.CarrelProtocolRateLimitPolicy);
+        api.MapCarrelManagementEndpoints(
+            policies.CarrelManagementAuthorizationPolicy,
+            policies.CarrelManagementRateLimitPolicy);
         api.MapManagedBackupEndpoints(
             policies.ManagedBackupsAuthorizationPolicy,
             policies.LargeTransferRateLimitPolicy);

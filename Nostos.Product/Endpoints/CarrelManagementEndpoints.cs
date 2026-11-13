@@ -28,7 +28,9 @@ public static class CarrelManagementEndpoints
     /// policy (Cloud); SelfHosted has one local owner and passes null.
     /// </summary>
     public static bool MapCarrelManagementEndpoints(
-        this IEndpointRouteBuilder routes, string? authorizationPolicy = null)
+        this IEndpointRouteBuilder routes,
+        string? authorizationPolicy = null,
+        string? rateLimitPolicy = null)
     {
         if (routes.ServiceProvider.GetService<CarrelSyncService>() is null)
             return false;
@@ -36,6 +38,8 @@ public static class CarrelManagementEndpoints
         var group = routes.MapGroup(Route);
         if (!string.IsNullOrEmpty(authorizationPolicy))
             group.RequireAuthorization(authorizationPolicy);
+        if (!string.IsNullOrEmpty(rateLimitPolicy))
+            group.RequireRateLimiting(rateLimitPolicy);
 
         group.MapGet("/pairing/{code}", async (
             string code,

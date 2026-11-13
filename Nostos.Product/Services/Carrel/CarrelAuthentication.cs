@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Nostos.Backend.Services.Carrel;
@@ -69,10 +70,17 @@ public static class CarrelRegistration
     /// the policy. The host must also register an
     /// <see cref="ICarrelOwnerProvider"/>; the endpoints and the Settings →
     /// Devices capability are mapped only when this method ran.
+    ///
+    /// <para>A host that keeps each owner's data in its own database registers
+    /// its own <see cref="ICarrelDeviceDirectory"/> first; otherwise the
+    /// single-database directory is used, which is the SelfHosted behaviour.
+    /// The directory is resolved by singleton services, so a custom one must
+    /// not depend on scoped services.</para>
     /// </summary>
     public static IServiceCollection AddNostosCarrelSync(this IServiceCollection services)
     {
         services.AddOptions<CarrelOptions>().BindConfiguration(CarrelOptions.SectionName);
+        services.TryAddSingleton<ICarrelDeviceDirectory, SingleDatabaseCarrelDeviceDirectory>();
         services.AddSingleton<CarrelPairingService>();
         services.AddSingleton<CarrelSyncService>();
         services.AddAuthentication()
