@@ -1,82 +1,23 @@
-import {
-  Component,
-  inject,
-  OnInit,
-  AfterViewInit,
-  signal,
-  effect,
-  computed,
-  DestroyRef,
-  untracked,
-  ElementRef,
-  ViewChild,
-  ChangeDetectionStrategy,
-} from '@angular/core';
-import { modifierKeyLabel } from '../core/platform';
-import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
-import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DragDropModule } from '@angular/cdk/drag-drop';
-import { catchError, debounceTime, distinctUntilChanged, firstValueFrom, finalize, forkJoin, map, of, switchMap } from 'rxjs';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  OnInit,
+  ViewChild,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { marked } from 'marked';
-import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
-import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
-
-import { HttpErrorResponse } from '@angular/common/http';
-import { WritingsService } from '../core/services/writings.service';
-import { ToastService } from '../core/services/toast.service';
-import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
-import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
-import { TopicsService, TopicDto, NoteContextDto } from '../core/services/topics.service';
-import { BooksService, Book as BookDto } from '../core/services/books.service';
-import { NotesService } from '../core/services/notes.service';
-import { RecentItemsService } from '../ui/command-palette/recent-items.service';
-import { NoteItemComponent } from '../ui/note-item/note-item.component';
-import { noteAsItem } from '../ui/note-item/note-item.helpers';
-import { WritingDto, WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
+import { ActivatedRoute, Router } from '@angular/router';
+import { catchError, debounceTime, distinctUntilChanged, finalize, forkJoin, map, of, switchMap } from 'rxjs';
+import { WritingContentDto, WritingDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 import { Note, NoteSearchHit, Passage, isPassage } from '../core/dtos/note.dtos';
-import { PassageViewerRequest, PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
-import {
-  MarkdownEditorComponent,
-  MarkdownEditorTransientState,
-  SourceSuggestionState,
-} from '../ui/markdown-editor/markdown-editor.component';
-import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
-import { PaletteChoice } from './source-palette/source-palette.helpers';
-import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
-import { StudioPreferencesService } from './page-settings/studio-preferences.service';
-import { CitableSource, CitationService } from './citations/citation.service';
-import { bookToCslItem, missingForStyle, missingPhrase } from './citations/csl-item';
-import { citationMarkdown, citedSourceIds } from '../ui/markdown-editor/citation.extension';
-import { removedCitedIds, sourceKey, touchedTopics } from './writing-touches.helpers';
-import { StyledInsertion, bibliographyMarkdown } from './citations/styled-insertion';
-import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
-import { buildFlatTree } from '../ui/flat-tree/flat-tree.helper';
-import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
-import { ButtonComponent } from '../ui/button/button.component';
-import { InputDirective } from '../ui/form-control/form-control.directive';
-import { NO_TOPICS, NO_TOPICS_MATCH, TopicOptionComponent } from '../ui/topic-option/topic-option.component';
-import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { ModalShell } from '../ui/modal-shell/modal-shell.component';
-import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
-import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
-import { quotePen } from '../reader/highlight-colours';
-import { NOSTOS_MENU } from '../ui/menu/menu.component';
-import { ExportDialogComponent } from './export/export-dialog.component';
-import { hasExportableContent } from './export/export-resolve';
-import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
-import {
-  buildNoteMarkdown,
-  buildQuoteMarkdown,
-  buildReferenceMarkdown,
-  hasMeaningfulNoteContent,
-  hasMeaningfulSelectedText,
-  sourceHumanLabel,
-} from './source-insertion.helpers';
 import {
   hasStudioSourceReturnState,
   readerReturnOriginState,
@@ -85,13 +26,77 @@ import {
   withStudioSourceReturnState,
   withoutStudioSourceReturnState,
 } from '../core/navigation/studio-reader-navigation';
-import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { modifierKeyLabel } from '../core/platform';
+import { BooksService, Book as BookDto } from '../core/services/books.service';
+import { NotesService } from '../core/services/notes.service';
+import { ToastService } from '../core/services/toast.service';
+import { TopicsService, TopicDto } from '../core/services/topics.service';
+import { WritingsService } from '../core/services/writings.service';
 import { editionChoices } from '../book-detail/edition-switch-options';
-import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
-import { BOOK_FORMAT_LABEL, bookFormatConcept, UNKNOWN_AUTHOR, type BookFormatConcept, UNKNOWN_BOOK } from '../core/book-format';
-import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
-import { StarterDraftService } from './starter-draft/starter-draft.service';
+import { AssistantLauncherService } from '../ui/assistant/assistant-launcher.service';
+import { ButtonComponent } from '../ui/button/button.component';
+import { RecentItemsService } from '../ui/command-palette/recent-items.service';
+import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
+import { type DropdownOption } from '../ui/dropdown/dropdown.component';
+import { TreeItem } from '../ui/flat-tree/flat-tree.helper';
+import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
+import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
+import {
+  MarkdownEditorComponent,
+  MarkdownEditorTransientState,
+  SourceSuggestionState,
+} from '../ui/markdown-editor/markdown-editor.component';
+import { citedSourceIds } from '../ui/markdown-editor/citation.extension';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
+import { ModalShell } from '../ui/modal-shell/modal-shell.component';
+import { noteAsItem } from '../ui/note-item/note-item.helpers';
+import { PassageViewerRequest, PassageViewerService } from '../ui/passage-viewer/passage-viewer.service';
+import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
+import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
+import { CitableSource, CitationService } from './citations/citation.service';
+import { CitationRefreshCoordinator } from './citations/citation-refresh.coordinator';
+import { StyledInsertion } from './citations/styled-insertion';
+import { ExportDialogComponent } from './export/export-dialog.component';
+import { hasExportableContent } from './export/export-resolve';
+import { noteContextToNote, noteSearchHitToNote, writingSourceToNote } from './note-context.mapper';
+import { StudioPageSettingsComponent } from './page-settings/studio-page-settings.component';
+import { StudioPreferencesService } from './page-settings/studio-preferences.service';
+import {
+  computeReferencePreview,
+  formatSourceProvenance,
+  formatSourceRowLabel,
+} from './reference-preview';
+import {
+  ReferenceLoadState,
+  ReferenceScrollKey,
+  StudioReferenceDrawerComponent,
+} from './reference-drawer/studio-reference-drawer.component';
+import {
+  buildNoteMarkdown,
+  buildQuoteMarkdown,
+  buildReferenceMarkdown,
+  hasMeaningfulNoteContent,
+  hasMeaningfulSelectedText,
+  sourceHumanLabel,
+} from './source-insertion.helpers';
+import { PaletteAnchor, SourcePaletteComponent } from './source-palette/source-palette.component';
+import { PaletteChoice } from './source-palette/source-palette.helpers';
 import { answerStarterOffer, starterOfferAnswered } from './starter-draft/starter-draft';
+import { StarterDraftService } from './starter-draft/starter-draft.service';
+import { StudioBodyClassService } from './studio-body-class.service';
+import { DeleteWritingModalComponent } from './tree/delete-writing-modal.component';
+import { MoveWritingDialogComponent } from './tree/move-writing-dialog.component';
+import {
+  MoveRow,
+  buildDeleteWritingCopy,
+  buildMoveRows,
+  moveLocationLabel,
+  moveRowKey,
+} from './tree/move-writing.helpers';
+import { StudioFilesSidebarComponent } from './tree/studio-files-sidebar.component';
+import { AutosaveHostAdapter, WritingAutosaveService } from './writing-autosave.service';
+import { removedCitedIds, sourceKey, touchedTopics } from './writing-touches.helpers';
 
 /** The writing the Studio opens on next time. */
 const STUDIO_LAST_WRITING_KEY = 'nostos.studio.lastWritingId';
@@ -107,22 +112,6 @@ const STUDIO_COMPACT_HEIGHT = 500;
 function isStudioCompactViewport(): boolean {
   return window.innerWidth <= STUDIO_COMPACT_WIDTH || window.innerHeight <= STUDIO_COMPACT_HEIGHT;
 }
-
-/** One destination in the "Move to…" dialog: Top level or a folder. */
-interface MoveRow {
-  /** Stable row id for focus bookkeeping; a folder id, prefixed. */
-  key: string;
-  /** The parent id the move request takes; null for Top level. */
-  parentId: string | null;
-  name: string;
-  /** Nesting depth, for the row's indent. Top level and root folders are 0. */
-  level: number;
-  /** This is where the open writing already is, so choosing it is a no-op. */
-  current: boolean;
-}
-
-type ReferenceLoadState = 'idle' | 'loading' | 'loaded' | 'error';
-type ReferenceScrollKey = 'writing' | 'topics' | 'topicNotes' | 'books' | 'bookNotes';
 
 function writeStudioValue(key: string, value: string | null): void {
   try {
@@ -193,41 +182,32 @@ function writeCarets(carets: RememberedCaret[]): void {
   writeStudioValue(STUDIO_CARETS_KEY, JSON.stringify(carets.slice(0, STUDIO_CARETS_MAX)));
 }
 
-
 @Component({
   selector: 'app-writing-studio',
   standalone: true,
   imports: [
-    ChoiceRowComponent,
-    DropdownComponent,
-    SearchFieldComponent,
     CommonModule,
-    FormsModule,
     NostosIconComponent,
-    DragDropModule,
-    FlatTreeComponent,
-    NoteItemComponent,
     MarkdownEditorComponent,
     SourcePaletteComponent,
     StudioPageSettingsComponent,
     IconButtonComponent,
     ButtonComponent,
-    InputDirective,
     ConfirmModal,
     ModalShell,
     NOSTOS_MENU,
     ExportDialogComponent,
-    QuoteBlockComponent,
-    TopicChipComponent,
-    TopicOptionComponent,
-    EmptyStateComponent,
-    LoadingIndicatorComponent,
     InlineRenameComponent,
     NostosDatePipe,
+    StudioFilesSidebarComponent,
+    StudioReferenceDrawerComponent,
+    MoveWritingDialogComponent,
+    DeleteWritingModalComponent,
   ],
+  providers: [StudioBodyClassService, WritingAutosaveService, CitationRefreshCoordinator],
   templateUrl: './writing-studio.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./writing-studio.component.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WritingStudio implements OnInit, AfterViewInit {
   private writingsService = inject(WritingsService);
@@ -242,20 +222,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   private destroyRef = inject(DestroyRef);
   private hostElement = inject(ElementRef<HTMLElement>);
+  private readonly bodyClass = inject(StudioBodyClassService);
+  private readonly autosave = inject(WritingAutosaveService);
+  private readonly citationCoordinator = inject(CitationRefreshCoordinator);
   @ViewChild('editor') private markdownEditor?: MarkdownEditorComponent;
 
-  private writingHandoffSubscription: { unsubscribe(): void } | null = null;
   private requestedWritingId: string | null = null;
   private handledWritingHandoffId: string | null = null;
   private handoffOpenGeneration = 0;
   private writingTreeLoaded = false;
-
-  // Autosaves and explicit "open source" flushes share one serialized lane.
-  // A newer generation supersedes stale UI responses, while queue ordering
-  // guarantees an older request can never land on the server after the flush.
-  private saveGeneration = 0;
-  private saveQueue: Promise<void> = Promise.resolve();
-  private pendingSaveCount = 0;
+  private destroyed = false;
+  private readonly pendingTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  private readonly pendingRafs = new Set<number>();
 
   // Reader excursions are represented only by short-lived browser history
   // state. Nothing here is persisted to Writing content or the backend.
@@ -268,11 +246,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   private readonly initialCompactMode = isStudioCompactViewport();
   isCompact = signal(this.initialCompactMode);
-  // The page comes first: both rails start closed. The file list is always a
-  // slide-over. Reference sits beside the page on a wide screen, so a source
-  // stays in view while it is quoted, and slides over on a compact one. One
-  // behaviour, no pin: a choice between the two was a second header button
-  // nobody could read.
   showFileSidebar = signal(false);
   showBrainSidebar = signal(false);
 
@@ -332,27 +305,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
    * Kept sources mapped to Note shape for the panel's rows,
    * in addedAt ascending order (chronological accretion).
    */
-  keptNotes = computed<Note[]>(() => {
-    return [...this.keptSources()]
+  keptNotes = computed<Note[]>(() =>
+    [...this.keptSources()]
       .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime())
-      .map((s) => ({
-        id: s.id,
-        bookId: s.bookId,
-        content: s.content,
-        selectedText: s.selectedText ?? undefined,
-        cfiRange: s.cfiRange ?? undefined,
-        createdAt: s.createdAt,
-        bookTitle: s.bookTitle ?? undefined,
-        bookAuthor: s.bookAuthor ?? undefined,
-        sourceAnchorKind: s.sourceAnchorKind ?? undefined,
-        sourceAnchorValue: s.sourceAnchorValue ?? undefined,
-        anchorVerified: s.anchorVerified ?? undefined,
-        kind: s.kind,
-        passageTitle: s.passageTitle,
-        passageEnd: s.passageEnd,
-        passageWordCount: s.passageWordCount,
-      }));
-  });
+      .map(writingSourceToNote),
+  );
 
   rootItems = signal<WritingDto[]>([]);
   activeItem = signal<WritingContentDto | null>(null);
@@ -374,12 +331,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
   });
 
   // --- What the writing touches (issue #1162) ---
-  // Worked out from what the writing cites, read live from the editor's
-  // document; never stored on the writing, and nothing here adds a topic.
 
   /** Note ids the open writing cites (lower-case, once each, in order). */
   readonly citedIds = computed(() => (this.activeItem() ? citedSourceIds(this.editorText()) : []));
-  private readonly citedIdSet = computed(() => new Set(this.citedIds()));
+  readonly citedIdSet = computed(() => new Set(this.citedIds()));
   /** Kept and cited sources as the server has them now, with their topics. */
   readonly sourceLookup = signal<ReadonlyMap<string, NoteSearchHit>>(new Map());
   /** The ids `sourceLookup` answers for: an id asked about and absent was removed. */
@@ -389,24 +344,27 @@ export class WritingStudio implements OnInit, AfterViewInit {
     [...new Set([...this.keptSources().map((s) => sourceKey(s.id)), ...this.citedIds()])]
       .filter(Boolean)
       .sort()
-      .join(','));
+      .join(','),
+  );
   /** The topics the cited sources carry, for the panel's one Touches line. */
   readonly touchedTopics = computed(() => touchedTopics(this.citedIds(), this.sourceLookup()));
   /** Cited sources whose note (or book) was deleted; the citation text stays. */
   readonly removedCitedCount = computed(
-    () => removedCitedIds(this.citedIds(), this.sourceLookup(), this.sourceLookedUp()).length);
+    () => removedCitedIds(this.citedIds(), this.sourceLookup(), this.sourceLookedUp()).length,
+  );
   /** Sources cited without being kept (a citation pasted from another writing). */
   readonly citedOnlyNotes = computed<Note[]>(() => {
     const kept = new Set(this.keptSources().map((s) => sourceKey(s.id)));
     const lookup = this.sourceLookup();
     return this.citedIds()
       .filter((id) => !kept.has(id) && lookup.has(id))
-      .map((id) => hitToNote(lookup.get(id)!));
+      .map((id) => noteSearchHitToNote(lookup.get(id)!));
   });
 
   /** Topic ids by folded name, so a source's topic pill can open its page. */
-  private readonly topicIdsByName = computed(
-    () => new Map(this.topics().map((topic) => [topic.name.toLocaleLowerCase(), topic.id])));
+  readonly topicIdsByName = computed(
+    () => new Map(this.topics().map((topic) => [topic.name.toLocaleLowerCase(), topic.id])),
+  );
 
   /** The Brain page of a cited source's topic, or null while topics are not loaded. */
   topicIdFor(name: string): string | null {
@@ -439,7 +397,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return this.isCited(noteId) ? (this.sourceLookup().get(sourceKey(noteId))?.topicNames ?? []) : [];
   }
 
-
   editingId = signal<string | null>(null);
   /** Why the last rename was refused, said under the field (issue #1209). */
   readonly renameError = signal<string | null>(null);
@@ -447,12 +404,12 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   editorText = signal('');
   editorTitle = signal('');
-  saveStatus = signal<'Saved' | 'Saving…' | 'Unsaved'>('Saved');
+  readonly saveStatus = this.autosave.saveStatus;
   /**
    * Set when a save is refused because the writing was changed elsewhere
    * (issue #1363). Holds the newer copy and the writer's own text.
    */
-  readonly saveConflict = signal<{ theirs: WritingContentDto; title: string; content: string } | null>(null);
+  readonly saveConflict = this.autosave.saveConflict;
 
   // Zen (focus) mode — issue #49. Session-only: never persisted.
   isZen = signal(false);
@@ -462,13 +419,22 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private readonly citations = inject(CitationService);
   private readonly starter = inject(StarterDraftService);
 
+  private readonly autosaveAdapter: AutosaveHostAdapter = {
+    getActiveItem: () => this.activeItem(),
+    setActiveItem: (updated) => this.activeItem.set(updated),
+    getTitle: () => this.editorTitle(),
+    setTitle: (title) => this.editorTitle.set(title),
+    getContent: () => this.editorText(),
+    setContent: (content) => this.editorText.set(content),
+    flushPendingEditorChange: () => this.markdownEditor?.flushPendingChange(),
+    onRenamedDuringSave: (id, newTitle) => {
+      this.loadTree();
+      this.recent.relabel('document', id, newTitle);
+    },
+  };
+
   // --- A starter draft (issue #1220) ---
 
-  /**
-   * The imported passages an empty Studio offers to start a draft from, or
-   * null when there is no offer: the library has writings, nothing imported,
-   * or the offer was answered on this device.
-   */
   readonly starterOffer = signal<NoteSearchHit[] | null>(null);
   readonly startingDraft = signal(false);
   readonly showStarterOffer = computed(
@@ -479,10 +445,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (starterOfferAnswered()) return;
     this.starter.passages().then(
       (passages) => {
-        // Only while the Studio is still empty: a writing begun in the meantime answers it.
-        if (this.rootItems().length === 0 && !this.activeItem()) this.starterOffer.set(passages.length ? passages : null);
+        if (this.destroyed) return;
+        if (this.rootItems().length === 0 && !this.activeItem()) {
+          this.starterOffer.set(passages.length ? passages : null);
+        }
       },
-      () => this.starterOffer.set(null),
+      () => {
+        if (!this.destroyed) this.starterOffer.set(null);
+      },
     );
   }
 
@@ -493,6 +463,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.startingDraft.set(true);
     try {
       const id = await this.starter.create(passages);
+      if (this.destroyed) return;
       if (!id) {
         this.toast.error('None of your imported highlights has words to quote');
         return;
@@ -502,9 +473,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.loadTree();
       this.openWritingDocument(id, false);
     } catch {
-      this.toast.error('Could not start the draft. Try again.');
+      if (!this.destroyed) this.toast.error('Could not start the draft. Try again.');
     } finally {
-      this.startingDraft.set(false);
+      if (!this.destroyed) this.startingDraft.set(false);
     }
   }
 
@@ -517,18 +488,15 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** A starter draft opens with the caret on a fresh line after its passages. */
   private caretAfterText(item: WritingContentDto): void {
-    setTimeout(() => {
+    this.scheduleTimeout(() => {
       if (this.activeItem()?.id !== item.id) return;
       void this.markdownEditor?.restoreTransientState({ at: 'body-end' }, item.content);
     });
   }
+
   pageSettingsOpen = signal(false);
   /** The export dialog (issue #1164). */
   exportOpen = signal(false);
-  /**
-   * Why "Export…" is unavailable, shown under it; null when it can open. An
-   * empty writing in a folder can still open it, to export the folder.
-   */
   readonly exportBlockedReason = computed(() => {
     const item = this.activeItem();
     if (!item) return 'Nothing to export yet';
@@ -536,11 +504,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const parent = this.rootItems().find((candidate) => candidate.id === item.id)?.parentId;
     return parent ? null : 'This document is empty';
   });
-  /** Where the settings open: the page, or the Citations list at a book missing details (#1157). */
-  readonly pageSettingsStart = signal<{ view: 'main' | 'citations'; book: string | null }>({ view: 'main', book: null });
-  /** The books this writing cites, for the Citations list's missing details. */
+  readonly pageSettingsStart = signal<{ view: 'main' | 'citations'; book: string | null }>({
+    view: 'main',
+    book: null,
+  });
   readonly citedBookIds = signal<string[]>([]);
-  /** The Aa button: the settings popover hangs under it (#1060). */
   @ViewChild('pageSettingsButton', { read: ElementRef }) pageSettingsButton?: ElementRef<HTMLElement>;
 
   /** Typewriter mode: keep the caret line centered. A page setting now. */
@@ -566,64 +534,23 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The "Move to…" dialog: Top level and the folders, to file the open writing in. */
   readonly moveOpen = signal(false);
   readonly moveBusy = signal(false);
-  /** The row whose move is in flight, so it can say "Moving…" in place. */
   readonly movePendingKey = signal<string | null>(null);
 
-  /** Where the open writing sits now: a folder id, or null at the top level. */
   readonly moveCurrentParent = computed(() => {
     const id = this.activeItem()?.id;
     return this.rootItems().find((item) => item.id === id)?.parentId ?? null;
   });
 
-  /** Every folder, nested the way the file list nests them. */
-  readonly moveFolders = computed(() => {
-    const folders = this.rootItems().filter((item) => item.type === 'Folder');
-    return buildFlatTree(folders, new Set(folders.map((folder) => folder.id)));
-  });
+  readonly moveRows = computed<MoveRow[]>(() =>
+    buildMoveRows(this.rootItems(), this.activeItem()?.id),
+  );
 
-  /**
-   * The dialog's rows: Top level first, then every folder in file-tree order.
-   *
-   * A flat array rather than two template blocks: the keyboard handler walks
-   * the same order the screen reader does, and a row knows whether it is the
-   * current location without a second lookup in the template.
-   */
-  readonly moveRows = computed<MoveRow[]>(() => {
-    const currentParent = this.moveCurrentParent();
-    return [
-      {
-        key: 'top-level',
-        parentId: null,
-        name: 'Top level',
-        level: 0,
-        current: currentParent === null,
-      },
-      ...this.moveFolders().map((folder) => ({
-        key: `folder:${folder.id}`,
-        parentId: folder.id,
-        name: folder.name,
-        level: folder.level,
-        current: currentParent === folder.id,
-      })),
-    ];
-  });
+  readonly moveLocation = computed(() =>
+    moveLocationLabel(this.moveCurrentParent(), this.rootItems()),
+  );
 
-  /** Where the writing is now, as the header's second line says it. */
-  readonly moveLocation = computed(() => {
-    const parent = this.moveCurrentParent();
-    if (parent === null) return 'at the top level';
-    const folder = this.rootItems().find((item) => item.id === parent);
-    return folder ? `in “${folder.name}”` : 'in a folder';
-  });
-
-  /** False only when the writing is at the top level and there are no folders. */
   readonly moveHasDestination = computed(() => this.moveRows().some((row) => !row.current));
 
-  /**
-   * The first row that is not the current location, for initial focus. Null
-   * when there is nowhere else to go, so the shell focuses its close button
-   * instead of an inert row.
-   */
   readonly moveInitialFocusKey = computed(
     () => this.moveRows().find((row) => !row.current)?.key ?? null,
   );
@@ -639,77 +566,33 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!this.moveBusy()) this.moveOpen.set(false);
   }
 
-  /** A row's own key, matching the `key` on its MoveRow. */
-  private moveKey(parentId: string | null): string {
-    return parentId === null ? 'top-level' : `folder:${parentId}`;
-  }
-
-  /** Choose a row with the pointer or Enter/Space; the current row is inert. */
-  chooseMove(row: MoveRow): void {
-    if (this.moveBusy() || row.current) return;
-    this.moveTo(row.parentId);
-  }
-
-  /**
-   * Arrow keys walk the destinations without leaving the dialog; Home/End
-   * jump to the ends. The current row is skipped because it cannot be chosen.
-   * Tab still visits every row, and Enter/Space activate the focused one.
-   */
-  onMoveRowKeydown(event: KeyboardEvent, row: MoveRow): void {
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    const selectable = this.moveRows().filter((candidate) => !candidate.current);
-    if (selectable.length === 0) return;
-
-    let next: MoveRow;
-    if (event.key === 'Home') {
-      next = selectable[0];
-    } else if (event.key === 'End') {
-      next = selectable[selectable.length - 1];
-    } else {
-      const at = selectable.findIndex((candidate) => candidate.key === row.key);
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      let index: number;
-      if (at === -1) index = event.key === 'ArrowDown' ? 0 : selectable.length - 1;
-      else index = (at + step + selectable.length) % selectable.length;
-      next = selectable[index];
-    }
-
-    event.preventDefault();
-    const list = (event.currentTarget as HTMLElement).closest('.move-list');
-    const target = Array.from(
-      list?.querySelectorAll<HTMLButtonElement>('[data-move-row]') ?? [],
-    ).find((button) => button.dataset['moveRow'] === next.key);
-    target?.focus();
-  }
-
-  /**
-   * Moves the open writing. The location it is already in is inert: the row is
-   * marked "Current" and a click on it leaves the dialog open rather than
-   * pretending a move happened.
-   */
+  /** Moves the open writing. */
   moveTo(parentId: string | null): void {
     const item = this.activeItem();
     if (!item || this.moveBusy()) return;
     if (parentId === this.moveCurrentParent()) return;
     this.moveBusy.set(true);
-    this.movePendingKey.set(this.moveKey(parentId));
-    this.writingsService.move(item.id, parentId).subscribe({
-      next: () => {
-        this.moveBusy.set(false);
-        this.movePendingKey.set(null);
-        this.moveOpen.set(false);
-        // Read the name before the tree reloads: the toast should not depend on
-        // the refreshed list still containing the folder it just moved into.
-        const folder = parentId ? this.rootItems().find((candidate) => candidate.id === parentId) : null;
-        this.loadTree();
-        this.toast.success(folder ? `Moved to “${folder.name}”` : 'Moved to the top level');
-      },
-      error: () => {
-        this.moveBusy.set(false);
-        this.movePendingKey.set(null);
-        this.toast.error('Could not move it');
-      },
-    });
+    this.movePendingKey.set(moveRowKey(parentId));
+    this.writingsService
+      .move(item.id, parentId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.moveBusy.set(false);
+          this.movePendingKey.set(null);
+          this.moveOpen.set(false);
+          const folder = parentId
+            ? this.rootItems().find((candidate) => candidate.id === parentId)
+            : null;
+          this.loadTree();
+          this.toast.success(folder ? `Moved to “${folder.name}”` : 'Moved to the top level');
+        },
+        error: () => {
+          this.moveBusy.set(false);
+          this.movePendingKey.set(null);
+          this.toast.error('Could not move it');
+        },
+      });
   }
 
   togglePageSettings(): void {
@@ -718,7 +601,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
       this.pageSettingsStart.set({ view: 'main', book: null });
       this.citedBookIds.set(this.writingBooks());
     }
-    // One layer over the page at a time: the settings replace a slide-over.
     if (open && this.drawerOpen()) {
       this.showFileSidebar.set(false);
       if (this.isDrawer('reference')) this.showBrainSidebar.set(false);
@@ -727,10 +609,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (!open) this.markdownEditor?.focus();
   }
 
-  /**
-   * Closed with Esc: back to the page. A press outside closes it without this,
-   * so focus stays where the press went (and no phone keyboard opens).
-   */
   closePageSettings(): void {
     if (!this.pageSettingsOpen()) return;
     this.pageSettingsOpen.set(false);
@@ -789,7 +667,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (this.isDrawer(rail)) {
       if (open) {
         this.captureCompactDrawerCaret();
-        // One slide-over at a time; a Reference column stays.
         if (isFiles && this.isDrawer('reference')) this.showBrainSidebar.set(false);
         if (!isFiles) this.showFileSidebar.set(false);
         if (isFiles) this.showFileSidebar.set(true);
@@ -806,8 +683,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     }
 
     this.showBrainSidebar.set(open);
-    // The heading control is removed with its rail when it collapses, so return
-    // focus to the persistent editor-header toggle in that case.
     if (!open && fromHeading) this.focusHeaderRailToggle(rail);
   }
 
@@ -823,8 +698,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       const collapse = this.hostElement.nativeElement.querySelector(selector) as HTMLButtonElement | null;
       collapse?.focus();
     };
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(focus);
-    else window.setTimeout(focus, 0);
+    this.scheduleAnimationFrame(focus);
   }
 
   private captureCompactDrawerCaret(): void {
@@ -847,11 +721,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return text ? text.split(/\s+/).length : 0;
   });
 
-  /**
-   * Word count reported by the editor (authoritative for the rendered
-   * document). Falls back to the markdown-derived count until
-   * the editor boots and emits its first count.
-   */
   editorWordCount = signal<number | null>(null);
   displayWordCount = computed(() => this.editorWordCount() ?? this.wordCount());
 
@@ -865,23 +734,19 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   // Books / Notes State
   books = signal<BookDto[]>([]);
-  protected readonly formatLabel = BOOK_FORMAT_LABEL;
-  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
-  /** The listed book the open edition belongs to. */
   readonly selectedWork = computed(() => {
     const id = this.selectedBookId();
-    return this.books().find((book) => book.id === id || book.otherEditions?.some((e) => e.id === id)) ?? null;
+    return (
+      this.books().find((book) => book.id === id || book.otherEditions?.some((e) => e.id === id)) ??
+      null
+    );
   });
-  /** Its editions, labelled as the book page labels them; empty for a single edition. */
   readonly selectedEditionOptions = computed<DropdownOption[]>(() =>
-    editionChoices(this.selectedWork()).map((edition) => ({ value: edition.id, label: edition.label })));
-  protected bookEditions(book: BookDto) {
-    return editionChoices(book);
-  }
-
-  protected bookFormat(book: BookDto): BookFormatConcept {
-    return bookFormatConcept(book.type, book.fileName);
-  }
+    editionChoices(this.selectedWork()).map((edition) => ({
+      value: edition.id,
+      label: edition.label,
+    })),
+  );
   bookIndexState = signal<ReferenceLoadState>('loading');
   bookQuery = signal('');
   selectedBookId = signal<string | null>(null);
@@ -897,26 +762,17 @@ export class WritingStudio implements OnInit, AfterViewInit {
     bookNotes: 0,
   };
 
-  /**
-   * Label for the surface an inspected source drills down from.
-   * Inspection is a temporary child state: closing it returns to the exact
-   * kept-source / topic / book context rather than to a generic Library root.
-   */
   inspectionReturnLabel = computed(() => {
     if (this.referenceMode() === 'writing') return 'For this document';
 
     if (this.activeSidebarTab() === 'brain') {
       const topicId = this.selectedTopicId();
-      return (
-        this.topics().find((topic) => topic.id === topicId)?.name ??
-        'Topic notes'
-      );
+      return this.topics().find((topic) => topic.id === topicId)?.name ?? 'Topic notes';
     }
 
     return this.selectedWork()?.title ?? 'Book notes';
   });
 
-  // Computed Map for highlighting topics in notes
   topicMap = computed(() => {
     const map = new Map<string, TopicDto>();
     for (const c of this.topics()) {
@@ -955,7 +811,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
           for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
           return forkJoin(chunks.map((chunk) => this.notesService.getMany(chunk))).pipe(
             map((pages) => ({ ids, hits: pages.flat() })),
-            // A failed lookup shows nothing rather than calling sources removed.
             catchError(() => of(null)),
           );
         }),
@@ -966,44 +821,41 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.sourceLookup.set(new Map(answer.hits.map((hit) => [sourceKey(hit.id), hit])));
         this.sourceLookedUp.set(new Set(answer.ids));
       });
+
     const onResize = () => {
       const compact = isStudioCompactViewport();
-
       if (compact === this.isCompact()) return;
 
-      // The file list is a slide-over in both modes, so crossing the
-      // breakpoint leaves it as it is (a first layout can report a narrow
-      // viewport and then widen; that must not shut a drawer just opened).
-      // Only an open Reference column changes kind: it closes on a compact
-      // screen rather than turning into a slide-over that covers the page.
       const referenceWasColumn = !this.isCompact() && this.showBrainSidebar();
       this.isCompact.set(compact);
       if (compact) {
         if (referenceWasColumn) this.showBrainSidebar.set(false);
       } else {
-        // A drawer still open keeps the caret it will hand back on closing.
         if (!this.drawerOpen()) this.compactDrawerCaret = null;
       }
     };
 
     window.addEventListener('resize', onResize);
-    this.destroyRef.onDestroy(() => window.removeEventListener('resize', onResize));
-
-    // Zen mode: Esc exits focus mode; listener removed on destroy.
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('pointermove', this.onPointerMove, { passive: true });
     window.addEventListener('pointerdown', this.onPointerDown, { passive: true });
     window.addEventListener('pagehide', this.rememberCaret);
+
     this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      for (const timer of this.pendingTimeouts) clearTimeout(timer);
+      this.pendingTimeouts.clear();
+      if (typeof window.cancelAnimationFrame === 'function') {
+        for (const raf of this.pendingRafs) window.cancelAnimationFrame(raf);
+      }
+      this.pendingRafs.clear();
       this.rememberCaret();
+      window.removeEventListener('resize', onResize);
       window.removeEventListener('keydown', this.onKeyDown);
       window.removeEventListener('pointermove', this.onPointerMove);
       window.removeEventListener('pointerdown', this.onPointerDown);
       window.removeEventListener('pagehide', this.rememberCaret);
-      document.body.classList.remove('nostos-studio-typing');
-      this.writingHandoffSubscription?.unsubscribe();
-      // Never leave the body class behind if the component is torn down mid-zen.
-      document.body.classList.remove('nostos-zen');
+      this.bodyClass.clearAll();
     });
 
     effect((onCleanup) => {
@@ -1014,22 +866,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
       if (!item) return;
 
-      if (text === item.content && title === item.name) {
-        this.saveStatus.set('Saved');
-        return;
-      }
-
-      this.saveStatus.set('Unsaved');
-      const generation = ++this.saveGeneration;
-
-      const timer = setTimeout(() => {
-        void this.queueWritingSave(item, title, text, generation).catch(() => {
-          // Autosave failure is represented by saveStatus. Explicit source
-          // navigation handles the same failure with user feedback below.
-        });
-      }, 2000);
-
-      onCleanup(() => clearTimeout(timer));
+      this.autosave.scheduleDebouncedSave(item, title, text, this.autosaveAdapter);
+      onCleanup(() => this.autosave.cancelDebounce());
     });
   }
 
@@ -1048,6 +886,28 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   ngAfterViewInit(): void {
     this.tryRestoreEditorSourceReturn();
+  }
+
+  private scheduleTimeout(fn: () => void, delay = 0): void {
+    if (this.destroyed) return;
+    const id = setTimeout(() => {
+      this.pendingTimeouts.delete(id);
+      if (!this.destroyed) fn();
+    }, delay);
+    this.pendingTimeouts.add(id);
+  }
+
+  private scheduleAnimationFrame(fn: () => void): void {
+    if (this.destroyed) return;
+    if (typeof window.requestAnimationFrame === 'function') {
+      const rafId = window.requestAnimationFrame(() => {
+        this.pendingRafs.delete(rafId);
+        if (!this.destroyed) fn();
+      });
+      this.pendingRafs.add(rafId);
+    } else {
+      this.scheduleTimeout(fn, 0);
+    }
   }
 
   closeSidebars() {
@@ -1079,13 +939,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** New, or no writing to return to: an empty page with the caret in it. */
   startBlankPage(): void {
     this.rememberCaret();
-    // Whatever was typed in the open writing in the last two seconds is saved,
-    // not dropped with the debounce the switch would cancel.
     const open = this.activeItem();
     if (open) void this.flushActiveWritingBeforeSource(open);
     else this.markdownEditor?.flushPendingChange();
-    // Fixed now: the page is made later, when words arrive, and the open
-    // writing (whose folder this is) is gone by then.
     this.blankParentId = this.newItemParentId();
     this.titleEditing.set(false);
     this.blankGeneration++;
@@ -1105,45 +961,48 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.focusPageSoon();
   }
 
-  /**
-   * The first words on a blank page create its writing. Nothing is created
-   * for a page left empty, so abandoned blank pages leave no files behind.
-   */
   private createFromBlankPage(): void {
     if (this.creatingFromBlank) return;
     this.creatingFromBlank = true;
     const generation = this.blankGeneration;
-    // Named on its first save, from its first line: at the first keystroke
-    // the line is a single letter.
-    this.writingsService.create({ name: UNTITLED_DOCUMENT, type: 'Document', parentId: this.blankParentId }).subscribe({
-      next: (created) => {
-        this.creatingFromBlank = false;
-        if (generation !== this.blankGeneration || !this.blankPage()) {
-          // The page was left while this was in flight: its words still
-          // belong in the writing they created, not nowhere.
-          this.saveLeftBlankPage(created.id, generation);
-          return;
-        }
-        this.blankPageTexts.delete(generation);
-        this.chosenFolderId.set(null);
-        // Empty server content: the nudge makes the save lane store the page.
-        this.activeItem.set({ id: created.id, name: created.name, content: '', updatedAt: created.updatedAt });
-        this.editorTitle.set(titleFromMarkdown(this.editorText()) || created.name);
-        this.blankPage.set(false);
-        this.saveNudge.update((n) => n + 1);
-        writeStudioValue(STUDIO_LAST_WRITING_KEY, created.id);
-        this.recent.record({ kind: 'document', id: created.id, label: created.name, sub: 'Document' });
-        this.loadTree();
-        this.loadKeptSources(created.id);
-      },
-      error: () => {
-        this.creatingFromBlank = false;
-        // One message, then a pause: not a request and a toast per keystroke.
-        const first = this.blankRetryAt === 0;
-        this.blankRetryAt = Date.now() + 5000;
-        if (first) this.toast.error('Could not create a document. Your words are still on the page.');
-      },
-    });
+    this.writingsService
+      .create({ name: UNTITLED_DOCUMENT, type: 'Document', parentId: this.blankParentId })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (created) => {
+          this.creatingFromBlank = false;
+          if (generation !== this.blankGeneration || !this.blankPage()) {
+            this.saveLeftBlankPage(created.id, generation);
+            return;
+          }
+          this.blankPageTexts.delete(generation);
+          this.chosenFolderId.set(null);
+          this.activeItem.set({
+            id: created.id,
+            name: created.name,
+            content: '',
+            updatedAt: created.updatedAt,
+          });
+          this.editorTitle.set(titleFromMarkdown(this.editorText()) || created.name);
+          this.blankPage.set(false);
+          this.saveNudge.update((n) => n + 1);
+          writeStudioValue(STUDIO_LAST_WRITING_KEY, created.id);
+          this.recent.record({
+            kind: 'document',
+            id: created.id,
+            label: created.name,
+            sub: 'Document',
+          });
+          this.loadTree();
+          this.loadKeptSources(created.id);
+        },
+        error: () => {
+          this.creatingFromBlank = false;
+          const first = this.blankRetryAt === 0;
+          this.blankRetryAt = Date.now() + 5000;
+          if (first) this.toast.error('Could not create a document. Your words are still on the page.');
+        },
+      });
   }
 
   /** Stores what a blank page held when it was left before its writing existed. */
@@ -1151,16 +1010,21 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const content = this.blankPageTexts.get(generation) ?? '';
     this.blankPageTexts.delete(generation);
     const name = titleFromMarkdown(content) || UNTITLED_DOCUMENT;
-    this.writingsService.update(id, { name, content }).subscribe({
-      next: () => this.loadTree(),
-      error: () => this.toast.error('Could not save the page you left'),
-    });
+    this.writingsService
+      .update(id, { name, content })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.loadTree(),
+        error: () => this.toast.error('Could not save the page you left'),
+      });
   }
 
   /** Opens where the writer left off: the last writing, or a blank page. */
   private openStartingPage(): void {
     const lastId = readStudioValue(STUDIO_LAST_WRITING_KEY);
-    const last = lastId ? this.rootItems().find((i) => i.id === lastId && i.type === 'Document') : null;
+    const last = lastId
+      ? this.rootItems().find((i) => i.id === lastId && i.type === 'Document')
+      : null;
     if (last) this.openWritingDocument(last.id, false);
     else this.startBlankPage();
   }
@@ -1182,11 +1046,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
       if (state) void editor()?.restoreTransientState(state, item.content);
       this.focusPageSoon();
     };
-    setTimeout(apply);
+    this.scheduleTimeout(apply);
   }
 
   private focusPageSoon(): void {
-    setTimeout(() => {
+    this.scheduleTimeout(() => {
       if (this.drawerOpen()) return;
       this.markdownEditor?.focus();
     });
@@ -1195,19 +1059,19 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private setTyping(typing: boolean): void {
     if (typing === this.isTyping()) return;
     this.isTyping.set(typing);
-    document.body.classList.toggle('nostos-studio-typing', typing);
+    this.bodyClass.setTyping(typing);
     if (!typing) this.lastPointer = null;
   }
 
-  /** A real pointer movement (not the jitter of a resting hand) brings the chrome back. */
   private readonly onPointerMove = (event: PointerEvent) => {
     if (!this.isTyping()) return;
     const last = this.lastPointer;
     this.lastPointer = { x: event.clientX, y: event.clientY };
-    if (last && Math.hypot(event.clientX - last.x, event.clientY - last.y) > 6) this.setTyping(false);
+    if (last && Math.hypot(event.clientX - last.x, event.clientY - last.y) > 6) {
+      this.setTyping(false);
+    }
   };
 
-  /** A tap or click is deliberate: on touch screens it is how the chrome comes back. */
   private readonly onPointerDown = () => this.setTyping(false);
 
   undoOnPage(): void {
@@ -1241,10 +1105,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (this.handleStudioShortcut(event)) return;
     if (event.key !== 'Escape') return;
-    // Esc closes the topmost layer first, and only then brings the chrome back.
-    // A layer inside (an open dropdown list) that already handled it wins.
     if (event.defaultPrevented) return;
-    // The shortcut sheet is a modal shell: it answers Escape itself.
     if (this.pageSettingsOpen()) {
       this.closePageSettings();
       event.preventDefault();
@@ -1267,11 +1128,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     }
   };
 
-  /**
-   * Alt+M files, Alt+R Reference, Ctrl/Cmd+/ (or ? outside the page) the
-   * shortcut sheet. Matched on the physical key, so a layout whose Alt types
-   * characters still reaches them.
-   */
   private handleStudioShortcut(event: KeyboardEvent): boolean {
     const mod = event.ctrlKey || event.metaKey;
     if (event.altKey && !mod && !event.shiftKey && (event.code === 'KeyM' || event.code === 'KeyR')) {
@@ -1298,19 +1154,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
   enterZen() {
     if (this.isZen()) return;
     this.isZen.set(true);
-    // Remember where focus was so it can be restored on exit (accessibility).
     this.zenFocusReturn =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    document.body.classList.add('nostos-zen');
+    this.bodyClass.setZen(true);
   }
 
   exitZen() {
     if (!this.isZen()) return;
     this.isZen.set(false);
-    document.body.classList.remove('nostos-zen');
+    this.bodyClass.setZen(false);
 
-    // Restore focus to the element that opened zen, falling back to the
-    // (now visible again) zen toggle in the document-action cluster.
     const fallback = this.hostElement.nativeElement.querySelector(
       '.zen-toggle',
     ) as HTMLButtonElement | null;
@@ -1324,26 +1177,29 @@ export class WritingStudio implements OnInit, AfterViewInit {
   readonly treeFailed = signal(false);
 
   loadTree() {
-    this.writingsService.list().subscribe({
-      next: (items) => {
-        this.treeFailed.set(false);
-        this.rootItems.set(items);
-        const firstLoad = !this.writingTreeLoaded;
-        this.writingTreeLoaded = true;
-        if (firstLoad && items.length === 0) this.checkStarterOffer();
-        const requested = this.requestedWritingId;
-        if (requested) this.openWritingFromHandoff(requested);
-        else if (firstLoad && !this.activeItem() && !this.blankPage()) this.openStartingPage();
-      },
-      error: () => {
-        if (this.rootItems().length === 0) this.treeFailed.set(true);
-        else this.toast.error('Could not refresh the writings. Try again.');
-        const firstLoad = !this.writingTreeLoaded;
-        this.writingTreeLoaded = true;
-        if (this.requestedWritingId) this.toast.error('That writing is unavailable');
-        else if (firstLoad && !this.activeItem()) this.startBlankPage();
-      },
-    });
+    this.writingsService
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (items) => {
+          this.treeFailed.set(false);
+          this.rootItems.set(items);
+          const firstLoad = !this.writingTreeLoaded;
+          this.writingTreeLoaded = true;
+          if (firstLoad && items.length === 0) this.checkStarterOffer();
+          const requested = this.requestedWritingId;
+          if (requested) this.openWritingFromHandoff(requested);
+          else if (firstLoad && !this.activeItem() && !this.blankPage()) this.openStartingPage();
+        },
+        error: () => {
+          if (this.rootItems().length === 0) this.treeFailed.set(true);
+          else this.toast.error('Could not refresh the writings. Try again.');
+          const firstLoad = !this.writingTreeLoaded;
+          this.writingTreeLoaded = true;
+          if (this.requestedWritingId) this.toast.error('That writing is unavailable');
+          else if (firstLoad && !this.activeItem()) this.startBlankPage();
+        },
+      });
   }
 
   private watchWritingHandoff(): void {
@@ -1351,9 +1207,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
     const queryParamMap = this.route.queryParamMap;
     if (queryParamMap?.subscribe) {
-      this.writingHandoffSubscription = queryParamMap.subscribe((params) => {
-        this.handleWritingHandoffId(params.get('writingId'));
-      });
+      if (typeof queryParamMap.pipe === 'function') {
+        queryParamMap
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe((params) => this.handleWritingHandoffId(params.get('writingId')));
+      } else {
+        const sub = queryParamMap.subscribe((params) =>
+          this.handleWritingHandoffId(params.get('writingId')),
+        );
+        this.destroyRef.onDestroy(() => sub.unsubscribe());
+      }
       return;
     }
 
@@ -1392,83 +1255,74 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   loadKeptSources(writingId: string) {
     this.keptSourcesState.set('loading');
-    this.writingsService.listSources(writingId).subscribe({
-      next: (sources) => {
-        // A slow response for a document that is no longer active must not overwrite the
-        // kept list of the document the writer has since switched to.
-        if (this.activeItem()?.id !== writingId) return;
-        this.keptSources.set(sources);
-        this.keptSourcesState.set('loaded');
-        const pendingInspection = this.pendingInspectedSourceRestore;
-        if (pendingInspection?.mode === 'writing') {
-          const match = this.keptNotes().find((note) => note.id === pendingInspection.id);
-          if (match) this.inspectedSource.set(match);
-          this.pendingInspectedSourceRestore = null;
-        }
-      },
-      error: () => {
-        if (this.activeItem()?.id !== writingId) return;
-        this.keptSourcesState.set('error');
-        this.toast.error('Could not load the kept sources');
-      },
-    });
+    this.writingsService
+      .listSources(writingId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (sources) => {
+          if (this.activeItem()?.id !== writingId) return;
+          this.keptSources.set(sources);
+          this.keptSourcesState.set('loaded');
+          const pendingInspection = this.pendingInspectedSourceRestore;
+          if (pendingInspection?.mode === 'writing') {
+            const match = this.keptNotes().find((note) => note.id === pendingInspection.id);
+            if (match) this.inspectedSource.set(match);
+            this.pendingInspectedSourceRestore = null;
+          }
+        },
+        error: () => {
+          if (this.activeItem()?.id !== writingId) return;
+          this.keptSourcesState.set('error');
+          this.toast.error('Could not load the kept sources');
+        },
+      });
   }
 
   keepNote(noteId: string) {
     const active = this.activeItem();
     if (!active) return;
 
-    if (this.keptNoteIds().has(noteId)) {
-      // Already kept: no-op
-      return;
-    }
-
-    if (this.keepingNoteIds().has(noteId)) {
-      // Request already in flight: return early to prevent concurrent race
-      return;
-    }
+    if (this.keptNoteIds().has(noteId)) return;
+    if (this.keepingNoteIds().has(noteId)) return;
 
     this.keepingNoteIds.update((s) => new Set(s).add(noteId));
 
-    this.writingsService.addSource(active.id, noteId).subscribe({
-      next: (source) => {
-        this.keepingNoteIds.update((s) => {
-          const next = new Set(s);
-          next.delete(noteId);
-          return next;
-        });
-        // The writer may have switched documents while the request was in flight; the
-        // response belongs to `active`, not to whatever is open now.
-        if (this.activeItem()?.id !== active.id) return;
-        // Update keptSources locally without full reload if already present or append
-        this.keptSources.update((prev) => {
-          if (prev.some((s) => s.id === source.id)) return prev;
-          return [...prev, source];
-        });
-      },
-      error: () => {
-        this.keepingNoteIds.update((s) => {
-          const next = new Set(s);
-          next.delete(noteId);
-          return next;
-        });
-        this.toast.error('Could not keep the source');
-        // Re-fetch kept list on error so UI does not leave an optimistic lie
-        if (this.activeItem()?.id === active.id) this.loadKeptSources(active.id);
-      },
-    });
+    this.writingsService
+      .addSource(active.id, noteId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (source) => {
+          this.keepingNoteIds.update((s) => {
+            const next = new Set(s);
+            next.delete(noteId);
+            return next;
+          });
+          if (this.activeItem()?.id !== active.id) return;
+          this.keptSources.update((prev) => {
+            if (prev.some((s) => s.id === source.id)) return prev;
+            return [...prev, source];
+          });
+        },
+        error: () => {
+          this.keepingNoteIds.update((s) => {
+            const next = new Set(s);
+            next.delete(noteId);
+            return next;
+          });
+          this.toast.error('Could not keep the source');
+          if (this.activeItem()?.id === active.id) this.loadKeptSources(active.id);
+        },
+      });
   }
 
   // ------------------------------------------------------------------
   // The @ source palette (issue #1039)
   // ------------------------------------------------------------------
 
-  /** The text typed after `@`, or null while no query is open. */
   readonly paletteQuery = signal<string | null>(null);
   readonly paletteAnchor = signal<PaletteAnchor | null>(null);
   @ViewChild(SourcePaletteComponent) private sourcePalette?: SourcePaletteComponent;
 
-  /** Keys the editor forwards while an `@` query is open. */
   readonly paletteKeyHandler = (event: KeyboardEvent): boolean =>
     this.sourcePalette?.handleKey(event) ?? false;
 
@@ -1477,19 +1331,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.paletteAnchor.set(state?.rect ?? null);
   }
 
-  /**
-   * Put the chosen source where `@` was typed, and keep it with the writing so
-   * the Reference rail shows it under "For this document". A passage is never
-   * inserted whole: it opens in the viewer, and the sentences chosen there go
-   * where the `@` was.
-   */
   insertFromPalette({ source, mode }: PaletteChoice): void {
     const editor = this.markdownEditor;
     if (!editor || !this.activeItem()) return;
 
     if (source.kind === 'passage' && mode === 'quote') {
-      // Kept and remembered only once something is quoted from it. The typed
-      // words stay on the page until then, so closing the viewer loses nothing.
       editor.holdSourceQuery();
       this.palettePassageSource = source;
       this.passageViewer.open(source.id, this.palettePassageOptions);
@@ -1515,18 +1361,25 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   // --- Citation styles (issue #1109) ---
 
-  /** The palette's choice as a live citation in the writer's style; plain house text when the book cannot be read. */
-  private async insertStyledFromPalette(source: PaletteChoice['source'], mode: PaletteChoice['mode']): Promise<void> {
+  private async insertStyledFromPalette(
+    source: PaletteChoice['source'],
+    mode: PaletteChoice['mode'],
+  ): Promise<void> {
     const editor = this.markdownEditor;
     if (!editor) return;
     const styled = await this.styledInsertion(source, mode);
-    const markdown = styled?.markdown
-      ?? (mode === 'reference'
+    if (this.destroyed) return;
+    const markdown =
+      styled?.markdown ??
+      (mode === 'reference'
         ? buildReferenceMarkdown(source)
         : mode === 'note'
           ? (buildNoteMarkdown(source) ?? buildQuoteMarkdown(source))
           : (buildQuoteMarkdown(source) ?? buildNoteMarkdown(source)));
-    if (!markdown || !editor.replaceSourceQuery(markdown, mode === 'reference' ? 'inline' : 'block', footnoteOf(styled))) {
+    if (
+      !markdown ||
+      !editor.replaceSourceQuery(markdown, mode === 'reference' ? 'inline' : 'block', footnoteOf(styled))
+    ) {
       this.toast.error('The editor is not ready for insertion yet');
       return;
     }
@@ -1535,31 +1388,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (styled) void this.warnIfIncomplete(source.bookId);
   }
 
-  /**
-   * A quote, note or reference as a live citation in the chosen style
-   * (issues #1109, #1157), or null to fall back to plain house text (the book
-   * cannot be read). A note style gives a book's first citation in full and
-   * later ones short; the refresh that follows keeps that true as notes move.
-   */
-  private async styledInsertion(
+  private styledInsertion(
     source: CitableSource & { id?: string },
     mode: 'quote' | 'note' | 'reference',
   ): Promise<StyledInsertion | null> {
-    const style = this.pagePrefs.citationStyle();
-    if (!this.markdownEditor || !source.bookId) return null;
-    const subsequent = style.kind === 'note' && this.markdownEditor.citedBooks().includes(source.bookId);
-    const styled = await this.citations.insertion(source, mode, style, subsequent, this.markdownEditor.nextFootnoteNumber());
-    if (!styled && style.kind !== 'house') {
-      this.toast.error(`Could not format this source in ${style.label}; it went in as Nostos writes it`);
-    }
-    return styled;
+    return this.citationCoordinator.styledInsertion(
+      this.markdownEditor,
+      source,
+      mode,
+      this.pagePrefs.citationStyle(),
+    );
   }
 
-  /**
-   * `/` → Bibliography: every book cited in this document, in the chosen
-   * style. Its entries are live (issue #1157): they follow the style, the
-   * books' details and what the writing goes on to cite.
-   */
   async insertBibliography(): Promise<void> {
     const editor = this.markdownEditor;
     if (!editor) return;
@@ -1568,27 +1408,21 @@ export class WritingStudio implements OnInit, AfterViewInit {
       return;
     }
     const style = this.pagePrefs.citationStyle();
-    const books = this.writingBooks();
-    let entries: { book: string; text: string }[] = [];
-    try {
-      entries = await this.citations.bibliographyEntries(books, style);
-    } catch {
-      this.toast.error('Could not build the bibliography');
-      return;
-    }
-    const markdown = bibliographyMarkdown(
-      entries.map((entry) => citationMarkdown(entry.text, { book: entry.book, page: null, src: null, as: 'bib' })),
-      style,
-    );
-    if (!markdown) {
+    const result = await this.citationCoordinator.buildBibliographyMarkdown(this.writingBooks(), style);
+    if (this.destroyed || !result) return;
+    if (!result.markdown) {
       this.toast.info('Nothing is cited in this document yet');
       return;
     }
-    if (!editor.insertBlockMarkdown(markdown)) {
+    if (!editor.insertBlockMarkdown(result.markdown)) {
       this.toast.error('The editor is not ready for insertion yet');
       return;
     }
-    void this.warnIncompleteBibliography(entries.map((entry) => entry.book));
+    void this.citationCoordinator.warnIncompleteBibliography(
+      result.bookIds,
+      style,
+      (bookId) => this.openCitationDetails(bookId),
+    );
   }
 
   /** Every book this writing cites or keeps, cited ones first. */
@@ -1599,49 +1433,30 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   // --- Live citations (issue #1157) ---
 
-  private citationRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private citationRefreshRun = 0;
-  /** "writing:book" pairs already told about missing details, so each is said once. */
-  private readonly toldIncomplete = new Set<string>();
-
   /** The style, a book's details or the kept sources changed: the open writing's citations follow. */
   protected readonly followCitationInputs = effect(() => {
     this.pagePrefs.citationStyle();
     this.citations.revision();
     this.keptSources();
-    untracked(() => this.scheduleCitationRefresh());
+    untracked(() => this.citationCoordinator.scheduleRefresh(() => this.refreshCitations()));
   });
 
   /** The editor's citations changed (one went in, moved or out, or a writing opened). */
   onCitationsChange(): void {
-    this.scheduleCitationRefresh();
-  }
-
-  private scheduleCitationRefresh(delay = 250): void {
-    if (this.citationRefreshTimer) clearTimeout(this.citationRefreshTimer);
-    this.citationRefreshTimer = setTimeout(() => {
-      this.citationRefreshTimer = null;
-      void this.refreshCitations();
-    }, delay);
+    this.citationCoordinator.scheduleRefresh(() => this.refreshCitations());
   }
 
   /** Writes the open writing's citations again from the books' details, in the chosen style. */
-  async refreshCitations(): Promise<boolean> {
+  refreshCitations(): Promise<boolean> {
     const editor = this.markdownEditor;
-    const writing = this.activeItem()?.id;
-    if (!editor || !writing) return false;
-    const books = editor.citedBooks();
-    if (!books.length) return false;
-    const run = ++this.citationRefreshRun;
-    let renderer;
-    try {
-      renderer = await this.citations.renderer(this.pagePrefs.citationStyle(), books, this.keptSources());
-    } catch {
-      return false;
-    }
-    // The writer may have switched writings, or a newer refresh started.
-    if (run !== this.citationRefreshRun || this.activeItem()?.id !== writing || this.markdownEditor !== editor) return false;
-    return editor.refreshCitations(renderer);
+    const writingId = this.activeItem()?.id;
+    return this.citationCoordinator.refreshCitations({
+      editor,
+      writingId,
+      isCurrent: (id, ed) => this.activeItem()?.id === id && this.markdownEditor === ed,
+      style: this.pagePrefs.citationStyle(),
+      keptSources: this.keptSources(),
+    });
   }
 
   /** Opens the Citations settings at the books missing details, this one first. */
@@ -1652,49 +1467,24 @@ export class WritingStudio implements OnInit, AfterViewInit {
     }
     this.citedBookIds.set(this.writingBooks());
     this.pageSettingsStart.set({ view: 'citations', book: bookId });
-    // Reopened, so a toast's action lands on the Citations list even when the settings were open.
     this.pageSettingsOpen.set(false);
-    queueMicrotask(() => this.pageSettingsOpen.set(true));
+    queueMicrotask(() => {
+      if (!this.destroyed) this.pageSettingsOpen.set(true);
+    });
   }
 
-  /**
-   * A book was cited without a detail the style needs: say so once per
-   * writing, with the way to add it. The citation is in already, written as
-   * the style writes a missing detail ("n.d."), and follows once it is added.
-   */
-  private async warnIfIncomplete(bookId: string | null | undefined): Promise<void> {
-    const writing = this.activeItem()?.id;
-    if (!bookId || !writing || this.toldIncomplete.has(`${writing}:${bookId}`)) return;
-    const style = this.pagePrefs.citationStyle();
-    const book = await this.citations.book(bookId);
-    if (!book) return;
-    const missing = missingForStyle(bookToCslItem(book), style);
-    if (!missing.length) return;
-    this.toldIncomplete.add(`${writing}:${bookId}`);
-    this.toast.show(
-      `“${book.title}” has no ${missingPhrase(missing)} in its details, so ${style.label} cites it without.`,
-      'info',
-      8000,
-      { label: 'Add', run: () => this.openCitationDetails(bookId) },
+  private warnIfIncomplete(bookId: string | null | undefined): Promise<void> {
+    return this.citationCoordinator.warnIfIncomplete(
+      bookId,
+      this.activeItem()?.id,
+      this.pagePrefs.citationStyle(),
+      (id) => this.openCitationDetails(id),
     );
-  }
-
-  /** A bibliography went in: name the books whose entries lack details, once. */
-  private async warnIncompleteBibliography(bookIds: readonly string[]): Promise<void> {
-    const style = this.pagePrefs.citationStyle();
-    const books = await Promise.all(bookIds.map((id) => this.citations.book(id)));
-    const incomplete = books.filter((book) => !!book && missingForStyle(bookToCslItem(book), style).length);
-    if (!incomplete.length) return;
-    const message =
-      incomplete.length === 1
-        ? `“${incomplete[0]!.title}” has no ${missingPhrase(missingForStyle(bookToCslItem(incomplete[0]!), style))} in its details, so its entry is incomplete.`
-        : `${incomplete.length} sources lack details ${style.label} needs, so their entries are incomplete.`;
-    this.toast.show(message, 'info', 8000, { label: 'Fix', run: () => this.openCitationDetails(incomplete[0]!.id) });
   }
 
   /** A book's details were saved from the Citations list. */
   onCitationBookUpdated(): void {
-    this.scheduleCitationRefresh(0);
+    this.citationCoordinator.scheduleRefresh(() => this.refreshCitations(), 0);
   }
 
   /** A book from this writing, for the citation style examples. */
@@ -1711,24 +1501,29 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.setRailOpen('reference', true);
   }
 
-  /** The viewer opened from the palette puts its quote after the caret's paragraph. */
   private readonly palettePassageOptions: Omit<PassageViewerRequest, 'noteId'> = {
     quoteSelection: (text: string, passage: Passage) =>
       passage.bookId
-        ? this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title }, 'quote').then(
-            (styled) => this.quoteFromPalettePassage(text, passage, styled),
-          )
+        ? this.styledInsertion(
+            { selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title },
+            'quote',
+          ).then((styled) => this.quoteFromPalettePassage(text, passage, styled))
         : this.quoteFromPalettePassage(text, passage, null),
   };
 
-  /** Puts a quote from a passage opened from the palette after the caret's paragraph. */
-  private quoteFromPalettePassage(text: string, passage: Passage, styled: StyledInsertion | null): boolean {
-    const markdown = styled?.markdown ?? buildQuoteMarkdown({
-      selectedText: text,
-      bookTitle: passage.bookTitle,
-      bookAuthor: passage.bookAuthor,
-      passageTitle: passage.title,
-    });
+  private quoteFromPalettePassage(
+    text: string,
+    passage: Passage,
+    styled: StyledInsertion | null,
+  ): boolean {
+    const markdown =
+      styled?.markdown ??
+      buildQuoteMarkdown({
+        selectedText: text,
+        bookTitle: passage.bookTitle,
+        bookAuthor: passage.bookAuthor,
+        passageTitle: passage.title,
+      });
     if (markdown && this.markdownEditor?.insertBlockMarkdown(markdown, footnoteOf(styled))) {
       this.markdownEditor.releaseHeldQuery();
       if (styled) void this.warnIfIncomplete(passage.bookId);
@@ -1746,33 +1541,34 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const active = this.activeItem();
     if (!active) return;
 
-    this.writingsService.removeSource(active.id, noteId).subscribe({
-      next: () => {
-        if (this.activeItem()?.id !== active.id) return;
-        this.keptSources.update((prev) => prev.filter((s) => s.id !== noteId));
-        if (this.inspectedSource()?.id === noteId) {
-          this.inspectedSource.set(null);
-          this.restoreCurrentReferenceScroll();
-        }
-      },
-      error: () => {
-        this.toast.error('Could not remove the source');
-        if (this.activeItem()?.id === active.id) this.loadKeptSources(active.id);
-      },
-    });
+    this.writingsService
+      .removeSource(active.id, noteId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (this.activeItem()?.id !== active.id) return;
+          this.keptSources.update((prev) => prev.filter((s) => s.id !== noteId));
+          if (this.inspectedSource()?.id === noteId) {
+            this.inspectedSource.set(null);
+            this.restoreCurrentReferenceScroll();
+          }
+        },
+        error: () => {
+          this.toast.error('Could not remove the source');
+          if (this.activeItem()?.id === active.id) this.loadKeptSources(active.id);
+        },
+      });
   }
 
-  handleItemSelected(node: any) {
-    const item = node as WritingDto;
-    if (item.type === 'Folder') {
-      this.chosenFolderId.set(item.id);
+  handleItemSelected(node: TreeItem & { updatedAt?: string }) {
+    if (node.type === 'Folder') {
+      this.chosenFolderId.set(node.id);
       return;
     }
     this.chosenFolderId.set(null);
 
-    // Manual selection wins over any slower route-handoff request already in flight.
     this.handoffOpenGeneration++;
-    this.openWritingDocument(item.id, false, undefined, true);
+    this.openWritingDocument(node.id, false, undefined, true);
   }
 
   private openWritingDocument(
@@ -1781,94 +1577,94 @@ export class WritingStudio implements OnInit, AfterViewInit {
     handoffGeneration?: number,
     fromFileList = false,
   ): void {
-    this.writingsService.get(id).subscribe({
-      next: (contentDto) => {
-        if (
-          fromHandoff &&
-          (handoffGeneration !== this.handoffOpenGeneration || this.requestedWritingId !== id)
-        ) {
-          return;
-        }
-        if (this.activeItem()?.id !== contentDto.id) {
-          this.rememberCaret();
-          this.editorWordCount.set(null);
-        }
-        if (this.blankPage()) this.blankGeneration++;
-        this.blankPage.set(false);
-        this.chosenFolderId.set(null);
-        this.titleEditing.set(false);
-        this.autoTitle = contentDto.name === UNTITLED_DOCUMENT;
-        this.activeItem.set(contentDto);
-        writeStudioValue(STUDIO_LAST_WRITING_KEY, contentDto.id);
-        // Opening from the file tree does not change the URL, so the command
-        // palette's Recent list would never see it; tell it directly.
-        this.recent.record({ kind: 'document', id: contentDto.id, label: contentDto.name, sub: 'Document' });
-        this.editorTitle.set(contentDto.name);
-        this.editorText.set(contentDto.content);
-        this.inspectedSource.set(null);
+    this.writingsService
+      .get(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (contentDto) => {
+          if (
+            fromHandoff &&
+            (handoffGeneration !== this.handoffOpenGeneration || this.requestedWritingId !== id)
+          ) {
+            return;
+          }
+          if (this.activeItem()?.id !== contentDto.id) {
+            this.rememberCaret();
+            this.editorWordCount.set(null);
+          }
+          if (this.blankPage()) this.blankGeneration++;
+          this.blankPage.set(false);
+          this.chosenFolderId.set(null);
+          this.titleEditing.set(false);
+          this.autoTitle = contentDto.name === UNTITLED_DOCUMENT;
+          this.activeItem.set(contentDto);
+          writeStudioValue(STUDIO_LAST_WRITING_KEY, contentDto.id);
+          this.recent.record({
+            kind: 'document',
+            id: contentDto.id,
+            label: contentDto.name,
+            sub: 'Document',
+          });
+          this.editorTitle.set(contentDto.name);
+          this.editorText.set(contentDto.content);
+          this.inspectedSource.set(null);
 
-        // Choosing a writing in the file list closes the list; a handoff lands
-        // in the editor on a compact screen. A slow load never closes a
-        // slide-over the writer opened in the meantime.
-        if ((fromFileList || (fromHandoff && this.isCompact())) && this.drawerOpen()) {
-          this.compactDrawerCaret = null;
-          this.showFileSidebar.set(false);
-          if (fromHandoff && this.isDrawer('reference')) this.showBrainSidebar.set(false);
-        }
+          if ((fromFileList || (fromHandoff && this.isCompact())) && this.drawerOpen()) {
+            this.compactDrawerCaret = null;
+            this.showFileSidebar.set(false);
+            if (fromHandoff && this.isDrawer('reference')) this.showBrainSidebar.set(false);
+          }
 
-        if (fromHandoff) this.restoreSourceReturnSurface(contentDto);
-        else this.restoreRememberedCaret(contentDto);
-        if (this.starter.takeCaret(contentDto.id)) this.caretAfterText(contentDto);
-        this.loadKeptSources(contentDto.id);
-      },
-      error: () => {
-        if (
-          fromHandoff &&
-          (handoffGeneration !== this.handoffOpenGeneration || this.requestedWritingId !== id)
-        ) {
-          return;
-        }
-        this.toast.error(fromHandoff ? 'That writing is unavailable' : 'Could not open the writing. Try again.');
-      },
-    });
+          if (fromHandoff) this.restoreSourceReturnSurface(contentDto);
+          else this.restoreRememberedCaret(contentDto);
+          if (this.starter.takeCaret(contentDto.id)) this.caretAfterText(contentDto);
+          this.loadKeptSources(contentDto.id);
+        },
+        error: () => {
+          if (
+            fromHandoff &&
+            (handoffGeneration !== this.handoffOpenGeneration || this.requestedWritingId !== id)
+          ) {
+            return;
+          }
+          this.toast.error(
+            fromHandoff ? 'That writing is unavailable' : 'Could not open the writing. Try again.',
+          );
+        },
+      });
   }
 
-  handleItemMove(event: { item: any; newParentId: string | null }) {
-    const item = event.item as WritingDto;
-    const newParentId = event.newParentId;
-
-    this.writingsService.move(item.id, newParentId).subscribe({
-      next: () => {
-        this.loadTree();
-      },
-      error: () => {
-        this.toast.error('Could not move the item');
-        this.loadTree();
-      },
-    });
+  handleItemMove(event: { item: TreeItem; newParentId: string | null }) {
+    this.writingsService
+      .move(event.item.id, event.newParentId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.loadTree();
+        },
+        error: () => {
+          this.toast.error('Could not move the item');
+          this.loadTree();
+        },
+      });
   }
 
-  /**
-   * New document: a blank page with the caret in it, created on the server
-   * with its first words (issue #1040). New folder: created now and named in
-   * the file list.
-   */
   createItem(type: 'Folder' | 'Document') {
-    // A new document is a blank page; it becomes a writing when words arrive.
     if (type === 'Document') {
       this.startBlankPage();
       return;
     }
-    this.writingsService.create({ name: 'Untitled folder', type, parentId: this.newItemParentId() }).subscribe({
-      next: (created) => {
-        // The file list is a slide-over; the rename field has to be on
-        // screen to be typed into.
-        if (!this.showFileSidebar()) this.setRailOpen('files', true);
-        this.editingId.set(created.id);
-        this.loadTree();
-      },
-      error: () => this.toast.error('Could not create a folder'),
-    });
+    this.writingsService
+      .create({ name: 'Untitled folder', type, parentId: this.newItemParentId() })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (created) => {
+          if (!this.showFileSidebar()) this.setRailOpen('files', true);
+          this.editingId.set(created.id);
+          this.loadTree();
+        },
+        error: () => this.toast.error('Could not create a folder'),
+      });
   }
 
   /** The open writing's name in the header, being edited where it is shown. */
@@ -1885,40 +1681,36 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.titleEditing.set(false);
   }
 
-  startRename(node: any) {
+  startRename(node: TreeItem) {
     this.renameError.set(null);
     this.editingId.set(node.id);
   }
 
-  /**
-   * The flat tree's rename has already refused an empty or unchanged name, so
-   * this only saves. A refusal stays in the field, under it, rather than
-   * closing it and losing what was typed.
-   */
   saveRename(id: string, newName: string) {
     if (this.renameBusy()) return;
     this.renameBusy.set(true);
     this.renameError.set(null);
-    this.writingsService.update(id, { name: newName }).subscribe({
-      next: () => {
-        this.renameBusy.set(false);
-        this.loadTree();
-        this.editingId.set(null);
-        this.titleEditing.set(false);
-        this.recent.relabel('document', id, newName);
+    this.writingsService
+      .update(id, { name: newName })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.renameBusy.set(false);
+          this.loadTree();
+          this.editingId.set(null);
+          this.titleEditing.set(false);
+          this.recent.relabel('document', id, newName);
 
-        // Opened after the save lands, so the editor title shows the new name.
-        if (this.activeItem()?.id === id) {
-          this.editorTitle.set(newName);
-          // Named by hand: it no longer follows its first line.
-          this.autoTitle = false;
-        }
-      },
-      error: () => {
-        this.renameBusy.set(false);
-        this.renameError.set('Could not rename it. Try again.');
-      },
-    });
+          if (this.activeItem()?.id === id) {
+            this.editorTitle.set(newName);
+            this.autoTitle = false;
+          }
+        },
+        error: () => {
+          this.renameBusy.set(false);
+          this.renameError.set('Could not rename it. Try again.');
+        },
+      });
   }
 
   cancelRename() {
@@ -1937,65 +1729,59 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /** The delete is on its way: the confirm stays open and says so. */
   readonly deletingItem = signal(false);
 
-  /** The question names what is being deleted: a document or a folder, and which. */
-  readonly deleteCopy = computed(() => {
-    const id = this.pendingDelete();
-    const item = id ? this.rootItems().find((candidate) => candidate.id === id) : undefined;
-    const isFolder = item?.type === 'Folder';
-    const noun = isFolder ? 'folder' : 'document';
-    const name = item?.name?.trim();
-    return {
-      heading: name ? `Delete “${name}”?` : `Delete this ${noun}?`,
-      description: isFolder
-        ? 'The folder and everything inside it is removed. This cannot be undone.'
-        : 'The document is removed. This cannot be undone.',
-      confirmLabel: `Delete ${noun}`,
-      name: name || null,
-    };
-  });
+  readonly deleteCopy = computed(() =>
+    buildDeleteWritingCopy(this.pendingDelete(), this.rootItems()),
+  );
 
   cancelDeleteItem(): void {
     if (!this.deletingItem()) this.pendingDelete.set(null);
   }
 
-  /** Stays open until the server answers: a failure leaves the question up. */
   confirmDeleteItem(): void {
     const id = this.pendingDelete();
     if (!id || this.deletingItem()) return;
     const { name } = this.deleteCopy();
     this.deletingItem.set(true);
 
-    this.writingsService.delete(id).pipe(
-      finalize(() => this.deletingItem.set(false)),
-    ).subscribe({
-      next: () => {
-        this.pendingDelete.set(null);
-        this.loadTree();
-        this.toast.success(name ? `Deleted “${name}”` : 'Deleted');
+    this.writingsService
+      .delete(id)
+      .pipe(
+        finalize(() => this.deletingItem.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: () => {
+          this.pendingDelete.set(null);
+          this.loadTree();
+          this.toast.success(name ? `Deleted “${name}”` : 'Deleted');
 
-        writeCarets(readCarets().filter((entry) => entry.id !== id));
-        if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) writeStudioValue(STUDIO_LAST_WRITING_KEY, null);
-        if (this.activeItem()?.id === id) {
-          // The page stays: a deleted writing leaves a blank one behind.
-          this.activeItem.set(null);
-          this.startBlankPage();
-        }
-      },
-      error: () => this.toast.error('Could not delete it. Try again.'),
-    });
+          writeCarets(readCarets().filter((entry) => entry.id !== id));
+          if (readStudioValue(STUDIO_LAST_WRITING_KEY) === id) {
+            writeStudioValue(STUDIO_LAST_WRITING_KEY, null);
+          }
+          if (this.activeItem()?.id === id) {
+            this.activeItem.set(null);
+            this.startBlankPage();
+          }
+        },
+        error: () => this.toast.error('Could not delete it. Try again.'),
+      });
   }
 
   // --- Brain & Notes Logic ---
 
   loadBrain() {
     this.topicIndexState.set('loading');
-    this.topicsService.list().subscribe({
-      next: (data) => {
-        this.topics.set(data);
-        this.topicIndexState.set('loaded');
-      },
-      error: () => this.topicIndexState.set('error'),
-    });
+    this.topicsService
+      .list()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (data) => {
+          this.topics.set(data);
+          this.topicIndexState.set('loaded');
+        },
+        error: () => this.topicIndexState.set('error'),
+      });
   }
 
   loadBooks() {
@@ -2004,9 +1790,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
       .list({
         page: 1,
         pageSize: 50,
-        // A book once; its editions come with it.
         groupByWork: true,
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
           this.books.set(data.items);
@@ -2039,48 +1825,29 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.inspectedSource.set(null);
     this.selectedTopicId.set(id);
     this.topicNotesState.set('loading');
-    this.topicsService.get(id).subscribe({
-      next: (d) => {
-        // Map NoteContextDto (noteId) → Note (id) for Reference row/card compatibility.
-        const mapped: Note[] = d.notes.map((n: NoteContextDto) => ({
-          id: n.noteId,
-          bookId: n.bookId,
-          content: n.content,
-          cfiRange: n.cfiRange,
-          selectedText: n.selectedText,
-          createdAt: n.createdAt ?? '',
-          bookTitle: n.bookTitle,
-          bookAuthor: n.bookAuthor,
-          sourceAnchorKind: n.sourceAnchorKind,
-          sourceAnchorValue: n.sourceAnchorValue,
-          anchorVerified: n.anchorVerified,
-          highlightColour: n.highlightColour,
-          kind: n.kind,
-          passageTitle: n.passageTitle,
-          passageEnd: n.passageEnd,
-          passageWordCount: n.passageWordCount,
-        }));
-        this.selectedTopicNotes.set(mapped);
-        this.topicNotesState.set('loaded');
-        const pendingInspection = this.pendingInspectedSourceRestore;
-        if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'brain') {
-          const match = mapped.find((note) => note.id === pendingInspection.id);
-          if (match) this.inspectedSource.set(match);
-          this.pendingInspectedSourceRestore = null;
-        }
-      },
-      error: () => this.topicNotesState.set('error'),
-    });
+    this.topicsService
+      .get(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (d) => {
+          const mapped: Note[] = d.notes.map(noteContextToNote);
+          this.selectedTopicNotes.set(mapped);
+          this.topicNotesState.set('loaded');
+          const pendingInspection = this.pendingInspectedSourceRestore;
+          if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'brain') {
+            const match = mapped.find((note) => note.id === pendingInspection.id);
+            if (match) this.inspectedSource.set(match);
+            this.pendingInspectedSourceRestore = null;
+          }
+        },
+        error: () => this.topicNotesState.set('error'),
+      });
   }
 
   retryTopicNotes(): void {
     const id = this.selectedTopicId();
     if (id) this.selectTopic(id);
   }
-
-  /** Bound for the shared detail-header template, which calls its `back` context value. */
-  readonly backToTopicsAction = (): void => this.backToTopics();
-  readonly backToBooksAction = (): void => this.backToBooks();
 
   backToTopics(): void {
     this.rememberReferenceScroll('topicNotes');
@@ -2093,19 +1860,22 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.inspectedSource.set(null);
     this.selectedBookId.set(id);
     this.bookNotesState.set('loading');
-    this.notesService.list(id).subscribe({
-      next: (notes) => {
-        this.selectedBookNotes.set(notes);
-        this.bookNotesState.set('loaded');
-        const pendingInspection = this.pendingInspectedSourceRestore;
-        if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'notes') {
-          const match = notes.find((note) => note.id === pendingInspection.id);
-          if (match) this.inspectedSource.set(match);
-          this.pendingInspectedSourceRestore = null;
-        }
-      },
-      error: () => this.bookNotesState.set('error'),
-    });
+    this.notesService
+      .list(id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (notes) => {
+          this.selectedBookNotes.set(notes);
+          this.bookNotesState.set('loaded');
+          const pendingInspection = this.pendingInspectedSourceRestore;
+          if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'notes') {
+            const match = notes.find((note) => note.id === pendingInspection.id);
+            if (match) this.inspectedSource.set(match);
+            this.pendingInspectedSourceRestore = null;
+          }
+        },
+        error: () => this.bookNotesState.set('error'),
+      });
   }
 
   retryBookNotes(): void {
@@ -2135,6 +1905,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (key) this.referenceScrollPositions[key] = element.scrollTop;
   }
 
+  onReferenceScrollCaptured(event: { key: ReferenceScrollKey; scrollTop: number }): void {
+    this.referenceScrollPositions[event.key] = event.scrollTop;
+  }
+
   private currentReferenceScrollKey(): ReferenceScrollKey {
     if (this.referenceMode() === 'writing') return 'writing';
     if (this.activeSidebarTab() === 'brain') {
@@ -2159,51 +1933,24 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   private restoreReferenceScroll(key: ReferenceScrollKey): void {
-    const restore = () => {
+    this.scheduleAnimationFrame(() => {
       const element = this.hostElement.nativeElement.querySelector(
-        '[data-reference-scroll="' + key + '"]',
+        `[data-reference-scroll="${key}"]`,
       );
       if (element) element.scrollTop = this.referenceScrollPositions[key];
-    };
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore);
-    else setTimeout(restore, 0);
+    });
   }
 
   referencePreview(note: Note): string {
-    const value = hasMeaningfulSelectedText(note) ? note.selectedText : note.content;
-    const markdown = noteWikilinksToText(value ?? '');
-    const html = marked.parse(markdown, { async: false });
-    const text = new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '';
-    return text.replace(/\s+/g, ' ').trim();
-  }
-
-  hasQuotePreview(note: Note): boolean {
-    return hasMeaningfulSelectedText(note);
+    return computeReferencePreview(note);
   }
 
   sourceProvenance(note: Note): string {
-    const title = note.bookTitle?.trim() || UNKNOWN_BOOK;
-    const locator = this.sourceDisplayLocator(note);
-    return locator ? `${title} · ${locator}` : title;
+    return formatSourceProvenance(note);
   }
 
   sourceRowLabel(note: Note): string {
-    return `Inspect source from ${this.sourceProvenance(note)}: ${this.referencePreview(note)}`;
-  }
-
-  keepActionLabel(noteId: string): string {
-    if (!this.activeItem()) return 'Open a document to keep or insert sources';
-    if (this.keepingNoteIds().has(noteId)) return 'Keeping in this document';
-    if (this.keptNoteIds().has(noteId)) {
-      return 'Already kept in this document; no change on click';
-    }
-    return 'Keep in this document';
-  }
-
-  sourceActionDisabledReason(): string | null {
-    if (!this.activeItem()) return 'Open a document to keep or insert sources';
-    if (this.editorWordCount() === null) return 'The editor is not ready for insertion yet';
-    return null;
+    return formatSourceRowLabel(note);
   }
 
   retryKeptSources(): void {
@@ -2224,24 +1971,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   canInsertQuote(source: Note | null = this.inspectedSource()): boolean {
-    // A passage's list copy is only its opening; it is quoted from the viewer.
     if (isPassage(source)) return false;
     return !!source && hasMeaningfulSelectedText(source) && !!sourceHumanLabel(source);
   }
 
-  /** Whether the source is a passage, quoted by reading it (issue #1021). */
   isPassageSource(source: Note | null = this.inspectedSource()): boolean {
     return isPassage(source);
   }
 
-  /**
-   * The passage viewer opened from Studio offers "Quote in writing": the
-   * words selected in it go into the draft as a quotation from the passage.
-   */
-  /** The pen a source row's quotation is shown in; null when the row does not know it. */
-  readonly quotePen = quotePen;
-  readonly noTopicsMatch = NO_TOPICS_MATCH;
-  readonly noTopics = NO_TOPICS;
   /** ⌘ on Apple devices, Ctrl elsewhere: what the shortcut sheet shows. */
   readonly modKey = modifierKeyLabel();
   readonly assistantLauncher = inject(AssistantLauncherService);
@@ -2254,15 +1991,20 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.passageViewer.open(source.id, this.passageViewerOptions);
   }
 
-  /** Whether the quote went in; the viewer confirms success on its own button. */
   private async quotePassageSelection(text: string, passage: Passage): Promise<boolean> {
-    const styled = await this.styledInsertion({ selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title }, 'quote');
-    const markdown = styled?.markdown ?? buildQuoteMarkdown({
-      selectedText: text,
-      bookTitle: passage.bookTitle,
-      bookAuthor: passage.bookAuthor,
-      passageTitle: passage.title,
-    });
+    const styled = await this.styledInsertion(
+      { selectedText: text, bookId: passage.bookId, id: passage.id, passageTitle: passage.title },
+      'quote',
+    );
+    if (this.destroyed) return false;
+    const markdown =
+      styled?.markdown ??
+      buildQuoteMarkdown({
+        selectedText: text,
+        bookTitle: passage.bookTitle,
+        bookAuthor: passage.bookAuthor,
+        passageTitle: passage.title,
+      });
     if (!markdown || !this.activeItem() || !this.markdownEditor) {
       this.toast.error('Open a document and place the cursor in the editor first');
       return false;
@@ -2285,25 +2027,39 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   async insertQuote(source: Note): Promise<void> {
     const styled = await this.styledInsertion(source, 'quote');
-    await this.insertSourceMarkdown(styled?.markdown ?? buildQuoteMarkdown(source), styled, source.bookId);
+    if (this.destroyed) return;
+    await this.insertSourceMarkdown(
+      styled?.markdown ?? buildQuoteMarkdown(source),
+      styled,
+      source.bookId,
+    );
   }
 
   async insertNote(source: Note): Promise<void> {
     const styled = await this.styledInsertion(source, 'note');
-    await this.insertSourceMarkdown(styled?.markdown ?? buildNoteMarkdown(source), styled, source.bookId);
+    if (this.destroyed) return;
+    await this.insertSourceMarkdown(
+      styled?.markdown ?? buildNoteMarkdown(source),
+      styled,
+      source.bookId,
+    );
   }
 
   async insertReference(source: Note): Promise<void> {
     const styled = await this.styledInsertion(source, 'reference');
-    await this.insertSourceMarkdown(styled?.markdown ?? buildReferenceMarkdown(source), styled, source.bookId);
+    if (this.destroyed) return;
+    await this.insertSourceMarkdown(
+      styled?.markdown ?? buildReferenceMarkdown(source),
+      styled,
+      source.bookId,
+    );
   }
 
-  /** The title a passage row leads with, or null for any other source. */
-  passageRowTitle(note: Note): string | null {
-    return isPassage(note) ? note.passageTitle?.trim() || 'Passage' : null;
-  }
-
-  private async insertSourceMarkdown(markdown: string | null, styled: StyledInsertion | null = null, bookId: string | null = null): Promise<void> {
+  private async insertSourceMarkdown(
+    markdown: string | null,
+    styled: StyledInsertion | null = null,
+    bookId: string | null = null,
+  ): Promise<void> {
     if (!markdown) return;
     if (!this.activeItem() || !this.markdownEditor) {
       this.toast.error('Open a document and place the cursor in the editor first');
@@ -2311,6 +2067,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     }
 
     const inserted = await this.markdownEditor.insertMarkdown(markdown, footnoteOf(styled));
+    if (this.destroyed) return;
     if (!inserted) {
       this.toast.error('The editor is not ready for insertion yet');
       return;
@@ -2329,14 +2086,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       return;
     }
 
-    // The 2s autosave debounce must never turn "Open source" into a data-loss
-    // path. The explicit flush joins the same serialized save lane and only
-    // navigates after the latest title/prose is safely persisted.
     if (!(await this.flushActiveWritingBeforeSource(active))) return;
 
-    // Capture the actual final caret/scroll/UI context immediately before
-    // leaving. If the writer typed while a save was in flight, the stable flush
-    // above has already persisted it and this snapshot follows that final caret.
     const snapshot = this.captureSourceReturnSnapshot(active.id);
     this.attachSourceReturnSnapshot(snapshot);
 
@@ -2371,9 +2122,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
       return;
     }
 
-    // Unsupported/unverified anchors remain honest Book Detail fallbacks. The
-    // prepared Studio history entry still means ordinary browser Back restores
-    // the exact writing context, but Book Detail receives no Reader marker.
     await this.navigateFromStudio(['/library', source.bookId]);
   }
 
@@ -2394,150 +2142,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
     };
   }
 
-  private async flushActiveWritingBeforeSource(item: WritingContentDto): Promise<boolean> {
-    // Usually one pass. Re-check after each awaited write because the editor
-    // remains live: text typed while the request is in flight must be included
-    // before teardown can cancel the ordinary debounce.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const current = this.activeItem();
-      if (!current || current.id !== item.id) return false;
-
-      // Typing is reported once the writer pauses; what was typed a moment ago is saved too.
-      this.markdownEditor?.flushPendingChange();
-      const title = this.editorTitle();
-      const content = this.editorText();
-      const dirty = title !== current.name || content !== current.content;
-
-      // If no delayed/in-flight autosave exists and the document is already
-      // persisted, opening a source should not generate a redundant write.
-      if (!dirty && this.pendingSaveCount === 0) return true;
-
-      const generation = ++this.saveGeneration;
-      try {
-        await this.queueWritingSave(current, title, content, generation);
-      } catch {
-        if (generation === this.saveGeneration) this.saveStatus.set('Unsaved');
-        this.toast.error('Could not save this document. Your draft is still open.');
-        return false;
-      }
-
-      const saved = this.activeItem();
-      if (
-        saved?.id === item.id &&
-        this.editorTitle() === saved.name &&
-        this.editorText() === saved.content &&
-        this.pendingSaveCount === 0
-      ) {
-        return true;
-      }
-    }
-
-    // Avoid ever choosing navigation over data safety if the document changes
-    // continuously during the flush window.
-    this.saveStatus.set('Unsaved');
-    this.toast.error('The document changed while opening the source. Try again.');
-    return false;
+  private flushActiveWritingBeforeSource(item: WritingContentDto): Promise<boolean> {
+    return this.autosave.flushBeforeNavigation(item, this.autosaveAdapter);
   }
 
-  /**
-   * "Keep mine": saves the typed text over the newer copy, now that the writer
-   * has seen the question.
-   */
+  /** "Keep mine": saves the typed text over the newer copy. */
   keepMineAfterConflict(): void {
-    const conflict = this.saveConflict();
-    const item = this.activeItem();
-    if (!conflict || !item) return;
-    this.saveConflict.set(null);
-    const generation = ++this.saveGeneration;
-    // The text on the page may have moved on while the question was open.
-    void this.queueWritingSave(item, this.editorTitle(), this.editorText(), generation, true).catch(
-      () => this.toast.error('Could not save this document. Your draft is still open.'),
-    );
+    this.autosave.keepMineAfterConflict(this.autosaveAdapter);
   }
 
-  /**
-   * "Load the newer version". What was typed is put on the clipboard first, so
-   * it can still be pasted back; it is never dropped without a copy.
-   */
+  /** "Load the newer version". Copies user text to clipboard first. */
   loadNewerAfterConflict(): void {
-    const conflict = this.saveConflict();
-    if (!conflict) return;
-    const mine = this.editorText();
-    const differs = mine !== conflict.theirs.content;
-    this.saveConflict.set(null);
-    this.saveGeneration++;
-    this.activeItem.set(conflict.theirs);
-    this.editorTitle.set(conflict.theirs.name);
-    this.editorText.set(conflict.theirs.content);
-    this.saveStatus.set('Saved');
-    if (differs) {
-      void navigator.clipboard?.writeText(mine).then(
-        () => this.toast.info('Your version is on the clipboard'),
-        () => undefined,
-      );
-    }
-  }
-
-  private queueWritingSave(
-    item: WritingContentDto,
-    title: string,
-    content: string,
-    generation: number,
-    force = false,
-  ): Promise<void> {
-    this.pendingSaveCount++;
-
-    const run = async () => {
-      // A newer debounce/flush superseded this request before it began.
-      if (generation !== this.saveGeneration) return;
-
-      // Nothing is saved over a newer copy until the writer has chosen.
-      if (this.saveConflict()) {
-        this.saveStatus.set('Unsaved');
-        throw new Error('save-conflict');
-      }
-
-      this.saveStatus.set('Saving…');
-      try {
-        // The version this tab last loaded or saved: an earlier save in the
-        // queue may have moved it on since `item` was captured.
-        const current = this.activeItem();
-        const baseUpdatedAt = (current?.id === item.id ? current : item).updatedAt;
-        const updated = await firstValueFrom(
-          this.writingsService.update(
-            item.id,
-            force ? { name: title, content } : { name: title, content, baseUpdatedAt },
-          ),
-        );
-
-        // An explicit flush may have been queued behind this request. Let that
-        // newer write own the UI and final server state.
-        if (generation !== this.saveGeneration) return;
-        if (this.activeItem()?.id !== item.id) return;
-
-        this.activeItem.set(updated);
-        this.saveStatus.set('Saved');
-        if (title !== item.name) {
-          this.loadTree();
-          this.recent.relabel('document', item.id, title);
-        }
-      } catch (error) {
-        if (generation === this.saveGeneration) this.saveStatus.set('Unsaved');
-        if (error instanceof HttpErrorResponse && error.status === 409 && error.error?.id === item.id) {
-          // Saved from another tab or device since this copy was loaded.
-          this.saveConflict.set({ theirs: error.error as WritingContentDto, title, content });
-        }
-        throw error;
-      }
-    };
-
-    const queued = this.saveQueue.catch(() => undefined).then(run);
-    this.saveQueue = queued.catch(() => undefined);
-    const settlePending = () => {
-      this.pendingSaveCount = Math.max(0, this.pendingSaveCount - 1);
-    };
-    void queued.then(settlePending, settlePending);
-    return queued;
+    this.autosave.loadNewerAfterConflict(this.autosaveAdapter);
   }
 
   private attachSourceReturnSnapshot(snapshot: StudioSourceReturnSnapshotV1): void {
@@ -2561,7 +2177,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
       ? await this.router?.navigate(commands as any[], extras as any)
       : await this.router?.navigate(commands as any[]);
     if (navigated === false) {
-      // Staying in Studio must not leave a return snapshot waiting to replay.
       this.consumeSourceReturnSnapshot();
     }
   }
@@ -2570,8 +2185,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     const state = window.history.state;
     this.pendingSourceReturnSnapshot = readStudioSourceReturnSnapshot(state);
 
-    // Malformed/old versions are one-shot state too. Remove them rather than
-    // letting a stale blob survive unrelated Studio visits.
     if (!this.pendingSourceReturnSnapshot && hasStudioSourceReturnState(state)) {
       this.consumeSourceReturnSnapshot();
     }
@@ -2601,9 +2214,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
         : null;
 
       if (this.isCompact()) {
-        // Mobile remains one-pane: Documents never reopens over the returned
-        // editor. The reference drawer may reopen because its existing close
-        // control is the explicit route back to drafting.
         this.showFileSidebar.set(false);
         this.showBrainSidebar.set(references.wasOpen);
       } else {
@@ -2621,10 +2231,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
       }
     }
 
-    // ViewChild may not exist yet for synchronous test/service observables.
-    // ngAfterViewInit retries without polling; real HTTP handoffs generally
-    // arrive after the editor view already exists.
-    queueMicrotask(() => this.tryRestoreEditorSourceReturn());
+    queueMicrotask(() => {
+      if (!this.destroyed) this.tryRestoreEditorSourceReturn();
+    });
   }
 
   private tryRestoreEditorSourceReturn(): void {
@@ -2640,8 +2249,6 @@ export class WritingStudio implements OnInit, AfterViewInit {
     }
 
     void editor.restoreTransientState(state, active.content).then(() => {
-      // Caret/scroll are best-effort, but this state represents one completed
-      // return cycle. Never let an unsupported bookmark replay on a later visit.
       if (this.pendingSourceReturnSnapshot === snapshot) {
         this.consumeSourceReturnSnapshot();
       }
@@ -2658,25 +2265,4 @@ export class WritingStudio implements OnInit, AfterViewInit {
       `${window.location.pathname}${window.location.search}${window.location.hash}`,
     );
   }
-}
-
-/** A cited source the server returned, in the shape the panel's rows draw. */
-function hitToNote(hit: NoteSearchHit): Note {
-  return {
-    id: hit.id,
-    bookId: hit.bookId,
-    content: hit.content,
-    selectedText: hit.selectedText ?? undefined,
-    cfiRange: hit.cfiRange ?? undefined,
-    createdAt: hit.createdAt,
-    bookTitle: hit.bookTitle ?? undefined,
-    bookAuthor: hit.bookAuthor ?? undefined,
-    sourceAnchorKind: hit.sourceAnchorKind ?? undefined,
-    sourceAnchorValue: hit.sourceAnchorValue ?? undefined,
-    anchorVerified: hit.anchorVerified ?? undefined,
-    kind: hit.kind,
-    passageTitle: hit.passageTitle,
-    passageEnd: hit.passageEnd,
-    passageWordCount: hit.passageWordCount,
-  };
 }
