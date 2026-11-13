@@ -257,6 +257,44 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
             strictConfirmation: true);
 
         ((LibraryErrorDto)result.Data!).Code.Should().Be("collection_not_found");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Books.CountAsync()).Should().Be(0);
+        (await db.Works.CountAsync()).Should().Be(0);
+        (await db.BookCollections.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Create_with_missing_collection_in_set_returns_collection_not_found_and_leaves_db_clean()
+    {
+        var h = Harness();
+        var existing = (CollectionDto)(await h.Service.CreateCollectionAsync(new(Client, "c1", "Philosophy"))).Data!;
+
+        var failed = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Fictions", Author: "Borges",
+                Key: "bad-set", CollectionIds: [existing.Id, Guid.NewGuid()]),
+            strictConfirmation: true);
+
+        ((LibraryErrorDto)failed.Data!).Code.Should().Be("collection_not_found");
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            (await db.Books.CountAsync()).Should().Be(0);
+            (await db.Works.CountAsync()).Should().Be(0);
+            (await db.BookCollections.CountAsync()).Should().Be(0);
+        }
+
+        // Retrying with a corrected collection set and new idempotency key succeeds cleanly.
+        var retried = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Fictions", Author: "Borges",
+                Key: "good-set", CollectionIds: [existing.Id]),
+            strictConfirmation: true);
+
+        ((LibraryCreateOrMatchResultDto)retried.Data!).Outcome.Should().Be("created");
+        await using var verifyDb = await h.Factory.CreateDbContextAsync();
+        (await verifyDb.Books.CountAsync()).Should().Be(1);
+        (await verifyDb.Works.CountAsync()).Should().Be(1);
+        (await verifyDb.BookCollections.CountAsync()).Should().Be(1);
     }
 
     [Fact]
