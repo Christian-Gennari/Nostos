@@ -18,5 +18,8 @@ the current docs and link back — do not treat the archived copy as current.
 | `performance/librivox-import/` | Measurement spike (#773) | LibriVox import timings and harness from one host; the commands and scratch paths in it are machine-specific |
 | `research/alignment-844/`, `research/alignment-step1/` | Investigation notes | Audio ↔ EPUB alignment measurements that informed the shipped alignment work |
 
-The alignment spike code under `tools/Nostos.Alignment.Spike*` is not archived
-by this directory; it is still referenced by its own README and CI.
+The alignment spike (`tools/Nostos.Alignment.Spike*`) that accompanied
+`research/alignment-step1/` was removed in #1653. Its 28 `PassageMatcher` tests
+now run in `Nostos.Backend.Tests/Alignment/PassageMatcherTests.cs` against the
+shipped matcher, and CI no longer runs a separate test step for it. The spike's
+benchmark harness and CLI are recoverable from git history.

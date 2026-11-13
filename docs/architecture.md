@@ -80,7 +80,7 @@ Nostos.sln
 │       ├── pair/            # Carrel device pairing
 │       └── cloud-entry/     # Entry points used only by the hosted deployment
 │
-└── tools/                   # Support projects outside the product (ReadwiseCanary, alignment spike)
+└── tools/                   # Support projects outside the product (ReadwiseCanary, fixtures)
 ```
 
 `Nostos.Backend` is the product's only executable; `Nostos.Product` is the library

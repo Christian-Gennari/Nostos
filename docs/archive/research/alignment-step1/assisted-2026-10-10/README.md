@@ -6,6 +6,6 @@ The owner approved independent cached local Whisper references after the session
 
 Verification: 9 focused matcher tests, 5 Python evidence/gate tests, ten independent synthetic calibration cases, and exact materialization of both book extractions/all 32 clips. Public CI passed on the implementation commit. No reader/Settings/browser acceptance is claimed.
 
-Commands are documented in `tools/Nostos.Alignment.Spike/README.md`: build/test, materialize exact fixtures from this manifest, calibrate/freeze, replay cached index, then finalize with accepted inspection receipts. Run replay from the public repo root using `results/transcripts-index.json`. Private billing/model records are in Cloud #294. No public HTTP endpoint or database migration.
+Commands were documented in the spike's README, `tools/Nostos.Alignment.Spike/README.md`, which was removed in #1653 together with the spike: build/test, materialize exact fixtures from this manifest, calibrate/freeze, replay cached index, then finalize with accepted inspection receipts. The matcher tests now live in `Nostos.Backend.Tests/Alignment/PassageMatcherTests.cs`, and the spike's harness is recoverable from git history. Run replay from the public repo root using `results/transcripts-index.json`. Private billing/model records are in Cloud #294. No public HTTP endpoint or database migration.
 
 Final matching evidence and the single next-step recommendation are in `results/README.md`. Both research issues stay open; do not merge or enable auto-merge as part of this checkpoint.
