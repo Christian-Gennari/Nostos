@@ -509,6 +509,15 @@ export class BrainListPage {
     this.selectNote(note.id);
   }
 
+  /** A wide row press: ticks the note in Select mode, opens it otherwise. */
+  onRowClick(note: NoteSearchHit): void {
+    if (!this.selecting()) {
+      this.chooseNote(note);
+      return;
+    }
+    this.setSelected(note.id, !this.selected().has(note.id));
+  }
+
   /**
    * A related note, the keyboard, or a row: open it in the same place. A click
    * pushes a history entry (so Back returns to the note read before it); the
@@ -539,7 +548,10 @@ export class BrainListPage {
     return root ? Array.from(root.querySelectorAll<HTMLElement>('[data-note-row]')) : [];
   }
 
-  /** ↑/↓ walk the list, Enter hands focus to the pane, Space chooses. */
+  /**
+   * ↑/↓ walk the list, Enter hands focus to the pane, Space chooses the note —
+   * or, while notes are being ticked, ticks the focused one.
+   */
   onListKeydown(event: KeyboardEvent): void {
     if (!this.wide()) return;
     const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-note-row]');
@@ -577,7 +589,13 @@ export class BrainListPage {
 
     if (event.key === ' ') {
       if (!currentId) return;
+      // A checkbox inside the row keeps its own Space and reports the tick itself.
+      if (event.target !== target) return;
       event.preventDefault();
+      if (this.selecting()) {
+        this.setSelected(currentId, !this.selected().has(currentId));
+        return;
+      }
       this.selectNote(currentId, true);
     }
   }

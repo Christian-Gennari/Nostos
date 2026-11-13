@@ -2,7 +2,9 @@
    listbox: the selected row is the soft tint the sidebar uses, and the row
    keeps its own rhythm so the list can be scanned without the full card. */
 :host {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
   width: 100%;
   padding: 0.8rem 0.85rem 0.75rem;
   border-radius: var(--radius-row);
@@ -10,6 +12,22 @@
   cursor: pointer;
   outline: none;
   transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+/* The row's content, beside the checkbox while notes are being ticked. */
+.row-body {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The same placement the full card gives its checkbox. */
+.row-select {
+  display: flex;
+  flex: none;
+  align-self: flex-start;
+  padding-top: 0.15rem;
+  cursor: pointer;
 }
 
 :host(:hover) {
