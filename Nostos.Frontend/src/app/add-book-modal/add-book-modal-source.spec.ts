@@ -247,10 +247,11 @@ describe('AddBookModal — From a Source', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    // Manual entry starts as a physical record, but file upload is still visible.
-    // Choosing the file decides the digital type; the user should not have to
-    // understand that PDF is represented internally as an E-book first.
-    expect(component.form.type).toBe('physical');
+    // Manual entry starts as a metadata-only E-book: no file and no explicit
+    // choice says nothing about owning a paper copy. Choosing the file decides
+    // the digital type; the user should not have to understand that PDF is
+    // represented internally as an E-book first.
+    expect(component.form.type).toBe('ebook');
 
     const input = fixture.nativeElement.querySelector(
       '.file-drop-zone--manual input[type="file"]',

@@ -182,7 +182,10 @@ export class AddBookModal {
 
   // Form State
   form = {
-    type: 'physical' as BookType,
+    // No file yet, so nothing says this is a paper copy: a hand-entered book is
+    // a metadata-only digital book. "Physical book" is a choice in the format
+    // dropdown, and a chosen file decides ebook vs audiobook on its own.
+    type: 'ebook' as BookType,
     title: '',
     subtitle: '' as string | null,
 
@@ -429,7 +432,7 @@ export class AddBookModal {
   fillForm(b: BookModel) {
     this.resetUploadState();
     this.form = {
-      type: b.type || 'physical',
+      type: b.type || 'ebook',
       title: b.title,
       subtitle: b.subtitle || '',
 
@@ -465,7 +468,8 @@ export class AddBookModal {
   resetForm(): void {
     this.bulkFiles.set([]);
     this.form = {
-      type: 'physical',
+      // See the form's own default: no file is not evidence of paper.
+      type: 'ebook',
       title: '',
       subtitle: null,
 
