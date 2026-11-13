@@ -258,7 +258,9 @@ create with no type makes a metadata-only ebook, never a physical book.
 
 ## Notes — `/api`
 
-Notes are always scoped to a book.
+Notes are always scoped to a book. The routes are implemented by
+[`NotesEndpoints`](../Nostos.Product/Endpoints/NotesEndpoints.cs) and
+[`NoteProcessingEndpoints`](../Nostos.Product/Endpoints/NoteProcessingEndpoints.cs).
 
 ### `GET /api/books/{bookId}/notes`
 
@@ -278,12 +280,96 @@ List all notes for a book.
 }
 ```
 
+The full `NoteDto` also carries capture provenance (`rawContent`,
+`captureSource`, `processingMode`, `sourceAnchorKind`, `sourceAnchorValue`,
+`anchorVerified`), the pen (`highlightColour`), a passage's fields (`kind`,
+`passageTitle`, `passageEnd`, `passageWordCount`), the book's author
+(`bookAuthor`), and the note's version (`updatedAt`). The list DTOs below
+(`NoteSearchHitDto`) add the book's format and edition count (`bookFormat`,
+`editionCount`), the note's work (`workId`), its topic names (`topicNames`) and
+the match `snippet`.
+
+### `GET /api/books/{bookId}/sections`
+
+The chapter titles of an EPUB in reading order (issue #1382), so the Studio can
+name the chapter a highlight is in.
+
+**Response:** `{ "titles": ["string"] }` — index 0 is the first section. A book
+with no table of contents, or another format, has none.
+
+### `GET /api/notes`
+
+The Brain's browse route: one paged place at a time, whether or not a note has a
+topic.
+
+| Query Param | Type | Default | Description |
+| ----------- | ---- | ------- | ----------- |
+| `query` | string | — | Search the notes' text, book title and author; accents and a small typo are forgiven when nothing matches as typed |
+| `bookId` | guid | — | One edition |
+| `workId` | guid | — | Every edition of one book |
+| `topicId` | guid | — | Only notes carrying this topic |
+| `withTopicId` | guid | — | Only notes carrying this topic; with `topicId`, both must be carried |
+| `withoutTopics` | bool | false | Only notes linked to no topic |
+| `kind` | string | — | `note` or `passage`; any other value matches nothing |
+| `order` | string | `newest` | `newest`, `oldest` or `book` |
+| `oldestFirst` | bool | false | The older spelling of `order=oldest`; `order` wins when both are sent |
+| `limit` | int | 25 | Clamped to 1–200 |
+| `offset` | int | 0 | Negative values are read as 0 |
+
+**Response:** `NoteSearchPageDto` — `{ items, totalCount, offset, limit }`, where
+`limit` is the effective page size after clamping and each item is a
+`NoteSearchHitDto`. An `order` that is none of the three is a `400`.
+
+### `GET /api/notes/search`
+
+Search note text; the index used to match topic names only, so a word living in a
+note's body or quote was unreachable.
+
+**Query:** `query`, and `limit` (default 50, clamped to 1–200).
+
+**Response:** `NoteSearchHitDto[]`. `snippet` is the fragment around the match, so
+a row can show why it matched without shipping the whole note.
+
+### `GET /api/notes/summary`
+
+How many notes each of the Brain's fixed places holds.
+
+**Response:** `{ total, passages, unsorted }`.
+
+### `GET /api/notes/books`
+
+The books that have notes in one place, for the Brain's Book filter. Takes the
+same filters as `GET /api/notes` except `bookId`, `workId`, `order` and paging.
+
+**Response:** `NoteBookFacetDto[]` — `{ bookId, bookTitle, bookAuthor, noteCount, workId }`.
+A book with several editions is one entry, counted across all of them; `workId`
+is what the Brain filters by, and is null for a note whose book row is gone.
+
+### `GET /api/notes/unlinked`
+
+Notes linked to no topic, so they can be read at all.
+
+**Query:** `limit` (default 50, clamped to 1–200), `offset`.
+
+**Response:** `NoteSearchPageDto`. The total travels with the page because the
+review mode walks the whole set: 50 of 63 unlinked notes must never read as "the
+unlinked notes".
+
+### `GET /api/notes/by-ids`
+
+Several notes with their topics, for the Studio's sources.
+
+**Query:** `ids` — comma-separated GUIDs. At most 200 (more is a `400`); a
+non-GUID or an id that names no note in this library is left out, never an error.
+
+**Response:** `NoteSearchHitDto[]`.
+
 ### `GET /api/notes/{id}`
 
 Get one canonical note for exact note/evidence deep-links.
 
 **Response:** [`NoteSearchHitDto`](../Nostos.Shared/Dtos/NoteDto.cs) — produced by
-[`NotesEndpoints`](https://github.com/Christian-Gennari/Nostos/blob/cf09b3114f54d9f2727fa590c2002ef9f31c5216/Nostos.Backend/Endpoints/NotesEndpoints.cs).
+[`NotesEndpoints`](../Nostos.Product/Endpoints/NotesEndpoints.cs).
 
 ```json
 {
@@ -315,12 +401,39 @@ and processing mode.
 
 **Response:** [`NoteRawTranscriptDto`](../Nostos.Shared/Dtos/NoteDto.cs) —
 produced by
-[`NoteProcessingEndpoints`](https://github.com/Christian-Gennari/Nostos/blob/cf09b3114f54d9f2727fa590c2002ef9f31c5216/Nostos.Backend/Endpoints/NoteProcessingEndpoints.cs).
+[`NoteProcessingEndpoints`](../Nostos.Product/Endpoints/NoteProcessingEndpoints.cs).
 
 `{ id, rawContent, content, processingMode }`
 
 Unlike the canonical note response's `hasRawContent` marker, this route carries
 the nullable `rawContent` value itself.
+
+### `GET /api/notes/{id}/passage`
+
+A passage in full (issue #1014). The list DTOs carry only a passage's opening, so
+a page of notes never ships whole chapters and the passage viewer asks for the
+rest when it opens.
+
+**Response:** `PassageDto` — `{ id, bookId, bookTitle, title, anchorKind, start,
+end, html, text, wordCount, content, highlightColour, createdAt, bookAuthor }`,
+where `anchorKind` is `epub_cfi`, `pdf_page` or `audio_timestamp`, the terms
+`start` and `end` are in. `404` when the note is not a passage.
+
+### `POST /api/notes/{id}/reprocess`
+
+Re-derive the stored text from the note's raw transcript (issue #262).
+
+**Body:** `{ "processingMode": "string" }`
+
+The raw transcript is always the source, never the current (possibly processed)
+text. `404` if the note does not exist, `409` when it has no raw transcript, `400`
+for an unknown mode. A provider failure is a `502` Problem Details response whose
+`title` is the provider error code; the note and its raw transcript are untouched.
+
+### `POST /api/notes/{id}/raw/restore`
+
+Restore `content` from the raw transcript; returns the note (`NoteDto`). Same
+failures as `/reprocess`.
 
 ### `POST /api/books/{bookId}/notes`
 
@@ -334,7 +447,17 @@ Create a note. Topics wrapped in `[[double brackets]]` are auto-extracted and li
   "cfiRange": "string? (epub CFI range)",
   "selectedText": "string? (highlighted text)",
   "highlightColour": "string? (amber | sage | blue | rose)",
-  "topics": ["string"]
+  "topics": ["string"],
+  "rawContent": "string? (the unprocessed capture)",
+  "captureSource": "text (default) | import | mcp | photo | …",
+  "processingMode": "verbatim (default) | …",
+  "sourceAnchorKind": "unknown (default)",
+  "sourceAnchorValue": "string?",
+  "anchorVerified": false,
+  "kind": "note (default) | passage",
+  "passageTitle": "string?",
+  "passageEnd": "string?",
+  "passageHtml": "string?"
 }
 ```
 
@@ -342,8 +465,12 @@ Create a note. Topics wrapped in `[[double brackets]]` are auto-extracted and li
 declare is written into it as its own `[[Name]]` paragraph. A note may be only
 topics. At most 50; a name that cannot stand inside `[[ ]]` is a `400`.
 
-**Response:** `201 Created` with `NoteDto`. An unknown `highlightColour` is a
-`400`.
+An optional `Idempotency-Key` header (at most 128 characters) with an
+`X-Client-Id` header (at most 64) makes the capture exactly-once; a caller that
+sends neither keeps the original non-idempotent behaviour.
+
+**Response:** `201 Created` with `NoteDto`. An unknown `highlightColour` or a
+malformed body is a `400`; an unknown `bookId` is a `404`.
 
 ### `PUT /api/notes/{id}`
 
@@ -356,7 +483,9 @@ Update a note. Re-processes `[[topic]]` links.
   "content": "Updated content with [[NewTopic]]",
   "selectedText": "string?",
   "highlightColour": "string? (amber | sage | blue | rose)",
-  "topics": ["string"]
+  "passageTitle": "string?",
+  "topics": ["string"],
+  "baseUpdatedAt": "datetime?"
 }
 ```
 
@@ -367,14 +496,28 @@ topics: each is written as a `[[Name]]` paragraph, and a pill topic left out
 
 `highlightColour` recolours a highlight. Omitted, it leaves the stored pen
 unchanged; a name that is not one of the four pens is a `400`. A note with no
-stored pen (`null`) is drawn in amber.
+stored pen (`null`) is drawn in amber. `passageTitle` is the same: omitted keeps
+it, and only a passage has one.
+
+`baseUpdatedAt` is optimistic concurrency (issue #1404): send the `updatedAt` the
+copy was loaded with, and a save made from a copy older than the stored note is
+refused with `409 Conflict` whose body is the current `NoteDto`, not an error
+object. The comparison is to the millisecond (PostgreSQL keeps microseconds,
+SQLite 100 ns, and the client echoes back what it was given). Omitted, no check
+runs, as before. An unknown note is a `404`.
 
 ### `PUT /api/notes/{id}/location`
 
-Record where the reader found an imported highlight in its EPUB, so it is drawn
-and opened like a highlight made in Nostos. Only notes with
-`captureSource: "import"` accept it. The first location is kept: a later call
-returns the note unchanged.
+Record where the reader found a note's text, so it is drawn and opened like a
+highlight made in Nostos. Two kinds of note accept it:
+
+- an imported highlight (`captureSource: "import"`), located by an EPUB CFI;
+- a quote saved by Ask Nostos or a connected app (MCP), located by an EPUB CFI
+  range or by the rectangles of the PDF page the note already names.
+
+Nothing that already has a place loses it, and a note a person wrote or marked is
+never touched: the first location is kept and a later call returns the note
+unchanged.
 
 **Body:**
 
@@ -384,14 +527,15 @@ returns the note unchanged.
 }
 ```
 
-**Response:** `200 OK` with `NoteDto`; `400` for a non-import note or a value
-that is not an EPUB CFI; `404` if the note does not exist.
+**Response:** `200 OK` with `NoteDto`; `400` when the note may not be located or
+the value is neither an EPUB CFI nor a PDF location; `404` if the note does not
+exist.
 
 ### `DELETE /api/notes/{id}`
 
 Delete a note and its topic links.
 
-**Response:** `204 No Content`
+**Response:** `204 No Content`, or `404` when the note does not exist.
 
 ### Highlight import — `/api/notes/imports`
 
@@ -408,6 +552,7 @@ upload limit; KOReader sidecars have a 2 MB limit; Kindle and Readwise files a
 | `POST` | `/api/notes/imports/preview` | Read multipart field `file`; return `{ source, books, skipped }` without writing. |
 | `POST` | `/api/notes/imports/commit` | Read the same `file` and a JSON `decisions` form field; import only decided books. |
 | `GET` | `/api/notes/imports/batches` | Return the five most recent imports that still have notes, with note/book counts. |
+| `GET` | `/api/notes/imports/starter?batchIds=` | The imported highlights a first draft opens with; `batchIds` (comma-separated, at most 50) narrows it to an import just made. |
 | `DELETE` | `/api/notes/imports/batches/{id}` | Undo a batch; return `{ removed }`, or `404` if it no longer exists. |
 
 Preview books include `sourceKey`, title/author, annotation/new counts, and
@@ -681,50 +826,195 @@ collection still has child collections.
 
 ---
 
+## Reading List — `/api/reading-list`
+
+Books the user wants to read and does not have yet, implemented by
+[`ReadingListEndpoints`](../Nostos.Product/Endpoints/ReadingListEndpoints.cs).
+"Next up" is an ordered shelf; everything not on it is "Someday". The list is
+returned whole, so its ceiling is a hard 2000 entries (`409 reading_list_full`
+on create). An entry whose title looks like a book already in the library carries
+`ownedBookId`, so the list can say "you already have this".
+
+### `GET /api/reading-list`
+
+**Response:** `ReadingListEntryDto[]` — `{ id, title, author, isbn, publishedDate,
+why, recommendedBy, nextPosition, createdAt, ownedBookId }`, "Next up" in shelf
+order first (`nextPosition` set), then "Someday" newest first (`nextPosition`
+null).
+
+### `POST /api/reading-list`
+
+**Body:** `{ "title": "string", "author": "string?", "isbn": "string?",
+"publishedDate": "string?", "why": "string?", "recommendedBy": "string?", "readNext":
+false }` — `readNext` puts the entry at the end of the shelf.
+
+**Response:** `201 Created` with `ReadingListEntryDto`. A missing title, an
+oversized field (title and author 500, `why` 2000, `recommendedBy` 300,
+`publishedDate` 32) is `400 invalid_reading_list_entry`; an ISBN that is not
+ISBN-10 or ISBN-13 is `400 invalid_isbn`; a full list is `409 reading_list_full`.
+
+### `PUT /api/reading-list/next`
+
+Replace the whole "Next up" shelf, in reading order. Promote, demote and reorder
+are all this one call: every entry not named becomes "Someday".
+
+**Body:** `{ "ids": ["guid"] }`
+
+**Response:** the list as it now is. `400 invalid_reading_list_order` for a
+duplicate id; `404 reading_list_entry_not_found` for an id that is no longer on
+the list.
+
+### `PUT /api/reading-list/{id}`
+
+Replace an entry's own fields. `readNext` only applies on create; the shelf is
+set by `PUT /api/reading-list/next`.
+
+**Body:** the same as create (without `readNext`'s effect).
+
+**Response:** the updated entry, `404 reading_list_entry_not_found`, or the same
+`400`s as create.
+
+### `DELETE /api/reading-list/{id}`
+
+**Response:** `204 No Content`, or `404 reading_list_entry_not_found`.
+
+### `POST /api/reading-list/{id}/acquired`
+
+The user got the book: the entry's `why` and `recommendedBy` become a note on the
+book, and the entry leaves the list.
+
+**Body:** `{ "bookId": "guid" }`
+
+**Response:** `204 No Content`; `404 reading_list_entry_not_found` or
+`404 book_not_found`. The note is written before the entry is removed, so a
+failure there leaves the reason on the book and the entry on the list.
+
+Reading-list errors are Problem Details with the domain code in `title` and in a
+`code` extension (`404` for a missing entry or book, `409` for a full list, `400`
+otherwise).
+
+---
+
 ## Topics — `/api/topics`
 
-Read-only. Topics are created automatically when notes with `[[brackets]]` are saved.
+Topics are created automatically when notes with `[[brackets]]` are saved, and by
+`/api/topics/link` when a name is new. They are not read-only: renaming,
+describing, merging and deleting all exist, along with the aggregate and graph
+reads the Brain uses. Routes are implemented by
+[`TopicsEndpoints`](../Nostos.Product/Endpoints/TopicsEndpoints.cs).
 
 > Topics were formerly called Concepts. `/api/concepts` remains a transition
-> prefix alias to the identical handlers in
-> [`TopicsEndpoints`](https://github.com/Christian-Gennari/Nostos/blob/cf09b3114f54d9f2727fa590c2002ef9f31c5216/Nostos.Backend/Endpoints/TopicsEndpoints.cs). Both prefixes
-> use the current topic request/response field names; the alias does not restore
-> old `concept` payload field names.
+> prefix alias to the identical handlers. Both prefixes use the current topic
+> request/response field names; the alias does not restore old `concept` payload
+> field names.
 
 ### `GET /api/topics`
 
-List all topics with usage count, sorted by most-used first.
+Without `search`: every topic with its usage count, most-used first.
 
-**Response:** `TopicDto[]` — `{ id, name, usageCount }`
+**Response:** `TopicDto[]` — `{ id, name, usageCount, noteMatchCount,
+noteMatchSnippet, description }`.
+
+**Query:** `search` searches the text of the notes, so a topic is found through
+what a note says as well as through its name. It returns at most 50 topics, each
+with `noteMatchCount` and `noteMatchSnippet` filled in.
+
+### `GET /api/topics/stats`
+
+The Index header's aggregate.
+
+**Response:** `TopicStatsDto` — `{ totalTopics, totalReferences, singleNoteTopics,
+mostUsedName, mostUsedCount }`.
 
 ### `GET /api/topics/{id}`
 
-Get topic detail with all related notes across books.
+Topic detail with every note carrying it, across books.
 
-**Response:**
+**Response:** `TopicDetailDto` — `{ id, name, notes }`. Each note is a
+`NoteContextDto`: `{ noteId, content, selectedText, cfiRange, bookId, bookTitle,
+bookAuthor, createdAt, sourceAnchorKind, sourceAnchorValue, anchorVerified,
+highlightColour, kind, passageTitle, passageEnd, passageWordCount }`. A passage's
+`selectedText` is its opening, with the reading markup expanded.
 
-```json
-{
-  "id": "guid",
-  "name": "string",
-  "notes": [
-    {
-      "noteId": "guid",
-      "content": "string",
-      "selectedText": "string?",
-      "cfiRange": "string?",
-      "bookId": "guid",
-      "bookTitle": "string"
-    }
-  ]
-}
-```
+### `GET /api/topics/{id}/related`
+
+Topics that co-occur with this one in the same notes.
+
+**Response:** `RelatedTopicDto[]` — `{ id, name, sharedNotes, sharedNoteIds }`.
+
+### `GET /api/topics/{id}/writings`
+
+Where a topic is used in writing (issue #1162), worked out at read time from the
+writings that cite its notes. Nothing ever stores a topic on a writing.
+
+**Query:** `limit` (default 5).
+
+**Response:** `TopicWritingUsageDto` — `{ total, writings, noteCitations }`, where
+each writing is `{ id, name, updatedAt }` and each citation count is `{ noteId,
+writings, writingIds }`. `404` for an unknown topic.
+
+### `GET /api/topics/graph`
+
+The whole-brain co-occurrence graph.
+
+**Response:** `TopicGraphDto` — `{ nodes, edges }`. Nodes are `{ id, name,
+usageCount }` and include topics with no links; edges are `{ sourceId, targetId,
+sharedNotes }`.
+
+### `PUT /api/topics/{id}`
+
+Rename a topic. The new name is written into the notes' `[[ ]]` references, and a
+name that already exists merges into that topic.
+
+**Body:** `{ "topic": "string" }`
+
+A name is 1–200 characters on one line, without `[[`, `]]` or `|`, not starting
+with `[` and not ending with `]`; anything else is a `400`. `404` for an unknown
+topic.
+
+### `PUT /api/topics/{id}/description`
+
+The reader's own words about a topic.
+
+**Body:** `{ "description": "string?" }` — empty or null clears it. The trimmed
+text is at most 4000 characters (`400` beyond that). `404` for an unknown topic.
+
+### `POST /api/topics/{id}/merge`
+
+Merge this topic into another: its notes move to the target and it is gone.
+
+**Body:** `{ "targetId": "guid" }`
+
+`400` when the target is the topic itself (`A topic cannot be merged into
+itself.`); `404` when either topic does not exist.
+
+### `POST /api/topics/link` and `POST /api/topics/unlink`
+
+Add or remove the named topics on many notes at once (the Brain's selection bar
+and its one-by-one sorter). A linked name is created when it is new; unlinking is
+also how a link is undone, and a link that exists only as a link (no `[[ ]]` in
+the text) is changed too.
+
+**Body:** `{ "topics": ["string"], "noteIds": ["guid"] }` — at most 20 topics and
+200 notes, and at least one of each.
+
+**Response:** `TopicLinkResultDto` — `{ changedNoteIds, notes }`, where `notes`
+are the listed notes as they now are (`NoteSearchHitDto[]`). `404` when a note
+does not exist; `400` for an invalid topic name or an oversized request.
+
+### `DELETE /api/topics/{id}`
+
+Delete a topic and its note links, and turn its references in the notes' text
+into plain words so it is not re-created on their next save.
+
+**Response:** `204 No Content`, or `404` when it does not exist.
 
 ---
 
 ## Writings — `/api/writings`
 
-Hierarchical file system for the writing studio.
+Hierarchical file system for the writing studio, implemented by
+[`WritingsEndpoints`](../Nostos.Product/Endpoints/WritingsEndpoints.cs).
 
 ### `GET /api/writings`
 
@@ -734,7 +1024,7 @@ List all writings (flat list with `parentId` for tree structure).
 
 ### `GET /api/writings/{id}`
 
-Get document content.
+Get a document's content.
 
 **Response:** `{ id, name, content, updatedAt }`
 
@@ -744,15 +1034,29 @@ Create a folder or document.
 
 **Body:** `{ "name": "string", "type": "Folder|Document", "parentId": "guid?" }`
 
+**Response:** `201 Created` with `WritingDto`; `400` when `type` is neither
+`Folder` nor `Document`.
+
 ### `PUT /api/writings/{id}`
 
 Update name and/or content (used by auto-save).
 
-**Body:** `{ "name": "string", "content": "string?" }`
+**Body:** `{ "name": "string", "content": "string?", "baseUpdatedAt": "datetime?" }`
+
+`content` is written only when the body carries a `content` property at all, so a
+rename never blanks the document; omitting it leaves the stored content alone.
+
+`baseUpdatedAt` is optimistic concurrency (issue #1363): send the `updatedAt` the
+copy was loaded with, and a save made from a copy older than the stored writing is
+refused with `409 Conflict` whose body is the current writing content
+(`{ id, name, content, updatedAt }`), not an error object. The comparison is to
+the millisecond. Omitted, no check runs. A body that is not a JSON object, or one
+that does not deserialize, is a `400`; `404` for an unknown writing.
 
 ### `PUT /api/writings/{id}/move`
 
-Move a writing to a new parent folder. Includes **cycle detection**.
+Move a writing to a new parent folder. Includes **cycle detection** — a folder
+cannot move into itself or into one of its own descendants (`400`).
 
 **Body:** `{ "newParentId": "guid?" }` (`null` = move to root)
 
@@ -760,7 +1064,103 @@ Move a writing to a new parent folder. Includes **cycle detection**.
 
 Delete a writing. Cascading delete removes all children.
 
-**Response:** `204 No Content`
+**Response:** `204 No Content`, or `404` when it does not exist.
+
+### `GET /api/writings/{id}/page-setup`
+
+The writing's export page setup (issue #1164).
+
+**Response:** `204 No Content` until one is saved, otherwise `WritingPageSetupDto`
+— `{ paper, marginMm, font, lineSpacing, citationStyle }`. `404` for an unknown
+writing.
+
+### `PUT /api/writings/{id}/page-setup`
+
+Save the export page setup. It is not a content change, so `updatedAt` stays as it
+is.
+
+**Body:** `{ "paper": "a4|letter", "marginMm": 5–80, "font": "font-id",
+"lineSpacing": 0.8–3, "citationStyle": "style-id" }` — `marginMm` is rounded to
+one decimal and `lineSpacing` to two.
+
+**Response:** the normalized setup. `font` and `citationStyle` are the
+frontend's identifiers (`^[a-z0-9][a-z0-9-]{0,63}$`); anything out of range is a
+`400` with the reason. `404` for an unknown writing.
+
+### `GET /api/writings/{writingId}/notes`
+
+The source notes kept for a writing document.
+
+**Response:** `WritingSourceDto[]` — every note field is the live canonical value,
+plus `addedAt` from the membership; nothing is copied into storage. `404` when the
+writing does not exist.
+
+### `POST /api/writings/{writingId}/notes`
+
+Keep a source note available for a writing document.
+
+**Body:** `{ "noteId": "guid" }`
+
+**Response:** `201 Created` with `WritingSourceDto`, or `200` with the existing
+membership when the note is already kept. `404` when the writing or the note does
+not exist; `400` when the writing is a folder.
+
+### `DELETE /api/writings/{writingId}/notes/{noteId}`
+
+Stop keeping a source note for a writing document.
+
+**Response:** `204 No Content` when the writing exists, whether or not the note
+was kept; `404` when the writing does not exist.
+
+---
+
+## Carrel — `/api/carrel` and `/carrel/v1`
+
+Device sync with Carrel clients (formerly the Stylos integration), implemented by
+[`CarrelProtocolEndpoints`](../Nostos.Product/Endpoints/CarrelProtocolEndpoints.cs)
+and
+[`CarrelManagementEndpoints`](../Nostos.Product/Endpoints/CarrelManagementEndpoints.cs).
+The `/carrel/v1` routes are the protocol crate's wire format: field names are
+snake_case, exactly as `carrel-protocol` types them. Both groups are mapped only
+when the host registers the feature; SelfHosted does.
+
+### Pairing and devices — `/api/carrel`
+
+The signed-in side: the approval page looks a code up, approves or denies it, and
+Settings → Devices lists and revokes paired devices. On Cloud these routes require
+the host's signed-in policy; SelfHosted has one local owner.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `GET` | `/api/carrel/pairing/{code}` | The waiting code's `{ code, deviceName, expiresAt }`; `404` when no device is waiting with it. |
+| `POST` | `/api/carrel/pairing/{code}/approve` | Approve it; `{ deviceId, deviceName }`; `404` for unknown, already approved or expired. |
+| `POST` | `/api/carrel/pairing/{code}/deny` | `204`; `404` when no device is waiting with it. |
+| `GET` | `/api/carrel/devices` | `{ devices: [{ id, name, createdAt, lastUsedAt }] }`; never a token. |
+| `DELETE` | `/api/carrel/devices/{id}` | Revoke a device; `204`, or `404`. |
+
+### Protocol v1 — `/carrel/v1`
+
+A device has no credential until pairing hands it one, so pairing is anonymous
+and everything else requires `Authorization: Bearer stl_…` from a paired device.
+Answers carry `Cache-Control: no-store`.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `POST` | `/carrel/v1/pair/start` | Body `{ device_name, device_pubkey }`; answer `{ pair_id, code, expires_at }` (`expires_at` is a Unix time). |
+| `GET` | `/carrel/v1/pair/{pair_id}` | `{ status, token?, server_cert_sha256?, server_name? }`. `status` is `pending`, `approved` or `expired`; the token appears once approved. |
+| `GET` | `/carrel/v1/files?since=` | `{ files: [{ file_id, path, hash, rev, deleted, modified_at }], cursor }`. |
+| `GET` | `/carrel/v1/files/{file_id}` | `{ file_id, path, hash, rev, content }`. |
+| `PUT` | `/carrel/v1/files/{file_id}` | Body `{ path, content, base_rev }`; `{ rev, hash }`, or `409` with `{ conflict: { server_rev, server_hash, server_file_id } }`. |
+| `DELETE` | `/carrel/v1/files/{file_id}` | A `base_rev` query parameter is required; `{ rev }`, or the same `409` conflict. |
+| `GET` | `/carrel/v1/library?since=` | `{ books, items, deleted, cursor }`: the notes a device can quote offline, each `{ id, kind, book_id, text, note, location, topics, citation: { markdown, url } }`, inside books of `{ id, title, author }`. |
+| `GET` | `/approve` | Anonymous redirect to `/pair`, keeping the query: a device builds its approval URL as `{origin}/approve`. |
+
+Protocol errors are a `400` whose body is the message (`invalid file id`,
+`invalid body`, `invalid base_rev`, a bad `since` cursor, `base_rev is
+required`), and a `404` with `{ "error": "file not found" }` (or `unknown
+pairing`) for a missing one. A device token whose owner's data is unavailable
+answers `401` with `WWW-Authenticate: Bearer` and `{ "error": "missing or
+invalid token" }`.
 
 ---
 
@@ -1157,7 +1557,11 @@ changes that collide with another book return `duplicate_identifier`.
 
 ## Error Handling
 
-All errors follow the Problem Details standard:
+Errors come in four shapes, and a client should be ready for all of them.
+
+**Problem Details** (`application/problem+json`) is what the pipeline emits for
+anything a handler did not classify, and what library-domain and reading-list
+errors use deliberately:
 
 ```json
 {
@@ -1167,8 +1571,44 @@ All errors follow the Problem Details standard:
 }
 ```
 
-Validation errors return `400 Bad Request` with `{ "error": "message" }`.
+The global exception handler answers an unhandled exception with that body:
+`title` is `An unexpected error occurred.` for a 5xx, and `The request could not be
+processed.` for a `BadHttpRequestException` (a malformed request). Exception
+messages and payloads are never included — they go to the log instead. A route
+that does not exist, or a method it does not allow, is answered by routing's own
+`404`/`405`, given a body in the same shape by `UseStatusCodePages()` with
+`AddProblemDetails()` registered.
 
-Library errors use the Problem Details shape with the domain error code in
-`title` and the human-readable reply in `detail`; the Library section above
-lists the status mapping.
+Domain errors that use Problem Details put the machine code in `title` and the
+human-readable reply in `detail`:
+
+- books, collections and alignment (`LibraryHttpMapper`): a code containing
+  `_not_found` is `404`, `invalid_` is `400`, the conflict family
+  (`identity_conflict`, `duplicate_identifier`, `confirmation_required`,
+  `collection_name_conflict`, `collection_cycle`, `collection_has_children`,
+  `book_in_use`) is `409`, and anything else is `422 Unprocessable Entity`;
+- the reading list: `title` is the code and the same code is repeated in a `code`
+  extension (`404` for a missing entry or book, `409` for a full list, `400`
+  otherwise);
+- `POST /api/notes/{id}/reprocess`: a provider failure is a `502` whose `title`
+  is the provider error code.
+
+**`{ "error": "message" }`** is the notes and topics shape for a `4xx` the
+handler classifies itself: a validation failure, or an operation the note or
+topic does not allow. The `error` value is the message to show a person. Carrel
+uses the same envelope for its `401` and `404`; its `400`s carry the message
+alone.
+
+**A bare JSON string** is what writings return for their own rejections, such as
+an invalid `type` on create, a move that would create a cycle, or a page setup
+out of range. It is the message alone — no envelope.
+
+**A `409 Conflict` whose body is the current resource** is optimistic
+concurrency, not an error object: `PUT /api/notes/{id}` answers with the current
+`NoteDto` and `PUT /api/writings/{id}` with the current writing content, so the
+client can show the newer copy and let the person decide. `baseUpdatedAt` is how a
+client opts in; a request that omits it is not checked.
+
+The Library section above lists that surface's status mapping; the Books routes
+use `{ "error": "message" }` for their validation failures (`400`) and `404` for a
+missing book.
