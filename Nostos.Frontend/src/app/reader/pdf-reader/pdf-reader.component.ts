@@ -1,51 +1,74 @@
-// src/app/reader/pdf-reader/pdf-reader.ts
+// src/app/reader/pdf-reader/pdf-reader.component.ts
 import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
+  DestroyRef,
   ElementRef,
-  input,
+  HostListener,
+  OnChanges,
+  OnDestroy,
+  OnInit,
+  SimpleChanges,
+  ViewChild,
   computed,
   effect,
-  untracked,
   inject,
-  OnInit,
-  OnChanges,
-  SimpleChanges,
+  input,
   output,
-  ViewChild,
-  OnDestroy,
   signal,
-  HostListener,
-  ChangeDetectionStrategy,
+  untracked,
 } from '@angular/core';
 import {
-  NgxExtendedPdfViewerModule,
-  NgxExtendedPdfViewerComponent,
-  NgxExtendedPdfViewerService,
   FindResultMatchesCount,
   FindState,
-  TextLayerRenderedEvent,
+  NgxExtendedPdfViewerComponent,
+  NgxExtendedPdfViewerModule,
+  NgxExtendedPdfViewerService,
   PagesLoadedEvent,
   PdfLoadedEvent,
   ScrollModeType,
+  TextLayerRenderedEvent,
 } from 'ngx-extended-pdf-viewer';
 import './pdf-defaults';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Subject, firstValueFrom } from 'rxjs';
+import { Subject, Subscription, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
-import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
-import { PdfReadAloud } from './pdf-read-aloud';
-import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
-import { buildPdfPageText, type PageRect } from './pdf-read-aloud-text';
-import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
+import { PageHighlight, PdfAnnotationManager } from './pdf-annotation-manager';
+import { chapterRangeAt } from './pdf-chapter-progress';
 import {
-  PassageDraft,
-  PassageMark,
-  closingOf,
-  countWords,
-  excerptOf,
-  withoutLeadingLabels,
-} from '../passage/passage-mark';
+  buildPdfPassageDraft,
+  detectPdfTextCapability,
+  extractPdfPageLabels,
+  extractPdfVisibleExcerpt,
+  isSubstantialPageText,
+  mapPdfOutline,
+} from './pdf-document-helpers';
+import { PdfReadAloudBridge } from './pdf-read-aloud-bridge';
+import {
+  DEFAULT_PDF_SCROLL_MODE,
+  DEFAULT_PDF_ZOOM,
+  PDF_READING_MODES,
+  PDF_ZOOM_PRESETS,
+  formatPdfZoomLabel,
+  isPdfZoomPreset,
+  nextPdfZoom,
+  readPdfInversion,
+  readPdfScrollMode,
+  readPdfZoom,
+  savePdfInversion,
+  savePdfScrollMode,
+  savePdfZoom,
+} from './pdf-reader-settings';
+import { PdfReaderTimers } from './pdf-reader-timers';
+import {
+  PdfSearchController,
+  sourcePassagePhrase,
+  sourcePassagePhrases,
+} from './pdf-search-controller';
+import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
+import { PassageDraft, PassageMark, excerptOf } from '../passage/passage-mark';
 import { isDesktopMouseSelection, type SelectionAnchor } from '../selection-anchor';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
@@ -57,14 +80,7 @@ import { Note, noteHasText, pdfQuotePageToLocate } from '../../core/dtos/note.dt
 import type { HighlightHit } from '../highlight-hit';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService, themeOption } from '../../core/services/theme.service';
-import {
-  IReader,
-  ReaderProgress,
-  ReaderSearchState,
-  ReaderSourceTarget,
-  TocItem,
-} from '../reader.interface';
-import { chapterRangeAt } from './pdf-chapter-progress';
+import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 import {
   shouldSuppressTouchClick,
@@ -74,6 +90,8 @@ import {
   type TouchClickSuppression,
 } from '../reader-keyboard';
 
+export { PDF_ZOOM_PRESETS, isSubstantialPageText, sourcePassagePhrase, sourcePassagePhrases };
+
 /**
  * Surround colour for the pdf.js viewer canvas. Light keeps the established
  * near-white; every other theme follows its `--bg-body` (THEMES' chrome
@@ -82,17 +100,6 @@ import {
  * toolbar/sidebar/find bar chrome.
  */
 const PDF_LIGHT_SURROUND = '#fefeff';
-
-/**
- * Page fits a fixed-layout document can be read at, offered in the shell's view
- * panel. A phone default of a fitted whole page renders a 512-page book at about
- * 9.5px, so 'page-width' leads; 100 is actual size (issue #226 §9).
- */
-export const PDF_ZOOM_PRESETS: { value: string | number; label: string }[] = [
-  { value: 'page-width', label: 'Fit width' },
-  { value: 'page-fit', label: 'Whole page' },
-  { value: 100, label: 'Actual size' },
-];
 
 interface PendingPdfHighlight {
   tempId: string;
@@ -107,68 +114,6 @@ interface PendingPdfHighlight {
  */
 const TOUCH_SELECTION_SETTLE_MS = 300;
 
-/** How far past a page with almost no text the excerpt for another edition may look. */
-const PDF_EXCERPT_LOOKAHEAD_PAGES = 2;
-
-/** Enough text to be one place in a book: more than a caption or a chapter title. */
-export function isSubstantialPageText(text: string): boolean {
-  return text.trim().length >= 100;
-}
-
-const UNSPACED_SCRIPT = /[\u3040-\u30ff\u3400-\u9fff\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]/g;
-
-/**
- * The phrase the reader's search marks after a landing from another edition:
- * the passage's last six words, or, in a script written without spaces between
- * words, its last dozen characters. Null when the passage is too short to find.
- */
-export function sourcePassagePhrase(excerpt: string | null | undefined): string | null {
-  return sourcePassagePhrases(excerpt)[0] ?? null;
-}
-
-/**
- * The phrases to try, best first. After the passage's last six words come its
- * last runs of five or six words that carry no punctuation: a scan's text
- * layer most often differs from the book's text at a quotation mark, a hyphen
- * or a line end, and a run of plain words is still long enough to be one place.
- */
-export function sourcePassagePhrases(excerpt: string | null | undefined): string[] {
-  const flat = (excerpt ?? '').replace(/\s+/g, ' ').trim();
-  if (!flat) return [];
-
-  const unspaced = (flat.match(UNSPACED_SCRIPT)?.length ?? 0) * 2 > flat.length;
-  if (unspaced) {
-    // A line break in the page text is a space here; the search cannot cross it.
-    const tail = flat.split(' ').filter(Boolean).at(-1) ?? '';
-    return tail.length >= 4 ? [tail.slice(-12)] : [];
-  }
-
-  const words = flat.split(' ').filter(Boolean);
-  if (words.length < 3) return [];
-
-  const phrases = [words.slice(-6).join(' ')];
-  let run: string[] = [];
-  const close = () => {
-    if (run.length >= 5) phrases.push(run.slice(-6).join(' '));
-    run = [];
-  };
-
-  for (let index = words.length - 1; index >= 0 && phrases.length < 3; index--) {
-    if (/^[\p{L}\p{N}]+$/u.test(words[index])) run.unshift(words[index]);
-    else close();
-  }
-  if (phrases.length < 3) close();
-
-  return [...new Set(phrases)];
-}
-
-/**
- * The longest page range whose text is gathered for a PDF passage. Longer
- * ranges are kept as pages alone: the viewer still shows them, but search does
- * not read them.
- */
-const PDF_PASSAGE_TEXT_PAGE_LIMIT = 400;
-
 @Component({
   selector: 'app-pdf-reader',
   standalone: true,
@@ -177,7 +122,7 @@ const PDF_PASSAGE_TEXT_PAGE_LIMIT = 400;
   // find bar's close control; with that gone the module is the whole list.
   imports: [NgxExtendedPdfViewerModule],
   templateUrl: './pdf-reader.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './pdf-reader.component.css',
 })
 export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
@@ -187,6 +132,18 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   private themeService = inject(ThemeService);
   private assistantContext = inject(AssistantContextService);
   private pdfSearch = inject(NgxExtendedPdfViewerService);
+  private cdr = inject(ChangeDetectorRef);
+  private destroyRef = inject(DestroyRef);
+
+  /**
+   * This component's own host element. The library renders the viewer and find
+   * bar inside it, so host-scoped queries reach pages, scrollport, and text
+   * layers without touching the rest of the document.
+   */
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  private readonly timers = new PdfReaderTimers();
+  private destroyed = false;
 
   /**
    * Reader signals published to the assistant context registry (issue #261):
@@ -195,12 +152,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   private assistantPage = signal<number | null>(null);
   private assistantSelection = signal<string | null>(null);
   private unregisterAssistantContext: (() => void) | null = null;
-  /**
-   * This component's own host element. The library renders the find bar inside
-   * it, so a query scoped here reaches the fields we need to focus without
-   * touching the rest of the document.
-   */
-  private host = inject(ElementRef<HTMLElement>);
 
   // --- Theme-following surround (issue #259) ---
 
@@ -237,29 +188,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   /** Toggle the inversion and persist the choice. */
   setPageInverted(value: boolean): void {
     this.savedInversion.set(value);
-    try {
-      localStorage.setItem(this.invertStorageKey(), JSON.stringify(value));
-    } catch {
-      // Private-mode storage — the mode still applies for the session.
-    }
-  }
-
-  private invertStorageKey(): string {
-    return `nostos.pdf-invert.${this.bookId()}`;
+    savePdfInversion(this.bookId(), value);
   }
 
   private restoreSavedInversion(): void {
-    try {
-      const raw = localStorage.getItem(this.invertStorageKey());
-      if (raw !== null) {
-        this.savedInversion.set(JSON.parse(raw) === true);
-        return;
-      }
-    } catch {
-      // fall through
-    }
-    // No choice yet: pageInverted follows the theme (inverted in dark).
-    this.savedInversion.set(null);
+    this.savedInversion.set(readPdfInversion(this.bookId()));
   }
 
   @ViewChild(NgxExtendedPdfViewerComponent) pdfViewer!: NgxExtendedPdfViewerComponent;
@@ -280,20 +213,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   /** Ask Nostos quotes to look for when their page's text layer is drawn, by page. */
   private readonly quotesByPage = new Map<number, Note[]>();
 
-  constructor() {
-    effect(() => {
-      const notes = this.notes();
-      if (!notes) return;
-      untracked(() => {
-        const arrived = notes.filter((note) => !this.notesSeen.has(note.id));
-        if (arrived.length === 0) return;
-        arrived.forEach((note) => this.notesSeen.add(note.id));
-        this.applyNotes(arrived);
-        this.waitForQuotes(arrived);
-      });
-    });
-  }
-
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
@@ -312,7 +231,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   highlightActivated = output<HighlightHit[]>();
   /** The mouse is over a saved highlight, which shows the pointer cursor. */
   readonly overHighlight = signal(false);
-  private hoverFrame = 0;
   private hoverPoint: { target: EventTarget | null; x: number; y: number } | null = null;
 
   /** The book's catalogue language, for choosing a voice. A PDF rarely says its own. */
@@ -327,109 +245,24 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    */
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('unknown');
 
+  private pdfDocRef: any = null;
+
+  private readonly searchController = new PdfSearchController({
+    pdfSearch: this.pdfSearch,
+    textCapability: this.textCapability,
+    timers: this.timers,
+    getPdfDoc: () => this.pdfDocRef,
+  });
+
   /** Shared shell search state; PDF.js remains the matching engine. */
-  searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
-  private pdfSearchReady = signal(false);
-  readonly searchAvailable = computed(
-    // A text-capable PDF should earn the search affordance. While capability
-    // detection is still unknown, keep Search disabled rather than briefly
-    // promising it for a scanned/image-only document.
-    () => this.pdfSearchReady() && this.textCapability() === 'available',
-  );
-  private searchGeneration = 0;
-  private activeSearchQuery = '';
+  searchState = this.searchController.searchState;
+  private pdfSearchReady = this.searchController.pdfSearchReady;
+  readonly searchAvailable = this.searchController.searchAvailable;
 
   private surfaceTouchStart:
     | { x: number; y: number; at: number; target: EventTarget | null }
     | null = null;
   private surfaceClickSuppression: TouchClickSuppression | null = null;
-
-  search(query: string): void {
-    if (!this.searchAvailable()) {
-      this.clearSearch();
-      return;
-    }
-
-    const normalized = query.trim();
-    if (!normalized) {
-      // Clear the previous PDF.js find before replacing the tracked query with
-      // an empty string, otherwise clearSearch() cannot know a mark exists.
-      this.clearSearch();
-      return;
-    }
-
-    const generation = ++this.searchGeneration;
-    this.activeSearchQuery = normalized;
-    this.searchState.set({ status: 'searching', current: 0, total: 0 });
-    const counts = this.pdfSearch.find(normalized, {
-      highlightAll: false,
-      matchCase: false,
-      dontScrollIntoView: false,
-    });
-    if (!counts) {
-      // ngx-extended-pdf-viewer 25.6.x returns undefined until its find
-      // controller is initialized. Fail back to idle instead of leaving the
-      // shared panel permanently on “Searching book…”.
-      if (generation === this.searchGeneration && this.activeSearchQuery === normalized) {
-        this.pdfSearchReady.set(false);
-        this.activeSearchQuery = '';
-        this.searchState.set({ status: 'idle', current: 0, total: 0 });
-      }
-      return;
-    }
-
-    void Promise.all(counts).then((perPage) => {
-      if (generation !== this.searchGeneration || this.activeSearchQuery !== normalized) return;
-      const total = perPage.reduce((sum, count) => sum + count, 0);
-      if (total === 0) {
-        this.searchState.set({ status: 'not-found', current: 0, total: 0 });
-        return;
-      }
-      const current = this.searchState().current || 1;
-      this.searchState.set({ status: 'ready', current: Math.min(current, total), total });
-    });
-  }
-
-  nextSearchResult(): void {
-    if (!this.activeSearchQuery || this.searchState().total === 0) return;
-    this.pdfSearch.findNext();
-  }
-
-  previousSearchResult(): void {
-    if (!this.activeSearchQuery || this.searchState().total === 0) return;
-    this.pdfSearch.findPrevious();
-  }
-
-  clearSearch(): void {
-    const hadQuery = this.activeSearchQuery.length > 0;
-    this.searchGeneration++;
-    this.activeSearchQuery = '';
-    this.searchState.set({ status: 'idle', current: 0, total: 0 });
-    // Avoid touching the service during early teardown before the viewer has
-    // initialized; when a query did run, an empty query is PDF.js's public clear.
-    if (hadQuery) {
-      this.pdfSearch.find('', { highlightAll: false, dontScrollIntoView: true });
-    }
-  }
-
-  onFindMatchesCount(result: FindResultMatchesCount): void {
-    if (!this.activeSearchQuery) return;
-    if (result.total <= 0) {
-      this.searchState.set({ status: 'not-found', current: 0, total: 0 });
-      return;
-    }
-    this.searchState.set({ status: 'ready', current: result.current, total: result.total });
-  }
-
-  onFindState(state: FindState): void {
-    if (!this.activeSearchQuery) return;
-    if (state === FindState.PENDING) {
-      const current = this.searchState();
-      this.searchState.set({ ...current, status: 'searching' });
-    } else if (state === FindState.NOT_FOUND) {
-      this.searchState.set({ status: 'not-found', current: 0, total: 0 });
-    }
-  }
 
   pdfSrc = computed(() => `/api/books/${this.bookId()}/file`);
   savedHighlights: PageHighlight[] = [];
@@ -446,7 +279,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse)').matches;
-  private touchSelectionTimer: ReturnType<typeof setTimeout> | undefined;
   highlightWarning = signal<string | null>(null);
 
   // --- IReader Implementation ---
@@ -481,7 +313,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   // `page-width` everywhere: a fitted full page renders a 512-page book at about
   // 9.5px on a phone, and a two-column page at about 7px on a 1280px screen. That
   // is not reading, it is squinting. "Whole page" stays one tap away in the zoom menu.
-  zoomLevel = signal<string | number>(this.initialZoom());
+  zoomLevel = signal<string | number>(DEFAULT_PDF_ZOOM);
 
   /**
    * pdf.js binds bare R / Shift+R to document rotation even when the viewer
@@ -492,111 +324,34 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   readonly ignoredViewerKeys = ['R', 'SHIFT+R'];
   rotation = signal<0 | 90 | 180 | 270>(0);
 
-  rotateClockwise(): void {
-    this.rotation.update((angle) => ((angle + 90) % 360) as 0 | 90 | 180 | 270);
+  private readonly _currentPage = signal(1);
+  get currentPage(): number {
+    return this._currentPage();
+  }
+  set currentPage(value: number) {
+    this._currentPage.set(value);
   }
 
-  rotateCounterclockwise(): void {
-    this.rotation.update((angle) => ((angle + 270) % 360) as 0 | 90 | 180 | 270);
-  }
-
-  resetRotation(): void {
-    this.rotation.set(0);
-  }
-
-  currentPage = 1;
   totalPages = 0;
-  private pdfDocRef: any = null;
+
+  private readonly readAloudBridge = new PdfReadAloudBridge({
+    language: () => this.language(),
+    pageCount: () => this.totalPages,
+    currentPage: () => this.currentPage,
+    getPdfDoc: () => this.pdfDocRef,
+    goToPage: (pageNumber) => this.goTo(pageNumber),
+    hostElement: () => this.host.nativeElement,
+    highlightService: this.highlightService,
+    timers: this.timers,
+  });
 
   /**
    * Read aloud. The cursor lives in {@link PdfReadAloud}; this is the reader's
    * side of it: a page's text runs, turning to a page, and drawing the mark.
    */
-  readonly readAloud = new PdfReadAloud({
-    language: () => languageTagFromCatalogue(this.language()),
-    pageCount: () => this.totalPages,
-    currentPage: () => this.currentPage,
-    loadPage: (pageNumber) => this.readAloudPage(pageNumber),
-    goToPage: (pageNumber) => this.readAloudGoTo(pageNumber),
-    showMark: (pageNumber, rects) => this.showReadAloudMark(pageNumber, rects),
-    clearMark: () => this.showReadAloudMark(0, []),
-  });
-  private readAloudMark: { pageNumber: number; rects: PageRect[] } | null = null;
-  /** Counts page turns read-aloud asked for, so `pageChange` can tell them from the person's. */
-  private readAloudMoves = 0;
+  readonly readAloud = this.readAloudBridge.readAloud;
 
-  private async readAloudPage(pageNumber: number) {
-    const doc = this.pdfDocRef;
-    if (!doc) return null;
-    try {
-      const page = await doc.getPage(pageNumber);
-      const content = await page.getTextContent();
-      if (doc !== this.pdfDocRef) return null;
-      const viewport = page.getViewport({ scale: 1 });
-      return {
-        items: Array.isArray(content?.items) ? content.items : [],
-        geometry: { width: viewport.width, height: viewport.height, transform: viewport.transform },
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private readAloudGoTo(pageNumber: number): void {
-    this.readAloudMoves++;
-    this.goTo(pageNumber);
-    setTimeout(() => {
-      this.readAloudMoves = Math.max(0, this.readAloudMoves - 1);
-    }, 400);
-  }
-
-  private showReadAloudMark(pageNumber: number, rects: PageRect[]): void {
-    const previous = this.readAloudMark;
-    this.readAloudMark = rects.length > 0 ? { pageNumber, rects } : null;
-    if (previous && previous.pageNumber !== pageNumber) this.paintReadAloudMark(previous.pageNumber, []);
-    if (pageNumber > 0) this.paintReadAloudMark(pageNumber, rects);
-  }
-
-  private paintReadAloudMark(pageNumber: number, rects: PageRect[]): void {
-    const layer = document.querySelector(
-      `.page[data-page-number="${pageNumber}"] .textLayer`,
-    ) as HTMLElement | null;
-    // A page that has not drawn its text yet is painted when it does.
-    if (!layer) return;
-    this.highlightService.paintReadAloudMark(layer, rects);
-    this.keepReadAloudMarkInView(layer);
-  }
-
-  /**
-   * A page is often taller than the window (and wider, zoomed in), so the
-   * sentence being read can be off screen on the right page. Scrolling can make
-   * the viewer report another page as current; that is read-aloud's doing, not
-   * the person's.
-   */
-  private keepReadAloudMarkInView(layer: HTMLElement): void {
-    const box = layer.querySelector('.read-aloud-mark-box') as HTMLElement | null;
-    const container = document.getElementById('viewerContainer');
-    if (!box || !container || typeof box.scrollIntoView !== 'function') return;
-
-    const mark = box.getBoundingClientRect();
-    const view = container.getBoundingClientRect();
-    if (mark.height === 0 || view.height === 0) return;
-    // The transport floats over the bottom of the page, hence the larger margin there.
-    const visible =
-      mark.top >= view.top + 8 &&
-      mark.bottom <= view.bottom - 96 &&
-      mark.left >= view.left &&
-      mark.left <= view.right - 40;
-    if (visible) return;
-
-    this.readAloudMoves++;
-    box.scrollIntoView({ block: 'center', inline: 'nearest' });
-    setTimeout(() => {
-      this.readAloudMoves = Math.max(0, this.readAloudMoves - 1);
-    }, 400);
-  }
   private pendingGroundedSourcePage: number | null = null;
-  private sourceHighlightGeneration = 0;
   private pageLabels = signal<(string | null)[]>([]);
   private sourcePageLabels = new Map<number, string>();
 
@@ -613,28 +368,77 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * `ScrollMode` (uppercase) is a different export. Binding the wrong one is a
    * template type error, not a silent no-op.
    */
-  scrollMode = signal<ScrollModeType>(ScrollModeType.vertical);
+  scrollMode = signal<ScrollModeType>(DEFAULT_PDF_SCROLL_MODE);
 
   /**
    * The two reading modes, offered in the shell's view panel. Continuous is the
    * default (§3); page-by-page stays available because §9 asks for both.
    */
-  readonly readingModes: { value: ScrollModeType; label: string }[] = [
-    { value: ScrollModeType.vertical, label: 'Scroll' },
-    { value: ScrollModeType.page, label: 'Page' },
-  ];
+  readonly readingModes = PDF_READING_MODES;
+  readonly zoomPresets = PDF_ZOOM_PRESETS;
+
+  private initialLoadComplete = false;
+  private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
+  private progressSubscription: Subscription | null = null;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.ngOnDestroy();
+    });
+
+    effect(() => {
+      const notes = this.notes();
+      if (!notes) return;
+      untracked(() => {
+        const arrived = notes.filter((note) => !this.notesSeen.has(note.id));
+        if (arrived.length === 0) return;
+        arrived.forEach((note) => this.notesSeen.add(note.id));
+        this.applyNotes(arrived);
+        this.waitForQuotes(arrived);
+      });
+    });
+  }
+
+  search(query: string): void {
+    this.searchController.search(query);
+  }
+
+  nextSearchResult(): void {
+    this.searchController.nextResult();
+  }
+
+  previousSearchResult(): void {
+    this.searchController.previousResult();
+  }
+
+  clearSearch(): void {
+    this.searchController.clear();
+  }
+
+  onFindMatchesCount(result: FindResultMatchesCount): void {
+    this.searchController.onMatchesCount(result);
+  }
+
+  onFindState(state: FindState): void {
+    this.searchController.onFindState(state);
+  }
+
+  rotateClockwise(): void {
+    this.rotation.update((angle) => ((angle + 90) % 360) as 0 | 90 | 180 | 270);
+  }
+
+  rotateCounterclockwise(): void {
+    this.rotation.update((angle) => ((angle + 270) % 360) as 0 | 90 | 180 | 270);
+  }
+
+  resetRotation(): void {
+    this.rotation.set(0);
+  }
 
   /** Set the reading mode and remember it for this book. */
   setScrollMode(mode: ScrollModeType): void {
     this.scrollMode.set(mode);
-    try {
-      localStorage.setItem(
-        this.scrollStorageKey(),
-        mode === ScrollModeType.page ? 'page' : 'scroll',
-      );
-    } catch {
-      // Private-mode storage can throw — the mode still applies for the session.
-    }
+    savePdfScrollMode(this.bookId(), mode);
   }
 
   isScrollMode(mode: ScrollModeType): boolean {
@@ -646,27 +450,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.setScrollMode(mode);
   }
 
-  private scrollStorageKey(): string {
-    return `nostos.pdf-scroll.${this.bookId()}`;
-  }
-
   private restoreSavedScrollMode(): void {
-    try {
-      const saved = localStorage.getItem(this.scrollStorageKey());
-      if (saved === 'page') this.scrollMode.set(ScrollModeType.page);
-      else if (saved === 'scroll') this.scrollMode.set(ScrollModeType.vertical);
-    } catch {
-      // Unreadable storage keeps the continuous default.
-    }
+    this.scrollMode.set(readPdfScrollMode(this.bookId()));
   }
-
-  private initialZoom(): string {
-    return 'page-width';
-  }
-
-  private initialLoadComplete = false;
-
-  private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
 
   ngOnChanges(changes: SimpleChanges): void {
     // An offered passage previews the pen it will be saved in.
@@ -677,16 +463,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const bookChange = changes['bookId'];
     if (!bookChange || bookChange.firstChange) return;
 
-    // Angular can reuse this component for PDF → PDF navigation. Drop the old
-    // document's transient find state immediately; the new viewer becomes
-    // searchable again only after its own pagesLoaded event.
-    this.clearSearch();
-    this.pdfSearchReady.set(false);
-    this.textCapability.set('unknown');
-    this.pdfDocRef = null;
+    // Angular can reuse this component for PDF → PDF navigation. Consolidate
+    // full per-book reset, timer cancellation, and settings reload here.
+    this.resetForBook();
   }
 
-  ngOnInit() {
+  ngOnInit(): void {
     this.unregisterAssistantContext = this.assistantContext.register(
       () => ({
         readerType: 'pdf',
@@ -696,13 +478,67 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       { explicit: true },
     );
 
-    // Zoom and reading mode are per-book preferences; the viewport default is only
-    // a starting point (issue #226 §3, §9).
+    this.resetForBook();
+  }
+
+  /**
+   * Reset all per-book transient state, cancel active timers and pending
+   * progress emissions, and reload per-book zoom/scroll/inversion preferences.
+   */
+  resetForBook(): void {
+    this.timers.cancelAll();
+    this.hoverPoint = null;
+    this.overHighlight.set(false);
+
+    this.searchController.reset();
+    this.textCapability.set('unknown');
+    this.pdfDocRef = null;
+
+    this.readAloudBridge.reset();
+
+    this.initialLoadComplete = false;
+    this.pendingGroundedSourcePage = null;
+    this._currentPage.set(1);
+    this.totalPages = 0;
+    this.toc.set([]);
+    this.pageLabels.set([]);
+    this.sourcePageLabels.clear();
+    this.progress.set({ label: '', percentage: 0 });
+    this.assistantPage.set(null);
+    this.assistantSelection.set(null);
+    this.rotation.set(0);
+
+    this.notesSeen.clear();
+    this.quotesByPage.clear();
+    this.savedHighlights = [];
+    this.pendingHighlight = null;
+    this.commitInFlight = false;
+    this.highlightWarning.set(null);
+
+    this.surfaceTouchStart = null;
+    this.surfaceClickSuppression = null;
+    this.clearNativeSelection();
+
+    this.bindProgressUpdater();
+
+    // Zoom, reading mode, and inversion are per-book preferences; reset to
+    // defaults first so a book without stored choices never inherits the prior
+    // book's settings.
+    this.zoomLevel.set(DEFAULT_PDF_ZOOM);
     this.restoreSavedZoom();
+    this.scrollMode.set(DEFAULT_PDF_SCROLL_MODE);
     this.restoreSavedScrollMode();
     this.restoreSavedInversion();
 
-    this.progressUpdater$
+    this.cdr.markForCheck();
+  }
+
+  private bindProgressUpdater(): void {
+    this.progressSubscription?.unsubscribe();
+    this.progressSubscription = null;
+    if (this.destroyed) return;
+
+    this.progressSubscription = this.progressUpdater$
       .pipe(
         filter(() => this.initialLoadComplete),
         debounceTime(1000),
@@ -715,19 +551,19 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   // --- IReader Methods ---
 
-  next() {
+  next(): void {
     if (this.currentPage < this.totalPages) {
       this.goTo(this.currentPage + 1);
     }
   }
 
-  previous() {
+  previous(): void {
     if (this.currentPage > 1) {
       this.goTo(this.currentPage - 1);
     }
   }
 
-  goTo(target: string | number) {
+  goTo(target: string | number): void {
     let targetPage = this.currentPage;
     let targetYPercent: number | null = null;
 
@@ -762,13 +598,15 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       this.highlightWarning.set(null);
       // The pager and the contents list come through here, and set the page
       // before the viewer reports it, so `pageChange` would see no change.
-      if (targetPage !== this.currentPage && this.readAloudMoves === 0) {
-        this.readAloud.notifyUserMoved();
+      if (targetPage !== this.currentPage) {
+        this.readAloudBridge.notifyUserMoved();
       }
       this.currentPage = targetPage;
       this.updateProgressState(targetPage);
       if (targetYPercent !== null) {
         this.scrollToWithinPage(targetPage, targetYPercent);
+      } else {
+        this.timers.clearTimeout('scrollToWithinPage');
       }
     }
   }
@@ -780,87 +618,17 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    */
   async visibleExcerpt(): Promise<string | null> {
     const doc = this.pdfDocRef;
-    if (!doc || this.totalPages <= 0) return null;
-
-    // A plate or a chapter title page says too little to be found in another
-    // edition, and a caption often repeats a line of the text. Reading resumes
-    // on the next page with text, so that page speaks for this one.
-    let sparse: string | null = null;
-    const lastPage = Math.min(this.totalPages, this.currentPage + PDF_EXCERPT_LOOKAHEAD_PAGES);
-    for (let pageNumber = this.currentPage; pageNumber <= lastPage; pageNumber++) {
-      const text = await this.pageExcerptText(doc, pageNumber);
-      if (doc !== this.pdfDocRef) return null;
-      if (text && isSubstantialPageText(text)) return text.slice(0, 280);
-      if (pageNumber === this.currentPage) sparse = text;
-    }
-
-    return sparse ? sparse.slice(0, 280) : null;
+    const generation = this.timers.currentGeneration();
+    return extractPdfVisibleExcerpt(
+      doc,
+      this.currentPage,
+      this.totalPages,
+      () => doc === this.pdfDocRef && this.timers.isCurrent(generation),
+    );
   }
 
-  private async pageExcerptText(doc: any, pageNumber: number): Promise<string | null> {
-    try {
-      const page = await doc.getPage(pageNumber);
-      const content = await page.getTextContent();
-      if (doc !== this.pdfDocRef) return null;
-
-      const text = (Array.isArray(content?.items) ? content.items : [])
-        .map((item: { str?: unknown }) => (typeof item?.str === 'string' ? item.str : ''))
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      return text || null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * After landing on a page from another edition, mark the passage with the
-   * reader's own search. A handful of the passage's last words is enough to
-   * find it and short enough to survive a line break in the page text. Not
-   * finding it is fine: the page is already the right one.
-   */
   private highlightSourcePassage(excerpt: string | null | undefined): void {
-    // A newer landing, another document or a destroyed reader cancels a
-    // pending highlight: it must never search a page it was not meant for.
-    const generation = ++this.sourceHighlightGeneration;
-
-    const phrases = sourcePassagePhrases(excerpt);
-    if (phrases.length === 0) return;
-
-    const doc = this.pdfDocRef;
-    const current = () =>
-      generation === this.sourceHighlightGeneration && (doc === null || doc === this.pdfDocRef);
-
-    // The passage is the book's text as the server read it; the page's own
-    // text layer can differ by a word. When a phrase is not on the page, the
-    // next one from the same passage is tried.
-    const attempt = (index: number, remaining: number) => {
-      if (!current()) return;
-
-      if (!this.searchAvailable()) {
-        if (remaining > 0) setTimeout(() => attempt(index, remaining - 1), 500);
-        return;
-      }
-
-      const phrase = phrases[index];
-      this.search(phrase);
-
-      const settle = (polls: number) => {
-        if (!current() || this.activeSearchQuery !== phrase) return;
-
-        const status = this.searchState().status;
-        if (status === 'searching' && polls > 0) {
-          setTimeout(() => settle(polls - 1), 250);
-        } else if (status === 'not-found') {
-          if (index + 1 < phrases.length) attempt(index + 1, remaining);
-          else this.clearSearch();
-        }
-      };
-      settle(40);
-    };
-    attempt(0, 20);
+    this.searchController.highlightSourcePassage(excerpt);
   }
 
   goToSource(target: ReaderSourceTarget): void {
@@ -894,16 +662,14 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     return JSON.stringify({ pageNumber: this.currentPage, yPercent: 0, rects: [] });
   }
 
-  zoomIn() {
+  zoomIn(): void {
     // From a named fit, the first step lands on a concrete percentage so the
     // reader is never stuck on a fit it cannot enlarge.
-    const current = this.zoomLevel();
-    this.setZoom(typeof current === 'number' ? Math.min(current + 10, 400) : 110);
+    this.setZoom(nextPdfZoom(this.zoomLevel(), 'in'));
   }
 
-  zoomOut() {
-    const current = this.zoomLevel();
-    this.setZoom(typeof current === 'number' ? Math.max(current - 10, 20) : 90);
+  zoomOut(): void {
+    this.setZoom(nextPdfZoom(this.zoomLevel(), 'out'));
   }
 
   /**
@@ -913,18 +679,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    */
   setZoom(zoom: string | number): void {
     this.zoomLevel.set(zoom);
-    try {
-      localStorage.setItem(this.zoomStorageKey(), JSON.stringify(zoom));
-    } catch {
-      // Private-mode storage can throw — the zoom still applies for the session.
-    }
+    savePdfZoom(this.bookId(), zoom);
   }
 
   /** Whether a preset is the zoom currently in effect (drives the active chip). */
   isZoomPreset(preset: string | number): boolean {
-    const current = this.zoomLevel();
-    if (typeof current === 'number' || typeof preset === 'number') return current === preset;
-    return String(current).toLowerCase() === String(preset).toLowerCase();
+    return isPdfZoomPreset(this.zoomLevel(), preset);
   }
 
   /**
@@ -933,31 +693,16 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * rendition has measured anything.
    */
   zoomLabel(): string {
-    const current = this.zoomLevel();
-    if (typeof current === 'number') return `${current}%`;
-    return current === 'page-width' ? 'Fit width' : 'Whole page';
-  }
-
-  readonly zoomPresets = PDF_ZOOM_PRESETS;
-
-  private zoomStorageKey(): string {
-    return `nostos.pdf-zoom.${this.bookId()}`;
+    return formatPdfZoomLabel(this.zoomLevel());
   }
 
   private restoreSavedZoom(): void {
-    try {
-      const raw = localStorage.getItem(this.zoomStorageKey());
-      if (raw === null) return;
-      const parsed = JSON.parse(raw) as string | number;
-      if (typeof parsed === 'number' || typeof parsed === 'string') this.zoomLevel.set(parsed);
-    } catch {
-      // Unreadable storage falls back to the viewport default.
-    }
+    this.zoomLevel.set(readPdfZoom(this.bookId()));
   }
 
   // --- PDF Events ---
 
-  onPagesLoaded(event: PagesLoadedEvent) {
+  onPagesLoaded(event: PagesLoadedEvent): void {
     this.totalPages = event.pagesCount;
     // At pagesLoaded the viewer application has mounted and its public find
     // service is expected to be usable. search() still handles a defensive
@@ -975,16 +720,17 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const doc = (event as any).source?.pdfDocument ?? null;
     if (doc && doc !== this.pdfDocRef) {
       this.pdfDocRef = doc;
-      void this.loadPdfOutline(doc);
-      void this.loadPdfPageLabels(doc);
-      void this.detectTextCapability(doc, event.pagesCount);
+      const generation = this.timers.currentGeneration();
+      void this.loadPdfOutline(doc, generation);
+      void this.loadPdfPageLabels(doc, generation);
+      void this.detectTextCapability(doc, event.pagesCount, generation);
     }
 
     if (this.pendingGroundedSourcePage !== null) {
       const groundedPage = this.pendingGroundedSourcePage;
       this.pendingGroundedSourcePage = null;
       this.goTo(groundedPage);
-      setTimeout(() => (this.initialLoadComplete = true), 500);
+      this.timers.replaceTimeout('initialLoad', () => (this.initialLoadComplete = true), 500);
     } else if (!this.initialLoadComplete) {
       const startLoc = this.initialLocation();
 
@@ -994,102 +740,67 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         this.updateProgressState(1);
       }
 
-      setTimeout(() => (this.initialLoadComplete = true), 500);
+      this.timers.replaceTimeout('initialLoad', () => (this.initialLoadComplete = true), 500);
     }
   }
 
   /** Best-effort second path: some loads fire this with the document attached. */
-  async onPdfLoaded(event: PdfLoadedEvent) {
+  async onPdfLoaded(event: PdfLoadedEvent): Promise<void> {
     const doc = (event as any).source?.pdfDocument ?? (event as any).pdfDocument ?? null;
     if (doc && doc !== this.pdfDocRef) {
       this.pdfDocRef = doc;
+      const generation = this.timers.currentGeneration();
       await Promise.all([
-        this.loadPdfOutline(doc),
-        this.loadPdfPageLabels(doc),
-        this.detectTextCapability(doc, event.pagesCount),
+        this.loadPdfOutline(doc, generation),
+        this.loadPdfPageLabels(doc, generation),
+        this.detectTextCapability(doc, event.pagesCount, generation),
       ]);
     }
   }
 
-  private async loadPdfPageLabels(pdfDoc: any): Promise<void> {
-    if (typeof pdfDoc?.getPageLabels !== 'function') return;
-
-    try {
-      const labels = await pdfDoc.getPageLabels();
-      this.pageLabels.set(
-        Array.isArray(labels)
-          ? labels.map((label) => (typeof label === 'string' && label.trim() ? label.trim() : null))
-          : [],
-      );
-      if (this.totalPages > 0) this.updateProgressState(this.currentPage);
-    } catch {
-      this.pageLabels.set([]);
-    }
+  private async loadPdfPageLabels(pdfDoc: any, generation: number): Promise<void> {
+    const labels = await extractPdfPageLabels(pdfDoc);
+    if (pdfDoc !== this.pdfDocRef || !this.timers.isCurrent(generation)) return;
+    this.pageLabels.set(labels);
+    if (this.totalPages > 0) this.updateProgressState(this.currentPage);
   }
 
-  /**
-   * Detect whether text-dependent tools are meaningful without parsing the
-   * entire document. A bounded, evenly distributed sample avoids turning a
-   * 900-page scan into a second ingestion pass while still handling blank cover
-   * pages in ordinary books.
-   */
-  private async detectTextCapability(pdfDoc: any, knownPageCount = this.totalPages): Promise<void> {
-    if (typeof pdfDoc?.getPage !== 'function' || knownPageCount <= 0) return;
-
-    const sampleCount = Math.min(knownPageCount, 8);
-    const pages = [
-      ...new Set(
-        Array.from({ length: sampleCount }, (_, index) =>
-          sampleCount === 1
-            ? 1
-            : 1 + Math.round((index * (knownPageCount - 1)) / (sampleCount - 1)),
-        ),
-      ),
-    ];
-
-    let inspected = 0;
-    for (const pageNumber of pages) {
-      try {
-        const page = await pdfDoc.getPage(pageNumber);
-        const textContent = await page.getTextContent();
-        if (pdfDoc !== this.pdfDocRef) return;
-        inspected += 1;
-        const hasText = Array.isArray(textContent?.items)
-          && textContent.items.some(
-            (item: { str?: unknown }) => typeof item?.str === 'string' && item.str.trim().length > 0,
-          );
-        if (hasText) {
-          this.textCapability.set('available');
-          return;
-        }
-      } catch {
-        // An unreadable sample is not evidence that the PDF has no text. An
-        // obsolete document must also not overwrite the capability state of a
-        // PDF that replaced it while this async sample was in flight.
-        if (pdfDoc !== this.pdfDocRef) return;
-        this.textCapability.set('unknown');
-        return;
-      }
+  private async detectTextCapability(
+    pdfDoc: any,
+    knownPageCount: number,
+    generation: number,
+  ): Promise<void> {
+    const capability = await detectPdfTextCapability(
+      pdfDoc,
+      knownPageCount,
+      () => pdfDoc === this.pdfDocRef && this.timers.isCurrent(generation),
+    );
+    if (capability === null || pdfDoc !== this.pdfDocRef || !this.timers.isCurrent(generation)) {
+      return;
     }
 
-    if (inspected > 0 && pdfDoc === this.pdfDocRef) {
-      this.textCapability.set('unavailable');
+    this.textCapability.set(capability);
+    if (capability === 'unavailable') {
       this.clearSearch();
       this.clearNativeSelection();
     }
   }
 
   /** Map the embedded PDF outline into the contents rail the shell renders. */
-  private async loadPdfOutline(pdfDoc: any): Promise<void> {
+  private async loadPdfOutline(pdfDoc: any, generation: number): Promise<void> {
     try {
       const outline = await pdfDoc.getOutline();
+      if (pdfDoc !== this.pdfDocRef || !this.timers.isCurrent(generation)) return;
       if (!outline || outline.length === 0) {
         this.toc.set([]);
         return;
       }
-      this.toc.set(await this.mapPdfOutline(outline, pdfDoc));
+      const mapped = await mapPdfOutline(outline, pdfDoc);
+      if (pdfDoc !== this.pdfDocRef || !this.timers.isCurrent(generation)) return;
+      this.toc.set(mapped);
       this.refreshChapterProgress();
     } catch (err) {
+      if (pdfDoc !== this.pdfDocRef || !this.timers.isCurrent(generation)) return;
       console.error('Error fetching PDF outline', err);
       this.toc.set([]);
     }
@@ -1100,20 +811,20 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * that follows it: a `[(page)]` banana would assign `currentPage` before this
    * handler runs, so a user's own page turn would never look like a move.
    */
-  onPageChange(newPage: number | undefined) {
+  onPageChange(newPage: number | undefined): void {
     // The viewer's `page` model is `number | undefined` (ngx-extended-pdf-viewer 26+);
     // undefined means no document page yet, which is not a move.
     if (newPage === undefined) return;
     if (newPage !== this.currentPage) {
       this.clearNativeSelection();
       this.highlightWarning.set(null);
-      if (this.readAloudMoves === 0) this.readAloud.notifyUserMoved();
+      this.readAloudBridge.notifyUserMoved();
     }
     this.currentPage = newPage;
     this.updateProgressState(newPage);
   }
 
-  onTextLayerRendered(event: TextLayerRenderedEvent) {
+  onTextLayerRendered(event: TextLayerRenderedEvent): void {
     const textLayerDiv = event.source.textLayer?.div;
     if (!textLayerDiv) return;
 
@@ -1124,10 +835,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     );
 
     // A page redraws its text layer on zoom and when it scrolls back in.
-    if (this.readAloudMark?.pageNumber === event.pageNumber) {
-      this.highlightService.paintReadAloudMark(textLayerDiv, this.readAloudMark.rects);
-      this.keepReadAloudMarkInView(textLayerDiv);
-    }
+    this.readAloudBridge.repaintOnTextLayer(event.pageNumber, textLayerDiv);
 
     void this.locateQuotes(event.pageNumber, textLayerDiv);
   }
@@ -1166,8 +874,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   onNativeSelectionChange(): void {
     this.assistantSelection.set(this.highlightService.captureSelectionText?.() ?? null);
     if (!this.touchInput) return;
-    clearTimeout(this.touchSelectionTimer);
-    this.touchSelectionTimer = setTimeout(
+    this.timers.replaceTimeout(
+      'touchSelection',
       () => this.captureSelection('touch'),
       TOUCH_SELECTION_SETTLE_MS,
     );
@@ -1201,9 +909,13 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // the page.
     const pending = this.pendingHighlight;
     if (pending && !liveSelection) {
-      setTimeout(() => {
-        if (this.pendingHighlight === pending) this.selectionDismissed.emit();
-      }, 0);
+      this.timers.replaceTimeout(
+        'selectionDismiss',
+        () => {
+          if (this.pendingHighlight === pending) this.selectionDismissed.emit();
+        },
+        0,
+      );
     }
     const selectedText = liveSelection ?? this.assistantSelection() ?? pending?.selectedText;
 
@@ -1239,21 +951,21 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   /** Follows the mouse to show the pointer over a highlight, once per frame at most. */
   onSurfacePointerMove(event: PointerEvent): void {
     if (event.pointerType !== 'mouse') return;
-    this.hoverPoint = event.buttons === 0 ? { target: event.target, x: event.clientX, y: event.clientY } : null;
-    if (this.hoverFrame) return;
-    this.hoverFrame = requestAnimationFrame(() => {
-      this.hoverFrame = 0;
+    this.hoverPoint =
+      event.buttons === 0 ? { target: event.target, x: event.clientX, y: event.clientY } : null;
+    this.timers.requestAnimationFrameOnce('hover', () => {
       const point = this.hoverPoint;
       const over =
-        !!point &&
-        !this.pendingHighlight &&
-        this.highlightsAtPoint(point.target, point.x, point.y, false).length > 0;
+        !!point
+        && !this.pendingHighlight
+        && this.highlightsAtPoint(point.target, point.x, point.y, false).length > 0;
       if (over !== this.overHighlight()) this.overHighlight.set(over);
     });
   }
 
   onSurfacePointerLeave(): void {
     this.hoverPoint = null;
+    this.timers.cancelAnimationFrame('hover');
     if (this.overHighlight()) this.overHighlight.set(false);
   }
 
@@ -1432,7 +1144,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   /** Adds notes' highlights. One already held, such as a mark made here, stays. */
-  private applyNotes(notes: Note[]) {
+  private applyNotes(notes: Note[]): void {
     const held = new Set(this.savedHighlights.map((highlight) => highlight.id));
     const added = notes
       .filter((note) => note.cfiRange && !held.has(note.id))
@@ -1460,9 +1172,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
 
     for (const pageNumber of pages) {
-      const layer = document.querySelector<HTMLElement>(
+      const layer = this.host.nativeElement.querySelector(
         `.page[data-page-number="${pageNumber}"] .textLayer`,
-      );
+      ) as HTMLElement | null;
       if (layer?.textContent?.trim()) void this.locateQuotes(pageNumber, layer);
     }
   }
@@ -1477,12 +1189,14 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     if (!quotes) return;
     this.quotesByPage.delete(pageNumber);
 
+    const generation = this.timers.currentGeneration();
     // Read together: a zoom can replace the layer during the saves below.
     const found = quotes.map((note) => ({
       note,
       rects: this.highlightService.quoteRects(layer, note.selectedText ?? ''),
     }));
     for (const { note, rects } of found) {
+      if (!this.timers.isCurrent(generation)) return;
       if (!rects) {
         rememberUnlocatedNoteId(note.id);
         continue;
@@ -1491,12 +1205,14 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       try {
         const location = JSON.stringify({ pageNumber, rects });
         const saved = await firstValueFrom(this.notesService.setLocation(note.id, location));
+        if (!this.timers.isCurrent(generation)) return;
         // Deleted while it was being saved: nothing to draw.
         if (!saved.cfiRange || !this.notes()?.some((held) => held.id === note.id)) continue;
         this.savedHighlights = this.savedHighlights.filter((held) => held.id !== note.id);
         this.applyNotes([saved]);
         this.noteLocated.emit(saved);
       } catch (error) {
+        if (!this.timers.isCurrent(generation)) return;
         // The server refused this note for good: do not ask at every opening.
         if (error instanceof HttpErrorResponse && error.status === 400) {
           rememberUnlocatedNoteId(note.id);
@@ -1506,7 +1222,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  private repaintSavedHighlightPages() {
+  private repaintSavedHighlightPages(): void {
     const pagesToRepaint = [...new Set(this.savedHighlights.map((h) => h.pageNumber))];
     pagesToRepaint.forEach((pageNum) => this.repaintPage(pageNum));
   }
@@ -1520,7 +1236,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.repaintPage(highlight.pageNumber);
   }
 
-  removeHighlight(id: string) {
+  removeHighlight(id: string): void {
     const index = this.savedHighlights.findIndex((h) => h.id === id);
     if (index !== -1) {
       const pageNumber = this.savedHighlights[index].pageNumber;
@@ -1529,7 +1245,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  commitHighlight(content = '', pen?: HighlightColour, topics: readonly string[] = []) {
+  commitHighlight(content = '', pen?: HighlightColour, topics: readonly string[] = []): void {
     if (!this.pendingHighlight) {
       // Never leave the shell in Saving... if its confirmation and the reader
       // somehow drift out of sync.
@@ -1538,6 +1254,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
 
     const p = this.pendingHighlight;
+    const generation = this.timers.currentGeneration();
     this.commitInFlight = true;
     // The pen in hand when Save was pressed is the one stored and drawn.
     const colour = pen ?? this.highlightColour();
@@ -1571,6 +1288,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       })
       .subscribe({
         next: (createdNote) => {
+          if (!this.timers.isCurrent(generation)) return;
           const index = this.savedHighlights.findIndex((h) => h.id === p.tempId);
           if (index !== -1) {
             this.savedHighlights[index].id = createdNote.id;
@@ -1580,6 +1298,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
           this.noteCreated.emit(createdNote);
         },
         error: () => {
+          if (!this.timers.isCurrent(generation)) return;
           this.savedHighlights = this.savedHighlights.filter((h) => h.id !== p.tempId);
           this.repaintPage(p.pageNumber);
           // Preserve the exact capture. The shared shell deliberately keeps its
@@ -1591,7 +1310,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       });
   }
 
-  discardHighlight() {
+  discardHighlight(): void {
     if (this.commitInFlight) return;
     this.clearNativeSelection();
     const old = this.pendingHighlight;
@@ -1624,59 +1343,16 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    */
   async buildPassage(a: PassageMark, b: PassageMark): Promise<PassageDraft | null> {
     const doc = this.pdfDocRef;
-    if (a.format !== 'pdf' || b.format !== 'pdf' || !doc) return null;
-    const pages = [a.start, a.end, b.start, b.end].map(Number).filter((n) => Number.isInteger(n) && n > 0);
-    if (pages.length !== 4) return null;
-    const first = Math.min(...pages);
-    const last = Math.max(...pages);
-
-    const blocks: string[] = [];
-    if (last - first < PDF_PASSAGE_TEXT_PAGE_LIMIT) {
-      // Read one page past each end too: a running head is recognised by
-      // standing on a neighbouring page, and the range's own first and last
-      // pages have one neighbour inside it at most.
-      const from = Math.max(1, first - 1);
-      const to = Math.min(this.totalPages || last, last + 1);
-      const read: Array<{ pageNumber: number; items: any[]; geometry: any } | null> = [];
-      for (let pageNumber = from; pageNumber <= to; pageNumber++) {
-        try {
-          const page = await doc.getPage(pageNumber);
-          const content = await page.getTextContent();
-          if (doc !== this.pdfDocRef) return null;
-          const viewport = page.getViewport({ scale: 1 });
-          read.push({
-            pageNumber,
-            items: Array.isArray(content?.items) ? content.items : [],
-            geometry: { width: viewport.width, height: viewport.height, transform: viewport.transform },
-          });
-        } catch {
-          // A page that cannot be read leaves only its place in the range.
-          read.push(null);
-        }
-      }
-      const margins = read.map((page) => (page ? buildPdfPageText(page.items, page.geometry).marginLines : []));
-      read.forEach((page, index) => {
-        if (!page || page.pageNumber < first || page.pageNumber > last) return;
-        const neighbours = [...(margins[index - 1] ?? []), ...(margins[index + 1] ?? [])];
-        const text = buildPdfPageText(page.items, page.geometry, neighbours).text.trim();
-        if (text) blocks.push(text);
-      });
-    }
-
-    const joined = blocks.join('\n\n').trim();
-    const text = (joined && withoutLeadingLabels(joined)) || null;
-    const range = first === last ? `Page ${this.pageName(first)}` : `Pages ${this.pageName(first)}–${this.pageName(last)}`;
-    return {
-      anchorKind: 'pdf_page',
-      start: String(first),
-      end: String(last),
-      title: this.chapterTitleAt(first) ?? range,
-      html: null,
-      text,
-      words: countWords(text),
-      opening: text ? excerptOf(text, 140) : range,
-      closing: text ? closingOf(text, 140) : range,
-    };
+    const generation = this.timers.currentGeneration();
+    return buildPdfPassageDraft({
+      a,
+      b,
+      pdfDoc: doc,
+      totalPages: this.totalPages,
+      isCurrent: () => doc === this.pdfDocRef && this.timers.isCurrent(generation),
+      pageName: (pageNumber) => this.pageName(pageNumber),
+      chapterTitleAt: (pageNumber) => this.chapterTitleAt(pageNumber),
+    });
   }
 
   private pageMark(pageNumber: number, excerpt: string): PassageMark {
@@ -1708,9 +1384,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.assistantSelection.set(null);
   }
 
-  private repaintPage(pageNumber: number) {
+  private repaintPage(pageNumber: number): void {
     const textLayerSelector = `.page[data-page-number="${pageNumber}"] .textLayer`;
-    const textLayer = document.querySelector(textLayerSelector) as HTMLElement;
+    const textLayer = this.host.nativeElement.querySelector(textLayerSelector) as HTMLElement | null;
 
     if (textLayer) {
       this.highlightService.paint(
@@ -1721,7 +1397,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  private updateProgressState(page: number) {
+  private updateProgressState(page: number): void {
     const percentage = this.totalPages > 0 ? Math.floor((page / this.totalPages) * 100) : 0;
     const pageLabel = this.logicalPageLabel(page);
 
@@ -1777,68 +1453,46 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * value; correcting at 0 ms was observed to be overwritten at high zoom.
    */
   private scrollToWithinPage(page: number, yPercent: number, attempt = 0): void {
-    setTimeout(() => {
-      const root = this.host.nativeElement;
-      const scrollport = root.querySelector('#viewerContainer') as HTMLElement | null;
-      const pageElement = root.querySelector(
-        `.page[data-page-number="${page}"]`,
-      ) as HTMLElement | null;
+    this.timers.replaceTimeout(
+      'scrollToWithinPage',
+      () => {
+        const root = this.host.nativeElement;
+        const scrollport = root.querySelector('#viewerContainer') as HTMLElement | null;
+        const pageElement = root.querySelector(
+          `.page[data-page-number="${page}"]`,
+        ) as HTMLElement | null;
 
-      if (!scrollport || !pageElement) {
-        if (attempt < 8) this.scrollToWithinPage(page, yPercent, attempt + 1);
-        return;
-      }
-
-      const clampedY = Math.min(1, Math.max(0, yPercent));
-      const viewportRect = scrollport.getBoundingClientRect();
-      const pageRect = pageElement.getBoundingClientRect();
-      const readingOffset = Math.min(scrollport.clientHeight * 0.2, 120);
-      const top =
-        scrollport.scrollTop
-        + (pageRect.top - viewportRect.top)
-        + pageRect.height * clampedY
-        - readingOffset;
-
-      scrollport.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
-    }, attempt === 0 ? 140 : 50);
-  }
-
-  private async mapPdfOutline(outline: any[], pdfDoc: any): Promise<TocItem[]> {
-    const items: TocItem[] = [];
-    for (const item of outline) {
-      let pageNumber = 1;
-      try {
-        if (item.dest) {
-          let dest = item.dest;
-          // Named destination — resolve to explicit destination array
-          if (typeof dest === 'string') {
-            dest = await pdfDoc.getDestination(dest);
-          }
-          if (Array.isArray(dest) && dest.length > 0) {
-            // dest[0] is a page reference object — resolve to 0-based page index
-            const pageIndex = await pdfDoc.getPageIndex(dest[0]);
-            pageNumber = pageIndex + 1; // convert to 1-based
-          }
+        if (!scrollport || !pageElement) {
+          if (attempt < 8) this.scrollToWithinPage(page, yPercent, attempt + 1);
+          return;
         }
-      } catch {
-        // If resolution fails, fall back to page 1
-        pageNumber = 1;
-      }
-      const children = item.items?.length ? await this.mapPdfOutline(item.items, pdfDoc) : [];
-      items.push({ label: item.title, target: pageNumber, children });
-    }
-    return items;
+
+        const clampedY = Math.min(1, Math.max(0, yPercent));
+        const viewportRect = scrollport.getBoundingClientRect();
+        const pageRect = pageElement.getBoundingClientRect();
+        const readingOffset = Math.min(scrollport.clientHeight * 0.2, 120);
+        const top =
+          scrollport.scrollTop
+          + (pageRect.top - viewportRect.top)
+          + pageRect.height * clampedY
+          - readingOffset;
+
+        scrollport.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
+      },
+      attempt === 0 ? 140 : 50,
+    );
   }
 
-  ngOnDestroy() {
-    this.readAloud.end();
-    if (this.hoverFrame) cancelAnimationFrame(this.hoverFrame);
-    ++this.sourceHighlightGeneration;
-    clearTimeout(this.touchSelectionTimer);
-    this.clearSearch();
-    this.pdfSearchReady.set(false);
+  ngOnDestroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.timers.cancelAll();
+    this.readAloudBridge.reset();
+    this.searchController.reset();
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
+    this.progressSubscription?.unsubscribe();
+    this.progressSubscription = null;
     this.progressUpdater$.complete();
   }
 }
