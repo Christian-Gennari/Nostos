@@ -244,6 +244,31 @@ describe('ExternalMediaSettingsComponent', () => {
     expect(text('external-media-import-row')).toContain('1 book added, 1 not imported.');
   });
 
+  /** Drives the dialog to the result step with the outcomes the server reported. */
+  const finishImport = async (outcomes: ExternalMediaImportState['outcomes']) => {
+    await component.startScan();
+    await component.openReview();
+    await component.importSelected();
+    importState = { ...noImport, status: 'done', total: outcomes.length, completed: outcomes.length, outcomes };
+    await component.refresh();
+    fixture.detectChanges();
+  };
+
+  it('says one book was already in Nostos and was left as it is', async () => {
+    await finishImport([{ key: 'a', title: 'First', outcome: 'already_linked', bookId: '1', message: null }]);
+
+    expect(text('external-media-result')).toContain('1 was already in Nostos and was left as it is.');
+  });
+
+  it('keeps the plural when two books were already in Nostos', async () => {
+    await finishImport([
+      { key: 'a', title: 'First', outcome: 'already_linked', bookId: '1', message: null },
+      { key: 'b', title: 'Second', outcome: 'already_linked', bookId: '2', message: null },
+    ]);
+
+    expect(text('external-media-result')).toContain('2 were already in Nostos and were left as they are.');
+  });
+
   it('picks up an import that is already running when the page is opened', async () => {
     importState = { ...noImport, status: 'importing', total: 40, completed: 12, current: 'A Novel' };
     await component.refresh();

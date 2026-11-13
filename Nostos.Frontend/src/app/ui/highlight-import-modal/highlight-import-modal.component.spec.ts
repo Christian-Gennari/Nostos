@@ -270,6 +270,30 @@ describe('HighlightImportModal', () => {
     expect(component.summary()).toBe('6 highlights removed from your library.');
   });
 
+  const importResults = async (books: HighlightImportResultBook[]) => {
+    await review(previewBook({}));
+    vi.spyOn(service, 'commit').mockReturnValue(of({ batchId: 'batch-1', source: 'kindle', books }));
+    await component.importReviewed();
+    fixture.detectChanges();
+  };
+
+  it('says one more was already in Nostos when exactly one was', async () => {
+    await importResults([
+      resultBook({ sourceKey: 'vol-1', bookId: 'b1', importedCount: 3, duplicateCount: 1 }),
+      resultBook({ sourceKey: 'vol-2', bookId: 'b2', bookTitle: 'Second Book', importedCount: 2 }),
+      resultBook({ sourceKey: 'vol-3', bookId: 'b3', bookTitle: 'Third Book', importedCount: 1 }),
+    ]);
+
+    expect(component.summary()).toBe('Into 3 books. 1 more was already in Nostos.');
+    expect(text()).toContain('Into 3 books. 1 more was already in Nostos.');
+  });
+
+  it('keeps the plural when two or more were already in Nostos', async () => {
+    await importResults([resultBook({ importedCount: 3, duplicateCount: 2 })]);
+
+    expect(component.summary()).toBe('Into 1 book. 2 more were already in Nostos.');
+  });
+
   it('imports nothing when nothing is selected', async () => {
     await review(suggested);
     const commit = vi.spyOn(service, 'commit');

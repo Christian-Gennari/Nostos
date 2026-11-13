@@ -207,7 +207,10 @@ export class HighlightImportModal {
     if (imported > 0) {
       const books = new Set(this.imported().filter((book) => book.importedCount > 0).map((book) => book.bookId));
       const from = `Into ${this.count(books.size, 'book')}.`;
-      return duplicates > 0 ? `${from} ${duplicates} more were already in Nostos.` : from;
+      if (duplicates === 0) return from;
+      return duplicates === 1
+        ? `${from} 1 more was already in Nostos.`
+        : `${from} ${duplicates} more were already in Nostos.`;
     }
     if (duplicates > 0) {
       return duplicates === 1
