@@ -626,6 +626,10 @@ app-sidebar-collections.no-transition {
   cursor: pointer;
   touch-action: manipulation;
   padding-bottom: 0.5rem;
+  /* Contain the card's own layers (the stretched link at 0, the cover at 1)
+     inside the card. Without it the cover's `z-index` would join the page's
+     stacking context and could paint over page chrome. */
+  isolation: isolate;
 }
 
 .book-card.is-importing .cover-image {
@@ -795,6 +799,20 @@ app-sidebar-collections.no-transition {
   /* IMPORTANT: Only use translateZ on hover if possible,
        but keeping it here to prevent paint flashing. */
   transform: translateZ(0);
+  /* `transform` makes this an atomic stacking context, so no child of the
+     cover (the corner toggles, the hover actions, the checkbox) can ever paint
+     above the card's stretched link on its own z-index. Lift the whole cover
+     above the link instead, and let the art fall through to it: the frame is
+     not a click target itself, only its controls are. */
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* The select-mode checkbox is visible whenever it exists, so it always takes
+   the pointer. The hover-revealed controls are enabled by the reveal rule
+   further down, so an invisible control can never eat the cover's click. */
+.cover-wrapper input {
+  pointer-events: auto;
 }
 
 /* The cover is the shared nostos-book-cover filling this frame; it owns the
@@ -823,6 +841,9 @@ app-sidebar-collections.no-transition {
   top: 8px;
   z-index: 2;
   opacity: 0;
+  /* Invisible at rest: a click here must reach the card link, not a control
+     the person cannot see. */
+  pointer-events: none;
 }
 
 /* Hover or keyboard only, active or not: the shelf does not show reading
@@ -832,6 +853,7 @@ app-sidebar-collections.no-transition {
 .book-card:focus-within .fav-btn-grid,
 .book-card:focus-within .finished-btn-grid {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .fav-btn-grid {
@@ -864,11 +886,19 @@ app-sidebar-collections.no-transition {
   opacity: 0;
   transition: opacity 0.2s ease;
   z-index: 1;
+  /* The overlay's ground is decoration: a click on it belongs to the card
+     link underneath. Only its discs opt back in while revealed. */
+  pointer-events: none;
 }
 
 .book-card:hover .actions-overlay,
 .book-card:focus-within .actions-overlay {
   opacity: 1;
+}
+
+.book-card:hover .actions-overlay button,
+.book-card:focus-within .actions-overlay button {
+  pointer-events: auto;
 }
 
 /* Edit/delete: the same overlay disc as the corners, so a hovered card shows
@@ -900,8 +930,8 @@ app-sidebar-collections.no-transition {
   overflow-wrap: anywhere;
 }
 
-/* A real link whose ::after covers the card (z-index 0): the cover buttons
-   (z-index 1-2) and the failure actions sit above it and stay clickable. */
+/* A real link whose ::after covers the card (z-index 0). The cover frame sits
+   above it (z-index 1) so its buttons stay clickable; see `.cover-wrapper`. */
 .card-link {
   color: inherit;
   text-decoration: none;
