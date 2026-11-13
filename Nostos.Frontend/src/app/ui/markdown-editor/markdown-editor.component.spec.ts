@@ -691,6 +691,78 @@ describe('MarkdownEditorComponent', () => {
       expect(page().textContent).toContain('Another writing');
     });
   });
+
+  describe('focus timer cleanup', () => {
+    const origGetClientRects = Range.prototype.getClientRects;
+    const origGetBoundingClientRect = Range.prototype.getBoundingClientRect;
+
+    beforeEach(() => {
+      Range.prototype.getClientRects = (() => [] as unknown as DOMRectList);
+      Range.prototype.getBoundingClientRect = () =>
+        ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    });
+
+    afterEach(() => {
+      Range.prototype.getClientRects = origGetClientRects;
+      Range.prototype.getBoundingClientRect = origGetBoundingClientRect;
+      vi.useRealTimers();
+    });
+
+    it('cancels pending urlInput focus timer when closing the URL prompt or destroying', async () => {
+      await create('Select me');
+      vi.useFakeTimers();
+
+      component.openUrlPrompt('link');
+      fixture.detectChanges();
+      const bubble = (component as unknown as { bubble: { nativeElement: HTMLElement } }).bubble.nativeElement;
+      const input = bubble.querySelector('.editor-url-input') as HTMLInputElement;
+      const focusSpy = vi.spyOn(input, 'focus');
+
+      component.cancelUrl();
+      fixture.detectChanges();
+      vi.runAllTimers();
+      expect(focusSpy).not.toHaveBeenCalled();
+
+      component.openUrlPrompt('link');
+      fixture.detectChanges();
+      const input2 = bubble.querySelector('.editor-url-input') as HTMLInputElement;
+      const focusSpy2 = vi.spyOn(input2, 'focus');
+
+      fixture.destroy();
+      vi.runAllTimers();
+      expect(focusSpy2).not.toHaveBeenCalled();
+    });
+
+    it('cancels pending blockImageInput focus timer when closing the image prompt or destroying', async () => {
+      await create('');
+      vi.useFakeTimers();
+      const editor = (component as unknown as { editor: import('@tiptap/core').Editor }).editor;
+      editor.commands.focus('end');
+      for (const ch of '/img') editor.commands.insertContent(ch);
+
+      component.runBlockAction('image');
+      fixture.detectChanges();
+      const input = fixture.nativeElement.querySelector('.block-menu-image input') as HTMLInputElement;
+      const focusSpy = vi.spyOn(input, 'focus');
+
+      component.cancelBlockImage();
+      fixture.detectChanges();
+      vi.runAllTimers();
+      expect(focusSpy).not.toHaveBeenCalled();
+
+      editor.commands.focus('end');
+      editor.commands.enter();
+      for (const ch of '/img') editor.commands.insertContent(ch);
+      component.runBlockAction('image');
+      fixture.detectChanges();
+      const input2 = fixture.nativeElement.querySelector('.block-menu-image input') as HTMLInputElement;
+      const focusSpy2 = vi.spyOn(input2, 'focus');
+
+      fixture.destroy();
+      vi.runAllTimers();
+      expect(focusSpy2).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('caretScrollDelta (typewriter geometry)', () => {
