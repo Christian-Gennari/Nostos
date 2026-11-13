@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 
 import { ToastService } from '../core/services/toast.service';
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
@@ -52,5 +52,18 @@ describe('BrainTopicActionsService rename', () => {
     expect(service.mergeTargetId()).toBe('b');
     expect(service.mergeConfirming()).toBe(true);
     expect(service.mergeHeading()).toBe('Merge “Alpha” into “Beta”?');
+  });
+
+  it('unsubscribes in-flight topic mutations when its injector is destroyed', () => {
+    const pending$ = new Subject<TopicDto>();
+    rename.mockReturnValue(pending$.asObservable());
+
+    service.startRename(alpha, 'sidebar');
+    service.renameValue.set('Gamma');
+    service.commitRename();
+    expect(pending$.observed).toBe(true);
+
+    TestBed.resetTestingModule();
+    expect(pending$.observed).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
@@ -19,6 +20,7 @@ const NONE: readonly string[] = [];
 export class BrainTopicSuggestionsService {
   private readonly assistant = inject(AssistantService);
   private readonly assistantContext = inject(AssistantContextService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly noteId = signal<string | null>(null);
   readonly state = signal<TopicSuggestionState>('off');
@@ -28,7 +30,7 @@ export class BrainTopicSuggestionsService {
   private unregister: (() => void) | null = null;
 
   constructor() {
-    const finished = this.assistant.turnFinished.subscribe((event) => {
+    this.assistant.turnFinished.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((event) => {
       if (!this.turnId || event.turnId !== this.turnId) return;
       this.turnId = null;
       const noteId = this.noteId();
@@ -43,10 +45,7 @@ export class BrainTopicSuggestionsService {
       this.names.set(names);
       this.state.set('ready');
     });
-    inject(DestroyRef).onDestroy(() => {
-      finished.unsubscribe();
-      this.clear();
-    });
+    this.destroyRef.onDestroy(() => this.clear());
   }
 
   /** The suggestion state for `note`'s picker; `off` for every other note. */

@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { TopicsService, type TopicDto } from '../core/services/topics.service';
 import { ToastService } from '../core/services/toast.service';
@@ -32,6 +33,7 @@ export class BrainTopicWordsComponent {
   protected readonly state = inject(BrainStateService);
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly topic = input.required<TopicDto>();
 
@@ -106,7 +108,7 @@ export class BrainTopicWordsComponent {
       return;
     }
     this.saving.set(true);
-    this.topics.setDescription(topic.id, words || null).subscribe({
+    this.topics.setDescription(topic.id, words || null).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.saving.set(false);
         this.editingId.set(null);

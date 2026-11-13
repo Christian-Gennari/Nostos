@@ -416,4 +416,31 @@ describe('BrainWritingHandoffComponent', () => {
       request.url.startsWith('/api/notes') || request.url.startsWith('/api/topics')
     );
   });
+
+  it('cancels pending /api/writings subscription and focus timer on destroy', () => {
+    vi.useFakeTimers();
+    try {
+      fixture = TestBed.createComponent(BrainWritingHandoffComponent);
+      component = fixture.componentInstance;
+      fixture.componentRef.setInput('noteIds', ['note-1']);
+      fixture.detectChanges();
+      http = TestBed.inject(HttpTestingController);
+
+      const req = http.expectOne('/api/writings');
+      expect(req.cancelled).toBe(false);
+
+      const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+      component.chooseNew();
+      fixture.detectChanges();
+
+      fixture.destroy();
+      vi.advanceTimersByTime(50);
+
+      expect(req.cancelled).toBe(true);
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
 });

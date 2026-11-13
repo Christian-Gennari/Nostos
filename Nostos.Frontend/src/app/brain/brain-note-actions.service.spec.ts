@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import type { Note, NoteSearchHit } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
@@ -169,5 +169,25 @@ describe('BrainNoteActionsService delete', () => {
     expect(service.deleteIds()).toEqual(['h1']);
     expect(host.remove).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith('Could not delete the highlight');
+  });
+
+  it('unsubscribes in-flight actions when its injector is destroyed', () => {
+    const pending$ = new Subject<Note>();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        BrainNoteActionsService,
+        { provide: NotesService, useValue: { update: () => pending$.asObservable() } },
+        { provide: TopicsService, useValue: {} },
+        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+        { provide: BrainStateService, useValue: { refresh: vi.fn() } },
+      ],
+    });
+    const scoped = TestBed.inject(BrainNoteActionsService);
+    scoped.edit({ id: 'n1', content: 'Pending' });
+    expect(pending$.observed).toBe(true);
+
+    TestBed.resetTestingModule();
+    expect(pending$.observed).toBe(false);
   });
 });
