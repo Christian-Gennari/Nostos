@@ -16,23 +16,32 @@ public static class PersistenceRegistration
         IConfiguration configuration,
         string contentRootPath)
     {
+        var dbPath = ResolveDatabasePath(
+            configuration[DatabasePathConfigurationKey],
+            contentRootPath);
+        return services.AddNostosPersistence(dbPath);
+    }
+
+    public static IServiceCollection AddNostosPersistence(
+        this IServiceCollection services,
+        string databasePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        var fullPath = Path.GetFullPath(databasePath);
+
         services.AddDbContextFactory<NostosDbContext>(options =>
         {
-            var dbPath = ResolveDatabasePath(
-                configuration[DatabasePathConfigurationKey],
-                contentRootPath);
-
             // SQLite creates the database file, but not a missing parent
             // directory. This matters for an explicitly configured data root
             // while preserving the historical content-root default.
-            var parentDirectory = Path.GetDirectoryName(dbPath);
+            var parentDirectory = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrWhiteSpace(parentDirectory))
             {
                 Directory.CreateDirectory(parentDirectory);
             }
 
             options.UseSqlite(
-                $"Data Source={dbPath}",
+                $"Data Source={fullPath}",
                 sqlite => sqlite.MigrationsAssembly(
                     typeof(PersistenceRegistration).Assembly.FullName));
         });
