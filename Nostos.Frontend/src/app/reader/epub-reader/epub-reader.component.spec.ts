@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { delay, of, throwError } from 'rxjs';
+import { Observable, Subject, delay, of, throwError } from 'rxjs';
 import ePub from 'epubjs';
 
 import { NotesService } from '../../core/services/notes.service';
@@ -308,8 +308,8 @@ describe('EpubReader annotation manager lifecycle (issue #16)', () => {
     const pendingCorpus = new Promise<Array<{ href: string; index: number; text: string }>>(
       (resolve) => { resolveCorpus = resolve; },
     );
-    (component as any).searchCorpus = null;
-    (component as any).searchCorpusPromise = pendingCorpus;
+    (component as any).searchController.corpus = null;
+    (component as any).searchController.corpusPromise = pendingCorpus;
     const displayCallsBeforeSearch = lastRendition.display.mock.calls.length;
 
     const pendingSearch = component.search('Transylvania');
@@ -946,7 +946,11 @@ describe('EpubReader theme-following normalization', () => {
     vi.useFakeTimers();
     try {
       const component = fixture.componentInstance;
-      const applied = vi.spyOn(component as never, 'applyTypographyToOpenContents' as never);
+      const applied = vi.spyOn(
+        (component as unknown as { typographyController: { applyTypographyToOpenContents(): void } })
+          .typographyController,
+        'applyTypographyToOpenContents',
+      );
 
       component.setTypography({ fontFamily: 'sans' });
       expect(applied).toHaveBeenCalledTimes(1); // leading edge
@@ -1502,7 +1506,8 @@ describe('EpubReader typography persistence', () => {
     component.setTypography({ fontFamily: 'libron', lineHeight: 2.0, margin: 'narrow' });
 
     const doc = makeDocument();
-    (component as unknown as { upsertTypographyStyle: (d: Document) => void }).upsertTypographyStyle(doc);
+    (component as unknown as { typographyController: { upsertTypographyStyle: (d: Document) => void } })
+      .typographyController.upsertTypographyStyle(doc);
     const style = doc.getElementById('nostos-typography');
     expect(style?.textContent).toContain(
       'font-family:"Libron", Georgia, "Times New Roman", Times, serif !important',
@@ -1513,7 +1518,8 @@ describe('EpubReader typography persistence', () => {
   it('gives every section the Libron faces, once, ahead of the typography rules', () => {
     const component = fixture.componentInstance;
     const upsert = (d: Document) =>
-      (component as unknown as { upsertTypographyStyle: (d: Document) => void }).upsertTypographyStyle(d);
+      (component as unknown as { typographyController: { upsertTypographyStyle: (d: Document) => void } })
+        .typographyController.upsertTypographyStyle(d);
 
     // Two sections, as epub.js renders them: each is its own document.
     const [first, second] = [makeDocument(), makeDocument()];
@@ -2487,5 +2493,300 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       await vi.advanceTimersByTimeAsync(1100);
       expect(booksService.updateProgress).toHaveBeenCalledWith('book-1', USER_CFI, expect.any(Number));
     });
+  });
+});
+
+describe('EpubReader book-switch teardown, generation guards, and destroy cleanup (issue #1600)', () => {
+  let fixture: ComponentFixture<EpubReader>;
+  let contentHooks: Array<(contents: any) => void>;
+  let renditions: any[];
+  let books: any[];
+
+  const notesService = {
+    list: vi.fn(() => of([])),
+    create: vi.fn(() => of({ id: 'n1' } as never)),
+    setLocation: vi.fn(() => of({} as never)),
+  };
+
+  let booksService: {
+    getLocations: ReturnType<typeof vi.fn>;
+    saveLocations: ReturnType<typeof vi.fn>;
+    updateProgress: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
+  };
+
+  const makeContents = () => {
+    const doc = document.implementation.createHTMLDocument('Section');
+    doc.body.innerHTML = '<p>Chapter text</p>';
+    return { document: doc, window: doc.defaultView, content: doc.body };
+  };
+
+  const createFakeBook = () => {
+    const hooks: Array<(contents: any) => void> = [];
+    const relocated: Array<(location: any) => void> = [];
+
+    const rendition = {
+      hooks: {
+        content: {
+          register: vi.fn((cb: (contents: any) => void) => {
+            hooks.push(cb);
+            contentHooks = hooks;
+          }),
+        },
+      },
+      themes: { register: vi.fn(), select: vi.fn(), fontSize: vi.fn() },
+      on: vi.fn((type: string, cb: (location: any) => void) => {
+        if (type === 'relocated') relocated.push(cb);
+      }),
+      off: vi.fn(),
+      annotations: { highlight: vi.fn(), underline: vi.fn(), add: vi.fn(), remove: vi.fn() },
+      getContents: vi.fn(() => []),
+      views: vi.fn(() => []),
+      getRange: vi.fn(),
+      display: vi.fn(() => Promise.resolve()),
+      resize: vi.fn(),
+      next: vi.fn(),
+      prev: vi.fn(),
+      currentLocation: vi.fn(() => ({ start: { cfi: 'epubcfi(/6/4)' } })),
+    };
+
+    const book = {
+      renderTo: vi.fn(() => {
+        renditions.push(rendition);
+        return rendition;
+      }),
+      ready: Promise.resolve({ navigation: { toc: [] } }),
+      loaded: { metadata: Promise.resolve({ language: 'en' }) },
+      on: vi.fn(),
+      off: vi.fn(),
+      locations: {
+        load: vi.fn(),
+        generate: vi.fn(() => Promise.resolve()),
+        save: vi.fn(() => '["loc"]'),
+        length: () => 0,
+        percentageFromCfi: () => 0,
+        locationFromCfi: () => 0,
+      },
+      navigation: { toc: [] },
+      spine: { ...SERIALIZE_HOOKS, spineItems: [] },
+      open: vi.fn(() => Promise.resolve()),
+      destroy: vi.fn(),
+    };
+    books.push(book);
+    return { book, rendition, hooks, emitRelocated: (cfi: string) => relocated.forEach((cb) => cb({ start: { cfi, href: 'ch1.xhtml', index: 0 } })) };
+  };
+
+  beforeEach(async () => {
+    contentHooks = [];
+    renditions = [];
+    books = [];
+    localStorage.clear();
+    booksService = {
+      getLocations: vi.fn(() => of({ locations: null })),
+      saveLocations: vi.fn(() => of(null)),
+      updateProgress: vi.fn(() => of(null)),
+      get: vi.fn(() => of({ lastLocation: null })),
+    };
+
+    vi.mocked(ePub).mockImplementation(() => createFakeBook().book as never);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+
+    await TestBed.configureTestingModule({
+      imports: [EpubReader],
+      providers: [
+        { provide: NotesService, useValue: notesService },
+        { provide: BooksService, useValue: booksService },
+        { provide: EpubFileCacheService, useValue: epubFiles },
+      ],
+    }).compileComponents();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  async function setupComponent(bookId = 'book-1') {
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', bookId);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it('clears both keyboardDocuments and interactionDocuments when loadBook tears down a previous epubBook', async () => {
+    await setupComponent('book-1');
+    const component = fixture.componentInstance as unknown as {
+      keyboardDocuments: Map<Document, () => void>;
+      interactionDocuments: Map<Document, () => void>;
+      clearContentsKeyboardListeners(): void;
+      clearContentsInteractionListeners(): void;
+      loadBook(id: string): void;
+      surfaceInteracted: { subscribe(fn: () => void): void };
+    };
+
+    const firstDoc = makeContents();
+    contentHooks.forEach((hook) => hook(firstDoc));
+
+    expect(component.keyboardDocuments.size).toBe(1);
+    expect(component.keyboardDocuments.has(firstDoc.document)).toBe(true);
+    expect(component.interactionDocuments.size).toBe(1);
+    expect(component.interactionDocuments.has(firstDoc.document)).toBe(true);
+
+    const clearKeyboardSpy = vi.spyOn(component as any, 'clearContentsKeyboardListeners');
+    const clearInteractionSpy = vi.spyOn(component as any, 'clearContentsInteractionListeners');
+
+    // Switch to a second book via loadBook while the component remains alive.
+    component.loadBook('book-2');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(clearKeyboardSpy).toHaveBeenCalledTimes(1);
+    expect(clearInteractionSpy).toHaveBeenCalledTimes(1);
+    expect(component.keyboardDocuments.size).toBe(0);
+    expect(component.interactionDocuments.size).toBe(0);
+
+    // Events dispatched on the torn-down iframe Document must not hit the new rendition.
+    const secondRendition = renditions[1];
+    const surface = vi.fn();
+    component.surfaceInteracted.subscribe(surface);
+
+    firstDoc.document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    );
+    firstDoc.document.body.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 50 }),
+    );
+
+    expect(secondRendition.next).not.toHaveBeenCalled();
+    expect(surface).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribes in-flight getLocations and ignores late callbacks after switching books or destroying', async () => {
+    let book1Teardown = false;
+    const book1Locations$ = new Subject<{ locations: string | null }>();
+    const book1Observable = new Observable<{ locations: string | null }>((subscriber) => {
+      const sub = book1Locations$.subscribe(subscriber);
+      return () => {
+        book1Teardown = true;
+        sub.unsubscribe();
+      };
+    });
+
+    booksService.getLocations.mockImplementation((id: string) =>
+      id === 'book-1' ? book1Observable : of({ locations: null }),
+    );
+
+    await setupComponent('book-1');
+    const firstBook = books[0];
+    expect(book1Teardown).toBe(false);
+
+    // Switch to book-2 while book-1's getLocations request is still pending.
+    fixture.componentInstance.loadBook('book-2');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(book1Teardown).toBe(true);
+    // Even if a late emission fires synchronously, book-1 must never mutate.
+    book1Locations$.next({ locations: '["stale"]' });
+    expect(firstBook.locations.load).not.toHaveBeenCalled();
+
+    // Also verify destroy cancels an in-flight getLocations subscription.
+    let book3Teardown = false;
+    const book3Locations$ = new Subject<{ locations: string | null }>();
+    booksService.getLocations.mockImplementationOnce(
+      () =>
+        new Observable<{ locations: string | null }>((subscriber) => {
+          const sub = book3Locations$.subscribe(subscriber);
+          return () => {
+            book3Teardown = true;
+            sub.unsubscribe();
+          };
+        }),
+    );
+
+    fixture.componentInstance.loadBook('book-3');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(book3Teardown).toBe(false);
+
+    fixture.destroy();
+    expect(book3Teardown).toBe(true);
+  });
+
+  it('cancels pending progress writes, readAloudDisplay timers, and applyTypography timers on book switch and destroy', async () => {
+    vi.useFakeTimers();
+    let inFlightProgressTeardown = false;
+    const inFlightProgress$ = new Subject<null>();
+    booksService.updateProgress.mockImplementation(
+      () =>
+        new Observable<null>((subscriber) => {
+          const sub = inFlightProgress$.subscribe(subscriber);
+          return () => {
+            inFlightProgressTeardown = true;
+            sub.unsubscribe();
+          };
+        }),
+    );
+
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const component = fixture.componentInstance as unknown as {
+      readAloudMoves: number;
+      readAloudDisplay(target: string): Promise<boolean>;
+      setTypography(patch: { margin: 'wide' | 'narrow' }): void;
+      updateProgressState(cfi: string): void;
+    };
+
+    const page = fixture.nativeElement.querySelector('#epub-page') as HTMLElement;
+    Object.defineProperty(page, 'clientWidth', { value: 800, configurable: true });
+    Object.defineProperty(page, 'clientHeight', { value: 600, configurable: true });
+
+    // Start a debounced progress update, a readAloudDisplay timer, and a typography margin timer.
+    component.updateProgressState('epubcfi(/6/8)');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(booksService.updateProgress).toHaveBeenCalledTimes(1);
+    expect(inFlightProgressTeardown).toBe(false);
+
+    void component.readAloudDisplay('epubcfi(/6/10)');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(component.readAloudMoves).toBe(1);
+
+    component.setTypography({ margin: 'wide' });
+
+    // Switching books cancels the in-flight HTTP subscription and pending timers.
+    fixture.componentRef.setInput('bookId', 'book-2');
+    fixture.detectChanges();
+    expect(inFlightProgressTeardown).toBe(true);
+    expect(component.readAloudMoves).toBe(0);
+
+    const resizeSpy = renditions[1].resize;
+    resizeSpy.mockClear();
+    await vi.advanceTimersByTimeAsync(400);
+    // Margin timer from book-1 must not resize book-2's rendition.
+    expect(resizeSpy).not.toHaveBeenCalled();
+
+    // Now test destroy cancellation for a debounced progress write, readAloudDisplay timer, and margin timer.
+    booksService.updateProgress.mockClear();
+    resizeSpy.mockClear();
+    component.updateProgressState('epubcfi(/6/12)');
+    void component.readAloudDisplay('epubcfi(/6/14)');
+    await vi.advanceTimersByTimeAsync(0);
+    component.setTypography({ margin: 'narrow' });
+
+    fixture.destroy();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(booksService.updateProgress).not.toHaveBeenCalled();
+    expect(resizeSpy).not.toHaveBeenCalled();
   });
 });

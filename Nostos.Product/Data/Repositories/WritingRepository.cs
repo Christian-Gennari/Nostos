@@ -15,33 +15,33 @@ public class WritingRepository : IWritingRepository
         _db = db;
     }
 
-    public async Task<List<WritingDto>> GetListAsync()
+    public async Task<List<WritingDto>> GetListAsync(CancellationToken cancellationToken = default)
     {
         // Projected so each document's full text (Content) never leaves the database.
         var rows = await _db.Writings
             .AsNoTracking()
             .Select(w => new { w.Id, w.Name, w.Type, w.ParentId, w.UpdatedAt })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
         return rows
             .Select(w => new WritingDto(w.Id, w.Name, w.Type.ToString(), w.ParentId, w.UpdatedAt))
             .ToList();
     }
 
-    public async Task<WritingModel?> GetByIdAsync(Guid id)
+    public async Task<WritingModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _db.Writings.FindAsync(id);
+        return await _db.Writings.FindAsync([id], cancellationToken);
     }
 
-    public async Task AddAsync(WritingModel writing)
+    public async Task AddAsync(WritingModel writing, CancellationToken cancellationToken = default)
     {
         _db.Writings.Add(writing);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(WritingModel writing)
+    public async Task UpdateAsync(WritingModel writing, CancellationToken cancellationToken = default)
     {
         _db.Writings.Update(writing);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task SaveContentAsync(WritingModel writing, CancellationToken ct = default)
@@ -61,41 +61,47 @@ public class WritingRepository : IWritingRepository
         await transaction.CommitAsync(ct);
     }
 
-    public async Task DeleteAsync(WritingModel writing)
+    public async Task DeleteAsync(WritingModel writing, CancellationToken cancellationToken = default)
     {
         // Cascade delete is configured in DbContext, so this deletes all children too.
         _db.Writings.Remove(writing);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<Guid?> GetParentIdAsync(Guid id)
+    public async Task<Guid?> GetParentIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var result = await _db
             .Writings.Where(w => w.Id == id)
             .Select(w => new { w.ParentId })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync(cancellationToken);
 
         return result?.ParentId;
     }
 
-    public async Task<List<WritingNoteModel>?> GetKeptNotesAsync(Guid writingId)
+    public async Task<List<WritingNoteModel>?> GetKeptNotesAsync(
+        Guid writingId,
+        CancellationToken cancellationToken = default)
     {
-        var writingExists = await _db.Writings.AnyAsync(w => w.Id == writingId);
+        var writingExists = await _db.Writings.AnyAsync(w => w.Id == writingId, cancellationToken);
         if (!writingExists)
             return null;
 
-        return await WithNotesAsync(_db.WritingNotes
-            .Where(wn => wn.WritingId == writingId)
-            .OrderBy(wn => wn.AddedAt)
-            .ThenBy(wn => wn.NoteId));
+        return await WithNotesAsync(
+            _db.WritingNotes
+                .Where(wn => wn.WritingId == writingId)
+                .OrderBy(wn => wn.AddedAt)
+                .ThenBy(wn => wn.NoteId),
+            cancellationToken);
     }
 
     /// <summary>Kept-note rows with their notes, each note with its book's headline.</summary>
-    private async Task<List<WritingNoteModel>> WithNotesAsync(IQueryable<WritingNoteModel> links)
+    private async Task<List<WritingNoteModel>> WithNotesAsync(
+        IQueryable<WritingNoteModel> links,
+        CancellationToken cancellationToken)
     {
-        var items = await links.AsNoTracking().ToListAsync();
+        var items = await links.AsNoTracking().ToListAsync(cancellationToken);
         var noteIds = items.Select(wn => wn.NoteId).ToList();
-        var notes = (await _db.Notes.Where(n => noteIds.Contains(n.Id)).ToListWithBookHeadlineAsync())
+        var notes = (await _db.Notes.Where(n => noteIds.Contains(n.Id)).ToListWithBookHeadlineAsync(cancellationToken))
             .ToDictionary(n => n.Id);
 
         // Defensive read filter: a membership row whose note is missing must never 500
@@ -104,23 +110,26 @@ public class WritingRepository : IWritingRepository
         return items.Where(wn => wn.Note is not null).ToList();
     }
 
-    public async Task<AddKeptNoteResult> AddKeptNoteAsync(Guid writingId, Guid noteId)
+    public async Task<AddKeptNoteResult> AddKeptNoteAsync(
+        Guid writingId,
+        Guid noteId,
+        CancellationToken cancellationToken = default)
     {
-        var writing = await _db.Writings.FirstOrDefaultAsync(w => w.Id == writingId);
+        var writing = await _db.Writings.FirstOrDefaultAsync(w => w.Id == writingId, cancellationToken);
         if (writing is null)
             return new AddKeptNoteResult(AddKeptNoteStatus.WritingNotFound, null);
 
         if (writing.Type == WritingType.Folder)
             return new AddKeptNoteResult(AddKeptNoteStatus.WritingIsFolder, null);
 
-        if (!await _db.Notes.AnyAsync(n => n.Id == noteId))
+        if (!await _db.Notes.AnyAsync(n => n.Id == noteId, cancellationToken))
             return new AddKeptNoteResult(AddKeptNoteStatus.NoteNotFound, null);
 
         // Idempotent. The join is keyed (WritingId, NoteId); inserting a second
         // row would be a duplicate key. The check runs against the database, not
         // the tracked navigation, so a repeated call sees the committed link.
         var link = _db.WritingNotes.Where(wn => wn.WritingId == writingId && wn.NoteId == noteId);
-        var existing = (await WithNotesAsync(link)).FirstOrDefault();
+        var existing = (await WithNotesAsync(link, cancellationToken)).FirstOrDefault();
 
         if (existing is not null)
             return new AddKeptNoteResult(AddKeptNoteStatus.AlreadyExists, existing);
@@ -132,24 +141,29 @@ public class WritingRepository : IWritingRepository
             NoteId = noteId,
             AddedAt = DateTime.UtcNow,
         });
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
 
-        return new AddKeptNoteResult(AddKeptNoteStatus.Success, (await WithNotesAsync(link)).First());
+        return new AddKeptNoteResult(
+            AddKeptNoteStatus.Success,
+            (await WithNotesAsync(link, cancellationToken)).First());
     }
 
-    public async Task<bool> RemoveKeptNoteAsync(Guid writingId, Guid noteId)
+    public async Task<bool> RemoveKeptNoteAsync(
+        Guid writingId,
+        Guid noteId,
+        CancellationToken cancellationToken = default)
     {
-        var writingExists = await _db.Writings.AnyAsync(w => w.Id == writingId);
+        var writingExists = await _db.Writings.AnyAsync(w => w.Id == writingId, cancellationToken);
         if (!writingExists)
             return false;
 
         var existing = await _db.WritingNotes
-            .FirstOrDefaultAsync(wn => wn.WritingId == writingId && wn.NoteId == noteId);
+            .FirstOrDefaultAsync(wn => wn.WritingId == writingId && wn.NoteId == noteId, cancellationToken);
 
         if (existing is not null)
         {
             _db.WritingNotes.Remove(existing);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(cancellationToken);
         }
 
         return true;

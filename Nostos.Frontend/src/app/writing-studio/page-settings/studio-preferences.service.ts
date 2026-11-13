@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
 
 import { SOUND_PACKS, SoundPack } from '../../ui/markdown-editor/typewriter-sounds';
 import { CitationStyleId, DEFAULT_CITATION_STYLE, citationStyle, isCitationStyleId } from '../citations/citation-styles';
@@ -156,6 +156,7 @@ function readStored(): StudioPreferences {
 
 @Injectable({ providedIn: 'root' })
 export class StudioPreferencesService {
+  private readonly destroyRef = inject(DestroyRef);
   private readonly state = signal<StudioPreferences>(readStored());
   readonly preferences = this.state.asReadonly();
 
@@ -177,7 +178,11 @@ export class StudioPreferencesService {
       onCleanup(() => clearTimeout(timer));
     });
     // A reload or a closed tab inside the debounce must not lose the change.
-    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.flush());
+    if (typeof window !== 'undefined') {
+      const onPageHide = () => this.flush();
+      window.addEventListener('pagehide', onPageHide);
+      this.destroyRef.onDestroy(() => window.removeEventListener('pagehide', onPageHide));
+    }
   }
 
   /** Writes a waiting change now. */

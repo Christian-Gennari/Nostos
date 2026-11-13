@@ -494,22 +494,25 @@ public sealed partial class LibraryService : ILibraryService
             return NoChange(Failure("confirmation_required",
                 LibraryReplyFormatter.MoreInformationRequired, state.StateVersion));
 
-        if (request.CollectionId.HasValue)
-        {
-            var collectionExists = await db.Collections.AsNoTracking()
-                .AnyAsync(c => c.Id == request.CollectionId.Value, ct);
-            if (!collectionExists)
-                return NoChange(Failure("collection_not_found",
-                    LibraryReplyFormatter.CollectionNotFound, state.StateVersion));
-        }
-
         // Create-time membership. CollectionIds (the set) is authoritative when
         // supplied; the singular CollectionId is the legacy REST shape and is
-        // still honoured so no existing caller changes behaviour. The join rows
-        // are added after SaveChanges, once the book id exists.
+        // still honoured so no existing caller changes behaviour. Validate all
+        // requested collections before inserting WorkModel/BookModel; the join
+        // rows are added after SaveChanges, once the book id exists.
         var membershipIds = request.CollectionIds is { Count: > 0 }
             ? request.CollectionIds.Distinct().ToList()
             : (request.CollectionId.HasValue ? [request.CollectionId.Value] : []);
+
+        if (membershipIds.Count > 0)
+        {
+            var known = await db.Collections.AsNoTracking()
+                .Where(c => membershipIds.Contains(c.Id))
+                .Select(c => c.Id)
+                .ToListAsync(ct);
+            if (known.Count != membershipIds.Count)
+                return NoChange(Failure("collection_not_found",
+                    LibraryReplyFormatter.CollectionNotFound, state.StateVersion));
+        }
 
         var createDto = new CreateBookDto(
             request.Type,
@@ -634,14 +637,6 @@ public sealed partial class LibraryService : ILibraryService
 
         if (membershipIds.Count > 0)
         {
-            var known = await db.Collections.AsNoTracking()
-                .Where(c => membershipIds.Contains(c.Id))
-                .Select(c => c.Id)
-                .ToListAsync(ct);
-            if (known.Count != membershipIds.Count)
-                return NoChange(Failure("collection_not_found",
-                    LibraryReplyFormatter.CollectionNotFound, state.StateVersion));
-
             foreach (var id in membershipIds)
                 db.BookCollections.Add(new BookCollectionModel
                 {

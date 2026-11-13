@@ -799,6 +799,280 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         thumbnailRead!.Info.Length.Should().BeGreaterThan(0);
     }
 
+    [Fact]
+    public async Task Swapped_book_collection_pairs_are_detected()
+    {
+        var (candidate, prepared, expected, ids) = await CreateJoinPairScenarioAsync();
+        await using var _ = candidate;
+
+        var baseline = await _fixture.Verifier.VerifyCandidateDatabaseAsync(
+            candidate.Db,
+            prepared,
+            expected);
+        baseline.Passed.Should().BeTrue(
+            string.Join("; ", baseline.Failures.Select(failure => $"{failure.Code}:{failure.Entity}:{failure.Field}")));
+
+        var existing = await candidate.Db.BookCollections.ToListAsync();
+        candidate.Db.BookCollections.RemoveRange(existing);
+        await candidate.Db.SaveChangesAsync();
+
+        candidate.Db.BookCollections.AddRange(
+            new BookCollectionModel
+            {
+                BookId = ids.Book1Id,
+                CollectionId = ids.Collection2Id,
+                AddedAt = ids.Timestamp,
+            },
+            new BookCollectionModel
+            {
+                BookId = ids.Book2Id,
+                CollectionId = ids.Collection1Id,
+                AddedAt = ids.Timestamp,
+            });
+        await candidate.Db.SaveChangesAsync();
+
+        var report = await _fixture.Verifier.VerifyCandidateDatabaseAsync(
+            candidate.Db,
+            prepared,
+            expected);
+
+        report.Passed.Should().BeFalse();
+        report.Failures.Should().Contain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.RelationshipMismatch
+            && failure.Entity == "bookCollection");
+        report.Failures.Should().NotContain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.CountMismatch);
+    }
+
+    [Fact]
+    public async Task Swapped_note_topic_pairs_are_detected()
+    {
+        var (candidate, prepared, expected, ids) = await CreateJoinPairScenarioAsync();
+        await using var _ = candidate;
+
+        var baseline = await _fixture.Verifier.VerifyCandidateDatabaseAsync(
+            candidate.Db,
+            prepared,
+            expected);
+        baseline.Passed.Should().BeTrue(
+            string.Join("; ", baseline.Failures.Select(failure => $"{failure.Code}:{failure.Entity}:{failure.Field}")));
+
+        var existing = await candidate.Db.NoteTopics.ToListAsync();
+        candidate.Db.NoteTopics.RemoveRange(existing);
+        await candidate.Db.SaveChangesAsync();
+
+        candidate.Db.NoteTopics.AddRange(
+            new NoteTopicModel
+            {
+                NoteId = ids.Note1Id,
+                TopicId = ids.Topic2Id,
+            },
+            new NoteTopicModel
+            {
+                NoteId = ids.Note2Id,
+                TopicId = ids.Topic1Id,
+            });
+        await candidate.Db.SaveChangesAsync();
+
+        var report = await _fixture.Verifier.VerifyCandidateDatabaseAsync(
+            candidate.Db,
+            prepared,
+            expected);
+
+        report.Passed.Should().BeFalse();
+        report.Failures.Should().Contain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.RelationshipMismatch
+            && failure.Entity == "noteTopic");
+        report.Failures.Should().NotContain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.CountMismatch);
+    }
+
+    [Fact]
+    public async Task Swapped_writing_note_pairs_are_detected()
+    {
+        var (candidate, prepared, expected, ids) = await CreateJoinPairScenarioAsync();
+        await using var _ = candidate;
+
+        var baseline = await _fixture.Verifier.VerifyCandidateDatabaseAsync(
+            candidate.Db,
+            prepared,
+            expected);
+        baseline.Passed.Should().BeTrue(
+            string.Join("; ", baseline.Failures.Select(failure => $"{failure.Code}:{failure.Entity}:{failure.Field}")));
+
+        var existing = await candidate.Db.WritingNotes.ToListAsync();
+        candidate.Db.WritingNotes.RemoveRange(existing);
+        await candidate.Db.SaveChangesAsync();
+
+        candidate.Db.WritingNotes.AddRange(
+            new WritingNoteModel
+            {
+                WritingId = ids.Writing1Id,
+                NoteId = ids.Note2Id,
+                AddedAt = ids.Timestamp,
+            },
+            new WritingNoteModel
+            {
+                WritingId = ids.Writing2Id,
+                NoteId = ids.Note1Id,
+                AddedAt = ids.Timestamp,
+            });
+        await candidate.Db.SaveChangesAsync();
+
+        var report = await _fixture.Verifier.VerifyCandidateDatabaseAsync(
+            candidate.Db,
+            prepared,
+            expected);
+
+        report.Passed.Should().BeFalse();
+        report.Failures.Should().Contain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.RelationshipMismatch
+            && failure.Entity == "writingNote");
+        report.Failures.Should().NotContain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.CountMismatch);
+    }
+
+    private sealed record JoinPairScenarioIds(
+        Guid Book1Id,
+        Guid Book2Id,
+        Guid Collection1Id,
+        Guid Collection2Id,
+        Guid Note1Id,
+        Guid Note2Id,
+        Guid Topic1Id,
+        Guid Topic2Id,
+        Guid Writing1Id,
+        Guid Writing2Id,
+        DateTime Timestamp);
+
+    private static async Task<(
+        LocalPortableTestLibrary Candidate,
+        PortablePreparedImport Prepared,
+        PortablePreparedImportVerification Expected,
+        JoinPairScenarioIds Ids)> CreateJoinPairScenarioAsync()
+    {
+        var timestamp = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+
+        var work = new WorkModel
+        {
+            Id = Guid.NewGuid(),
+            Title = "Join Pair Work",
+            NormalizedTitle = "JOIN PAIR WORK",
+            NormalizedAuthor = string.Empty,
+            CreatedAt = timestamp,
+        };
+        var book1 = new EBookModel
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Work = work,
+            Title = "Book One",
+            CreatedAt = timestamp,
+        };
+        var book2 = new EBookModel
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Work = work,
+            Title = "Book Two",
+            CreatedAt = timestamp,
+        };
+        var collection1 = new CollectionModel { Id = Guid.NewGuid(), Name = "Collection One" };
+        var collection2 = new CollectionModel { Id = Guid.NewGuid(), Name = "Collection Two" };
+        var note1 = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = book1.Id,
+            Book = book1,
+            Content = "Note One",
+            CreatedAt = timestamp,
+        };
+        var note2 = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = book2.Id,
+            Book = book2,
+            Content = "Note Two",
+            CreatedAt = timestamp,
+        };
+        var topic1 = new TopicModel { Id = Guid.NewGuid(), Topic = "Topic One" };
+        var topic2 = new TopicModel { Id = Guid.NewGuid(), Topic = "Topic Two" };
+        var writing1 = new WritingModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Writing One",
+            Type = WritingType.Document,
+            CreatedAt = timestamp,
+            UpdatedAt = timestamp,
+        };
+        var writing2 = new WritingModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Writing Two",
+            Type = WritingType.Document,
+            CreatedAt = timestamp,
+            UpdatedAt = timestamp,
+        };
+
+        source.Db.Works.Add(work);
+        source.Db.Books.AddRange(book1, book2);
+        source.Db.Collections.AddRange(collection1, collection2);
+        source.Db.BookCollections.AddRange(
+            new BookCollectionModel { BookId = book1.Id, CollectionId = collection1.Id, AddedAt = timestamp },
+            new BookCollectionModel { BookId = book2.Id, CollectionId = collection2.Id, AddedAt = timestamp });
+        source.Db.Notes.AddRange(note1, note2);
+        source.Db.Topics.AddRange(topic1, topic2);
+        source.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = note1.Id, TopicId = topic1.Id },
+            new NoteTopicModel { NoteId = note2.Id, TopicId = topic2.Id });
+        source.Db.Writings.AddRange(writing1, writing2);
+        source.Db.WritingNotes.AddRange(
+            new WritingNoteModel { WritingId = writing1.Id, NoteId = note1.Id, AddedAt = timestamp },
+            new WritingNoteModel { WritingId = writing2.Id, NoteId = note2.Id, AddedAt = timestamp });
+        await source.Db.SaveChangesAsync();
+
+        var archive = await SelfHostedActivationTestSupport.ExportArchiveAsync(source);
+        PortablePreparedImport prepared;
+        PortablePreparedImportVerification expected;
+        var store = new InMemoryPortableImportStagingStore();
+        await using (var staging = new InMemoryPortableImportStaging(store))
+        {
+            prepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(archive, staging);
+            expected = await new PortableLibraryVerifier().VerifyPreparedImportAsync(staging, prepared);
+            expected.Passed.Should().BeTrue(
+                string.Join("; ", expected.Failures.Select(failure => failure.Code)));
+        }
+
+        var candidate = await LocalPortableTestLibrary.CreateAsync();
+        try
+        {
+            using var stream = new MemoryStream(archive, writable: false);
+            await candidate.Portability().ImportAsync(stream);
+            return (
+                candidate,
+                prepared,
+                expected,
+                new JoinPairScenarioIds(
+                    book1.Id,
+                    book2.Id,
+                    collection1.Id,
+                    collection2.Id,
+                    note1.Id,
+                    note2.Id,
+                    topic1.Id,
+                    topic2.Id,
+                    writing1.Id,
+                    writing2.Id,
+                    timestamp));
+        }
+        catch
+        {
+            await candidate.DisposeAsync();
+            throw;
+        }
+    }
+
     private static async Task<(
         LocalPortableTestLibrary Candidate,
         PortablePreparedImport Prepared,

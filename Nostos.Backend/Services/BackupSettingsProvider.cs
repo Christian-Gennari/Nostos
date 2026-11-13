@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using Nostos.Backend.Composition;
 using Nostos.Backend.Configuration;
 using Nostos.Shared.Dtos;
 
@@ -24,11 +25,14 @@ public class BackupSettingsProvider
     };
 
     public BackupSettingsProvider(IWebHostEnvironment env, IOptions<BackupSettings> defaults,
-        ILibraryMaintenanceCoordinator? maintenance = null, IConfiguration? configuration = null)
+        ILibraryMaintenanceCoordinator? maintenance = null, IConfiguration? configuration = null,
+        SelfHostedStoragePaths? storagePaths = null)
     {
         Maintenance = maintenance ?? new LibraryMaintenanceCoordinator();
-        _filePath = ResolveSettingsPath(
-            configuration?[PersistenceRegistration.DatabasePathConfigurationKey], env.ContentRootPath);
+        _filePath = storagePaths is not null
+            ? Path.Combine(Path.GetDirectoryName(storagePaths.DatabasePath) ?? env.ContentRootPath, FileName)
+            : ResolveSettingsPath(
+                configuration?[PersistenceRegistration.DatabasePathConfigurationKey], env.ContentRootPath);
         MigrateLegacyFile(Path.Combine(env.ContentRootPath, FileName), _filePath);
         _defaults = defaults.Value;
         _current = LoadFromFile() ?? CloneDefaults();

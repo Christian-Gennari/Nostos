@@ -357,4 +357,90 @@ public sealed class LibriVoxProviderTests
         found.Should().NotBeNull();
         found!.Id.Should().Be("librivox");
     }
+
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task Search_MapsTransientTransportFailureToProviderUnavailable(Type exceptionType)
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ => throw (Exception)Activator.CreateInstance(exceptionType, "socket reset")!);
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("1601"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(LibriVoxProvider.ProviderIdentifier);
+    }
+
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task GetItemAndPlanAcquisition_MapTransientTransportFailureToProviderUnavailable(Type exceptionType)
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ => throw (Exception)Activator.CreateInstance(exceptionType, "stream reset")!);
+
+        var itemAct = () => provider.GetItemAsync("2469", CancellationToken.None);
+        var itemError = (await itemAct.Should().ThrowAsync<ProviderException>()).Which;
+        itemError.Code.Should().Be(ProviderException.Unavailable);
+        itemError.Message.Should().Contain(LibriVoxProvider.ProviderIdentifier);
+
+        var planAct = () => provider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("2469", null),
+            CancellationToken.None);
+        var planError = (await planAct.Should().ThrowAsync<ProviderException>()).Which;
+        planError.Code.Should().Be(ProviderException.Unavailable);
+        planError.Message.Should().Contain(LibriVoxProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Search_MapsMidStreamIOExceptionToProviderUnavailable()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ => TransientHttpTestHelpers.ChunkThenThrowJsonResponse(
+            "{\"books\":[{\"id\":\"2469\"",
+            () => new IOException("truncated TCP stream")));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("1601"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(LibriVoxProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task SearchAndPlan_MapClientTimeoutToProviderUnavailable_WhilePreservingCallerCancellation()
+    {
+        var timeoutProvider = new LibriVoxProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri("https://librivox.org"),
+                TimeSpan.FromMilliseconds(25)),
+            NullLogger<LibriVoxProvider>.Instance);
+
+        var searchTimeoutAct = () => timeoutProvider.SearchAsync(
+            new ProviderSearchQuery("1601"),
+            CancellationToken.None);
+        var searchError = (await searchTimeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        searchError.Code.Should().Be(ProviderException.Unavailable);
+        searchError.Message.Should().Contain(LibriVoxProvider.ProviderIdentifier);
+
+        var planTimeoutAct = () => timeoutProvider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("2469", null),
+            CancellationToken.None);
+        var planError = (await planTimeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        planError.Code.Should().Be(ProviderException.Unavailable);
+        planError.Message.Should().Contain(LibriVoxProvider.ProviderIdentifier);
+
+        var (cancelProvider, handler) = CreateProvider();
+        using var cts = new CancellationTokenSource();
+        handler.SetFallback(_ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        var cancelAct = () => cancelProvider.SearchAsync(new ProviderSearchQuery("1601"), cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
+    }
 }

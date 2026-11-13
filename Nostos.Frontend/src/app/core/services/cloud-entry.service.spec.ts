@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { Subject, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
 import { BooksService } from './books.service';
@@ -8,11 +8,13 @@ import { CloudAuthService } from './cloud-auth.service';
 import { CloudEntryService } from './cloud-entry.service';
 import { CloudOnboardingService } from './cloud-onboarding.service';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from './deployment-capabilities.testing';
 import { PortableLibraryService } from './portable-library.service';
 
 describe('CloudEntryService', () => {
   let service: CloudEntryService;
-  let capabilities: { get: ReturnType<typeof vi.fn> };
+  let capabilities: { get: ReturnType<typeof vi.fn<(refresh?: boolean) => Observable<any>>> };
+  let capabilitiesMock: ReturnType<typeof createDeploymentCapabilitiesServiceMock>;
   let auth: {
     getSession: ReturnType<typeof vi.fn>;
     loginUrl: ReturnType<typeof vi.fn>;
@@ -64,6 +66,7 @@ describe('CloudEntryService', () => {
     history.replaceState({}, '', '/');
 
     capabilities = { get: vi.fn() };
+    capabilitiesMock = createDeploymentCapabilitiesServiceMock((refresh) => capabilities.get(refresh));
     auth = { getSession: vi.fn(), loginUrl: vi.fn() };
     onboarding = {
       getState: vi.fn(),
@@ -77,7 +80,7 @@ describe('CloudEntryService', () => {
     TestBed.configureTestingModule({
       providers: [
         CloudEntryService,
-        { provide: DeploymentCapabilitiesService, useValue: capabilities },
+        { provide: DeploymentCapabilitiesService, useValue: capabilitiesMock },
         { provide: CloudAuthService, useValue: auth },
         { provide: CloudOnboardingService, useValue: onboarding },
         {

@@ -203,10 +203,7 @@ public sealed partial class StandardEbooksProvider : IContentProvider,
 
     private async Task<XDocument?> LoadFeedAsync(string path, CancellationToken ct)
     {
-        using var response = await _http.GetAsync(
-            path,
-            HttpCompletionOption.ResponseHeadersRead,
-            ct);
+        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
 
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
             return null;
@@ -225,28 +222,27 @@ public sealed partial class StandardEbooksProvider : IContentProvider,
                 $"the OPDS feed answered HTTP {(int)response.StatusCode}");
         }
 
-        try
+        var document = await ProviderHttp.ExecuteAsync(Id, ct, async token =>
         {
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            var document = await XDocument.LoadAsync(stream, LoadOptions.None, ct);
-
-            if (!StandardEbooksCatalog.IsFeed(document))
+            try
             {
-                throw ProviderException.InvalidResponse(
-                    Id,
-                    "the response was not an OPDS Atom feed");
+                await using var stream = await response.Content.ReadAsStreamAsync(token);
+                return await XDocument.LoadAsync(stream, LoadOptions.None, token);
             }
+            catch (XmlException ex)
+            {
+                throw ProviderException.InvalidResponse(Id, ex.Message);
+            }
+        });
 
-            return document;
-        }
-        catch (ProviderException)
+        if (!StandardEbooksCatalog.IsFeed(document))
         {
-            throw;
+            throw ProviderException.InvalidResponse(
+                Id,
+                "the response was not an OPDS Atom feed");
         }
-        catch (XmlException ex)
-        {
-            throw ProviderException.InvalidResponse(Id, ex.Message);
-        }
+
+        return document;
     }
 
     private static string BuildSearchPath(string query, int pageSize, int page) =>

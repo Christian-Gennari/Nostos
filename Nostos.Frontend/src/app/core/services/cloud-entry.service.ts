@@ -1,11 +1,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import { CloudOnboardingSnapshot } from '../dtos/cloud-onboarding.dtos';
 import { CloudSession } from '../dtos/cloud-auth.dtos';
 import { CloudAccountDeletionStatus } from '../dtos/cloud-account-deletion.dtos';
-import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
 import { CloudAccountDeletionService } from './cloud-account-deletion.service';
 import { BooksService } from './books.service';
 import { CloudAuthService } from './cloud-auth.service';
@@ -49,9 +48,9 @@ const DEPLOYMENT_MODE_KEY = 'nostos.deployment-mode';
  */
 @Injectable({ providedIn: 'root' })
 export class CloudEntryService {
+  private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly session = signal<CloudSession | null>(null);
   private readonly requestedOffer = signal<string | null>(null);
-  private readonly deploymentCapabilities = signal<DeploymentCapabilities | null>(null);
   private hasAutoAdvancedCheckout = false;
   private pollHandle: ReturnType<typeof setTimeout> | undefined;
 
@@ -73,9 +72,7 @@ export class CloudEntryService {
   readonly canCancelDeletion = computed(
     () => this.accountDeletionStatus()?.canCancel ?? true,
   );
-  readonly accountManagementUrl = computed(
-    () => this.deploymentCapabilities()?.accountManagementUrl ?? null,
-  );
+  readonly accountManagementUrl = this.capabilities.accountManagementUrl;
   readonly productReady = computed(() => this.view().kind === 'product');
   readonly selectedOffer = computed(() => this.view().onboarding?.selectedOffer ?? null);
 
@@ -84,28 +81,15 @@ export class CloudEntryService {
    * keeps the legacy first-run import; true mounts the shared import flow.
    * Never inferred from the deployment mode.
    */
-  readonly supportsLibraryMigration = computed(
-    () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
-  );
-  /** A SelfHosted server with an external media folder configured (#843). */
-  readonly supportsExternalMediaLibraries = computed(
-    () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
-  );
-  /** A SelfHosted server that can read a Calibre library (#1527). */
-  readonly supportsCalibreImport = computed(
-    () => this.deploymentCapabilities()?.supportsCalibreImport === true,
-  );
+  readonly supportsLibraryMigration = this.capabilities.supportsLibraryMigration;
 
   /**
    * Server-authoritative safe activation (#681). The shared import flow only
    * starts activation when this is true; false keeps the gated explanation.
    */
-  readonly supportsSafeActivation = computed(
-    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
-  );
+  readonly supportsSafeActivation = this.capabilities.supportsSafeActivation;
 
   constructor(
-    private readonly capabilities: DeploymentCapabilitiesService,
     private readonly auth: CloudAuthService,
     private readonly onboarding: CloudOnboardingService,
     private readonly portableLibrary: PortableLibraryService,
@@ -139,7 +123,6 @@ export class CloudEntryService {
         : null;
 
       const capabilities = await capabilitiesRequest;
-      this.deploymentCapabilities.set(capabilities);
       this.rememberDeploymentMode(capabilities.deploymentMode);
       if (capabilities.deploymentMode === 'SelfHosted') {
         this.session.set(null);
@@ -174,7 +157,6 @@ export class CloudEntryService {
 
       await this.refreshOnboarding();
     } catch {
-      this.deploymentCapabilities.set(null);
       this.view.set({ kind: 'backend_error' });
     }
   }

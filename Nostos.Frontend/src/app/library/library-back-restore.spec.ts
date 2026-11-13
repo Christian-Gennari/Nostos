@@ -9,7 +9,7 @@ import { vi } from 'vitest';
 import { BookSort } from '../core/dtos/book.enums';
 import type { Book, PaginatedResponse } from '../core/dtos/book.dtos';
 import { BooksService, type BookListOptions } from '../core/services/books.service';
-import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { ImportService } from '../core/services/import.service';
@@ -132,7 +132,7 @@ describe('Library Back restore', () => {
           } as unknown as CollectionsService,
         },
         { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
-        { provide: CloudEntryService, useValue: { supportsExternalMediaLibraries: () => false } },
+        { provide: DeploymentCapabilitiesService, useValue: { supportsExternalMediaLibraries: () => false } },
         { provide: ExternalMediaService, useValue: { book: vi.fn() } },
         {
           provide: ImportService,

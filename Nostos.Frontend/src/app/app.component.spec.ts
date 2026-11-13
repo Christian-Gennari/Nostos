@@ -4,13 +4,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
-import { of } from 'rxjs';
 import { App } from './app.component';
 import { WorkspaceLayout } from './layout/workspace-layout/workspace-layout.component';
 import { AssistantStatusService } from './ui/assistant/assistant-status.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
 import { HostedBrowserIntegrationService } from './core/services/hosted-browser-integration.service';
 import { DeploymentCapabilitiesService } from './core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from './core/services/deployment-capabilities.testing';
 import { DeploymentCapabilities } from './core/dtos/deployment-capabilities.dtos';
 import { LibraryPreferencesService } from './core/services/library-preferences.service';
 import { LibraryActivationController } from './library-transfer/services/library-activation-controller.service';
@@ -147,7 +147,7 @@ describe('App activation boundary', () => {
         },
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of(cloudCapabilities), peek: () => cloudCapabilities },
+          useValue: createDeploymentCapabilitiesServiceMock(cloudCapabilities),
         },
         {
           provide: LibraryActivationController,
@@ -250,7 +250,7 @@ describe('App shell utility area', () => {
         },
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of(cloudCapabilities), peek: () => cloudCapabilities },
+          useValue: createDeploymentCapabilitiesServiceMock(cloudCapabilities),
         },
       ],
     }).compileComponents();

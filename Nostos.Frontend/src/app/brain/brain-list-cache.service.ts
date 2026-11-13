@@ -1,4 +1,5 @@
-import { Injectable, inject } from '@angular/core';
+import { DestroyRef, Injectable, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationStart, Router } from '@angular/router';
 
 import type { NoteBookFacet, NoteSearchHit } from '../core/dtos/note.dtos';
@@ -22,11 +23,12 @@ const KEPT = 12;
  */
 @Injectable({ providedIn: 'root' })
 export class BrainListCacheService {
+  private readonly destroyRef = inject(DestroyRef);
   private readonly snapshots = new Map<string, BrainListSnapshot>();
   private lastWasHistory = false;
 
   constructor() {
-    inject(Router).events.subscribe((event) => {
+    inject(Router).events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((event) => {
       if (event instanceof NavigationStart) this.lastWasHistory = event.navigationTrigger === 'popstate';
     });
   }

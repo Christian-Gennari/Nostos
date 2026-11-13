@@ -193,6 +193,31 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     }
 
     [Fact]
+    public void Unique_violation_detection_recognizes_db_exception_sqlstate()
+    {
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "db exception unique",
+                    new FakeDbException("23505")))
+            .Should().BeTrue();
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "nested db exception unique",
+                    new InvalidOperationException("wrapper", new FakeDbException("23505"))))
+            .Should().BeTrue();
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "db exception fk",
+                    new FakeDbException("23503")))
+            .Should().BeFalse();
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "db exception null sqlstate",
+                    new FakeDbException(null)))
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Get_returns_null_for_an_unknown_job()
     {
         await using var harness = await NewHarnessAsync();
@@ -1708,5 +1733,10 @@ public sealed class EfMigrationJobStoreTests : IDisposable
         }
 
         public async ValueTask DisposeAsync() => await Db.DisposeAsync();
+    }
+
+    private sealed class FakeDbException(string? sqlState) : DbException
+    {
+        public override string? SqlState => sqlState;
     }
 }

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, signal, untracked } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
@@ -42,6 +42,7 @@ export class BrainNotePage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly notesService = inject(NotesService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly state = inject(BrainStateService);
   readonly noteActions = inject(BrainNoteActionsService);
@@ -68,7 +69,7 @@ export class BrainNotePage {
     if (this.wideMedia) {
       const onChange = (event: MediaQueryListEvent) => this.wide.set(event.matches);
       this.wideMedia.addEventListener('change', onChange);
-      inject(DestroyRef).onDestroy(() => this.wideMedia?.removeEventListener('change', onChange));
+      this.destroyRef.onDestroy(() => this.wideMedia?.removeEventListener('change', onChange));
     }
 
     effect(() => {
@@ -100,7 +101,7 @@ export class BrainNotePage {
     this.note.set(null);
     this.failed.set(false);
     if (!id) return;
-    this.notesService.get(id).subscribe({
+    this.notesService.get(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (note) => {
         if (this.noteId() === id) this.note.set(note);
       },

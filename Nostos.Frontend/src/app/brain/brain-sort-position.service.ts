@@ -1,4 +1,5 @@
-import { Injectable, inject } from '@angular/core';
+import { DestroyRef, Injectable, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Observable, catchError, defer, map, of, switchMap } from 'rxjs';
 
 import { CloudAuthService } from '../core/services/cloud-auth.service';
@@ -28,6 +29,7 @@ export function sortQueueKey(book: string | null, order: string, query: string |
 export class BrainSortPositionService {
   private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly cloudAuth = inject(CloudAuthService);
+  private readonly destroyRef = inject(DestroyRef);
 
   /** Resolved per use, so a sign-in or sign-out in this tab moves to that account's key. */
   private readonly key$: Observable<string | null> = defer(() => this.capabilities.get()).pipe(
@@ -58,7 +60,7 @@ export class BrainSortPositionService {
   }
 
   write(position: SortPosition | null): void {
-    this.key$.subscribe((key) => {
+    this.key$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((key) => {
       if (!key) return;
       try {
         if (position) localStorage.setItem(key, JSON.stringify(position));

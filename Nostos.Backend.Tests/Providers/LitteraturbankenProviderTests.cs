@@ -457,18 +457,49 @@ public sealed class LitteraturbankenProviderTests
         handler.RecordedRequests.Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task Search_MapsTransportFailureToProviderUnavailable()
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task Search_MapsTransportFailureToProviderUnavailable(Type exceptionType)
     {
         var (provider, _) = CreateProvider(_ =>
-            throw new HttpRequestException("connection reset"));
+            throw (Exception)Activator.CreateInstance(exceptionType, "connection reset")!);
 
         var act = () => provider.SearchAsync(
             new ProviderSearchQuery("Kåtornas folk"),
             CancellationToken.None);
 
-        var error = await act.Should().ThrowAsync<ProviderException>();
-        error.Which.Code.Should().Be(ProviderException.Unavailable);
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(LitteraturbankenProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Search_MapsClientTimeoutToProviderUnavailable_WhilePreservingCallerCancellation()
+    {
+        var timeoutProvider = new LitteraturbankenProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri(LitteraturbankenProvider.BaseUrl),
+                TimeSpan.FromMilliseconds(25)));
+
+        var timeoutAct = () => timeoutProvider.SearchAsync(
+            new ProviderSearchQuery("Kåtornas folk"),
+            CancellationToken.None);
+        var error = (await timeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(LitteraturbankenProvider.ProviderIdentifier);
+
+        using var cts = new CancellationTokenSource();
+        var (cancelProvider, _) = CreateProvider(_ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        var cancelAct = () => cancelProvider.SearchAsync(
+            new ProviderSearchQuery("Kåtornas folk"),
+            cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
     }
 
     private static HttpResponseMessage Json(string value) =>

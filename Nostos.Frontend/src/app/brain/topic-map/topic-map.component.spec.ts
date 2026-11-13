@@ -1356,4 +1356,59 @@ describe('TopicMapComponent', () => {
       expect(graph.getNodeAttributes('alpha')['x']).toBe(original['x']);
     });
   });
+
+  describe('lifecycle cleanup', () => {
+    it('cancels pending fullscreen and drag timeouts when destroyed', async () => {
+      vi.useFakeTimers();
+      const origFullscreenEnabled = Object.getOwnPropertyDescriptor(document, 'fullscreenEnabled');
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      try {
+        setTopics(topics);
+        flushGraph();
+
+        const sigma = (globalThis as {
+          __nostosSigma?: { refresh: ReturnType<typeof vi.fn> };
+        }).__nostosSigma!;
+        const refreshSpy = vi.spyOn(sigma, 'refresh');
+        const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+
+        // Trigger pseudo-fullscreen refresh timer and drag-reset timer before destroying.
+        await component.toggleFullscreen();
+
+        const sigmaHandlers = (globalThis as unknown as {
+          __sigmaHandlers: Record<string, (payload?: unknown) => void>;
+        }).__sigmaHandlers;
+        const captor = (globalThis as unknown as {
+          __captor: Record<string, (payload?: unknown) => void>;
+        }).__captor;
+        sigmaHandlers['downNode']!({ node: 'alpha', event: { x: 0, y: 0 } });
+        captor['mousemovebody']!({ x: 50, y: 50, preventSigmaDefault: () => {} });
+        captor['mouseup']!(undefined);
+
+        refreshSpy.mockClear();
+        fixture.destroy();
+        vi.advanceTimersByTime(100);
+
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+        expect(refreshSpy).not.toHaveBeenCalled();
+      } finally {
+        if (origFullscreenEnabled) {
+          Object.defineProperty(document, 'fullscreenEnabled', origFullscreenEnabled);
+        } else {
+          delete (document as unknown as Record<string, unknown>)['fullscreenEnabled'];
+        }
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('aborts an in-flight /api/topics/graph subscription on destroy', () => {
+      setTopics(topics);
+      const req = http.expectOne('/api/topics/graph');
+      expect(req.cancelled).toBe(false);
+
+      fixture.destroy();
+      expect(req.cancelled).toBe(true);
+    });
+  });
 });

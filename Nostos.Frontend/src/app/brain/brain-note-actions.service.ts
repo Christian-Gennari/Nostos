@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, forkJoin, map, of } from 'rxjs';
 
 import type { Note, NoteSearchHit } from '../core/dtos/note.dtos';
@@ -31,6 +32,7 @@ export class BrainNoteActionsService {
   private readonly topics = inject(TopicsService);
   private readonly toast = inject(ToastService);
   private readonly state = inject(BrainStateService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private host: BrainNoteHost | null = null;
 
@@ -103,7 +105,7 @@ export class BrainNoteActionsService {
     if (noteIds.length === 0) return;
     this.setBusy(noteIds, true);
     const request = kind === 'link' ? this.topics.link(topics, noteIds) : this.topics.unlink(topics, noteIds);
-    request.subscribe({
+    request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (result) => {
         this.setBusy(noteIds, false);
         result.notes.forEach((note) => this.host?.replace(note));
@@ -128,7 +130,7 @@ export class BrainNoteActionsService {
   edit(edit: NoteItemEdit, options: { quiet?: boolean } = {}): void {
     this.setBusy([edit.id], true);
     const { id, ...dto } = edit;
-    this.notes.update(id, dto).subscribe({
+    this.notes.update(id, dto).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (saved) => {
         this.host?.edited?.(saved, edit);
         this.reload(id, options.quiet ? null : 'Note saved');
@@ -179,7 +181,7 @@ export class BrainNoteActionsService {
   }
 
   private reload(id: string, message: string | null): void {
-    this.notes.get(id).subscribe({
+    this.notes.get(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (note) => {
         this.setBusy([id], false);
         this.host?.replace(note);
@@ -209,6 +211,7 @@ export class BrainNoteActionsService {
     if (!ids.length || this.deleting()) return;
     this.deleting.set(true);
     forkJoin(ids.map((id) => this.notes.delete(id).pipe(map(() => id), catchError(() => of(null)))))
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((results) => {
         const deleted = results.filter((id): id is string => id !== null);
         deleted.forEach((id) => this.host?.remove(id));

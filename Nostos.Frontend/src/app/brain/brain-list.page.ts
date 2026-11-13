@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toSignal, takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CdkConnectedOverlay, CdkOverlayOrigin, type ConnectedPosition } from '@angular/cdk/overlay';
 
@@ -133,6 +133,7 @@ export class BrainListPage {
   private readonly topicsService = inject(TopicsService);
   private readonly cache = inject(BrainListCacheService);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly state = inject(BrainStateService);
   readonly topicActions = inject(BrainTopicActionsService);
@@ -325,7 +326,7 @@ export class BrainListPage {
     if (this.wideMedia) {
       const onChange = (event: MediaQueryListEvent) => this.wide.set(event.matches);
       this.wideMedia.addEventListener('change', onChange);
-      inject(DestroyRef).onDestroy(() => this.wideMedia?.removeEventListener('change', onChange));
+      this.destroyRef.onDestroy(() => this.wideMedia?.removeEventListener('change', onChange));
     }
 
     // The URL says which note is open; the pane shows it (or the list notices
@@ -363,7 +364,7 @@ export class BrainListPage {
       untracked(() => this.refill());
     });
 
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       if (this.searchTimer !== null) clearTimeout(this.searchTimer);
       this.saveSnapshot();
     });
@@ -486,7 +487,7 @@ export class BrainListPage {
     this.selectedLoadKey = key;
     this.noteLoading.set(true);
     this.noteFailed.set(false);
-    this.notesService.get(id).subscribe({
+    this.notesService.get(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (note) => {
         if (this.selectedNoteId() !== id) return;
         this.selectedNote.set(note);
@@ -607,7 +608,7 @@ export class BrainListPage {
       order: this.order(),
       limit: Math.min(200, Math.max(PAGE_SIZE, this.notes().length + 1)),
       offset: 0,
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
         if (seq !== this.seq) return;
         this.notes.set(page.items);
@@ -632,7 +633,7 @@ export class BrainListPage {
       order: this.order(),
       limit: PAGE_SIZE,
       offset: this.notes().length,
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
         if (seq !== this.seq) return;
         const held = new Set(this.notes().map((note) => note.id));
@@ -659,7 +660,7 @@ export class BrainListPage {
     if (!force && key === this.booksKey) return;
     this.booksKey = key;
     const seq = ++this.booksSeq;
-    this.notesService.books(this.filter()).subscribe({
+    this.notesService.books(this.filter()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (books) => {
         if (seq === this.booksSeq) this.books.set(books);
       },
@@ -678,7 +679,7 @@ export class BrainListPage {
       return;
     }
     if (this.writingUsage() && this.topicId() !== topicId) this.writingUsage.set(null);
-    this.topicsService.getWritingUsage(topicId, USED_IN_FETCHED).subscribe({
+    this.topicsService.getWritingUsage(topicId, USED_IN_FETCHED).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (usage) => {
         if (seq === this.writingUsageSeq) this.writingUsage.set(usage);
       },
@@ -697,7 +698,7 @@ export class BrainListPage {
     this.related.set([]);
     this.relatedExpanded.set(false);
     if (!topicId) return;
-    this.topicsService.getRelated(topicId).subscribe({
+    this.topicsService.getRelated(topicId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (related) => {
         if (this.topicId() !== topicId) return;
         this.related.set([...related].sort((a, b) => b.sharedNotes - a.sharedNotes || a.name.localeCompare(b.name)));
@@ -839,7 +840,7 @@ export class BrainListPage {
 
   /** Keep the topic's notes with a writing: every note it has, not only the ones loaded. */
   keepTopicWithWriting(topic: TopicDto): void {
-    this.topicsService.get(topic.id).subscribe({
+    this.topicsService.get(topic.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (detail) => this.noteActions.keepWithWriting(detail.notes.map((note) => note.noteId)),
       error: () => undefined,
     });

@@ -23,16 +23,22 @@ namespace Nostos.Backend.Tests.Portability;
 /// 404; expired artifacts return 410 with a typed code.
 /// </summary>
 public sealed class MigrationExportDownloadHttpTests
+    : IClassFixture<MigrationExportDownloadHttpTests.MigrationDownloadHostFactory>, IAsyncLifetime
 {
+    private readonly MigrationDownloadHostFactory _factory;
+
+    public MigrationExportDownloadHttpTests(MigrationDownloadHostFactory factory) => _factory = factory;
+
+    public Task InitializeAsync() => _factory.ResetStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     [Fact]
     public async Task Full_download_streams_the_artifact_as_an_attachment()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(2 * 1024 * 1024 + 123);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var response = await client.GetAsync(
             $"/api/portability/migration/jobs/{jobId}/export-download",
@@ -56,12 +62,9 @@ public sealed class MigrationExportDownloadHttpTests
     [InlineData("bytes=-32")]
     public async Task Valid_ranges_return_206_with_exact_slices(string range)
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(2 * 1024 * 1024 + 123);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
@@ -84,12 +87,9 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task If_range_with_matching_etag_returns_206_and_a_stale_etag_returns_the_full_file()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(512 * 1024);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var full = await client.GetAsync(
             $"/api/portability/migration/jobs/{jobId}/export-download");
@@ -117,12 +117,9 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task Invalid_range_returns_416()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(64 * 1024);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
@@ -136,10 +133,7 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task Unknown_and_import_identifiers_return_404()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         using var unknown = await client.GetAsync(
             $"/api/portability/migration/jobs/{Guid.NewGuid()}/export-download");
@@ -147,7 +141,7 @@ public sealed class MigrationExportDownloadHttpTests
         (await ErrorCodeAsync(unknown)).Should().Be("migration_not_found");
 
         Guid importJobId;
-        using (var scope = host.Services.CreateScope())
+        using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
             importJobId = Guid.NewGuid();
@@ -164,20 +158,17 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task Not_completed_job_returns_404_and_expired_artifact_returns_410()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         // An artifact that exists for a job that has not reached Completed.
-        var active = await SeedArtifactAsync(host, DeterministicBytes(128), state: MigrationJobState.Validating);
+        var active = await SeedArtifactAsync(_factory, DeterministicBytes(128), state: MigrationJobState.Validating);
         using var notCompleted = await client.GetAsync(
             $"/api/portability/migration/jobs/{active}/export-download");
         notCompleted.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ErrorCodeAsync(notCompleted)).Should().Be("migration_export_not_available");
 
         var expired = await SeedArtifactAsync(
-            host,
+            _factory,
             DeterministicBytes(128),
             artifactExpired: true);
         using var expiredResponse = await client.GetAsync(
@@ -189,12 +180,9 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task Download_headers_arrive_before_the_body_is_read_and_partial_reads_stream()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(12 * 1024 * 1024);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var response = await client.GetAsync(
             $"/api/portability/migration/jobs/{jobId}/export-download",
@@ -215,12 +203,9 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task Head_returns_the_file_headers_without_a_body()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(256 * 1024);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var request = new HttpRequestMessage(
             HttpMethod.Head,
@@ -237,12 +222,9 @@ public sealed class MigrationExportDownloadHttpTests
     [Fact]
     public async Task An_in_flight_download_survives_the_sweep_deleting_the_artifact()
     {
-        using var factory = new LibraryEndpointFactory();
-        factory.UseKestrel(0);
-        using var host = factory;
         var content = DeterministicBytes(2 * 1024 * 1024 + 7);
-        var jobId = await SeedArtifactAsync(host, content);
-        using var client = host.CreateClient();
+        var jobId = await SeedArtifactAsync(_factory, content);
+        using var client = _factory.CreateClient();
 
         using var response = await client.GetAsync(
             $"/api/portability/migration/jobs/{jobId}/export-download",
@@ -256,7 +238,7 @@ public sealed class MigrationExportDownloadHttpTests
         // Expire the artifact and run the sweep while the response is open. The
         // endpoint serves from the opened handle, so the rest of the body still
         // arrives even though the row is now expired/deleted.
-        await using (var scope = host.Services.CreateAsyncScope())
+        await using (var scope = _factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
             var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
@@ -343,5 +325,13 @@ public sealed class MigrationExportDownloadHttpTests
         return document.RootElement.TryGetProperty("error", out var error)
             ? error.GetString()
             : null;
+    }
+
+    public sealed class MigrationDownloadHostFactory : LibraryEndpointFactory
+    {
+        public MigrationDownloadHostFactory()
+        {
+            UseKestrel(0);
+        }
     }
 }

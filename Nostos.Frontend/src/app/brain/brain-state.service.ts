@@ -1,4 +1,5 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import type { NoteSummary } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
@@ -33,11 +34,12 @@ const NOTE_WRITING_CAPABILITIES = new Set(['notes_capture', 'notes_rewrite_captu
 export class BrainStateService {
   private readonly topicsService = inject(TopicsService);
   private readonly notesService = inject(NotesService);
+  private readonly destroyRef = inject(DestroyRef);
 
   constructor() {
     // Ask Nostos can capture a note or link a topic: the Brain's lists and
     // counts are read again, wherever the reader is.
-    inject(AssistantService).actionExecuted.subscribe(({ capability }) => {
+    inject(AssistantService).actionExecuted.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(({ capability }) => {
       if (NOTE_WRITING_CAPABILITIES.has(capability)) this.topicsChanged();
     });
   }
@@ -104,7 +106,7 @@ export class BrainStateService {
     // arrives last must not undo a newer one.
     const seq = ++this.refreshSeq;
     this.loading = true;
-    this.topicsService.list().subscribe({
+    this.topicsService.list().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (topics) => {
         if (seq !== this.refreshSeq) return;
         this.topics.set(topics);
@@ -123,7 +125,7 @@ export class BrainStateService {
 
   private loadSummary(seq: number): void {
     this.summaryRequested = true;
-    this.notesService.summary().subscribe({
+    this.notesService.summary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (summary) => {
         if (seq === this.refreshSeq) this.summary.set(summary);
       },

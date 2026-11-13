@@ -11,12 +11,21 @@ using Xunit;
 
 namespace Nostos.Backend.Tests.Endpoints;
 
-public sealed class ReadingHistoryImportEndpointTests : IDisposable
+public sealed class ReadingHistoryImportEndpointTests : IClassFixture<LibraryEndpointFactory>, IAsyncLifetime
 {
+    private readonly LibraryEndpointFactory _factory;
     private readonly string _directory =
         Directory.CreateTempSubdirectory("nostos-reading-history-test-").FullName;
 
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public ReadingHistoryImportEndpointTests(LibraryEndpointFactory factory) => _factory = factory;
+
+    public Task InitializeAsync() => _factory.ResetStateAsync();
+
+    public Task DisposeAsync()
+    {
+        Directory.Delete(_directory, recursive: true);
+        return Task.CompletedTask;
+    }
 
     private static string Goodreads => Path.Combine(
         AppContext.BaseDirectory, "Fixtures", "goodreads", "goodreads_library_export.csv");
@@ -27,8 +36,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task Preview_matches_by_isbn13_then_isbn10_then_title_and_author_and_writes_nothing()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var cartographer = await CreateBookAsync(client, "The Cartographer's Daughter", "Ada Vance", "9780000000019");
         var kitchen = await CreateBookAsync(client, "Small Gods of the Kitchen", "Bea Lindqvist", "0000000051");
         var orchard = await CreateBookAsync(client, "The Glass Orchard", "Elias Thorn");
@@ -65,7 +73,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         var ebook = preview.Books.Single(book => book.SourceKey == "goodreads:id:107");
         ebook.Match.Should().Be("none", "a title with no ISBN that is not in the library has no match");
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         (await db.Books.CountAsync()).Should().Be(3);
         (await db.BookImportBatches.CountAsync()).Should().Be(0);
         (await db.ReadingListEntries.CountAsync()).Should().Be(0);
@@ -76,8 +84,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task Commit_sets_work_values_finish_date_shelves_and_private_note()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "The Cartographer's Daughter", "Ada Vance", "9780000000019");
 
         var result = await CommitAsync(client, Goodreads,
@@ -89,7 +96,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         row.BookId.Should().Be(book.Id);
         row.ChangeCount.Should().BeGreaterThanOrEqualTo(5, "rating, review, finish date, two shelves and a note");
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var saved = await db.Books
             .Include(candidate => candidate.Work)
             .Include(candidate => candidate.BookCollections)
@@ -113,8 +120,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task An_older_export_never_overwrites_a_newer_rating_and_undo_restores_both()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         // The file says 4 stars, read 2022-11-02; the library holds a newer 5.
         var book = await CreateBookAsync(
             client, "A Winter in the Salt Marshes", "Nils Berg",
@@ -123,7 +129,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         var result = await CommitAsync(client, Goodreads,
             new ReadingHistoryImportDecision("goodreads:id:102", book.Id));
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             var saved = await db.Books.Include(candidate => candidate.Work).SingleAsync(candidate => candidate.Id == book.Id);
             saved.Work!.Rating.Should().Be(5, "a newer value is never displaced by an older export");
@@ -136,7 +142,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         (await client.DeleteAsync($"/api/books/imports/batches/{result.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             var saved = await db.Books.Include(candidate => candidate.Work).SingleAsync(candidate => candidate.Id == book.Id);
             saved.Work!.Rating.Should().Be(5);
@@ -150,15 +156,14 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task A_newer_export_moves_the_library_rating_to_the_edition()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(
             client, "A Winter in the Salt Marshes", "Nils Berg",
             rating: 3, finishedAt: "2019-01-01T00:00:00Z");
 
         await CommitAsync(client, Goodreads, new ReadingHistoryImportDecision("goodreads:id:102", book.Id));
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var saved = await db.Books.Include(candidate => candidate.Work).SingleAsync(candidate => candidate.Id == book.Id);
         saved.Work!.Rating.Should().Be(4, "the file was read after the library's last read");
         saved.Progress.Rating.Should().Be(3, "the value the work used to hold is kept on the edition");
@@ -168,8 +173,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task Reimporting_the_same_file_adds_nothing_and_can_be_undone_and_imported_again()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "The Cartographer's Daughter", "Ada Vance", "9780000000019");
 
         var first = await CommitAsync(client, Goodreads,
@@ -185,7 +189,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         repeat.BatchId.Should().BeNull("an import that changes nothing has nothing to undo");
         repeat.Books.Single(entry => entry.SourceKey == "goodreads:id:101").Status.Should().Be("unchanged");
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             (await db.BookImportBatches.CountAsync()).Should().Be(1);
             (await db.Notes.CountAsync()).Should().Be(1);
@@ -196,7 +200,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         (await client.DeleteAsync($"/api/books/imports/batches/{first.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             (await db.BookImportBatches.CountAsync()).Should().Be(0);
             (await db.Notes.CountAsync()).Should().Be(0);
@@ -213,8 +217,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task A_later_edit_is_not_lost_by_undo()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "A Winter in the Salt Marshes", "Nils Berg");
 
         var result = await CommitAsync(client, Goodreads,
@@ -225,7 +228,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         (await client.DeleteAsync($"/api/books/imports/batches/{result.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var saved = await db.Books.Include(candidate => candidate.Work).SingleAsync(candidate => candidate.Id == book.Id);
         saved.Work!.Rating.Should().Be(5, "undo only takes back what the import itself wrote");
     }
@@ -233,8 +236,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task To_read_goes_to_the_reading_list_and_creates_no_book()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var result = await CommitAsync(client, Goodreads,
             new ReadingHistoryImportDecision("goodreads:id:103", Create: true));
@@ -244,7 +246,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         row.BookId.Should().BeNull();
         row.Created.Should().BeFalse();
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             (await db.Books.CountAsync()).Should().Be(0);
             var entry = await db.ReadingListEntries.AsNoTracking().SingleAsync();
@@ -260,15 +262,14 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         // Undo takes the entry back as well.
         (await client.DeleteAsync($"/api/books/imports/batches/{result.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
             (await db.ReadingListEntries.CountAsync()).Should().Be(0);
     }
 
     [Fact]
     public async Task Shelves_become_collections_only_when_the_owner_maps_them()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var cartographer = await CreateBookAsync(client, "The Cartographer's Daughter", "Ada Vance", "9780000000019");
         var silence = await CreateBookAsync(client, "Nine Kinds of Silence", "Ruth Okonkwo", "9780000000064");
 
@@ -276,7 +277,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
             new ReadingHistoryImportDecision("goodreads:id:101", cartographer.Id),
             new ReadingHistoryImportDecision("goodreads:id:106", silence.Id, MapShelves: true));
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var collections = await db.Collections.AsNoTracking().OrderBy(collection => collection.Name).ToListAsync();
         collections.Select(collection => collection.Name).Should().Equal("book club", "literary");
         var mapped = await db.Books.Include(candidate => candidate.BookCollections)
@@ -290,8 +291,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task A_new_unmatched_book_can_be_added_and_undo_takes_it_back()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var result = await CommitAsync(client, Goodreads,
             new ReadingHistoryImportDecision("goodreads:id:110", Create: true));
@@ -300,7 +300,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         row.Created.Should().BeTrue();
         row.BookId.Should().NotBeNull();
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             var saved = await db.Books.Include(candidate => candidate.Work).SingleAsync();
             saved.Title.Should().Be("Dune, or: \"The Spice\" Must Flow");
@@ -311,15 +311,14 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
         (await client.DeleteAsync($"/api/books/imports/batches/{result.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
             (await db.Books.CountAsync()).Should().Be(0, "the book was added by this import");
     }
 
     [Fact]
     public async Task A_storygraph_export_rounds_quarter_stars_and_uses_dates_read()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var kitchen = await CreateBookAsync(client, "Small Gods of the Kitchen", "Bea Lindqvist", "0000000051");
         var estuary = await CreateBookAsync(client, "The Long Estuary", "Sam Achterberg");
         var glass = await CreateBookAsync(client, "The Glass Orchard", "Elias Thorn");
@@ -336,7 +335,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
             new ReadingHistoryImportDecision("storygraph:meta:THE LONG ESTUARY|SAM ACHTERBERG", estuary.Id),
             new ReadingHistoryImportDecision("storygraph:isbn:9780000000057", glass.Id));
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var kitchenBook = await db.Books.Include(candidate => candidate.Work).SingleAsync(candidate => candidate.Id == kitchen.Id);
         kitchenBook.Work!.Rating.Should().Be(4, "4.25 rounds to 4");
         kitchenBook.Progress.FinishedAt.Should().Be(new DateTime(2023, 5, 1, 0, 0, 0, DateTimeKind.Utc));
@@ -354,8 +353,7 @@ public sealed class ReadingHistoryImportEndpointTests : IDisposable
     [Fact]
     public async Task A_file_that_is_neither_source_is_rejected_and_batches_list_what_was_imported()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var other = Path.Combine(_directory, "library.csv");
         await File.WriteAllTextAsync(other, "Title,Author\nA Book,Someone\n");

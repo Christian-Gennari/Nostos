@@ -44,120 +44,98 @@ public sealed partial class StandardEbooksProvider
         if (continuation is not null)
             await Task.Delay(SnapshotPageDelay, _clock, ct);
 
-        HttpResponseMessage response;
-        try
-        {
-            response = await SendSnapshotPageAsync(
+        using var response = await ProviderHttp.ExecuteAsync(
+            ProviderIdentifier,
+            ct,
+            token => SendSnapshotPageAsync(
                 requestUri,
                 etag: continuation is null && mode == SnapshotMode.Incremental ? request.ETag : null,
                 ifModifiedSince: continuation is null && mode == SnapshotMode.Incremental ? request.IfModifiedSince : null,
                 useValidators: continuation is null && mode == SnapshotMode.Incremental,
-                ct);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw ProviderException.UnavailableFor(ProviderIdentifier, ex.Message);
-        }
-        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
-        {
-            throw ProviderException.UnavailableFor(ProviderIdentifier, ex.Message);
-        }
+                token));
 
-        using (response)
+        if (response.StatusCode == HttpStatusCode.NotModified)
         {
-            if (response.StatusCode == HttpStatusCode.NotModified)
-            {
-                if (continuation is not null || mode != SnapshotMode.Incremental)
-                {
-                    throw ProviderException.UnavailableFor(
-                        ProviderIdentifier,
-                        "the complete catalog unexpectedly answered HTTP 304");
-                }
-
-                return ProviderSnapshot.NotModified(
-                    etag: response.Headers.ETag?.ToString() ?? request.ETag,
-                    lastModified: response.Content.Headers.LastModified ?? request.IfModifiedSince);
-            }
-
-            if (!response.IsSuccessStatusCode)
+            if (continuation is not null || mode != SnapshotMode.Incremental)
             {
                 throw ProviderException.UnavailableFor(
                     ProviderIdentifier,
-                    $"the OPDS catalog answered HTTP {(int)response.StatusCode}");
+                    "the complete catalog unexpectedly answered HTTP 304");
             }
 
-            XDocument feed;
+            return ProviderSnapshot.NotModified(
+                etag: response.Headers.ETag?.ToString() ?? request.ETag,
+                lastModified: response.Content.Headers.LastModified ?? request.IfModifiedSince);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw ProviderException.UnavailableFor(
+                ProviderIdentifier,
+                $"the OPDS catalog answered HTTP {(int)response.StatusCode}");
+        }
+
+        var feed = await ProviderHttp.ExecuteAsync(ProviderIdentifier, ct, async token =>
+        {
             try
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                feed = await XDocument.LoadAsync(stream, LoadOptions.None, ct);
+                await using var stream = await response.Content.ReadAsStreamAsync(token);
+                return await XDocument.LoadAsync(stream, LoadOptions.None, token);
             }
             catch (XmlException ex)
             {
                 throw ProviderException.InvalidResponse(ProviderIdentifier, ex.Message);
             }
-            catch (HttpRequestException ex)
-            {
-                throw ProviderException.UnavailableFor(ProviderIdentifier, ex.Message);
-            }
-            catch (IOException ex)
-            {
-                throw ProviderException.UnavailableFor(ProviderIdentifier, ex.Message);
-            }
-            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
-            {
-                throw ProviderException.UnavailableFor(ProviderIdentifier, ex.Message);
-            }
+        });
 
-            if (!StandardEbooksCatalog.IsFeed(feed))
-            {
-                throw ProviderException.InvalidResponse(
-                    ProviderIdentifier,
-                    "the response was not an OPDS Atom feed");
-            }
+        if (!StandardEbooksCatalog.IsFeed(feed))
+        {
+            throw ProviderException.InvalidResponse(
+                ProviderIdentifier,
+                "the response was not an OPDS Atom feed");
+        }
 
-            var etag = response.Headers.ETag?.ToString()
-                ?? continuation?.ETag
-                ?? (mode == SnapshotMode.Incremental ? request.ETag : null);
-            var lastModified = response.Content.Headers.LastModified
-                ?? continuation?.LastModified
-                ?? (mode == SnapshotMode.Incremental ? request.IfModifiedSince : null);
+        var etag = response.Headers.ETag?.ToString()
+            ?? continuation?.ETag
+            ?? (mode == SnapshotMode.Incremental ? request.ETag : null);
+        var lastModified = response.Content.Headers.LastModified
+            ?? continuation?.LastModified
+            ?? (mode == SnapshotMode.Incremental ? request.IfModifiedSince : null);
 
-            var nextPage = StandardEbooksCatalog.NextPageUri(feed, requestUri);
-            if (nextPage == requestUri)
-            {
-                throw ProviderException.InvalidResponse(
-                    ProviderIdentifier,
-                    "the OPDS catalog linked to the page it had just returned");
-            }
+        var nextPage = StandardEbooksCatalog.NextPageUri(feed, requestUri);
+        if (nextPage == requestUri)
+        {
+            throw ProviderException.InvalidResponse(
+                ProviderIdentifier,
+                "the OPDS catalog linked to the page it had just returned");
+        }
 
-            if (nextPage is not null && (continuation?.PageNumber ?? 1) >= MaximumSnapshotPages)
-            {
-                throw ProviderException.InvalidResponse(
-                    ProviderIdentifier,
-                    $"the OPDS catalog exceeded {MaximumSnapshotPages} sequential pages");
-            }
+        if (nextPage is not null && (continuation?.PageNumber ?? 1) >= MaximumSnapshotPages)
+        {
+            throw ProviderException.InvalidResponse(
+                ProviderIdentifier,
+                $"the OPDS catalog exceeded {MaximumSnapshotPages} sequential pages");
+        }
 
-            var nextCursor = nextPage is null
-                ? null
-                : new SnapshotCursor(
-                    Mode: mode,
-                    NextPageUri: nextPage,
-                    ETag: etag,
-                    LastModified: lastModified,
-                    PageNumber: (continuation?.PageNumber ?? 1) + 1).Encode();
-
-            var items = StandardEbooksCatalog.Parse(feed)
-                .Select(book => ToProviderItem(book, includeAssets: false))
-                .ToList();
-
-            return new ProviderSnapshot(
-                ProviderSnapshotStatus.Updated,
-                items.ToAsyncEnumerable(),
+        var nextCursor = nextPage is null
+            ? null
+            : new SnapshotCursor(
+                Mode: mode,
+                NextPageUri: nextPage,
                 ETag: etag,
                 LastModified: lastModified,
-                NextCursor: nextCursor);
-        }
+                PageNumber: (continuation?.PageNumber ?? 1) + 1).Encode();
+
+        var items = StandardEbooksCatalog.Parse(feed)
+            .Select(book => ToProviderItem(book, includeAssets: false))
+            .ToList();
+
+        return new ProviderSnapshot(
+            ProviderSnapshotStatus.Updated,
+            items.ToAsyncEnumerable(),
+            ETag: etag,
+            LastModified: lastModified,
+            NextCursor: nextCursor);
     }
 
     private async Task<HttpResponseMessage> SendSnapshotPageAsync(

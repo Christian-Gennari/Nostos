@@ -1,7 +1,6 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
 
 import {
   FeedbackLinkService,
@@ -9,7 +8,9 @@ import {
   withFeedbackOrigin,
 } from './feedback-link.service';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from './deployment-capabilities.testing';
 import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
+import { Subject, of, throwError } from 'rxjs';
 
 @Component({ standalone: true, template: '' })
 class BlankComponent {}
@@ -82,20 +83,21 @@ describe('withFeedbackOrigin', () => {
 describe('FeedbackLinkService', () => {
   let capabilities: DeploymentCapabilities;
   let capabilitiesError: Error | null;
+  let capabilitiesMock: ReturnType<typeof createDeploymentCapabilitiesServiceMock>;
 
   beforeEach(() => {
     capabilities = cloudCapabilities;
     capabilitiesError = null;
+    capabilitiesMock = createDeploymentCapabilitiesServiceMock(() =>
+      capabilitiesError ? throwError(() => capabilitiesError) : of(capabilities),
+    );
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([{ path: '**', component: BlankComponent }]),
         {
           provide: DeploymentCapabilitiesService,
-          useValue: {
-            get: () =>
-              capabilitiesError ? throwError(() => capabilitiesError) : of(capabilities),
-          },
+          useValue: capabilitiesMock,
         },
       ],
     });
@@ -132,5 +134,18 @@ describe('FeedbackLinkService', () => {
     capabilitiesError = new Error('offline');
     const service = await serviceAt('/library');
     expect(service.url()).toBeNull();
+  });
+
+  it('reactively updates url when capabilities resolve after construction', async () => {
+    const pending = new Subject<DeploymentCapabilities>();
+    TestBed.overrideProvider(DeploymentCapabilitiesService, {
+      useValue: createDeploymentCapabilitiesServiceMock(() => pending.asObservable()),
+    });
+
+    const service = await serviceAt('/library');
+    expect(service.url()).toBeNull();
+
+    pending.next(cloudCapabilities);
+    expect(service.url()).toBe('https://nostos.page/feedback?from=library');
   });
 });

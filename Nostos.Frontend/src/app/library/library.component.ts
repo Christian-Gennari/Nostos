@@ -57,7 +57,7 @@ import { SearchFieldComponent } from '../ui/search-field/search-field.component'
 import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { READING_STATUS_LABEL } from '../core/reading-status';
-import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { CheckboxDirective } from '../ui/check/check.directive';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
@@ -194,7 +194,7 @@ export class Library implements OnInit, OnDestroy {
   /** The background-import feed. Owned by the service, not by this list. */
   readonly imports = inject(ImportService);
   private readonly libraryChanges = inject(LibraryChangesService);
-  private readonly cloudEntry = inject(CloudEntryService);
+  private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly externalMedia = inject(ExternalMediaService);
   private readonly listCache = inject(LibraryListCacheService);
 
@@ -1088,7 +1088,7 @@ export class Library implements OnInit, OnDestroy {
   private askDelete(book: Book): void {
     this.deleteLookup?.unsubscribe();
     this.deleteTargetLinked.set(false);
-    if (!book.hasFile || !this.cloudEntry.supportsExternalMediaLibraries()) {
+    if (!book.hasFile || !this.capabilities.supportsExternalMediaLibraries()) {
       this.deleteTarget.set(book);
       return;
     }
@@ -1232,7 +1232,7 @@ export class Library implements OnInit, OnDestroy {
   readonly bulkDeleteDescription = computed(
     () =>
       'This action cannot be undone. The book files, annotations, and all reading progress will be permanently deleted from your library.' +
-      (this.cloudEntry.supportsExternalMediaLibraries()
+      (this.capabilities.supportsExternalMediaLibraries()
         ? ' Books linked from an external media folder are only removed from Nostos; their original files stay.'
         : ''),
   );

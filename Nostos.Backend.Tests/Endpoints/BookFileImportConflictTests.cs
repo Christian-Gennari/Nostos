@@ -16,17 +16,25 @@ namespace Nostos.Backend.Tests.Endpoints;
 
 /// <summary>Provider acquisitions and manual writes must never race on one book.</summary>
 public sealed class BookFileImportConflictTests
+    : IClassFixture<LibraryEndpointFactory>, IAsyncLifetime
 {
+    private readonly LibraryEndpointFactory _factory;
+
+    public BookFileImportConflictTests(LibraryEndpointFactory factory) => _factory = factory;
+
+    public Task InitializeAsync() => _factory.ResetStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     [Theory]
     [InlineData(BookStatus.Downloading)]
     [InlineData(BookStatus.Transcoding)]
     public async Task Upload_to_importing_book_is_conflict_without_writing_any_file(BookStatus status)
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var row = await db.Books.SingleAsync(b => b.Id == book.Id);
             row.Status = status;
@@ -37,24 +45,23 @@ public sealed class BookFileImportConflictTests
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().Contain("book_import_in_progress");
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var saved = await db.Books.SingleAsync(b => b.Id == book.Id);
             saved.Status.Should().Be(status);
             saved.FileDetails.HasFile.Should().BeFalse();
             saved.FileDetails.FileName.Should().BeNull();
         }
-        Directory.Exists(Path.Combine(factory.BooksRootPath, book.Id.ToString()))
+        Directory.Exists(Path.Combine(_factory.BooksRootPath, book.Id.ToString()))
             .Should().BeFalse("rejection must precede writing to durable storage");
     }
 
     [Fact]
     public async Task Upload_rejected_while_acquisition_owns_a_ready_book()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
-        var gate = factory.Services.GetRequiredService<BookFileMutationGate>();
+        var gate = _factory.Services.GetRequiredService<BookFileMutationGate>();
 
         using (await gate.EnterAsync(book.Id, CancellationToken.None))
         {
@@ -63,7 +70,7 @@ public sealed class BookFileImportConflictTests
         }
 
         // A conflicting request must not change even a Ready book's metadata.
-        await using var db = OpenDb(factory.DatabasePath);
+        await using var db = OpenDb(_factory.DatabasePath);
         var saved = await db.Books.SingleAsync(b => b.Id == book.Id);
         saved.Status.Should().Be(BookStatus.Ready);
         saved.FileDetails.HasFile.Should().BeFalse();
@@ -77,11 +84,10 @@ public sealed class BookFileImportConflictTests
     [Fact]
     public async Task Upload_to_book_with_a_file_is_refused_unless_replace_is_asked_for()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var row = await db.Books.SingleAsync(b => b.Id == book.Id);
             row.FileDetails.HasFile = true;
@@ -93,7 +99,7 @@ public sealed class BookFileImportConflictTests
         refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await refused.Content.ReadAsStringAsync()).Should().Contain("book_has_file");
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var saved = await db.Books.SingleAsync(b => b.Id == book.Id);
             saved.FileDetails.FileName.Should().Be("original.pdf");
@@ -102,7 +108,7 @@ public sealed class BookFileImportConflictTests
         using var replaced = await UploadAsync(client, book.Id, "?replace=true");
         replaced.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var saved = await db.Books.SingleAsync(b => b.Id == book.Id);
             saved.FileDetails.FileName.Should().NotBe("original.pdf");
@@ -112,8 +118,7 @@ public sealed class BookFileImportConflictTests
     [Fact]
     public async Task Book_list_reports_its_page_size_ceiling()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         using var response = await client.GetAsync("/api/books?pageSize=200");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
