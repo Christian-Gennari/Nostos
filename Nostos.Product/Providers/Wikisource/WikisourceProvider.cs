@@ -114,67 +114,52 @@ public sealed class WikisourceProvider : IContentProvider,
     /// </summary>
     public async Task<ProviderSnapshot> ReadAsync(ProviderSnapshotRequest request, CancellationToken ct)
     {
-        try
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, WikisourceCatalog.CatalogPath);
+
+        if (!string.IsNullOrWhiteSpace(request.ETag)
+            && EntityTagHeaderValue.TryParse(request.ETag, out var entityTag))
         {
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, WikisourceCatalog.CatalogPath);
+            httpRequest.Headers.IfNoneMatch.Add(entityTag);
+        }
 
-            if (!string.IsNullOrWhiteSpace(request.ETag)
-                && EntityTagHeaderValue.TryParse(request.ETag, out var entityTag))
-            {
-                httpRequest.Headers.IfNoneMatch.Add(entityTag);
-            }
+        if (request.IfModifiedSince is { } ifModifiedSince)
+            httpRequest.Headers.IfModifiedSince = ifModifiedSince;
 
-            if (request.IfModifiedSince is { } ifModifiedSince)
-                httpRequest.Headers.IfModifiedSince = ifModifiedSince;
+        using var response = await ProviderHttp.SendHeadersAsync(_http, Id, httpRequest, ct);
 
-            using var response = await _http.SendAsync(
-                httpRequest,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
+        if (response.StatusCode == HttpStatusCode.NotModified)
+        {
+            return ProviderSnapshot.NotModified(
+                etag: request.ETag ?? response.Headers.ETag?.ToString(),
+                lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
+        }
 
-            if (response.StatusCode == HttpStatusCode.NotModified)
-            {
-                return ProviderSnapshot.NotModified(
-                    etag: request.ETag ?? response.Headers.ETag?.ToString(),
-                    lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
-            }
+        if (!response.IsSuccessStatusCode)
+            throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
 
-            if (!response.IsSuccessStatusCode)
-                throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
-
-            XDocument document;
+        var document = await ProviderHttp.ExecuteAsync(Id, ct, async token =>
+        {
             try
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                document = await XDocument.LoadAsync(stream, LoadOptions.None, ct);
+                await using var stream = await response.Content.ReadAsStreamAsync(token);
+                return await XDocument.LoadAsync(stream, LoadOptions.None, token);
             }
             catch (XmlException ex)
             {
                 throw ProviderException.InvalidResponse(Id, ex.Message);
             }
+        });
 
-            if (!WikisourceCatalog.IsAtomDocument(document))
-                throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
+        if (!WikisourceCatalog.IsAtomDocument(document))
+            throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
 
-            return new ProviderSnapshot(
-                ProviderSnapshotStatus.Updated,
-                WikisourceCatalog.Parse(document)
-                    .Select(book => ToProviderItem(book))
-                    .ToAsyncEnumerable(),
-                ETag: response.Headers.ETag?.ToString(),
-                LastModified: response.Content.Headers.LastModified);
-        }
-        catch (HttpRequestException ex)
-        {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
-        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
-        {
-            // The 20 s client timeout surfaces as an OperationCanceledException
-            // that has nothing to do with the caller's token. A sync that only
-            // knows provider_unavailable would not recognise a raw one.
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
+        return new ProviderSnapshot(
+            ProviderSnapshotStatus.Updated,
+            WikisourceCatalog.Parse(document)
+                .Select(book => ToProviderItem(book))
+                .ToAsyncEnumerable(),
+            ETag: response.Headers.ETag?.ToString(),
+            LastModified: response.Content.Headers.LastModified);
     }
 
     public async Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(
@@ -228,6 +213,8 @@ public sealed class WikisourceProvider : IContentProvider,
     /// </summary>
     private async Task<IReadOnlyList<WikisourceBook>> GetCatalogAsync(CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+
         Task<CatalogSnapshot> refresh;
         lock (_catalogGate)
         {
@@ -284,20 +271,20 @@ public sealed class WikisourceProvider : IContentProvider,
 
     private async Task<XDocument?> LoadAsync(string path, CancellationToken ct)
     {
-        try
+        using var response = await ProviderHttp.GetHeadersAsync(_http, Id, path, ct);
+
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
+            return null;
+
+        if (!response.IsSuccessStatusCode)
+            throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
+
+        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
         {
-            using var response = await _http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
-
-            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
-                return null;
-
-            if (!response.IsSuccessStatusCode)
-                throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
-
             try
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                var document = await XDocument.LoadAsync(stream, LoadOptions.None, ct);
+                await using var stream = await response.Content.ReadAsStreamAsync(token);
+                var document = await XDocument.LoadAsync(stream, LoadOptions.None, token);
                 if (!WikisourceCatalog.IsAtomDocument(document))
                     throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
 
@@ -307,11 +294,7 @@ public sealed class WikisourceProvider : IContentProvider,
             {
                 throw ProviderException.InvalidResponse(Id, ex.Message);
             }
-        }
-        catch (HttpRequestException ex)
-        {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
+        });
     }
 
     private static bool Matches(WikisourceBook book, IReadOnlyList<string> terms)

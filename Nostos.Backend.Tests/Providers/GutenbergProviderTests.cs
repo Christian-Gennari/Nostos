@@ -498,6 +498,118 @@ public sealed class GutenbergProviderTests
         handler.RecordedRequests.Should().ContainSingle();
     }
 
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task Search_MapsTransientTransportFailureToProviderUnavailable(Type exceptionType)
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ => throw (Exception)Activator.CreateInstance(exceptionType, "socket failure")!);
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("austen"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(GutenbergProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Search_MapsMidStreamIOExceptionToProviderUnavailable()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.SetFallback(_ => TransientHttpTestHelpers.ChunkThenThrowXmlResponse(
+            "<?xml version=\"1.0\"?><feed>",
+            () => new IOException("connection dropped mid-body")));
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("austen"), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(GutenbergProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Search_MapsClientTimeoutToProviderUnavailable_WhilePreservingCallerCancellation()
+    {
+        var timeoutProvider = new GutenbergProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri("https://www.gutenberg.org"),
+                TimeSpan.FromMilliseconds(25)),
+            NullLogger<GutenbergProvider>.Instance);
+
+        var timeoutAct = () => timeoutProvider.SearchAsync(
+            new ProviderSearchQuery("austen"),
+            CancellationToken.None);
+
+        var error = (await timeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(GutenbergProvider.ProviderIdentifier);
+
+        var (cancelProvider, handler) = CreateProvider();
+        using var cts = new CancellationTokenSource();
+        handler.SetFallback(_ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        var cancelAct = () => cancelProvider.SearchAsync(new ProviderSearchQuery("austen"), cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task PlanAcquisition_MapsTransientTransportFailureToProviderUnavailable(Type exceptionType)
+    {
+        var handler = new StubHttpMessageHandler().Register("/ebooks/1342.opds", _ =>
+            throw (Exception)Activator.CreateInstance(exceptionType, "connection failure")!);
+        var provider = CreateProviderWithoutRetryWaits(handler);
+
+        var act = () => provider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("1342", AssetId: null),
+            CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(GutenbergProvider.ProviderIdentifier);
+        handler.RecordedRequests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task PlanAcquisition_MapsClientTimeoutToProviderUnavailable_WhilePreservingCallerCancellation()
+    {
+        var timeoutProvider = new GutenbergProvider(
+            TransientHttpTestHelpers.CreateTimeoutFactory(
+                new Uri("https://www.gutenberg.org"),
+                TimeSpan.FromMilliseconds(25)),
+            NullLogger<GutenbergProvider>.Instance)
+        {
+            CatalogueRetryDelays = [TimeSpan.Zero, TimeSpan.Zero],
+        };
+
+        var timeoutAct = () => timeoutProvider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("1342", AssetId: null),
+            CancellationToken.None);
+
+        var error = (await timeoutAct.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(GutenbergProvider.ProviderIdentifier);
+
+        var (cancelProvider, handler) = CreateProvider();
+        using var cts = new CancellationTokenSource();
+        handler.Register("/ebooks/1342.opds", _ =>
+        {
+            cts.Cancel();
+            throw new TaskCanceledException("caller cancelled", null, cts.Token);
+        });
+
+        var cancelAct = () => cancelProvider.PlanAcquisitionAsync(
+            new ProviderAcquisitionRequest("1342", AssetId: null),
+            cts.Token);
+        await cancelAct.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private static GutenbergProvider CreateProviderWithoutRetryWaits(StubHttpMessageHandler handler) =>
         new(new StubHttpClientFactory(handler), NullLogger<GutenbergProvider>.Instance)
         {

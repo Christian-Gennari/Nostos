@@ -77,6 +77,12 @@ public sealed class ProviderContentDownloader(
     private const int BufferSize = 131072;
     private readonly AcquisitionOptions _options = options.Value;
 
+    /// <summary>
+    /// Starting wait before exponential backoff on a retryable failure.
+    /// Settable so tests exercising backoff/exhaustion do not sleep.
+    /// </summary>
+    internal TimeSpan InitialRetryDelay { get; init; } = TimeSpan.FromSeconds(2);
+
     public Task<long> DownloadAsync(
         Uri url,
         string destinationPath,
@@ -90,7 +96,7 @@ public sealed class ProviderContentDownloader(
             async (candidate, token) =>
             {
                 using var response = await OpenAsync(candidate, policy, token);
-                return await StreamToFileAsync(response, destinationPath, policy, totalBudgetBytes, progress, token);
+                return await StreamToFileAsync(response, candidate, destinationPath, policy, totalBudgetBytes, progress, token);
             },
             ct);
 
@@ -112,14 +118,14 @@ public sealed class ProviderContentDownloader(
                         ProviderDownloadException.TooLarge,
                         $"The source offers {declared.Value} bytes, above the {maxBytes} byte limit.");
 
-                await using var source = await response.Content.ReadAsStreamAsync(token);
+                await using var source = await OpenResponseStreamAsync(response, candidate, token);
                 using var buffer = new MemoryStream();
 
                 var chunk = ArrayPool<byte>.Shared.Rent(BufferSize);
                 try
                 {
                     int read;
-                    while ((read = await source.ReadAsync(chunk.AsMemory(0, BufferSize), token)) > 0)
+                    while ((read = await ReadSourceAsync(source, chunk.AsMemory(0, BufferSize), candidate, token)) > 0)
                     {
                         if (buffer.Length + read > maxBytes)
                             throw new ProviderDownloadException(
@@ -149,7 +155,7 @@ public sealed class ProviderContentDownloader(
         CancellationToken ct)
     {
         var attempts = _options.ClampDownloadAttempts();
-        var delay = TimeSpan.FromSeconds(2);
+        var delay = InitialRetryDelay;
 
         // A source with a mirror alternates between the two, starting with its
         // own address: when the source is down, the second attempt already
@@ -161,6 +167,8 @@ public sealed class ProviderContentDownloader(
 
         for (var number = 1; ; number++)
         {
+            ct.ThrowIfCancellationRequested();
+
             var candidate = mirror is not null && number % 2 == 0 ? mirror : url;
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -189,6 +197,11 @@ public sealed class ProviderContentDownloader(
 
                 await Task.Delay(delay, ct);
                 delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
+            }
+            catch (ProviderDownloadException) when (ct.IsCancellationRequested)
+            {
+                ct.ThrowIfCancellationRequested();
+                throw;
             }
             catch (ProviderDownloadException ex) when (ex.Retryable && number < attempts)
             {
@@ -231,6 +244,11 @@ public sealed class ProviderContentDownloader(
             try
             {
                 response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException)
+            {
+                request.Dispose();
+                throw TransientFailure(current, ex);
             }
             catch
             {
@@ -289,6 +307,7 @@ public sealed class ProviderContentDownloader(
 
     private static async Task<long> StreamToFileAsync(
         HttpResponseMessage response,
+        Uri url,
         string destinationPath,
         IProviderDownloadPolicy policy,
         long totalBudgetBytes,
@@ -310,14 +329,14 @@ public sealed class ProviderContentDownloader(
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
         try
         {
-            await using var source = await response.Content.ReadAsStreamAsync(ct);
+            await using var source = await OpenResponseStreamAsync(response, url, ct);
             await using var destination = new FileStream(
                 destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
 
             long written = 0;
             int read;
 
-            while ((read = await source.ReadAsync(buffer.AsMemory(0, BufferSize), ct)) > 0)
+            while ((read = await ReadSourceAsync(source, buffer.AsMemory(0, BufferSize), url, ct)) > 0)
             {
                 written += read;
 
@@ -357,6 +376,43 @@ public sealed class ProviderContentDownloader(
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
+
+    private static async Task<Stream> OpenResponseStreamAsync(
+        HttpResponseMessage response,
+        Uri url,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await response.Content.ReadAsStreamAsync(ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            throw TransientFailure(url, ex);
+        }
+    }
+
+    private static async Task<int> ReadSourceAsync(
+        Stream source,
+        Memory<byte> buffer,
+        Uri url,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await source.ReadAsync(buffer, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            throw TransientFailure(url, ex);
+        }
+    }
+
+    private static ProviderDownloadException TransientFailure(Uri url, Exception ex) =>
+        new(
+            ProviderDownloadException.Failed,
+            $"Downloading from {url.Host} failed: {ex.Message}",
+            retryable: true);
 
     private static void EnsureAllowed(Uri url, IProviderDownloadPolicy policy)
     {
