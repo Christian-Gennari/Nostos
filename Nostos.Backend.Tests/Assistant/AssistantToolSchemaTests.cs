@@ -516,14 +516,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         var db = new NostosDbContext(options);
 
         var topics = new TopicRepository(db);
-        var noteService = new NoteService(
-            new NoteRepository(db),
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            new FakeThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
         var libraryService = new LibraryService(
             factory,

@@ -36,6 +36,16 @@ internal static class NostosLibraryServices
         services.AddScoped<MediaMetadataService>();
         services.AddScoped<AudiobookPackageService>();
         services.AddScoped<NoteProcessorService>();
+        // NoteService is the command surface; its reads, search, topic linking
+        // and raw-transcript lifecycle are focused collaborators (issue #1619).
+        // TryAdd keeps a host's own registration authoritative.
+        services.TryAddScoped<NoteSnippetFormatter>();
+        services.TryAddScoped<NoteProjector>();
+        services.TryAddScoped<NoteEditionCounter>();
+        services.TryAddScoped<NoteReadService>();
+        services.TryAddScoped<NoteSearchService>();
+        services.TryAddScoped<NoteTopicLinkService>();
+        services.TryAddScoped<NoteProcessingLifecycleService>();
         services.AddScoped<INoteService, NoteService>();
         services.AddScoped<IReadingListService, ReadingListService>();
         services.AddScoped<KoreaderNoteImportService>();

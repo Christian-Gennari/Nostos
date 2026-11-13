@@ -1,23 +1,24 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
-using Nostos.Backend.Search;
-using Nostos.Backend.Services.Ai;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Notes;
 
 /// <summary>
 /// Canonical note service (issue #260 §1, §5). Owns every note write —
-/// including topic processing — so an endpoint (or a future assistant
-/// capability) can never orchestrate the repositories itself. The scoped
-/// <see cref="NostosDbContext"/> is shared with the repositories and the
+/// including idempotency and topic processing — so an endpoint (or a future
+/// assistant capability) can never orchestrate the repositories itself. The
+/// scoped <see cref="NostosDbContext"/> is shared with the repositories and the
 /// <see cref="NoteProcessorService"/>, so a create/update stays one unit of
 /// work exactly as it did when the handler held the repositories.
+///
+/// Reads, search, topic linking and the raw-transcript lifecycle are delegated
+/// to focused collaborators (issue #1619); this class keeps the commands and
+/// their validation.
 /// </summary>
 public sealed class NoteService : INoteService
 {
@@ -41,292 +42,130 @@ public sealed class NoteService : INoteService
 
     private readonly INoteRepository _notes;
     private readonly IBookRepository _books;
-    private readonly ITopicRepository _topics;
     private readonly NoteProcessorService _processor;
-    private readonly IThoughtProcessor _thoughts;
     private readonly NostosDbContext _db;
-    private readonly ILogger<NoteService> _logger;
+    private readonly NoteReadService _reads;
+    private readonly NoteSearchService _search;
+    private readonly NoteTopicLinkService _links;
+    private readonly NoteProcessingLifecycleService _lifecycle;
 
     public NoteService(
         INoteRepository notes,
         IBookRepository books,
-        ITopicRepository topics,
         NoteProcessorService processor,
-        IThoughtProcessor thoughts,
         NostosDbContext db,
-        ILogger<NoteService> logger)
+        NoteReadService reads,
+        NoteSearchService search,
+        NoteTopicLinkService links,
+        NoteProcessingLifecycleService lifecycle)
     {
         _notes = notes;
         _books = books;
-        _topics = topics;
         _processor = processor;
-        _thoughts = thoughts;
         _db = db;
-        _logger = logger;
+        _reads = reads;
+        _search = search;
+        _links = links;
+        _lifecycle = lifecycle;
     }
 
     // ------------------------------------------------------------------
-    // Read-only
+    // Read-only: delegated to NoteReadService
     // ------------------------------------------------------------------
 
-    public async Task<IReadOnlyList<NoteDto>> GetByBookAsync(Guid bookId, CancellationToken ct = default)
-    {
-        var notes = await _notes.GetByBookIdAsync(bookId);
-        return notes.Select(n => n.ToDto()).ToList();
-    }
+    public Task<IReadOnlyList<NoteDto>> GetByBookAsync(Guid bookId, CancellationToken ct = default) =>
+        _reads.GetByBookAsync(bookId, ct);
 
-    public async Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default)
-    {
-        var note = await _notes.GetForReadingAsync(noteId);
+    public Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default) =>
+        _reads.GetAsync(noteId, ct);
 
-        return note is null ? null : ByText(note, null, await EditionCountsAsync([note], ct));
-    }
-
-    public async Task<IReadOnlyList<NoteSearchHitDto>> GetManyAsync(
-        IReadOnlyCollection<Guid> noteIds, CancellationToken ct = default)
-    {
-        var ids = noteIds.Distinct().Take(MaxNotesByIds).ToList();
-        if (ids.Count == 0)
-            return [];
-
-        var notes = await _db.Notes
-            .Include(n => n.NoteTopics)
-            .ThenInclude(nc => nc.Topic)
-            .Where(n => ids.Contains(n.Id))
-            .ToListWithBookHeadlineAsync(ct);
-
-        var order = ids.Select((id, index) => (id, index)).ToDictionary(x => x.id, x => x.index);
-        var editions = await EditionCountsAsync(notes, ct);
-        return notes.OrderBy(n => order[n.Id]).Select(n => ByText(n, null, editions)).ToList();
-    }
+    public Task<IReadOnlyList<NoteSearchHitDto>> GetManyAsync(
+        IReadOnlyCollection<Guid> noteIds, CancellationToken ct = default) =>
+        _reads.GetManyAsync(noteIds, ct);
 
     /// <summary>The most notes one <see cref="GetManyAsync"/> call answers for.</summary>
-    public const int MaxNotesByIds = 200;
+    public const int MaxNotesByIds = NoteReadService.MaxNotesByIds;
 
-    public async Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default)
-    {
-        var take = Clamp(limit);
-        var skip = Math.Max(offset, 0);
-        var total = await _notes.CountWithoutTopicsAsync();
-        var notes = await _notes.GetWithoutTopicsAsync(take, skip);
-        var editions = await EditionCountsAsync(notes, ct);
-        return new NoteSearchPageDto(notes.Select(n => ByText(n, null, editions)).ToList(), total, skip, take);
-    }
+    public Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default) =>
+        _reads.GetUnlinkedAsync(limit, offset, ct);
 
-    public async Task<NoteSearchPageDto> BrowseAsync(
-        NoteBrowseQuery query, int limit, int offset, CancellationToken ct = default)
-    {
-        var take = Clamp(limit);
-        var skip = Math.Max(offset, 0);
-        var (items, total) = await _notes.BrowseAsync(Normalized(query), take, skip);
-        var editions = await EditionCountsAsync(items, ct);
-        return new NoteSearchPageDto(items.Select(n => ByText(n, query.Text?.Trim(), editions)).ToList(), total, skip, take);
-    }
+    public Task<NoteSearchPageDto> BrowseAsync(
+        NoteBrowseQuery query, int limit, int offset, CancellationToken ct = default) =>
+        _reads.BrowseAsync(query, limit, offset, ct);
 
-    public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(
-        NoteBrowseQuery query, CancellationToken ct = default)
-    {
-        return await _notes.GetBookFacetsAsync(Normalized(query));
-    }
+    public Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(
+        NoteBrowseQuery query, CancellationToken ct = default) =>
+        _reads.GetBookFacetsAsync(query, ct);
 
-    public async Task<NoteSummaryDto> GetSummaryAsync(CancellationToken ct = default)
-    {
-        return await _notes.GetSummaryAsync();
-    }
+    public Task<NoteSummaryDto> GetSummaryAsync(CancellationToken ct = default) =>
+        _reads.GetSummaryAsync(ct);
 
-    // An unknown kind matches nothing rather than everything.
-    private static NoteBrowseQuery Normalized(NoteBrowseQuery query) =>
-        string.IsNullOrWhiteSpace(query.Kind)
-            ? query with { Kind = null }
-            : query with { Kind = NoteKinds.Normalize(query.Kind) ?? "unknown" };
+    public Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default) =>
+        _reads.GetPassageAsync(noteId, ct);
+
+    // ------------------------------------------------------------------
+    // Search: delegated to NoteSearchService
+    // ------------------------------------------------------------------
+
+    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+        string query,
+        int limit,
+        CancellationToken ct = default) =>
+        _search.SearchAsync(query, limit, ct);
+
+    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+        string query,
+        int limit,
+        IReadOnlyList<Guid>? bookIds,
+        CancellationToken ct = default) =>
+        _search.SearchAsync(query, limit, bookIds, ct);
+
+    // ------------------------------------------------------------------
+    // Topic linking: delegated to NoteTopicLinkService
+    // ------------------------------------------------------------------
 
     public Task<NoteCommandResult<TopicLinkResultDto>> LinkTopicsAsync(
         IReadOnlyList<string> topics, IReadOnlyList<Guid> noteIds, CancellationToken ct = default) =>
-        ChangeTopicReferencesAsync(topics, noteIds, TopicReferences.Append, unlink: false, ct);
+        _links.LinkTopicsAsync(topics, noteIds, ct);
 
     public Task<NoteCommandResult<TopicLinkResultDto>> UnlinkTopicsAsync(
         IReadOnlyList<string> topics, IReadOnlyList<Guid> noteIds, CancellationToken ct = default) =>
-        ChangeTopicReferencesAsync(topics, noteIds, TopicReferences.Remove, unlink: true, ct);
+        _links.UnlinkTopicsAsync(topics, noteIds, ct);
 
-    private const int MaxTopicsPerLink = 20;
-    private const int MaxNotesPerLink = 200;
-
-    /// <summary>
-    /// Rewrites each listed note's body with <paramref name="change"/> for every
-    /// named topic, re-derives its links, and saves all of it at once: either
-    /// every note changes or none does.
-    /// </summary>
-    private async Task<NoteCommandResult<TopicLinkResultDto>> ChangeTopicReferencesAsync(
-        IReadOnlyList<string>? topics,
-        IReadOnlyList<Guid>? noteIds,
-        Func<string, string, string> change,
-        bool unlink,
-        CancellationToken ct)
-    {
-        var names = (topics ?? [])
-            .Select(name => name?.Trim() ?? string.Empty)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var ids = (noteIds ?? []).Distinct().ToList();
-
-        if (names.Count == 0 || ids.Count == 0)
-            return InvalidTopicLink("Name at least one topic and one note.");
-        if (names.Count > MaxTopicsPerLink || ids.Count > MaxNotesPerLink)
-            return InvalidTopicLink($"At most {MaxTopicsPerLink} topics and {MaxNotesPerLink} notes at once.");
-        if (!names.All(TopicReferences.IsValidName))
-            return InvalidTopicLink(TopicReferences.InvalidNameMessage);
-
-        var notes = await _db.Notes
-            .Include(n => n.NoteTopics).ThenInclude(link => link.Topic)
-            .Where(n => ids.Contains(n.Id))
-            .ToListAsync(ct);
-        if (notes.Count != ids.Count)
-            return NoteCommandResult<TopicLinkResultDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
-
-        var byId = notes.ToDictionary(n => n.Id);
-        var ordered = ids.Select(id => byId[id]).ToList();
-        var changed = new List<Guid>();
-        foreach (var note in ordered)
-        {
-            var content = names.Aggregate(note.Content, change);
-            // A link-only topic (no reference in the text) changes the links,
-            // not the text, so the links are compared too.
-            var linked = note.NoteTopics
-                .Select(link => link.Topic?.Topic)
-                .OfType<string>()
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var linksChange = unlink ? names.Any(linked.Contains) : names.Any(name => !linked.Contains(name));
-            if (content == note.Content && !linksChange) continue;
-
-            note.Content = content;
-            await _processor.ProcessNoteAsync(note, unlink ? names : null);
-            changed.Add(note.Id);
-        }
-
-        if (changed.Count > 0)
-            await _db.SaveChangesAsync(ct);
-
-        // Read back rather than mapped from the tracked notes, which hold no book.
-        return NoteCommandResult<TopicLinkResultDto>.Ok(
-            new TopicLinkResultDto(changed, await GetManyAsync(ids, ct)));
-    }
-
-    private static NoteCommandResult<TopicLinkResultDto> InvalidTopicLink(string message) =>
-        NoteCommandResult<TopicLinkResultDto>.Fail(NoteErrorCodes.InvalidTopicLink, message);
-
-    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
-        string query,
-        int limit,
+    public Task<NoteCommandResult<NoteDto>> LinkToExistingTopicAsync(
+        Guid noteId,
+        Guid topicId,
         CancellationToken ct = default) =>
-        SearchCoreAsync(query, limit, bookIds: null, forgiving: true, ct);
+        _links.LinkToExistingTopicAsync(noteId, topicId, ct);
 
-    // Above the planner's phrase weight (4): every word present beats the exact
-    // phrase being absent, and the phrase is rare in a short "@" query anyway.
-    private const int AllTermsWeight = 5;
+    public Task<NoteReviewDto?> GetForReviewAsync(Guid noteId, CancellationToken ct = default) =>
+        _reads.GetForReviewAsync(noteId, ct);
 
-    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
-        string query,
-        int limit,
-        IReadOnlyList<Guid>? bookIds,
+    // ------------------------------------------------------------------
+    // Post-processing lifecycle: delegated to NoteProcessingLifecycleService
+    // ------------------------------------------------------------------
+
+    public Task<NoteCommandResult<NoteDto>> ReprocessAsync(
+        Guid noteId,
+        string processingMode,
         CancellationToken ct = default) =>
-        SearchCoreAsync(query, limit, bookIds, forgiving: false, ct);
+        _lifecycle.ReprocessAsync(noteId, processingMode, ct);
 
-    /// <summary>
-    /// <paramref name="forgiving"/> is for what a person types into a search box:
-    /// when no note holds the words as typed, accents are ignored and a small
-    /// typo is allowed (issue #1380). Retrieval for the assistant stays exact.
-    /// </summary>
-    private async Task<IReadOnlyList<NoteSearchHitDto>> SearchCoreAsync(
-        string query,
-        int limit,
-        IReadOnlyList<Guid>? bookIds,
-        bool forgiving,
-        CancellationToken ct)
-    {
-        var take = Clamp(limit);
-        var variants = LexicalQueryPlanner.Build(query);
-        if (variants.Count == 0)
-            return [];
+    public Task<NoteCommandResult<NoteDto>> RewriteCaptureAsync(
+        Guid noteId,
+        string clientId,
+        CancellationToken ct = default) =>
+        _lifecycle.RewriteCaptureAsync(noteId, clientId, ct);
 
-        // Keep enough candidates per variant for deterministic fusion without
-        // letting one broad token expand into an unbounded note scan.
-        var candidateLimit = Math.Clamp(take * 3, 20, 60);
-        var fused = new Dictionary<Guid, NoteFusionCandidate>();
+    public Task<NoteCommandResult<NoteRawTranscriptDto>> GetRawAsync(
+        Guid noteId,
+        CancellationToken ct = default) =>
+        _lifecycle.GetRawAsync(noteId, ct);
 
-        // Several words: a note holding every one of them, across its text and
-        // its book's title and author, outranks one that shares only a single
-        // word (issue #1038). "schopenhauer will" names an author and a subject.
-        var tokens = variants
-            .Where(variant => variant.Kind == LexicalQueryVariantKind.Token)
-            .Select(variant => variant.Text)
-            .ToList();
-        var searches = variants
-            .Select(variant => (variant.Text, variant.Weight, Terms: (IReadOnlyList<string>)[variant.Text]))
-            .ToList();
-        if (tokens.Count >= 2)
-            searches.Insert(0, (string.Join(' ', tokens), AllTermsWeight, tokens));
-
-        var matchedAllTerms = new HashSet<Guid>();
-        foreach (var variant in searches)
-        {
-            var hits = await _notes.SearchByAllTermsAsync(variant.Terms, candidateLimit, bookIds);
-            if (variant.Weight == AllTermsWeight)
-                matchedAllTerms.UnionWith(hits.Select(note => note.Id));
-            for (var rank = 0; rank < hits.Count; rank++)
-            {
-                var note = hits[rank];
-                var score = (variant.Weight * 100) + Math.Max(0, candidateLimit - rank);
-
-                if (!fused.TryGetValue(note.Id, out var current))
-                {
-                    fused[note.Id] = new NoteFusionCandidate(
-                        note,
-                        score,
-                        variant.Text,
-                        MatchedVariants: 1);
-                    continue;
-                }
-
-                fused[note.Id] = current with
-                {
-                    Score = current.Score + score,
-                    MatchedVariants = current.MatchedVariants + 1,
-                    // Prefer the more specific variant for the snippet.
-                    SnippetTerm = variant.Weight > SpecificityWeight(current.SnippetTerm, variants)
-                        ? variant.Text
-                        : current.SnippetTerm,
-                };
-            }
-        }
-
-        if (fused.Count == 0 && forgiving)
-        {
-            var forgiven = await _notes.SearchByAllTermsAsync(
-                [query.Trim()], candidateLimit, bookIds, forgiving: true);
-            foreach (var note in forgiven)
-                fused[note.Id] = new NoteFusionCandidate(note, 0, query.Trim(), MatchedVariants: 1);
-        }
-
-        // With several words: a note holding every word comes first, and among
-        // those a word found in the note itself says more than one found only in
-        // its book's title. "schopenhauer will" is about the will, not about
-        // every note from "The World as Will and Representation".
-        // Single-word queries keep their existing order exactly.
-        var multiWord = tokens.Count >= 2;
-        var ranked = fused.Values
-            .OrderByDescending(candidate => multiWord && matchedAllTerms.Contains(candidate.Note.Id))
-            .ThenByDescending(candidate => multiWord ? OwnTextMatches(candidate.Note, tokens) : 0)
-            .ThenByDescending(candidate => candidate.MatchedVariants)
-            .ThenByDescending(candidate => candidate.Score)
-            .ThenByDescending(candidate => candidate.Note.CreatedAt)
-            .ThenBy(candidate => candidate.Note.Id)
-            .Take(take)
-            .ToList();
-        var editions = await EditionCountsAsync(ranked.Select(candidate => candidate.Note), ct);
-        return ranked
-            .Select(candidate => ByText(candidate.Note, SnippetTermFor(candidate, tokens), editions))
-            .ToList();
-    }
+    public Task<NoteCommandResult<NoteDto>> RestoreRawAsync(
+        Guid noteId,
+        CancellationToken ct = default) =>
+        _lifecycle.RestoreRawAsync(noteId, ct);
 
     // ------------------------------------------------------------------
     // Mutations
@@ -403,7 +242,7 @@ public sealed class NoteService : INoteService
         DateTime? createdAt,
         CancellationToken ct)
     {
-        var book = await _books.GetByIdAsync(bookId);
+        var book = await _books.GetByIdAsync(bookId, ct);
         if (book is null)
             return NoteCommandResult<NoteDto>.Fail(
                 NoteErrorCodes.BookNotFound, $"Book {bookId} not found.");
@@ -460,7 +299,7 @@ public sealed class NoteService : INoteService
         // Between the raw transcript and the stored note (issue #262 §7): a
         // non-verbatim mode rewrites Content from the raw capture, which is kept
         // in RawContent. Verbatim is a no-op that makes no provider call.
-        await ApplyCaptureProcessingAsync(model, dto.ProcessingMode, ct);
+        await _lifecycle.ApplyCaptureProcessingAsync(model, dto.ProcessingMode, ct);
 
         // Pill topics are written as text after any rewrite, so a capture mode
         // that rewrites the words cannot drop them.
@@ -470,22 +309,15 @@ public sealed class NoteService : INoteService
         // A reader's place becomes the note's anchor (issue #1381).
         LocationAnchor.Apply(model);
 
-        await _notes.AddAsync(model);
+        await _notes.AddAsync(model, ct);
 
         // EF Core tracks 'model', so the processor can add links to it before we save.
-        await _processor.ProcessNoteAsync(model);
+        await _processor.ProcessNoteAsync(model, ct: ct);
 
-        await _notes.SaveChangesAsync();
+        await _notes.SaveChangesAsync(ct);
 
-        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(model.Id));
+        return NoteCommandResult<NoteDto>.Ok(await _reads.SavedNoteAsync(model.Id, ct));
     }
-
-    /// <summary>
-    /// A saved note as its reply, read back to get its book's title and author:
-    /// a note tracked for an edit does not carry its book.
-    /// </summary>
-    private async Task<NoteDto> SavedNoteAsync(Guid noteId) =>
-        (await _notes.GetByIdWithBookAsync(noteId))!.ToDto();
 
     /// <summary>
     /// The exactly-once path: hold the in-process gate, replay a prior receipt
@@ -505,7 +337,7 @@ public sealed class NoteService : INoteService
         await CommandGate.WaitAsync(ct);
         try
         {
-            var prior = await _notes.GetReceiptAsync(clientId, idempotencyKey);
+            var prior = await _notes.GetReceiptAsync(clientId, idempotencyKey, ct);
             if (prior is not null)
                 return Deserialize(prior.ResultJson);
 
@@ -532,11 +364,11 @@ public sealed class NoteService : INoteService
                 Command = CaptureCommand,
                 ResultJson = json,
                 CreatedAtUtc = DateTime.UtcNow,
-            });
+            }, ct);
 
             try
             {
-                await _notes.SaveChangesAsync();
+                await _notes.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
                 return result;
             }
@@ -546,7 +378,7 @@ public sealed class NoteService : INoteService
                 // receipt and return that stored result rather than throwing.
                 await transaction.RollbackAsync(ct);
                 _db.ChangeTracker.Clear();
-                var raced = await _notes.GetReceiptAsync(clientId, idempotencyKey);
+                var raced = await _notes.GetReceiptAsync(clientId, idempotencyKey, ct);
                 if (raced is not null)
                     return Deserialize(raced.ResultJson);
                 throw;
@@ -560,7 +392,7 @@ public sealed class NoteService : INoteService
 
     public async Task<NoteCommandResult<NoteDto>> UpdateAsync(Guid noteId, UpdateNoteDto dto, CancellationToken ct = default)
     {
-        var existing = await _notes.GetByIdWithTopicsAsync(noteId);
+        var existing = await _notes.GetByIdWithTopicsAsync(noteId, ct);
         if (existing is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
@@ -571,7 +403,7 @@ public sealed class NoteService : INoteService
         if (dto.BaseUpdatedAt is { } baseUpdatedAt
             && !SameInstantToMillisecond(baseUpdatedAt, existing.UpdatedAt ?? existing.CreatedAt))
         {
-            var current = await SavedNoteAsync(noteId);
+            var current = await _reads.SavedNoteAsync(noteId, ct);
             return new NoteCommandResult<NoteDto>(
                 false, NoteErrorCodes.EditConflict, "The note changed since this copy was loaded.", current);
         }
@@ -601,11 +433,11 @@ public sealed class NoteService : INoteService
         // Re-process topics (the processor clears old links then re-adds). An
         // edit that sent its topics sent all of them: an old link the text
         // never declared was shown as a pill, and one left out was removed.
-        await _processor.ProcessNoteAsync(existing, textIsComplete: dto.Topics is not null);
+        await _processor.ProcessNoteAsync(existing, textIsComplete: dto.Topics is not null, ct: ct);
 
-        await _notes.SaveChangesAsync();
+        await _notes.SaveChangesAsync(ct);
 
-        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
+        return NoteCommandResult<NoteDto>.Ok(await _reads.SavedNoteAsync(noteId, ct));
     }
 
     /// <summary>
@@ -689,13 +521,6 @@ public sealed class NoteService : INoteService
     private static NoteCommandResult<NoteDto> InvalidPassage(string message) =>
         NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.InvalidPassage, message);
 
-    public async Task<PassageDto?> GetPassageAsync(Guid noteId, CancellationToken ct = default)
-    {
-        var note = await _notes.GetByIdWithBookAsync(noteId);
-
-        return note is null || !note.IsPassage() ? null : note.ToPassageDto();
-    }
-
     private static NoteCommandResult<NoteDto> InvalidHighlightColour() =>
         NoteCommandResult<NoteDto>.Fail(
             NoteErrorCodes.InvalidHighlightColour,
@@ -719,7 +544,7 @@ public sealed class NoteService : INoteService
                 NoteErrorCodes.LocationNotAllowed, "An EPUB CFI range or the rectangles of a PDF highlight are required.");
         }
 
-        var existing = await _notes.GetByIdWithTopicsAsync(noteId);
+        var existing = await _notes.GetByIdWithTopicsAsync(noteId, ct);
         if (existing is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
@@ -734,254 +559,29 @@ public sealed class NoteService : INoteService
         {
             existing.CfiRange = found;
             LocationAnchor.Apply(existing);
-            await _notes.SaveChangesAsync();
+            await _notes.SaveChangesAsync(ct);
         }
 
-        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
+        return NoteCommandResult<NoteDto>.Ok(await _reads.SavedNoteAsync(noteId, ct));
     }
 
     public async Task<NoteCommandResult<bool>> DeleteAsync(Guid noteId, CancellationToken ct = default)
     {
-        var existing = await _notes.GetByIdAsync(noteId);
+        var existing = await _notes.GetByIdAsync(noteId, ct);
         if (existing is null)
             return NoteCommandResult<bool>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
         // Remove topic links first: the join table's note FK is Restrict.
-        await _notes.DeleteTopicLinksAsync(noteId);
+        await _notes.DeleteTopicLinksAsync(noteId, ct);
 
-        await _notes.DeleteAsync(existing);
+        await _notes.DeleteAsync(existing, ct);
 
         return NoteCommandResult<bool>.Ok(true);
     }
 
     // ------------------------------------------------------------------
-    // Capabilities for the note-review flow (issue #261)
+    // Stored receipt helpers
     // ------------------------------------------------------------------
-
-    public async Task<NoteCommandResult<NoteDto>> LinkToExistingTopicAsync(
-        Guid noteId,
-        Guid topicId,
-        CancellationToken ct = default)
-    {
-        var note = await _notes.GetByIdWithTopicsAsync(noteId);
-        if (note is null)
-            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
-
-        // Never creates a topic: the link target must already exist.
-        var topic = await _db.Topics.AsNoTracking().FirstOrDefaultAsync(c => c.Id == topicId, ct);
-        if (topic is null)
-            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.TopicNotFound, "Topic not found.");
-
-        // Idempotent. The join is keyed (NoteId, TopicId); inserting a second
-        // row would be a duplicate key. The check runs against the database, not
-        // the tracked navigation, so a repeated call sees the committed link.
-        var existingNames = await _db.NoteTopics
-            .AsNoTracking()
-            .Where(nc => nc.NoteId == noteId)
-            .Select(nc => new { nc.TopicId, Name = nc.Topic!.Topic })
-            .ToListAsync(ct);
-        var alreadyLinked = existingNames.Any(link => link.TopicId == topicId);
-
-        // The note body is the canonical source of membership on every later
-        // edit. A join-only Act link would disappear when UpdateAsync reprocesses
-        // that body. Normalize older join-only links on this note as well, so
-        // accepting a new proposal does not make those disappear on the next edit.
-        var before = note.Content;
-        note.Content = TopicReferences.AppendAll(note.Content, existingNames.Select(link => link.Name).Append(topic.Topic));
-        var contentChanged = note.Content != before;
-
-        if (!alreadyLinked)
-        {
-            // Keep other links and save the text and join in one unit of work.
-            _topics.AddNoteLink(new NoteTopicModel { NoteId = noteId, TopicId = topicId });
-        }
-        if (!alreadyLinked || contentChanged)
-            await _notes.SaveChangesAsync();
-
-        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
-    }
-
-    public async Task<NoteReviewDto?> GetForReviewAsync(Guid noteId, CancellationToken ct = default)
-    {
-        var note = await _notes.GetForReadingAsync(noteId);
-
-        if (note is null)
-            return null;
-
-        return new NoteReviewDto(
-            note.Id,
-            note.BookId,
-            note.Book?.Title,
-            note.Content,
-            note.SelectedText,
-            note.NoteTopics
-                .Where(nc => nc.Topic is not null)
-                .Select(nc => nc.Topic!.Topic)
-                .OrderBy(name => name)
-                .ToList(),
-            note.NoteTopics.Select(link => link.TopicId).ToList());
-    }
-
-    // ------------------------------------------------------------------
-    // Post-processing (issue #262 §7, §8)
-    // ------------------------------------------------------------------
-
-    public async Task<NoteCommandResult<NoteDto>> ReprocessAsync(
-        Guid noteId,
-        string processingMode,
-        CancellationToken ct = default)
-    {
-        if (!ThoughtProcessingModes.IsSupported(processingMode))
-        {
-            return NoteCommandResult<NoteDto>.Fail(
-                NoteErrorCodes.InvalidProcessingMode,
-                $"Unknown processing mode '{processingMode}'.");
-        }
-
-        var note = await _notes.GetByIdWithTopicsAsync(noteId);
-        if (note is null)
-            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
-
-        var mode = ThoughtProcessingModes.Normalize(processingMode);
-
-        // The original transcript is the ONLY source of a re-run: a second pass
-        // (say, clarify after light polish) must never transform transformed
-        // prose. A note that predates the mode feature has no RawContent yet, so
-        // its current text IS the original and becomes the raw transcript now.
-        var raw = note.RawContent;
-        if (string.IsNullOrWhiteSpace(raw) && !string.IsNullOrWhiteSpace(note.Content))
-        {
-            raw = note.Content;
-            note.RawContent = raw;
-        }
-
-        if (mode == ThoughtProcessingModes.Verbatim || string.IsNullOrWhiteSpace(raw))
-        {
-            // Verbatim restore (or a quote-only capture with no thought text):
-            // the raw words are the stored words, and no provider is called.
-            note.Content = raw ?? note.Content;
-            note.ProcessingMode = ThoughtProcessingModes.Verbatim;
-        }
-        else
-        {
-            var result = await _thoughts.ProcessAsync(raw, mode, ct);
-            note.Content = result.Text;
-            note.ProcessingMode = result.Mode;
-        }
-
-        // Content may have changed, so the topic links are re-derived from it.
-        await _processor.ProcessNoteAsync(note);
-        await _notes.SaveChangesAsync();
-
-        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
-    }
-
-    public async Task<NoteCommandResult<NoteDto>> RewriteCaptureAsync(
-        Guid noteId,
-        string clientId,
-        CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(clientId) || !await _notes.HasReceiptForNoteAsync(clientId, noteId))
-        {
-            return NoteCommandResult<NoteDto>.Fail(
-                NoteErrorCodes.NoteNotFound,
-                "No note captured in this conversation has that id.");
-        }
-
-        return await ReprocessAsync(noteId, ThoughtProcessingModes.Clarify, ct);
-    }
-
-    public async Task<NoteCommandResult<NoteRawTranscriptDto>> GetRawAsync(
-        Guid noteId,
-        CancellationToken ct = default)
-    {
-        var note = await _notes.GetByIdAsync(noteId);
-        if (note is null)
-            return NoteCommandResult<NoteRawTranscriptDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
-
-        return NoteCommandResult<NoteRawTranscriptDto>.Ok(
-            new NoteRawTranscriptDto(note.Id, note.RawContent, note.Content, note.ProcessingMode));
-    }
-
-    public async Task<NoteCommandResult<NoteDto>> RestoreRawAsync(
-        Guid noteId,
-        CancellationToken ct = default)
-    {
-        var note = await _notes.GetByIdWithTopicsAsync(noteId);
-        if (note is null)
-            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
-
-        if (string.IsNullOrWhiteSpace(note.RawContent))
-        {
-            return NoteCommandResult<NoteDto>.Fail(
-                NoteErrorCodes.NoRawTranscript,
-                "This note has no raw transcript to restore.");
-        }
-
-        // Restore the original words and record the honest mode. RawContent is
-        // left exactly as it was — restoring is not a way to erase the capture.
-        note.Content = note.RawContent;
-        note.ProcessingMode = ThoughtProcessingModes.Verbatim;
-
-        await _processor.ProcessNoteAsync(note);
-        await _notes.SaveChangesAsync();
-
-        return NoteCommandResult<NoteDto>.Ok(await SavedNoteAsync(noteId));
-    }
-
-    /// <summary>
-    /// Applies the capture's mode to the model before it is stored. The raw
-    /// transcript is preserved in <see cref="NoteModel.RawContent"/> and is never
-    /// overwritten; a provider failure keeps the raw words rather than losing the
-    /// thought.
-    /// </summary>
-    private async Task ApplyCaptureProcessingAsync(NoteModel model, string mode, CancellationToken ct)
-    {
-        var normalized = ThoughtProcessingModes.Normalize(mode);
-        if (normalized == ThoughtProcessingModes.Verbatim)
-            return;
-
-        // A quote-only capture has no user thought to process. The quote lives in
-        // SelectedText and is never handed to the processor, so it cannot be
-        // rewritten by any mode. Nothing was processed, so the honest mode is
-        // verbatim rather than the requested one.
-        if (string.IsNullOrWhiteSpace(model.Content))
-        {
-            model.ProcessingMode = ThoughtProcessingModes.Verbatim;
-            return;
-        }
-
-        // The raw transcript is the source of truth. A request that asks for a
-        // processed mode but supplies no raw transcript means the incoming
-        // Content IS the raw transcript — so it is kept before Content changes.
-        model.RawContent ??= model.Content;
-
-        try
-        {
-            var result = await _thoughts.ProcessAsync(model.RawContent, normalized, ct);
-            model.Content = result.Text;
-            model.ProcessingMode = result.Mode;
-        }
-        catch (LlmException ex)
-        {
-            // A thought is never lost to a provider failure: the raw transcript
-            // becomes the content and the stored mode says so honestly.
-            _logger.LogWarning(
-                ex,
-                "Post-processing capture {NoteId} in mode {Mode} failed; keeping the raw transcript.",
-                model.Id,
-                normalized);
-            model.Content = model.RawContent;
-            model.ProcessingMode = ThoughtProcessingModes.Verbatim;
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Helpers moved verbatim from NotesEndpoints
-    // ------------------------------------------------------------------
-
-    /// <summary>A small page keeps the index responsive; the cap is a guard on the caller.</summary>
-    private static int Clamp(int limit) => Math.Clamp(limit, 1, 200);
 
     /// <summary>Stored note command result. Successes only, so this always represents a created note.</summary>
     private static string Serialize(NoteCommandResult<NoteDto> result) =>
@@ -990,122 +590,4 @@ public sealed class NoteService : INoteService
     private static NoteCommandResult<NoteDto> Deserialize(string json) =>
         JsonSerializer.Deserialize<NoteCommandResult<NoteDto>>(json, ReceiptJson)
         ?? throw new InvalidOperationException("Stored note command receipt is invalid.");
-
-    /// <summary>
-    /// The all-words search records the whole query as its term, which rarely
-    /// occurs verbatim when its words matched different fields. Centre the
-    /// snippet on a word the note's own text really contains instead.
-    /// </summary>
-    private static string? SnippetTermFor(NoteFusionCandidate candidate, IReadOnlyList<string> tokens)
-    {
-        bool InText(string term) =>
-            candidate.Note.Content.Contains(term, StringComparison.OrdinalIgnoreCase)
-            || (candidate.Note.SelectedText?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false);
-
-        if (candidate.SnippetTerm is { } term && InText(term)) return term;
-        return tokens.FirstOrDefault(InText) ?? candidate.SnippetTerm;
-    }
-
-    private static int OwnTextMatches(NoteModel note, IReadOnlyList<string> tokens) =>
-        tokens.Count(token =>
-            note.Content.Contains(token, StringComparison.OrdinalIgnoreCase)
-            || (note.SelectedText?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (note.PassageTitle?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false));
-
-    private static int SpecificityWeight(
-        string term,
-        IReadOnlyList<LexicalQueryVariant> variants) =>
-        variants.FirstOrDefault(
-            variant => string.Equals(variant.Text, term, StringComparison.OrdinalIgnoreCase))?.Weight ?? 0;
-
-    private sealed record NoteFusionCandidate(
-        NoteModel Note,
-        int Score,
-        string SnippetTerm,
-        int MatchedVariants);
-
-    /// <summary>
-    /// How many editions each listed note's book has, in one query for the whole
-    /// page (never one per note), keyed by work.
-    /// </summary>
-    private async Task<IReadOnlyDictionary<Guid, int>> EditionCountsAsync(
-        IEnumerable<NoteModel> notes, CancellationToken ct)
-    {
-        var workIds = notes.Where(n => n.Book is not null).Select(n => n.Book!.WorkId).Distinct().ToList();
-        if (workIds.Count == 0) return new Dictionary<Guid, int>();
-        return await _db.Books
-            .AsNoTracking()
-            .Where(b => workIds.Contains(b.WorkId))
-            .GroupBy(b => b.WorkId)
-            .Select(g => new { WorkId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(row => row.WorkId, row => row.Count, ct);
-    }
-
-    private static NoteSearchHitDto ByText(
-        NoteModel n, string? term, IReadOnlyDictionary<Guid, int>? editions = null) => new(
-        n.Id,
-        n.BookId,
-        n.Book?.Title,
-        n.Content,
-        // A passage travels as its opening; the snippet still finds the match
-        // anywhere in it.
-        TextLigatures.Expand(n.IsPassage() ? PassageText.Opening(n.SelectedText) : n.SelectedText),
-        Snippet(n.Content, TextLigatures.Expand(n.SelectedText), term),
-        n.NoteTopics
-            .Where(nc => nc.Topic != null)
-            .Select(nc => nc.Topic!.Topic)
-            .OrderBy(name => name)
-            .ToList(),
-        n.CreatedAt,
-        n.CfiRange,
-        n.SourceAnchorKind,
-        n.SourceAnchorValue,
-        n.AnchorVerified,
-        n.CaptureSource,
-        n.ProcessingMode,
-        !string.IsNullOrWhiteSpace(n.RawContent),
-        n.Kind,
-        n.PassageTitle,
-        n.PassageEnd,
-        n.IsPassage() ? PassageText.WordCount(n.SelectedText) : null,
-        n.Book?.Author,
-        n.HighlightColour,
-        FormatOf(n.Book),
-        n.Book is not null && editions is not null && editions.TryGetValue(n.Book.WorkId, out var count) ? count : 1,
-        n.Book?.WorkId,
-        n.UpdatedAt ?? n.CreatedAt);
-
-    /// <summary>The format glyph's name for an edition: audiobook, pdf, ebook or physical.</summary>
-    private static string? FormatOf(BookModel? book) => book switch
-    {
-        null => null,
-        AudioBookModel => "audiobook",
-        PhysicalBookModel => "physical",
-        _ when book.FileDetails.FileName?.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) == true => "pdf",
-        _ => "ebook",
-    };
-
-    /// <summary>
-    /// The fragment around the match, so a row can show WHY it matched. Built here
-    /// rather than in the client so the whole note body never has to travel.
-    /// </summary>
-    private static string? Snippet(string content, string? quote, string? term)
-    {
-        // Prefer the quotation: it is the passage from the book either way.
-        var text = string.IsNullOrWhiteSpace(quote) ? content : quote!;
-        if (string.IsNullOrWhiteSpace(text)) return null;
-
-        var flat = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-        if (flat.Length <= 160) return flat;
-
-        // Centre on the match when there is one, so the row shows WHY it matched
-        // rather than the opening words of every hit.
-        var at = term is null ? -1 : flat.IndexOf(term, StringComparison.OrdinalIgnoreCase);
-        if (at < 0) return flat[..157] + "…";
-
-        var start = Math.Max(0, at - 60);
-        var end = Math.Min(flat.Length, start + 157);
-        start = Math.Max(0, Math.Min(start, end - 40));
-        return (start > 0 ? "…" : string.Empty) + flat[start..end] + (end < flat.Length ? "…" : string.Empty);
-    }
 }

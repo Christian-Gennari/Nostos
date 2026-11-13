@@ -680,14 +680,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         // web host wires it.
         var topics = new TopicRepository(db);
         var noteRepository = new NoteRepository(db);
-        var noteService = new NoteService(
-            noteRepository,
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            new FakeThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
         var libraryService = new LibraryService(
             factory,

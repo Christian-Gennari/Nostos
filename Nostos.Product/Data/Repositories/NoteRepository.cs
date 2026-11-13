@@ -56,6 +56,40 @@ public class NoteRepository : INoteRepository
         return notes.FirstOrDefault();
     }
 
+    public async Task<List<NoteModel>> GetManyForReadingAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        return await _db.Notes
+            .Include(n => n.NoteTopics)
+            .ThenInclude(nc => nc.Topic)
+            .Where(n => ids.Contains(n.Id))
+            .ToListWithBookHeadlineAsync(cancellationToken);
+    }
+
+    public async Task<List<NoteModel>> GetManyWithTopicsAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        return await _db.Notes
+            .Include(n => n.NoteTopics).ThenInclude(link => link.Topic)
+            .Where(n => ids.Contains(n.Id))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<NoteTopicLink>> GetTopicLinksAsync(
+        Guid noteId,
+        CancellationToken cancellationToken = default)
+    {
+        // AsNoTracking: this is a check of the committed links, never a read
+        // that the caller edits.
+        return await _db.NoteTopics
+            .AsNoTracking()
+            .Where(nc => nc.NoteId == noteId)
+            .Select(nc => new NoteTopicLink(nc.TopicId, nc.Topic!.Topic))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<NoteModel?> GetByIdWithBookAsync(
         Guid id,
         CancellationToken cancellationToken = default)

@@ -429,6 +429,14 @@ public class TopicRepository : ITopicRepository
         return row.Topic;
     }
 
+    public async Task<TopicModel?> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        return await _db.Topics.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+    }
+
     public async Task<TopicModel?> RenameAsync(
         Guid id,
         string name,

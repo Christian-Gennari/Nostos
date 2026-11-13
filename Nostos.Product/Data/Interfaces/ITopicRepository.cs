@@ -52,6 +52,9 @@ public interface ITopicRepository
     /// </summary>
     Task<TopicModel?> GetByIdWithNotesAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>A topic by id, untracked. Null when it does not exist.</summary>
+    Task<TopicModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Renames a topic, merging its links into an existing target name when necessary.
     /// Returns the surviving topic, or null when the source is not found.

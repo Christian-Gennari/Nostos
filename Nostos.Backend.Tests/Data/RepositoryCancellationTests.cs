@@ -24,6 +24,7 @@ public sealed class RepositoryCancellationTests : IClassFixture<SqliteTestFixtur
         await AssertCanceledAsync(() => repo.GetByIdAsync(book.Id, canceled));
         await AssertCanceledAsync(() => repo.CountBooksWithFilesAsync(canceled));
         await AssertCanceledAsync(() => repo.GetBooksWithFilesPageAsync(0, 10, canceled));
+        await AssertCanceledAsync(() => repo.CountEditionsByWorkAsync([book.WorkId], canceled));
         await AssertCanceledAsync(() => repo.UpdateAsync(book, canceled));
     }
 
@@ -50,6 +51,9 @@ public sealed class RepositoryCancellationTests : IClassFixture<SqliteTestFixtur
         await AssertCanceledAsync(() => repo.GetByIdWithTopicsAsync(note.Id, canceled));
         await AssertCanceledAsync(() => repo.GetForReadingAsync(note.Id, canceled));
         await AssertCanceledAsync(() => repo.GetByIdWithBookAsync(note.Id, canceled));
+        await AssertCanceledAsync(() => repo.GetManyForReadingAsync([note.Id], canceled));
+        await AssertCanceledAsync(() => repo.GetManyWithTopicsAsync([note.Id], canceled));
+        await AssertCanceledAsync(() => repo.GetTopicLinksAsync(note.Id, canceled));
         await AssertCanceledAsync(() => repo.AddAsync(note, canceled));
         await AssertCanceledAsync(() => repo.SaveChangesAsync(canceled));
         await repo.AddAsync(note);
@@ -117,6 +121,7 @@ public sealed class RepositoryCancellationTests : IClassFixture<SqliteTestFixtur
         await AssertCanceledAsync(() => repo.GetGraphAsync(canceled));
         await AssertCanceledAsync(() => repo.GetWritingUsageAsync(id, 10, canceled));
         await AssertCanceledAsync(() => repo.GetByIdWithNotesAsync(id, canceled));
+        await AssertCanceledAsync(() => repo.GetByIdAsync(id, canceled));
         await AssertCanceledAsync(() => repo.RenameAsync(id, "Renamed", canceled));
         await AssertCanceledAsync(() => repo.MergeAsync(id, Guid.NewGuid(), canceled));
         await AssertCanceledAsync(() => repo.SetDescriptionAsync(id, "Desc", canceled));

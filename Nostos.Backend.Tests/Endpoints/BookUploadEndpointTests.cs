@@ -924,6 +924,11 @@ public sealed class BookUploadEndpointTests
         public Task<int> CountBooksWithFilesAsync(CancellationToken cancellationToken = default) =>
             inner.CountBooksWithFilesAsync(cancellationToken);
 
+        public Task<IReadOnlyDictionary<Guid, int>> CountEditionsByWorkAsync(
+            IReadOnlyCollection<Guid> workIds,
+            CancellationToken cancellationToken = default) =>
+            inner.CountEditionsByWorkAsync(workIds, cancellationToken);
+
         public Task<List<BookModel>> GetBooksWithFilesPageAsync(
             int skip,
             int take,
