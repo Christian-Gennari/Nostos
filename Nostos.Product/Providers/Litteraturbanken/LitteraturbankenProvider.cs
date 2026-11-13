@@ -1,8 +1,3 @@
-using System.Net;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Xml.Linq;
 using Nostos.Backend.Providers.Contracts;
 
 namespace Nostos.Backend.Providers.Litteraturbanken;
@@ -10,6 +5,13 @@ namespace Nostos.Backend.Providers.Litteraturbanken;
 /// <summary>
 /// Litteraturbanken's public catalog, exposing only listed EPUB/PDF files whose
 /// exact per-work license is CC0, public domain, or CC BY.
+///
+/// This type is the provider contract and its paging orchestration only. The
+/// catalog query, row parsing and cursor live in
+/// <see cref="LitteraturbankenCatalog"/>, HTTP in
+/// <see cref="LitteraturbankenCatalogClient"/>, the work/asset mapping in
+/// <see cref="LitteraturbankenItemMapper"/> and the license/provenance rendering
+/// in <see cref="LitteraturbankenRightsCatalog"/>.
 /// </summary>
 public sealed class LitteraturbankenProvider : IContentProvider,
     IProviderSearch,
@@ -22,34 +24,15 @@ public sealed class LitteraturbankenProvider : IContentProvider,
     public const string HttpClientName = "litteraturbanken";
     public const string BaseUrl = "https://litteraturbanken.se";
 
-    private const string CatalogPath = "/api/query_string/etext,faksimil";
-    private const string LicensePath = "/red/etc/license/license.json";
-    private const string ProvenancePath = "/red/etc/provenance/provenance.json";
     private const long MaxFileBytes = 128L * 1024 * 1024;
-    private const int MaxSearchRows = 100;
-    private const int MaxSearchLimit = 24;
-    private const int SnapshotPageSize = 100;
-    private const int MaxSnapshotPages = 1_000;
-    private const string IncludeFields =
-        "lbworkid,titlepath,title,titleid,work_titleid,shorttitle,mediatype," +
-        "authors.authorid,authors.full_name,export.type,export.size,license," +
-        "provenance.library,provenance.signum,provenance.text2,printed," +
-        "sort_date_imprint.plain";
-    private const string ExcludeFields = "text,parts,sourcedesc,pages,errata";
 
-    private static readonly string[] AllowedLicenseCodes = ["cc-0", "pd", "cc-by"];
-    private static readonly HashSet<string> AllowedLicenses =
-        new(AllowedLicenseCodes, StringComparer.Ordinal);
-    private static readonly JsonSerializerOptions JsonOptions =
-        new() { PropertyNameCaseInsensitive = true };
-
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly SemaphoreSlim _rightsGate = new(1, 1);
-    private RightsCatalog? _rightsCatalog;
+    private readonly LitteraturbankenCatalogClient _catalogClient;
+    private readonly LitteraturbankenItemMapper _mapper;
 
     public LitteraturbankenProvider(IHttpClientFactory httpClientFactory)
     {
-        _httpClientFactory = httpClientFactory;
+        _catalogClient = new LitteraturbankenCatalogClient(httpClientFactory, ProviderIdentifier);
+        _mapper = new LitteraturbankenItemMapper(ProviderIdentifier, MaxFileBytes);
     }
 
     public string Id => ProviderIdentifier;
@@ -95,9 +78,9 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         if (searchText.Length < 2)
             return new ProviderSearchPage([], HasMore: false);
 
-        var limit = Math.Clamp(query.Limit, 1, MaxSearchLimit);
+        var limit = Math.Clamp(query.Limit, 1, LitteraturbankenCatalog.MaxSearchLimit);
         var offset = Math.Max(0, query.Offset);
-        if (offset >= MaxSearchRows / 2)
+        if (offset >= LitteraturbankenCatalog.MaxSearchRows / 2)
         {
             return new ProviderSearchPage(
                 [],
@@ -108,28 +91,28 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         // One bounded request covers both source media types. Rows for a work
         // are combined only after each file and its rights have been checked.
         var rowsToRead = (int)Math.Min(
-            MaxSearchRows,
+            LitteraturbankenCatalog.MaxSearchRows,
             Math.Max(2L, (offset + (long)limit + 1) * 2));
-        var response = await LoadCatalogAsync(
-            BuildSearchQuery(searchText),
+        var response = await _catalogClient.LoadPageAsync(
+            LitteraturbankenCatalog.BuildSearchQuery(searchText),
             from: 0,
             to: rowsToRead,
             ct);
 
         var records = response.Data
-            .Select(ToCatalogRecord)
+            .Select(LitteraturbankenCatalog.ToRecord)
             .Where(record => record is not null)
             .Select(record => record!)
-            .Where(IsRightsAllowed)
+            .Where(LitteraturbankenCatalog.IsRightsAllowed)
             .ToList();
 
         if (records.Count == 0)
             return new ProviderSearchPage([], HasMore: response.Hits > response.Data.Count);
 
-        var rights = await GetRightsCatalogAsync(ct);
+        var rights = await _catalogClient.GetRightsCatalogAsync(ct);
         var items = records
             .GroupBy(record => record.ExternalId, StringComparer.Ordinal)
-            .Select(group => BuildWork(group, rights))
+            .Select(group => _mapper.BuildWork(group, rights))
             .Where(work => work is not null)
             .Select(work => work!)
             .ToList();
@@ -161,11 +144,11 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         if (cursor.PagesRead > 0)
             await Task.Delay(SnapshotPageDelay, ct);
 
-        if (cursor.PagesRead >= MaxSnapshotPages)
+        if (cursor.PagesRead >= LitteraturbankenCatalog.MaxSnapshotPages)
         {
             throw ProviderException.InvalidResponse(
                 Id,
-                $"the catalog exceeded {MaxSnapshotPages} sequential pages");
+                $"the catalog exceeded {LitteraturbankenCatalog.MaxSnapshotPages} sequential pages");
         }
 
         // The catalog cannot be paged past 10,000 rows by offset (it answers
@@ -173,12 +156,12 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         // the whole result. Page by key instead: sort by work id, start every
         // request at offset 0, and resume from the first row of the work that
         // straddled the previous page.
-        var response = await LoadCatalogAsync(
-            BuildSnapshotQuery(cursor.AfterWorkId),
+        var response = await _catalogClient.LoadPageAsync(
+            LitteraturbankenCatalog.BuildSnapshotQuery(cursor.AfterWorkId),
             from: 0,
-            to: SnapshotPageSize,
+            to: LitteraturbankenCatalog.SnapshotPageSize,
             ct,
-            SnapshotSortField);
+            LitteraturbankenCatalog.SnapshotSortField);
         if (response.Hits < response.Data.Count)
             throw ProviderException.InvalidResponse(Id, "the catalog total was smaller than its returned page");
 
@@ -191,7 +174,7 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         // request restarts from the first row of that work, so the host stores
         // one metadata item with the full set of eligible formats.
         var trailingWorkId = hasMore
-            ? NormalizeWorkKey(response.Data[^1].ExternalId)
+            ? LitteraturbankenCatalog.NormalizeWorkKey(response.Data[^1].ExternalId)
             : null;
         if (hasMore && trailingWorkId is null)
             throw ProviderException.InvalidResponse(Id, "the catalog returned an unusable work id");
@@ -202,23 +185,23 @@ public sealed class LitteraturbankenProvider : IContentProvider,
                 .AsEnumerable()
                 .Reverse()
                 .TakeWhile(row => string.Equals(
-                    NormalizeWorkKey(row.ExternalId),
+                    LitteraturbankenCatalog.NormalizeWorkKey(row.ExternalId),
                     trailingWorkId,
                     StringComparison.Ordinal))
                 .Count();
         var usableCount = response.Data.Count - trailingRows;
         var records = response.Data
             .Take(usableCount)
-            .Select(ToCatalogRecord)
+            .Select(LitteraturbankenCatalog.ToRecord)
             .Where(record => record is not null)
             .Select(record => record!)
-            .Where(IsRightsAllowed)
+            .Where(LitteraturbankenCatalog.IsRightsAllowed)
             .ToList();
 
-        var rights = await GetRightsCatalogAsync(ct);
+        var rights = await _catalogClient.GetRightsCatalogAsync(ct);
         var items = records
             .GroupBy(record => record.ExternalId, StringComparer.Ordinal)
-            .Select(group => BuildWork(group, rights))
+            .Select(group => _mapper.BuildWork(group, rights))
             .Where(work => work is not null)
             .Select(work => work!.Item with { Assets = [] })
             .ToList();
@@ -236,11 +219,11 @@ public sealed class LitteraturbankenProvider : IContentProvider,
                     "one work exceeded the catalog page size");
             }
 
-            if (cursor.PagesRead + 1 >= MaxSnapshotPages)
+            if (cursor.PagesRead + 1 >= LitteraturbankenCatalog.MaxSnapshotPages)
             {
                 throw ProviderException.InvalidResponse(
                     Id,
-                    $"the catalog exceeded {MaxSnapshotPages} sequential pages");
+                    $"the catalog exceeded {LitteraturbankenCatalog.MaxSnapshotPages} sequential pages");
             }
 
             nextCursor = cursor.Next(trailingWorkId!).Encode();
@@ -263,747 +246,33 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         CancellationToken ct)
     {
         var work = await LoadWorkAsync(request.ExternalId, ct);
-        if (work is null)
-            return null;
-
-        var selected = request.AssetId is null
-            ? work.Assets.FirstOrDefault(asset => asset.Asset.IsPreferred) ?? work.Assets.FirstOrDefault()
-            : work.Assets.FirstOrDefault(asset =>
-                string.Equals(asset.Asset.Id, request.AssetId, StringComparison.OrdinalIgnoreCase));
-
-        if (selected is null)
-        {
-            throw ProviderException.AssetUnavailableFor(
-                Id,
-                request.ExternalId,
-                request.AssetId ?? "ebook");
-        }
-
-        return new ProviderAcquisitionPlan(
-            ProviderId: Id,
-            ExternalId: work.Item.ExternalId,
-            Asset: selected.Asset,
-            Metadata: work.Item.Metadata,
-            Parts:
-            [
-                new ProviderDownloadPart(
-                    selected.Url,
-                    selected.Output.FileExtension,
-                    selected.Asset.SizeBytes,
-                    selected.Output.Label),
-            ],
-            Output: selected.Output,
-            Source: ToSourceInfo(selected.Record, work.Rights));
+        return work is null ? null : _mapper.PlanAcquisition(work, request.AssetId, request.ExternalId);
     }
 
     private async Task<WorkBundle?> LoadWorkAsync(string externalId, CancellationToken ct)
     {
-        var id = NormalizeExternalId(externalId);
+        var id = LitteraturbankenCatalog.NormalizeExternalId(externalId);
         if (id is null)
             return null;
 
-        var response = await LoadCatalogAsync(
-            BuildItemQuery(id),
+        var response = await _catalogClient.LoadPageAsync(
+            LitteraturbankenCatalog.BuildItemQuery(id),
             from: 0,
             to: 10,
             ct);
         var records = response.Data
-            .Select(ToCatalogRecord)
+            .Select(LitteraturbankenCatalog.ToRecord)
             .Where(record => record is not null)
             .Select(record => record!)
             .Where(record =>
                 string.Equals(record.ExternalId, id, StringComparison.Ordinal)
-                && IsRightsAllowed(record))
+                && LitteraturbankenCatalog.IsRightsAllowed(record))
             .ToList();
 
         if (records.Count == 0)
             return null;
 
-        var rights = await GetRightsCatalogAsync(ct);
-        return BuildWork(records, rights);
-    }
-
-    private async Task<CatalogPage> LoadCatalogAsync(
-        string query,
-        int from,
-        int to,
-        CancellationToken ct,
-        string sortField = "sortkey|asc")
-    {
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["from"] = from.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["to"] = to.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["include"] = IncludeFields,
-            ["exclude"] = ExcludeFields,
-            ["sort_field"] = sortField,
-            ["q"] = query,
-        });
-        var queryString = await form.ReadAsStringAsync(ct);
-
-        using var response = await ProviderHttp.GetHeadersAsync(
-            ProviderHttp.Client(_httpClientFactory, HttpClientName, accept: ProviderHttp.JsonMediaType),
-            Id,
-            CatalogPath + "?" + queryString,
-            ct);
-
-        ProviderHttp.EnsureSuccess(response, Id, "the public catalog");
-
-        var result = await ProviderHttp.ReadJsonAsync<CatalogPage>(response, Id, JsonOptions, ct);
-
-        if (result?.Data is null)
-            throw ProviderException.InvalidResponse(Id, "the catalog omitted its data list");
-
-        return result;
-    }
-
-    private async Task<RightsCatalog> GetRightsCatalogAsync(CancellationToken ct)
-    {
-        if (_rightsCatalog is not null)
-            return _rightsCatalog;
-
-        await _rightsGate.WaitAsync(ct);
-        try
-        {
-            if (_rightsCatalog is not null)
-                return _rightsCatalog;
-
-            var licenses = await GetJsonAsync<Dictionary<string, string>>(LicensePath, ct);
-            var provenance = await GetJsonElementAsync(ProvenancePath, ct);
-            _rightsCatalog = RightsCatalog.Parse(licenses, provenance);
-            return _rightsCatalog;
-        }
-        finally
-        {
-            _rightsGate.Release();
-        }
-    }
-
-    private async Task<T> GetJsonAsync<T>(string path, CancellationToken ct)
-    {
-        using var response = await ProviderHttp.GetHeadersAsync(
-            ProviderHttp.Client(_httpClientFactory, HttpClientName, accept: ProviderHttp.JsonMediaType),
-            Id,
-            path,
-            ct);
-
-        ProviderHttp.EnsureSuccess(response, Id, "rights metadata");
-
-        return await ProviderHttp.ReadJsonAsync<T>(response, Id, JsonOptions, ct)
-            ?? throw ProviderException.InvalidResponse(Id, "rights metadata was empty");
-    }
-
-    private async Task<JsonElement> GetJsonElementAsync(string path, CancellationToken ct)
-    {
-        using var response = await ProviderHttp.GetHeadersAsync(
-            ProviderHttp.Client(_httpClientFactory, HttpClientName, accept: ProviderHttp.JsonMediaType),
-            Id,
-            path,
-            ct);
-
-        ProviderHttp.EnsureSuccess(response, Id, "provenance metadata");
-
-        using var document = await ProviderHttp.ReadJsonAsync(response, Id, ct);
-        return document.RootElement.Clone();
-    }
-
-    private WorkBundle? BuildWork(IEnumerable<CatalogRecord> sourceRecords, RightsCatalog rights)
-    {
-        var records = sourceRecords
-            .OrderBy(record => record.MediaType == "etext" ? 0 : 1)
-            .ToList();
-        if (records.Count == 0)
-            return null;
-
-        var sourcedAssets = records
-            .SelectMany(record => BuildAssets(record, rights))
-            .GroupBy(asset => asset.Asset.Id, StringComparer.Ordinal)
-            .Select(group =>
-            {
-                var variants = group.ToList();
-                var signatures = variants
-                    .Select(variant => variant.Record.License + "|" + RightsSignature(variant.Record))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToList();
-                return signatures.Count == 1 ? variants[0] : null;
-            })
-            .Where(asset => asset is not null)
-            .Select(asset => asset!)
-            .OrderBy(asset => asset.Asset.Id == "epub" ? 0 : 1)
-            .ToList();
-
-        if (sourcedAssets.Count == 0)
-            return null;
-
-        var preferred = sourcedAssets.FirstOrDefault(asset => asset.Asset.Id == "epub")
-            ?? sourcedAssets[0];
-        var item = new ProviderItem(
-            ProviderId: Id,
-            ExternalId: preferred.Record.ExternalId,
-            MediaKind: ProviderMediaKind.Ebook,
-            Metadata: ToMetadata(preferred.Record),
-            Assets: sourcedAssets.Select(asset => asset.Asset).ToList(),
-            Source: ToWorkSourceInfo(preferred.Record, sourcedAssets, rights));
-
-        return new WorkBundle(item, sourcedAssets, rights);
-    }
-
-    private static IEnumerable<SourcedAsset> BuildAssets(CatalogRecord record, RightsCatalog rights)
-    {
-        if (!IsRightsAllowed(record)
-            || record.SourceItemUrl is null
-            || !rights.TryBuildStatement(record, out _, out _))
-        {
-            yield break;
-        }
-
-        if (record.MediaType == "etext"
-            && TryGetExportSize(record, "epub", out var epubBytes)
-            && epubBytes <= MaxFileBytes)
-        {
-            var author = record.Authors.FirstOrDefault()?.AuthorId;
-            var title = record.WorkTitleId ?? record.TitleId;
-            if (!string.IsNullOrWhiteSpace(author) && !string.IsNullOrWhiteSpace(title))
-            {
-                var file = Uri.EscapeDataString(author + "_" + title) + ".epub";
-                yield return new SourcedAsset(
-                    new ProviderAsset(
-                        "epub",
-                        ProviderMediaKind.Ebook,
-                        "EPUB",
-                        "application/epub+zip",
-                        epubBytes,
-                        IsPreferred: true),
-                    new Uri(BaseUrl + "/txt/epub/" + file),
-                    new ProviderOutput(".epub", "application/epub+zip", "EPUB"),
-                    record);
-            }
-        }
-
-        if (record.MediaType == "faksimil"
-            && TryGetExportSize(record, "pdf", out var pdfBytes)
-            && pdfBytes <= MaxFileBytes)
-        {
-            yield return new SourcedAsset(
-                new ProviderAsset(
-                    "pdf",
-                    ProviderMediaKind.Ebook,
-                    "PDF",
-                    "application/pdf",
-                    pdfBytes),
-                new Uri(BaseUrl + "/export/faksimil/" + record.ExternalId + ".pdf"),
-                new ProviderOutput(".pdf", "application/pdf", "PDF"),
-                record);
-        }
-    }
-
-    private static ProviderMetadata ToMetadata(CatalogRecord record)
-    {
-        var title = string.IsNullOrWhiteSpace(record.ShortTitle)
-            ? record.Title
-            : record.ShortTitle.Trim();
-        var authors = record.Authors
-            .Select(author => author.FullName?.Trim())
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Cast<string>()
-            .ToList();
-
-        return new ProviderMetadata(
-            Title: title,
-            Subtitle: !string.Equals(title, record.Title, StringComparison.Ordinal) ? record.Title : null,
-            Author: authors.Count == 0 ? null : string.Join("; ", authors),
-            Language: "Swedish",
-            Publisher: "Litteraturbanken",
-            PublishedDate: record.SortDateImprint?.Plain);
-    }
-
-    private static ProviderSourceInfo ToWorkSourceInfo(
-        CatalogRecord preferred,
-        IReadOnlyList<SourcedAsset> assets,
-        RightsCatalog rights)
-    {
-        var statements = new List<string>();
-        var rightsUrls = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var asset in assets)
-        {
-            if (!rights.TryBuildStatement(asset.Record, out var statement, out var rightsUrl)
-                || string.IsNullOrWhiteSpace(statement))
-            {
-                continue;
-            }
-
-            var link = string.IsNullOrWhiteSpace(rightsUrl) ? string.Empty : " (" + rightsUrl + ")";
-            statements.Add(asset.Asset.Label + ": " + statement + link);
-            if (!string.IsNullOrWhiteSpace(rightsUrl))
-                rightsUrls.Add(rightsUrl);
-        }
-
-        return new ProviderSourceInfo(
-            ItemUrl: preferred.SourceItemUrl?.ToString(),
-            RightsStatement: statements.Count == 0 ? null : string.Join(" ", statements),
-            RightsUrl: rightsUrls.Count == 1 ? rightsUrls.Single() : null);
-    }
-
-    private static ProviderSourceInfo ToSourceInfo(CatalogRecord record, RightsCatalog rights)
-    {
-        rights.TryBuildStatement(record, out var statement, out var rightsUrl);
-        return new ProviderSourceInfo(
-            ItemUrl: record.SourceItemUrl?.ToString(),
-            RightsStatement: statement,
-            RightsUrl: rightsUrl);
-    }
-
-    private static bool TryGetExportSize(CatalogRecord record, string format, out long size)
-    {
-        var export = record.Exports.FirstOrDefault(candidate =>
-            string.Equals(candidate.Type, format, StringComparison.Ordinal));
-        size = export?.Size ?? 0;
-        return size > 0;
-    }
-
-    private static bool IsRightsAllowed(CatalogRecord record) =>
-        AllowedLicenses.Contains(record.License ?? string.Empty)
-        && record.SourceItemUrl is not null;
-
-    private static CatalogRecord? ToCatalogRecord(CatalogRow row)
-    {
-        var externalId = NormalizeExternalId(row.ExternalId);
-        var title = string.IsNullOrWhiteSpace(row.Title) ? null : row.Title.Trim();
-        if (externalId is null || title is null || string.IsNullOrWhiteSpace(row.MediaType))
-            return null;
-
-        var authors = row.Authors ?? [];
-        var author = authors.FirstOrDefault(candidate =>
-            !string.IsNullOrWhiteSpace(candidate.AuthorId));
-        var titleId = row.WorkTitleId ?? row.TitleId;
-        if (author is null || string.IsNullOrWhiteSpace(titleId))
-            return null;
-
-        var itemUrl = new Uri(
-            BaseUrl
-            + "/författare/"
-            + Uri.EscapeDataString(author.AuthorId!)
-            + "/titlar/"
-            + Uri.EscapeDataString(titleId)
-            + "/info");
-
-        return new CatalogRecord(
-            externalId,
-            title,
-            row.ShortTitle?.Trim(),
-            titleId,
-            row.WorkTitleId,
-            row.MediaType,
-            row.License,
-            row.Printed,
-            authors,
-            row.Exports ?? [],
-            row.Provenance ?? [],
-            row.SortDateImprint,
-            itemUrl);
-    }
-
-    private static string? NormalizeExternalId(string? value)
-    {
-        var id = value?.Trim();
-        if (id is null || id.Length > 32 || id.Length < 3
-            || !id.StartsWith("lb", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        for (var index = 2; index < id.Length; index++)
-        {
-            if (!char.IsAsciiDigit(id[index]))
-                return null;
-        }
-
-        return id;
-    }
-
-    private static string RightsSignature(CatalogRecord record) =>
-        string.Join(
-            "|",
-            record.Provenance
-                .Select(provenance => (provenance.Library ?? string.Empty) + ":" + (provenance.Signum ?? string.Empty))
-                .OrderBy(value => value, StringComparer.Ordinal));
-
-    private static string BuildSearchQuery(string searchText)
-    {
-        var escaped = EscapeQuery(searchText);
-        return "@type=cross_fields @default_operator=AND "
-            + "@fields=autocomplete.scandinavian "
-            + escaped
-            + " AND searchable:true AND show:true AND "
-            + "(license:cc-0 OR license:pd OR license:cc-by)";
-    }
-
-    private const string SnapshotSortField = "lbworkid|asc";
-
-    private static string BuildSnapshotQuery(string? afterWorkId) =>
-        "searchable:true AND show:true AND "
-        + "(license:cc-0 OR license:pd OR license:cc-by)"
-        + (afterWorkId is null ? string.Empty : " AND lbworkid:>=" + afterWorkId);
-
-    /// <summary>
-    /// Validates a raw catalogue work id for use as a paging key. Wider than
-    /// <see cref="NormalizeExternalId"/>: ids that are not offered as items
-    /// still take part in the sort order the cursor walks.
-    /// </summary>
-    private static string? NormalizeWorkKey(string? value)
-    {
-        var id = value?.Trim();
-        if (id is null || id.Length > 32 || id.Length < 3
-            || !id.StartsWith("lb", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        for (var index = 2; index < id.Length; index++)
-        {
-            if (!char.IsAsciiDigit(id[index]) && !char.IsAsciiLetterLower(id[index]))
-                return null;
-        }
-
-        return id;
-    }
-
-    private static string BuildItemQuery(string externalId) =>
-        "lbworkid:" + externalId
-        + " AND searchable:true AND show:true AND "
-        + "(license:cc-0 OR license:pd OR license:cc-by)";
-
-    private static string EscapeQuery(string value)
-    {
-        const string special = "\\+-=&|><!(){}[]^\"~*?:/";
-        var builder = new StringBuilder(value.Length + 8);
-        foreach (var character in value)
-        {
-            if (special.Contains(character))
-                builder.Append('\\');
-            builder.Append(character);
-        }
-
-        return builder.ToString();
-    }
-
-    private sealed record WorkBundle(
-        ProviderItem Item,
-        IReadOnlyList<SourcedAsset> Assets,
-        RightsCatalog Rights);
-
-    private readonly record struct SnapshotCursor(string? AfterWorkId, int PagesRead)
-    {
-        private const string Version = "v2";
-
-        public static SnapshotCursor Start => new(null, 0);
-
-        public SnapshotCursor Next(string afterWorkId) => new(afterWorkId, PagesRead + 1);
-
-        public string Encode() => string.Join(
-            '|',
-            Version,
-            AfterWorkId ?? string.Empty,
-            PagesRead.ToString(System.Globalization.CultureInfo.InvariantCulture));
-
-        public static SnapshotCursor Decode(string value, string providerId)
-        {
-            var parts = value.Split('|');
-            if (parts.Length != 3
-                || !string.Equals(parts[0], Version, StringComparison.Ordinal)
-                || NormalizeWorkKey(parts[1]) is not { } afterWorkId
-                || !int.TryParse(
-                    parts[2],
-                    System.Globalization.NumberStyles.None,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out var pagesRead)
-                || pagesRead <= 0
-                || pagesRead >= MaxSnapshotPages)
-            {
-                throw ProviderException.InvalidResponse(providerId, "the catalog cursor was invalid");
-            }
-
-            return new SnapshotCursor(afterWorkId, pagesRead);
-        }
-    }
-
-    private sealed record SourcedAsset(
-        ProviderAsset Asset,
-        Uri Url,
-        ProviderOutput Output,
-        CatalogRecord Record);
-
-    private sealed record CatalogRecord(
-        string ExternalId,
-        string Title,
-        string? ShortTitle,
-        string TitleId,
-        string? WorkTitleId,
-        string MediaType,
-        string? License,
-        bool Printed,
-        List<CatalogAuthor> Authors,
-        List<CatalogExport> Exports,
-        List<CatalogProvenance> Provenance,
-        CatalogDate? SortDateImprint,
-        Uri? SourceItemUrl);
-
-    private sealed class CatalogPage
-    {
-        [JsonPropertyName("hits")]
-        public int Hits { get; init; }
-
-        [JsonPropertyName("data")]
-        public List<CatalogRow> Data { get; init; } = [];
-    }
-
-    private sealed class CatalogRow
-    {
-        [JsonPropertyName("lbworkid")]
-        public string? ExternalId { get; init; }
-
-        [JsonPropertyName("title")]
-        public string? Title { get; init; }
-
-        [JsonPropertyName("shorttitle")]
-        public string? ShortTitle { get; init; }
-
-        [JsonPropertyName("titleid")]
-        public string? TitleId { get; init; }
-
-        [JsonPropertyName("work_titleid")]
-        public string? WorkTitleId { get; init; }
-
-        [JsonPropertyName("mediatype")]
-        public string? MediaType { get; init; }
-
-        [JsonPropertyName("license")]
-        public string? License { get; init; }
-
-        [JsonPropertyName("printed")]
-        public bool Printed { get; init; }
-
-        [JsonPropertyName("authors")]
-        public List<CatalogAuthor>? Authors { get; init; }
-
-        [JsonPropertyName("export")]
-        public List<CatalogExport>? Exports { get; init; }
-
-        [JsonPropertyName("provenance")]
-        public List<CatalogProvenance>? Provenance { get; init; }
-
-        [JsonPropertyName("sort_date_imprint")]
-        public CatalogDate? SortDateImprint { get; init; }
-    }
-
-    private sealed class CatalogAuthor
-    {
-        [JsonPropertyName("authorid")]
-        public string? AuthorId { get; init; }
-
-        [JsonPropertyName("full_name")]
-        public string? FullName { get; init; }
-    }
-
-    private sealed class CatalogExport
-    {
-        [JsonPropertyName("type")]
-        public string? Type { get; init; }
-
-        [JsonPropertyName("size")]
-        public long Size { get; init; }
-    }
-
-    private sealed class CatalogProvenance
-    {
-        [JsonPropertyName("library")]
-        public string? Library { get; init; }
-
-        [JsonPropertyName("signum")]
-        public string? Signum { get; init; }
-
-        [JsonPropertyName("text2")]
-        public bool Text2 { get; init; }
-    }
-
-    private sealed class CatalogDate
-    {
-        [JsonPropertyName("plain")]
-        public string? Plain { get; init; }
-    }
-
-    private sealed record LicenseNotice(string Statement, string? RightsUrl);
-
-    private sealed record ProvenanceNotice(
-        IReadOnlyDictionary<string, string> Text,
-        IReadOnlyDictionary<string, string> Text2);
-
-    private sealed class RightsCatalog
-    {
-        private readonly IReadOnlyDictionary<string, LicenseNotice> _licenses;
-        private readonly IReadOnlyDictionary<string, ProvenanceNotice> _provenance;
-
-        private RightsCatalog(
-            IReadOnlyDictionary<string, LicenseNotice> licenses,
-            IReadOnlyDictionary<string, ProvenanceNotice> provenance)
-        {
-            _licenses = licenses;
-            _provenance = provenance;
-        }
-
-        public static RightsCatalog Parse(
-            IReadOnlyDictionary<string, string> licenseMarkup,
-            JsonElement provenanceRoot)
-        {
-            var licenses = new Dictionary<string, LicenseNotice>(StringComparer.Ordinal);
-            foreach (var code in AllowedLicenseCodes)
-            {
-                if (!licenseMarkup.TryGetValue(code, out var markup))
-                    continue;
-
-                try
-                {
-                    var document = XDocument.Parse(markup, LoadOptions.None);
-                    var statement = NormalizeWhitespace(document.Root?.Value ?? string.Empty);
-                    var licenseLink = document
-                        .Descendants()
-                        .FirstOrDefault(element =>
-                            element.Name.LocalName == "a"
-                            && string.Equals(
-                                element.Attribute("rel")?.Value,
-                                "license",
-                                StringComparison.OrdinalIgnoreCase))
-                        ?.Attribute("href")
-                        ?.Value;
-
-                    if (statement.Length > 0)
-                    {
-                        var safeLink = Uri.TryCreate(licenseLink, UriKind.Absolute, out var uri)
-                            && uri.Scheme == Uri.UriSchemeHttps
-                            && uri.Host == "creativecommons.org"
-                            ? uri.ToString()
-                            : null;
-                        licenses[code] = new LicenseNotice(statement, safeLink);
-                    }
-                }
-                catch (System.Xml.XmlException)
-                {
-                    // A malformed source license is not permission to expose a work.
-                }
-            }
-
-            var provenance = new Dictionary<string, ProvenanceNotice>(StringComparer.Ordinal);
-            if (provenanceRoot.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var entry in provenanceRoot.EnumerateObject())
-                {
-                    provenance[entry.Name] = new ProvenanceNotice(
-                        ReadTextMap(entry.Value, "text"),
-                        ReadTextMap(entry.Value, "text2"));
-                }
-            }
-
-            return new RightsCatalog(licenses, provenance);
-        }
-
-        public bool TryBuildStatement(
-            CatalogRecord record,
-            out string? statement,
-            out string? rightsUrl)
-        {
-            statement = null;
-            rightsUrl = null;
-            if (record.License is null
-                || !_licenses.TryGetValue(record.License, out var notice))
-            {
-                return false;
-            }
-
-            var provenanceText = BuildProvenanceText(record);
-            var rendered = notice.Statement;
-            if (rendered.Contains("{{provenance}}", StringComparison.Ordinal))
-            {
-                if (string.IsNullOrWhiteSpace(provenanceText))
-                    return false;
-
-                rendered = rendered.Replace(
-                    "{{provenance}}",
-                    provenanceText,
-                    StringComparison.Ordinal);
-            }
-            else if (!string.IsNullOrWhiteSpace(provenanceText))
-            {
-                rendered += " Provenance: " + provenanceText;
-            }
-
-            statement = rendered;
-            rightsUrl = notice.RightsUrl;
-            return true;
-        }
-
-        private string? BuildProvenanceText(CatalogRecord record)
-        {
-            if (record.Provenance.Count == 0)
-                return null;
-
-            var mediaType = record.MediaType == "faksimil"
-                ? record.Printed ? "faksimilprint" : "faksimilnoprint"
-                : "etext";
-            var statements = new List<string>();
-
-            for (var index = 0; index < record.Provenance.Count; index++)
-            {
-                var item = record.Provenance[index];
-                if (string.IsNullOrWhiteSpace(item.Library)
-                    || !_provenance.TryGetValue(item.Library, out var source))
-                {
-                    return null;
-                }
-
-                var sourceText = index > 0 && item.Text2
-                    ? source.Text2.GetValueOrDefault(mediaType)
-                    : null;
-                if (string.IsNullOrWhiteSpace(sourceText))
-                    sourceText = source.Text.GetValueOrDefault(mediaType);
-
-                if (string.IsNullOrWhiteSpace(sourceText))
-                    return null;
-
-                var signum = string.IsNullOrWhiteSpace(item.Signum)
-                    ? string.Empty
-                    : " (" + item.Signum.Trim() + ")";
-                statements.Add(sourceText.Replace(
-                    "{{signum}}",
-                    signum,
-                    StringComparison.Ordinal));
-            }
-
-            return string.Join(" ", statements);
-        }
-
-        private static IReadOnlyDictionary<string, string> ReadTextMap(
-            JsonElement source,
-            string propertyName)
-        {
-            if (!source.TryGetProperty(propertyName, out var map)
-                || map.ValueKind != JsonValueKind.Object)
-            {
-                return new Dictionary<string, string>(StringComparer.Ordinal);
-            }
-
-            return map.EnumerateObject()
-                .Where(entry => entry.Value.ValueKind == JsonValueKind.String)
-                .ToDictionary(
-                    entry => entry.Name,
-                    entry => entry.Value.GetString() ?? string.Empty,
-                    StringComparer.Ordinal);
-        }
-
-        private static string NormalizeWhitespace(string value) =>
-            string.Join(
-                " ",
-                WebUtility.HtmlDecode(value)
-                    .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        var rights = await _catalogClient.GetRightsCatalogAsync(ct);
+        return _mapper.BuildWork(records, rights);
     }
 }
