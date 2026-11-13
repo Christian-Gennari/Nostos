@@ -1,0 +1,919 @@
+{
+  "instructions": "Nostos is the user's own library: the books they read (EPUB, PDF, audiobooks and paper books), the highlights, notes and passages they kept from them, the topics that connect those notes, their To read list, and their drafts in the Writing Studio.\n\nRules:\n- Quote only words a Nostos tool returned. Never quote a book from memory: use `search` or `find_quote` first, and say so when Nostos has no evidence.\n- Cite every quotation and every claim about what a book or note says. Each result carries a `citation` with the book, author, year, a location when Nostos knows it, and a `url` that opens it in Nostos.\n- When you write a draft for the Writing Studio, put quotations in as the `citation.markdown` link (a `nostos:cite/` link). The Studio shows it as a live citation and exports it as a footnote. Replace the link text only with the exact words you quote.\n- `search` looks across notes, highlights, passages, topics and the text of the user's books. `fetch` reads one result in full.\n- Save a note only when the user asks you to keep something. Keep their own words; do not rewrite them unless asked.\n- Add a book or change a book's details only when the user asks. `update_book` keeps a detail the book already has unless the user asked to change it (`replace: true`).\n- Books on paper have notes but no searchable text. A book that is still being indexed may return no passages yet.",
+  "tools": [
+    {
+      "name": "add_book",
+      "title": "Add a book to the library",
+      "description": "Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A matching entry on To read moves to the library, and its reason stays as a note on the book.",
+      "annotations": {
+        "title": "Add a book to the library",
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The title.",
+            "type": "string"
+          },
+          "author": {
+            "description": "The author or authors.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "type": {
+            "description": "`physical` (a paper book, the default), `ebook` or `audiobook`. An ebook or audiobook is added without its file.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "isbn": {
+            "description": "The ISBN.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "asin": {
+            "description": "The ASIN, for an audiobook.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "subtitle": {
+            "description": "The subtitle.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "description": {
+            "description": "A description of the book.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publisher": {
+            "description": "The publisher.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publishedDate": {
+            "description": "The year or date it was published.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "language": {
+            "description": "The language.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "pageCount": {
+            "description": "The number of pages.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          },
+          "series": {
+            "description": "The series it belongs to.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "volumeNumber": {
+            "description": "Its number in the series.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "confirmedBookId": {
+            "description": "After `candidates`: the id of the book the user says it is. Nothing is added.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "default": null
+          },
+          "forceCreate": {
+            "description": "After `candidates`: true when the user wants it added as a separate book.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "add_to_reading_list",
+      "title": "Put a book on To read",
+      "description": "Puts a book the user wants to read on their To read list. A book already there is not added twice. Check `list_books` first if they may own it.",
+      "annotations": {
+        "title": "Put a book on To read",
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The book's title.",
+            "type": "string"
+          },
+          "author": {
+            "description": "The author.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "isbn": {
+            "description": "The ISBN, if known.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publishedDate": {
+            "description": "The year or date it was published.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "why": {
+            "description": "Why the user wants to read it, in their words.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "recommendedBy": {
+            "description": "Who recommended it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "readNext": {
+            "description": "True to put it on Next up.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "create_draft",
+      "title": "Write a new Studio draft",
+      "description": "Makes a new document in the Writing Studio from Markdown. It never changes an existing document. Put quotations in as their `citation.markdown` links so the Studio shows them as live citations. Sending the same draft again keeps one document.",
+      "annotations": {
+        "title": "Write a new Studio draft",
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "The document's name.",
+            "type": "string"
+          },
+          "content": {
+            "description": "The document in Markdown.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "folderId": {
+            "description": "A folder to put it in (a folder id from `list_drafts`). Leave out for the top level.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "default": null
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "fetch",
+      "title": "Read a result in full",
+      "description": "Reads one result from `search` in full: the whole note or highlight, a topic with its notes, or a passage of a book. Pass the result's `id`.",
+      "annotations": {
+        "title": "Read a result in full",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "The `id` of a result from `search`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "find_quote",
+      "title": "Find a passage in a book",
+      "description": "Finds a passage in one book by its first and last words, and returns the book's exact words. For a paper book it looks in the digital editions of the same work. Use it before quoting a passage the user names, or before `save_note` or `save_passage` with a `quoteRef`. When it asks the user to choose, call it again with `choice`.",
+      "annotations": {
+        "title": "Find a passage in a book",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book (id from `list_books`).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsWith": {
+            "description": "The words the passage starts with.",
+            "type": "string"
+          },
+          "endsWith": {
+            "description": "The words the passage ends with.",
+            "type": "string"
+          },
+          "page": {
+            "description": "The page, if the user named one. Only narrows the search.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          },
+          "chapter": {
+            "description": "The chapter, if the user named one. Only narrows the search.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "choice": {
+            "description": "After the tool asked to choose: the number picked (1 confirms a single passage). Send the same words again.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "bookId",
+          "startsWith",
+          "endsWith"
+        ]
+      }
+    },
+    {
+      "name": "get_book",
+      "title": "One book",
+      "description": "One book's details: title, author, year, publisher, ISBN, description, progress, rating, the user's review, and a citation for the book as a whole.",
+      "annotations": {
+        "title": "One book",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book's id.",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "bookId"
+        ]
+      }
+    },
+    {
+      "name": "get_topic",
+      "title": "One topic",
+      "description": "One topic: the user's own words about it and the notes linked to it across books, newest first, each with a citation. Pass a topic id from `list_topics` or `search`.",
+      "annotations": {
+        "title": "One topic",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "topicId": {
+            "description": "The topic's id (`topic:<id>` or the bare id).",
+            "type": "string"
+          },
+          "limit": {
+            "description": "How many notes, 1 to 100. Defaults to 30.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "topicId"
+        ]
+      }
+    },
+    {
+      "name": "list_books",
+      "title": "Find books",
+      "description": "Lists or finds books in the library by title, author, ISBN, collection or shelf. Returns each book's id for the other tools.",
+      "annotations": {
+        "title": "Find books",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "description": "Words in the title or author.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "isbn": {
+            "description": "An ISBN. Finds that exact book, ignoring the other filters.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "shelf": {
+            "description": "A shelf: All, Reading, Finished, NotStarted, Favorites or Unsorted. Defaults to All.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "sort": {
+            "description": "Order: Recent, Title, LastRead, RecentlyFinished or Rating. Defaults to Recent.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "collectionId": {
+            "description": "Only books in this collection (id from `overview`).",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "default": null
+          },
+          "page": {
+            "description": "Page, from 1.",
+            "type": "integer",
+            "default": 1
+          },
+          "pageSize": {
+            "description": "Books per page, 1 to 50. Defaults to 20.",
+            "type": "integer",
+            "default": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "list_drafts",
+      "title": "Studio drafts",
+      "description": "The user's documents and folders in the Writing Studio, with their paths. Finds them by name or folder, not by what they say.",
+      "annotations": {
+        "title": "Studio drafts",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "Words in a document's name or folder path.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "type": {
+            "description": "`Document` or `Folder`. Leave out for both.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "limit": {
+            "description": "How many, 1 to 200. Defaults to 50.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "list_notes",
+      "title": "A book's notes",
+      "description": "Every highlight, note and passage the user kept from one book, in page order where Nostos knows the page, each with a citation.",
+      "annotations": {
+        "title": "A book's notes",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book's id.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "offset": {
+            "description": "Skip this many notes, for the next page.",
+            "type": "integer",
+            "default": 0
+          },
+          "limit": {
+            "description": "Notes per page, 1 to 100. Defaults to 50.",
+            "type": "integer",
+            "default": 50
+          }
+        },
+        "required": [
+          "bookId"
+        ]
+      }
+    },
+    {
+      "name": "list_topics",
+      "title": "Topics",
+      "description": "The topics that connect the user's notes across books, most used first, or those matching a search. Pass a topic's `id` to `fetch` to read its notes.",
+      "annotations": {
+        "title": "Topics",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "description": "Words to find topics by, through the notes linked to them. Leave out to list topics by use.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "overview",
+      "title": "Library and Brain at a glance",
+      "description": "A compact picture of the whole library and the Brain: every book with its collections, note totals, the most used topics, and the books with the most notes. Use it for questions about the library as a whole.",
+      "annotations": {
+        "title": "Library and Brain at a glance",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "read_draft",
+      "title": "Read a draft",
+      "description": "One Studio document as Markdown. Its `nostos:cite/` links are the Studio's live citations: keep them when you quote from the draft.",
+      "annotations": {
+        "title": "Read a draft",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "writingId": {
+            "description": "The document's id, from `list_drafts`.",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "writingId"
+        ]
+      }
+    },
+    {
+      "name": "reading_list",
+      "title": "To read",
+      "description": "The books the user wants to read but does not have yet: Next up first, then the rest.",
+      "annotations": {
+        "title": "To read",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "shelf": {
+            "description": "`all`, `next` (Next up only) or `someday`. Defaults to all.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "limit": {
+            "description": "How many, at most 200. Defaults to 50.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "save_note",
+      "title": "Keep a note on a book",
+      "description": "Keeps a thought or a quote on one book, the way the user would in Nostos. Use it only when the user asks to keep something. Pass their own words as `thought`. For a quote, pass a `quoteRef` from `find_quote` (Nostos then stores the book's exact words) or the exact `quote`. Saving the same thing twice keeps one note.",
+      "annotations": {
+        "title": "Keep a note on a book",
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book the note belongs to (id from `list_books`).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "thought": {
+            "description": "The user's own words, as they gave them.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "quote": {
+            "description": "Words quoted from the book, exactly as the book has them.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "quoteRef": {
+            "description": "A `quoteRef` from `find_quote`, instead of `quote`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "topics": {
+            "description": "Topic names to link the note to, at most five. Existing names are reused.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": null
+          },
+          "wholeBook": {
+            "description": "True when the thought is about the whole book rather than one place in it.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "bookId"
+        ]
+      }
+    },
+    {
+      "name": "save_passage",
+      "title": "Keep a passage of a book",
+      "description": "Keeps a passage: a longer stretch of a book with a title (such as a whole argument or a thought experiment), read in Nostos's passage viewer rather than shown as a highlight. Use it only when the user asks to keep a passage. Find the passage with `find_quote` first and pass its `quoteRef`; Nostos stores the book's exact words and where the passage starts and ends. Works for EPUB and PDF books; for a paper book, use `save_note` with the `quoteRef` instead. Saving the same passage twice keeps one.",
+      "annotations": {
+        "title": "Keep a passage of a book",
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book the passage belongs to (id from `list_books`).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "quoteRef": {
+            "description": "A `quoteRef` from `find_quote` for the whole passage.",
+            "type": "string"
+          },
+          "title": {
+            "description": "The passage's title, as the user named it (1 to 300 characters).",
+            "type": "string"
+          },
+          "thought": {
+            "description": "The user's own note on the passage, as they gave it.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "topics": {
+            "description": "Topic names to link the passage to, at most five. Existing names are reused.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": null
+          }
+        },
+        "required": [
+          "bookId",
+          "quoteRef",
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "search",
+      "title": "Search the library",
+      "description": "Searches the user's own reading in one go: notes, highlights and passages they kept, topics, and the text of their imported EPUB and PDF books. Returns results with an id you can pass to `fetch`, a short excerpt, a link, and a citation. Use it before saying what a book or the user's notes say.",
+      "annotations": {
+        "title": "Search the library",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "description": "What to find, in a few words or a short question.",
+            "type": "string"
+          },
+          "bookIds": {
+            "description": "Only look in these books (ids from `list_books`). Leave out to search the whole library.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "default": null
+          },
+          "kind": {
+            "description": "Only one kind of result: `notes`, `topics` or `book_text`. Leave out for all.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "limit": {
+            "description": "How many results of each kind, 1 to 8. Defaults to 6.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "update_book",
+      "title": "Fill in or correct a book's details",
+      "description": "Fills in or corrects one book's details: title, subtitle, author, description, year, ISBN, publisher, language and series. Use it only when the user asks. Pass only the details to set. A detail the book already has is kept unless you pass `replace: true`, which only the user's request to change it allows. The result lists every changed detail with its old value, and `undo` holds the arguments that put them back.",
+      "annotations": {
+        "title": "Fill in or correct a book's details",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "description": "The book (id from `list_books` or `add_book`).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "description": "The title.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "subtitle": {
+            "description": "The subtitle.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "author": {
+            "description": "The author or authors.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "description": {
+            "description": "The description.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publishedDate": {
+            "description": "The year or date it was published.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "isbn": {
+            "description": "The ISBN.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "publisher": {
+            "description": "The publisher.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "language": {
+            "description": "The language.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "series": {
+            "description": "The series it belongs to.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "volumeNumber": {
+            "description": "Its number in the series.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "replace": {
+            "description": "True to change details the book already has. With it, an empty string clears a detail.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "bookId"
+        ]
+      }
+    }
+  ]
+}
