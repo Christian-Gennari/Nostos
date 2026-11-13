@@ -24,7 +24,7 @@ namespace Nostos.Backend.Tests.Mcp;
 /// descriptions, argument schemas, annotations, server instructions and result
 /// shapes in the checked-in files under <c>Mcp/Expected/</c>; this test fails on
 /// any byte that differs. It is a characterization test: it was captured from
-/// the server before <see cref="NostosMcpTools"/> was split by feature
+/// the server before the single MCP tool class was split by feature
 /// (issue #1599), and it is what proves the split changed no caller's view.
 ///
 /// To regenerate deliberately (only when a contract change is intended), run
