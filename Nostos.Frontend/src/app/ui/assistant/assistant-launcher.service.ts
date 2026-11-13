@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { modifierKeyLabel } from '../../core/platform';
 import { Subject } from 'rxjs';
 
@@ -21,6 +21,7 @@ export const ASSISTANT_LAUNCHER_ATTR = 'data-assistant-launcher';
 export class AssistantLauncherService {
   private readonly assistant = inject(AssistantService);
   private readonly status = inject(AssistantStatusService);
+  private readonly destroyRef = inject(DestroyRef);
 
   /**
    * Whether Ask Nostos exists at all: the user wants it (preference on) AND the
@@ -107,13 +108,15 @@ export class AssistantLauncherService {
     // server says it can run the assistant; ask at boot, not when the
     // deferred shell happens to load.
     this.status.ensureLoaded();
-    document.addEventListener('keydown', (event) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (this.toggleRequested.observed) return;
       const mod = event.metaKey || event.ctrlKey;
       if (!mod || event.altKey || event.key.toLowerCase() !== 'j' || !this.available()) return;
       event.preventDefault();
       this.toggle();
-    });
+    };
+    document.addEventListener('keydown', onKeyDown);
+    this.destroyRef.onDestroy(() => document.removeEventListener('keydown', onKeyDown));
   }
 }
 

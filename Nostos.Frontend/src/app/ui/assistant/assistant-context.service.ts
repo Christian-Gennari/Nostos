@@ -20,6 +20,7 @@
  * capture would be filed against the wrong place.
  */
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter } from 'rxjs/operators';
 
@@ -131,14 +132,17 @@ export class AssistantContextService {
     if (router) {
       this.url.set(router.url);
       router.events
-        .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
+        .pipe(
+          filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+          takeUntilDestroyed(),
+        )
         .subscribe((event) => this.url.set(event.urlAfterRedirects));
     }
 
     // Book identity (title/format) is ambient, route-derived. It cannot come
     // from the readers alone: the PDF reader holds no book object and Book
     // Details is not a reader at all.
-    effect(() => {
+    effect((onCleanup) => {
       const id = this.routeBookId();
       const books = this.books;
       if (!id || !books || typeof books.get !== 'function') {
@@ -148,7 +152,7 @@ export class AssistantContextService {
       // Book Details has the book already and hands it over (`provideBook`).
       if (untracked(() => this.routeInfo(this.url()).surface) === 'book-detail') return;
       let cancelled = false;
-      books.get(id).subscribe({
+      const sub = books.get(id).subscribe({
         next: (book) => {
           if (cancelled) return;
           this.bookMeta.set({ id: book.id, title: book.title, format: book.type });
@@ -157,9 +161,10 @@ export class AssistantContextService {
           if (!cancelled) this.bookMeta.set(null);
         },
       });
-      return () => {
+      onCleanup(() => {
         cancelled = true;
-      };
+        sub.unsubscribe();
+      });
     });
   }
 
