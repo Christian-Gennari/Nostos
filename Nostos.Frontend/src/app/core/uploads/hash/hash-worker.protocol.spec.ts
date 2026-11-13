@@ -1,4 +1,4 @@
-import { TransferCancelledError } from '../../models/library-transfer.models';
+import { TransferCancelledError } from '../upload.models';
 import {
   HashWorkerInbound,
   HashWorkerOutbound,

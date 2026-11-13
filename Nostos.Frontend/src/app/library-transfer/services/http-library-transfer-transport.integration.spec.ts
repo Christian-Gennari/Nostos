@@ -15,10 +15,10 @@ import { TestBed } from '@angular/core/testing';
 
 import { MigrationSessionStatusDto } from '../models/migration-http.dtos';
 import { TransferProgress } from '../models/library-transfer.models';
-import { ChunkUploadEngine } from './chunk-upload-engine.service';
-import { FileDigestService } from './file-digest.service';
-import { HASH_WORKER_FACTORY } from './hash/hash-worker';
-import { sha256ChunkHex } from './hash/chunk-digest';
+import { ChunkUploadEngine } from '../../core/uploads/chunk-upload-engine';
+import { FileDigestService } from '../../core/uploads/file-digest.service';
+import { HASH_WORKER_FACTORY } from '../../core/uploads/hash/hash-worker';
+import { sha256ChunkHex } from '../../core/uploads/hash/chunk-digest';
 import {
   CHUNK_HASH_HEADER_NAME,
   HttpLibraryTransferTransport,

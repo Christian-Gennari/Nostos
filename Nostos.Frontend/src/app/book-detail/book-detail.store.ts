@@ -9,16 +9,13 @@ import { Book, LinkableBookDto } from '../core/dtos/book.dtos';
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
 import { BooksService } from '../core/services/books.service';
-import {
-  BookUploadService,
-  describeBookUploadFailure,
-} from '../core/services/book-upload.service';
+import { BookUploadService } from '../core/services/book-upload.service';
+import { describeUploadFailure } from '../core/uploads/upload-error-copy';
 import { NotesService } from '../core/services/notes.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
 import { isImportInFlight, importStageLabel } from '../core/dtos/import.dtos';
 import { clampPaperPage, paperPagePercent, writePaperPage } from './paper-page-progress';
-import { planLimitMessage } from '../core/plan-limit-message';
 
 /** True when the book has other editions, so its notes are read by its work. */
 function hasEditions(book: Book): boolean {
@@ -770,7 +767,7 @@ export class BookDetailStore {
         .upload(b.id, file, { replace: true })
         .then(() => this.loadBook(b.id, { background: true }))
         .catch((error: unknown) =>
-          this.toast.error(describeBookUploadFailure(error)),
+          this.toast.error(describeUploadFailure(error)),
         )
         .finally(() => this.uploadingFile.set(false));
       return;
@@ -784,22 +781,8 @@ export class BookDetailStore {
           this.loadBook(b.id, { background: true });
         }
       },
-      error: (error: unknown) => this.toast.error(this.describeUploadFailure(error)),
+      error: (error: unknown) =>
+        this.toast.error(describeUploadFailure(error, { resumable: false })),
     });
-  }
-
-  private describeUploadFailure(error: unknown): string {
-    const limit = planLimitMessage(error);
-    if (limit) return limit;
-    const status = (error as { status?: number } | null)?.status;
-    if (status === 0) return 'The connection was interrupted. Try the upload again.';
-    if (status === 408 || status === 504) return 'The upload timed out. Try again.';
-    if (status === 409) return 'This book is already importing or uploading a file. Wait until it finishes.';
-    if (status === 413) return 'This file is larger than this server allows';
-    if (status === 429) return 'Too many uploads are running right now. Try again in a moment.';
-    if (status != null && status >= 400 && status < 500) {
-      return 'The server did not accept this file. Check the file and try again.';
-    }
-    return 'Could not upload the file. Try again.';
   }
 }

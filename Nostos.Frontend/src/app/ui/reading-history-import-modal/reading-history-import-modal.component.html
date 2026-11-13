@@ -44,7 +44,7 @@
                 <li class="history-row" data-testid="reading-history-recent-row">
                   <span class="history-row-text">
                     <span class="history-row-title">
-                      {{ countLabel(batch.bookCount, 'book') }}, {{ countLabel(batch.changeCount, 'value') }}
+                      {{ plural(batch.bookCount, 'book') }}, {{ plural(batch.changeCount, 'value') }}
                     </span>
                     <span class="history-row-sub">
                       {{ sourceNameFor(batch.source) }} · {{ batch.createdAtUtc | nostosDate: 'datetime' }}
@@ -83,7 +83,7 @@
         </p>
 
         <p class="history-counts" data-testid="reading-history-counts">
-          {{ countLabel(rows().length, 'book') }} ·
+          {{ plural(rows().length, 'book') }} ·
           {{ matchedCount() }} matched ·
           {{ newCount() }} new
           @if (skippedCount() > 0) {
@@ -284,7 +284,7 @@
         @if (included().length === 0) {
           Nothing selected
         } @else {
-          Import {{ countLabel(included().length, 'book') }}
+          Import {{ plural(included().length, 'book') }}
         }
       </button>
     </app-dialog-actions>

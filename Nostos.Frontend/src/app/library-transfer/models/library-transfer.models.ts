@@ -17,6 +17,7 @@ import type {
   MigrationProgressDto,
   MigrationSessionRequestDto,
 } from './migration-http.dtos';
+import type { TransferProgress } from '../../core/uploads/upload.models';
 
 /** Host-reported activation state rendered by the import flow (slice B8). */
 export type HostActivationState = 'idle' | 'in-progress' | 'completed' | 'failed';
@@ -34,44 +35,19 @@ export interface LibraryActivationConflictFacts {
   changedSinceImportStarted?: boolean | null;
 }
 
-/** Read block for whole-file hashing: bounded regardless of archive size (plan §11.3). */
-export const HASH_READ_BLOCK_BYTES = 4 * 1024 * 1024;
-
-/** Default upload concurrency: enough pipelining, bounded memory (plan §19). */
-export const DEFAULT_UPLOAD_CONCURRENCY = 2;
-
-/** Default total attempts per chunk, including the first (plan §22). */
-export const DEFAULT_CHUNK_MAX_ATTEMPTS = 8;
-
-export class TransferCancelledError extends Error {
-  constructor(message = 'The operation was cancelled.') {
-    super(message);
-    this.name = 'TransferCancelledError';
-  }
-}
-
-/** Transient progress of a single in-flight chunk request. */
-export interface ChunkProgress {
-  chunkIndex: number;
-  loadedBytes: number;
-  totalBytes: number;
-}
-
-/** Aggregated transfer progress suitable for the later progress component (plan §23). */
-export interface TransferProgress {
-  /** Server-confirmed completed bytes; never decreases. */
-  uploadedBytes: number;
-  totalBytes: number;
-  completedChunks: number;
-  totalChunks: number;
-  /** Bytes of in-flight requests currently known to be on the wire. */
-  inFlightBytes: number;
-  /** Rolling transfer rate, null until the estimator has enough samples. */
-  rateBytesPerSecond: number | null;
-  /** Seconds remaining, null while the rate is unreliable. */
-  etaSeconds: number | null;
-  paused: boolean;
-}
+// The chunk-upload primitives moved to `core/uploads/` (#1646); re-exported
+// here so every existing library-transfer import keeps its meaning.
+export {
+  DEFAULT_CHUNK_MAX_ATTEMPTS,
+  DEFAULT_UPLOAD_CONCURRENCY,
+  HASH_READ_BLOCK_BYTES,
+  TransferCancelledError,
+} from '../../core/uploads/upload.models';
+export type {
+  ChunkProgress,
+  FileDigest,
+  TransferProgress,
+} from '../../core/uploads/upload.models';
 
 /** UI-facing failure: stable code plus an English message; B4 maps copy. */
 export interface LibraryTransferFailure {
@@ -121,24 +97,6 @@ export interface PortableArchiveSummary {
   maxEntryBytes: number;
   counts: MigrationPreflightRequestDto['incomingCounts'];
   mediaEntries: number;
-}
-
-export interface FileDigest {
-  /** Whole-file streaming SHA-256; bounded reads, progress, cancellable. */
-  sha256(
-    file: Blob,
-    options?: {
-      signal?: AbortSignal;
-      readBlockBytes?: number;
-      onProgress?: (bytesRead: number, totalBytes: number) => void;
-    },
-  ): Promise<string>;
-
-  /** One-shot SHA-256 of a single bounded chunk. */
-  sha256Chunk(blob: Blob): Promise<string>;
-
-  /** Versioned cheap fingerprint over size + head + tail (plan §14). */
-  fingerprint(file: Blob): Promise<string>;
 }
 
 /**

@@ -27,8 +27,8 @@ import {
   LibraryTransferCoordinator,
   MAINTENANCE_MAX_WAIT_MS,
 } from './library-transfer-coordinator.service';
-import { HASH_WORKER_FACTORY } from './hash/hash-worker';
-import { Sha256 } from './hash/sha256';
+import { HASH_WORKER_FACTORY } from '../../core/uploads/hash/hash-worker';
+import { Sha256 } from '../../core/uploads/hash/sha256';
 import { PortableArchiveInspector } from './portable-archive-inspector.service';
 import { TRANSFER_RESUME_STORAGE_KEY } from './transfer-resume-store.service';
 

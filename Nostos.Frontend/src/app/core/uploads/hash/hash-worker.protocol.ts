@@ -7,7 +7,7 @@
  * its behaviour can be exercised in unit tests without a real worker thread.
  */
 
-import { TransferCancelledError } from '../../models/library-transfer.models';
+import { TransferCancelledError } from '../upload.models';
 import { hashBlobIncrementally } from './file-hash';
 
 export interface HashWorkerStartRequest {

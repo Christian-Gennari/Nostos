@@ -14,10 +14,8 @@ import { firstValueFrom, lastValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 
 import { BooksService } from '../core/services/books.service';
-import {
-  BookUploadService,
-  describeBookUploadFailure,
-} from '../core/services/book-upload.service';
+import { describeUploadFailure } from '../core/uploads/upload-error-copy';
+import { BookUploadService } from '../core/services/book-upload.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { NoticeComponent } from '../ui/notice/notice.component';
@@ -401,7 +399,7 @@ export class BulkEbookAddComponent {
     } catch (error) {
       this.patch(index, {
         status: 'failed',
-        note: describeBookUploadFailure(error, { bookSaved }),
+        note: describeUploadFailure(error, { bookSaved, resumable }),
       });
     }
   }

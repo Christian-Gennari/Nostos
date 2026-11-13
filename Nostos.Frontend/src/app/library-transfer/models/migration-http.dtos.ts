@@ -13,6 +13,8 @@
  * Future limits beyond petabyte scale must revisit this assumption.
  */
 
+import type { UploadChunk } from '../../core/uploads/upload.models';
+
 export type MigrationDirection = 'Import' | 'Export';
 
 export type MigrationJobState =
@@ -371,13 +373,8 @@ export interface MigrationActivationConflictDto {
   changedSinceImportStarted: boolean;
 }
 
-export interface BrowserMigrationChunk {
-  index: number;
-  offsetBytes: number;
-  lengthBytes: number;
-  sha256: string;
-  blob: Blob;
-}
+/** A migration part is the shared upload part; the name predates `core/uploads`. */
+export type BrowserMigrationChunk = UploadChunk;
 
 /** Number of chunks a session of `totalBytes` needs at `chunkSize` (minimum 1). */
 export function chunkCount(totalBytes: number, chunkSize: number): number {
@@ -386,10 +383,7 @@ export function chunkCount(totalBytes: number, chunkSize: number): number {
 }
 
 /** Byte length of chunk `index`; only the final chunk may be short. */
-export function chunkLength(index: number, totalBytes: number, chunkSize: number): number {
-  const offset = index * chunkSize;
-  return Math.max(0, Math.min(chunkSize, totalBytes - offset));
-}
+export { chunkLength } from '../../core/uploads/upload.models';
 
 /** Mirrors `MigrationContractLimits.IsValidChunkBytes`. */
 export function isValidChunkBytes(

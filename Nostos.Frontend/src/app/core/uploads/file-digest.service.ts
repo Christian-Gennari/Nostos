@@ -4,7 +4,7 @@ import {
   FileDigest,
   HASH_READ_BLOCK_BYTES,
   TransferCancelledError,
-} from '../models/library-transfer.models';
+} from './upload.models';
 import { readBlobBytes } from './hash/blob-bytes';
 import { sha256ChunkHex } from './hash/chunk-digest';
 import { hashBlobIncrementally } from './hash/file-hash';

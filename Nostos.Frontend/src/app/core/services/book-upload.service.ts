@@ -2,37 +2,29 @@ import { Injectable, inject } from '@angular/core';
 
 import {
   BOOK_UPLOAD_LIMITS,
-  BookUploadErrorCode,
   BookUploadStatusDto,
 } from '../dtos/book-upload.dtos';
-import { planLimitMessage } from '../plan-limit-message';
-import { FileDigestService } from '../../library-transfer/services/file-digest.service';
+import { UploadFailure, toUploadFailure } from '../uploads/upload-error';
+import { canonicalUploadCode } from '../uploads/upload-error-copy';
+import { FileDigestService } from '../uploads/file-digest.service';
 import {
   ChunkPartTransport,
-  ChunkUploadEngine,
   ChunkUploadSession,
-} from '../../library-transfer/services/chunk-upload-engine.service';
-import { TransferCancelledError } from '../../library-transfer/models/library-transfer.models';
-import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
+} from '../uploads/chunk-upload-engine';
+import { TransferCancelledError } from '../uploads/upload.models';
 import {
-  BookUploadClient,
-  BookUploadTransportError,
-  abortedError,
-} from './book-upload.client';
+  UploadPhase,
+  UploadProgress,
+  uploadFinishedProgress,
+} from '../uploads/upload-progress';
+import { digestForUpload, uploadMissingParts } from '../uploads/upload-run';
+import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
+import { BookUploadClient } from './book-upload.client';
 
 /** Which visible phase a resumable book upload is in. */
-export type BookUploadPhase = 'preparing' | 'uploading' | 'finishing';
+export type BookUploadPhase = UploadPhase;
 
-export interface BookUploadProgress {
-  phase: BookUploadPhase;
-  /** 0-100 for the phase the user is looking at. */
-  percent: number;
-  /** Bytes the server has durably receipted (0 while hashing). */
-  uploadedBytes: number;
-  /** Bytes moved including bodies still in flight; what `percent` tracks. */
-  movedBytes: number;
-  totalBytes: number;
-}
+export type BookUploadProgress = UploadProgress;
 
 export interface BookUploadOptions {
   signal?: AbortSignal;
@@ -81,9 +73,8 @@ export class BookUploadService {
 
   /**
    * Starts, resumes or joins the upload of one file for one book. Rejects with
-   * a {@link BookUploadTransportError} (or {@link TransferCancelledError} when
-   * the caller aborts); the visible copy comes from
-   * {@link describeBookUploadFailure}.
+   * an {@link UploadFailure} (or {@link TransferCancelledError} when the caller
+   * aborts); the visible copy comes from `describeUploadFailure`.
    */
   upload(
     bookId: string,
@@ -157,37 +148,13 @@ export class BookUploadService {
   ): Promise<BookUploadStatusDto> {
     this.assertAcceptable(file);
     const signal = options.signal;
-    if (signal?.aborted) throw abortedError();
+    if (signal?.aborted) throw cancelledError();
 
     const report = options.onProgress ?? (() => {});
-    report({
-      phase: 'preparing',
-      percent: 0,
-      uploadedBytes: 0,
-      movedBytes: 0,
-      totalBytes: file.size,
-    });
 
     // Whole-file SHA-256 is streamed by the worker-backed digest service;
     // this call never materializes the file as one ArrayBuffer.
-    let lastHashedPercent = 0;
-    const sha256 = await this.digest.sha256(file, {
-      signal,
-      onProgress: (bytesRead, totalBytes) => {
-        const percent = totalBytes > 0 ? Math.round((bytesRead / totalBytes) * 100) : 0;
-        if (percent === lastHashedPercent) return;
-        lastHashedPercent = percent;
-        report({
-          phase: 'preparing',
-          percent,
-          uploadedBytes: 0,
-          movedBytes: bytesRead,
-          totalBytes,
-        });
-      },
-    });
-
-    if (signal?.aborted) throw abortedError();
+    const sha256 = await digestForUpload(this.digest, file, { signal, onProgress: report });
 
     const status = await this.client.create(
       bookId,
@@ -202,13 +169,7 @@ export class BookUploadService {
     );
 
     if (status.state === 'Complete') {
-      report({
-        phase: 'finishing',
-        percent: 100,
-        uploadedBytes: status.totalBytes,
-        movedBytes: status.totalBytes,
-        totalBytes: status.totalBytes,
-      });
+      report(uploadFinishedProgress(status.totalBytes));
       return status;
     }
 
@@ -217,7 +178,7 @@ export class BookUploadService {
     // session that looks busy to the next attempt.
     if (signal?.aborted) {
       onPauseScheduled(this.pauseInBackground(bookId, status.sessionId));
-      throw abortedError();
+      throw cancelledError();
     }
 
     const session: ChunkUploadSession = {
@@ -228,7 +189,6 @@ export class BookUploadService {
       receivedChunks: status.receivedParts,
     };
 
-    const engine = new ChunkUploadEngine(undefined, this.digest);
     const partTransport: ChunkPartTransport = {
       uploadPart: (sessionId, chunk, onProgress, partSignal) =>
         this.client.uploadPart(
@@ -244,54 +204,27 @@ export class BookUploadService {
         ),
     };
 
-    const run = engine.start({
-      session,
-      file,
-      partTransport,
-      hashMismatchCode: 'book_upload_part_hash_mismatch',
-      concurrency: 2,
-      maxAttempts: 4,
-      signal,
-      onProgress: (progress) => {
-        const moved = progress.uploadedBytes + progress.inFlightBytes;
-        report({
-          phase: 'uploading',
-          percent:
-            progress.totalBytes > 0
-              ? Math.min(99, Math.round((moved / progress.totalBytes) * 100))
-              : 0,
-          uploadedBytes: progress.uploadedBytes,
-          movedBytes: moved,
-          totalBytes: progress.totalBytes,
-        });
-      },
-    });
-
     try {
-      const outcome = await run.done;
-      if (outcome.kind === 'cancelled') {
-        onPauseScheduled(this.pauseInBackground(bookId, session.sessionId));
-        throw new TransferCancelledError('The upload was cancelled.');
-      }
+      await uploadMissingParts({
+        digest: this.digest,
+        file,
+        session,
+        partTransport,
+        hashMismatchCode: 'book_upload_part_hash_mismatch',
+        signal,
+        onProgress: report,
+      });
     } catch (error) {
-      if (error instanceof TransferCancelledError) throw error;
-
       // The parts already receipted stay useful: tell the server to mark the
       // session resumable before the page loses track of it.
-      const failure = error as { retryable?: boolean; status?: number } | null;
-      if (failure?.retryable || failure?.status === 0) {
+      const failure = toUploadFailure(error);
+      if (failure.code === 'request_aborted' || failure.retryable || failure.status === 0) {
         onPauseScheduled(this.pauseInBackground(bookId, session.sessionId));
       }
       throw error;
     }
 
-    report({
-      phase: 'finishing',
-      percent: 100,
-      uploadedBytes: status.totalBytes,
-      movedBytes: status.totalBytes,
-      totalBytes: status.totalBytes,
-    });
+    report(uploadFinishedProgress(status.totalBytes));
 
     return this.client.complete(bookId, session.sessionId, signal);
   }
@@ -314,14 +247,14 @@ export class BookUploadService {
 
   private assertAcceptable(file: File): void {
     if (!file.name || file.size <= 0) {
-      throw new BookUploadTransportError(
+      throw new UploadFailure(
         'book_upload_invalid_request',
         400,
         'The selected file is empty.',
       );
     }
     if (file.size > BOOK_UPLOAD_LIMITS.maxBookBytes) {
-      throw new BookUploadTransportError(
+      throw new UploadFailure(
         'book_upload_invalid_request',
         413,
         'This file is larger than this server allows. Choose a smaller file to continue.',
@@ -333,100 +266,16 @@ export class BookUploadService {
 /**
  * The server's reason when it read the bytes and found they are not the kind of
  * file the name claims (an empty or damaged EPUB, say), else null. Works for a
- * resumable transport error and for the whole-request upload's HTTP error.
+ * resumable transport failure and for the whole-request upload's HTTP error.
  */
 export function rejectedFileMessage(error: unknown): string | null {
-  const failure = error as
-    | { code?: string; message?: string; error?: { error?: string; message?: string } }
-    | null
-    | undefined;
-  if (failure?.code === 'book_upload_invalid_file') {
-    return failure.message || 'This file could not be read as a book.';
-  }
-  if (failure?.error?.error === 'book_upload_invalid_file') {
-    return failure.error.message || 'This file could not be read as a book.';
-  }
-  return null;
+  const failure = toUploadFailure(error);
+  if (canonicalUploadCode(failure.code) !== 'invalid_file') return null;
+  return failure.message || 'This file could not be read as a book.';
 }
 
-/**
- * Reader-facing copy for a failed resumable upload (#1266). The codes are
- * stable; the words say what happened and what the reader can do next.
- */
-export function describeBookUploadFailure(
-  error: unknown,
-  options: { bookSaved?: boolean } = {},
-): string {
-  const limit = planLimitMessage(error) ?? planLimitMessage(asCause(error));
-  if (limit) return limit;
-
-  if (error instanceof TransferCancelledError) {
-    return 'The upload was cancelled.';
-  }
-
-  const failure = error as
-    | { code?: string; status?: number; cause?: unknown }
-    | null
-    | undefined;
-  const rejected = rejectedFileMessage(error);
-  if (rejected) return `${rejected} Choose a different file.`;
-
-  const resume = options.bookSaved
-    ? 'Your book is saved; choose the same file to resume.'
-    : 'Choose the same file to resume.';
-
-  switch (failure?.code as BookUploadErrorCode | undefined) {
-    case 'book_upload_expired':
-      return `This upload expired. ${resume}`;
-    case 'book_upload_part_hash_mismatch':
-      return 'A part of the file did not match its checksum. The upload will retry that part.';
-    case 'book_upload_file_hash_mismatch':
-      return `The file changed while it was uploading. ${resume}`;
-    case 'book_upload_storage_exhausted':
-      return 'There is not enough free storage for this file.';
-    case 'book_upload_unsupported_type':
-      return 'This file type cannot be uploaded as a book.';
-    case 'book_has_file':
-      return 'This book already has a file. Your new file was not added.';
-    case 'book_upload_in_progress':
-      return 'This book is already importing or uploading a file. Wait until it finishes.';
-    case 'book_upload_not_found':
-    case 'book_upload_book_not_found':
-      return `The book or its upload is no longer available. ${resume}`;
-    case 'book_upload_part_range_invalid':
-    case 'book_upload_part_conflict':
-      return `The server rejected a part of the file. ${resume}`;
-    case 'book_upload_publish_failed':
-      return 'The file was received but could not be added to the book. Try the upload again.';
-    case 'book_upload_invalid_request':
-      return failure?.status === 413
-        ? 'This file is larger than this server allows. Choose a smaller file to continue.'
-        : 'The server could not accept this file. Check the file and try again.';
-    case 'request_aborted':
-      return 'The upload was cancelled.';
-  }
-
-  const status = failure?.status;
-  if (status === 0 || status == null) {
-    return `The connection was interrupted. ${resume}`;
-  }
-  if (status === 408 || status === 504) {
-    return `The upload timed out. ${resume}`;
-  }
-  if (status === 413) {
-    return 'This file is larger than this server allows. Choose a smaller file to continue.';
-  }
-  if (status === 429) {
-    return `Too many uploads are running right now. ${resume}`;
-  }
-  if (status >= 500) {
-    return `The upload was interrupted. ${resume}`;
-  }
-  return 'The server did not accept this file. Check the file and try again.';
-}
-
-function asCause(error: unknown): unknown {
-  return (error as { cause?: unknown } | null | undefined)?.cause;
+function cancelledError(): TransferCancelledError {
+  return new TransferCancelledError('The upload was cancelled.');
 }
 
 function delay(ms: number): Promise<void> {

@@ -13,10 +13,8 @@ import {
   CalibreStatus,
   CalibreUploadStatus,
 } from '../../core/services/calibre-import.service';
-import {
-  CalibreUploadError,
-  CalibreUploadService,
-} from '../../core/services/calibre-upload.service';
+import { CalibreUploadService } from '../../core/services/calibre-upload.service';
+import { UploadFailure } from '../../core/uploads/upload-error';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 
 const format = (overrides: Partial<CalibreFormatChoice> = {}): CalibreFormatChoice => ({
@@ -233,7 +231,7 @@ describe('CalibreImportModal', () => {
 
     expect(component.stage()).toBe('upload');
     expect(fixture.nativeElement.querySelector('[data-testid="calibre-upload-picker"]')).toBeTruthy();
-    expect(text()).toContain('Up to 8.0 GB');
+    expect(text()).toContain('Up to 8 GB');
 
     const file = new File([new Uint8Array([1, 2, 3])], 'library.zip', { type: 'application/zip' });
     await component.onLibraryFile({ target: { files: [file], value: 'library.zip' } } as unknown as Event);
@@ -331,7 +329,7 @@ describe('CalibreImportModal', () => {
 
     expect(component.stage()).toBe('upload');
     expect(text()).toContain('Choose the same zip to resume');
-    expect(text()).toContain('16.0 MB of 38.1 MB');
+    expect(text()).toContain('16 MB of 38.1 MB');
 
     await component.cancelUpload();
     expect(cancel).toHaveBeenCalledWith('up-2');
@@ -345,7 +343,7 @@ describe('CalibreImportModal', () => {
       [],
     );
     vi.spyOn(uploadService, 'upload').mockRejectedValue(
-      new CalibreUploadError(
+      new UploadFailure(
         'calibre_upload_unsafe_entry',
         422,
         'The zip contains a symbolic link. Create it without links.',

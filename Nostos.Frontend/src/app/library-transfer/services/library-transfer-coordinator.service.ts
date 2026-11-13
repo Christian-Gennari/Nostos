@@ -35,7 +35,7 @@ import {
   chunkCount,
   chunkLength,
 } from '../models/migration-http.dtos';
-import { FileDigestService } from './file-digest.service';
+import { FileDigestService } from '../../core/uploads/file-digest.service';
 import {
   LIBRARY_TRANSFER_TRANSPORT,
   LibraryTransferTransport,
@@ -43,7 +43,7 @@ import {
   isMaintenanceBusy,
   toTransferFailure,
 } from './library-transfer-transport';
-import { ChunkUploadEngine, ChunkUploadRun } from './chunk-upload-engine.service';
+import { ChunkUploadEngine, ChunkUploadRun } from '../../core/uploads/chunk-upload-engine';
 import {
   PortableArchiveInspector,
   preflightRequestFromSummary,

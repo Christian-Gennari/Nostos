@@ -7,7 +7,7 @@ import {
 import { MigrationTransportError } from '../services/library-transfer-transport';
 import { calculateHostPeakReservationBytes } from '../services/migration-preflight';
 import { MockLibraryTransferTransport } from './mock-library-transfer-transport';
-import { sha256ChunkHex } from '../services/hash/chunk-digest';
+import { sha256ChunkHex } from '../../core/uploads/hash/chunk-digest';
 
 const CHUNK = 4 * 1024 * 1024;
 

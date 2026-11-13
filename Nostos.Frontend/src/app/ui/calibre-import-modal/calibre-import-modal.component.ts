@@ -20,9 +20,10 @@ import {
 import {
   CalibreUploadProgress,
   CalibreUploadService,
-  describeCalibreUploadFailure,
 } from '../../core/services/calibre-upload.service';
-import { TransferCancelledError } from '../../library-transfer/models/library-transfer.models';
+import { describeUploadFailure } from '../../core/uploads/upload-error-copy';
+import { formatByteProgress, formatFileSize, plural } from '../../core/format';
+import { TransferCancelledError } from '../../core/uploads/upload.models';
 import type { HighlightImportCandidate } from '../../core/services/highlight-import.service';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import { ModalShell } from '../modal-shell/modal-shell.component';
@@ -149,7 +150,7 @@ export class CalibreImportModal {
     if (!progress) return '';
     if (progress.phase === 'preparing') return 'Checking the zip…';
     if (progress.phase === 'finishing') return 'Reading the library…';
-    return `${this.formatSize(progress.movedBytes)} of ${this.formatSize(progress.totalBytes)}`;
+    return formatByteProgress(progress.movedBytes, progress.totalBytes);
   });
 
   readonly importing = computed(() => this.stage() === 'importing');
@@ -164,7 +165,7 @@ export class CalibreImportModal {
     if (this.undone()) return 'Import undone';
     if (this.error()) return 'The library could not be read';
     const imported = this.imported().length;
-    if (imported > 0) return `${this.count(imported, 'book')} brought in`;
+    if (imported > 0) return `${plural(imported, 'book')} brought in`;
     if (this.unchanged().length > 0) return 'Already up to date';
     return this.failed().length > 0 ? 'Nothing was imported' : 'Nothing was imported';
   });
@@ -173,13 +174,13 @@ export class CalibreImportModal {
     const undone = this.undone();
     if (undone) {
       const kept = undone.kept > 0
-        ? ` ${this.count(undone.kept, 'book')} stayed because you have read or written in them.`
+        ? ` ${plural(undone.kept, 'book')} stayed because you have read or written in them.`
         : '';
-      return `${this.count(undone.removed, 'row')} taken back out of your library.${kept}`;
+      return `${plural(undone.removed, 'row')} taken back out of your library.${kept}`;
     }
     const imported = this.imported().length;
     const files = this.imported().reduce((total, book) => total + book.fileCount, 0);
-    if (imported > 0) return `Into ${this.count(imported, 'book')}, ${this.count(files, 'file')}.`;
+    if (imported > 0) return `Into ${plural(imported, 'book')}, ${plural(files, 'file')}.`;
     if (this.unchanged().length > 0) return 'Every file this selection would bring is already in Nostos.';
     return '';
   });
@@ -348,7 +349,7 @@ export class CalibreImportModal {
         return;
       }
 
-      this.uploadError.set(describeCalibreUploadFailure(error));
+      this.uploadError.set(describeUploadFailure(error));
       this.currentUpload.set(await this.loadCurrentUpload());
     } finally {
       if (this.uploadAbort === controller) this.uploadAbort = null;
@@ -553,17 +554,9 @@ export class CalibreImportModal {
     this.stage.set('loading');
   }
 
-  countLabel(value: number, noun: string): string {
-    return this.count(value, noun);
-  }
+  formatSize = formatFileSize;
 
-  formatSize(bytes: number): string {
-    if (bytes <= 0) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  }
+  readonly plural = plural;
 
   trackFormat(_: number, format: CalibreFormatChoice): string {
     return format.key;
@@ -594,9 +587,5 @@ export class CalibreImportModal {
       return body?.error ?? body?.message ?? 'The Calibre library could not be read.';
     }
     return 'The Calibre library could not be read.';
-  }
-
-  private count(value: number, noun: string): string {
-    return value === 1 ? `1 ${noun}` : `${value} ${noun}s`;
   }
 }

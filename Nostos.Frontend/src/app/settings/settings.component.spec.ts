@@ -49,7 +49,7 @@ import {
 } from '../library-transfer/services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../library-transfer/testing/mock-library-transfer-transport';
 import { LibraryTransferCoordinator } from '../library-transfer/services/library-transfer-coordinator.service';
-import { HASH_WORKER_FACTORY } from '../library-transfer/services/hash/hash-worker';
+import { HASH_WORKER_FACTORY } from '../core/uploads/hash/hash-worker';
 import {
   TRANSFER_RESUME_STORAGE_KEY,
 } from '../library-transfer/services/transfer-resume-store.service';

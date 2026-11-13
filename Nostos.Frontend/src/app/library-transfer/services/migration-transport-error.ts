@@ -10,29 +10,29 @@ import {
   LibraryTransferFailure,
   TransferCancelledError,
 } from '../models/library-transfer.models';
+import {
+  UploadFailure,
+} from '../../core/uploads/upload-error';
 import type { MigrationErrorCode } from '../models/migration-http.dtos';
 
-/** Transport-level error carrying the stable #679 error code. */
-export class MigrationTransportError extends Error {
+// Retry and `Retry-After` policy is shared with every other upload (#1646);
+// re-exported here so the transport modules keep one import site.
+export { isTransientStatus, parseRetryAfterMs } from '../../core/uploads/upload-error';
+
+/**
+ * Transport-level error carrying the stable #679 error code. It is an
+ * {@link UploadFailure} so the shared chunk engine can retry it on the same
+ * terms as a book or Calibre part.
+ */
+export class MigrationTransportError extends UploadFailure {
   constructor(
-    readonly code: MigrationErrorCode,
-    readonly status: number,
+    override readonly code: MigrationErrorCode,
+    override readonly status: number,
     message: string,
     options?: { retryAfterMs?: number; cause?: unknown },
   ) {
-    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
+    super(code, status, message, options);
     this.name = 'MigrationTransportError';
-    this.retryAfterMs = options?.retryAfterMs;
-  }
-
-  readonly retryAfterMs?: number;
-
-  /** True only for the transient statuses the plan allows to be retried (plan §22). */
-  get retryable(): boolean {
-    // A browser cancellation is a deliberate act, never a transient failure,
-    // even though it carries status 0.
-    if (this.code === 'request_aborted') return false;
-    return isTransientStatus(this.status);
   }
 }
 
@@ -54,18 +54,6 @@ export class MigrationActivationConflictError extends MigrationTransportError {
   }
 }
 
-/** Network failure (no HTTP status) or the retryable statuses from plan §22. */
-export function isTransientStatus(status: number): boolean {
-  return (
-    status === 0 || // connection reset / network failure
-    status === 408 ||
-    status === 429 ||
-    status === 502 ||
-    status === 503 ||
-    status === 504
-  );
-}
-
 /**
  * The two 503 maintenance codes the coordinator waits out and re-attempts on
  * the same operation: exclusive library maintenance and host storage
@@ -80,6 +68,16 @@ export function toTransferFailure(error: unknown): LibraryTransferFailure {
   if (error instanceof MigrationTransportError) {
     return {
       code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+      status: error.status,
+      retryAfterMs: error.retryAfterMs,
+    };
+  }
+
+  if (error instanceof UploadFailure) {
+    return {
+      code: error.code as MigrationErrorCode,
       message: error.message,
       retryable: error.retryable,
       status: error.status,
@@ -120,17 +118,6 @@ export function readErrorBody(value: unknown): TransportErrorBody | null {
     error: record['error'],
     message: typeof record['message'] === 'string' ? record['message'] : record['error'],
   };
-}
-
-/** `Retry-After` is either delay-seconds (the middleware's `5`) or an HTTP date. */
-export function parseRetryAfterMs(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
-
-  const date = Date.parse(value);
-  if (Number.isNaN(date)) return undefined;
-  return Math.max(0, date - Date.now());
 }
 
 export function abortedError(): MigrationTransportError {
