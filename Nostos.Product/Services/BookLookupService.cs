@@ -9,6 +9,13 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
 {
     public const string HttpClientName = "book-lookup";
 
+    // A catalogue describes an edition, not the copy someone owns: an ISBN says
+    // nothing about whether they hold a paper book, an ebook or both. So the
+    // metadata below leaves the book's format (Type) empty, and the caller
+    // decides it — Add Book from whether a file is attached, the create command
+    // from its own default. Filling it in here used to hand every looked-up book
+    // the "physical" label even after a file was attached (#332's root cause).
+
     [GeneratedRegex("[^0-9X]", RegexOptions.IgnoreCase)]
     private static partial Regex IsbnCleanupRegex();
 
@@ -83,7 +90,7 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
         var baseData =
             olData
             ?? new CreateBookDto(
-                Type: "physical",
+                Type: "",
                 Title: "",
                 Subtitle: null,
                 Author: null,
@@ -172,7 +179,7 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
             return null;
 
         return new CreateBookDto(
-            Type: "physical",
+            Type: "",
             Title: item.Title ?? "",
             Subtitle: item.Subtitle,
             Author: item.Authors is not null ? string.Join(", ", item.Authors) : null,
@@ -305,7 +312,7 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
         var place = item.PublishPlaces?.FirstOrDefault()?.Name;
 
         return new CreateBookDto(
-            Type: "physical",
+            Type: "",
             Title: item.Title ?? "",
             Subtitle: item.Subtitle,
             Author: authors is not null ? string.Join(", ", authors) : null,
@@ -345,7 +352,7 @@ public partial class BookLookupService(IHttpClientFactory httpClientFactory, ILo
         var categories = item.Subjects?.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
 
         return new CreateBookDto(
-            Type: "physical",
+            Type: "",
             Title: item.Title ?? "",
             Subtitle: item.Subtitle,
             Author: authors is { Length: > 0 } ? string.Join(", ", authors) : null,

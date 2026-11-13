@@ -147,6 +147,7 @@ public class NostosDbContext : DbContext
     {
         AssignMissingWorks();
         StampNoteUpdates();
+        EnsurePhysicalBooksHaveNoFile();
         if (!HasPortableChanges())
             return base.SaveChanges(acceptAllChangesOnSuccess);
 
@@ -193,6 +194,7 @@ public class NostosDbContext : DbContext
     {
         await AssignMissingWorksAsync(cancellationToken);
         StampNoteUpdates();
+        EnsurePhysicalBooksHaveNoFile();
         if (!HasPortableChanges())
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
 
@@ -475,6 +477,58 @@ public class NostosDbContext : DbContext
             var previous = note.UpdatedAt ?? note.CreatedAt;
             note.UpdatedAt = stamp > previous.AddMilliseconds(1) ? stamp : previous.AddMilliseconds(1);
         }
+    }
+
+    /// <summary>
+    /// A physical book has no file: it is metadata-only (#332). This is the one
+    /// place the rule is enforced for writes, so a code path that forgets it
+    /// fails loudly here instead of creating a row that shows paper controls
+    /// beside a working Read button.
+    ///
+    /// Only the save that writes the file state is refused: a new physical book
+    /// that arrives with one, or a physical row whose file fields are being
+    /// changed. A row that already carried a file because it predates #332 — the
+    /// migration converts those, and leaves a genuinely ambiguous one physical —
+    /// can still have its title or rating saved.
+    /// </summary>
+    private void EnsurePhysicalBooksHaveNoFile()
+    {
+        // A book whose file fields this save writes: EF marks the owned
+        // FileInfoDetails entry Modified and leaves its owner Unchanged when only
+        // the file changed.
+        var fileEntries = ChangeTracker.Entries<FileInfoDetails>()
+            .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+            .Select(entry => entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
+
+        PhysicalBookModel? offender = null;
+        foreach (var entry in ChangeTracker.Entries<PhysicalBookModel>())
+        {
+            if (entry.State is EntityState.Deleted or EntityState.Detached)
+                continue;
+
+            var book = entry.Entity;
+            if (!book.FileDetails.HasFile)
+                continue;
+            if (entry.State is not EntityState.Added && !fileEntries.Contains(book.FileDetails))
+            {
+                // A row that already carried a file (the migration leaves a
+                // genuinely ambiguous one physical) can still have its title,
+                // rating or notes saved: only writing the file is refused.
+                continue;
+            }
+
+            offender = book;
+            break;
+        }
+
+        if (offender is null)
+            return;
+
+        throw new InvalidOperationException(
+            $"Book {offender.Id} (\"{offender.Title}\") is physical and carries a file " +
+            $"({offender.FileDetails.FileName ?? "unnamed"}). A physical book is metadata-only: " +
+            "store the file on the digital edition it belongs to.");
     }
 
     private void AssignMissingWorks()

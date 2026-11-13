@@ -424,6 +424,41 @@ describe('AddBookModal', () => {
     expect(component.selectedFile()).toBeNull();
   });
 
+  it('adds a hand-entered book without a file as a metadata-only ebook, never a paper copy', () => {
+    const books = TestBed.inject(BooksService);
+    const create = vi
+      .spyOn(books, 'createOrMatch')
+      .mockReturnValue(of({ book: { id: 'manual-new' } as unknown as Book, created: true }));
+
+    // What the manual door leaves behind: no file chosen.
+    expect(component.form.type).toBe('ebook');
+    component.form.title = 'Meditations';
+
+    component.submit();
+
+    expect(create.mock.calls[0][0].type).toBe('ebook');
+    expect(create.mock.calls[0][0].fileAttached).toBe(false);
+  });
+
+  it('takes the format from the attached file, so the file decides ebook or audiobook', () => {
+    const books = TestBed.inject(BooksService);
+    const create = vi
+      .spyOn(books, 'createOrMatch')
+      .mockReturnValue(of({ book: { id: 'file-new' } as unknown as Book, created: true }));
+    vi.spyOn(books, 'uploadFile').mockReturnValue(new Subject<any>());
+
+    component.form.title = 'Meditations';
+    component.onFileSelected({
+      target: { files: [new File(['audio'], 'meditations.mp3', { type: 'audio/mpeg' })] },
+    } as unknown as Event);
+
+    expect(component.form.type).toBe('audiobook');
+    component.submit();
+
+    expect(create.mock.calls[0][0].type).toBe('audiobook');
+    expect(create.mock.calls[0][0].fileAttached).toBe(true);
+  });
+
   it('never uploads a stale file when creating a physical book', () => {
     const books = TestBed.inject(BooksService);
     vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: { id: 'physical-new' } as unknown as Book, created: true }));

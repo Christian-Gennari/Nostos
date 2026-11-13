@@ -249,6 +249,11 @@ Lookup book metadata by ISBN. Queries both **Google Books API** and **Open Libra
 **Response:** `400` for an invalid ISBN; `CreateBookDto` (pre-filled) or
 `404` when no metadata is found. The external lookup has a 15-second timeout.
 
+The pre-filled `type` is empty: a catalogue describes an edition, not the copy
+someone owns, so it never says whether the book is paper, an ebook or an
+audiobook. The caller chooses — Add Book takes it from the attached file, and a
+create with no type makes a metadata-only ebook, never a physical book.
+
 ---
 
 ## Notes — `/api`

@@ -16,6 +16,23 @@ public sealed class BookLookupServiceTests
     private const string Isbn = "9780141183848";
 
     [Fact]
+    public async Task Lookup_metadata_does_not_dictate_a_book_format()
+    {
+        // A catalogue knows the edition, not the copy someone owns: the format
+        // is left empty so an ISBN lookup can never turn an added file into a
+        // "physical" book (#332).
+        var handler = Handler(
+            _ => Json(OpenLibraryMatch),
+            _ => Json("""{"items":[{"volumeInfo":{"title":"Fictions","pageCount":176}}]}"""));
+
+        var outcome = await Service(handler).LookupCombinedDetailedAsync(Isbn);
+
+        outcome.Metadata.Should().NotBeNull();
+        outcome.Metadata!.Type.Should().BeEmpty();
+        outcome.Metadata.Isbn.Should().Be(Isbn);
+    }
+
+    [Fact]
     public async Task OpenLibrary_success_survives_GoogleBooks_failure()
     {
         var handler = Handler(

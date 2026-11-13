@@ -61,7 +61,10 @@ Errors are mapped by `LibraryHttpMapper` to Problem Details: `invalid_*` →
 `duplicate_identifier`, `confirmation_required`, `collection_name_conflict`,
 `collection_cycle`, `collection_has_children`, `book_in_use`) → 409,
 everything else → 422. `GET /lookup/{isbn}` rejects an invalid ISBN with 400
-and returns 404 when no metadata is found.
+and returns 404 when no metadata is found. The metadata it returns carries an
+empty `type`: a catalogue knows the edition, not the copy someone owns, so the
+format is the caller's choice (and a create with no type is a metadata-only
+ebook, never a physical book).
 
 ### ProviderEndpoints (`/api/providers`)
 

@@ -237,6 +237,14 @@ export interface CreateBookDto {
   finishedAt?: string | null;
 }
 
+/**
+ * What an ISBN lookup returns: metadata for an edition, and no book type.
+ * A catalogue cannot know whether someone holds the paper book, an ebook or an
+ * audiobook, so the format is the caller's to decide (Add Book takes it from
+ * the attached file).
+ */
+export type BookLookupMetadata = Omit<CreateBookDto, 'type'>;
+
 export interface UpdateBookDto {
   title?: string;
   subtitle?: string | null;

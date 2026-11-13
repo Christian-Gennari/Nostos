@@ -1,6 +1,17 @@
 namespace Nostos.Backend.Services;
 
 /// <summary>
+/// What a book file is: something to read, or something to listen to. This is
+/// the digital half of the book's <c>BookType</c>; a physical book has no file
+/// at all.
+/// </summary>
+public enum BookDigitalFormat
+{
+    Ebook,
+    Audiobook,
+}
+
+/// <summary>
 /// Shared format policy for every storage provider.
 /// </summary>
 public static class BookAssetFormats
@@ -13,6 +24,15 @@ public static class BookAssetFormats
             ".txt",
             ".mobi",
             ".azw3",
+            ".m4b",
+            ".m4a",
+            ".mp3",
+        };
+
+    /// <summary>The book extensions that make an audiobook rather than an ebook.</summary>
+    public static readonly IReadOnlySet<string> AudioExtensions =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
             ".m4b",
             ".m4a",
             ".mp3",
@@ -83,6 +103,23 @@ public static class BookAssetFormats
 
         var semicolon = contentType.IndexOf(';');
         return (semicolon >= 0 ? contentType[..semicolon] : contentType).Trim();
+    }
+
+    /// <summary>
+    /// The digital book a file's extension makes it, or null when the name has
+    /// no book extension this product accepts. Case-insensitive; the file's own
+    /// content is not consulted.
+    /// </summary>
+    public static BookDigitalFormat? DigitalFormatForFileName(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return null;
+
+        var extension = Path.GetExtension(fileName);
+        if (!BookExtensions.Contains(extension))
+            return null;
+
+        return AudioExtensions.Contains(extension) ? BookDigitalFormat.Audiobook : BookDigitalFormat.Ebook;
     }
 
     public static string RequireBookExtension(string fileName)

@@ -34,12 +34,13 @@ internal static class PortableLibraryDatabaseMaterializer
     internal static async Task<PortableLibraryData> ReadRelationalDataAsync(
         IPortableImportStaging staging,
         PortableStagingId stagingId,
+        IReadOnlyList<PortablePreparedMedia> stagedMedia,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(staging);
         await using var staged = await staging
             .OpenDataReadAsync(stagingId, cancellationToken);
-        return await ReadRelationalDataAsync(staged, cancellationToken);
+        return await ReadRelationalDataAsync(staged, stagedMedia, cancellationToken);
     }
 
     /// <summary>
@@ -48,6 +49,7 @@ internal static class PortableLibraryDatabaseMaterializer
     /// </summary>
     internal static async Task<PortableLibraryData> ReadRelationalDataAsync(
         Stream source,
+        IReadOnlyList<PortablePreparedMedia> stagedMedia,
         CancellationToken cancellationToken)
     {
         try
@@ -61,7 +63,12 @@ internal static class PortableLibraryDatabaseMaterializer
             // An archive from before rating, favourite and review moved onto the
             // work is rolled up here, once, so every later step (restore,
             // verification) sees the same book-level values.
-            return PortableLegacyBookValues.ToCurrent(data);
+            var current = PortableLegacyBookValues.ToCurrent(data);
+
+            // And one from before #332 may hold a physical book that carries a
+            // file: it is read as the digital book its file makes it, once,
+            // here, so the restore and its verification agree.
+            return PortableLegacyPhysicalFileBooks.ToCurrent(current, stagedMedia);
         }
         catch (JsonException exception)
         {
@@ -439,7 +446,7 @@ public static class PortableLibraryRelationalRestore
         ArgumentNullException.ThrowIfNull(stagedMedia);
 
         var data = await PortableLibraryDatabaseMaterializer
-            .ReadRelationalDataAsync(verifiedRelationalPayload, cancellationToken);
+            .ReadRelationalDataAsync(verifiedRelationalPayload, stagedMedia, cancellationToken);
         await PortableLibraryDatabaseMaterializer
             .ApplyRelationalDataAsync(db, data, stagedMedia, cancellationToken);
     }

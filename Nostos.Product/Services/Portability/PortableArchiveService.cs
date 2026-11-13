@@ -393,7 +393,11 @@ public sealed class PortableArchiveService(
                 staging,
                 cancellationToken);
 
-            var data = await ReadStagedDataAsync(staging, prepared.StagingId, cancellationToken);
+            var data = await ReadStagedDataAsync(
+                staging,
+                prepared.StagingId,
+                prepared.Media,
+                cancellationToken);
             var manifest = await ReadStagedManifestAsync(staging, prepared.StagingId, cancellationToken);
 
             var uploadedBookIds = new HashSet<Guid>();
@@ -572,10 +576,12 @@ public sealed class PortableArchiveService(
     private static Task<PortableLibraryData> ReadStagedDataAsync(
         IPortableImportStaging staging,
         PortableStagingId stagingId,
+        IReadOnlyList<PortablePreparedMedia> stagedMedia,
         CancellationToken cancellationToken) =>
         PortableLibraryDatabaseMaterializer.ReadRelationalDataAsync(
             staging,
             stagingId,
+            stagedMedia,
             cancellationToken);
 
     private static async Task<PortableArchiveManifest> ReadStagedManifestAsync(

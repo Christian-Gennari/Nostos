@@ -145,7 +145,10 @@ public sealed class BookTextSearchQueryCountTests(ITestOutputHelper output) : ID
             db.Collections.Add(new CollectionModel { Id = collectionId, Name = "Sea" });
             for (var i = 0; i < books; i++)
             {
-                var book = new PhysicalBookModel
+                // A searchable book is one with text to search, so these are
+                // ebooks: a physical book never holds a file (see the backfill
+                // test below, which gives them all a file).
+                var book = new EBookModel
                 {
                     Id = Guid.NewGuid(),
                     Title = $"Book {i:D3}",

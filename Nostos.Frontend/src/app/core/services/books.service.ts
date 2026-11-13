@@ -4,6 +4,7 @@ import { LIBRARY_WRITE_HANDLED } from './library-changes.service';
 import { catchError, map, Observable, throwError } from 'rxjs';
 import {
   Book,
+  BookLookupMetadata,
   CreateBookDto,
   UpdateBookDto,
   UpdateProgressDto,
@@ -211,8 +212,9 @@ export class BooksService {
     return this.http.delete<void>(`/api/books/${bookId}/cover`);
   }
 
-  lookup(isbn: string): Observable<CreateBookDto> {
-    return this.http.get<CreateBookDto>(`/api/books/lookup/${encodeURIComponent(isbn)}`).pipe(
+  /** Metadata for an ISBN. It carries no book type: that is the caller's to choose. */
+  lookup(isbn: string): Observable<BookLookupMetadata> {
+    return this.http.get<BookLookupMetadata>(`/api/books/lookup/${encodeURIComponent(isbn)}`).pipe(
       catchError((error: unknown) => {
         if (!(error instanceof HttpErrorResponse)) {
           return throwError(() => error);
