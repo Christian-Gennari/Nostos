@@ -831,70 +831,10 @@ public sealed partial class LibraryService : ILibraryService
             return NoChange(Failure("invalid_book_identity",
                 "Only audiobooks use ASIN.", state.StateVersion));
 
-        // Null = leave unchanged; empty string = clear (repo convention).
-        if (request.Title is not null)
-            book.Title = request.Title;
-        if (request.Author is not null)
-            book.Author = NullIfEmpty(request.Author);
-        if (request.Subtitle is not null)
-            book.Metadata.Subtitle = NullIfEmpty(request.Subtitle);
-        if (request.Editor is not null)
-            book.Metadata.Editor = NullIfEmpty(request.Editor);
-        if (request.Translator is not null)
-            book.Metadata.Translator = NullIfEmpty(request.Translator);
-        if (request.Description is not null)
-            book.Metadata.Description = NullIfEmpty(request.Description);
-        if (request.Publisher is not null)
-            book.Metadata.Publisher = NullIfEmpty(request.Publisher);
-        if (request.PlaceOfPublication is not null)
-            book.Metadata.PlaceOfPublication = NullIfEmpty(request.PlaceOfPublication);
-        if (request.PublishedDate is not null)
-            book.Metadata.PublishedDate = NullIfEmpty(request.PublishedDate);
-        if (request.Edition is not null)
-            book.Metadata.Edition = NullIfEmpty(request.Edition);
-        if (request.Language is not null)
-            book.Metadata.Language = NullIfEmpty(request.Language);
-        if (request.Categories is not null)
-            book.Metadata.Categories = NullIfEmpty(request.Categories);
-        if (request.Series is not null)
-            book.Metadata.Series = NullIfEmpty(request.Series);
-        if (request.VolumeNumber is not null)
-            book.Metadata.VolumeNumber = NullIfEmpty(request.VolumeNumber);
-
-        // Rating, favourite and review are the book's, shared by every edition,
-        // so they are written to the work. EditionRating and EditionReview are this
-        // edition's own exceptions (0 / empty clears).
-        var work = book.Work!;
-        if (request.Rating.HasValue)
-            work.Rating = Math.Clamp(request.Rating.Value, 0, 5);
-        if (request.IsFavorite.HasValue)
-            work.IsFavorite = request.IsFavorite.Value;
-        if (request.PersonalReview is not null)
-            work.PersonalReview = NullIfEmpty(request.PersonalReview);
-        if (request.EditionRating.HasValue)
-            book.Progress.Rating = Math.Clamp(request.EditionRating.Value, 0, 5);
-        if (request.EditionReview is not null)
-            book.Progress.PersonalReview = NullIfEmpty(request.EditionReview);
-
-        // Finished semantics mirror UpdateBookDto.Apply.
-        if (request.FinishedAt is not null)
-        {
-            book.Progress.FinishedAt = request.FinishedAt;
-        }
-        else if (request.IsFinished.HasValue)
-        {
-            if (request.IsFinished.Value)
-            {
-                book.Progress.FinishedAt ??= Now;
-                book.Progress.ProgressPercent = 100;
-                // Finishing is reading it last: finished books rank by Last read.
-                book.Progress.LastReadAt ??= book.Progress.FinishedAt;
-            }
-            else
-            {
-                book.Progress.FinishedAt = null;
-            }
-        }
+        // Every field an update can carry, in one shared mapping (issue #1612):
+        // null leaves a field alone, an empty string clears it, the book's values
+        // go to its work and the edition keeps only its own exceptions.
+        BookUpdateMapping.Apply(book, request.ToPatch(), Now);
 
         // --- COLLECTION MEMBERSHIP ---
         // CollectionIds (the full replacement set) is the authoritative write.
@@ -952,33 +892,6 @@ public sealed partial class LibraryService : ILibraryService
                 .Where(bc => bc.BookId == book.Id)
                 .ToListAsync(ct);
             db.BookCollections.RemoveRange(current);
-        }
-
-        switch (book)
-        {
-            case PhysicalBookModel p:
-                if (request.Isbn is not null)
-                    p.Isbn = NullIfEmpty(request.Isbn);
-                if (request.PageCount.HasValue && request.PageCount != p.PageCount)
-                {
-                    p.PageCount = request.PageCount;
-                    PaperPageProgress.RecomputeAfterPageCountChange(p, Now);
-                }
-                break;
-            case EBookModel e:
-                if (request.Isbn is not null)
-                    e.Isbn = NullIfEmpty(request.Isbn);
-                if (request.PageCount.HasValue)
-                    e.PageCount = request.PageCount;
-                break;
-            case AudioBookModel a:
-                if (request.Asin is not null)
-                    a.Asin = NullIfEmpty(request.Asin);
-                if (request.Duration is not null)
-                    a.Duration = NullIfEmpty(request.Duration);
-                if (request.Narrator is not null)
-                    a.Narrator = NullIfEmpty(request.Narrator);
-                break;
         }
 
         // Recompute normalized identity after possible identifier changes.

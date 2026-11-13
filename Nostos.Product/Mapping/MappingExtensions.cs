@@ -9,15 +9,23 @@ namespace Nostos.Backend.Mapping;
 
 public static class MappingExtensions
 {
-    private static readonly ILoggerFactory _loggerFactory = LoggerFactory.Create(builder =>
-        builder.AddConsole()
-    );
-    private static readonly ILogger _logger = _loggerFactory.CreateLogger("MappingExtensions");
+    // Chapter JSON is a small, stable shape; parsing it must not allocate a new
+    // options object per book.
+    private static readonly JsonSerializerOptions ChaptersJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
 
     // ------------------------------
     // Read mappings (Model → DTO)
     // ------------------------------
-    public static BookDto ToDto(this BookModel model)
+    /// <param name="logger">
+    /// Where an unreadable chapters JSON is reported. Optional because most
+    /// callers are static reads without a logger in scope; a caller that has
+    /// one should pass it, so the warning reaches the host's logging pipeline
+    /// instead of a console logger created outside DI (issue #1612).
+    /// </param>
+    public static BookDto ToDto(this BookModel model, ILogger? logger = null)
     {
         // The book's rating, favourite and review live on its work. A book mapped
         // without it would silently report rating 0, so fail loudly instead:
@@ -68,13 +76,13 @@ public static class MappingExtensions
             {
                 chapters = JsonSerializer.Deserialize<List<BookChapterDto>>(
                     model.FileDetails.ChaptersJson,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    ChaptersJsonOptions
                 );
             }
             catch (JsonException ex)
             {
                 chapters = null;
-                _logger.LogWarning(
+                logger?.LogWarning(
                     ex,
                     "Failed to deserialize chapters JSON for book {BookId}",
                     model.Id
@@ -377,97 +385,16 @@ public static class MappingExtensions
     public static TopicModel ToModel(this CreateTopicDto dto) =>
         new TopicModel { Id = Guid.NewGuid(), Topic = dto.Topic };
 
-    // Helper: treats empty string as null (allows clearing optional fields)
-    private static string? NullIfEmpty(string? value) =>
-        value is not null ? (string.IsNullOrEmpty(value) ? null : value) : null;
-
     // ------------------------------
     // Update mappings (Apply fields)
     // ------------------------------
-    public static void Apply(this BookModel model, UpdateBookDto dto)
-    {
-        // 1. Apply Root Fields
-        if (dto.Title != null)
-            model.Title = dto.Title;
-        if (dto.Author != null)
-            model.Author = NullIfEmpty(dto.Author);
-
-        // 2. Apply Metadata (Owned Type) — empty string clears the field
-        if (dto.Subtitle != null)
-            model.Metadata.Subtitle = NullIfEmpty(dto.Subtitle);
-        if (dto.Editor != null)
-            model.Metadata.Editor = NullIfEmpty(dto.Editor);
-        if (dto.Translator != null)
-            model.Metadata.Translator = NullIfEmpty(dto.Translator);
-        if (dto.Description != null)
-            model.Metadata.Description = NullIfEmpty(dto.Description);
-        if (dto.Publisher != null)
-            model.Metadata.Publisher = NullIfEmpty(dto.Publisher);
-        if (dto.PlaceOfPublication != null)
-            model.Metadata.PlaceOfPublication = NullIfEmpty(dto.PlaceOfPublication);
-        if (dto.PublishedDate != null)
-            model.Metadata.PublishedDate = NullIfEmpty(dto.PublishedDate);
-        if (dto.Edition != null)
-            model.Metadata.Edition = NullIfEmpty(dto.Edition);
-        if (dto.Language != null)
-            model.Metadata.Language = NullIfEmpty(dto.Language);
-        if (dto.Categories != null)
-            model.Metadata.Categories = NullIfEmpty(dto.Categories);
-        if (dto.Series != null)
-            model.Metadata.Series = NullIfEmpty(dto.Series);
-        if (dto.VolumeNumber != null)
-            model.Metadata.VolumeNumber = NullIfEmpty(dto.VolumeNumber);
-
-        // 3. Apply Progress (Owned Type)
-        // Rating, favourite and review are the book's and live on its work; the
-        // library service writes them there (this maps the edition only).
-
-        // LOGIC FIX: Handle Finished Status
-        if (dto.FinishedAt != null)
-        {
-            model.Progress.FinishedAt = dto.FinishedAt;
-        }
-        else if (dto.IsFinished.HasValue)
-        {
-            if (dto.IsFinished.Value)
-            {
-                // Mark as finished (Set to Now if not already set)
-                model.Progress.FinishedAt ??= DateTime.UtcNow;
-                model.Progress.ProgressPercent = 100;
-                model.Progress.LastReadAt ??= model.Progress.FinishedAt;
-            }
-            else
-            {
-                // Mark as Unread
-                model.Progress.FinishedAt = null;
-            }
-        }
-
-        // 4. Apply Specific Fields (Pattern Matching)
-        switch (model)
-        {
-            case PhysicalBookModel p:
-                if (dto.Isbn != null)
-                    p.Isbn = dto.Isbn;
-                if (dto.PageCount != null)
-                    p.PageCount = dto.PageCount;
-                break;
-            case EBookModel e:
-                if (dto.Isbn != null)
-                    e.Isbn = dto.Isbn;
-                if (dto.PageCount != null)
-                    e.PageCount = dto.PageCount;
-                break;
-            case AudioBookModel a:
-                if (dto.Asin != null)
-                    a.Asin = dto.Asin;
-                if (dto.Duration != null)
-                    a.Duration = dto.Duration;
-                if (dto.Narrator != null)
-                    a.Narrator = dto.Narrator;
-                break;
-        }
-    }
+    /// <summary>
+    /// The legacy REST patch shape. Delegates to <see cref="BookUpdateMapping"/>
+    /// so this and the library command can never disagree about what an update
+    /// means; collection membership is not a field and the service owns it.
+    /// </summary>
+    public static void Apply(this BookModel model, UpdateBookDto dto) =>
+        BookUpdateMapping.Apply(model, dto, DateTime.UtcNow);
 
     public static void Apply(this CollectionModel model, UpdateCollectionDto dto)
     {
