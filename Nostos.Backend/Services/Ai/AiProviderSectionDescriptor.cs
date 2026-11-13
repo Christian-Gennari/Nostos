@@ -18,10 +18,10 @@ internal sealed class AiProviderSectionDescriptor(
     Action<AiProviderSettingsModel, string?> setModel,
     Func<AiProviderSettingsModel, string?> getApiKeyEncrypted,
     Action<AiProviderSettingsModel, string?> setApiKeyEncrypted,
-    bool fallbackEnabled,
-    string fallbackBaseUrl,
-    string fallbackModel,
-    string apiKeyEnvironmentVariable)
+    Func<bool> fallbackEnabled,
+    Func<string> fallbackBaseUrl,
+    Func<string> fallbackModel,
+    Func<string> apiKeyEnvironmentVariable)
 {
     public AiProviderKind Kind { get; } = kind;
     public string Surface { get; } = surface;
@@ -33,8 +33,12 @@ internal sealed class AiProviderSectionDescriptor(
     public Action<AiProviderSettingsModel, string?> SetModel { get; } = setModel;
     public Func<AiProviderSettingsModel, string?> GetApiKeyEncrypted { get; } = getApiKeyEncrypted;
     public Action<AiProviderSettingsModel, string?> SetApiKeyEncrypted { get; } = setApiKeyEncrypted;
-    public bool FallbackEnabled { get; } = fallbackEnabled;
-    public string FallbackBaseUrl { get; } = fallbackBaseUrl;
-    public string FallbackModel { get; } = fallbackModel;
-    public string ApiKeyEnvironmentVariable { get; } = apiKeyEnvironmentVariable;
+
+    // The fallbacks read the host's options on every call, never a copy taken
+    // at construction: the options objects are shared singletons that a host
+    // (or a test) may change after this store is built.
+    public bool FallbackEnabled => fallbackEnabled();
+    public string FallbackBaseUrl => fallbackBaseUrl();
+    public string FallbackModel => fallbackModel();
+    public string ApiKeyEnvironmentVariable => apiKeyEnvironmentVariable();
 }

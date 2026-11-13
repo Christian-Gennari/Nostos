@@ -64,10 +64,10 @@ internal sealed class AiProviderSettingsStore : IAiProviderConfigResolver
             (row, value) => row.LlmModel = value,
             row => row.LlmApiKeyEncrypted,
             (row, value) => row.LlmApiKeyEncrypted = value,
-            assistantOptions.Enabled,
-            assistantOptions.BaseUrl,
-            assistantOptions.Model,
-            assistantOptions.ApiKeyEnvironmentVariable);
+            () => assistantOptions.Enabled,
+            () => assistantOptions.BaseUrl,
+            () => assistantOptions.Model,
+            () => assistantOptions.ApiKeyEnvironmentVariable);
 
         _stt = new AiProviderSectionDescriptor(
             AiProviderKind.Stt,
@@ -80,10 +80,10 @@ internal sealed class AiProviderSettingsStore : IAiProviderConfigResolver
             (row, value) => row.SttModel = value,
             row => row.SttApiKeyEncrypted,
             (row, value) => row.SttApiKeyEncrypted = value,
-            speechOptions.Enabled,
-            speechOptions.BaseUrl,
-            speechOptions.Model,
-            speechOptions.ApiKeyEnvironmentVariable);
+            () => speechOptions.Enabled,
+            () => speechOptions.BaseUrl,
+            () => speechOptions.Model,
+            () => speechOptions.ApiKeyEnvironmentVariable);
 
         _embedding = new AiProviderSectionDescriptor(
             AiProviderKind.Embedding,
@@ -96,10 +96,10 @@ internal sealed class AiProviderSettingsStore : IAiProviderConfigResolver
             (row, value) => row.EmbeddingModel = value,
             row => row.EmbeddingApiKeyEncrypted,
             (row, value) => row.EmbeddingApiKeyEncrypted = value,
-            embeddingOptions.Enabled,
-            embeddingOptions.BaseUrl,
-            embeddingOptions.Model,
-            embeddingOptions.ApiKeyEnvironmentVariable);
+            () => embeddingOptions.Enabled,
+            () => embeddingOptions.BaseUrl,
+            () => embeddingOptions.Model,
+            () => embeddingOptions.ApiKeyEnvironmentVariable);
 
         _tts = new AiProviderSectionDescriptor(
             AiProviderKind.Tts,
@@ -112,10 +112,10 @@ internal sealed class AiProviderSettingsStore : IAiProviderConfigResolver
             (row, value) => row.TtsModel = value,
             row => row.TtsApiKeyEncrypted,
             (row, value) => row.TtsApiKeyEncrypted = value,
-            ttsOptions.Enabled,
-            ttsOptions.BaseUrl,
-            ttsOptions.Model,
-            ttsOptions.ApiKeyEnvironmentVariable);
+            () => ttsOptions.Enabled,
+            () => ttsOptions.BaseUrl,
+            () => ttsOptions.Model,
+            () => ttsOptions.ApiKeyEnvironmentVariable);
 
         _alignment = new AiProviderSectionDescriptor(
             AiProviderKind.AlignmentTranscription,
@@ -128,10 +128,10 @@ internal sealed class AiProviderSettingsStore : IAiProviderConfigResolver
             (row, value) => row.AlignmentTranscriptionModel = value,
             row => row.AlignmentTranscriptionApiKeyEncrypted,
             (row, value) => row.AlignmentTranscriptionApiKeyEncrypted = value,
-            fallbackEnabled: false,
-            fallbackBaseUrl: string.Empty,
-            fallbackModel: string.Empty,
-            AlignmentKeyEnvironmentVariable);
+            fallbackEnabled: static () => false,
+            fallbackBaseUrl: static () => string.Empty,
+            fallbackModel: static () => string.Empty,
+            static () => AlignmentKeyEnvironmentVariable);
     }
 
     private IDataProtector CreateProtector() =>
