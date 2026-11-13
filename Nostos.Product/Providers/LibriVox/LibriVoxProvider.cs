@@ -210,22 +210,10 @@ public sealed class LibriVoxProvider : IContentProvider,
         if (cursor.Offset > 0)
             await Task.Delay(SnapshotPageDelay, _clock, ct);
 
-        JsonDocument? document;
-        try
-        {
-            document = await LoadJsonAsync(
-                _snapshotHttp,
-                LibriVoxCatalog.SnapshotPagePath(cursor.Offset, cursor.Since ? cursor.SinceUnixSeconds : null),
-                ct);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            throw ProviderException.UnavailableFor(Id, "the catalogue did not answer within the snapshot timeout");
-        }
-        catch (HttpRequestException ex)
-        {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
-        }
+        var document = await LoadJsonAsync(
+            _snapshotHttp,
+            LibriVoxCatalog.SnapshotPagePath(cursor.Offset, cursor.Since ? cursor.SinceUnixSeconds : null),
+            ct);
 
         ct.ThrowIfCancellationRequested();
 
@@ -512,7 +500,7 @@ public sealed class LibriVoxProvider : IContentProvider,
     /// </summary>
     private async Task<JsonDocument?> LoadJsonAsync(HttpClient client, string path, CancellationToken ct)
     {
-        using var response = await client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await ProviderHttp.GetHeadersAsync(client, Id, path, ct);
 
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
             return null;
@@ -520,14 +508,17 @@ public sealed class LibriVoxProvider : IContentProvider,
         if (!response.IsSuccessStatusCode)
             throw ProviderException.UnavailableFor(Id, $"the catalogue answered HTTP {(int)response.StatusCode}");
 
-        try
+        return await ProviderHttp.ExecuteAsync(Id, ct, async token =>
         {
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            return await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-        }
-        catch (JsonException ex)
-        {
-            throw ProviderException.InvalidResponse(Id, ex.Message);
-        }
+            try
+            {
+                await using var stream = await response.Content.ReadAsStreamAsync(token);
+                return await JsonDocument.ParseAsync(stream, cancellationToken: token);
+            }
+            catch (JsonException ex)
+            {
+                throw ProviderException.InvalidResponse(Id, ex.Message);
+            }
+        });
     }
 }

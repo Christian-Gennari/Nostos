@@ -22,6 +22,7 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// read the bytes that were actually written.
 /// </summary>
 public sealed class AiProviderSettingsEndpointTests
+    : IClassFixture<AiProviderSettingsEndpointTests.SettingsHostFactory>, IAsyncLifetime
 {
     // Variable names owned solely by this class: the process-wide environment is
     // shared, so a distinct name keeps another suite's token out of these tests.
@@ -35,10 +36,22 @@ public sealed class AiProviderSettingsEndpointTests
     private const string SttBaseUrl = "http://stt.invalid";
     private const string SttModel = "test-stt-model";
 
-    public AiProviderSettingsEndpointTests()
+    private readonly SettingsHostFactory _factory;
+
+    public AiProviderSettingsEndpointTests(SettingsHostFactory factory) => _factory = factory;
+
+    public Task InitializeAsync()
     {
         Environment.SetEnvironmentVariable(LlmTokenVariable, null);
         Environment.SetEnvironmentVariable(SttTokenVariable, null);
+        return _factory.ResetStateAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        Environment.SetEnvironmentVariable(LlmTokenVariable, null);
+        Environment.SetEnvironmentVariable(SttTokenVariable, null);
+        return Task.CompletedTask;
     }
 
     // ------------------------------------------------------------------
@@ -48,9 +61,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task Get_reports_the_fallback_when_nothing_is_stored()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync(AiProviderSettingsEndpoints.Route);
 
@@ -81,9 +92,7 @@ public sealed class AiProviderSettingsEndpointTests
         Environment.SetEnvironmentVariable(LlmTokenVariable, LlmTokenValue);
         try
         {
-            using var factory = new LibraryEndpointFactory();
-            using var host = CreateHost(factory);
-            using var client = host.CreateClient();
+            using var client = _factory.CreateClient();
 
             var response = await client.GetAsync(AiProviderSettingsEndpoints.Route);
             var raw = await response.Content.ReadAsStringAsync();
@@ -108,9 +117,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task Put_round_trips_enabled_baseUrl_and_model()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var put = await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -141,9 +148,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task Put_stores_the_key_encrypted_at_rest_and_never_returns_it()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var put = await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -159,14 +164,14 @@ public sealed class AiProviderSettingsEndpointTests
         body.Llm.KeyFromServerEnv.Should().BeFalse();
         raw.Should().NotContain(NewLlmKey);
 
-        using var db = OpenDb(factory.DatabasePath);
+        using var db = OpenDb(_factory.DatabasePath);
         var stored = db.AiProviderSettings.AsNoTracking().Single();
         stored.LlmApiKeyEncrypted.Should().NotBeNullOrWhiteSpace();
         stored.LlmApiKeyEncrypted.Should().NotBe(NewLlmKey);
         stored.LlmApiKeyEncrypted.Should().NotContain(NewLlmKey);
 
         // It decrypts back to the same usable key, through the effective config.
-        var effective = await host.Services
+        var effective = await _factory.Services
             .GetRequiredService<IAiProviderConfigResolver>()
             .GetEffectiveLlmAsync();
         effective.ApiKey.Should().Be(NewLlmKey);
@@ -175,9 +180,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task Put_omitting_the_key_leaves_the_stored_one_unchanged()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -186,7 +189,7 @@ public sealed class AiProviderSettingsEndpointTests
                 Stt: null));
 
         string? ciphertextBefore;
-        using (var db = OpenDb(factory.DatabasePath))
+        using (var db = OpenDb(_factory.DatabasePath))
         {
             ciphertextBefore = db.AiProviderSettings.AsNoTracking().Single().LlmApiKeyEncrypted;
         }
@@ -203,7 +206,7 @@ public sealed class AiProviderSettingsEndpointTests
         body.Llm.KeyFromServerEnv.Should().BeFalse();
         body.Llm.Model.Should().Be("another-model");
 
-        using (var db = OpenDb(factory.DatabasePath))
+        using (var db = OpenDb(_factory.DatabasePath))
         {
             var stored = db.AiProviderSettings.AsNoTracking().Single();
             stored.LlmApiKeyEncrypted.Should().Be(ciphertextBefore);
@@ -213,9 +216,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task Put_with_an_empty_key_clears_the_stored_one()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -234,7 +235,7 @@ public sealed class AiProviderSettingsEndpointTests
         body!.Llm.HasKey.Should().BeFalse();
         body.Llm.KeyFromServerEnv.Should().BeFalse();
 
-        using var db = OpenDb(factory.DatabasePath);
+        using var db = OpenDb(_factory.DatabasePath);
         db.AiProviderSettings.AsNoTracking().Single().LlmApiKeyEncrypted.Should().BeNull();
     }
 
@@ -244,9 +245,7 @@ public sealed class AiProviderSettingsEndpointTests
         Environment.SetEnvironmentVariable(LlmTokenVariable, LlmTokenValue);
         try
         {
-            using var factory = new LibraryEndpointFactory();
-            using var host = CreateHost(factory);
-            using var client = host.CreateClient();
+            using var client = _factory.CreateClient();
 
             await client.PutAsJsonAsync(
                 AiProviderSettingsEndpoints.Route,
@@ -273,9 +272,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task A_private_http_host_is_accepted_because_the_gateway_is_on_the_lan()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var put = await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -296,9 +293,7 @@ public sealed class AiProviderSettingsEndpointTests
     [InlineData("")]
     public async Task Put_rejects_an_invalid_base_url(string baseUrl)
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var put = await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -313,9 +308,7 @@ public sealed class AiProviderSettingsEndpointTests
     [Fact]
     public async Task Put_rejects_an_empty_model()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory);
-        using var client = host.CreateClient();
+        using var client = _factory.CreateClient();
 
         var put = await client.PutAsJsonAsync(
             AiProviderSettingsEndpoints.Route,
@@ -342,9 +335,11 @@ public sealed class AiProviderSettingsEndpointTests
         return document.TryGetProperty("error", out var error) ? error.GetString() : null;
     }
 
-    private static WebApplicationFactory<Program> CreateHost(LibraryEndpointFactory factory) =>
-        factory.WithWebHostBuilder(builder =>
+    public sealed class SettingsHostFactory : LibraryEndpointFactory
+    {
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
+            base.ConfigureWebHost(builder);
             builder.UseSetting("Assistant:Enabled", "true");
             builder.UseSetting("Assistant:BaseUrl", LlmBaseUrl);
             builder.UseSetting("Assistant:Model", LlmModel);
@@ -354,5 +349,6 @@ public sealed class AiProviderSettingsEndpointTests
             builder.UseSetting("Speech:BaseUrl", SttBaseUrl);
             builder.UseSetting("Speech:Model", SttModel);
             builder.UseSetting("Speech:ApiKeyEnvironmentVariable", SttTokenVariable);
-        });
+        }
+    }
 }

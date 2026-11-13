@@ -31,14 +31,25 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// that lands in the library is byte-identical to the source.
 /// </summary>
 public sealed class BookUploadEndpointTests
+    : IClassFixture<BookUploadEndpointTests.BookUploadHostFactory>, IAsyncLifetime
 {
     private const int PartBytes = 16 * 1024 * 1024;
+    private readonly BookUploadHostFactory _factory;
+
+    public BookUploadEndpointTests(BookUploadHostFactory factory) => _factory = factory;
+
+    public Task InitializeAsync()
+    {
+        _factory.Faults.ResetAll();
+        return _factory.ResetStateAsync();
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task Interrupted_upload_resumes_from_receipts_and_publishes_identical_bytes()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         // Two parts: the resume path must skip what the server already has.
@@ -72,7 +83,7 @@ public sealed class BookUploadEndpointTests
         final.State.Should().Be("Complete");
         final.ReceivedParts.Should().Equal(0, 1);
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var row = await db.Books.SingleAsync(b => b.Id == book.Id);
             row.FileDetails.HasFile.Should().BeTrue();
@@ -82,7 +93,7 @@ public sealed class BookUploadEndpointTests
             sessionRow.ActiveSessionKey.Should().BeNull();
         }
 
-        var stored = Path.Combine(factory.BooksRootPath, book.Id.ToString(), "book.txt");
+        var stored = Path.Combine(_factory.BooksRootPath, book.Id.ToString(), "book.txt");
         File.Exists(stored).Should().BeTrue();
         Sha256Hex(await File.ReadAllBytesAsync(stored)).Should().Be(sha);
     }
@@ -90,8 +101,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Concurrent_parts_each_get_a_receipt()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         // Two requests that both read the session before either receipt is
@@ -124,8 +134,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Repeating_a_received_part_is_idempotent()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
         var bytes = Encoding.ASCII.GetBytes("hello resumable world");
         var sha = Sha256Hex(bytes);
@@ -145,8 +154,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Part_with_wrong_hash_is_rejected_without_a_receipt()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
         var bytes = Encoding.ASCII.GetBytes("checksum matters");
         var sha = Sha256Hex(bytes);
@@ -168,8 +176,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Different_file_replaces_an_interrupted_session()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         var first = Encoding.ASCII.GetBytes("first draft");
@@ -187,7 +194,7 @@ public sealed class BookUploadEndpointTests
         replacement.SessionId.Should().NotBe(session.SessionId);
         replacement.ReceivedParts.Should().BeEmpty();
 
-        await using var db = OpenDb(factory.DatabasePath);
+        await using var db = OpenDb(_factory.DatabasePath);
         (await db.BookUploadSessionRecords.CountAsync(s => s.ActiveSessionKey != null))
             .Should().Be(1);
     }
@@ -195,8 +202,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Unknown_session_is_not_found()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var response = await client.GetAsync(
@@ -207,8 +213,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Legacy_whole_request_upload_still_works()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
         var bytes = Encoding.ASCII.GetBytes("legacy upload path");
 
@@ -220,7 +225,7 @@ public sealed class BookUploadEndpointTests
         using var response = await client.PostAsync($"/api/books/{book.Id}/file", form);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var stored = Path.Combine(factory.BooksRootPath, book.Id.ToString(), "book.txt");
+        var stored = Path.Combine(_factory.BooksRootPath, book.Id.ToString(), "book.txt");
         File.Exists(stored).Should().BeTrue();
         Sha256Hex(await File.ReadAllBytesAsync(stored)).Should().Be(Sha256Hex(bytes));
     }
@@ -233,8 +238,7 @@ public sealed class BookUploadEndpointTests
     public async Task Resumable_complete_rejects_bytes_that_do_not_match_the_name(
         string fileName, string contentType, string text)
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
         var bytes = Encoding.Latin1.GetBytes(text);
 
@@ -246,9 +250,9 @@ public sealed class BookUploadEndpointTests
         body.Should().Contain("book_upload_invalid_file");
 
         // No file was adopted: the book row still has none.
-        File.Exists(Path.Combine(factory.BooksRootPath, book.Id.ToString(), Path.ChangeExtension("book", Path.GetExtension(fileName))))
+        File.Exists(Path.Combine(_factory.BooksRootPath, book.Id.ToString(), Path.ChangeExtension("book", Path.GetExtension(fileName))))
             .Should().BeFalse();
-        using var scope = factory.Services.CreateScope();
+        using var scope = _factory.Services.CreateScope();
         var row = await scope.ServiceProvider.GetRequiredService<IBookRepository>().GetByIdAsync(book.Id);
         row!.FileDetails.HasFile.Should().BeFalse();
     }
@@ -256,8 +260,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Empty_file_is_rejected_when_the_session_is_created()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var response = await CreateSessionAsync(
@@ -270,8 +273,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Valid_epub_pdf_and_mp3_are_accepted_and_txt_and_mobi_are_stored_as_is()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var cases = new (string Name, string Type, byte[] Bytes)[]
         {
@@ -297,8 +299,7 @@ public sealed class BookUploadEndpointTests
     public async Task Legacy_upload_rejects_bad_files_with_a_clear_400(
         string fileName, string contentType, string text)
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
         using var form = new MultipartFormDataContent();
@@ -335,8 +336,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Capability_advertises_the_contract_on_this_host()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var capabilities = await client.GetFromJsonAsync<JsonElement>(
             "/api/runtime/capabilities");
@@ -346,8 +346,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Deleting_the_book_discards_its_unfinished_upload()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
         var bytes = Encoding.ASCII.GetBytes("will be discarded");
 
@@ -358,13 +357,13 @@ public sealed class BookUploadEndpointTests
         using var deleted = await client.DeleteAsync($"/api/books/{book.Id}");
         deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             (await db.BookUploadSessionRecords.CountAsync()).Should().Be(0);
         }
 
         var staging = Path.Combine(
-            factory.StorageTempRoot,
+            _factory.StorageTempRoot,
             "transfers",
             "book-uploads",
             session.SessionId.ToString("N"));
@@ -378,7 +377,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Crash_after_adoption_of_a_first_upload_completes_on_retry()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client);
         var bytes = Encoding.ASCII.GetBytes("first upload, crash before the row");
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
@@ -398,7 +397,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Crash_after_adoption_of_a_replacement_runs_the_row_commit()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookWithFileAsync(scene, Encoding.ASCII.GetBytes("the old file"));
         await SetStaleFileStateAsync(scene.Factory, book.Id);
         var bytes = Encoding.ASCII.GetBytes("the replacement, a crash before its row");
@@ -418,7 +417,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Failed_row_update_is_finished_by_recovery()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookWithFileAsync(scene, Encoding.ASCII.GetBytes("the old file"));
         await SetStaleFileStateAsync(scene.Factory, book.Id);
         var bytes = Encoding.ASCII.GetBytes("the replacement, row update fails once");
@@ -439,7 +438,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Failed_adoption_of_a_same_length_replacement_is_not_reported_complete()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var oldBytes = Encoding.ASCII.GetBytes("old file, same length");
         var book = await CreateBookWithFileAsync(scene, oldBytes);
         await SetStaleFileStateAsync(scene.Factory, book.Id);
@@ -468,7 +467,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Failed_adoption_of_a_different_length_replacement_stays_retryable()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var oldBytes = Encoding.ASCII.GetBytes("old file");
         var book = await CreateBookWithFileAsync(scene, oldBytes);
         var bytes = Encoding.ASCII.GetBytes("a new file of another length");
@@ -487,7 +486,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Stored_file_with_other_bytes_is_never_reported_complete()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var oldBytes = Encoding.ASCII.GetBytes("old file, same length");
         var book = await CreateBookWithFileAsync(scene, oldBytes);
         await SetStaleFileStateAsync(scene.Factory, book.Id);
@@ -512,7 +511,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Stored_file_with_the_same_bytes_and_another_format_is_not_this_upload()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client);
         var bytes = Encoding.ASCII.GetBytes("same bytes, another extension");
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
@@ -529,7 +528,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Recovery_that_fails_can_be_retried()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client);
         var bytes = Encoding.ASCII.GetBytes("the row cannot be written yet");
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
@@ -554,7 +553,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Commit_that_failed_after_the_row_update_is_repeated_safely()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client);
         var bytes = Encoding.ASCII.GetBytes("the index could not be told");
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
@@ -570,7 +569,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Recovery_without_staging_takes_the_file_mutation_gate()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client);
         var bytes = Encoding.ASCII.GetBytes("an acquisition owns this book");
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
@@ -592,7 +591,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Recovery_reads_metadata_from_the_stored_file()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client, "audiobook");
         var bytes = SilentMp3(frames: 400);
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.mp3", "audio/mpeg");
@@ -610,7 +609,7 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Uninterrupted_publish_commits_once()
     {
-        using var scene = new RecoveryScene();
+        using var scene = new RecoveryScene(_factory);
         var book = await CreateBookAsync(scene.Client);
         var bytes = Encoding.ASCII.GetBytes("nothing goes wrong");
         var session = await StageAsync(scene.Client, book.Id, bytes, "first.txt");
@@ -735,11 +734,10 @@ public sealed class BookUploadEndpointTests
     [Fact]
     public async Task Session_on_a_book_with_a_file_is_refused_unless_replace_is_asked_for()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client);
 
-        await using (var db = OpenDb(factory.DatabasePath))
+        await using (var db = OpenDb(_factory.DatabasePath))
         {
             var row = await db.Books.SingleAsync(b => b.Id == book.Id);
             row.FileDetails.HasFile = true;
@@ -821,14 +819,14 @@ public sealed class BookUploadEndpointTests
 
     private sealed record PartResultDto(Guid SessionId, int PartIndex, bool AlreadyPresent);
 
-    /// <summary>One host whose storage, row writes and scheduler can be made to fail.</summary>
-    private sealed class RecoveryScene : IDisposable
+    public sealed class BookUploadHostFactory : LibraryEndpointFactory
     {
-        private readonly LibraryEndpointFactory _factory = new();
+        public UploadFaults Faults { get; } = new();
 
-        public RecoveryScene()
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
-            Host = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            base.ConfigureWebHost(builder);
+            builder.ConfigureTestServices(services =>
             {
                 services.AddSingleton<IBookAssetStorage>(sp => new FaultingAssetStorage(
                     sp.GetRequiredService<ExternalMediaBookStorage>(),
@@ -837,26 +835,25 @@ public sealed class BookUploadEndpointTests
                     new BookRepository(sp.GetRequiredService<NostosDbContext>()),
                     Faults));
                 services.AddSingleton<IBookTextIngestionScheduler>(Faults);
-            }));
-            Client = Host.CreateClient();
-        }
-
-        public UploadFaults Faults { get; } = new();
-
-        public LibraryEndpointFactory Factory => _factory;
-
-        public WebApplicationFactory<Program> Host { get; }
-
-        public HttpClient Client { get; }
-
-        public void Dispose()
-        {
-            Client.Dispose();
-            _factory.Dispose();
+            });
         }
     }
 
-    private sealed class UploadFaults : IBookTextIngestionScheduler
+    /// <summary>One host whose storage, row writes and scheduler can be made to fail.</summary>
+    private sealed class RecoveryScene(BookUploadHostFactory factory) : IDisposable
+    {
+        public UploadFaults Faults => factory.Faults;
+
+        public LibraryEndpointFactory Factory => factory;
+
+        public WebApplicationFactory<Program> Host => factory;
+
+        public HttpClient Client { get; } = factory.CreateClient();
+
+        public void Dispose() => Client.Dispose();
+    }
+
+    public sealed class UploadFaults : IBookTextIngestionScheduler
     {
         public int FailAdoptions { get; set; }
 
@@ -872,6 +869,14 @@ public sealed class BookUploadEndpointTests
         {
             RowUpdates = 0;
             Scheduled.Clear();
+        }
+
+        public void ResetAll()
+        {
+            FailAdoptions = 0;
+            FailRowUpdates = 0;
+            FailSchedules = 0;
+            Reset();
         }
 
         public Task ScheduleAsync(Guid bookId, string sourceFileName, CancellationToken ct = default)
@@ -913,14 +918,19 @@ public sealed class BookUploadEndpointTests
     private sealed class FaultingBookRepository(IBookRepository inner, UploadFaults faults)
         : IBookRepository
     {
-        public Task<BookModel?> GetByIdAsync(Guid id) => inner.GetByIdAsync(id);
+        public Task<BookModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            inner.GetByIdAsync(id, cancellationToken);
 
-        public Task<int> CountBooksWithFilesAsync() => inner.CountBooksWithFilesAsync();
+        public Task<int> CountBooksWithFilesAsync(CancellationToken cancellationToken = default) =>
+            inner.CountBooksWithFilesAsync(cancellationToken);
 
-        public Task<List<BookModel>> GetBooksWithFilesPageAsync(int skip, int take) =>
-            inner.GetBooksWithFilesPageAsync(skip, take);
+        public Task<List<BookModel>> GetBooksWithFilesPageAsync(
+            int skip,
+            int take,
+            CancellationToken cancellationToken = default) =>
+            inner.GetBooksWithFilesPageAsync(skip, take, cancellationToken);
 
-        public Task UpdateAsync(BookModel book)
+        public Task UpdateAsync(BookModel book, CancellationToken cancellationToken = default)
         {
             faults.RowUpdates += 1;
             if (faults.FailRowUpdates > 0)
@@ -929,7 +939,7 @@ public sealed class BookUploadEndpointTests
                 throw new IOException("Injected row update failure.");
             }
 
-            return inner.UpdateAsync(book);
+            return inner.UpdateAsync(book, cancellationToken);
         }
     }
 }

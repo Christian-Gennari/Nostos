@@ -11,12 +11,20 @@ using Xunit;
 namespace Nostos.Backend.Tests.Endpoints;
 
 public sealed class KoreaderNoteImportEndpointTests
+    : IClassFixture<LibraryEndpointFactory>, IAsyncLifetime
 {
+    private readonly LibraryEndpointFactory _factory;
+
+    public KoreaderNoteImportEndpointTests(LibraryEndpointFactory factory) => _factory = factory;
+
+    public Task InitializeAsync() => _factory.ResetStateAsync();
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     [Fact]
     public async Task Koreader_metadata_import_matches_book_imports_notes_and_is_idempotent()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var fixture = ImportFixtures.KoreaderEpub;
 
@@ -35,7 +43,7 @@ public sealed class KoreaderNoteImportEndpointTests
         secondReport!.ImportedCount.Should().Be(0);
         secondReport.DuplicateCount.Should().Be(2);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var notes = await db.Notes
             .AsNoTracking()
             .Where(note => note.BookId == book.Id)
@@ -61,8 +69,7 @@ public sealed class KoreaderNoteImportEndpointTests
     [Fact]
     public async Task Koreader_metadata_import_reports_unmatched_without_creating_notes()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await UploadAsync(client, ImportFixtures.KoreaderEpub);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -71,7 +78,7 @@ public sealed class KoreaderNoteImportEndpointTests
         report!.Status.Should().Be("unmatched");
         report.ImportedCount.Should().Be(0);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         (await db.Notes.CountAsync()).Should().Be(0);
     }
 

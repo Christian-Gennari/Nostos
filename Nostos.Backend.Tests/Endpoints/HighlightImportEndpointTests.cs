@@ -13,18 +13,27 @@ using Xunit;
 
 namespace Nostos.Backend.Tests.Endpoints;
 
-public sealed class HighlightImportEndpointTests : IDisposable
+public sealed class HighlightImportEndpointTests
+    : IClassFixture<LibraryEndpointFactory>, IAsyncLifetime
 {
+    private readonly LibraryEndpointFactory _factory;
     private readonly string _directory =
         Directory.CreateTempSubdirectory("nostos-kobo-test-").FullName;
 
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public HighlightImportEndpointTests(LibraryEndpointFactory factory) => _factory = factory;
+
+    public Task InitializeAsync() => _factory.ResetStateAsync();
+
+    public Task DisposeAsync()
+    {
+        Directory.Delete(_directory, recursive: true);
+        return Task.CompletedTask;
+    }
 
     [Fact]
     public async Task Preview_writes_nothing_and_sorts_books_into_exact_suggested_and_none()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         // Same title, same surname, different first name: a resemblance.
         var resembling = await CreateBookAsync(client, "Second Synthetic Book", "Lovelace, Grace");
@@ -50,7 +59,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         none.Match.Should().Be("none");
         none.Candidates.Should().BeEmpty();
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         (await db.Notes.CountAsync()).Should().Be(0);
         (await db.NoteImportBookLinks.CountAsync()).Should().Be(0);
     }
@@ -58,8 +67,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Only_an_identity_is_exact_and_every_resemblance_is_a_suggestion()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var mountain = await CreateBookAsync(client, "The Magic Mountain", "Thomas Mann");
         var devils = await CreateBookAsync(client, "Devils", "Fyodor Dostoevsky");
         var emma = await CreateBookAsync(client, "Emma", "Jane Austen");
@@ -95,8 +103,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Two_editions_of_one_book_are_offered_not_chosen()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var first = await CreateBookAsync(client, "Essays and Aphorisms", "Arthur Schopenhauer", "9780141921754");
         var second = await CreateBookAsync(client, "Essays and Aphorisms", "Arthur Schopenhauer", "9780140442274", "ebook");
 
@@ -115,8 +122,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Commit_imports_only_decided_books_remembers_them_and_is_idempotent()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var resembling = await CreateBookAsync(client, "Second Synthetic Book", "Lovelace, Grace");
         var database = CreateKoboDatabase();
@@ -144,7 +150,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         again.Books.Sum(book => book.ImportedCount).Should().Be(0);
         again.Books.Sum(book => book.DuplicateCount).Should().Be(3);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var notes = await db.Notes.AsNoTracking().ToListAsync();
         notes.Should().HaveCount(3);
         notes.Should().OnlyContain(note =>
@@ -164,8 +170,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Apple_books_files_from_a_mac_import_together_and_again_add_nothing()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var walden = await CreateBookAsync(client, "Walden", "Henry David Thoreau");
         var annotations = AppleBooksFixtures.CreateAnnotations(_directory,
             new AppleBooksFixtures.Annotation("ASSET-W", "Our life is frittered away by detail.", "Keep this."),
@@ -188,7 +193,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var second = (await again.Content.ReadFromJsonAsync<HighlightImportResult>())!.Books.Single();
         (second.ImportedCount, second.DuplicateCount).Should().Be((0, 2));
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var notes = await db.Notes.AsNoTracking().OrderBy(note => note.SelectedText).ToListAsync();
         notes.Select(note => (note.SelectedText, note.Content, note.SourceAnchorKind)).Should().Equal(
             ("Our life is frittered away by detail.", "Keep this.", "applebooks_cfi"),
@@ -199,8 +204,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Apple_books_highlights_still_in_the_wal_file_are_read_when_it_comes_along()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var (database, wal) = AppleBooksFixtures.CreateAnnotationsWithPendingWal(_directory,
             [new AppleBooksFixtures.Annotation("ASSET-1", "Saved before.")],
             [new AppleBooksFixtures.Annotation("ASSET-1", "Made while Books was open.")]);
@@ -216,8 +220,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task The_apple_books_library_file_alone_says_which_file_is_missing()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var library = AppleBooksFixtures.CreateLibrary(_directory,
             new AppleBooksFixtures.Asset("ASSET-W", "Walden", "Henry David Thoreau"));
 
@@ -230,8 +233,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Commit_can_add_a_missing_book_to_the_library()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var result = await CommitAsync(client, CreateKoboDatabase(),
             new HighlightImportDecision("vol-3", Create: true));
@@ -240,7 +242,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         created.Created.Should().BeTrue();
         created.ImportedCount.Should().Be(2);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var book = await db.Books.AsNoTracking().SingleAsync();
         book.Title.Should().Be("Not In The Library");
         book.Author.Should().Be("Nobody");
@@ -257,13 +259,12 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Undo_keeps_a_created_book_that_has_other_notes_since()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var result = await CommitAsync(client, CreateKoboDatabase(),
             new HighlightImportDecision("vol-3", Create: true));
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             var book = await db.Books.AsNoTracking().SingleAsync();
             var own = await client.PostAsJsonAsync($"/api/books/{book.Id}/notes", new CreateNoteDto("My own thought"));
@@ -273,7 +274,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
-        await using var verify = CreateContext(factory.DatabasePath);
+        await using var verify = CreateContext(_factory.DatabasePath);
         (await verify.Books.CountAsync()).Should().Be(1);
         (await verify.Notes.CountAsync()).Should().Be(1);
     }
@@ -281,22 +282,20 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Undo_keeps_a_book_that_was_already_in_the_library()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
 
         var result = await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", owned.Id));
         (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}")).EnsureSuccessStatusCode();
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         (await db.Books.CountAsync()).Should().Be(1);
     }
 
     [Fact]
     public async Task Preview_lists_each_highlight_and_commit_leaves_out_the_unticked_ones()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var database = CreateKoboDatabase();
 
@@ -310,7 +309,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
             new HighlightImportDecision("vol-1", owned.Id, ExcludedHighlights: [0]));
 
         result.Books.Single(book => book.SourceKey == "vol-1").ImportedCount.Should().Be(1);
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         (await db.Notes.CountAsync()).Should().Be(1);
 
         // Unticking every highlight imports nothing and creates nothing.
@@ -323,8 +322,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Undo_removes_the_batch_notes_and_lets_them_be_imported_again()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var other = await CreateBookAsync(client, "A Different Book", "Someone Else");
         var database = CreateKoboDatabase();
@@ -339,7 +337,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         (await client.DeleteAsync($"/api/notes/imports/batches/{first.BatchId}"))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             (await db.Notes.CountAsync()).Should().Be(0);
             (await db.NoteCommandReceipts.CountAsync()).Should().Be(0);
@@ -349,15 +347,14 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var second = await CommitAsync(client, database, new HighlightImportDecision("vol-1", other.Id));
         second.Books.Single(book => book.SourceKey == "vol-1").ImportedCount.Should().Be(2);
 
-        await using var verify = CreateContext(factory.DatabasePath);
+        await using var verify = CreateContext(_factory.DatabasePath);
         (await verify.Notes.CountAsync(note => note.BookId == other.Id)).Should().Be(2);
     }
 
     [Fact]
     public async Task Files_imported_together_share_one_batch()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var kobo = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var koreader = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderEpub;
@@ -378,7 +375,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         undo.StatusCode.Should().Be(HttpStatusCode.OK);
         using var report = JsonDocument.Parse(await undo.Content.ReadAsStringAsync());
         report.RootElement.GetProperty("removed").GetInt32().Should().Be(4);
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         (await db.Notes.CountAsync()).Should().Be(0);
         (await db.Books.CountAsync()).Should().Be(2);
         (await db.NoteImportBookLinks.CountAsync()).Should().Be(2);
@@ -388,14 +385,13 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_note_deleted_in_nostos_is_not_imported_again()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var database = CreateKoboDatabase();
         await CommitAsync(client, database, new HighlightImportDecision("vol-1", book.Id));
 
         Guid noteId;
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             noteId = (await db.Notes.AsNoTracking().FirstAsync(note => note.SourceAnchorValue == "bm-1")).Id;
         }
@@ -406,15 +402,14 @@ public sealed class HighlightImportEndpointTests : IDisposable
         matched.ImportedCount.Should().Be(0);
         matched.DuplicateCount.Should().Be(2);
 
-        await using var verify = CreateContext(factory.DatabasePath);
+        await using var verify = CreateContext(_factory.DatabasePath);
         (await verify.Notes.CountAsync(note => note.BookId == book.Id)).Should().Be(1);
     }
 
     [Fact]
     public async Task A_koreader_sidecar_goes_through_the_same_preview_and_commit()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderEpub;
 
@@ -439,8 +434,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Reimport_corrects_notes_an_earlier_import_stored_cut_short_instead_of_duplicating_them()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderMultiline;
 
@@ -448,7 +442,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         // source line of the two-paragraph highlight, quote and backslash
         // included, and the bookmark under its screen count.
         Guid cutId, bookmarkId;
-        await using (var seed = CreateContext(factory.DatabasePath))
+        await using (var seed = CreateContext(_factory.DatabasePath))
         {
             var cut = new Nostos.Backend.Data.Models.NoteModel
             {
@@ -482,7 +476,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         imported.DuplicateCount.Should().Be(2);
         imported.Message.Should().Be("2 notes from an earlier import were corrected.");
 
-        await using (var verify = CreateContext(factory.DatabasePath))
+        await using (var verify = CreateContext(_factory.DatabasePath))
         {
             var notes = await verify.Notes.AsNoTracking().Where(note => note.BookId == book.Id).ToListAsync();
             notes.Should().HaveCount(3);
@@ -503,8 +497,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task An_imported_highlight_takes_the_first_reader_location_and_nothing_else_does()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderEpub;
         var preview = await PreviewAsync(client, sidecar);
@@ -536,8 +529,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_pdf_sidecar_named_only_by_its_file_is_offered_the_book_and_never_filed_unasked()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader PDF", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderPdfUntitled;
 
@@ -558,8 +550,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_file_that_is_neither_source_is_rejected()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var notSqlite = Path.Combine(_directory, "notes.txt");
         await File.WriteAllTextAsync(notSqlite, "this is not a database, just some text");
@@ -574,8 +565,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Kindle_clippings_go_through_the_same_preview_commit_and_undo()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
         await CreateBookAsync(client, "Walden; or, Life in the Woods", "Henry David Thoreau");
         var clippings = ImportFixtures.KindleEnglish;
@@ -605,7 +595,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         created.Created.Should().BeTrue();
         result.Books.Single(book => book.SourceKey == walden.SourceKey).Status.Should().Be("skipped");
 
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             var note = await db.Notes.AsNoTracking().SingleAsync(candidate => candidate.BookId == austen.Id);
             note.SelectedText.Should().StartWith("It is a truth universally acknowledged, that");
@@ -631,7 +621,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         repeat.Books.Single(book => book.SourceKey == exact.SourceKey).DuplicateCount.Should().Be(1);
 
         (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}")).StatusCode.Should().Be(HttpStatusCode.OK);
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             (await db.Notes.CountAsync()).Should().Be(0);
             (await db.Books.CountAsync()).Should().Be(2, "undo takes back the one book the import added, and no book that was already there");
@@ -641,8 +631,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_windows_1252_clippings_file_reads_cleanly_and_adds_no_duplicates_after_a_utf8_import()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Sommarboken", "Tove Jansson", type: "ebook");
         const string quote = "Det var \u201Csommar\u201D \u2014 \u00E5\u00E4\u00F6 och \u00C5\u00C4\u00D6, s\u00E5 klart.";
         var text = "Sommarboken (Jansson, Tove)\r\n- Your Highlight on page 1 | Location 5-6 | Added on Monday, January 1, 2024 10:00:00 AM\r\n\r\n"
@@ -662,7 +651,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var repeat = await CommitAsync(client, cp1252, new HighlightImportDecision(again.Books.Single().SourceKey, book.Id));
         repeat.BatchId.Should().BeNull();
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var note = await db.Notes.AsNoTracking().SingleAsync(candidate => candidate.BookId == book.Id);
         note.SelectedText.Should().Be(quote);
         Directory.Delete(directory, true);
@@ -671,8 +660,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_starter_draft_offers_the_passages_an_import_just_brought_in()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
         var clippings = ImportFixtures.KindleEnglish;
         var preview = await PreviewAsync(client, clippings);
@@ -714,8 +702,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_readwise_export_imports_books_and_reports_what_it_left_out()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen");
         var export = ImportFixtures.ReadwiseExport;
 
@@ -737,7 +724,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         var again = await CommitAsync(client, export, new HighlightImportDecision(book.SourceKey, austen.Id));
         again.Books.Single(candidate => candidate.SourceKey == book.SourceKey).DuplicateCount.Should().Be(3);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var notes = await db.Notes.AsNoTracking().Where(note => note.BookId == austen.Id).ToListAsync();
         notes.Should().HaveCount(3);
         notes.Should().AllSatisfy(note =>
@@ -752,8 +739,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task The_same_highlight_from_another_source_is_already_in_nostos()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
         var other = await CreateBookAsync(client, "Emma", "Jane Austen", type: "ebook");
 
@@ -788,7 +774,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         committed.ImportedCount.Should().Be(1);
         committed.DuplicateCount.Should().Be(1);
 
-        await using var db = CreateContext(factory.DatabasePath);
+        await using var db = CreateContext(_factory.DatabasePath);
         var notes = await db.Notes.AsNoTracking().Where(note => note.BookId == austen.Id).ToListAsync();
         notes.Should().HaveCount(3);
         notes.Should().ContainSingle(note => note.SelectedText!.Contains("flourish", StringComparison.OrdinalIgnoreCase)
@@ -803,8 +789,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_kobo_import_keeps_a_report_that_adds_up()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
 
         await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", owned.Id));
@@ -823,8 +808,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_koreader_import_keeps_a_report_that_adds_up()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderEpub;
         var preview = await PreviewAsync(client, sidecar);
@@ -843,8 +827,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_kindle_import_keeps_a_report_that_adds_up_and_names_what_it_skipped()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen", type: "ebook");
         var clippings = ImportFixtures.KindleEnglish;
         var preview = await PreviewAsync(client, clippings);
@@ -874,8 +857,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_readwise_import_keeps_a_report_that_adds_up_and_names_what_it_skipped()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var austen = await CreateBookAsync(client, "Pride and Prejudice", "Jane Austen");
         var export = ImportFixtures.ReadwiseExport;
         var preview = await PreviewAsync(client, export);
@@ -903,8 +885,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task An_apple_books_import_keeps_a_report_that_adds_up()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var walden = await CreateBookAsync(client, "Walden", "Henry David Thoreau");
         var annotations = AppleBooksFixtures.CreateAnnotations(_directory,
             new AppleBooksFixtures.Annotation("ASSET-W", "Our life is frittered away by detail.", "Keep this."),
@@ -930,8 +911,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task Files_imported_together_add_up_into_one_report()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var kobo = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
         var koreader = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var sidecar = ImportFixtures.KoreaderEpub;
@@ -953,12 +933,11 @@ public sealed class HighlightImportEndpointTests : IDisposable
     [Fact]
     public async Task A_batch_from_before_reports_existed_has_none()
     {
-        using var factory = new LibraryEndpointFactory();
-        var client = factory.CreateClient();
+        using var client = _factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
 
         await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", owned.Id));
-        await using (var db = CreateContext(factory.DatabasePath))
+        await using (var db = CreateContext(_factory.DatabasePath))
         {
             var batch = await db.NoteImportBatches.SingleAsync();
             batch.ReportJson = null;

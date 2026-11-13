@@ -29,6 +29,7 @@ import { AiProviderService } from '../core/services/ai-provider.service';
 import { ProviderSettingsService } from '../core/services/provider-settings.service';
 import { ProviderSettingsItem, ProviderSettingsResponse } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from '../core/services/deployment-capabilities.testing';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { McpConnectedAppsService } from '../core/services/mcp-connected-apps.service';
 import { CarrelService } from '../core/services/carrel.service';
@@ -119,9 +120,12 @@ const cloudCapabilities: DeploymentCapabilities = {
   feedbackUrl: 'https://nostos.page/feedback?from=settings',
 };
 
-const capabilitiesServiceMock = {
-  get: vi.fn((): Observable<DeploymentCapabilities> => of(selfHostedCapabilities)),
-};
+const capabilitiesGetMock = vi.fn(
+  (_refresh?: boolean): Observable<DeploymentCapabilities> => of(selfHostedCapabilities),
+);
+const capabilitiesServiceMock = createDeploymentCapabilitiesServiceMock((refresh) =>
+  capabilitiesGetMock(refresh),
+);
 
 const managedBackupListing: ManagedBackupListing = {
   retentionDays: 14,
@@ -506,9 +510,9 @@ describe('SettingsComponent backup-only surface', () => {
   ): void {
     const capabilities = fixture.componentInstance.deploymentCapabilities();
     if (requestedCapabilities) {
-      capabilitiesServiceMock.get.mockReturnValue(of(requestedCapabilities));
+      capabilitiesGetMock.mockReturnValue(of(requestedCapabilities));
     } else if (capabilities) {
-      capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
+      capabilitiesGetMock.mockReturnValue(of(capabilities));
     }
     fixture.destroy();
     routeStub.snapshot.data.manageLibraryPage = true;
@@ -534,8 +538,9 @@ describe('SettingsComponent backup-only surface', () => {
     cloudAccountDeletionServiceMock.requestDeletion.mockClear();
     cloudAccountDeletionServiceMock.requestDeletion.mockReturnValue(of(accountDeletionStatus));
     cloudAccountDeletionServiceMock.cancelDeletion.mockClear();
-    capabilitiesServiceMock.get.mockClear();
-    capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
+    capabilitiesServiceMock.reset();
+    capabilitiesGetMock.mockClear();
+    capabilitiesGetMock.mockReturnValue(of(selfHostedCapabilities));
     managedBackupsServiceMock.getBackups.mockClear();
     managedBackupsServiceMock.getBackups.mockReturnValue(of(managedBackupListing));
     managedBackupsServiceMock.restore.mockClear();
@@ -828,7 +833,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps account deletion hidden in Cloud when its server capability is absent or off', () => {
-    fixture.componentInstance.deploymentCapabilities.set(cloudCapabilities);
+    capabilitiesServiceMock.setCapabilities(cloudCapabilities);
     fixture.detectChanges();
     const accountTab = Array.from(
       fixture.nativeElement.querySelectorAll('.settings-nav-item'),
@@ -842,7 +847,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('shows the deletion control only when the Cloud host advertises the capability', () => {
-    fixture.componentInstance.deploymentCapabilities.set({
+    capabilitiesServiceMock.setCapabilities({
       ...cloudCapabilities,
       supportsAccountDeletion: true,
     });
@@ -1127,7 +1132,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('shows the authenticated Cloud identity and signs out through the BFF', () => {
-    capabilitiesServiceMock.get.mockReturnValue(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValue(of(cloudCapabilities));
     render();
 
     expect(cloudAuthServiceMock.getSession).toHaveBeenCalledTimes(1);
@@ -1289,7 +1294,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('shows no owner-only controls or owner API calls while capabilities are loading', () => {
     const pending = new Subject<DeploymentCapabilities>();
-    capabilitiesServiceMock.get.mockReturnValueOnce(pending.asObservable());
+    capabilitiesGetMock.mockReturnValueOnce(pending.asObservable());
     backupServiceMock.getStatus.mockClear();
     backupServiceMock.getSettings.mockClear();
     backupServiceMock.getHistory.mockClear();
@@ -1311,7 +1316,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('fails closed when the capability manifest cannot be loaded', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       throwError(() => new Error('capabilities offline')),
     );
     backupServiceMock.getStatus.mockClear();
@@ -1335,7 +1340,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps Cloud Library settings for managed e-reader access without server-owner plumbing', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     backupServiceMock.getStatus.mockClear();
     backupServiceMock.getSettings.mockClear();
     backupServiceMock.getHistory.mockClear();
@@ -1388,7 +1393,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-usage-card"]')).toBeNull();
     expect(cloudAiRefillServiceMock.getUsage).not.toHaveBeenCalled();
 
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     render();
 
     const card = fixture.nativeElement.querySelector(
@@ -1415,7 +1420,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('fails closed for refill usage when usage metering is not advertised', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       of({ ...cloudCapabilities, usageMeteringAvailable: false }),
     );
     render();
@@ -1427,7 +1432,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('offers External media only when the server reports the capability', () => {
     externalMediaServiceMock.status.mockClear();
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       of({ ...selfHostedCapabilities, supportsExternalMediaLibraries: true }),
     );
 
@@ -1447,7 +1452,7 @@ describe('SettingsComponent backup-only surface', () => {
     externalMediaServiceMock.status.mockClear();
 
     for (const capabilities of [selfHostedCapabilities, cloudCapabilities]) {
-      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      capabilitiesGetMock.mockReturnValueOnce(of(capabilities));
       render();
 
       expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-external"]')).toBeNull();
@@ -1476,7 +1481,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(calibreImportServiceMock.open).toHaveBeenCalled();
     fixture.destroy();
 
-    capabilitiesServiceMock.get.mockReturnValue(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValue(of(cloudCapabilities));
     render();
     navItem('Import').click();
     fixture.detectChanges();
@@ -1484,7 +1489,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('offers the Calibre upload on Cloud when the host advertises it', () => {
-    capabilitiesServiceMock.get.mockReturnValue(of({ ...cloudCapabilities, supportsCalibreUpload: true }));
+    capabilitiesGetMock.mockReturnValue(of({ ...cloudCapabilities, supportsCalibreUpload: true }));
     render();
     navItem('Import').click();
     fixture.detectChanges();
@@ -1495,12 +1500,12 @@ describe('SettingsComponent backup-only surface', () => {
     expect(calibre).toBeTruthy();
     expect(calibre.textContent).toContain('A zip of your Calibre library');
     fixture.destroy();
-    capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
+    capabilitiesGetMock.mockReturnValue(of(selfHostedCapabilities));
   });
 
   it('offers Connected apps when the server keeps a record of them', () => {
     mcpAccessTokensServiceMock.list.mockClear();
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       of({ ...selfHostedCapabilities, supportsMcpConnectedApps: true }),
     );
 
@@ -1517,7 +1522,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('offers Connected apps on Cloud too once Cloud advertises it', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       of({ ...cloudCapabilities, supportsMcpConnectedApps: true }),
     );
 
@@ -1530,7 +1535,7 @@ describe('SettingsComponent backup-only surface', () => {
     mcpAccessTokensServiceMock.list.mockClear();
 
     for (const capabilities of [selfHostedCapabilities, cloudCapabilities, { ...cloudCapabilities, supportsMcpConnectedApps: false }]) {
-      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      capabilitiesGetMock.mockReturnValueOnce(of(capabilities));
       render();
 
       expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-apps"]')).toBeNull();
@@ -1541,7 +1546,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('offers Devices when the server serves the Carrel Sync Protocol', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       of({ ...selfHostedCapabilities, supportsCarrelDevices: true }),
     );
 
@@ -1559,7 +1564,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('hides Devices and asks for nothing without the capability', () => {
     for (const capabilities of [selfHostedCapabilities, cloudCapabilities]) {
-      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      capabilitiesGetMock.mockReturnValueOnce(of(capabilities));
       render();
 
       expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-devices"]')).toBeNull();
@@ -1569,7 +1574,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps Cloud Backups & data available for portable export without e-reader access', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(
+    capabilitiesGetMock.mockReturnValueOnce(
       of({ ...cloudCapabilities, supportsEreaderAccess: false }),
     );
     opdsServiceMock.getInfo.mockClear();
@@ -1596,7 +1601,7 @@ describe('SettingsComponent backup-only surface', () => {
   it('offers one Cloud export action and keeps it out of SelfHosted settings', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-portable-export-card"]')).toBeNull();
 
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     render();
     openManageLibraryPage();
 
@@ -1613,7 +1618,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('shows export progress and completes the download through the portability service', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     const pending = new Subject<HttpEvent<Blob>>();
     portableLibraryServiceMock.exportArchive.mockReturnValueOnce(pending.asObservable());
     render();
@@ -1673,7 +1678,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('leaves a clear inline error when Cloud export fails', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     portableLibraryServiceMock.exportArchive.mockReturnValueOnce(
       throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Server error' })),
     );
@@ -1697,7 +1702,7 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('offers notes as Markdown on SelfHosted and Cloud alike', () => {
     for (const capabilities of [selfHostedCapabilities, cloudCapabilities]) {
-      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      capabilitiesGetMock.mockReturnValueOnce(of(capabilities));
       render();
       openManageLibraryPage(capabilities);
 
@@ -1756,7 +1761,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps the Cloud voice toggle as product intent instead of provider configuration', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     aiProviderServiceMock.update.mockClear();
     render();
 
@@ -1853,7 +1858,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('offers the Nostos archive in the same drop zone when the host imports one', () => {
-    capabilitiesServiceMock.get.mockReturnValue(
+    capabilitiesGetMock.mockReturnValue(
       of({ ...selfHostedCapabilities, supportsLibraryMigration: true }),
     );
     fixture.destroy();
@@ -2187,7 +2192,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('shows the managed Cloud enable state and catalogue without fabricating credentials', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedDisabled));
 
     render();
@@ -2200,7 +2205,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('shows and copies a newly-created managed password only from the create response', async () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedDisabled));
     const writeText = vi.fn(() => Promise.resolve());
     installClipboard(writeText);
@@ -2234,7 +2239,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('does not pretend it can reveal an existing managed password later', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedEnabled));
 
     render();
@@ -2246,7 +2251,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('regenerates the managed password and explains that the old password stops working', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedEnabled));
 
     render();
@@ -2271,7 +2276,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('requires confirmation before revoking managed e-reader access', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedEnabled));
 
     render();
@@ -2294,7 +2299,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('fails closed when managed credential state cannot be read', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(
       throwError(() => new Error('managed OPDS offline')),
     );
@@ -2307,7 +2312,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('keeps the current managed state when a management request fails', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     opdsServiceMock.getManagedAccess.mockReturnValueOnce(of(managedDisabled));
     opdsServiceMock.enableManagedAccess.mockReturnValueOnce(
       throwError(() => new Error('enable failed')),
@@ -2432,7 +2437,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('uses product copy for an unavailable managed Cloud assistant', () => {
-    capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
+    capabilitiesGetMock.mockReturnValueOnce(of(cloudCapabilities));
     assistantStatusMock.available.set(false);
     render();
 
@@ -3181,8 +3186,9 @@ describe('SettingsComponent shared library transfer host', () => {
     TestBed.resetTestingModule();
     localStorage.clear();
     routeParamMap.next(convertToParamMap({}));
-    capabilitiesServiceMock.get.mockClear();
-    capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
+    capabilitiesServiceMock.reset();
+    capabilitiesGetMock.mockClear();
+    capabilitiesGetMock.mockReturnValue(of(capabilities));
     portableLibraryServiceMock.exportArchive.mockClear();
     toastMock.success.mockClear();
     toastMock.error.mockClear();

@@ -7,6 +7,7 @@ import { Subject, of } from 'rxjs';
 
 import { AppDockComponent } from './app-dock.component';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
+import { createDeploymentCapabilitiesServiceMock } from '../../core/services/deployment-capabilities.testing';
 import { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
 import { AssistantLauncherService } from '../../ui/assistant/assistant-launcher.service';
 import { AssistantService } from '../../ui/assistant/assistant.service';
@@ -57,7 +58,7 @@ describe('AppDockComponent', () => {
         provideRouter([{ path: '**', component: BlankComponent }]),
         {
           provide: DeploymentCapabilitiesService,
-          useValue: { get: () => of(capabilities) },
+          useValue: createDeploymentCapabilitiesServiceMock(() => of(capabilities)),
         },
       ],
     });
@@ -277,7 +278,7 @@ describe('AppDockComponent', () => {
   it('shows More before capabilities resolve and keeps it after', () => {
     const pending = new Subject<DeploymentCapabilities>();
     TestBed.overrideProvider(DeploymentCapabilitiesService, {
-      useValue: { get: () => pending.asObservable() },
+      useValue: createDeploymentCapabilitiesServiceMock(() => pending.asObservable()),
     });
 
     const fixture = render(390);

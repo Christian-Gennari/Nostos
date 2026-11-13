@@ -204,6 +204,37 @@ public sealed class WikisourceSnapshotSourceTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    [Theory]
+    [InlineData(typeof(HttpRequestException))]
+    [InlineData(typeof(IOException))]
+    public async Task Read_maps_transient_transport_failure_to_provider_unavailable(Type exceptionType)
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ =>
+            throw (Exception)Activator.CreateInstance(exceptionType, "transport failure")!);
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+    }
+
+    [Fact]
+    public async Task Read_maps_mid_stream_io_exception_to_provider_unavailable()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ => TransientHttpTestHelpers.ChunkThenThrowXmlResponse(
+            "<?xml version=\"1.0\"?><feed>",
+            () => new IOException("connection dropped mid-body")));
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = (await act.Should().ThrowAsync<ProviderException>()).Which;
+        error.Code.Should().Be(ProviderException.Unavailable);
+        error.Message.Should().Contain(WikisourceProvider.ProviderIdentifier);
+    }
+
     [Fact]
     public void Snapshot_source_is_reachable_through_the_provider_registry()
     {

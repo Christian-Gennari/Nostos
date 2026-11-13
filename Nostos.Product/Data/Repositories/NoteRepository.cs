@@ -17,75 +17,98 @@ public class NoteRepository : INoteRepository
         _db = db;
     }
 
-    public async Task<List<NoteModel>> GetByBookIdAsync(Guid bookId)
+    public async Task<List<NoteModel>> GetByBookIdAsync(
+        Guid bookId,
+        CancellationToken cancellationToken = default)
     {
         // Oldest first, with Id as a tiebreak: the book page shows the latest notes
         // at the end of a collapsed feed, which needs a defined order (#1062).
         return await _db.Notes.Where(n => n.BookId == bookId)
             .OrderBy(n => n.CreatedAt).ThenBy(n => n.Id)
-            .ToListWithBookHeadlineAsync();
+            .ToListWithBookHeadlineAsync(cancellationToken);
     }
 
-    public async Task<NoteModel?> GetByIdAsync(Guid id)
+    public async Task<NoteModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _db.Notes.FindAsync(id);
+        return await _db.Notes.FindAsync([id], cancellationToken);
     }
 
-    public async Task<NoteModel?> GetByIdWithTopicsAsync(Guid id)
+    public async Task<NoteModel?> GetByIdWithTopicsAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
         // Tracked for the edit that follows, so without the book: a tracked note
         // would drag the whole book row along. The caller reloads the saved note
         // with GetByIdWithBookAsync for its reply.
         return await _db
             .Notes.Include(n => n.NoteTopics)
-            .FirstOrDefaultAsync(n => n.Id == id);
+            .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
     }
 
-    public async Task<NoteModel?> GetForReadingAsync(Guid id)
+    public async Task<NoteModel?> GetForReadingAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
         var notes = await _db.Notes
             .Include(n => n.NoteTopics).ThenInclude(nc => nc.Topic)
             .Where(n => n.Id == id)
-            .ToListWithBookHeadlineAsync();
+            .ToListWithBookHeadlineAsync(cancellationToken);
         return notes.FirstOrDefault();
     }
 
-    public async Task<NoteModel?> GetByIdWithBookAsync(Guid id)
+    public async Task<NoteModel?> GetByIdWithBookAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        var notes = await _db.Notes.Where(n => n.Id == id).ToListWithBookHeadlineAsync();
+        var notes = await _db.Notes.Where(n => n.Id == id).ToListWithBookHeadlineAsync(cancellationToken);
         return notes.FirstOrDefault();
     }
 
-    public Task AddAsync(NoteModel note)
+    public Task AddAsync(NoteModel note, CancellationToken cancellationToken = default)
     {
+        if (cancellationToken.IsCancellationRequested)
+            return Task.FromCanceled(cancellationToken);
+
         _db.Notes.Add(note);
         // Don't save here — the endpoint calls ProcessNoteAsync first, then saves
         return Task.CompletedTask;
     }
 
-    public async Task SaveChangesAsync()
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        await _db.SaveChangesAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<NoteCommandReceipt?> GetReceiptAsync(string clientId, string idempotencyKey)
+    public async Task<NoteCommandReceipt?> GetReceiptAsync(
+        string clientId,
+        string idempotencyKey,
+        CancellationToken cancellationToken = default)
     {
         // AsNoTracking keeps the replay read out of the change tracker; the
         // stored result is returned as-is and never mutated.
         return await _db
             .NoteCommandReceipts.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.ClientId == clientId && r.IdempotencyKey == idempotencyKey);
+            .FirstOrDefaultAsync(
+                r => r.ClientId == clientId && r.IdempotencyKey == idempotencyKey,
+                cancellationToken);
     }
 
-    public Task AddReceiptAsync(NoteCommandReceipt receipt)
+    public Task AddReceiptAsync(NoteCommandReceipt receipt, CancellationToken cancellationToken = default)
     {
+        if (cancellationToken.IsCancellationRequested)
+            return Task.FromCanceled(cancellationToken);
+
         // Don't save here — the service writes the note and its receipt inside
         // one transaction, then commits.
         _db.NoteCommandReceipts.Add(receipt);
         return Task.CompletedTask;
     }
 
-    public async Task<bool> HasReceiptForNoteAsync(string clientId, Guid noteId)
+    public async Task<bool> HasReceiptForNoteAsync(
+        string clientId,
+        Guid noteId,
+        CancellationToken cancellationToken = default)
     {
         // Containment narrows the candidates, but note text may itself mention
         // another note's id. Only the receipt's result id proves ownership.
@@ -93,7 +116,7 @@ public class NoteRepository : INoteRepository
         var receipts = await _db.NoteCommandReceipts.AsNoTracking()
             .Where(r => r.ClientId == clientId && r.ResultJson.Contains(id))
             .Select(r => r.ResultJson)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
         return receipts.Any(json =>
         {
             using var document = JsonDocument.Parse(json);
@@ -105,27 +128,28 @@ public class NoteRepository : INoteRepository
         });
     }
 
-    public async Task DeleteAsync(NoteModel note)
+    public async Task DeleteAsync(NoteModel note, CancellationToken cancellationToken = default)
     {
         _db.Notes.Remove(note);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteTopicLinksAsync(Guid noteId)
+    public async Task DeleteTopicLinksAsync(Guid noteId, CancellationToken cancellationToken = default)
     {
         // ExecuteDelete bypasses the change tracker. The revision row is
         // advanced FIRST, before the portable rows, so every portable writer
         // takes the singleton lock in the same order (issue #679 Slice 11).
-        await using var transaction = await _db.Database.BeginTransactionAsync();
-        await LibraryRevision.AdvanceAndGetAsync(_db);
-        await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
-        await transaction.CommitAsync();
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        await LibraryRevision.AdvanceAndGetAsync(_db, cancellationToken);
+        await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
     public Task<List<NoteModel>> SearchByTextAsync(
         string query,
         int limit,
-        IReadOnlyCollection<Guid>? bookIds = null) =>
-        SearchByAllTermsAsync([query], limit, bookIds);
+        IReadOnlyCollection<Guid>? bookIds = null,
+        CancellationToken cancellationToken = default) =>
+        SearchByAllTermsAsync([query], limit, bookIds, cancellationToken: cancellationToken);
 
     /// <summary>
     /// Notes where EVERY term appears in at least one of the fields a person
@@ -138,8 +162,11 @@ public class NoteRepository : INoteRepository
         IReadOnlyList<string> terms,
         int limit,
         IReadOnlyCollection<Guid>? bookIds = null,
-        bool forgiving = false)
+        bool forgiving = false,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cleaned = terms.Select(t => t.Trim()).Where(t => t.Length > 0).Distinct().ToList();
         if (cleaned.Count == 0 || bookIds is { Count: 0 }) return [];
 
@@ -158,23 +185,26 @@ public class NoteRepository : INoteRepository
         var found = await notes
             .OrderByDescending(n => n.CreatedAt)
             .Take(limit)
-            .ToListWithBookHeadlineAsync();
+            .ToListWithBookHeadlineAsync(cancellationToken);
         if (found.Count > 0 || !forgiving)
             return found;
 
         // Nothing contains the words as typed: try again ignoring accents and
         // forgiving a small typo (issue #1380).
-        var fuzzyIds = await FuzzyNoteIdsAsync(scoped, cleaned);
+        var fuzzyIds = await FuzzyNoteIdsAsync(scoped, cleaned, cancellationToken);
         if (fuzzyIds.Count == 0)
             return [];
         return await scoped
             .Where(n => fuzzyIds.Contains(n.Id))
             .OrderByDescending(n => n.CreatedAt)
             .Take(limit)
-            .ToListWithBookHeadlineAsync();
+            .ToListWithBookHeadlineAsync(cancellationToken);
     }
 
-    public async Task<List<NoteModel>> GetWithoutTopicsAsync(int limit, int offset)
+    public async Task<List<NoteModel>> GetWithoutTopicsAsync(
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default)
     {
         return await _db.Notes
             .Where(n => !n.NoteTopics.Any())
@@ -185,13 +215,17 @@ public class NoteRepository : INoteRepository
             .ThenBy(n => n.Id)
             .Skip(offset)
             .Take(limit)
-            .ToListWithBookHeadlineAsync();
+            .ToListWithBookHeadlineAsync(cancellationToken);
     }
 
-    public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(NoteBrowseQuery query, int limit, int offset)
+    public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(
+        NoteBrowseQuery query,
+        int limit,
+        int offset,
+        CancellationToken cancellationToken = default)
     {
-        var notes = await FilterAsync(query);
-        var total = await notes.CountAsync();
+        var notes = await FilterAsync(query, cancellationToken);
+        var total = await notes.CountAsync(cancellationToken);
         var ordered = query.Order switch
         {
             NoteBrowseOrder.Oldest => notes.OrderBy(n => n.CreatedAt).ThenBy(n => n.Id),
@@ -208,13 +242,15 @@ public class NoteRepository : INoteRepository
         };
         var items = await ordered.Skip(offset).Take(limit)
             .Include(n => n.NoteTopics).ThenInclude(nc => nc.Topic)
-            .ToListWithBookHeadlineAsync();
+            .ToListWithBookHeadlineAsync(cancellationToken);
         return (items, total);
     }
 
-    public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(NoteBrowseQuery query)
+    public async Task<IReadOnlyList<NoteBookFacetDto>> GetBookFacetsAsync(
+        NoteBrowseQuery query,
+        CancellationToken cancellationToken = default)
     {
-        var rows = await (await FilterAsync(query with { BookId = null, WorkId = null }))
+        var rows = await (await FilterAsync(query with { BookId = null, WorkId = null }, cancellationToken))
             .GroupBy(note => new
             {
                 note.BookId,
@@ -223,7 +259,7 @@ public class NoteRepository : INoteRepository
                 Author = note.Book != null ? note.Book.Author : null,
             })
             .Select(group => new { group.Key.BookId, group.Key.WorkId, group.Key.Title, group.Key.Author, Count = group.Count() })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         // A book is listed once however many editions it has: its editions'
         // notes are counted together, under the title and author of the edition
@@ -244,7 +280,7 @@ public class NoteRepository : INoteRepository
             .ToList();
     }
 
-    public async Task<NoteSummaryDto> GetSummaryAsync()
+    public async Task<NoteSummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default)
     {
         // One pass, the shape TopicRepository.GetStatsAsync already uses.
         var summary = await _db.Notes
@@ -254,13 +290,17 @@ public class NoteRepository : INoteRepository
                 group.Count(),
                 group.Count(n => n.Passage),
                 group.Count(n => n.Unsorted)))
-            .SingleOrDefaultAsync();
+            .SingleOrDefaultAsync(cancellationToken);
         return summary ?? new NoteSummaryDto(0, 0, 0);
     }
 
     /// <summary>The notes in one place of the Brain, before order and paging.</summary>
-    private async Task<IQueryable<NoteModel>> FilterAsync(NoteBrowseQuery query)
+    private async Task<IQueryable<NoteModel>> FilterAsync(
+        NoteBrowseQuery query,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var notes = _db.Notes.AsNoTracking().AsQueryable();
         if (query.BookId is { } bookId) notes = notes.Where(n => n.BookId == bookId);
         if (query.WorkId is { } workId) notes = notes.Where(n => n.Book!.WorkId == workId);
@@ -274,12 +314,12 @@ public class NoteRepository : INoteRepository
         if (!string.IsNullOrEmpty(term))
         {
             var matched = WhereAnyFieldContains(notes, term);
-            if (await matched.AnyAsync())
+            if (await matched.AnyAsync(cancellationToken))
                 return matched;
 
             // Nothing contains the text as typed: ignore accents and forgive a
             // small typo before saying there is nothing (issue #1380).
-            var fuzzyIds = await FuzzyNoteIdsAsync(notes, [term]);
+            var fuzzyIds = await FuzzyNoteIdsAsync(notes, [term], cancellationToken);
             return notes.Where(n => fuzzyIds.Contains(n.Id));
         }
         return notes;
@@ -296,7 +336,9 @@ public class NoteRepository : INoteRepository
     /// the exact search found nothing.
     /// </summary>
     private static async Task<List<Guid>> FuzzyNoteIdsAsync(
-        IQueryable<NoteModel> scope, IReadOnlyList<string> terms)
+        IQueryable<NoteModel> scope,
+        IReadOnlyList<string> terms,
+        CancellationToken cancellationToken)
     {
         var rows = await scope
             .AsNoTracking()
@@ -311,7 +353,7 @@ public class NoteRepository : INoteRepository
                 BookAuthor = n.Book != null ? n.Book.Author : null,
             })
             .Take(FuzzyCandidateCap)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
         var candidates = rows
             .Select(r => new FuzzyRow(
                 r.Id,
@@ -332,14 +374,17 @@ public class NoteRepository : INoteRepository
 
     private sealed record FuzzyRow(Guid Id, string? Text, string? Book);
 
-    public async Task<int> CountWithoutTopicsAsync()
+    public async Task<int> CountWithoutTopicsAsync(CancellationToken cancellationToken = default)
     {
-        return await _db.Notes.CountAsync(n => !n.NoteTopics.Any());
+        return await _db.Notes.CountAsync(n => !n.NoteTopics.Any(), cancellationToken);
     }
 
-    public Task<int> CountAsync() => _db.Notes.CountAsync();
+    public Task<int> CountAsync(CancellationToken cancellationToken = default) =>
+        _db.Notes.CountAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(int limit)
+    public async Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
     {
         var take = Math.Clamp(limit, 1, 50);
         var rows = await _db.Notes
@@ -359,7 +404,7 @@ public class NoteRepository : INoteRepository
             .ThenBy(item => item.BookTitle)
             .ThenBy(item => item.BookId)
             .Take(take)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return rows
             .Select(item => new NoteBookCount(
@@ -369,10 +414,6 @@ public class NoteRepository : INoteRepository
             .ToList();
     }
 
-    /// <summary>
-    /// `%` and `_` are wildcards inside LIKE, and `\` is the escape character
-    /// passed above, so a user searching for "100%" must not match everything.
-    /// </summary>
     /// <summary>
     /// Notes where <paramref name="term"/> appears in a field a person would
     /// describe the note by: its text, its quotation, its passage title, or its
@@ -386,51 +427,48 @@ public class NoteRepository : INoteRepository
     /// </summary>
     private static IQueryable<NoteModel> WhereAnyFieldContains(IQueryable<NoteModel> notes, string term)
     {
-        var typed = $"%{Escape(term)}%";
-        var lower = $"%{Escape(term.ToLowerInvariant())}%";
+        var typed = SqlLikePatternHelper.Contains(term);
+        var lower = SqlLikePatternHelper.Contains(term.ToLowerInvariant());
         // Quotes saved before ligatures were cleaned still hold "ﬁ" for "fi".
         var ligatured = TextLigatures.LigatureForm(term);
         if (ligatured is not null)
         {
-            var ligTyped = $"%{Escape(ligatured)}%";
-            var ligLower = $"%{Escape(ligatured.ToLowerInvariant())}%";
+            var ligTyped = SqlLikePatternHelper.Contains(ligatured);
+            var ligLower = SqlLikePatternHelper.Contains(ligatured.ToLowerInvariant());
             return notes.Where(n =>
-                EF.Functions.Like(n.Content, typed, "\\")
-                || EF.Functions.Like(n.Content.ToLower(), lower, "\\")
+                EF.Functions.Like(n.Content, typed, SqlLikePatternHelper.EscapeChar)
+                || EF.Functions.Like(n.Content.ToLower(), lower, SqlLikePatternHelper.EscapeChar)
                 || (n.SelectedText != null
-                    && (EF.Functions.Like(n.SelectedText, typed, "\\")
-                        || EF.Functions.Like(n.SelectedText.ToLower(), lower, "\\")
-                        || EF.Functions.Like(n.SelectedText, ligTyped, "\\")
-                        || EF.Functions.Like(n.SelectedText.ToLower(), ligLower, "\\")))
+                    && (EF.Functions.Like(n.SelectedText, typed, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(n.SelectedText.ToLower(), lower, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(n.SelectedText, ligTyped, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(n.SelectedText.ToLower(), ligLower, SqlLikePatternHelper.EscapeChar)))
                 || (n.PassageTitle != null
-                    && (EF.Functions.Like(n.PassageTitle, typed, "\\")
-                        || EF.Functions.Like(n.PassageTitle.ToLower(), lower, "\\")))
+                    && (EF.Functions.Like(n.PassageTitle, typed, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(n.PassageTitle.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
                 || (n.Book != null && n.Book.Title != null
-                    && (EF.Functions.Like(n.Book.Title, typed, "\\")
-                        || EF.Functions.Like(n.Book.Title.ToLower(), lower, "\\")))
+                    && (EF.Functions.Like(n.Book.Title, typed, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(n.Book.Title.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
                 || (n.Book != null && n.Book.Author != null
-                    && (EF.Functions.Like(n.Book.Author, typed, "\\")
-                        || EF.Functions.Like(n.Book.Author.ToLower(), lower, "\\"))));
+                    && (EF.Functions.Like(n.Book.Author, typed, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(n.Book.Author.ToLower(), lower, SqlLikePatternHelper.EscapeChar))));
         }
 
         return notes.Where(n =>
-            EF.Functions.Like(n.Content, typed, "\\")
-            || EF.Functions.Like(n.Content.ToLower(), lower, "\\")
+            EF.Functions.Like(n.Content, typed, SqlLikePatternHelper.EscapeChar)
+            || EF.Functions.Like(n.Content.ToLower(), lower, SqlLikePatternHelper.EscapeChar)
             || (n.SelectedText != null
-                && (EF.Functions.Like(n.SelectedText, typed, "\\")
-                    || EF.Functions.Like(n.SelectedText.ToLower(), lower, "\\")))
+                && (EF.Functions.Like(n.SelectedText, typed, SqlLikePatternHelper.EscapeChar)
+                    || EF.Functions.Like(n.SelectedText.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
             || (n.PassageTitle != null
-                && (EF.Functions.Like(n.PassageTitle, typed, "\\")
-                    || EF.Functions.Like(n.PassageTitle.ToLower(), lower, "\\")))
+                && (EF.Functions.Like(n.PassageTitle, typed, SqlLikePatternHelper.EscapeChar)
+                    || EF.Functions.Like(n.PassageTitle.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
             || (n.Book != null && n.Book.Title != null
-                && (EF.Functions.Like(n.Book.Title, typed, "\\")
-                    || EF.Functions.Like(n.Book.Title.ToLower(), lower, "\\")))
+                && (EF.Functions.Like(n.Book.Title, typed, SqlLikePatternHelper.EscapeChar)
+                    || EF.Functions.Like(n.Book.Title.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
             || (n.Book != null && n.Book.Author != null
-                && (EF.Functions.Like(n.Book.Author, typed, "\\")
-                    || EF.Functions.Like(n.Book.Author.ToLower(), lower, "\\"))));
+                && (EF.Functions.Like(n.Book.Author, typed, SqlLikePatternHelper.EscapeChar)
+                    || EF.Functions.Like(n.Book.Author.ToLower(), lower, SqlLikePatternHelper.EscapeChar))));
     }
-
-    private static string Escape(string value) =>
-        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
 }

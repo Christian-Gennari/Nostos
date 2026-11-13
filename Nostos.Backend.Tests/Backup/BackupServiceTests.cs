@@ -8,11 +8,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
+using Nostos.Backend.Workers;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 using Xunit;
@@ -982,6 +984,322 @@ public sealed class BackupServiceTests
         stored.Checksum.Should().NotBeEmpty();
     }
 
+    [Fact]
+    public async Task RestoreBackup_IntoActiveWalModeDatabaseWithSidecars_CheckpointsSafetyCopyClearsSidecarsAndVerifiesIntegrity()
+    {
+        using var h = BackupHarness.Create();
+        await SeedBooksAndNotesScenarioAsync(h);
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        // Switch the active database into WAL mode and write a new book with
+        // autocheckpoint disabled via a pooled connection so uncheckpointed
+        // frames sit in -wal and -shm on disk when RestoreBackupAsync runs.
+        var afterBackupTitle = "Uncheckpointed WAL Book";
+        await using (var conn = new SqliteConnection($"Data Source={h.DatabasePath};Pooling=True"))
+        {
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var db = h.NewDbContext())
+        {
+            db.Books.Add(new PhysicalBookModel { Title = afterBackupTitle, Author = "WAL Author" });
+            await db.SaveChangesAsync();
+        }
+
+        var walPath = h.DatabasePath + "-wal";
+        var shmPath = h.DatabasePath + "-shm";
+        File.Exists(walPath).Should().BeTrue("WAL sidecar should exist on disk before restore");
+        new FileInfo(walPath).Length.Should().BeGreaterThan(0, "WAL sidecar holds uncheckpointed frames");
+        File.Exists(shmPath).Should().BeTrue("SHM sidecar should exist on disk before restore");
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        // Stale WAL sidecars are removed and never replayed onto the restored DB.
+        File.Exists(walPath).Should().BeFalse("pre-restore -wal sidecar must be removed");
+        File.Exists(shmPath).Should().BeFalse("pre-restore -shm sidecar must be removed");
+
+        await using (var after = h.NewDbContext())
+        {
+            var titles = await after.Books.Select(b => b.Title).ToListAsync();
+            titles.Should().HaveCount(2);
+            titles.Should().NotContain(afterBackupTitle);
+
+            var connection = after.Database.GetDbConnection();
+            await connection.OpenAsync();
+            await using var checkCmd = connection.CreateCommand();
+            checkCmd.CommandText = "PRAGMA integrity_check;";
+            ((string)(await checkCmd.ExecuteScalarAsync())!).Should().Be("ok");
+        }
+
+        // The pre-restore safety copy received the checkpointed WAL frames too.
+        var safetyFiles = Directory.GetFiles(Path.GetDirectoryName(h.DatabasePath)!, "nostos.db.pre-restore-*");
+        safetyFiles.Should().ContainSingle();
+        await using (var safetyConn = new SqliteConnection($"Data Source={safetyFiles[0]};Pooling=False"))
+        {
+            await safetyConn.OpenAsync();
+            await using var countCmd = safetyConn.CreateCommand();
+            countCmd.CommandText = "SELECT COUNT(*) FROM Books WHERE Title = $title";
+            countCmd.Parameters.AddWithValue("$title", afterBackupTitle);
+            Convert.ToInt64(await countCmd.ExecuteScalarAsync()).Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task RestoreBackup_RejectsCorruptArchiveDatabase_WithoutReplacingLiveDatabase()
+    {
+        using var h = BackupHarness.Create();
+        await SeedBooksAndNotesScenarioAsync(h);
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+        var archivePath = h.Service.GetLocalArchivePath(created.Id)!;
+        var liveBytesBefore = await File.ReadAllBytesAsync(h.DatabasePath);
+
+        // Replace database/nostos.db in the archive with corrupt bytes and
+        // update the stored manifest checksum so failure happens during DB verification.
+        var tempZip = Path.Combine(h.ContentRoot, "corrupt-replace.nostos");
+        using (var src = ZipFile.OpenRead(archivePath))
+        using (var dst = ZipFile.Open(tempZip, ZipArchiveMode.Create))
+        {
+            foreach (var entry in src.Entries)
+            {
+                var target = dst.CreateEntry(entry.FullName);
+                await using var outStream = target.Open();
+                if (entry.FullName == "database/nostos.db")
+                {
+                    await outStream.WriteAsync("not-a-valid-sqlite-database"u8.ToArray());
+                }
+                else
+                {
+                    await using var inStream = entry.Open();
+                    await inStream.CopyToAsync(outStream);
+                }
+            }
+        }
+        File.Move(tempZip, archivePath, overwrite: true);
+        await StampArchiveChecksumAsync(h, created.Id, archivePath);
+
+        var result = await h.Service.RestoreBackupAsync(created.Id);
+        result.Success.Should().BeFalse();
+        h.Settings.IsInMaintenanceMode.Should().BeFalse();
+        (await File.ReadAllBytesAsync(h.DatabasePath)).Should().Equal(liveBytesBefore);
+    }
+
+    [Fact]
+    public async Task RestoreBackup_RejectsZipSlipArchive_WithoutWritingOutsideStaging()
+    {
+        using var h = BackupHarness.Create();
+        await SeedBooksAndNotesScenarioAsync(h);
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+        var archivePath = h.Service.GetLocalArchivePath(created.Id)!;
+        var liveBytesBefore = await File.ReadAllBytesAsync(h.DatabasePath);
+
+        // Inject a Zip Slip entry escaping StagingDir/restore-<id> -> Storage/backups/zipslip-escaped.txt
+        using (var zip = ZipFile.Open(archivePath, ZipArchiveMode.Update))
+        {
+            var evil = zip.CreateEntry("../../zipslip-escaped.txt");
+            await using var writer = new StreamWriter(evil.Open());
+            await writer.WriteAsync("pwned");
+        }
+        await StampArchiveChecksumAsync(h, created.Id, archivePath);
+
+        var result = await h.Service.RestoreBackupAsync(created.Id);
+        result.Success.Should().BeFalse();
+        h.Settings.IsInMaintenanceMode.Should().BeFalse();
+
+        Directory.GetFiles(h.ContentRoot, "zipslip-escaped.txt", SearchOption.AllDirectories)
+            .Should().BeEmpty();
+        (await File.ReadAllBytesAsync(h.DatabasePath)).Should().Equal(liveBytesBefore);
+    }
+
+    [Theory]
+    [InlineData("../evil.txt")]
+    [InlineData("database/../../evil.txt")]
+    [InlineData("/etc/evil.txt")]
+    [InlineData("..\\evil.txt")]
+    [InlineData("C:\\evil.txt")]
+    public async Task ExtractArchiveSafely_RejectsPathTraversalEntries(string maliciousEntryName)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nostos-zipslip-{Guid.NewGuid():N}");
+        var extractDir = Path.Combine(root, "extract");
+        Directory.CreateDirectory(extractDir);
+        var archivePath = Path.Combine(root, "evil.nostos");
+
+        try
+        {
+            using (var zip = ZipFile.Open(archivePath, ZipArchiveMode.Create))
+            {
+                var entry = zip.CreateEntry(maliciousEntryName);
+                await using var writer = new StreamWriter(entry.Open());
+                await writer.WriteAsync("payload");
+            }
+
+            Func<Task> act = () => BackupService.ExtractArchiveSafelyAsync(archivePath, extractDir);
+            await act.Should().ThrowAsync<InvalidDataException>();
+            File.Exists(Path.Combine(root, "evil.txt")).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractArchiveSafely_RejectsSymlinkEntries()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nostos-zipsym-{Guid.NewGuid():N}");
+        var extractDir = Path.Combine(root, "extract");
+        Directory.CreateDirectory(extractDir);
+        var archivePath = Path.Combine(root, "symlink.nostos");
+
+        try
+        {
+            using (var zip = ZipFile.Open(archivePath, ZipArchiveMode.Create))
+            {
+                var entry = zip.CreateEntry("books/link");
+                entry.ExternalAttributes = 0xA000 << 16; // Unix S_IFLNK
+                await using var writer = new StreamWriter(entry.Open());
+                await writer.WriteAsync("/etc/passwd");
+            }
+
+            Func<Task> act = () => BackupService.ExtractArchiveSafelyAsync(archivePath, extractDir);
+            await act.Should().ThrowAsync<InvalidDataException>();
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExtractArchiveSafely_EnforcesEntryCountEntrySizeAndTotalSizeBounds()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nostos-zipbounds-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var tooManyArchive = Path.Combine(root, "many.nostos");
+            using (var zip = ZipFile.Open(tooManyArchive, ZipArchiveMode.Create))
+            {
+                for (var i = 0; i < 4; i++)
+                {
+                    var e = zip.CreateEntry($"file-{i}.txt");
+                    await using var s = e.Open();
+                    await s.WriteAsync(new byte[10]);
+                }
+            }
+
+            var tooManyAct = () => BackupService.ExtractArchiveSafelyAsync(
+                tooManyArchive,
+                Path.Combine(root, "out-many"),
+                new BackupExtractionLimits(MaxEntries: 3, MaxEntryBytes: 1024, MaxTotalBytes: 4096));
+            await tooManyAct.Should().ThrowAsync<InvalidDataException>();
+
+            var bigEntryArchive = Path.Combine(root, "big-entry.nostos");
+            using (var zip = ZipFile.Open(bigEntryArchive, ZipArchiveMode.Create))
+            {
+                var e = zip.CreateEntry("database/nostos.db");
+                await using var s = e.Open();
+                await s.WriteAsync(new byte[200]);
+            }
+
+            var bigEntryAct = () => BackupService.ExtractArchiveSafelyAsync(
+                bigEntryArchive,
+                Path.Combine(root, "out-entry"),
+                new BackupExtractionLimits(MaxEntries: 10, MaxEntryBytes: 100, MaxTotalBytes: 1000));
+            await bigEntryAct.Should().ThrowAsync<InvalidDataException>();
+
+            var bigTotalArchive = Path.Combine(root, "big-total.nostos");
+            using (var zip = ZipFile.Open(bigTotalArchive, ZipArchiveMode.Create))
+            {
+                for (var i = 0; i < 3; i++)
+                {
+                    var e = zip.CreateEntry($"books/{i}.bin");
+                    await using var s = e.Open();
+                    await s.WriteAsync(new byte[80]);
+                }
+            }
+
+            var bigTotalAct = () => BackupService.ExtractArchiveSafelyAsync(
+                bigTotalArchive,
+                Path.Combine(root, "out-total"),
+                new BackupExtractionLimits(MaxEntries: 10, MaxEntryBytes: 100, MaxTotalBytes: 200));
+            await bigTotalAct.Should().ThrowAsync<InvalidDataException>();
+
+            var validOut = Path.Combine(root, "out-valid");
+            await BackupService.ExtractArchiveSafelyAsync(
+                bigTotalArchive,
+                validOut,
+                new BackupExtractionLimits(MaxEntries: 10, MaxEntryBytes: 100, MaxTotalBytes: 240));
+            File.Exists(Path.Combine(validOut, "books", "0.bin")).Should().BeTrue();
+            File.Exists(Path.Combine(validOut, "books", "2.bin")).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task BackupAndRestoreStaging_LiveUnderLocalBackupDir_AndOrphansAreCleanedOnStartup()
+    {
+        using var h = BackupHarness.Create();
+        await SeedBooksAndNotesScenarioAsync(h);
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        h.Service.StagingDir.Should().Be(Path.Combine(h.ContentRoot, "Storage", "backups", ".staging"));
+        if (Directory.Exists(h.Service.StagingDir))
+        {
+            Directory.GetFileSystemEntries(h.Service.StagingDir).Should().BeEmpty();
+        }
+        Directory.Exists(Path.Combine(Path.GetTempPath(), $"nostos-backup-{created.Id}")).Should().BeFalse();
+
+        // Simulate orphaned staging artifacts left behind by a crash.
+        var orphanDir = Path.Combine(h.Service.StagingDir, $"backup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(orphanDir);
+        await File.WriteAllTextAsync(Path.Combine(orphanDir, "partial.db"), "orphan");
+        var orphanFile = Path.Combine(h.Service.StagingDir, $"nostos-backup-{Guid.NewGuid():N}.nostos");
+        await File.WriteAllTextAsync(orphanFile, "orphan-zip");
+
+        var worker = new BackupWorker(
+            h.ScopeFactory,
+            h.Settings,
+            NullLogger<BackupWorker>.Instance);
+        worker.RunStartupStagingCleanup();
+
+        Directory.Exists(orphanDir).Should().BeFalse("startup cleanup removes orphaned staging directories");
+        File.Exists(orphanFile).Should().BeFalse("startup cleanup removes orphaned staging archives");
+        File.Exists(h.Service.GetLocalArchivePath(created.Id)!).Should().BeTrue("completed archives are untouched");
+    }
+
+    private static async Task StampArchiveChecksumAsync(BackupHarness h, Guid backupId, string archivePath)
+    {
+        var bytes = await File.ReadAllBytesAsync(archivePath);
+        var checksum = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        await using var db = h.NewDbContext();
+        var record = await db.BackupRecords.SingleAsync(r => r.Id == backupId);
+        var manifest = JsonSerializer.Deserialize<BackupManifestDto>(record.ManifestJson!, TestJsonOpts)!;
+        record.ManifestJson = JsonSerializer.Serialize(manifest with { Checksum = checksum }, TestJsonOpts);
+        await db.SaveChangesAsync();
+    }
+
     private sealed class BackupHarness : IDisposable
     {
         public string ContentRoot { get; }
@@ -1004,6 +1322,7 @@ public sealed class BackupServiceTests
 
         public BackupService Service => _provider.GetRequiredService<BackupService>();
         public BackupSettingsProvider Settings => _provider.GetRequiredService<BackupSettingsProvider>();
+        public IServiceScopeFactory ScopeFactory => _provider.GetRequiredService<IServiceScopeFactory>();
         public IDbContextFactory<NostosDbContext> DbFactory => _provider.GetRequiredService<IDbContextFactory<NostosDbContext>>();
 
         public NostosDbContext NewDbContext() => new(Options);
@@ -1065,6 +1384,7 @@ public sealed class BackupServiceTests
                     sp.GetRequiredService<IOptions<FileStorageOptions>>(),
                     sp.GetRequiredService<ILogger<FileStorageService>>()));
             services.AddSingleton<BackupService>();
+            services.AddSingleton<IBackupService>(sp => sp.GetRequiredService<BackupService>());
             var provider = services.BuildServiceProvider();
 
             using (var db = provider.GetRequiredService<IDbContextFactory<NostosDbContext>>().CreateDbContext())

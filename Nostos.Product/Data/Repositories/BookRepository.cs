@@ -21,17 +21,20 @@ public class BookRepository : IBookRepository
         _db = db;
     }
 
-    public async Task<BookModel?> GetByIdAsync(Guid id)
+    public async Task<BookModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _db.Books.FindAsync(id);
+        return await _db.Books.FindAsync([id], cancellationToken);
     }
 
-    public async Task<int> CountBooksWithFilesAsync()
+    public async Task<int> CountBooksWithFilesAsync(CancellationToken cancellationToken = default)
     {
-        return await _db.Books.AsNoTracking().CountAsync(BooksWithFiles);
+        return await _db.Books.AsNoTracking().CountAsync(BooksWithFiles, cancellationToken);
     }
 
-    public async Task<List<BookModel>> GetBooksWithFilesPageAsync(int skip, int take)
+    public async Task<List<BookModel>> GetBooksWithFilesPageAsync(
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
     {
         return await _db
             .Books.AsNoTracking()
@@ -45,14 +48,14 @@ public class BookRepository : IBookRepository
             .Skip(skip)
             .Take(take)
             .Select(BookReadShapes.WithoutLocations)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(BookModel book)
+    public async Task UpdateAsync(BookModel book, CancellationToken cancellationToken = default)
     {
         // Entity is likely already tracked, so Update usually just means SaveChanges
         // But explicit Update call is safe.
         _db.Books.Update(book);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
     }
 }

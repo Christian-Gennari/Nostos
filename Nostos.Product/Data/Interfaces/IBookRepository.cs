@@ -4,13 +4,13 @@ namespace Nostos.Backend.Data.Interfaces;
 
 public interface IBookRepository
 {
-    Task<BookModel?> GetByIdAsync(Guid id);
+    Task<BookModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Number of books that have an uploaded file. Used by the OPDS catalog
     /// feed to describe the whole collection without materializing it.
     /// </summary>
-    Task<int> CountBooksWithFilesAsync();
+    Task<int> CountBooksWithFilesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// One page of books that have an uploaded file, newest first. Used by the
@@ -19,7 +19,7 @@ public interface IBookRepository
     /// The ordering is total (creation date descending, then id) so that
     /// consecutive pages cannot repeat or skip a book at a shared timestamp.
     /// </summary>
-    Task<List<BookModel>> GetBooksWithFilesPageAsync(int skip, int take);
+    Task<List<BookModel>> GetBooksWithFilesPageAsync(int skip, int take, CancellationToken cancellationToken = default);
 
-    Task UpdateAsync(BookModel book);
+    Task UpdateAsync(BookModel book, CancellationToken cancellationToken = default);
 }

@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { of } from 'rxjs';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom, of } from 'rxjs';
 
 import { CalibreImportModal } from './calibre-import-modal.component';
 import {
@@ -16,6 +17,7 @@ import {
   CalibreUploadError,
   CalibreUploadService,
 } from '../../core/services/calibre-upload.service';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 
 const format = (overrides: Partial<CalibreFormatChoice> = {}): CalibreFormatChoice => ({
   key: 'calibre:1:EPUB',
@@ -384,5 +386,52 @@ describe('CalibreImportModal', () => {
     expect(service.undo).toHaveBeenCalledWith('batch-1');
     expect(text()).toContain('Import undone');
     expect(text()).toContain('1 book stayed');
+  });
+
+  it('reactively updates folderSupported when capabilities resolve after initial evaluation', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [CalibreImportModal],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CalibreImportModal);
+    component = fixture.componentInstance;
+    service = TestBed.inject(CalibreImportService);
+    vi.spyOn(service, 'recent').mockReturnValue(of([]));
+
+    const capabilities = TestBed.inject(DeploymentCapabilitiesService);
+    const http = TestBed.inject(HttpTestingController);
+
+    await open(
+      { configured: false, available: false, folderSupported: false, uploadSupported: true },
+      [],
+    );
+
+    expect(component.stage()).toBe('upload');
+    expect(component.folderSupported()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="calibre-folder-option"]')).toBeNull();
+
+    const capabilitiesPromise = firstValueFrom(capabilities.get());
+    http.expectOne('/api/runtime/capabilities').flush({
+      deploymentMode: 'SelfHosted',
+      requiresAuthentication: false,
+      canConfigureAiProvider: true,
+      managedAi: false,
+      managedVoiceTranscription: false,
+      usesCloudStorage: false,
+      supportsLocalBackupConfiguration: true,
+      supportsPrivateNetworkAccess: true,
+      supportsEreaderAccess: true,
+      usageMeteringAvailable: false,
+      supportsCalibreImport: true,
+      supportsCalibreUpload: true,
+    });
+    await capabilitiesPromise;
+    fixture.detectChanges();
+
+    expect(component.folderSupported()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="calibre-folder-option"]')).toBeTruthy();
+    http.verify();
   });
 });

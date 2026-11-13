@@ -10,7 +10,7 @@ import { CollectionsService } from '../core/services/collections.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
-import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
 import { ImportActivity } from '../core/dtos/import.dtos';
 import { PaginatedResponse } from '../core/dtos/book.dtos';
@@ -114,7 +114,7 @@ describe('Library', () => {
         },
         { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
         {
-          provide: CloudEntryService,
+          provide: DeploymentCapabilitiesService,
           useValue: { supportsExternalMediaLibraries: () => externalMediaSupported() },
         },
         { provide: ExternalMediaService, useValue: { book: externalMediaBook } },
