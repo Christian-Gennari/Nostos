@@ -46,6 +46,8 @@ public sealed class CapturingLoggerProvider : ILoggerProvider
 
     public IReadOnlyCollection<string> Lines => _lines;
 
+    public void Clear() => _lines.Clear();
+
     public ILogger CreateLogger(string categoryName) => new Logger(categoryName, _lines);
 
     public void Dispose() { }

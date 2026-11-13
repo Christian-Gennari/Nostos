@@ -21,7 +21,20 @@ namespace Nostos.Backend.Tests.Endpoints;
 /// provider is called and settled whatever happens.
 /// </summary>
 public sealed class ReadAloudEndpointTests
+    : IClassFixture<ReadAloudEndpointTests.ReadAloudHostFactory>, IAsyncLifetime
 {
+    private readonly ReadAloudHostFactory _factory;
+
+    public ReadAloudEndpointTests(ReadAloudHostFactory factory) => _factory = factory;
+
+    public Task InitializeAsync()
+    {
+        _factory.Configure(new FakeReadAloudProvider());
+        return _factory.ResetStateAsync();
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
+
     // ------------------------------------------------------------------
     // Status
     // ------------------------------------------------------------------
@@ -29,9 +42,8 @@ public sealed class ReadAloudEndpointTests
     [Fact]
     public async Task Status_lists_the_voices_for_the_books_language()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, new FakeReadAloudProvider());
-        using var client = host.CreateClient();
+        _factory.Configure(new FakeReadAloudProvider());
+        using var client = _factory.CreateClient();
 
         var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
             $"{ReadAloudEndpoints.StatusRoute}?language=en-GB");
@@ -47,9 +59,8 @@ public sealed class ReadAloudEndpointTests
     public async Task Status_is_unavailable_for_a_language_no_voice_reads()
     {
         const string language = "sv";
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, new FakeReadAloudProvider());
-        using var client = host.CreateClient();
+        _factory.Configure(new FakeReadAloudProvider());
+        using var client = _factory.CreateClient();
 
         var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
             $"{ReadAloudEndpoints.StatusRoute}?language={language}");
@@ -66,9 +77,8 @@ public sealed class ReadAloudEndpointTests
     public async Task Status_offers_every_voice_and_chooses_none_when_the_book_does_not_say_its_language(
         string? language)
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, new FakeReadAloudProvider());
-        using var client = host.CreateClient();
+        _factory.Configure(new FakeReadAloudProvider());
+        using var client = _factory.CreateClient();
 
         var route = language is null
             ? ReadAloudEndpoints.StatusRoute
@@ -84,8 +94,8 @@ public sealed class ReadAloudEndpointTests
     [Fact]
     public async Task A_host_without_a_provider_answers_unavailable_not_an_error()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider: null);
+        using var host = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.RemoveAll<IReadAloudProvider>()));
         using var client = host.CreateClient();
 
         var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
@@ -101,9 +111,8 @@ public sealed class ReadAloudEndpointTests
     [Fact]
     public async Task Status_is_unavailable_when_the_host_policy_denies_access()
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, new FakeReadAloudProvider(), entitled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(new FakeReadAloudProvider(), entitled: false);
+        using var client = _factory.CreateClient();
 
         var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
             $"{ReadAloudEndpoints.StatusRoute}?language=en");
@@ -117,9 +126,8 @@ public sealed class ReadAloudEndpointTests
     [InlineData(true, false, ReadAloudErrorCodes.NotConfigured)]
     public async Task Status_says_why_an_unusable_provider_is_unavailable(bool enabled, bool configured, string reason)
     {
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, new FakeReadAloudProvider { Enabled = enabled, Configured = configured });
-        using var client = host.CreateClient();
+        _factory.Configure(new FakeReadAloudProvider { Enabled = enabled, Configured = configured });
+        using var client = _factory.CreateClient();
 
         var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
             $"{ReadAloudEndpoints.StatusRoute}?language=en");
@@ -137,9 +145,8 @@ public sealed class ReadAloudEndpointTests
     {
         var provider = new FakeReadAloudProvider();
         var usage = new RecordingUsage();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, usage: usage);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, usage: usage);
+        using var client = _factory.CreateClient();
 
         const string text = "It is a truth universally acknowledged.";
         var response = await PostAsync(client, $"  {text}  ", language: "en-GB");
@@ -159,9 +166,8 @@ public sealed class ReadAloudEndpointTests
     public async Task A_named_voice_is_used_when_the_host_offers_it()
     {
         var provider = new FakeReadAloudProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         await PostAsync(client, "Mr. Bennet made no answer.", language: "en", voice: "bm_george");
 
@@ -172,9 +178,8 @@ public sealed class ReadAloudEndpointTests
     public async Task An_unknown_voice_is_never_passed_to_the_provider()
     {
         var provider = new FakeReadAloudProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         await PostAsync(client, "Mr. Bennet made no answer.", language: "it", voice: "../../etc/passwd");
 
@@ -186,9 +191,8 @@ public sealed class ReadAloudEndpointTests
     {
         var provider = new FakeReadAloudProvider();
         var usage = new RecordingUsage();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, usage: usage);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, usage: usage);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, "Det var en afton i början av maj.", language: "sv");
 
@@ -204,9 +208,8 @@ public sealed class ReadAloudEndpointTests
     public async Task Empty_text_is_a_typed_400(string text)
     {
         var provider = new FakeReadAloudProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, text, language: "en");
 
@@ -219,9 +222,8 @@ public sealed class ReadAloudEndpointTests
     public async Task Text_over_the_limit_is_rejected_before_the_provider_is_called()
     {
         var provider = new FakeReadAloudProvider { MaxCharacters = 20 };
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, new string('a', 21), language: "en");
 
@@ -236,9 +238,8 @@ public sealed class ReadAloudEndpointTests
     public async Task An_unusable_provider_is_a_typed_503(bool enabled, bool configured, string code)
     {
         var provider = new FakeReadAloudProvider { Enabled = enabled, Configured = configured };
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        _factory.Configure(provider);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, "Mr. Bennet made no answer.", language: "en");
 
@@ -251,9 +252,8 @@ public sealed class ReadAloudEndpointTests
     public async Task A_denied_request_is_a_typed_403()
     {
         var provider = new FakeReadAloudProvider();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, entitled: false);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, entitled: false);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, "Mr. Bennet made no answer.", language: "en");
 
@@ -270,9 +270,8 @@ public sealed class ReadAloudEndpointTests
         {
             Block = new AiUsageException(AiUsageBlockReason.LimitReached, "The monthly allowance is used up."),
         };
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, usage: usage);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, usage: usage);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, "Mr. Bennet made no answer.", language: "en");
 
@@ -293,9 +292,8 @@ public sealed class ReadAloudEndpointTests
     {
         var provider = new FakeReadAloudProvider { Failure = new ReadAloudException(code, "upstream said no") };
         var usage = new RecordingUsage();
-        using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider, usage: usage);
-        using var client = host.CreateClient();
+        _factory.Configure(provider, usage: usage);
+        using var client = _factory.CreateClient();
 
         var response = await PostAsync(client, "Mr. Bennet made no answer.", language: "en");
 
@@ -324,40 +322,92 @@ public sealed class ReadAloudEndpointTests
         return document.GetProperty("title").GetString();
     }
 
-    private static WebApplicationFactory<Program> CreateHost(
-        LibraryEndpointFactory factory,
-        FakeReadAloudProvider? provider,
-        RecordingUsage? usage = null,
-        bool entitled = true) =>
-        factory.WithWebHostBuilder(builder =>
+    public sealed class ReadAloudHostFactory : LibraryEndpointFactory
+    {
+        private FakeReadAloudProvider _provider = new();
+        private IAiUsageAccountingService _usage = NoOpAiUsageAccountingService.Instance;
+        private bool _entitled = true;
+
+        public void Configure(
+            FakeReadAloudProvider provider,
+            IAiUsageAccountingService? usage = null,
+            bool entitled = true)
         {
+            _provider = provider;
+            _usage = usage ?? NoOpAiUsageAccountingService.Instance;
+            _entitled = entitled;
+        }
+
+        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IReadAloudProvider>();
-                if (provider is not null)
-                    services.AddSingleton<IReadAloudProvider>(provider);
+                services.AddSingleton<IReadAloudProvider>(new DelegatingReadAloudProvider(this));
 
-                if (usage is not null)
-                {
-                    services.RemoveAll<IAiUsageAccountingService>();
-                    services.AddSingleton<IAiUsageAccountingService>(usage);
-                }
+                services.RemoveAll<IAiUsageAccountingService>();
+                services.AddSingleton<IAiUsageAccountingService>(new DelegatingUsageAccounting(this));
 
-                if (!entitled)
-                {
-                    services.RemoveAll<IAiAccessPolicy>();
-                    services.AddSingleton<IAiAccessPolicy, DenyAccessPolicy>();
-                }
+                services.RemoveAll<IAiAccessPolicy>();
+                services.AddSingleton<IAiAccessPolicy>(new DelegatingAccessPolicy(this));
             });
-        });
+        }
 
-    private sealed class DenyAccessPolicy : IAiAccessPolicy
-    {
-        public Task<bool> IsAllowedAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(false);
+        private sealed class DelegatingReadAloudProvider(ReadAloudHostFactory owner) : IReadAloudProvider
+        {
+            public IReadOnlyList<ReadAloudVoice> Voices => owner._provider.Voices;
+
+            public Task<ReadAloudAvailability> GetAvailabilityAsync(CancellationToken ct = default) =>
+                owner._provider.GetAvailabilityAsync(ct);
+
+            public Task<ReadAloudAudio> SynthesizeAsync(
+                ReadAloudSpeechRequest request,
+                CancellationToken ct = default) =>
+                owner._provider.SynthesizeAsync(request, ct);
+        }
+
+        private sealed class DelegatingUsageAccounting(ReadAloudHostFactory owner)
+            : IAiUsageAccountingService
+        {
+            public Task<AiUsageLease?> BeginLlmTurnAsync(CancellationToken cancellationToken = default) =>
+                owner._usage.BeginLlmTurnAsync(cancellationToken);
+
+            public Task CompleteLlmTurnAsync(
+                AiUsageLease? lease,
+                LlmProviderUsage usage,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.CompleteLlmTurnAsync(lease, usage, cancellationToken);
+
+            public Task<AiUsageLease?> BeginSttAsync(CancellationToken cancellationToken = default) =>
+                owner._usage.BeginSttAsync(cancellationToken);
+
+            public Task CompleteSttAsync(
+                AiUsageLease? lease,
+                TranscriptionUsage usage,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.CompleteSttAsync(lease, usage, cancellationToken);
+
+            public Task<AiUsageLease?> BeginTtsAsync(
+                int characters,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.BeginTtsAsync(characters, cancellationToken);
+
+            public Task CompleteTtsAsync(
+                AiUsageLease? lease,
+                SpeechSynthesisUsage usage,
+                CancellationToken cancellationToken = default) =>
+                owner._usage.CompleteTtsAsync(lease, usage, cancellationToken);
+        }
+
+        private sealed class DelegatingAccessPolicy(ReadAloudHostFactory owner) : IAiAccessPolicy
+        {
+            public Task<bool> IsAllowedAsync(CancellationToken ct = default) =>
+                Task.FromResult(owner._entitled);
+        }
     }
 
-    private sealed class FakeReadAloudProvider : IReadAloudProvider
+    public sealed class FakeReadAloudProvider : IReadAloudProvider
     {
         public bool Enabled { get; set; } = true;
         public bool Configured { get; set; } = true;
