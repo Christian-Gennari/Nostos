@@ -36,6 +36,7 @@ import { Subject, Subscription, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PageHighlight, PdfAnnotationManager } from './pdf-annotation-manager';
+import { bookFileUrl } from '../../core/book-url';
 import { chapterRangeAt } from './pdf-chapter-progress';
 import {
   buildPdfPassageDraft,
@@ -264,7 +265,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     | null = null;
   private surfaceClickSuppression: TouchClickSuppression | null = null;
 
-  pdfSrc = computed(() => `/api/books/${this.bookId()}/file`);
+  pdfSrc = computed(() => bookFileUrl(this.bookId()));
   savedHighlights: PageHighlight[] = [];
 
   private pendingHighlight: PendingPdfHighlight | null = null;

@@ -23,7 +23,8 @@ import { BooksService } from '../../core/services/books.service';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
 import { Book } from '../../core/dtos/book.dtos';
-import { AUDIO_PLAYER_FACTORY, AudioPlayer, PlaylistTrack } from './track-playlist-player';
+import { AUDIO_PLAYER_FACTORY, AudioPlayer, PlaylistTrack } from '../../core/media/track-playlist-player';
+import { bookFileUrl, bookTrackUrl } from '../../core/book-url';
 
 import { BookCoverComponent } from '../../ui/book-cover/book-cover.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
@@ -370,10 +371,10 @@ export class AudioReader implements OnDestroy, IReader {
     const playlist: PlaylistTrack[] =
       tracks.length > 0
         ? tracks.map((track) => ({
-            url: `/api/books/${id}/tracks/${track.number}`,
+            url: bookTrackUrl(id, track.number),
             duration: track.duration,
           }))
-        : [{ url: `/api/books/${id}/file`, duration: 0 }];
+        : [{ url: bookFileUrl(id), duration: 0 }];
     // Load the track the listener is actually in, not track 1 first.
     const startAt = this.resumeAt ?? this.pendingSourceTime ?? this.savedPosition();
     this.player = this.createPlayer(playlist, callbacks, startAt);

@@ -112,11 +112,11 @@ export {
 } from './epub-grounded-source';
 
 export { registerNostosReaderThemes, selectNostosReaderTheme } from './epub-reader-theme';
+export { libronFontFaceCss } from '../../core/typography/libron-font';
 export {
   DEFAULT_TYPOGRAPHY,
   EPUB_FONT_OPTIONS,
   fontFamilyFromStored,
-  libronFontFaceCss,
   marginInsetPercent,
   markFloatedIllustrations,
   markGlyphElements,

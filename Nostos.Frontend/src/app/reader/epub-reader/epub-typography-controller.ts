@@ -2,15 +2,13 @@ import { computed, signal } from '@angular/core';
 import type { Contents, Rendition } from 'epubjs';
 
 import { type ThemeMode, type ThemeName, themeOption } from '../../core/services/theme.service';
+import { LIBRON_FACES, libronFaceUrls, libronFontFaceCss } from '../../core/typography/libron-font';
 import { registerNostosReaderThemes, selectNostosReaderTheme } from './epub-reader-theme';
 import { scaleAbsoluteFontSizes, setTextScale } from './epub-text-size';
 import {
   DEFAULT_TYPOGRAPHY,
   EPUB_LINE_OPTIONS,
-  LIBRON_FACES,
   fontFamilyFromStored,
-  libronFaceUrls,
-  libronFontFaceCss,
   marginInsetPercent,
   markFloatedIllustrations,
   markGlyphElements,

@@ -21,7 +21,8 @@ import { ThemeService } from '../../core/services/theme.service';
 import { BooksService } from '../../core/services/books.service';
 import { ClipPlayer } from './clip-player';
 import { Passage, formatAudioTime, passageReadingMinutes, passageSizeLabel } from '../../core/dtos/note.dtos';
-import { libronFontFaceCss } from '../../reader/epub-reader/epub-typography';
+import { bookFileUrl } from '../../core/book-url';
+import { libronFontFaceCss } from '../../core/typography/libron-font';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { ButtonComponent } from '../button/button.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
@@ -427,7 +428,7 @@ export class PassageViewerComponent {
         }
         this.pdfWorker = worker;
         const task = pdfjs.getDocument({
-          url: `/api/books/${passage.bookId}/file`,
+          url: bookFileUrl(passage.bookId),
           withCredentials: true,
           worker: worker.worker,
         });

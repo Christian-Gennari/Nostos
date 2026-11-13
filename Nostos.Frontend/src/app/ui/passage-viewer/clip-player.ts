@@ -1,7 +1,8 @@
 import { WritableSignal, signal } from '@angular/core';
 import { Howl } from 'howler';
 
-import { AudioPlayer, TrackPlaylistPlayer } from '../../reader/audio-reader/track-playlist-player';
+import { AudioPlayer, TrackPlaylistPlayer } from '../../core/media/track-playlist-player';
+import { bookFileUrl, bookTrackUrl } from '../../core/book-url';
 
 /**
  * Announced when a clip starts playing, so the audio reader (if it is open
@@ -60,7 +61,7 @@ export class ClipPlayer {
       tracks.length > 0
         ? new TrackPlaylistPlayer(
             tracks.map((track) => ({
-              url: `/api/books/${book.id}/tracks/${track.number}`,
+              url: bookTrackUrl(book.id, track.number),
               duration: track.duration,
             })),
             callbacks,
@@ -69,7 +70,7 @@ export class ClipPlayer {
             start,
           )
         : (new Howl({
-            src: [`/api/books/${book.id}/file`],
+            src: [bookFileUrl(book.id)],
             html5: true,
             format: ['mp3', 'm4a', 'm4b'],
             ...callbacks,
