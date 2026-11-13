@@ -8,125 +8,6 @@ using Nostos.Product.Services.Ai;
 
 namespace Nostos.Product.Alignment;
 
-public sealed class AlignmentException(
-    string code,
-    int statusCode,
-    string message) : Exception(message)
-{
-    public string Code { get; } = code;
-    public int StatusCode { get; } = statusCode;
-}
-
-public sealed class AlignmentOptions
-{
-    public const string SectionName = "Alignment";
-
-    public double ClipSeconds { get; set; } = 20;
-    public double ProbeSeconds { get; set; } = 20;
-    public int MaxProbes { get; set; } = 5;
-    public int MatchToleranceCharacters { get; set; } = 40;
-    public int ConsistencyToleranceCharacters { get; set; } = 40;
-    // Measured live: a located start can fall a few seconds after the sentence
-    // when the narrator is quicker than the clip maths assumes. Starting a little
-    // early costs nothing; starting late loses the sentence.
-    public double LeadInSeconds { get; set; } = 3.0;
-    public double MaximumLocalRateRatio { get; set; } = 5;
-
-    // Historical configuration name. Applies to both EPUB and PDF.
-    // Keep the existing Alignment:MaxEpubBytes binding.
-    public long MaxEpubBytes { get; set; } =
-        200L * 1024 * 1024;
-
-    public long MaxCachedCharacters { get; set; } =
-        20_000_000;
-
-    /// <summary>
-    /// When a transcription has not answered after this many seconds, the same
-    /// clip is asked for a second time and the first answer is used. 0, the
-    /// default, never asks twice. It suits a hosted transcriber whose answers
-    /// are usually quick and occasionally very slow; a transcriber that is
-    /// simply slow would only be given twice the work.
-    /// </summary>
-    public double HedgeAfterSeconds { get; set; }
-
-    /// <summary>
-    /// Limits the cost and size of reverse-alignment probes, including
-    /// when options are constructed outside the normal DI registration.
-    /// </summary>
-    public void NormalizeProbeSettings()
-    {
-        MaxProbes = Math.Clamp(MaxProbes, 1, 8);
-
-        ProbeSeconds = double.IsNaN(ProbeSeconds)
-            ? 20
-            : Math.Clamp(ProbeSeconds, 5, 30);
-    }
-}
-
-public sealed record AlignmentLocator(
-    int SpineIndex,
-    string ResourceHref,
-    string? Cfi,
-    int? TextOffset);
-
-public sealed record AlignmentPdfLocator(
-    int PageIndex,
-    int PageNumber,
-    string? PageLabel,
-    int TextOffset);
-
-public sealed record AlignmentLocateResult(
-    bool Located,
-    string? Reason,
-    double? Score,
-    string? Excerpt,
-    AlignmentLocator? Locator,
-    bool AnchorStored = false,
-    AlignmentPdfLocator? Pdf = null,
-    string? SourceText = null)
-{
-    public static AlignmentLocateResult Declined(string reason) =>
-        new(false, reason, null, null, null);
-}
-
-public sealed record AlignmentLocateAudioResult(
-    bool Located,
-    string? Reason,
-    double? PositionSeconds,
-    double? ApproximatePositionSeconds,
-    int Probes,
-    double? Score,
-    bool AnchorStored)
-{
-    public static AlignmentLocateAudioResult Declined(
-        string reason,
-        int probes = 0,
-        double? approximatePositionSeconds = null) =>
-        new(
-            false,
-            reason,
-            null,
-            approximatePositionSeconds,
-            probes,
-            null,
-            false);
-}
-
-public interface IAlignmentService
-{
-    Task<AlignmentLocateResult> LocateAsync(
-        AudioBookModel source,
-        EBookModel target,
-        double positionSeconds,
-        CancellationToken ct = default);
-
-    Task<AlignmentLocateAudioResult> LocateAudioAsync(
-        EBookModel source,
-        AudioBookModel target,
-        string excerpt,
-        CancellationToken ct = default);
-}
-
 public sealed class AlignmentService(
     IAudioClipCutter cutter,
     IAlignmentTranscriber transcriber,
@@ -139,6 +20,10 @@ public sealed class AlignmentService(
     IAlignmentAudioRevisionProvider audioRevisions,
     ILogger<AlignmentService> logger) : IAlignmentService
 {
+    private readonly AlignmentProbeReader probeReader = new();
+    private readonly HedgedSttTranscriber sttTranscriber = new(
+        transcriber, usage, options, logger);
+
     public async Task<AlignmentLocateResult> LocateAsync(
         AudioBookModel source,
         EBookModel target,
@@ -156,7 +41,7 @@ public sealed class AlignmentService(
 
         ValidatePair(source, target);
 
-        if (!await transcriber.IsAvailableAsync(ct))
+        if (!await sttTranscriber.IsAvailableAsync(ct))
         {
             throw new AlignmentException(
                 "alignment_transcription_unavailable",
@@ -175,7 +60,7 @@ public sealed class AlignmentService(
             options.ClipSeconds,
             ct);
 
-        var transcription = await TranscribeAsync(
+        var transcription = await sttTranscriber.TranscribeAsync(
             source, clip, ct);
 
         var match = matcher.Locate(transcription.Text);
@@ -349,7 +234,7 @@ public sealed class AlignmentService(
                 "duration_unknown");
         }
 
-        if (!await transcriber.IsAvailableAsync(ct))
+        if (!await sttTranscriber.IsAvailableAsync(ct))
         {
             throw new AlignmentException(
                 "alignment_transcription_unavailable",
@@ -404,29 +289,7 @@ public sealed class AlignmentService(
         // The registered options are normalized during composition.
         // Use a local bounded copy so independently constructed services
         // cannot spend more than eight transcription calls.
-        var searchOptions = new AlignmentOptions
-        {
-            ClipSeconds = options.ClipSeconds,
-            ProbeSeconds = options.ProbeSeconds,
-            MaxProbes = options.MaxProbes,
-            MatchToleranceCharacters = options.MatchToleranceCharacters,
-            ConsistencyToleranceCharacters =
-                options.ConsistencyToleranceCharacters,
-            LeadInSeconds = options.LeadInSeconds,
-            MaximumLocalRateRatio = options.MaximumLocalRateRatio,
-            MaxEpubBytes = options.MaxEpubBytes,
-            MaxCachedCharacters = options.MaxCachedCharacters,
-        };
-
-        searchOptions.NormalizeProbeSettings();
-
-        if (!double.IsFinite(searchOptions.LeadInSeconds) ||
-            searchOptions.LeadInSeconds < 0)
-            searchOptions.LeadInSeconds = 0;
-
-        searchOptions.LeadInSeconds = Math.Min(
-            searchOptions.LeadInSeconds,
-            searchOptions.ProbeSeconds);
+        var searchOptions = options.CloneNormalizedForSearch();
 
         AudioAlignmentSearch search;
 
@@ -492,16 +355,17 @@ public sealed class AlignmentService(
 
             // BeginSttAsync is invoked once per transcription, not once
             // per search. A denied lease propagates without retrying.
-            var transcription = await TranscribeAsync(
+            var transcription = await sttTranscriber.TranscribeAsync(
                 target, clip, ct);
 
             probes++;
 
-            var reading = ReadProbe(
+            var reading = probeReader.ReadProbe(
                 matcher,
                 transcription.Text,
                 clipStart,
-                clipEnd);
+                clipEnd,
+                searchOptions.ProbeSeconds);
 
             if (reading is null)
             {
@@ -538,7 +402,7 @@ public sealed class AlignmentService(
                 if (!double.IsFinite(locatedSeconds) ||
                     locatedSeconds < 0 ||
                     locatedSeconds > duration.Value ||
-                    !ConsistentWithAnchors(
+                    !AlignmentProbeReader.ConsistentWithAnchors(
                         locatedSeconds,
                         targetSpoken,
                         before,
@@ -605,12 +469,12 @@ public sealed class AlignmentService(
         // pair at the book's pace is a few seconds of extrapolation, which is
         // a better answer than asking the reader to accept "roughly".
         if (search.NearTargetPositionSeconds is { } near &&
-            ConsistentWithAnchors(
+            AlignmentProbeReader.ConsistentWithAnchors(
                 near,
                 targetSpoken,
                 before,
                 after,
-                options.ProbeSeconds * 2))
+                searchOptions.ProbeSeconds * 2))
         {
             return new AlignmentLocateAudioResult(
                 Located: true,
@@ -626,185 +490,6 @@ public sealed class AlignmentService(
             "probe_budget_exhausted",
             probes,
             search.ApproximatePositionSeconds);
-    }
-
-    /// <summary>What one probe's transcript says about where the clip is in the book.</summary>
-    private sealed record ProbeReading(
-        IReadOnlyList<AudioAlignmentSearch.Point> Knots,
-        double Score,
-        PassageLocation? OpeningStart,
-        PassageLocation? ClosingEnd);
-
-    /// <summary>
-    /// Places a probe's transcript in the book. The closing words are spoken
-    /// at the clip's end and the opening words at its start; between them a
-    /// word's time is its share of the transcript, because the transcript is
-    /// the speech of exactly this clip. When one of the two cannot be placed,
-    /// a window from the middle is tried, so a clip with a misheard ending is
-    /// still read. Null when nothing in the transcript is found in the book.
-    /// </summary>
-    private ProbeReading? ReadProbe(
-        PassageMatcher matcher,
-        string transcript,
-        double clipStart,
-        double clipEnd)
-    {
-        var spoken = AlignmentTokens.Split(transcript);
-        var settings = MatcherSettings.For(spoken);
-
-        if (spoken.Count < settings.MinimumTokens)
-            return null;
-
-        var size = Math.Min(settings.MaximumTokens, spoken.Count);
-        var first = spoken[0].Index;
-        var last = spoken[^1].Index + spoken[^1].Length;
-
-        double TimeAt(int token) =>
-            token >= spoken.Count
-                ? clipEnd
-                : clipStart + (clipEnd - clipStart) *
-                    (spoken[token].Index - first) / (double)(last - first);
-
-        var windows = new List<(int From, int To, PassageMatch Match)>();
-
-        void Place(int from)
-        {
-            if (windows.Any(window => window.From == from))
-                return;
-
-            var match = matcher.LocateTokens(
-                spoken.Skip(from).Take(size),
-                settings);
-
-            if (!match.Accepted)
-                return;
-
-            if (match.Start?.Locator is not
-                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator) ||
-                match.End?.Locator is not
-                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
-            {
-                throw new AlignmentException(
-                    "alignment_locator_invalid",
-                    422,
-                    "A probe has no supported text source provenance.");
-            }
-
-            windows.Add((from, from + size, match));
-        }
-
-        var closing = spoken.Count - size;
-
-        Place(closing);
-
-        if (closing > 0)
-            Place(0);
-
-        if (closing > 1 && windows.Count < 2)
-            Place(closing / 2);
-
-        if (windows.Count == 0)
-            return null;
-
-        // The closing window is tried first, so it wins a tie.
-        var best = windows.MaxBy(window => window.Match.Score);
-
-        // The pairs are (second, spoken characters). A clip cannot cover more
-        // text than fast speech allows, and what it covers runs forward. Windows that disagree did not all find the same
-        // place; the best one then stands alone.
-        var points = new List<AudioAlignmentSearch.Point>();
-        var agree = true;
-
-        foreach (var window in windows.OrderBy(window => window.From))
-        {
-            foreach (var point in new[]
-            {
-                new AudioAlignmentSearch.Point(
-                    TimeAt(window.From),
-                    window.Match.StartSpoken),
-                new AudioAlignmentSearch.Point(
-                    TimeAt(window.To),
-                    window.Match.EndSpoken),
-            })
-            {
-                if (points.Count == 0)
-                {
-                    points.Add(point);
-                    continue;
-                }
-
-                var previous = points[^1];
-
-                if (point.AudioSeconds > previous.AudioSeconds &&
-                    point.TextOffset > previous.TextOffset)
-                {
-                    points.Add(point);
-                }
-                else if (point.AudioSeconds > previous.AudioSeconds + 1 &&
-                         point.TextOffset <= previous.TextOffset)
-                {
-                    agree = false;
-                }
-            }
-        }
-
-        var plausible = Math.Ceiling(options.ProbeSeconds * 40);
-
-        if (!agree ||
-            points.Count < 2 ||
-            points[^1].TextOffset - points[0].TextOffset > plausible)
-        {
-            windows = [best];
-            points =
-            [
-                new AudioAlignmentSearch.Point(
-                    TimeAt(best.From),
-                    best.Match.StartSpoken),
-                new AudioAlignmentSearch.Point(
-                    TimeAt(best.To),
-                    best.Match.EndSpoken),
-            ];
-
-            if (points[1].TextOffset <= points[0].TextOffset ||
-                points[1].AudioSeconds <= points[0].AudioSeconds)
-                return null;
-        }
-
-        var opening = windows.FirstOrDefault(window => window.From == 0);
-        var ending = windows.FirstOrDefault(window => window.To == spoken.Count);
-
-        return new ProbeReading(
-            points,
-            best.Match.Score,
-            opening.Match?.Start,
-            ending.Match?.End);
-    }
-
-    private static bool ConsistentWithAnchors(
-        double positionSeconds,
-        int targetOffset,
-        AudioAlignmentSearch.Point? before,
-        AudioAlignmentSearch.Point? after,
-        double toleranceSeconds)
-    {
-        if (before is null || after is null ||
-            before.TextOffset > targetOffset ||
-            after.TextOffset < targetOffset)
-            return true;
-
-        if (!double.IsFinite(toleranceSeconds) ||
-            toleranceSeconds <= 0)
-            return false;
-
-        if (before.AudioSeconds > after.AudioSeconds)
-            return false;
-
-        var low = before.AudioSeconds - toleranceSeconds;
-        var high = after.AudioSeconds + toleranceSeconds;
-
-        return double.IsFinite(positionSeconds) &&
-            positionSeconds >= low &&
-            positionSeconds <= high;
     }
 
     private async Task<AlignmentDocumentSnapshot> ReadDocumentAsync(
@@ -826,198 +511,6 @@ public sealed class AlignmentService(
 
         return await cache.GetAsync(
             book.Id, storage, extractor, ct);
-    }
-
-    private Task<SttResult> TranscribeAsync(
-        AudioBookModel book,
-        AudioClip clip,
-        CancellationToken ct) =>
-        double.IsFinite(options.HedgeAfterSeconds) &&
-        options.HedgeAfterSeconds > 0
-            ? TranscribeHedgedAsync(book, clip, options.HedgeAfterSeconds, ct)
-            : TranscribeOnceAsync(book, clip, ct);
-
-    /// <summary>
-    /// One clip, asked a second time when the first request is slow. Whichever
-    /// answers first is used and the other is cancelled.
-    ///
-    /// Each request has its own usage lease. The leases are opened and settled
-    /// here, one at a time: the usage service belongs to the request and is not
-    /// used from two tasks at once. Only the calls to the provider overlap.
-    /// </summary>
-    private async Task<SttResult> TranscribeHedgedAsync(
-        AudioBookModel book,
-        AudioClip clip,
-        double hedgeAfterSeconds,
-        CancellationToken ct)
-    {
-        using var buffer = new MemoryStream();
-        await clip.Audio.CopyToAsync(buffer, ct);
-        var audio = buffer.ToArray();
-
-        var language = string.IsNullOrWhiteSpace(book.Metadata.Language)
-            ? null
-            : book.Metadata.Language.Trim();
-
-        using var race = CancellationTokenSource.CreateLinkedTokenSource(ct);
-
-        async Task<SttResult> AskAsync()
-        {
-            race.Token.ThrowIfCancellationRequested();
-
-            return await transcriber.TranscribeAsync(
-                new MemoryStream(audio, writable: false),
-                "alignment.wav",
-                "audio/wav",
-                language,
-                race.Token);
-        }
-
-        var firstLease = await usage.BeginSttAsync(ct);
-        var first = AskAsync();
-
-        AiUsageLease? secondLease = null;
-        Task<SttResult>? second = null;
-
-        try
-        {
-            var patience = Task.Delay(
-                TimeSpan.FromSeconds(hedgeAfterSeconds), race.Token);
-
-            if (await Task.WhenAny(first, patience) != first)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                try
-                {
-                    secondLease = await usage.BeginSttAsync(ct);
-                    second = AskAsync();
-
-                    logger.LogInformation(
-                        "Alignment transcription for audio book {AudioBookId} " +
-                        "had not answered after {Seconds} s and was asked again.",
-                        book.Id,
-                        hedgeAfterSeconds);
-                }
-                catch (AiUsageException)
-                {
-                    // No allowance for a second request: the first one stands.
-                }
-            }
-
-            if (second is null)
-                return await first;
-
-            var finished = await Task.WhenAny(first, second);
-
-            if (finished.IsCompletedSuccessfully)
-                return await finished;
-
-            // The request that finished failed. The other may still answer;
-            // if it does not, the first request's failure is the one reported.
-            var other = finished == first ? second : first;
-
-            try
-            {
-                return await other;
-            }
-            catch when (!first.IsCompletedSuccessfully)
-            {
-                return await first;
-            }
-        }
-        finally
-        {
-            await race.CancelAsync();
-            await SettleAsync(first, firstLease);
-
-            if (second is not null)
-                await SettleAsync(second, secondLease);
-        }
-    }
-
-    private async Task SettleAsync(
-        Task<SttResult> request,
-        AiUsageLease? lease)
-    {
-        try
-        {
-            // A cancelled provider call ends promptly; never wait on one that
-            // does not.
-            await request.WaitAsync(TimeSpan.FromSeconds(2));
-        }
-        catch
-        {
-        }
-
-        var category = request.IsCompletedSuccessfully
-            ? "Completed"
-            : request.IsFaulted && request.Exception?.InnerException
-                is not OperationCanceledException
-                ? "ProviderError"
-                : "Cancelled";
-
-        // Observe a request that outlives the wait above.
-        _ = request.ContinueWith(
-            task => _ = task.Exception,
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted,
-            TaskScheduler.Default);
-
-        await usage.CompleteSttAsync(
-            lease,
-            new TranscriptionUsage(
-                1,
-                request.IsCompletedSuccessfully
-                    ? request.Result.DurationSeconds
-                    : null,
-                category),
-            CancellationToken.None);
-    }
-
-    private async Task<SttResult> TranscribeOnceAsync(
-        AudioBookModel book,
-        AudioClip clip,
-        CancellationToken ct)
-    {
-        var lease = await usage.BeginSttAsync(ct);
-
-        SttResult? transcription = null;
-        var resultCategory = "ProviderError";
-
-        try
-        {
-            ct.ThrowIfCancellationRequested();
-
-            transcription = await transcriber.TranscribeAsync(
-                clip.Audio,
-                "alignment.wav",
-                "audio/wav",
-                string.IsNullOrWhiteSpace(book.Metadata.Language)
-                    ? null
-                    : book.Metadata.Language.Trim(),
-                ct);
-
-            resultCategory = "Completed";
-            return transcription;
-        }
-        catch (OperationCanceledException)
-        {
-            resultCategory = "Cancelled";
-            throw;
-        }
-        finally
-        {
-            await usage.CompleteSttAsync(
-                lease,
-                new TranscriptionUsage(
-                    1,
-                    resultCategory == "Completed"
-                        ? transcription?.DurationSeconds
-                        : null,
-                    resultCategory),
-                CancellationToken.None);
-        }
     }
 
     private async Task<bool> TryStoreAnchorAsync(

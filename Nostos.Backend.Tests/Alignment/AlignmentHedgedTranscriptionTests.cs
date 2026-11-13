@@ -186,6 +186,23 @@ public sealed class AlignmentHedgedTranscriptionTests
         bench.Usage.Settled.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task Reverse_alignment_also_hedges_when_configured()
+    {
+        var bench = new Bench(Hedge);
+
+        var locating = bench.LocateAudioAsync();
+        await bench.Transcriber.RequestAsync(2);
+        bench.Transcriber.Answer(2, Sentence);
+
+        var result = await locating;
+
+        result.Located.Should().BeTrue();
+        bench.Transcriber.Requests.Should().Be(2);
+        bench.Transcriber.WasCancelled(1).Should().BeTrue();
+        bench.Usage.Settled.Should().Equal("Cancelled", "Completed");
+    }
+
     private sealed class Bench
     {
         private readonly AlignmentService service;
@@ -246,6 +263,9 @@ public sealed class AlignmentHedgedTranscriptionTests
 
         public Task<AlignmentLocateResult> LocateAsync(CancellationToken ct = default) =>
             Task.Run(() => service.LocateAsync(audio, text, 120, ct), CancellationToken.None);
+
+        public Task<AlignmentLocateAudioResult> LocateAudioAsync(CancellationToken ct = default) =>
+            Task.Run(() => service.LocateAudioAsync(text, audio, Sentence, ct), CancellationToken.None);
     }
 
     private sealed class ScriptedTranscriber : IAlignmentTranscriber
