@@ -35,7 +35,7 @@ public sealed class BookTextIngestionWorker(
         try
         {
             await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(stoppingToken);
-            using var initialScope = scopes.CreateScope();
+            await using var initialScope = scopes.CreateAsyncScope();
             await initialScope.ServiceProvider
                 .GetRequiredService<BookTextBackfillService>()
                 .ScheduleMissingAsync(stoppingToken);
@@ -83,7 +83,7 @@ public sealed class BookTextIngestionWorker(
     public async Task<bool> ProcessOneAsync(CancellationToken ct = default)
     {
         await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
-        using var scope = scopes.CreateScope();
+        await using var scope = scopes.CreateAsyncScope();
         var index = scope.ServiceProvider.GetRequiredService<IBookTextIndex>();
         // A freshly activated or restored generation starts without the
         // derived book-text schema (the FTS tables are intentionally not part
@@ -108,7 +108,7 @@ public sealed class BookTextIngestionWorker(
     public async Task<BookTextEmbeddingPassResult> ProcessEmbeddingsAsync(CancellationToken ct = default)
     {
         await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
-        using var scope = scopes.CreateScope();
+        await using var scope = scopes.CreateAsyncScope();
         // Same first-use-after-cutover rule as ProcessOneAsync: the embedding
         // tables are derived and are recreated lazily.
         await scope.ServiceProvider.GetRequiredService<IBookTextIndex>().EnsureSchemaAsync(ct);

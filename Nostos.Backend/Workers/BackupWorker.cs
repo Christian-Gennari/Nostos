@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
+using Nostos.Backend.Services.Portability;
 
 namespace Nostos.Backend.Workers;
 
@@ -11,7 +12,14 @@ public class BackupWorker(
     ILogger<BackupWorker> logger
 ) : BackgroundService
 {
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromMinutes(5);
+    // Virtual so tests can poll on a clock they control rather than wall time.
+    protected virtual TimeSpan PollingInterval => TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// The clock the poll delay runs on. Overridden in tests so a poll is due
+    /// deterministically and no test waits five real minutes.
+    /// </summary>
+    protected virtual TimeProvider Clock => TimeProvider.System;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -23,7 +31,7 @@ public class BackupWorker(
         {
             try
             {
-                await Task.Delay(PollingInterval, stoppingToken);
+                await Task.Delay(PollingInterval, Clock, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -33,6 +41,19 @@ public class BackupWorker(
             try
             {
                 await DoWorkAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // Host shutdown in the middle of a backup cycle is not a failure.
+                break;
+            }
+            catch (MigrationActivationException ex) when (ex.Code == MigrationActivationErrorCodes.Busy)
+            {
+                // Exclusive maintenance (restore or activation) began between the
+                // due-check and CreateBackupAsync. That is an expected skip, not a
+                // failed backup: the next poll retries once the library is free.
+                logger.LogInformation(
+                    "Scheduled backup skipped because the library is busy or in maintenance; retrying on the next poll.");
             }
             catch (Exception ex)
             {
@@ -51,7 +72,7 @@ public class BackupWorker(
 
         DateTime? lastBackupTime;
         await using (var operation = await settingsProvider.Maintenance.EnterOperationAsync(ct))
-        using (var scope = scopeFactory.CreateScope())
+        await using (var scope = scopeFactory.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
             lastBackupTime = await db.BackupRecords
@@ -69,7 +90,7 @@ public class BackupWorker(
                 return;
         }
 
-        using var workScope = scopeFactory.CreateScope();
+        await using var workScope = scopeFactory.CreateAsyncScope();
         var backupService = workScope.ServiceProvider.GetRequiredService<IBackupService>();
 
         logger.LogInformation("Running scheduled backup...");

@@ -71,7 +71,7 @@ public class BackupService : IBackupService
 
     public async Task<BackupStatusDto> GetStatusAsync()
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         var lastRecord = await db
@@ -144,7 +144,7 @@ public class BackupService : IBackupService
         var recordStatus = BackupStatus.InProgress;
         var recordSizeBytes = 0L;
 
-        using (var scope = _scopeFactory.CreateScope())
+        await using (var scope = _scopeFactory.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
             var record = new BackupRecord
@@ -170,7 +170,7 @@ public class BackupService : IBackupService
             var checksum = await ComputeFileChecksumAsync(archivePath);
             _settingsProvider.UpdateProgress("Finalizing", 95, 5, 5);
 
-            using (var scope = _scopeFactory.CreateScope())
+            await using (var scope = _scopeFactory.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
                 var record = await db.BackupRecords.FindAsync([recordId], ct);
@@ -210,7 +210,7 @@ public class BackupService : IBackupService
 
             try
             {
-                using var scope = _scopeFactory.CreateScope();
+                await using var scope = _scopeFactory.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
                 var record = await db.BackupRecords.FindAsync([recordId], ct);
                 if (record != null)
@@ -251,7 +251,7 @@ public class BackupService : IBackupService
         BackupRecord? record;
         using (var operation = _settingsProvider.Maintenance.TryEnterOperation()
             ?? throw LibraryMaintenanceCoordinator.Busy())
-        using (var scope = _scopeFactory.CreateScope())
+        await using (var scope = _scopeFactory.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
             record = await db.BackupRecords.FindAsync([backupId], ct);
@@ -327,7 +327,7 @@ public class BackupService : IBackupService
 
     public async Task<List<BackupHistoryDto>> GetHistoryAsync()
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         return await db
@@ -346,7 +346,7 @@ public class BackupService : IBackupService
 
     public async Task DeleteBackupRecordAsync(Guid id)
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         var record = await db.BackupRecords.FindAsync(id);
@@ -375,7 +375,7 @@ public class BackupService : IBackupService
 
         var imported = new List<BackupHistoryDto>();
 
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         var trackedPaths = await db.BackupRecords
@@ -513,7 +513,7 @@ public class BackupService : IBackupService
             var metadataDir = Path.Combine(tempDir, "metadata");
             Directory.CreateDirectory(metadataDir);
 
-            using (var scope = _scopeFactory.CreateScope())
+            await using (var scope = _scopeFactory.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
@@ -673,7 +673,7 @@ public class BackupService : IBackupService
         {
             try
             {
-                using var scope = _scopeFactory.CreateScope();
+                await using var scope = _scopeFactory.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 #pragma warning disable EF1002
                 await db.Database.ExecuteSqlRawAsync($"VACUUM INTO '{sanitizedPath}'", ct);
@@ -1036,7 +1036,7 @@ public class BackupService : IBackupService
     private async Task ReconcileBackupRecordsAfterRestoreAsync(
         BackupRecord restored, string archivePath, CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         var rows = await db.BackupRecords.ToListAsync(ct);
@@ -1129,7 +1129,7 @@ public class BackupService : IBackupService
 
     private async Task EnforceMaxBackupsAsync(CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         var rows = await db.BackupRecords.ToListAsync(ct);
@@ -1226,7 +1226,7 @@ public class BackupService : IBackupService
 
     private async Task MarkStaleInProgressAsync(CancellationToken ct)
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
 
         var stale = await db

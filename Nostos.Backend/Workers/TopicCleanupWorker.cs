@@ -9,8 +9,15 @@ public class TopicCleanupWorker(
     ILibraryMaintenanceCoordinator? maintenance = null
 ) : BackgroundService
 {
-    // Run every 1 hour
-    private readonly PeriodicTimer _timer = new(TimeSpan.FromHours(1));
+    // Run every 1 hour. Virtual so tests can drive the real loop with a clock
+    // they control instead of waiting for wall-clock time.
+    protected virtual TimeSpan CleanupInterval => TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// The clock the cleanup timer runs on. Overridden in tests so the interval
+    /// fires deterministically and no test waits for an hour of real time.
+    /// </summary>
+    protected virtual TimeProvider Clock => TimeProvider.System;
 
     /// <summary>
     /// Runs the Topic Cleanup Worker loop until the app is stopped.
@@ -19,6 +26,7 @@ public class TopicCleanupWorker(
     /// This method is called by the ASP.NET Core framework as part of the BackgroundService.
     /// It will run every hour until the app is stopped.
     /// If an exception occurs in the loop, it will be caught and logged, but the loop will continue.
+    /// A cancellation caused by host shutdown ends the loop quietly (no error entry).
     /// If the timer itself crashes, it will be logged as critical.
     /// </remarks>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -27,12 +35,21 @@ public class TopicCleanupWorker(
 
         try
         {
+            // Owned by this method, so it is disposed on every exit path,
+            // including host shutdown while a tick is pending.
+            using var timer = new PeriodicTimer(CleanupInterval, Clock);
+
             // Loop until the app stops
-            while (await _timer.WaitForNextTickAsync(stoppingToken))
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 try
                 {
-                    await DoWorkAsync(stoppingToken);
+                    await RunCycleAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Host shutdown in the middle of a cycle is not a failure.
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -40,6 +57,13 @@ public class TopicCleanupWorker(
                     // so the loop continues next tick.
                     logger.LogError(ex, "An error occurred during the Topic Cleanup cycle.");
                 }
+            }
+
+            if (stoppingToken.IsCancellationRequested)
+            {
+                logger.LogInformation(
+                    "Topic Cleanup Worker received stop signal and is shutting down."
+                );
             }
         }
         catch (OperationCanceledException)
@@ -57,6 +81,13 @@ public class TopicCleanupWorker(
     }
 
     /// <summary>
+    /// One cleanup cycle. Virtual so tests can drive the loop's cancellation and
+    /// error handling without a database.
+    /// </summary>
+    protected virtual Task RunCycleAsync(CancellationToken stoppingToken) =>
+        DoWorkAsync(stoppingToken);
+
+    /// <summary>
     /// Merges topic case variants still waiting under a pending key (a restore
     /// activated since startup can bring them; startup itself merges them in
     /// DatabaseBootstrapService), then cleans up orphaned topics (topics with
@@ -65,7 +96,7 @@ public class TopicCleanupWorker(
     private async Task DoWorkAsync(CancellationToken stoppingToken)
     {
         await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(stoppingToken);
-        using var scope = scopeFactory.CreateScope();
+        await using var scope = scopeFactory.CreateAsyncScope();
         var topicRepo = scope.ServiceProvider.GetRequiredService<ITopicRepository>();
 
         var mergedCount = await topicRepo.MergeCaseVariantsAsync(stoppingToken);
