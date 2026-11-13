@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Nostos.Backend.Providers.Litteraturbanken;
 
 namespace Nostos.Backend.Tests.Providers;
 
@@ -183,5 +184,32 @@ internal static class LitteraturbankenFixtures
         }
 
         return string.Empty;
+    }
+
+    /// <summary>The catalog page a recorded payload describes.</summary>
+    public static CatalogPage Page(string catalogJson) =>
+        JsonSerializer.Deserialize<CatalogPage>(
+            catalogJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+    /// <summary>The parsed record for every row of a recorded catalog payload.</summary>
+    public static IReadOnlyList<CatalogRecord> Records(string catalogJson) =>
+        Page(catalogJson).Data
+            .Select(LitteraturbankenCatalog.ToRecord)
+            .Where(record => record is not null)
+            .Select(record => record!)
+            .ToList();
+
+    /// <summary>The rights renderer built from the recorded license/provenance documents.</summary>
+    public static LitteraturbankenRightsCatalog RightsCatalog()
+    {
+        var licenses = JsonSerializer.Deserialize<Dictionary<string, string>>(RightsLicenseJson)!;
+        return LitteraturbankenRightsCatalog.Parse(licenses, ProvenanceElement());
+    }
+
+    public static JsonElement ProvenanceElement()
+    {
+        using var document = JsonDocument.Parse(ProvenanceJson);
+        return document.RootElement.Clone();
     }
 }
