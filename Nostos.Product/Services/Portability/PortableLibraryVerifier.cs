@@ -1641,18 +1641,23 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         }
     }
 
-    private static void CompareProjectedKeys<TKey>(
+    private static void CompareJoinPairs<TLeft, TRight>(
         FailureList failures,
         string entity,
         string field,
-        IEnumerable<TKey> expected,
-        IEnumerable<TKey> actual)
-        where TKey : notnull
+        IEnumerable<(TLeft LeftId, TRight RightId)> expected,
+        IEnumerable<(TLeft LeftId, TRight RightId)> actual)
+        where TLeft : notnull
+        where TRight : notnull
     {
         var expectedList = expected.ToList();
         var actualList = actual.ToList();
+        var expectedSet = expectedList.ToHashSet();
+        var actualSet = actualList.ToHashSet();
         if (expectedList.Count == actualList.Count
-            && expectedList.ToHashSet().SetEquals(actualList.ToHashSet()))
+            && expectedSet.Count == expectedList.Count
+            && actualSet.Count == actualList.Count
+            && expectedSet.SetEquals(actualSet))
         {
             return;
         }
@@ -1662,7 +1667,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             entity,
             null,
             field,
-            $"The candidate {entity} {field} set differs from the prepared import."));
+            $"The candidate {entity} {field} pairs differ from the prepared import."));
     }
 
     private static void CompareAddedAt<TKey>(
@@ -1673,10 +1678,22 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         IEnumerable<(TKey Key, DateTime AddedAt)> actual)
         where TKey : notnull
     {
+        var seen = new HashSet<TKey>();
         foreach (var (key, addedAt) in actual)
         {
-            if (expected.TryGetValue(key, out var expectedAddedAt)
-                && !CanonicalValuesEqual(addedAt, expectedAddedAt))
+            seen.Add(key);
+            if (!expected.TryGetValue(key, out var expectedAddedAt))
+            {
+                failures.Add(Failure(
+                    PortableLibraryVerificationErrorCodes.RelationshipMismatch,
+                    entity,
+                    null,
+                    field,
+                    $"The candidate {entity} contains an unexpected {field} pair."));
+                continue;
+            }
+
+            if (!CanonicalValuesEqual(addedAt, expectedAddedAt))
             {
                 failures.Add(Failure(
                     PortableLibraryVerificationErrorCodes.FieldMismatch,
@@ -1684,6 +1701,19 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                     null,
                     field,
                     $"A candidate {entity} {field} value does not match the prepared import."));
+            }
+        }
+
+        foreach (var missing in expected.Keys)
+        {
+            if (!seen.Contains(missing))
+            {
+                failures.Add(Failure(
+                    PortableLibraryVerificationErrorCodes.RelationshipMismatch,
+                    entity,
+                    null,
+                    field,
+                    $"The candidate {entity} is missing an expected {field} pair."));
             }
         }
     }
@@ -1792,7 +1822,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         IReadOnlyDictionary<string, string> NotComparedProperties);
 
     private sealed record ComparisonEntry<TContext>(
-        string ArchiveProperty,
+        IReadOnlyList<string> ArchiveProperties,
         IReadOnlyList<EntityField> CandidateFields,
         Action<TContext, FailureList> Compare);
 
@@ -1886,7 +1916,14 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         string archiveProperty,
         IReadOnlyList<EntityField> candidateFields,
         Action<TContext, FailureList> compare) =>
-        new(archiveProperty, candidateFields, compare);
+        new([archiveProperty], candidateFields, compare);
+
+    private static ComparisonEntry<TContext> PairEntry<TContext>(
+        string leftArchiveProperty,
+        string rightArchiveProperty,
+        IReadOnlyList<EntityField> candidateFields,
+        Action<TContext, FailureList> compare) =>
+        new([leftArchiveProperty, rightArchiveProperty], candidateFields, compare);
 
     private static readonly IReadOnlyList<ComparisonEntry<WorkContext>> WorkComparisons =
     [
@@ -2435,24 +2472,18 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
 
     private static readonly IReadOnlyList<ComparisonEntry<MembershipContext>> BookCollectionComparisons =
     [
-        Entry<MembershipContext>(
+        PairEntry<MembershipContext>(
             nameof(PortableBookCollection.BookId),
-            Ef(("BookCollectionModel", nameof(BookCollectionModel.BookId))),
-            (context, failures) => CompareProjectedKeys(
-                failures,
-                "bookCollection",
-                nameof(PortableBookCollection.BookId),
-                context.Expected.Select(item => item.BookId),
-                context.Rows.Select(row => row.BookId))),
-        Entry<MembershipContext>(
             nameof(PortableBookCollection.CollectionId),
-            Ef(("BookCollectionModel", nameof(BookCollectionModel.CollectionId))),
-            (context, failures) => CompareProjectedKeys(
+            Ef(
+                ("BookCollectionModel", nameof(BookCollectionModel.BookId)),
+                ("BookCollectionModel", nameof(BookCollectionModel.CollectionId))),
+            (context, failures) => CompareJoinPairs(
                 failures,
                 "bookCollection",
-                nameof(PortableBookCollection.CollectionId),
-                context.Expected.Select(item => item.CollectionId),
-                context.Rows.Select(row => row.CollectionId))),
+                $"{nameof(PortableBookCollection.BookId)},{nameof(PortableBookCollection.CollectionId)}",
+                context.Expected.Select(item => (item.BookId, item.CollectionId)),
+                context.Rows.Select(row => (row.BookId, row.CollectionId)))),
         Entry<MembershipContext>(
             nameof(PortableBookCollection.AddedAt),
             Ef(("BookCollectionModel", nameof(BookCollectionModel.AddedAt))),
@@ -2472,46 +2503,34 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
 
     private static readonly IReadOnlyList<ComparisonEntry<NoteTopicContext>> NoteTopicComparisons =
     [
-        Entry<NoteTopicContext>(
+        PairEntry<NoteTopicContext>(
             nameof(PortableNoteTopic.NoteId),
-            Ef(("NoteTopicModel", nameof(NoteTopicModel.NoteId))),
-            (context, failures) => CompareProjectedKeys(
-                failures,
-                "noteTopic",
-                nameof(PortableNoteTopic.NoteId),
-                context.Expected.Select(item => item.NoteId),
-                context.Rows.Select(row => row.NoteId))),
-        Entry<NoteTopicContext>(
             nameof(PortableNoteTopic.TopicId),
-            Ef(("NoteTopicModel", nameof(NoteTopicModel.TopicId))),
-            (context, failures) => CompareProjectedKeys(
+            Ef(
+                ("NoteTopicModel", nameof(NoteTopicModel.NoteId)),
+                ("NoteTopicModel", nameof(NoteTopicModel.TopicId))),
+            (context, failures) => CompareJoinPairs(
                 failures,
                 "noteTopic",
-                nameof(PortableNoteTopic.TopicId),
-                context.Expected.Select(item => item.TopicId),
-                context.Rows.Select(row => row.TopicId))),
+                $"{nameof(PortableNoteTopic.NoteId)},{nameof(PortableNoteTopic.TopicId)}",
+                context.Expected.Select(item => (item.NoteId, item.TopicId)),
+                context.Rows.Select(row => (row.NoteId, row.TopicId)))),
     ];
 
     private static readonly IReadOnlyList<ComparisonEntry<WritingNoteContext>> WritingNoteComparisons =
     [
-        Entry<WritingNoteContext>(
+        PairEntry<WritingNoteContext>(
             nameof(PortableWritingNote.WritingId),
-            Ef(("WritingNoteModel", nameof(WritingNoteModel.WritingId))),
-            (context, failures) => CompareProjectedKeys(
-                failures,
-                "writingNote",
-                nameof(PortableWritingNote.WritingId),
-                context.Expected.Select(item => item.WritingId),
-                context.Rows.Select(row => row.WritingId))),
-        Entry<WritingNoteContext>(
             nameof(PortableWritingNote.NoteId),
-            Ef(("WritingNoteModel", nameof(WritingNoteModel.NoteId))),
-            (context, failures) => CompareProjectedKeys(
+            Ef(
+                ("WritingNoteModel", nameof(WritingNoteModel.WritingId)),
+                ("WritingNoteModel", nameof(WritingNoteModel.NoteId))),
+            (context, failures) => CompareJoinPairs(
                 failures,
                 "writingNote",
-                nameof(PortableWritingNote.NoteId),
-                context.Expected.Select(item => item.NoteId),
-                context.Rows.Select(row => row.NoteId))),
+                $"{nameof(PortableWritingNote.WritingId)},{nameof(PortableWritingNote.NoteId)}",
+                context.Expected.Select(item => (item.WritingId, item.NoteId)),
+                context.Rows.Select(row => (row.WritingId, row.NoteId)))),
         Entry<WritingNoteContext>(
             nameof(PortableWritingNote.AddedAt),
             Ef(("WritingNoteModel", nameof(WritingNoteModel.AddedAt))),
@@ -2598,7 +2617,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
     private static RecordComparisonSpec Spec<TContext>(
         IReadOnlyList<ComparisonEntry<TContext>> entries) =>
         new(
-            entries.Select(entry => entry.ArchiveProperty).ToArray(),
+            entries.SelectMany(entry => entry.ArchiveProperties).ToArray(),
             entries.SelectMany(entry => entry.CandidateFields).ToArray(),
             EmptyExclusions);
 }
