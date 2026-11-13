@@ -11,30 +11,7 @@ namespace Nostos.Backend.Tests.Providers;
 
 public sealed class GutenbergProviderTests
 {
-    private static string LoadFixture(string filename)
-    {
-        var basePath = AppContext.BaseDirectory;
-        var directPath = Path.Combine(basePath, "Fixtures", "gutenberg", filename);
-        if (File.Exists(directPath))
-            return File.ReadAllText(directPath);
-
-        // Fallback: look upward from base directory
-        var current = new DirectoryInfo(basePath);
-        while (current is not null)
-        {
-            var candidate = Path.Combine(current.FullName, "Fixtures", "gutenberg", filename);
-            if (File.Exists(candidate))
-                return File.ReadAllText(candidate);
-
-            var nestedCandidate = Path.Combine(current.FullName, "Nostos.Backend.Tests", "Fixtures", "gutenberg", filename);
-            if (File.Exists(nestedCandidate))
-                return File.ReadAllText(nestedCandidate);
-
-            current = current.Parent;
-        }
-
-        throw new FileNotFoundException($"Gutenberg test fixture '{filename}' could not be located in output directory or repo tree.");
-    }
+    private static string LoadFixture(string filename) => GutenbergFixtures.Load(filename);
 
     private static (GutenbergProvider Provider, StubHttpMessageHandler Handler) CreateProvider(StubHttpMessageHandler? handler = null)
     {

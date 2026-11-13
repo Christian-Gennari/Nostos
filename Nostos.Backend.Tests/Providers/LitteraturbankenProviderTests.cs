@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,66 +14,9 @@ namespace Nostos.Backend.Tests.Providers;
 
 public sealed class LitteraturbankenProviderTests
 {
-    private const string RightsLicenseJson = """
-        {
-          "cc-0": "<text><p>Utgåvan är fri från kända upphovsrättsliga begränsningar. CC0. Hänvisa till Litteraturbanken.</p><a rel=\"license\" href=\"https://creativecommons.org/publicdomain/zero/1.0/deed.sv\">CC0</a></text>",
-          "pd": "<text><p>Detta verk är fritt från kända upphovsrättsliga begränsningar. Hänvisa till {{provenance}} och Litteraturbanken.</p><a rel=\"license\" href=\"https://creativecommons.org/publicdomain/mark/1.0/deed.sv\">Public Domain</a></text>",
-          "cc-by": "<text><p>Litteraturbanken. För detta verk gäller licensen CC BY.</p><a rel=\"license\" href=\"https://creativecommons.org/licenses/by/4.0/deed.sv\">CC BY</a></text>"
-        }
-        """;
-
-    private const string ProvenanceJson = """
-        {
-          "GUB": {
-            "fullname": "Göteborgs universitetsbibliotek",
-            "text": {
-              "etext": "Det exemplar som ligger till grund för Litteraturbankens utgåva tillhör Göteborgs universitetsbibliotek{{signum}}.",
-              "faksimilprint": "Det avbildade exemplaret tillhör Göteborgs universitetsbibliotek{{signum}}.",
-              "faksimilnoprint": "Det avbildade manuskriptet tillhör Göteborgs universitetsbibliotek{{signum}}."
-            }
-          }
-        }
-        """;
-
-    private const string TwoFormatCatalogJson = """
-        {
-          "hits": 2,
-          "distinct_hits": 1,
-          "data": [
-            {
-              "lbworkid": "lb100",
-              "title": "Kåtornas folk",
-              "shorttitle": "Kåtornas folk",
-              "titleid": "KatornasFolk",
-              "work_titleid": "KatornasFolk",
-              "mediatype": "etext",
-              "license": "cc-0",
-              "show": true,
-              "searchable": true,
-              "sort_date_imprint": { "plain": "1916" },
-              "authors": [{ "authorid": "NordstromEB", "full_name": "Ester Blenda Nordström" }],
-              "provenance": [{ "library": "GUB", "signum": "Geogr. Sv. Lappland" }],
-              "export": [{ "type": "epub", "size": 301593 }]
-            },
-            {
-              "lbworkid": "lb100",
-              "title": "Kåtornas folk",
-              "shorttitle": "Kåtornas folk",
-              "titleid": "KatornasFolk",
-              "work_titleid": "KatornasFolk",
-              "mediatype": "faksimil",
-              "license": "pd",
-              "printed": true,
-              "show": true,
-              "searchable": true,
-              "sort_date_imprint": { "plain": "1916" },
-              "authors": [{ "authorid": "NordstromEB", "full_name": "Ester Blenda Nordström" }],
-              "provenance": [{ "library": "GUB", "signum": "Shelf 42" }],
-              "export": [{ "type": "pdf", "size": 8000000 }]
-            }
-          ]
-        }
-        """;
+    private const string RightsLicenseJson = LitteraturbankenFixtures.RightsLicenseJson;
+    private const string ProvenanceJson = LitteraturbankenFixtures.ProvenanceJson;
+    private const string TwoFormatCatalogJson = LitteraturbankenFixtures.TwoFormatCatalogJson;
 
     private static (LitteraturbankenProvider Provider, StubHttpMessageHandler Handler) CreateProvider(
         Func<HttpRequestMessage, HttpResponseMessage>? route = null)
@@ -140,11 +82,11 @@ public sealed class LitteraturbankenProviderTests
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/api/query_string/etext,faksimil")
-                return Json(TwoFormatCatalogJson);
+                return LitteraturbankenFixtures.Json(TwoFormatCatalogJson);
             if (path == "/red/etc/license/license.json")
-                return Json(RightsLicenseJson);
+                return LitteraturbankenFixtures.Json(RightsLicenseJson);
             if (path == "/red/etc/provenance/provenance.json")
-                return Json(ProvenanceJson);
+                return LitteraturbankenFixtures.Json(ProvenanceJson);
 
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
@@ -171,7 +113,7 @@ public sealed class LitteraturbankenProviderTests
 
         var searchRequest = handler.RecordedRequests.Single(request =>
             request.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil");
-        var query = ReadQueryValue(searchRequest.RequestUri!, "q");
+        var query = LitteraturbankenFixtures.ReadQueryValue(searchRequest.RequestUri!, "q");
         query.Should().Contain("searchable:true");
         query.Should().Contain("show:true");
         query.Should().Contain("license:cc-0 OR license:pd OR license:cc-by");
@@ -185,11 +127,11 @@ public sealed class LitteraturbankenProviderTests
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/api/query_string/etext,faksimil")
-                return Json(TwoFormatCatalogJson);
+                return LitteraturbankenFixtures.Json(TwoFormatCatalogJson);
             if (path == "/red/etc/license/license.json")
-                return Json(RightsLicenseJson);
+                return LitteraturbankenFixtures.Json(RightsLicenseJson);
             if (path == "/red/etc/provenance/provenance.json")
-                return Json(ProvenanceJson);
+                return LitteraturbankenFixtures.Json(ProvenanceJson);
 
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
@@ -221,25 +163,11 @@ public sealed class LitteraturbankenProviderTests
     [Fact]
     public async Task GetItem_RejectsUnknownRightsAndInvalidIdsBeforeAcquisition()
     {
-        var restrictedJson = """
-            {
-              "hits": 1,
-              "data": [{
-                "lbworkid": "lb200",
-                "title": "Restricted",
-                "titleid": "Restricted",
-                "mediatype": "etext",
-                "license": "lb-2-20120306",
-                "show": true,
-                "authors": [{ "authorid": "Author", "full_name": "Author Name" }],
-                "export": [{ "type": "epub", "size": 200000 }]
-              }]
-            }
-            """;
+        var restrictedJson = LitteraturbankenFixtures.RestrictedCatalogJson;
         var (provider, handler) = CreateProvider(request =>
         {
             if (request.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil")
-                return Json(restrictedJson);
+                return LitteraturbankenFixtures.Json(restrictedJson);
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
@@ -339,11 +267,11 @@ public sealed class LitteraturbankenProviderTests
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/api/query_string/etext,faksimil")
-                return Json(TwoFormatCatalogJson);
+                return LitteraturbankenFixtures.Json(TwoFormatCatalogJson);
             if (path == "/red/etc/license/license.json")
-                return Json(RightsLicenseJson);
+                return LitteraturbankenFixtures.Json(RightsLicenseJson);
             if (path == "/red/etc/provenance/provenance.json")
-                return Json(ProvenanceJson);
+                return LitteraturbankenFixtures.Json(ProvenanceJson);
 
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
@@ -364,91 +292,27 @@ public sealed class LitteraturbankenProviderTests
 
         var request = handler.RecordedRequests.Single(message =>
             message.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil");
-        ReadQueryValue(request.RequestUri!, "from").Should().Be("0");
-        ReadQueryValue(request.RequestUri!, "to").Should().Be("100");
-        ReadQueryValue(request.RequestUri!, "q")
+        LitteraturbankenFixtures.ReadQueryValue(request.RequestUri!, "from").Should().Be("0");
+        LitteraturbankenFixtures.ReadQueryValue(request.RequestUri!, "to").Should().Be("100");
+        LitteraturbankenFixtures.ReadQueryValue(request.RequestUri!, "q")
             .Should().Contain("searchable:true")
             .And.Contain("show:true")
             .And.Contain("license:cc-0 OR license:pd OR license:cc-by");
-    }
-
-    /// <summary>
-    /// Behaves like the live catalog for the snapshot query: honours
-    /// <c>sort_field</c> and the <c>lbworkid:&gt;=</c> filter, and rejects
-    /// offset paging at 10,000 rows (the real service answers HTTP 500).
-    /// </summary>
-    private static HttpResponseMessage ServeCatalog(
-        HttpRequestMessage request,
-        IReadOnlyList<(string Id, object Row)> catalog)
-    {
-        var path = request.RequestUri!.AbsolutePath;
-        if (path == "/red/etc/license/license.json")
-            return Json(RightsLicenseJson);
-        if (path == "/red/etc/provenance/provenance.json")
-            return Json(ProvenanceJson);
-        if (path != "/api/query_string/etext,faksimil")
-            return new HttpResponseMessage(HttpStatusCode.NotFound);
-
-        var from = int.Parse(ReadQueryValue(request.RequestUri!, "from"));
-        var to = int.Parse(ReadQueryValue(request.RequestUri!, "to"));
-        if (from >= 10_000)
-            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
-
-        var query = ReadQueryValue(request.RequestUri!, "q");
-        IEnumerable<(string Id, object Row)> matches = catalog;
-        const string marker = "lbworkid:>=";
-        var markerIndex = query.IndexOf(marker, StringComparison.Ordinal);
-        if (markerIndex >= 0)
-        {
-            var after = query[(markerIndex + marker.Length)..].Split(' ')[0];
-            matches = matches.Where(entry =>
-                string.CompareOrdinal(entry.Id, after) >= 0);
-        }
-
-        // Default order scatters the rows of one work, as the live catalog does.
-        matches = ReadQueryValue(request.RequestUri!, "sort_field") == "lbworkid|asc"
-            ? matches.OrderBy(entry => entry.Id, StringComparer.Ordinal)
-            : matches.OrderBy(entry => (entry.Id.GetHashCode() & 0x7fffffff) % 997)
-                .ThenBy(entry => entry.Id, StringComparer.Ordinal);
-
-        var all = matches.ToArray();
-        var page = all.Skip(from).Take(to - from).Select(entry => entry.Row).ToArray();
-        return Json(CatalogJson(all.Length, page));
-    }
-
-    private static async Task<(List<ProviderItem> Items, int Pages)> WalkSnapshotAsync(
-        LitteraturbankenProvider provider)
-    {
-        var items = new List<ProviderItem>();
-        string? cursor = null;
-        var pages = 0;
-        do
-        {
-            var snapshot = await provider.ReadAsync(
-                new ProviderSnapshotRequest(Cursor: cursor),
-                CancellationToken.None);
-            items.AddRange(await ReadItemsAsync(snapshot.Items));
-            cursor = snapshot.NextCursor;
-            pages++;
-        }
-        while (cursor is not null && pages < 20);
-
-        return (items, pages);
     }
 
     [Fact]
     public async Task Snapshot_OverlapsPageBoundaryToKeepAllFormatsOfOneWorkTogether()
     {
         var catalog = Enumerable.Range(1, 99)
-            .Select(index => ("lb" + (1000 + index), CatalogRow("lb" + (1000 + index), "Work " + index)))
+            .Select(index => ("lb" + (1000 + index), LitteraturbankenFixtures.CatalogRow("lb" + (1000 + index), "Work " + index)))
             .Concat(
             [
-                ("lb1100", CatalogRow("lb1100", "Kåtornas folk")),
-                ("lb1100", CatalogRow("lb1100", "Kåtornas folk", mediaType: "faksimil", format: "pdf", size: 8_000_000)),
-                ("lb9999", CatalogRow("lb9999", "Last work")),
+                ("lb1100", LitteraturbankenFixtures.CatalogRow("lb1100", "Kåtornas folk")),
+                ("lb1100", LitteraturbankenFixtures.CatalogRow("lb1100", "Kåtornas folk", mediaType: "faksimil", format: "pdf", size: 8_000_000)),
+                ("lb9999", LitteraturbankenFixtures.CatalogRow("lb9999", "Last work")),
             ])
             .ToArray();
-        var (provider, handler) = CreateProvider(request => ServeCatalog(request, catalog));
+        var (provider, handler) = CreateProvider(request => LitteraturbankenFixtures.ServeCatalog(request, catalog));
 
         var firstPage = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
         var firstItems = await ReadItemsAsync(firstPage.Items);
@@ -471,11 +335,11 @@ public sealed class LitteraturbankenProviderTests
             .ToArray();
         catalogRequests.Should().HaveCount(2);
         catalogRequests.Should().OnlyContain(message =>
-            ReadQueryValue(message.RequestUri!, "from") == "0"
-            && ReadQueryValue(message.RequestUri!, "to") == "100"
-            && ReadQueryValue(message.RequestUri!, "sort_field") == "lbworkid|asc");
+            LitteraturbankenFixtures.ReadQueryValue(message.RequestUri!, "from") == "0"
+            && LitteraturbankenFixtures.ReadQueryValue(message.RequestUri!, "to") == "100"
+            && LitteraturbankenFixtures.ReadQueryValue(message.RequestUri!, "sort_field") == "lbworkid|asc");
         var queries = catalogRequests
-            .Select(message => ReadQueryValue(message.RequestUri!, "q"))
+            .Select(message => LitteraturbankenFixtures.ReadQueryValue(message.RequestUri!, "q"))
             .ToArray();
         queries.Should().ContainSingle(query => !query.Contains("lbworkid:>="));
         queries.Should().ContainSingle(query => query.EndsWith("lbworkid:>=lb1100", StringComparison.Ordinal));
@@ -492,15 +356,15 @@ public sealed class LitteraturbankenProviderTests
         for (var index = 0; index < 230; index++)
         {
             var id = "lb" + (20000 + index);
-            catalog.Add((id, CatalogRow(id, "Work " + index)));
+            catalog.Add((id, LitteraturbankenFixtures.CatalogRow(id, "Work " + index)));
             if (index % 7 == 0)
             {
-                catalog.Add((id, CatalogRow(id, "Work " + index, mediaType: "faksimil", format: "pdf", size: 4_000_000)));
+                catalog.Add((id, LitteraturbankenFixtures.CatalogRow(id, "Work " + index, mediaType: "faksimil", format: "pdf", size: 4_000_000)));
             }
         }
 
-        catalog.Add(("lb0889slfmxtqsqq3m", CatalogRow("lb0889slfmxtqsqq3m", "Letter id")));
-        var (provider, handler) = CreateProvider(request => ServeCatalog(request, catalog));
+        catalog.Add(("lb0889slfmxtqsqq3m", LitteraturbankenFixtures.CatalogRow("lb0889slfmxtqsqq3m", "Letter id")));
+        var (provider, handler) = CreateProvider(request => LitteraturbankenFixtures.ServeCatalog(request, catalog));
 
         var (items, pages) = await WalkSnapshotAsync(provider);
 
@@ -510,7 +374,7 @@ public sealed class LitteraturbankenProviderTests
             .And.HaveCount(230);
         handler.RecordedRequests
             .Where(message => message.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil")
-            .Should().OnlyContain(message => ReadQueryValue(message.RequestUri!, "from") == "0");
+            .Should().OnlyContain(message => LitteraturbankenFixtures.ReadQueryValue(message.RequestUri!, "from") == "0");
     }
 
     [Fact]
@@ -572,43 +436,25 @@ public sealed class LitteraturbankenProviderTests
         await cancelAct.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    private static HttpResponseMessage Json(string value) =>
-        new(HttpStatusCode.OK)
-        {
-            Content = new StringContent(value, System.Text.Encoding.UTF8, "application/json"),
-        };
-
-    private static object CatalogRow(
-        string id,
-        string title,
-        string mediaType = "etext",
-        string format = "epub",
-        long size = 301593) => new
+    private static async Task<(List<ProviderItem> Items, int Pages)> WalkSnapshotAsync(
+        LitteraturbankenProvider provider)
     {
-        lbworkid = id,
-        title,
-        shorttitle = title,
-        titleid = title.Replace(' ', '_'),
-        work_titleid = title.Replace(' ', '_'),
-        mediatype = mediaType,
-        license = mediaType == "faksimil" ? "pd" : "cc-0",
-        printed = true,
-        searchable = true,
-        show = true,
-        sort_date_imprint = new { plain = "1916" },
-        authors = new[] { new { authorid = "TestAuthor", full_name = "Test Author" } },
-        provenance = new[] { new { library = "GUB", signum = "Shelf 1" } },
-        export = new[] { new { type = format, size } },
-    };
-
-    private static string CatalogJson(int hits, IReadOnlyCollection<object> rows) =>
-        JsonSerializer.Serialize(new
+        var items = new List<ProviderItem>();
+        string? cursor = null;
+        var pages = 0;
+        do
         {
-            hits,
-            distinct_hits = rows.Select(row => JsonSerializer.SerializeToElement(row)
-                .GetProperty("lbworkid").GetString()).Distinct().Count(),
-            data = rows,
-        });
+            var snapshot = await provider.ReadAsync(
+                new ProviderSnapshotRequest(Cursor: cursor),
+                CancellationToken.None);
+            items.AddRange(await ReadItemsAsync(snapshot.Items));
+            cursor = snapshot.NextCursor;
+            pages++;
+        }
+        while (cursor is not null && pages < 20);
+
+        return (items, pages);
+    }
 
     private static async Task<List<ProviderItem>> ReadItemsAsync(IAsyncEnumerable<ProviderItem> items)
     {
@@ -616,20 +462,5 @@ public sealed class LitteraturbankenProviderTests
         await foreach (var item in items)
             result.Add(item);
         return result;
-    }
-
-    private static string ReadQueryValue(Uri uri, string name)
-    {
-        foreach (var field in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var separator = field.IndexOf('=');
-            if (separator < 0)
-                continue;
-
-            if (WebUtility.UrlDecode(field[..separator]) == name)
-                return WebUtility.UrlDecode(field[(separator + 1)..]) ?? string.Empty;
-        }
-
-        return string.Empty;
     }
 }
