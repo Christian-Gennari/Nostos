@@ -25,11 +25,12 @@ public class NoteProcessorService
     public async Task ProcessNoteAsync(
         NoteModel note,
         IReadOnlyCollection<string>? removed = null,
-        bool textIsComplete = false)
+        bool textIsComplete = false,
+        CancellationToken ct = default)
     {
         // A. Clear existing links for this note (Full refresh strategy), keeping
         //    what only the links knew.
-        var linkOnly = await _topicRepo.ClearNoteLinksAsync(note);
+        var linkOnly = await _topicRepo.ClearNoteLinksAsync(note, ct);
         if (linkOnly.Count != 0 && !textIsComplete)
         {
             var dropped = (removed ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -43,7 +44,7 @@ public class NoteProcessorService
             return;
 
         // C. Find existing topics in DB to reuse
-        var existingTopics = await _topicRepo.GetByNamesAsync(foundNames);
+        var existingTopics = await _topicRepo.GetByNamesAsync(foundNames, ct);
 
         var existingNames = existingTopics
             .Select(c => c.Topic)

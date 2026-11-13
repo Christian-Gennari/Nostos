@@ -65,14 +65,7 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
         var db = new NostosDbContext(options);
         var topics = new TopicRepository(db);
         var noteRepository = new NoteRepository(db);
-        var noteService = new NoteService(
-            noteRepository,
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            new PassThroughThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        var noteService = NoteServiceGraph.Create(db, new PassThroughThoughtProcessor());
 
         var library = new LibraryService(
             factory,

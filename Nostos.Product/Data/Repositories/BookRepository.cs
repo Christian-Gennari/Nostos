@@ -26,6 +26,20 @@ public class BookRepository : IBookRepository
         return await _db.Books.FindAsync([id], cancellationToken);
     }
 
+    public async Task<IReadOnlyDictionary<Guid, int>> CountEditionsByWorkAsync(
+        IReadOnlyCollection<Guid> workIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (workIds.Count == 0) return new Dictionary<Guid, int>();
+
+        return await _db.Books
+            .AsNoTracking()
+            .Where(b => workIds.Contains(b.WorkId))
+            .GroupBy(b => b.WorkId)
+            .Select(g => new { WorkId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(row => row.WorkId, row => row.Count, cancellationToken);
+    }
+
     public async Task<int> CountBooksWithFilesAsync(CancellationToken cancellationToken = default)
     {
         return await _db.Books.AsNoTracking().CountAsync(BooksWithFiles, cancellationToken);

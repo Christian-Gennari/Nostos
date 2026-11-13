@@ -226,15 +226,7 @@ internal static class AuthorSearchSeed
 
     public static NoteService CreateService(NostosDbContext db)
     {
-        var topics = new TopicRepository(db);
-        return new NoteService(
-            new NoteRepository(db),
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            new FakeThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        return NoteServiceGraph.Create(db, new FakeThoughtProcessor());
     }
 
     public static async Task<Ids> SeedAsync(NostosDbContext db)

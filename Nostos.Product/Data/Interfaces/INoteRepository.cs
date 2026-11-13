@@ -15,6 +15,27 @@ public interface INoteRepository
     Task<NoteModel?> GetForReadingAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The listed notes that exist, with their topics and their book's
+    /// headline, for reading only. Ids naming no note are left out.
+    /// </summary>
+    Task<List<NoteModel>> GetManyForReadingAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The listed notes that exist, with their topic links, tracked for an edit.</summary>
+    Task<List<NoteModel>> GetManyWithTopicsAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The topic links of one note, read from the database rather than the
+    /// tracked navigation, so a repeated link request sees the committed link.
+    /// </summary>
+    Task<IReadOnlyList<NoteTopicLink>> GetTopicLinksAsync(
+        Guid noteId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets a note with its Book eagerly loaded (for building the response DTO after create).
     /// </summary>
     Task<NoteModel?> GetByIdWithBookAsync(Guid id, CancellationToken cancellationToken = default);
@@ -119,6 +140,9 @@ public interface INoteRepository
 }
 
 public sealed record NoteBookCount(Guid BookId, string BookTitle, int NoteCount);
+
+/// <summary>One committed note–topic link, as stored.</summary>
+public sealed record NoteTopicLink(Guid TopicId, string Name);
 
 /// <summary>
 /// What a list of notes in the Brain shows: one place (everything, unsorted,

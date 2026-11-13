@@ -614,16 +614,8 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
 
         // The same scoped context backs every repository and the processor, so
         // create/update stay one unit of work exactly as in the web host.
-        var topics = new TopicRepository(db);
         var thoughts = new FakeThoughtProcessor();
-        var service = new NoteService(
-            new NoteRepository(db),
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            thoughts,
-            db,
-            NullLogger<NoteService>.Instance);
+        var service = NoteServiceGraph.Create(db, thoughts);
 
         return new Harness(db, service, thoughts);
     }

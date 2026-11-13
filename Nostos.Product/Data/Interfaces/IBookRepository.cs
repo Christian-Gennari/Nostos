@@ -7,6 +7,14 @@ public interface IBookRepository
     Task<BookModel?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// How many editions each listed work has, keyed by work id: one query for a
+    /// page of notes, never one per note.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, int>> CountEditionsByWorkAsync(
+        IReadOnlyCollection<Guid> workIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Number of books that have an uploaded file. Used by the OPDS catalog
     /// feed to describe the whole collection without materializing it.
     /// </summary>

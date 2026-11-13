@@ -16,8 +16,8 @@ public static class NotesEndpoints
         // GET notes by book
         group.MapGet(
             "/books/{bookId}/notes",
-            async (Guid bookId, INoteService notes) =>
-                Results.Ok(await notes.GetByBookAsync(bookId))
+            async (Guid bookId, INoteService notes, CancellationToken ct) =>
+                Results.Ok(await notes.GetByBookAsync(bookId, ct))
         );
 
         // GET the chapter titles of an EPUB in reading order (issue #1382), so
@@ -32,9 +32,9 @@ public static class NotesEndpoints
         // GET one canonical note for exact note/evidence deep-links.
         group.MapGet(
             "/notes/{id:guid}",
-            async (Guid id, INoteService notes) =>
+            async (Guid id, INoteService notes, CancellationToken ct) =>
             {
-                var note = await notes.GetAsync(id);
+                var note = await notes.GetAsync(id, ct);
                 return note is null ? Results.NotFound() : Results.Ok(note);
             }
         );
@@ -76,8 +76,8 @@ public static class NotesEndpoints
         // topic row can ever lead to.
         group.MapGet(
             "/notes/search",
-            async (string? query, INoteService notes, int? limit) =>
-                Results.Ok(await notes.SearchAsync(query ?? string.Empty, limit ?? 50))
+            async (string? query, INoteService notes, int? limit, CancellationToken ct) =>
+                Results.Ok(await notes.SearchAsync(query ?? string.Empty, limit ?? 50, ct))
         );
 
         // A paged, searchable home for every saved note, whether or not it has a
@@ -87,7 +87,7 @@ public static class NotesEndpoints
             "/notes",
             async (INoteService notes, string? query, Guid? bookId, bool? withoutTopics,
                 bool? oldestFirst, int? limit, int? offset, string? kind, Guid? topicId,
-                Guid? withTopicId, string? order, Guid? workId) =>
+                Guid? withTopicId, string? order, Guid? workId, CancellationToken ct) =>
             {
                 if (!TryParseOrder(order, oldestFirst ?? false, out var parsed))
                     return Results.BadRequest(new { error = "order is newest, oldest or book." });
@@ -95,14 +95,15 @@ public static class NotesEndpoints
                 // workId: the notes of every edition of one book; bookId: one edition.
                 var browse = new NoteBrowseQuery(query, bookId, withoutTopics ?? false, kind,
                     topicId, withTopicId, parsed, workId);
-                return Results.Ok(await notes.BrowseAsync(browse, limit ?? 25, offset ?? 0));
+                return Results.Ok(await notes.BrowseAsync(browse, limit ?? 25, offset ?? 0, ct));
             }
         );
 
         // How many notes the Brain's fixed places hold: All notes, Passages, Unsorted.
         group.MapGet(
             "/notes/summary",
-            async (INoteService notes) => Results.Ok(await notes.GetSummaryAsync())
+            async (INoteService notes, CancellationToken ct) =>
+                Results.Ok(await notes.GetSummaryAsync(ct))
         );
 
         // The books that have notes in one place (the same filters as /notes,
@@ -110,9 +111,9 @@ public static class NotesEndpoints
         group.MapGet(
             "/notes/books",
             async (INoteService notes, string? query, bool? withoutTopics, string? kind,
-                Guid? topicId, Guid? withTopicId) =>
+                Guid? topicId, Guid? withTopicId, CancellationToken ct) =>
                 Results.Ok(await notes.GetBookFacetsAsync(new NoteBrowseQuery(
-                    query, null, withoutTopics ?? false, kind, topicId, withTopicId)))
+                    query, null, withoutTopics ?? false, kind, topicId, withTopicId), ct))
         );
 
         // Notes linked to no topic, so they can be read at all.
@@ -124,8 +125,8 @@ public static class NotesEndpoints
         // total alongside a bounded page.
         group.MapGet(
             "/notes/unlinked",
-            async (INoteService notes, int? limit, int? offset) =>
-                Results.Ok(await notes.GetUnlinkedAsync(limit ?? 50, offset ?? 0))
+            async (INoteService notes, int? limit, int? offset, CancellationToken ct) =>
+                Results.Ok(await notes.GetUnlinkedAsync(limit ?? 50, offset ?? 0, ct))
         );
 
         // CREATE note. Optional `Idempotency-Key` + `X-Client-Id` headers make
@@ -133,11 +134,12 @@ public static class NotesEndpoints
         // keep the original non-idempotent behaviour.
         group.MapPost(
             "/books/{bookId}/notes",
-            async (Guid bookId, CreateNoteDto dto, INoteService notes, HttpRequest request) =>
+            async (Guid bookId, CreateNoteDto dto, INoteService notes, HttpRequest request,
+                CancellationToken ct) =>
             {
                 var clientId = HeaderValue(request, "X-Client-Id");
                 var idempotencyKey = HeaderValue(request, "Idempotency-Key");
-                var result = await notes.CreateAsync(bookId, dto, clientId, idempotencyKey);
+                var result = await notes.CreateAsync(bookId, dto, clientId, idempotencyKey, ct);
                 if (result.Success)
                     return Results.Created($"/api/notes/{result.Value!.Id}", result.Value);
 
@@ -320,9 +322,9 @@ public static class NotesEndpoints
         // UPDATE note
         group.MapPut(
             "/notes/{id}",
-            async (Guid id, UpdateNoteDto dto, INoteService notes) =>
+            async (Guid id, UpdateNoteDto dto, INoteService notes, CancellationToken ct) =>
             {
-                var result = await notes.UpdateAsync(id, dto);
+                var result = await notes.UpdateAsync(id, dto, ct);
                 if (result.Success)
                     return Results.Ok(result.Value);
                 if (result.ErrorCode == NoteErrorCodes.EditConflict)
@@ -351,9 +353,9 @@ public static class NotesEndpoints
         // DELETE note
         group.MapDelete(
             "/notes/{id}",
-            async (Guid id, INoteService notes) =>
+            async (Guid id, INoteService notes, CancellationToken ct) =>
             {
-                var result = await notes.DeleteAsync(id);
+                var result = await notes.DeleteAsync(id, ct);
                 return result.Success ? Results.NoContent() : Results.NotFound();
             }
         );

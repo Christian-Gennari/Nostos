@@ -108,14 +108,7 @@ public sealed class BookReadShapesTests : IClassFixture<SqliteTestFixture>
         await using var db = await store.Factory.CreateDbContextAsync();
         var notes = new NoteRepository(db);
         var topics = new TopicRepository(db);
-        var noteService = new NoteService(
-            notes,
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            new FakeThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
         store.Commands.Clear();
 

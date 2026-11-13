@@ -352,15 +352,7 @@ public sealed class NoteIdempotencyTests : IClassFixture<SqliteTestFixture>
     private static Harness NewHarness(string path)
     {
         var db = CreateContext(path);
-        var topics = new TopicRepository(db);
-        var service = new NoteService(
-            new NoteRepository(db),
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            new FakeThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        var service = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
         return new Harness(db, service);
     }
 

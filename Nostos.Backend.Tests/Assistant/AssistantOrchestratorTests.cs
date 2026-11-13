@@ -4326,14 +4326,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var db = new NostosDbContext(options);
 
         var topics = new TopicRepository(db);
-        var noteService = new NoteService(
-            new NoteRepository(db),
-            new BookRepository(db),
-            topics,
-            new NoteProcessorService(topics),
-            thoughts ?? new FakeThoughtProcessor(),
-            db,
-            NullLogger<NoteService>.Instance);
+        var noteService = NoteServiceGraph.Create(db, thoughts ?? new FakeThoughtProcessor());
 
         var libraryService = new LibraryService(
             factory,
