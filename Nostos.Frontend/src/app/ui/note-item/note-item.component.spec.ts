@@ -425,6 +425,8 @@ describe('NoteItemComponent', () => {
       const quote = element.querySelector('.note-item-quote') as HTMLElement;
       const toggle = element.querySelector('.note-item-expand') as HTMLButtonElement;
       expect(quote.classList).toContain('is-clamped');
+      expect(quote.classList).toContain('is-faded');
+      expect(toggle.classList).toContain('nostos-button--secondary');
       expect(toggle.textContent?.trim()).toBe('Show all');
       expect(toggle.getAttribute('aria-expanded')).toBe('false');
 
@@ -432,13 +434,36 @@ describe('NoteItemComponent', () => {
       fixture.detectChanges();
 
       expect(quote.classList).not.toContain('is-clamped');
+      expect(quote.classList).not.toContain('is-faded');
       expect(toggle.textContent?.trim()).toBe('Show less');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+      toggle.click();
+      fixture.detectChanges();
+
+      // Back to exactly the clipped card it was before "Show all".
+      expect(quote.classList).toContain('is-clamped');
+      expect(quote.classList).toContain('is-faded');
+      expect(toggle.textContent?.trim()).toBe('Show all');
+    });
+
+    it('marks only the paragraph that is actually cut', () => {
+      render({ selectedText: 'A sentence worth keeping. '.repeat(30) });
+      const thought = element.querySelector('.note-item-thought') as HTMLElement;
+      expect(thought.classList).toContain('is-clamped');
+      expect(thought.classList).not.toContain('is-faded');
+
+      render({ content: 'a thought worth keeping. '.repeat(28) });
+      expect(element.querySelector('.note-item-quote')?.classList).not.toContain('is-faded');
+      expect(element.querySelector('.note-item-thought')?.classList).toContain('is-faded');
     });
 
     it('leaves an ordinary quote whole', () => {
       render();
 
       expect(element.querySelector('.note-item-quote')?.classList).not.toContain('is-clamped');
+      expect(element.querySelector('.note-item-quote')?.classList).not.toContain('is-faded');
+      expect(element.querySelector('.note-item-thought')?.classList).not.toContain('is-faded');
       expect(element.querySelector('.note-item-expand')).toBeNull();
     });
   });
@@ -520,6 +545,7 @@ describe('NoteItemComponent', () => {
       render({ ...PASSAGE, selectedText: 'A long opening. '.repeat(60) });
 
       expect(element.querySelector('.note-item-expand')).toBeNull();
+      expect(element.querySelector('.note-item-quote')?.classList).not.toContain('is-faded');
       expect(element.querySelector('.note-item-passage-size')?.textContent).toBe('9,262 words · 37 min');
     });
 

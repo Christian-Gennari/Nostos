@@ -281,6 +281,18 @@ export class NoteItemComponent {
   readonly long = computed(() =>
     !this.isPassage() && (this.quote().length > LONG_QUOTE || this.thought().length > LONG_THOUGHT));
 
+  /**
+   * The quote is longer than the card shows, so its last clamped line fades.
+   * Tested against the quote's own length: a note long only because of its words
+   * keeps a short quote whole.
+   */
+  readonly quoteClipped = computed(() =>
+    this.long() && !this.expanded() && this.quote().length > LONG_QUOTE);
+
+  /** The reader's own words are longer than the card shows, so they fade too. */
+  readonly thoughtClipped = computed(() =>
+    this.long() && !this.expanded() && this.thought().length > LONG_THOUGHT);
+
   readonly source = computed(() => noteSourceLink(this.note()));
 
   readonly audioTimeLabel = computed(() => {
