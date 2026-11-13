@@ -7,6 +7,12 @@
 **/dist
 Nostos.Backend/wwwroot
 Nostos.Backend/Storage
+# The image only needs the frontend build and the .NET publish. Nothing in the
+# Dockerfile copies from these, so they stay out of the build context: the
+# documentation tree and the committed visual baselines cost ~230 MB per build
+# and nothing in them can change the result.
+docs/
+Nostos.Frontend/e2e/visual-evidence/
 **/*.db
 **/*.db-shm
 **/*.db-wal

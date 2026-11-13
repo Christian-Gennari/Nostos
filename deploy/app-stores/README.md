@@ -32,7 +32,7 @@ These facts come from the `Dockerfile` and the self-hosting docs. If one of them
 
 ```bash
 python3 deploy/app-stores/check.py                    # all packages agree with the Dockerfile and each other
-python3 deploy/app-stores/update-image.py v2026.10.25 # point the packages at a release
+python3 deploy/app-stores/update-image.py v2026.11.12 # point the packages at a release
 python3 deploy/app-stores/make-assets.py              # rebuild icons and screenshots from the brand kit
 ```
 
@@ -42,7 +42,7 @@ python3 deploy/app-stores/make-assets.py              # rebuild icons and screen
 
 ## Before the first submission
 
-The packages pin `v2026.10.25`, the first release published for both amd64 and arm64 (#1222, #1224). Re-run the update for a newer release before submitting if one exists:
+The packages pin `v2026.11.12`, the newest release published for both amd64 and arm64. Re-run the update for a newer release before submitting if one exists:
 
 ```bash
 gh release list -R Christian-Gennari/Nostos -L 1

@@ -10,7 +10,7 @@ services:
       PROXY_AUTH_WHITELIST: "/opds/*"
 
   web:
-    image: ghcr.io/christian-gennari/nostos:v2026.10.25@sha256:5d37710ab5f38f6881526fcfe9a81b66490175fe2651b6d38c788378de4e7ef6
+    image: ghcr.io/christian-gennari/nostos:v2026.11.12@sha256:0ffe6416b86fcd1ad44b9385a4d4ff3dda1bffaf975f7c2a91f2358bb6e03b0a
     # Umbrel creates app data owned by 1000:1000. Nostos runs as any UID; its
     # temporary folder must then be one that UID can write.
     user: "1000:1000"

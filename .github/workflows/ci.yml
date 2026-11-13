@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       code: ${{ steps.detect.outputs.code }}
+      stores: ${{ steps.stores.outputs.stores }}
     steps:
       - name: Checkout history without file contents
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,6 +53,59 @@ jobs:
           else
             echo "code=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # The app-store templates describe the image the Dockerfile builds, so
+      # they are checked whenever either side moves. This is a narrower question
+      # than "did code change": a README tweak under deploy/app-stores/ does not
+      # need a container build, but it does need check.py.
+      - name: Detect Dockerfile or app-store packaging changes
+        id: stores
+        env:
+          EVENT: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            # The checked-out merge commit's first parent is the base branch.
+            pull_request) base="$(git rev-parse HEAD^1 2>/dev/null || true)" ;;
+            push) base="$PUSH_BEFORE" ;;
+            *) base="" ;;
+          esac
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            # Unknown base: check the packages rather than silently skip them.
+            echo "stores=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only --no-renames "$base" HEAD)" || {
+            echo "Could not diff $base..HEAD; checking the packages anyway."
+            echo "stores=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if printf '%s\n' "$changed" | grep -qE '^(Dockerfile|deploy/app-stores/)'; then
+            echo "stores=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stores=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  app-store-packages:
+    name: App-store packages
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.stores == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the app-store packages against the Dockerfile
+        run: |
+          set -euo pipefail
+          # check.py needs PyYAML only. The runner's system Python is externally
+          # managed, so install into a throwaway virtualenv.
+          python3 -m venv "$RUNNER_TEMP/app-stores"
+          "$RUNNER_TEMP/app-stores/bin/pip" install --quiet PyYAML
+          "$RUNNER_TEMP/app-stores/bin/python" deploy/app-stores/check.py
 
   public-boundary-and-backend:
     name: Public boundary and backend regression

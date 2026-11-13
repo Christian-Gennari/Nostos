@@ -8,9 +8,12 @@
 #
 # Documentation is Markdown anywhere except where the frontend serves or
 # imports it (Nostos.Frontend/public, Nostos.Frontend/src), plus everything
-# under the top-level docs/ directory and the app-store packages in
-# deploy/app-stores/ (store templates and images; nothing there is built,
-# tested or copied into the image).
+# under the top-level docs/ directory.
+#
+# deploy/app-stores/ is deliberately NOT documentation-only: those templates
+# describe the image the Dockerfile builds, and CI checks them against it. A
+# template edit must therefore run that check instead of skipping with the
+# docs-only fast path.
 set -uo pipefail
 
 base="${1:-}"
@@ -40,7 +43,7 @@ while IFS= read -r path; do
       echo "Code change: $path"
       exit 1
       ;;
-    docs/* | deploy/app-stores/* | *.md)
+    docs/* | *.md)
       ;;
     *)
       echo "Code change: $path"
