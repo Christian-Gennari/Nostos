@@ -17,6 +17,8 @@ public class BackupWorker(
     {
         logger.LogInformation("Backup Worker started. Polling every {Interval} minutes.", (int)PollingInterval.TotalMinutes);
 
+        RunStartupStagingCleanup();
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -77,5 +79,21 @@ public class BackupWorker(
             logger.LogInformation("Scheduled backup completed: {Id} ({Size} bytes)", result.Id, result.SizeBytes);
         else
             logger.LogWarning("Scheduled backup {Id} finished with status: {Status}", result.Id, result.Status);
+    }
+
+    internal void RunStartupStagingCleanup()
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            if (scope.ServiceProvider.GetService<IBackupService>() is BackupService backupService)
+            {
+                backupService.CleanupOrphanedStaging();
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Backup startup staging cleanup failed; continuing.");
+        }
     }
 }
