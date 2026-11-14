@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Services;
+using Nostos.Product.Storage;
 
 namespace Nostos.Product.BookText;
 
@@ -10,10 +11,15 @@ public sealed class BookTextIngestionEngine(
     IBookTextIndex index,
     IEnumerable<IBookTextExtractor> extractors,
     BookTextOptions options,
-    ILogger<BookTextIngestionEngine> logger)
+    ILogger<BookTextIngestionEngine> logger,
+    IProductScratchStorage? scratchStorage = null)
 {
     private readonly IReadOnlyDictionary<BookTextSourceFormat, IBookTextExtractor> _extractors =
         extractors.ToDictionary(extractor => extractor.Format);
+
+    // A host that names no scratch root (Nostos-Cloud today) keeps the process
+    // temp path this engine used before the seam existed.
+    private readonly IProductScratchStorage _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
 
     public async Task ProcessAsync(BookTextIngestionWork work, CancellationToken ct = default)
     {
@@ -47,9 +53,9 @@ public sealed class BookTextIngestionEngine(
                     "book_text_source_missing",
                     "The source publication is no longer available.");
 
-            tempPath = Path.Combine(
-                Path.GetTempPath(),
-                $"nostos-book-text-{work.BookId:N}-{Guid.NewGuid():N}{Path.GetExtension(info.FileName)}");
+            tempPath = _scratch.CreateFilePath(
+                $"nostos-book-text-{work.BookId:N}",
+                Path.GetExtension(info.FileName));
 
             string sourceHash;
             await using (var staged = new FileStream(

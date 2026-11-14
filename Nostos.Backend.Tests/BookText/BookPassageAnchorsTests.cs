@@ -3,7 +3,9 @@ using System.Text;
 using FluentAssertions;
 using Nostos.Backend.Services;
 using Nostos.Backend.Tests.Portability;
+using Nostos.Backend.Tests.Support;
 using Nostos.Product.BookText;
+using Nostos.Product.Storage;
 using Xunit;
 
 namespace Nostos.Backend.Tests.BookText;
@@ -131,7 +133,39 @@ public sealed class BookPassageAnchorsTests
         (await new BookPassageAnchors(new EpubStorage(null)).AnchorAsync(quote)).Should().BeNull();
     }
 
-    private static BookPassageAnchors Anchors() => new(new EpubStorage(Epub()));
+    [Fact]
+    public async Task The_staged_epub_lives_on_the_host_scratch_root_and_is_deleted()
+    {
+        var blocks = await BlocksAsync();
+        var first = blocks.Single(b => b.Text.StartsWith("Glaucon", StringComparison.Ordinal));
+        var last = blocks.Single(b => b.Text.StartsWith("He found", StringComparison.Ordinal));
+        var quote = Quote(
+            "The story of Gyges the shepherd begins here.\n\nHe found a ring of gold, and turned its collar inward.",
+            first, first.Text.IndexOf("The story", StringComparison.Ordinal),
+            last, last.Text.Length - 1);
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-passage-scratch-{Guid.NewGuid():N}"));
+
+        try
+        {
+            var ends = await Anchors(scratch).AnchorAsync(quote);
+
+            ends.Should().NotBeNull();
+            // A ZIP needs to seek, so the whole publication is staged — on the
+            // host's scratch root, never the process temp path (issue #1596).
+            scratch.Files.Should().ContainSingle()
+                .Which.Should().StartWith(scratch.Root).And.EndWith(".epub");
+            scratch.Leftovers().Should().BeEmpty("the staged EPUB is deleted after anchoring");
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
+    }
+
+    private static BookPassageAnchors Anchors(IProductScratchStorage? scratch = null) =>
+        new(new EpubStorage(Epub()), scratch);
 
     private static BookTextResolvedQuote Quote(string text, BookTextArtifactBlock start, int startWithin, BookTextArtifactBlock end, int endWithin)
     {

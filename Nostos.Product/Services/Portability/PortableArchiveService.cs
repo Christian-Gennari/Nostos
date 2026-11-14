@@ -9,6 +9,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
 using Nostos.Shared.Enums;
 using Nostos.Product.BookText;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Services.Portability;
 
@@ -18,7 +19,8 @@ public sealed class PortableArchiveService(
     ILogger<PortableArchiveService> logger,
     IBookTextIngestionScheduler? bookTextScheduler = null,
     TimeProvider? timeProvider = null,
-    IBookTrackStorage? trackStorage = null)
+    IBookTrackStorage? trackStorage = null,
+    IProductScratchStorage? scratchStorage = null)
     : IPortableArchiveService
 {
     private const int CopyBufferSize = 128 * 1024;
@@ -35,8 +37,10 @@ public sealed class PortableArchiveService(
     internal long MaxExportDataBytes { get; init; } = PortableArchiveLimits.MaxDataBytes;
 
     // Test seam: the directory that receives the per-import scratch directory
-    // (upload spool plus local staging). Production uses the process temp path.
-    internal string ScratchRoot { get; init; } = Path.GetTempPath();
+    // (upload spool plus local staging). A host that names a scratch root —
+    // SelfHosted puts it on the library's volume — wins over the process temp
+    // path, which is the fallback for a host that has not adopted the seam.
+    internal string ScratchRoot { get; init; } = scratchStorage?.Root ?? ProductScratchStorage.TempPath.Root;
 
     // Test seam: free-space probe for the scratch volume. Production uses DriveInfo.
     internal Func<string, long?>? ScratchFreeSpaceProbe { get; init; }
@@ -364,6 +368,10 @@ public sealed class PortableArchiveService(
         // The lease is the ownership signal cleanup uses: an import may legally
         // run longer than the scratch TTL, and its directory timestamp alone
         // cannot prove it is dead.
+        // The directory name is part of the legacy sweep contract
+        // (LegacyPortabilityScratchCleanup.LegacyImportScratchPrefix), so the
+        // spool keeps its shape and only its root moves: ScratchRoot comes from
+        // the host's product scratch root (issue #1596), never /tmp by default.
         var tempRoot = Path.Combine(
             ScratchRoot,
             $"nostos-portable-import-{Guid.NewGuid():N}");

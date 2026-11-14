@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Nostos.Backend.Providers.Acquisition;
 using Nostos.Backend.Providers.Contracts;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Providers.Gutenberg;
 
@@ -45,7 +46,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
     /// </summary>
     public const string SnapshotHttpClientName = "gutenberg-snapshot";
 
-    private const string SnapshotTempFilePrefix = "nostos-gutenberg-";
+    private const string SnapshotTempFilePrefix = "nostos-gutenberg";
 
     /// <summary>
     /// Gutenberg's ebook ids are numeric. Validated before the id is used to
@@ -63,6 +64,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
     private readonly GutenbergSnapshotDownloader _snapshotDownloader;
     private readonly GutenbergSnapshotReader _snapshotReader;
     private readonly GutenbergSnapshotDownloadOptions _snapshotDownloadOptions;
+    private readonly IProductScratchStorage _scratch;
 
     public GutenbergProvider(
         IHttpClientFactory httpClientFactory,
@@ -76,9 +78,11 @@ public sealed partial class GutenbergProvider : IContentProvider,
         IHttpClientFactory httpClientFactory,
         ILogger<GutenbergProvider> logger,
         GutenbergSnapshotLimits? snapshotLimits,
-        GutenbergSnapshotDownloadOptions? snapshotDownloadOptions)
+        GutenbergSnapshotDownloadOptions? snapshotDownloadOptions,
+        IProductScratchStorage? scratchStorage = null)
     {
         _logger = logger;
+        _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
         _snapshotDownloadOptions = snapshotDownloadOptions ?? new GutenbergSnapshotDownloadOptions();
         _snapshotDownloadOptions.Validate();
 
@@ -276,9 +280,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
         GutenbergSnapshotValidator probedValidator,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var path = Path.Combine(
-            Path.GetTempPath(),
-            SnapshotTempFilePrefix + Guid.NewGuid().ToString("N") + ".zip");
+        var path = _scratch.CreateFilePath(SnapshotTempFilePrefix, ".zip");
 
         try
         {
