@@ -1,0 +1,112 @@
+/* Transcript container rules stay with the panel shell; only the pending turn
+   (which this component renders itself) belongs here. */
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+}
+
+.entry-assistant {
+  padding: 0 2px;
+}
+
+/* Turn activity */
+.pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 1.9rem;
+}
+
+.turn-activity {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+/* The activity line ("Searching your highlights…") carries a slow sheen, so a
+   long turn reads as working rather than stuck. Text, not a spinner. */
+.turn-activity.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-muted) 0%,
+    var(--color-text-muted) 35%,
+    var(--color-text-main) 50%,
+    var(--color-text-muted) 65%,
+    var(--color-text-muted) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: assistant-shimmer 2.2s linear infinite;
+}
+
+@keyframes assistant-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.turn-stop {
+  flex: 0 0 auto;
+}
+
+.entry-pending .thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 1.55em;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.thinking-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text-muted);
+  opacity: 0.28;
+  animation: assistant-thinking 1.4s var(--ease-plain) infinite;
+}
+
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes assistant-thinking {
+  0%,
+  60%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-activity.shimmer {
+    animation: none;
+    background: none;
+    color: var(--color-text-muted);
+  }
+
+  .thinking-dot {
+    animation: none;
+    opacity: 0.55;
+  }
+}

@@ -1,0 +1,298 @@
+@if (entry().kind === 'user') {
+<!-- Speakers are told apart by layout on screen; the names stay for
+     screen readers, which read the transcript as one stream. -->
+<span class="entry-speaker visually-hidden" data-testid="assistant-entry-user-label">You</span>
+} @else if (entry().kind === 'assistant') {
+<span class="entry-speaker visually-hidden" data-testid="assistant-entry-assistant-label">Nostos</span>
+}
+@if (entry().kind === 'assistant') {
+<div
+  class="entry-text entry-markdown"
+  data-testid="assistant-entry-markdown"
+  [innerHTML]="entry().text | assistantMarkdown: previews()"
+  (click)="onReplyClick($event)"
+></div>
+} @else if (entry().kind !== 'error') {
+<blockquote class="entry-text">{{ entry().text }}</blockquote>
+}
+
+@if (sourceView(); as view) {
+  @if (view.items.length) {
+  <div class="entry-sources" data-testid="assistant-entry-sources">
+    @for (display of view.items; track display.key) {
+      @if (display.kind === 'group') {
+      <div class="entry-source-group-wrap">
+        <button
+          appButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          class="entry-source entry-source-group"
+          (click)="toggleSourceGroup(entry().id, display.bookId)"
+          [attr.aria-expanded]="isSourceGroupExpanded(entry().id, display.bookId)"
+          [attr.aria-controls]="sourceGroupId(entry().id, display.bookId)"
+          data-testid="assistant-source-group"
+        >
+          @if (citesSources()) {
+          <span class="entry-source-number">{{ sourceGroupNumbers(display) }}</span>
+          }
+          <nostos-icon name="book-open" [size]="12"></nostos-icon>
+          <span>{{ display.bookTitle }} · {{ display.items.length }} passages</span>
+        </button>
+
+        @if (isSourceGroupExpanded(entry().id, display.bookId)) {
+        <div
+          class="entry-source-list"
+          [id]="sourceGroupId(entry().id, display.bookId)"
+          role="list"
+        >
+          @for (item of display.items; track item.key) {
+          <div class="entry-source-list-row" role="listitem">
+            @if (item.kind === 'evidence') {
+              @if (canOpenEvidence(item.evidence)) {
+              <button
+                appButton
+                variant="ghost"
+                size="sm"
+                type="button"
+                class="entry-source entry-source-item"
+                (click)="openEvidence(item.evidence)"
+                [attr.title]="item.evidence.excerpt"
+                data-testid="assistant-source-item"
+              >
+                @if (citesSources()) {
+                <span class="entry-source-number">{{ item.number }}</span>
+                }
+                <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                <span class="entry-source-label">{{ evidenceLabel(item.evidence) }}</span>
+                @if (sourceExcerpt(item.evidence.excerpt); as excerpt) {
+                <span class="entry-source-excerpt">{{ excerpt }}</span>
+                }
+              </button>
+              } @else {
+              <span
+                class="entry-source-status"
+                [attr.title]="item.evidence.excerpt"
+                data-testid="assistant-source-item"
+              >
+                @if (citesSources()) {
+                <span class="entry-source-number">{{ item.number }}</span>
+                }
+                <span class="entry-source-label">Source · {{ evidenceLabel(item.evidence) }}</span>
+                @if (sourceExcerpt(item.evidence.excerpt); as excerpt) {
+                <span class="entry-source-excerpt">{{ excerpt }}</span>
+                }
+              </span>
+              }
+            } @else {
+              @if (canOpenSource(item.source)) {
+              <button
+                appButton
+                variant="ghost"
+                size="sm"
+                type="button"
+                class="entry-source entry-source-item"
+                (click)="openSource(item.source)"
+                [attr.title]="item.source.excerpt"
+                data-testid="assistant-source-item"
+              >
+                <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                <span class="entry-source-label">{{ sourceLabel(item.source) }}</span>
+                @if (sourceExcerpt(item.source.excerpt); as excerpt) {
+                <span class="entry-source-excerpt">{{ excerpt }}</span>
+                }
+              </button>
+              } @else {
+              <span
+                class="entry-source-status"
+                [attr.title]="item.source.excerpt"
+                data-testid="assistant-source-item"
+              >
+                <span class="entry-source-label">Source · {{ sourceLabel(item.source) }}</span>
+                @if (sourceExcerpt(item.source.excerpt); as excerpt) {
+                <span class="entry-source-excerpt">{{ excerpt }}</span>
+                }
+              </span>
+              }
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+      } @else {
+        @if (display.item.kind === 'evidence') {
+          @if (canOpenEvidence(display.item.evidence)) {
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="entry-source"
+            (click)="openEvidence(display.item.evidence)"
+            [attr.title]="display.item.evidence.excerpt"
+            data-testid="assistant-source-item"
+          >
+            @if (citesSources()) {
+            <span class="entry-source-number">{{ display.item.number }}</span>
+            }
+            <nostos-icon name="book-open" [size]="12"></nostos-icon>
+            <span>{{ evidenceLabel(display.item.evidence) }}</span>
+          </button>
+          } @else {
+          <span
+            class="entry-source-status"
+            [attr.title]="display.item.evidence.excerpt"
+            data-testid="assistant-source-item"
+          >
+            @if (citesSources()) {
+            <span class="entry-source-number">{{ display.item.number }}</span>
+            }
+            Source · {{ evidenceLabel(display.item.evidence) }}
+          </span>
+          }
+        } @else {
+          @if (canOpenSource(display.item.source)) {
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="entry-source"
+            (click)="openSource(display.item.source)"
+            [attr.title]="display.item.source.excerpt"
+            data-testid="assistant-source-item"
+          >
+            <nostos-icon name="book-open" [size]="12"></nostos-icon>
+            <span>{{ sourceLabel(display.item.source) }}</span>
+          </button>
+          } @else {
+          <span
+            class="entry-source-status"
+            [attr.title]="display.item.source.excerpt"
+            data-testid="assistant-source-item"
+          >
+            Source · {{ sourceLabel(display.item.source) }}
+          </span>
+          }
+        }
+      }
+    }
+  </div>
+  }
+}
+
+@if (entry().suggestions?.length) {
+<div class="assistant-suggestions" data-testid="assistant-suggestions">
+  <span class="suggestions-title">Existing topics this note could link to</span>
+  <div class="suggestions-list">
+    @for (suggestion of entry().suggestions; track suggestion.value ?? suggestion.label) {
+    <button type="button" class="suggestion-chip" (click)="assistantService.applySuggestion(suggestion)"
+      data-testid="assistant-suggestion">
+      <span class="suggestion-label">{{ suggestion.label }}</span>
+      <span class="suggestion-reason">{{ suggestion.reason }}</span>
+    </button>
+    }
+  </div>
+  <button appButton variant="ghost" size="sm" type="button" class="suggestion-none"
+    (click)="assistantService.dismissSuggestions(entry().turnId)" data-testid="assistant-suggestion-none">
+    None of these / no strong match
+  </button>
+</div>
+}
+@if (entry().artifacts?.length) {
+<div class="entry-artifacts" data-testid="assistant-entry-artifacts">
+  @for (artifact of entry().artifacts; track artifact.kind + ':' + $index) {
+    @if (artifact.kind === 'proposal' && showProposalArtifact(artifact)) {
+    <footer class="entry-meta">
+      <span class="entry-status">{{ artifactLabel(artifact) }}</span>
+    </footer>
+    }
+    @if (
+      artifact.kind === 'capture'
+      || artifact.kind === 'action'
+      || (artifact.kind === 'failure' && artifact.state === 'incomplete')
+    ) {
+    <footer class="entry-meta">
+      <span class="entry-status">{{ artifactLabel(artifact) }}</span>
+    </footer>
+    }
+    @if (artifact.kind === 'capture') {
+    <app-captured-note-topics [noteId]="artifact.noteId" data-testid="assistant-capture-topics" />
+    }
+    @if (artifact.kind === 'changeset') {
+    <app-assistant-changeset-card
+      [attr.data-changeset-id]="artifact.changeset.changesetId"
+      [changeset]="artifact.changeset"
+      [conflicts]="artifact.conflicts ?? []"
+      [busy]="assistantService.changesetBusy() === artifact.changeset.changesetId"
+      [locked]="!!assistantService.changesetBusy() && assistantService.changesetBusy() !== artifact.changeset.changesetId"
+      [error]="assistantService.changesetErrors()[artifact.changeset.changesetId] ?? null"
+      [answerable]="assistantService.pendingReview()?.changeset?.changesetId === artifact.changeset.changesetId"
+      (apply)="assistantService.applyChangeset(artifact.changeset.changesetId)"
+      (discard)="assistantService.discardChangeset(artifact.changeset.changesetId)"
+      (undo)="assistantService.undoChangeset(artifact.changeset.changesetId)"
+      (stepToggled)="assistantService.setChangesetStepIncluded(artifact.changeset.changesetId, $event.index, $event.included)"
+      (detailsToggled)="onChangesetDetailsToggled(artifact.changeset.changesetId, $event)"
+    />
+    }
+  }
+</div>
+}
+@if (entry().kind === 'error') {
+<!-- The turn's committed outcomes come first (#1558): a capture that was
+     saved stays visible above the failure, then the failure itself
+     (#1556): the server sentence, one next step that fits the typed
+     code, and the raw code only behind Details. -->
+<div class="entry-failure" data-testid="assistant-failure">
+  <p class="entry-failure-text" role="status" aria-live="polite">{{ entry().text }}</p>
+  @if (allowanceRenewsAt(); as renewsAt) {
+  <p class="entry-failure-note">Allowance renews {{ renewsAt | nostosDate }}.</p>
+  }
+  @if (failureAction(); as action) {
+  <div class="entry-failure-actions">
+    @if (action.kind === 'allowance') {
+    <a
+      appButton
+      variant="secondary"
+      size="sm"
+      [href]="action.href"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="assistant-failure-allowance"
+    >{{ action.label }}</a>
+    } @else if (action.kind === 'retry') {
+    <button
+      appButton
+      variant="secondary"
+      size="sm"
+      type="button"
+      (click)="onRetryFailure()"
+      [disabled]="assistantService.sending()"
+      data-testid="assistant-retry"
+    >{{ action.label }}</button>
+    } @else {
+    <button
+      appButton
+      variant="secondary"
+      size="sm"
+      type="button"
+      (click)="onFailureAction(action)"
+      data-testid="assistant-failure-action"
+    >{{ action.label }}</button>
+    }
+  </div>
+  }
+  <details class="entry-failure-details" data-testid="assistant-failure-details">
+    <summary>Details</summary>
+    <code class="entry-failure-code">{{ failureCode() }}</code>
+  </details>
+</div>
+}
+<!-- A failure's code belongs behind Details, not in the entry footer. -->
+@if (entry().kind !== 'error' && (entry().anchorLabel || entry().meta)) {
+<footer class="entry-meta">
+  @if (entry().anchorLabel) { <span class="entry-anchor">{{ entry().anchorLabel }}</span> }
+  @if (entry().meta) { <span class="entry-status">{{ entry().meta }}</span> }
+</footer>
+}

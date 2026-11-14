@@ -17,9 +17,9 @@
  * `TRANSCRIPT_SEND_POLICY` is unchanged: a voice transcript enters the composer
  * and is dispatched after the grace window, with a pre-dispatch Undo.
  */
-import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { HttpClient, HttpEventType } from '@angular/common/http';
-import { Subject, Subscription } from 'rxjs';
+import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Subject } from 'rxjs';
 
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { formatAudioTime } from '../../core/format';
@@ -39,6 +39,30 @@ import {
   type AssistantConversationEvent,
   type AssistantEventDelivery,
 } from './assistant-history';
+import { AssistantTurnStream } from './assistant-stream';
+import {
+  AssistantChangesetGateway,
+  AssistantRequestTracker,
+  excludedSteps,
+} from './assistant-changesets';
+import { AssistantRetryState, retryMatchesTurn } from './assistant-retry';
+import {
+  AssistantAutoSend,
+  TRANSCRIPT_AUTO_SEND_DELAY_MS,
+  TRANSCRIPT_SEND_POLICY,
+} from './assistant-auto-send';
+import {
+  PreparedAssistantTurn,
+  PersistedAssistantSession,
+  readAssistantSession,
+  writeAssistantSession,
+} from './assistant-session';
+import type { AssistantContextDto, AssistantTurnRequestDto } from './assistant-wire';
+
+export { ASSISTANT_TURN_WATCHDOG_MS } from './assistant-stream';
+export { ASSISTANT_SESSION_STORAGE_KEY } from './assistant-session';
+export { TRANSCRIPT_AUTO_SEND_DELAY_MS, TRANSCRIPT_SEND_POLICY } from './assistant-auto-send';
+
 
 export interface AssistantEntry {
   /** UI/event identity. Deliberately distinct from the logical TurnId. */
@@ -299,20 +323,6 @@ export interface AssistantTurnEventDto {
 
 export const ASSISTANT_PENDING_DELAY_MS = 350;
 
-/**
- * How long a turn may stay silent before the panel stops waiting (#1560).
- *
- * The server owns the clocks (`AssistantOptions`, #1561): one provider call
- * times out at 60 s (`RequestTimeoutSeconds`), and the whole turn ends at 90 s
- * (`MaxTurnElapsedMilliseconds`), which startup validation keeps above the
- * per-call timeout. So a healthy server always writes a terminal event inside
- * 90 s. Adding a 15 s transport grace makes 105 s the first moment a silent
- * stream cannot still be a legitimate turn. Waiting longer only strands the
- * reader on three dots; firing earlier would replace a slow but live turn with
- * a false failure.
- */
-export const ASSISTANT_TURN_WATCHDOG_MS = 105_000;
-
 /** One normal turn result, mirroring `AssistantTurnResponse`. */
 export interface AssistantTurnResponse {
   reply: string;
@@ -334,76 +344,6 @@ export interface AssistantTurnResponse {
   /** One unambiguous canonical book read/resolved/searched by this turn. */
   resolvedBook?: AssistantResolvedBookDto | null;
 }
-
-/** The turn request the bridge accepts. */
-interface AssistantTurnRequestDto {
-  /** Compatibility aliases: equal to conversationId / turnId for new clients. */
-  clientId: string;
-  idempotencyKey: string;
-  /** Stable for the current working Ask Nostos conversation. */
-  conversationId: string;
-  /** Stable identity for this logical user turn, reused on delivery retry. */
-  turnId: string;
-  message: string;
-  context: AssistantContextDto;
-  /** Server-held deterministic continuation answered by this real user turn. */
-  continuationId: string | null;
-  continuationSkipped: boolean;
-  /**
-   * The completed session ledger from BEFORE this logical turn. The browser
-   * sends it intact; the server owns the budgeted selection that reaches the
-   * model, so this field is not itself a provider-context contract.
-   */
-  history: AssistantHistoryMessage[];
-}
-
-/** Mirrors the backend `AssistantContextDto` field-for-field. */
-interface AssistantContextDto {
-  surface: string;
-  route: string;
-  bookId: string | null;
-  bookTitle: string | null;
-  bookFormat: string | null;
-  readerType: string | null;
-  epubCfi: string | null;
-  pdfPage: number | null;
-  audioTimestamp: number | null;
-  audioChapter: string | null;
-  selectedText: string | null;
-  brainReviewNoteId: string | null;
-  topic: string | null;
-  collectionId: string | null;
-  anchor: { kind: string; value: string | null; verified: boolean } | null;
-  /**
-   * Legacy wire compatibility only. V3 continuation answers travel as the real
-   * message; this stays null on new-client follow-ups and the server resolves
-   * the book from its continuation state.
-   */
-  captureBookTitle: string | null;
-}
-
-/**
- * What happens to a voice transcript (issue #262 §6).
- *
- * `auto` (the decision): the transcript enters the composer and is dispatched
- * after {@link TRANSCRIPT_AUTO_SEND_DELAY_MS}. While that grace window is open
- * an Undo cancels the dispatch BEFORE anything is sent. Pre-dispatch on purpose:
- * the app has no delete capability, so a capture must never be created wrongly
- * in the first place.
- *
- * `review`: the transcript waits in the composer until the user sends it.
- *
- * ONE SWITCH, deliberately. Both branches converge on `submit()` — the exact
- * entry point a typed message uses — so there is no second send path and no
- * mode asymmetry between an ordinary capture and a follow-up answer.
- */
-export const TRANSCRIPT_SEND_POLICY: 'review' | 'auto' = 'auto';
-
-/** The grace window before an auto-sent transcript is dispatched. */
-export const TRANSCRIPT_AUTO_SEND_DELAY_MS = 2000;
-
-/** Session-scoped persistence only; closing the browser tab ends the conversation. */
-export const ASSISTANT_SESSION_STORAGE_KEY = 'nostos.ask-nostos.session.v1';
 
 /** Shape exposed on `globalThis.__nostosAssistant` for live verification. */
 export interface NostosAssistantDiagnostics {
@@ -431,39 +371,23 @@ function createId(): string {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-interface PreparedAssistantTurn {
-  turnId: string;
-  text: string;
-  request: AssistantTurnRequestDto;
-  context: AssistantContext;
-  displayAnchor: AssistantAnchor | null;
-  userEntryId: string;
-  /** Restored if delivery fails while answering a deterministic continuation. */
-  continuationPrompt: AssistantAnchorPrompt | null;
-}
-
-interface PersistedAssistantSession {
-  version: 1;
-  conversationId: string;
-  eventLedger: AssistantConversationEvent[];
-  draft: string;
-  pendingAnchor: AssistantAnchorPrompt | null;
-  pendingContinuationContext: AssistantContext | null;
-  suggestions: AssistantSuggestionDto[];
-  capturedNoteId: string | null;
-  /**
-   * A request persisted before transport begins. On reload it is treated as
-   * delivery-uncertain and can be retried with the exact same TurnId.
-   */
-  retryableTurn: PreparedAssistantTurn | null;
-}
-
 @Injectable({ providedIn: 'root' })
 export class AssistantService {
   private readonly contextService = inject(AssistantContextService);
   private readonly http = inject(HttpClient);
   private readonly preferences = inject(LibraryPreferencesService);
   private readonly status = inject(AssistantStatusService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** NDJSON turn transport and its silence watchdog. */
+  private readonly stream = new AssistantTurnStream(this.http);
+  /** Every short-lived assistant request (changeset actions, Stop). */
+  private readonly requests = new AssistantRequestTracker();
+  private readonly changesets = new AssistantChangesetGateway(this.http, this.requests);
+  /** Uncertain-delivery and deterministic-follow-up state. */
+  private readonly retry = new AssistantRetryState();
+  /** The pre-dispatch voice grace window. */
+  private readonly autoSend = new AssistantAutoSend();
 
   /** Same availability contract as the app-wide AssistantComponent capsule. */
   readonly surfaceAvailable = computed(
@@ -494,7 +418,6 @@ export class AssistantService {
   /** Transport-local turn id; Stop is exposed only after server 'started'. */
   private inFlightTurnId: string | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
-  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The most recent turn, for the transcript and live verification. */
   readonly lastTurn = signal<AssistantTurnResponse | null>(null);
@@ -541,25 +464,18 @@ export class AssistantService {
   }>();
 
   /** True while an auto transcript is waiting out its Undo window. */
-  readonly autoSendPending = signal(false);
-  private autoSendTimer: ReturnType<typeof setTimeout> | null = null;
+  readonly autoSendPending = this.autoSend.pending;
 
   /** A deterministic follow-up awaiting the user's next real turn. */
-  readonly pendingAnchor = signal<AssistantAnchorPrompt | null>(null);
-  private readonly pendingContinuationContext = signal<AssistantContext | null>(null);
-
-  /**
-   * The one logical turn whose HTTP result is uncertain. Retrying the unchanged
-   * draft resends this exact request and TurnId; editing starts a new turn.
-   */
-  private readonly retryableTurn = signal<PreparedAssistantTurn | null>(null);
+  readonly pendingAnchor = this.retry.pendingAnchor;
+  private readonly pendingContinuationContext = this.retry.pendingContinuationContext;
 
   /**
    * The turn a visible "Try again" control belongs to, if any. The failure
    * block renders the control only for its own turn, so a later successful
    * turn cannot leave an older retry action armed.
    */
-  readonly retryableTurnId = computed(() => this.retryableTurn()?.turnId ?? null);
+  readonly retryableTurnId = this.retry.retryableTurnId;
 
   /**
    * Model history is a projection of the canonical event ledger. A transport-
@@ -613,94 +529,38 @@ export class AssistantService {
       };
       this.persistSession();
     });
+
+    // A root service outlives every panel, so its destroy is the final
+    // cancellation boundary: no turn, changeset action, Stop request or
+    // auto-send may outlive the conversation state that explains it.
+    this.destroyRef.onDestroy(() => {
+      this.stream.stop();
+      this.requests.cancelAll();
+      this.autoSend.destroy();
+      this.clearPendingTimer();
+    });
   }
 
   private restoreSession(): void {
-    const storage = sessionStorageOrNull();
-    if (!storage) return;
+    const restored = readAssistantSession();
+    if (!restored) return;
 
-    try {
-      const raw = storage.getItem(ASSISTANT_SESSION_STORAGE_KEY);
-      if (!raw) return;
+    this.conversationId.set(restored.conversationId);
+    this.eventLedger.set(restored.eventLedger);
+    this.pendingAnchor.set(restored.pendingAnchor);
+    this.pendingContinuationContext.set(restored.pendingContinuationContext);
+    this.suggestions.set([]);
+    this.capturedNoteId.set(restored.capturedNoteId);
+    this.retry.restore(restored.retryableTurn);
+    this.draft.set(restored.draft);
 
-      const parsed = JSON.parse(raw) as Partial<PersistedAssistantSession>;
-      if (
-        parsed.version !== 1 ||
-        typeof parsed.conversationId !== 'string' ||
-        !parsed.conversationId.trim() ||
-        !Array.isArray(parsed.eventLedger)
-      ) {
-        storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
-        return;
-      }
-
-      this.conversationId.set(parsed.conversationId);
-      const restoredEvents = parsed.eventLedger
-        .filter(isRestorableConversationEvent)
-        .map((event) => ({
-          ...event,
-          // Artifacts are inert data. Proposal buttons are active UI state and
-          // intentionally do not survive a page reload.
-          artifacts: Array.isArray(event.artifacts)
-            ? event.artifacts.filter(isAssistantTurnArtifact)
-            : [],
-          suggestions: [],
-          ...(event.delivery === 'sending'
-            ? { delivery: 'retryable' as const, meta: 'Delivery uncertain' }
-            : {}),
-        }));
-      this.eventLedger.set(restoredEvents);
-
-      this.pendingAnchor.set(isAnchorPrompt(parsed.pendingAnchor) ? parsed.pendingAnchor : null);
-      this.pendingContinuationContext.set(
-        isAssistantContext(parsed.pendingContinuationContext)
-          ? parsed.pendingContinuationContext
-          : null,
-      );
-      this.suggestions.set([]);
-      this.capturedNoteId.set(
-        typeof parsed.capturedNoteId === 'string' ? parsed.capturedNoteId : null,
-      );
-
-      const restoredRetry = isPreparedTurn(parsed.retryableTurn)
-        ? parsed.retryableTurn
-        : null;
-      this.retryableTurn.set(restoredRetry);
-
-      if (restoredRetry) {
-        // A reload can interrupt an in-flight request after the server committed
-        // but before the browser received the response. Treat it as uncertain:
-        // restore the exact request/TurnId and let canonical receipts decide.
-        const inlineTurn = restoredEvents.some((event) =>
-          event.turnId === restoredRetry.turnId && event.hiddenFromTranscript);
-        // Never place an internal Brain operation (including topic IDs) in the composer.
-        this.draft.set(inlineTurn ? '' : restoredRetry.text);
-        this.updateUserDelivery(
-          restoredRetry.userEntryId,
-          'retryable',
-          'Delivery uncertain',
-        );
-        if (restoredRetry.continuationPrompt) {
-          this.pendingAnchor.set(restoredRetry.continuationPrompt);
-          this.pendingContinuationContext.set(restoredRetry.context);
-        }
-      } else {
-        this.draft.set(typeof parsed.draft === 'string' ? parsed.draft : '');
-      }
-
-      // Natural-language approval is intentionally NOT restored as armed. The
-      // card's Apply button still applies the exact server-held changeset,
-      // while a generic "yes" after refresh cannot.
-      this.directReviewApprovalArmed.set(false);
-    } catch {
-      storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
-    }
+    // Natural-language approval is intentionally NOT restored as armed. The
+    // card's Apply button still applies the exact server-held changeset,
+    // while a generic "yes" after refresh cannot.
+    this.directReviewApprovalArmed.set(false);
   }
 
   private persistSession(): void {
-    const storage = sessionStorageOrNull();
-    if (!storage) return;
-
     const state: PersistedAssistantSession = {
       version: 1,
       conversationId: this.conversationId(),
@@ -711,16 +571,10 @@ export class AssistantService {
       // Proposal artifacts persist; executable chips do not.
       suggestions: [],
       capturedNoteId: this.capturedNoteId(),
-      retryableTurn: this.retryableTurn(),
+      retryableTurn: this.retry.retryableTurn(),
     };
 
-    try {
-      storage.setItem(ASSISTANT_SESSION_STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Storage can be unavailable or full (privacy mode / browser quota).
-      // Conversation still works in memory; persistence is a convenience, not
-      // an execution/safety dependency.
-    }
+    writeAssistantSession(state);
   }
 
   /**
@@ -769,7 +623,7 @@ export class AssistantService {
     // transcript and a pending follow-up are the conversation, not the panel, so
     // they survive: the user can step away to find the page and answer without
     // losing the thought that is waiting on it.
-    this.cancelAutoSend();
+    this.autoSend.cancel();
     this.isOpen.set(false);
   }
 
@@ -786,13 +640,11 @@ export class AssistantService {
   newConversation(): void {
     if (this.sending()) return;
 
-    this.cancelAutoSend();
+    this.autoSend.cancel();
     this.anchorDismissed.set(false);
     this.conversationId.set(createId());
     this.eventLedger.set([]);
-    this.retryableTurn.set(null);
-    this.pendingAnchor.set(null);
-    this.pendingContinuationContext.set(null);
+    this.retry.reset();
     this.directReviewApprovalArmed.set(false);
     this.changesetBusy.set(null);
     this.changesetErrors.set({});
@@ -801,16 +653,20 @@ export class AssistantService {
     this.lastError.set(null);
     this.draft.set('');
     this.capturedNoteId.set(null);
+    // Reset is a cancellation boundary: no request or watchdog from the old
+    // conversation may settle into the new one.
+    this.requests.cancelAll();
+    this.stream.stop();
     this.finishTurnUi(null);
     this.persistSession();
   }
 
   updateDraft(value: string): void {
-    const retry = this.retryableTurn();
+    const retry = this.retry.retryableTurn();
     if (retry && value.trim() !== retry.text) {
       // Editing an uncertain delivery is a new logical turn. The old visible
       // event remains marked uncertain and is never promoted into model history.
-      this.retryableTurn.set(null);
+      this.retry.forget();
     }
     this.draft.set(value);
   }
@@ -827,7 +683,9 @@ export class AssistantService {
     const current = this.draft().trim();
     this.updateDraft(current ? `${current} ${transcript}` : transcript);
 
-    if (TRANSCRIPT_SEND_POLICY === 'auto') this.scheduleAutoSend();
+    if (TRANSCRIPT_SEND_POLICY === 'auto') {
+      this.autoSend.schedule(TRANSCRIPT_AUTO_SEND_DELAY_MS, () => this.submit());
+    }
   }
 
   /**
@@ -836,25 +694,7 @@ export class AssistantService {
    * it — which is the point, because a created capture cannot be deleted.
    */
   undoTranscript(): void {
-    this.cancelAutoSend();
-  }
-
-  private scheduleAutoSend(): void {
-    this.cancelAutoSend();
-    this.autoSendPending.set(true);
-    this.autoSendTimer = setTimeout(() => {
-      this.autoSendTimer = null;
-      this.autoSendPending.set(false);
-      this.submit();
-    }, TRANSCRIPT_AUTO_SEND_DELAY_MS);
-  }
-
-  private cancelAutoSend(): void {
-    if (this.autoSendTimer !== null) {
-      clearTimeout(this.autoSendTimer);
-      this.autoSendTimer = null;
-    }
-    this.autoSendPending.set(false);
+    this.autoSend.cancel();
   }
 
   /**
@@ -863,17 +703,19 @@ export class AssistantService {
    * replaying the original capture text in a mutated context.
    */
   submit(): void {
-    this.cancelAutoSend();
+    this.autoSend.cancel();
     const text = this.draft().trim();
     if (!text || this.sending()) return;
 
-    const pending = this.pendingAnchor();
-    if (pending) {
-      const context = this.pendingContinuationContext() ?? this.context();
-      this.pendingAnchor.set(null);
-      this.pendingContinuationContext.set(null);
+    const continuation = this.retry.takeContinuation(this.context());
+    if (continuation) {
       this.draft.set('');
-      this.dispatchContinuation(text, pending, context, false);
+      this.dispatchContinuation(
+        text,
+        continuation.prompt,
+        continuation.context,
+        false,
+      );
       return;
     }
 
@@ -940,7 +782,7 @@ export class AssistantService {
    * separate send.
    */
   retryTurn(turnId?: string): boolean {
-    const turn = this.retryableTurn();
+    const turn = this.retry.retryableTurn();
     if (!turn || this.sending()) return false;
     if (turnId && turn.turnId !== turnId) return false;
 
@@ -970,8 +812,7 @@ export class AssistantService {
     if (!pending || pending.kind === 'book' || this.sending()) return;
 
     const context = this.pendingContinuationContext() ?? this.context();
-    this.pendingAnchor.set(null);
-    this.pendingContinuationContext.set(null);
+    this.retry.clearContinuation();
     this.draft.set('');
     this.dispatchContinuation("I don't know", pending, context, true);
   }
@@ -1129,15 +970,13 @@ export class AssistantService {
       this.persistSession();
     };
 
-    this.http
-      .post<AssistantChangesetActionResponse>(
-        `/api/assistant/changesets/${encodeURIComponent(changesetId)}/${action}`,
-        body,
-      )
-      .subscribe({
-        next: (response) => settle(response),
-        error: (error: unknown) => settle(changesetActionFromError(error)),
-      });
+    this.changesets.post(
+      changesetId,
+      action,
+      body,
+      (response) => settle(response),
+      (errorResponse) => settle(errorResponse),
+    );
   }
 
   private findChangeset(changesetId: string): { turnId: string; changeset: AssistantChangesetDto } | null {
@@ -1175,14 +1014,14 @@ export class AssistantService {
     anchor: AssistantAnchor | null,
     captureBookTitle: string | null = null,
   ): string {
-    const retry = this.retryableTurn();
-    if (retry && retry.text === text && retry.request.continuationId === null) {
+    const retry = this.retry.retryableTurn();
+    if (retry && retryMatchesTurn(retry, text, null, false)) {
       this.draft.set('');
       this.sendPreparedTurn(retry);
       return retry.turnId;
     }
 
-    this.retryableTurn.set(null);
+    this.retry.forget();
     const context = this.context();
     return this.startPreparedTurn({
       text,
@@ -1201,18 +1040,13 @@ export class AssistantService {
     context: AssistantContext,
     skipped: boolean,
   ): void {
-    const retry = this.retryableTurn();
-    if (
-      retry &&
-      retry.text === text &&
-      retry.request.continuationId === prompt.continuationId &&
-      retry.request.continuationSkipped === skipped
-    ) {
+    const retry = this.retry.retryableTurn();
+    if (retry && retryMatchesTurn(retry, text, prompt.continuationId, skipped)) {
       this.sendPreparedTurn(retry);
       return;
     }
 
-    this.retryableTurn.set(null);
+    this.retry.forget();
     const displayAnchor: AssistantAnchor | null =
       prompt.kind === 'book'
         ? null
@@ -1296,7 +1130,7 @@ export class AssistantService {
       events.filter((event) => !(event.turnId === turn.turnId && event.kind === 'error')),
     );
     this.updateUserDelivery(turn.userEntryId, 'sending', null);
-    this.retryableTurn.set(turn);
+    this.retry.remember(turn);
     this.lastError.set(null);
     this.sending.set(true);
     this.beginTurnUi(turn.turnId);
@@ -1306,8 +1140,6 @@ export class AssistantService {
     // new turn and defeating #560's mutation receipts.
     this.persistSession();
 
-    let receivedCharacters = 0;
-    let pendingText = '';
     let lastSequence = 0;
     let terminalHandled = false;
 
@@ -1362,65 +1194,18 @@ export class AssistantService {
       }
     };
 
-    const consumeCumulative = (text: string, final: boolean): void => {
-      const delta = text.slice(receivedCharacters);
-      receivedCharacters = text.length;
-      pendingText += delta;
-
-      const lines = pendingText.split('\n');
-      pendingText = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          handleValue(JSON.parse(trimmed));
-        } catch {
-          // A malformed product-event line is a transport failure, not a reason
-          // to expose its raw contents in the transcript.
-        }
-      }
-
-      if (final && pendingText.trim()) {
-        try {
-          handleValue(JSON.parse(pendingText.trim()));
-        } catch {
-          // Handled below as an incomplete/invalid transport.
-        }
-        pendingText = '';
-      }
-    };
-
-    const subscription: Subscription = this.http.post('/api/assistant/turn/stream', turn.request, {
-      observe: 'events',
-      reportProgress: true,
-      responseType: 'text',
-    }).subscribe({
-      next: (event) => {
-        if (event.type === HttpEventType.DownloadProgress) {
-          consumeCumulative(event.partialText ?? '', false);
-          return;
-        }
-
-        if (event.type === HttpEventType.Response) {
-          const body = typeof event.body === 'string'
-            ? event.body
-            : JSON.stringify(event.body ?? '');
-          consumeCumulative(body, true);
-
-          if (!terminalHandled) {
-            this.handleTransportFailure(
-              turn,
-              'assistant_network_error',
-              'The Ask Nostos response ended unexpectedly. Your message is ready to retry.',
-            );
-          }
-        }
-      },
-      error: () => {
+    this.stream.start(turn.request, {
+      onValue: (value) => handleValue(value),
+      onEnd: () => {
         if (terminalHandled) return;
-        const offline =
-          typeof globalThis.navigator !== 'undefined'
-          && globalThis.navigator.onLine === false;
+        this.handleTransportFailure(
+          turn,
+          'assistant_network_error',
+          'The Ask Nostos response ended unexpectedly. Your message is ready to retry.',
+        );
+      },
+      onError: (offline) => {
+        if (terminalHandled) return;
         this.handleTransportFailure(
           turn,
           offline ? 'assistant_offline' : 'assistant_network_error',
@@ -1429,24 +1214,20 @@ export class AssistantService {
             : 'The connection to Ask Nostos was interrupted. Your message is ready to retry.',
         );
       },
+      // The server writes `started` immediately, then only terminal events and
+      // occasional activity. A stream that stays silent past every server clock
+      // is a black-holed connection: stop waiting, cancel the request, and turn
+      // the pending dots into the same retry block a network failure produces.
+      onStalled: () => {
+        if (terminalHandled) return;
+        terminalHandled = true;
+        this.handleTransportFailure(
+          turn,
+          'assistant_stream_stalled',
+          'Ask Nostos did not answer in time. Your message is ready to retry.',
+        );
+      },
     });
-
-    // The server writes `started` immediately, then only terminal events and
-    // occasional activity. A stream that stays silent past every server clock
-    // is a black-holed connection: stop waiting, cancel the request, and turn
-    // the pending dots into the same retry block a network failure produces.
-    this.clearWatchdog();
-    this.watchdogTimer = setTimeout(() => {
-      this.watchdogTimer = null;
-      if (terminalHandled) return;
-      terminalHandled = true;
-      subscription.unsubscribe();
-      this.handleTransportFailure(
-        turn,
-        'assistant_stream_stalled',
-        'Ask Nostos did not answer in time. Your message is ready to retry.',
-      );
-    }, ASSISTANT_TURN_WATCHDOG_MS);
   }
 
   /** Stop only the currently visible logical turn. No new turn is created. */
@@ -1454,7 +1235,7 @@ export class AssistantService {
     const turnId = this.activeTurnId();
     if (!turnId || !this.sending()) return;
 
-    this.http.post('/api/assistant/turn/cancel', {
+    const subscription = this.http.post('/api/assistant/turn/cancel', {
       conversationId: this.conversationId(),
       turnId,
     }).subscribe({
@@ -1462,11 +1243,12 @@ export class AssistantService {
         this.lastError.set('Ask Nostos could not send the Stop request.');
       },
     });
+    this.requests.track(subscription);
   }
 
   private beginTurnUi(turnId: string): void {
     this.clearPendingTimer();
-    this.clearWatchdog();
+    this.stream.stop();
     this.inFlightTurnId = turnId;
     this.activeTurnId.set(null);
     this.turnActivity.set(null);
@@ -1494,7 +1276,7 @@ export class AssistantService {
   private finishTurnUi(turnId: string | null): void {
     if (turnId !== null && this.inFlightTurnId !== turnId) return;
     this.clearPendingTimer();
-    this.clearWatchdog();
+    this.stream.stop();
     this.inFlightTurnId = null;
     this.activeTurnId.set(null);
     this.turnActivity.set(null);
@@ -1506,13 +1288,6 @@ export class AssistantService {
     if (this.pendingTimer !== null) {
       clearTimeout(this.pendingTimer);
       this.pendingTimer = null;
-    }
-  }
-
-  private clearWatchdog(): void {
-    if (this.watchdogTimer !== null) {
-      clearTimeout(this.watchdogTimer);
-      this.watchdogTimer = null;
     }
   }
 
@@ -1548,15 +1323,14 @@ export class AssistantService {
     // failure with Try again. The replay reuses this TurnId, so the server's
     // receipts answer instead of writing a second note (#1558).
     if (failure?.retryable) {
-      this.retryableTurn.set(turn);
+      this.retry.remember(turn);
       this.draft.set(turn.text);
       this.updateUserDelivery(turn.userEntryId, 'retryable', 'Ready to retry');
       if (turn.continuationPrompt) {
-        this.pendingAnchor.set(turn.continuationPrompt);
-        this.pendingContinuationContext.set(turn.context);
+        this.retry.armContinuation(turn.continuationPrompt, turn.context);
       }
     } else {
-      if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
+      this.retry.forget(turn.turnId);
       this.updateUserDelivery(turn.userEntryId, 'complete', null);
     }
 
@@ -1580,7 +1354,7 @@ export class AssistantService {
   ): void {
     if (response) this.applyTurnResponse(turn, response);
 
-    if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
+    if (this.retry.retryableTurn()?.turnId === turn.turnId) this.retry.forget();
     this.updateUserDelivery(turn.userEntryId, 'complete', null);
     this.lastError.set(null);
 
@@ -1621,7 +1395,7 @@ export class AssistantService {
     message: string,
   ): void {
     this.finishTurnUi(turn.turnId);
-    this.retryableTurn.set(turn);
+    this.retry.remember(turn);
     this.lastError.set(message);
     this.draft.set(turn.text);
     this.updateUserDelivery(
@@ -1632,8 +1406,7 @@ export class AssistantService {
     this.pushEntry(turn.turnId, 'error', message, null, code, [], false);
 
     if (turn.continuationPrompt) {
-      this.pendingAnchor.set(turn.continuationPrompt);
-      this.pendingContinuationContext.set(turn.context);
+      this.retry.armContinuation(turn.continuationPrompt, turn.context);
     }
     this.replaceTurnArtifacts(turn.turnId, [{
       kind: 'failure',
@@ -1650,7 +1423,7 @@ export class AssistantService {
     turn: PreparedAssistantTurn,
     response: AssistantTurnResponse,
   ): void {
-    if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
+    if (this.retry.retryableTurn()?.turnId === turn.turnId) this.retry.forget();
     this.updateUserDelivery(turn.userEntryId, 'complete', null);
     this.lastError.set(response.error?.message ?? null);
     this.lastTurn.set(response);
@@ -1708,21 +1481,18 @@ export class AssistantService {
           question: response.anchorPrompt.question,
           continuationId,
         };
-        this.pendingAnchor.set(prompt);
-        this.pendingContinuationContext.set(turn.context);
+        this.retry.armContinuation(prompt, turn.context);
         promptText = prompt.question;
         this.pushEntry(turn.turnId, 'assistant', prompt.question, null, null);
       } else {
-        this.pendingAnchor.set(null);
-        this.pendingContinuationContext.set(null);
+        this.retry.clearContinuation();
         this.lastError.set(
           response.error?.message
             ?? 'The assistant requested follow-up input without a valid continuation.',
         );
       }
     } else {
-      this.pendingAnchor.set(null);
-      this.pendingContinuationContext.set(null);
+      this.retry.clearContinuation();
     }
 
     if (
@@ -2089,124 +1859,6 @@ function artifactKey(artifact: AssistantTurnArtifact): string {
 
 function dedupeArtifacts(artifacts: readonly AssistantTurnArtifact[]): AssistantTurnArtifact[] {
   return uniqueBy(artifacts, artifactKey);
-}
-
-function isAssistantTurnArtifact(value: unknown): value is AssistantTurnArtifact {
-  if (!value || typeof value !== 'object') return false;
-  const artifact = value as Partial<AssistantTurnArtifact>;
-  switch (artifact.kind) {
-    case 'evidence':
-      return !!(artifact as { evidence?: unknown }).evidence;
-    case 'capture':
-      return typeof (artifact as { noteId?: unknown }).noteId === 'string';
-    case 'action':
-      return typeof (artifact as { capability?: unknown }).capability === 'string';
-    case 'failure':
-      return typeof (artifact as { code?: unknown }).code === 'string'
-        && typeof (artifact as { message?: unknown }).message === 'string';
-    case 'proposal':
-      return !!(artifact as { proposal?: unknown }).proposal;
-    case 'changeset': {
-      const changeset = (artifact as { changeset?: Partial<AssistantChangesetDto> }).changeset;
-      return !!changeset
-        && typeof changeset.changesetId === 'string'
-        && typeof changeset.status === 'string'
-        && Array.isArray(changeset.steps)
-        && !!changeset.diff;
-    }
-    default:
-      return false;
-  }
-}
-
-function sessionStorageOrNull(): Storage | null {
-  try {
-    return typeof globalThis.sessionStorage === 'undefined'
-      ? null
-      : globalThis.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-function isAnchorPrompt(value: unknown): value is AssistantAnchorPrompt {
-  if (!value || typeof value !== 'object') return false;
-  const prompt = value as Partial<AssistantAnchorPrompt>;
-  return (
-    (prompt.kind === 'physical_page' ||
-      prompt.kind === 'external_audio_timestamp' ||
-      prompt.kind === 'book') &&
-    typeof prompt.question === 'string' &&
-    typeof prompt.continuationId === 'string' &&
-    prompt.continuationId.length > 0
-  );
-}
-
-function isAssistantContext(value: unknown): value is AssistantContext {
-  if (!value || typeof value !== 'object') return false;
-  const context = value as Partial<AssistantContext>;
-  return typeof context.surface === 'string' && typeof context.route === 'string';
-}
-
-/** The steps of a changeset the user has left out. */
-function excludedSteps(changeset: AssistantChangesetDto): number[] {
-  return changeset.steps.filter((step) => !step.included).map((step) => step.index);
-}
-
-/**
- * A changeset route answers 404/403 with the same body as a refusal, so the
- * card can say what happened instead of a generic network failure.
- */
-function changesetActionFromError(error: unknown): AssistantChangesetActionResponse | null {
-  const body = (error as { error?: unknown } | null)?.error;
-  if (body && typeof body === 'object' && typeof (body as { errorCode?: unknown }).errorCode === 'string') {
-    const refusal = body as Partial<AssistantChangesetActionResponse>;
-    return {
-      success: false,
-      errorCode: refusal.errorCode ?? null,
-      errorMessage: refusal.errorMessage ?? null,
-      changeset: refusal.changeset ?? null,
-      conflicts: refusal.conflicts ?? [],
-    };
-  }
-  return null;
-}
-
-function isPreparedTurn(value: unknown): value is PreparedAssistantTurn {
-  if (!value || typeof value !== 'object') return false;
-  const turn = value as Partial<PreparedAssistantTurn>;
-  const request = turn.request as Partial<AssistantTurnRequestDto> | undefined;
-  return (
-    typeof turn.turnId === 'string' &&
-    typeof turn.text === 'string' &&
-    typeof turn.userEntryId === 'string' &&
-    isAssistantContext(turn.context) &&
-    !!request &&
-    typeof request.turnId === 'string' &&
-    request.turnId === turn.turnId &&
-    typeof request.conversationId === 'string' &&
-    typeof request.message === 'string' &&
-    (turn.continuationPrompt === null || isAnchorPrompt(turn.continuationPrompt))
-  );
-}
-
-function isRestorableConversationEvent(value: unknown): value is AssistantConversationEvent {
-  if (!value || typeof value !== 'object') return false;
-  const event = value as Partial<AssistantConversationEvent>;
-  return (
-    typeof event.id === 'string' &&
-    typeof event.turnId === 'string' &&
-    (event.kind === 'user' || event.kind === 'assistant' || event.kind === 'error') &&
-    typeof event.text === 'string' &&
-    typeof event.remember === 'boolean' &&
-    (event.delivery === 'sending' ||
-      event.delivery === 'complete' ||
-      event.delivery === 'retryable') &&
-    Array.isArray(event.sources) &&
-    Array.isArray(event.historyEvidence) &&
-    Array.isArray(event.historyActions) &&
-    (event.artifacts === undefined || Array.isArray(event.artifacts))
-  );
 }
 
 function isAssistantTurnEvent(value: unknown): value is AssistantTurnEventDto {
