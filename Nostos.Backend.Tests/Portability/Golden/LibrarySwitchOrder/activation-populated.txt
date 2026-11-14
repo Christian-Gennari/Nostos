@@ -1,0 +1,60 @@
+phase:CandidatePrepared
+  +db:/.nostos-activation/
+  +db:/.nostos-activation/<job>/
+  +db:/.nostos-activation/<job>/activation.json
+  +db:/.nostos-recovery/
+  +db:/.nostos-recovery/<job>/
+  +media:/.nostos-activation/
+  +media:/.nostos-activation/<job>/
+  +media:/.nostos-recovery/
+  +media:/.nostos-recovery/<job>/
+after:capture
+after:admission
+after:build-media
+  +media:/.nostos-activation/<job>/candidate-books/
+  +media:/.nostos-activation/<job>/candidate-books/<34af58be>/
+  +media:/.nostos-activation/<job>/candidate-books/<7eb12439>/
+  +media:/.nostos-activation/<job>/candidate-books/<efea8815>/
+after:build-database
+  +db:/.nostos-activation/<job>/candidate.db
+after:verify-candidate
+phase:ExclusiveEntered
+  +db:/.nostos-activation/maintenance.json
+after:finalize
+  +db:/.nostos-activation/<job>/candidate.finalized.json
+after:quiesce
+phase:DatabaseCheckpointed
+after:prepare-retention
+  +db:/.nostos-recovery/<job>/recovery.json
+phase:CutoverPrepared
+after:retain-media
+  +media:/.nostos-recovery/<job>/books/
+  +media:/.nostos-recovery/<job>/books/<64f17b9c>/
+  -media:/library/
+  -media:/library/<64f17b9c>/
+phase:PreviousMediaRetained
+after:retain-db
+  +db:/.nostos-recovery/<job>/nostos.db
+  -db:/nostos.db
+phase:PreviousDatabaseRetained
+after:activate-media
+  +media:/library/
+  +media:/library/<34af58be>/
+  +media:/library/<7eb12439>/
+  +media:/library/<efea8815>/
+  -media:/.nostos-activation/<job>/candidate-books/
+  -media:/.nostos-activation/<job>/candidate-books/<34af58be>/
+  -media:/.nostos-activation/<job>/candidate-books/<7eb12439>/
+  -media:/.nostos-activation/<job>/candidate-books/<efea8815>/
+phase:CandidateMediaActivated
+after:activate-db
+  +db:/nostos.db
+  -db:/.nostos-activation/<job>/candidate.db
+phase:CandidateDatabaseActivated
+after:reopen
+after:post-verify
+phase:PostActivationVerified
+phase:Committed
+after:journal-resolved
+  +db:/.nostos-activation/<job>/activation.resolved.json
+  -db:/.nostos-activation/<job>/activation.json
