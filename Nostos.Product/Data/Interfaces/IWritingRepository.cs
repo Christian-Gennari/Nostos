@@ -30,9 +30,11 @@ public interface IWritingRepository
     Task DeleteAsync(WritingModel writing, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the ParentId of a writing item for ancestor-chain cycle detection.
+    /// Every writing's Id and ParentId in one read, for the folder-cycle check
+    /// (issue #1715). Keyed by Id; a null value means the root level.
     /// </summary>
-    Task<Guid?> GetParentIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, Guid?>> GetParentMapAsync(
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns the kept source notes for a writing document, or null if the writing does not exist.

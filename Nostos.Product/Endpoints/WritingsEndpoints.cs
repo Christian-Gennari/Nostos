@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
+using Nostos.Backend.Services.Writings;
 using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
@@ -116,36 +117,33 @@ public static class WritingsEndpoints
         // PUT: Move (Drag & Drop)
         group.MapPut(
             "/{id}/move",
-            async (Guid id, MoveWritingDto dto, IWritingRepository repo, CancellationToken ct) =>
+            async (
+                Guid id,
+                MoveWritingDto dto,
+                IWritingRepository repo,
+                WritingTreeService tree,
+                CancellationToken ct) =>
             {
                 var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
-                // --- CYCLE DETECTION START ---
-                if (dto.NewParentId.HasValue)
+                // The tree check is one read for the whole move (WritingTreeService,
+                // issue #1715); the messages below are the bodies clients already see.
+                var outcome = await tree.CheckMoveAsync(id, dto.NewParentId, ct);
+                if (outcome != WritingMoveOutcome.Allowed)
                 {
-                    if (dto.NewParentId == id)
-                        return ApiErrors.Message("Cannot move a folder into itself.");
-
-                    var currentAncestorId = dto.NewParentId;
-                    var visited = new HashSet<Guid>();
-                    while (currentAncestorId != null)
+                    return outcome switch
                     {
-                        if (!visited.Add(currentAncestorId.Value))
-                            return ApiErrors.Message(
-                                "Circular reference detected in folder hierarchy."
-                            );
-
-                        if (currentAncestorId == id)
-                            return ApiErrors.Message(
-                                "Cannot move a folder into its own descendant."
-                            );
-
-                        currentAncestorId = await repo.GetParentIdAsync(currentAncestorId.Value, ct);
-                    }
+                        WritingMoveOutcome.IntoItself =>
+                            ApiErrors.Message("Cannot move a folder into itself."),
+                        WritingMoveOutcome.IntoDescendant =>
+                            ApiErrors.Message("Cannot move a folder into its own descendant."),
+                        WritingMoveOutcome.CircularHierarchy =>
+                            ApiErrors.Message("Circular reference detected in folder hierarchy."),
+                        _ => Results.NotFound(),
+                    };
                 }
-                // --- CYCLE DETECTION END ---
 
                 item.ParentId = dto.NewParentId;
                 item.UpdatedAt = DateTime.UtcNow;

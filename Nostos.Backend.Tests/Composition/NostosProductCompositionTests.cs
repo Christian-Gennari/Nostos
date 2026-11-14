@@ -31,6 +31,7 @@ using Nostos.Backend.Services.Portability.Markdown;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.ReadingList;
 using Nostos.Backend.Services.Recovery;
+using Nostos.Backend.Services.Writings;
 using Nostos.Product.Alignment;
 using Nostos.Product.BookText;
 using Nostos.Product.Composition;
@@ -254,6 +255,7 @@ public sealed class NostosProductCompositionTests
         AssertRegistered(services, typeof(INoteRepository), typeof(NoteRepository), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(ITopicRepository), typeof(TopicRepository), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(IWritingRepository), typeof(WritingRepository), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(WritingTreeService), typeof(WritingTreeService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(BookFileCommit), typeof(BookFileCommit), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(BookTrackUpload), typeof(BookTrackUpload), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(BookLookupService), typeof(BookLookupService), ServiceLifetime.Scoped);

@@ -11,6 +11,7 @@ using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Backend.Services.ReadingList;
 using Nostos.Backend.Services.Recovery;
+using Nostos.Backend.Services.Writings;
 
 namespace Nostos.Product.Composition;
 
@@ -23,6 +24,9 @@ internal static class NostosLibraryServices
         services.AddScoped<INoteRepository, NoteRepository>();
         services.AddScoped<ITopicRepository, TopicRepository>();
         services.AddScoped<IWritingRepository, WritingRepository>();
+        // One-read folder-cycle check for the writings move endpoint (#1715).
+        // TryAdd keeps a host's own registration authoritative.
+        services.TryAddScoped<WritingTreeService>();
 
         // The legacy single-POST upload commits through this on every host,
         // Cloud included, so it is registered here rather than per host (#1266).

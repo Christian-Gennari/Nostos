@@ -68,14 +68,15 @@ public class WritingRepository : IWritingRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<Guid?> GetParentIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyDictionary<Guid, Guid?>> GetParentMapAsync(
+        CancellationToken cancellationToken = default)
     {
-        var result = await _db
-            .Writings.Where(w => w.Id == id)
-            .Select(w => new { w.ParentId })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return result?.ParentId;
+        // Two GUID columns per writing: one query, walked in memory by
+        // WritingTreeService instead of one parent read per folder level.
+        return await _db
+            .Writings.AsNoTracking()
+            .Select(w => new { w.Id, w.ParentId })
+            .ToDictionaryAsync(w => w.Id, w => w.ParentId, cancellationToken);
     }
 
     public async Task<List<WritingNoteModel>?> GetKeptNotesAsync(
