@@ -177,23 +177,7 @@ internal static class SelfHostedSqliteFile
 
             using (var connection = Open(databasePath, readOnly: false))
             {
-                var integrity = QueryStrings(connection, "PRAGMA integrity_check;");
-                if (integrity.Count != 1 || !string.Equals(integrity[0], "ok", StringComparison.Ordinal))
-                {
-                    throw new MigrationActivationException(
-                        MigrationActivationErrorCodes.Failed,
-                        "The activated database failed its integrity check.");
-                }
-
-                using var command = connection.CreateCommand();
-                command.CommandText = "PRAGMA foreign_key_check;";
-                using var reader = command.ExecuteReader();
-                if (reader.Read())
-                {
-                    throw new MigrationActivationException(
-                        MigrationActivationErrorCodes.Failed,
-                        "The activated database has foreign-key violations.");
-                }
+                VerifyIntegrityAndForeignKeys(connection, "The activated");
             }
 
             ClearPools();
@@ -203,6 +187,32 @@ internal static class SelfHostedSqliteFile
             throw new MigrationActivationException(
                 MigrationActivationErrorCodes.Failed,
                 "The activated database could not be opened or verified.");
+        }
+    }
+
+    /// <summary>
+    /// The candidate and the activated database are both proved self-contained the
+    /// same way: SQLite's own integrity check plus a foreign-key check, with the
+    /// subject named so the failure message stays specific to the caller.
+    /// </summary>
+    internal static void VerifyIntegrityAndForeignKeys(SqliteConnection connection, string subject)
+    {
+        var integrity = QueryStrings(connection, "PRAGMA integrity_check;");
+        if (integrity.Count != 1 || !string.Equals(integrity[0], "ok", StringComparison.Ordinal))
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                $"{subject} database failed its integrity check.");
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA foreign_key_check;";
+        using var reader = command.ExecuteReader();
+        if (reader.Read())
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                $"{subject} database has foreign-key violations.");
         }
     }
 

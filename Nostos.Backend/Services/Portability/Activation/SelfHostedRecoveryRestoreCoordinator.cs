@@ -39,7 +39,7 @@ internal sealed record SelfHostedRecoveryRestoreResult(
 /// abrupt process loss. The coordinator rethrows it without rolling back,
 /// releasing or cleaning anything, exactly like a host that died there.
 /// </summary>
-internal sealed class SelfHostedRecoveryRestoreAbandonedException : Exception;
+internal sealed class SelfHostedRecoveryRestoreAbandonedException : Exception, ISelfHostedLibrarySwitchAbandoned;
 
 /// <summary>Names of the durable phase writes and step boundaries tests crash at.</summary>
 internal static class SelfHostedRecoveryRestoreSteps
@@ -103,14 +103,13 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
     private readonly SelfHostedActivationJournalStore _journals;
     private readonly SelfHostedRecoveryManifestStore _manifests;
     private readonly IServiceScopeFactory _scopes;
-    private readonly ISelfHostedSqliteLifecycle _sqlite;
     private readonly IPortableLibraryVerifier _verifier;
     private readonly ISelfHostedRecoverySchemaMigrator _migrator;
-    private readonly IReadOnlyList<ISelfHostedActivationRecoveryStep> _recoverySteps;
     private readonly TransferPathResolver _transferPaths;
     private readonly ILibraryDestinationRevisionProvider _revisionProvider;
     private readonly ILogger<SelfHostedRecoveryRestoreCoordinator> _logger;
     private readonly TimeProvider _clock;
+    private readonly SelfHostedLibraryCutover _cutover;
 
     /// <summary>Test seam: invoked after each named boundary; throwing models a crash.</summary>
     internal Action<string>? StepObserverForTesting { get; set; }
@@ -148,14 +147,14 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         _journals = journals;
         _manifests = manifests;
         _scopes = scopes;
-        _sqlite = sqlite;
         _verifier = verifier;
         _migrator = migrator;
-        _recoverySteps = recoverySteps.OrderBy(step => step.Order).ToArray();
         _transferPaths = transferPaths;
         _revisionProvider = revisionProvider;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _cutover = new SelfHostedLibraryCutover(paths, maintenance, journals, sqlite,
+            recoverySteps.OrderBy(step => step.Order).ToArray(), scopes, logger, Step);
     }
 
     /// <summary>
@@ -303,6 +302,13 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             MigrationRecoveryStatus.Restored, null);
     }
 
+    /// <summary>
+    /// Phase A runs here; Phase B is the shared journaled cutover (#1604).
+    /// Recovery restore supplies the authoritative revision recheck, candidate
+    /// finalization, the retention plan for the library being replaced and the
+    /// restore's own bookkeeping; the window, every durable phase write, the
+    /// renames and the rollback are the protocol.
+    /// </summary>
     private async Task<SelfHostedRecoveryRestoreResult> RunCutoverAsync(
         Guid recoveryId,
         SelfHostedRecoveryManifest manifest,
@@ -315,14 +321,12 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             throw Corrupt("The restore does not record the confirmed destination revision.");
         }
 
-        IAsyncDisposable? exclusive = null;
-        var exclusiveEntered = false;
-        var committed = false;
         var journalPrepared = false;
-        var operationId = Guid.NewGuid();
+        SelfHostedLibraryCutoverPlan? plan = null;
         try
         {
             // ---- Phase A: long, outside maintenance, no live mutation. ----
+            var operationId = Guid.NewGuid();
             _journals.PrepareForRetry(restoreId);
             _journals.Write(new SelfHostedActivationJournal(restoreId, operationId,
                 SelfHostedActivationPhase.CandidatePrepared, storedRevision, RetainPreviousLibrary: true,
@@ -346,159 +350,120 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             var source = await PrepareSourceAsync(recoveryId, restoreId, manifest, ct);
 
             // ---- Phase B: exclusive maintenance, committed or rolled back. ----
-            exclusive = await _maintenance.EnterExclusiveAsync(
-                LibraryMaintenanceReason.RecoveryRestore, ct);
-            exclusiveEntered = true;
-
-            // The authoritative revision recheck closes the race once admission
-            // is closed and every reader/writer has drained.
-            var currentRevision = await ReadCurrentRevisionAsync(CancellationToken.None);
-            MigrationActivationAdmission.ValidateRecoveryRestore(
-                new MigrationRecoveryRestoreRequest(storedRevision, ConfirmReplacement: true),
-                currentRevision);
-
-            _journals.Advance(restoreId, SelfHostedActivationPhase.ExclusiveEntered, exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.PhaseExclusiveEntered);
-
-            // Last live database mutation is the finalized candidate snapshot
-            // plus the revision bump. Everything after quiesce is path movement.
-            await using (var scope = _scopes.CreateAsyncScope())
+            plan = new SelfHostedLibraryCutoverPlan
             {
-                var builder = (SelfHostedActivationDatabaseBuilder)scope.ServiceProvider
-                    .GetRequiredService<ISelfHostedActivationDatabaseBuilder>();
-                await builder.FinalizeCandidateAsync(restoreId, exclusive, CancellationToken.None);
-                if (!builder.IsFinalized(restoreId))
+                SwitchId = restoreId,
+                Reason = LibraryMaintenanceReason.RecoveryRestore,
+                Labels = SelfHostedLibraryCutoverLabels.RecoveryRestore,
+                Steps = SelfHostedLibraryCutoverSteps.RecoveryRestore,
+                // The current library is always retained as the new recovery
+                // copy: the same manifest/rename machinery activation uses for
+                // the previous library, with the operation id doubling as the
+                // new copy's recovery id so the restore itself is reversible.
+                RetainPreviousLibrary = true,
+                // The copy was durably claimed as Restoring before this window
+                // opened, so even a refused admission must release the claim.
+                RollBackWhenEnterFails = true,
+                AdmitAsync = async (_, _) =>
                 {
-                    throw Failed("The restore candidate was not finalized.");
-                }
-            }
-
-            Step(SelfHostedRecoveryRestoreSteps.AfterFinalize);
-
-            // A crash-terminated attempt may have left an unfinished retention
-            // plan bound to a previous attempt; clear it before quiescence so no
-            // database access is needed after the checkpoint boundary.
-            await using (var scope = _scopes.CreateAsyncScope())
-            {
-                if (_manifests.Read(restoreId) is { Status: MigrationRecoveryStatus.Creating })
+                    // The authoritative revision recheck closes the race once
+                    // admission is closed and every reader/writer has drained.
+                    var currentRevision = await ReadCurrentRevisionAsync(CancellationToken.None);
+                    MigrationActivationAdmission.ValidateRecoveryRestore(
+                        new MigrationRecoveryRestoreRequest(storedRevision, ConfirmReplacement: true),
+                        currentRevision);
+                },
+                FinalizeCandidateAsync = async exclusive =>
                 {
-                    await scope.ServiceProvider.GetRequiredService<SelfHostedMigrationRecoveryService>()
-                        .AbandonAsync(restoreId, exclusive, CancellationToken.None);
-                }
-            }
+                    await using var scope = _scopes.CreateAsyncScope();
+                    var builder = scope.ServiceProvider
+                        .GetRequiredService<ISelfHostedActivationDatabaseBuilder>();
+                    await builder.FinalizeCandidateAsync(restoreId, exclusive, CancellationToken.None);
+                    if (!builder.IsFinalized(restoreId))
+                    {
+                        throw Failed("The restore candidate was not finalized.");
+                    }
+                },
+                // A crash-terminated attempt may have left an unfinished
+                // retention plan bound to a previous attempt; clear it before
+                // quiescence so no database access is needed after the
+                // checkpoint boundary.
+                ClearStaleRetentionAsync = async exclusive =>
+                {
+                    await using var scope = _scopes.CreateAsyncScope();
+                    if (_manifests.Read(restoreId) is { Status: MigrationRecoveryStatus.Creating })
+                    {
+                        await scope.ServiceProvider.GetRequiredService<SelfHostedMigrationRecoveryService>()
+                            .AbandonAsync(restoreId, exclusive, CancellationToken.None);
+                    }
+                },
+                PrepareRetentionAsync = (recovery, exclusive) =>
+                    recovery.PrepareRetentionAsync(restoreId, capture, exclusive, CancellationToken.None),
+                RetainMediaAsync = (recovery, exclusive) =>
+                    recovery.RetainMediaAsync(restoreId, exclusive, CancellationToken.None),
+                RetainDatabaseAsync = (recovery, exclusive) =>
+                    recovery.RetainDatabaseAsync(restoreId, exclusive, CancellationToken.None),
+                VerifyActivatedLibraryAsync = () => PostActivationVerifyAsync(source.Payload, source.Media),
+                FinalizeCommittedAsync = exclusive => FinalizeCommittedAsync(manifest, restoreId, exclusive),
+                OnRolledBackAsync = async (exclusive, failure) =>
+                {
+                    await TryAbandonRetentionPlanAsync(restoreId, exclusive);
+                    TryClearRestoreJournal(restoreId);
+                    CleanupWorkingFiles(_paths.RestoreSourceDatabase(restoreId), _paths.RestorePayload(restoreId));
+                    await TryMarkRetryableAsync(recoveryId, ErrorCode(failure));
+                },
+                OnRollbackFailedAsync = () =>
+                {
+                    TryRecordRestoreError(recoveryId, MigrationActivationErrorCodes.RecoveryFailed);
+                    return Task.CompletedTask;
+                },
+                RollbackFailureLogMessage =
+                    "Recovery restore rollback could not complete; the library stays in maintenance until "
+                    + "startup reconciliation. Follow the activation recovery guide.",
+                RollbackFailedMessage =
+                    "The restore failed and the current library could not be restored in-process. "
+                    + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.",
+            };
 
-            _sqlite.QuiesceLive(exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.AfterQuiesce);
-            _journals.Advance(restoreId, SelfHostedActivationPhase.DatabaseCheckpointed, exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.PhaseDatabaseCheckpointed);
-
-            await using (var scope = _scopes.CreateAsyncScope())
-            {
-                var recovery = scope.ServiceProvider.GetRequiredService<SelfHostedMigrationRecoveryService>();
-                // Retain the CURRENT library as the new recovery copy: the same
-                // manifest/rename machinery that activation uses for the
-                // previous library. The operation id doubles as the new copy's
-                // recovery id, so the restore itself is reversible.
-                await recovery.PrepareRetentionAsync(restoreId, capture, exclusive, CancellationToken.None);
-                Step(SelfHostedRecoveryRestoreSteps.AfterPrepareRetention);
-
-                _journals.Advance(restoreId, SelfHostedActivationPhase.CutoverPrepared, exclusive);
-                Step(SelfHostedRecoveryRestoreSteps.PhaseCutoverPrepared);
-
-                await recovery.RetainMediaAsync(restoreId, exclusive, CancellationToken.None);
-                Step(SelfHostedRecoveryRestoreSteps.AfterRetainMedia);
-                _journals.Advance(restoreId, SelfHostedActivationPhase.PreviousMediaRetained, exclusive);
-                Step(SelfHostedRecoveryRestoreSteps.PhasePreviousMediaRetained);
-
-                await recovery.RetainDatabaseAsync(restoreId, exclusive, CancellationToken.None);
-                Step(SelfHostedRecoveryRestoreSteps.AfterRetainDatabase);
-                _journals.Advance(restoreId, SelfHostedActivationPhase.PreviousDatabaseRetained, exclusive);
-                Step(SelfHostedRecoveryRestoreSteps.PhasePreviousDatabaseRetained);
-            }
-
-            ActivationFileSystem.Rename(_paths.CandidateMedia(restoreId), _paths.LiveMedia);
-            Step(SelfHostedRecoveryRestoreSteps.AfterActivateMedia);
-            _journals.Advance(restoreId, SelfHostedActivationPhase.CandidateMediaActivated, exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.PhaseCandidateMediaActivated);
-
-            ActivationFileSystem.Rename(_paths.CandidateDatabase(restoreId), _paths.LiveDatabase);
-            Step(SelfHostedRecoveryRestoreSteps.AfterActivateDatabase);
-            _journals.Advance(restoreId, SelfHostedActivationPhase.CandidateDatabaseActivated, exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.PhaseCandidateDatabaseActivated);
-
-            _sqlite.ReopenActivated(exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.AfterReopen);
-
-            await PostActivationVerifyAsync(source.Payload, source.Media);
-            Step(SelfHostedRecoveryRestoreSteps.AfterPostVerify);
-
-            _journals.Advance(restoreId, SelfHostedActivationPhase.PostActivationVerified, exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.PhasePostActivationVerified);
-            _journals.Advance(restoreId, SelfHostedActivationPhase.Committed, exclusive);
-            Step(SelfHostedRecoveryRestoreSteps.PhaseCommitted);
-            committed = true;
-
-            await FinalizeCommittedAsync(manifest, restoreId, exclusive);
+            await _cutover.RunAsync(plan, ct);
             return new SelfHostedRecoveryRestoreResult(recoveryId, SelfHostedRecoveryRestoreOutcome.Restored,
                 MigrationRecoveryStatus.Restored, null);
         }
         catch (SelfHostedRecoveryRestoreAbandonedException)
         {
             // A process crash never runs a finally: admission must stay closed
-            // until a restart's reconciler decides the generation.
+            // until a restart's reconciler decides the generation. Phase A
+            // boundaries are outside the shared cutover, so this catch owns it.
             _maintenance.FailClosedForRecovery();
             throw;
         }
-        catch (Exception exception) when (!committed)
+        catch (Exception exception) when (plan is not { Committed: true })
         {
-            if (exclusiveEntered && exclusive is not null)
+            if (plan is not { WindowEntered: true })
             {
-                try
+                // Phase A, or the exclusive window could not be taken at all.
+                if (exception is MigrationActivationException { Code: MigrationActivationErrorCodes.Busy })
                 {
-                    await RollBackAsync(restoreId, exclusive);
+                    // Another operation owns the library; this request stays
+                    // pending and the runner retries it on the next scan.
                 }
-                catch (Exception rollbackFailure)
+                else if (!journalPrepared)
                 {
-                    _maintenance.FailClosedForRecovery();
-                    TryRecordRestoreError(recoveryId, MigrationActivationErrorCodes.RecoveryFailed);
-                    _logger.LogCritical(rollbackFailure,
-                        "Recovery restore rollback could not complete; the library stays in maintenance until "
-                        + "startup reconciliation. Follow the activation recovery guide.");
-                    throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryFailed,
-                        "The restore failed and the current library could not be restored in-process. "
-                        + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.");
+                    // The journal could not even be prepared: the durable state
+                    // is inconsistent and must be inspected rather than retried.
+                    TryMarkTerminal(recoveryId, ErrorCode(exception));
                 }
-
-                await TryAbandonRetentionPlanAsync(restoreId, exclusive);
-                TryClearRestoreJournal(restoreId);
-                CleanupWorkingFiles(_paths.RestoreSourceDatabase(restoreId), _paths.RestorePayload(restoreId));
-                await TryMarkRetryableAsync(recoveryId, ErrorCode(exception));
-            }
-            else if (exception is MigrationActivationException { Code: MigrationActivationErrorCodes.Busy })
-            {
-                // Another operation owns the library; this request stays
-                // pending and the runner retries it on the next scan.
-            }
-            else if (!journalPrepared)
-            {
-                // The journal could not even be prepared: the durable state is
-                // inconsistent and must be inspected rather than retried.
-                TryMarkTerminal(recoveryId, ErrorCode(exception));
-            }
-            else
-            {
-                // No live path could have changed yet: reset the copy for a
-                // later attempt (or mark tamper/corruption terminal).
-                TryClearRestoreJournal(restoreId);
-                CleanupWorkingFiles(_paths.RestoreSourceDatabase(restoreId), _paths.RestorePayload(restoreId));
-                await TryMarkFailedOrRetryableAsync(recoveryId, exception);
+                else
+                {
+                    // No live path could have changed yet: reset the copy for a
+                    // later attempt (or mark tamper/corruption terminal).
+                    TryClearRestoreJournal(restoreId);
+                    CleanupWorkingFiles(_paths.RestoreSourceDatabase(restoreId), _paths.RestorePayload(restoreId));
+                    await TryMarkFailedOrRetryableAsync(recoveryId, exception);
+                }
             }
 
             throw WrapRestoreFailure(exception);
-        }
-        finally
-        {
-            if (exclusive is not null) await exclusive.DisposeAsync();
         }
     }
 
@@ -606,7 +571,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             }
 
             var folderName = Path.GetFileName(directory);
-            if (!TryReadBookDirectoryName(folderName, out var bookId))
+            if (!SelfHostedRecoveryMediaLayout.TryReadBookDirectoryName(folderName, out var bookId))
             {
                 throw Corrupt("The retained recovery media root contains an unexpected directory.");
             }
@@ -626,7 +591,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                 }
 
                 var fileName = Path.GetFileName(entry);
-                var (kind, extension) = ClassifyMediaFile(fileName);
+                var (kind, extension) = SelfHostedRecoveryMediaLayout.ClassifyMediaFile(fileName);
                 var targetPath = Path.Combine(targetFolder, fileName);
                 _paths.VerifyMediaPath(targetPath);
 
@@ -780,7 +745,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         CancellationToken ct)
     {
         await using var scope = _scopes.CreateAsyncScope();
-        var builder = (SelfHostedActivationDatabaseBuilder)scope.ServiceProvider
+        var builder = scope.ServiceProvider
             .GetRequiredService<ISelfHostedActivationDatabaseBuilder>();
         await builder.BuildPortableCandidateFromVerifiedPayloadAsync(
             restoreId, _paths.RestorePayload(restoreId), payload.PrimaryMedia, ct);
@@ -792,13 +757,13 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         CancellationToken ct)
     {
         await using var scope = _scopes.CreateAsyncScope();
-        var builder = (SelfHostedActivationDatabaseBuilder)scope.ServiceProvider
+        var builder = scope.ServiceProvider
             .GetRequiredService<ISelfHostedActivationDatabaseBuilder>();
         using var candidate = builder.OpenCandidate(restoreId);
         var report = await _verifier.VerifyDatabaseAgainstExpectedAsync(candidate, payload, ct);
         if (!report.Passed)
         {
-            throw Failed($"The restore candidate failed verification ({FirstFailureCode(report.Failures)}).");
+            throw Failed($"The restore candidate failed verification ({SelfHostedVerificationFailures.FirstCode(report.Failures)}).");
         }
     }
 
@@ -812,7 +777,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             var report = await _verifier.VerifyDatabaseAgainstExpectedAsync(db, payload, CancellationToken.None);
             if (!report.Passed)
             {
-                throw Failed($"The restored library failed authoritative verification ({FirstFailureCode(report.Failures)}).");
+                throw Failed($"The restored library failed authoritative verification ({SelfHostedVerificationFailures.FirstCode(report.Failures)}).");
             }
         }
 
@@ -895,38 +860,6 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                 "The restore is committed but finalization could not complete in-process. "
                 + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.");
         }
-    }
-
-    /// <summary>
-    /// Rollback through the startup reconciler's own steps: the durable phase
-    /// selects the direction, every step validates before any executes, and
-    /// repeating from any partially repaired position succeeds.
-    /// </summary>
-    private async Task RollBackAsync(Guid restoreId, IAsyncDisposable exclusive)
-    {
-        var journal = _journals.Read(restoreId)
-            ?? throw SelfHostedActivationPaths.Failure("The restore journal is missing.");
-        var action = SelfHostedActivationState.RecoveryAction(journal);
-        if (action == SelfHostedRecoveryAction.Nothing) return;
-        if (action != SelfHostedRecoveryAction.RollBackOriginal)
-        {
-            throw SelfHostedActivationPaths.Failure(
-                "The restore journal does not describe a recoverable pre-commit state.");
-        }
-
-        foreach (var step in _recoverySteps) step.Validate(journal, action);
-        _journals.Advance(restoreId, SelfHostedActivationPhase.RollingBack, exclusive);
-        foreach (var step in _recoverySteps) step.Execute(journal, action);
-        if (!File.Exists(_paths.LiveDatabase) || !Directory.Exists(_paths.LiveMedia))
-        {
-            throw SelfHostedActivationPaths.Failure("Restore rollback did not restore the live library.");
-        }
-
-        _sqlite.ReopenActivated(exclusive);
-        _journals.Advance(restoreId, SelfHostedActivationPhase.RolledBack, exclusive);
-        _journals.MarkResolved(restoreId, exclusive);
-        Step("restore:after:rollback");
-        await Task.CompletedTask;
     }
 
     private async Task TryAbandonRetentionPlanAsync(Guid restoreId, IAsyncDisposable exclusive)
@@ -1226,34 +1159,6 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                 sqlite => sqlite.MigrationsAssembly(typeof(PersistenceRegistration).Assembly.FullName))
             .Options);
 
-    private static bool TryReadBookDirectoryName(string name, out Guid bookId)
-    {
-        bookId = Guid.Empty;
-        if (!Guid.TryParse(name, out var parsed) || parsed == Guid.Empty) return false;
-        if (!string.Equals(name, parsed.ToString("D"), StringComparison.Ordinal)
-            && !string.Equals(name, parsed.ToString("N"), StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        bookId = parsed;
-        return true;
-    }
-
-    private static (string Kind, string Extension) ClassifyMediaFile(string fileName)
-    {
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (fileName.EndsWith(".partial", StringComparison.OrdinalIgnoreCase)) return ("partial", extension);
-        var stem = Path.GetFileNameWithoutExtension(fileName);
-        if (string.Equals(stem, "book", StringComparison.OrdinalIgnoreCase)) return ("book", extension);
-        if (string.Equals(stem, "cover", StringComparison.OrdinalIgnoreCase)) return ("cover", extension);
-        if (stem.StartsWith("cover-thumb-", StringComparison.OrdinalIgnoreCase)) return ("thumbnail", extension);
-        // A track of a multi-track audiobook. Exact, case-correct name only:
-        // anything that merely resembles one stays "other".
-        if (BookTrackFormats.TryParseCanonicalFileName(fileName, out _)) return ("track", extension);
-        return ("other", extension);
-    }
-
     private void Step(string name) => StepObserverForTesting?.Invoke(name);
 
     private static bool IsTerminal(Exception exception) =>
@@ -1261,9 +1166,6 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
 
     private static string ErrorCode(Exception exception) =>
         exception is MigrationActivationException activation ? activation.Code : MigrationActivationErrorCodes.Failed;
-
-    private static string FirstFailureCode(IReadOnlyList<PortableLibraryVerificationFailure> failures) =>
-        failures.Count == 0 ? "portable_verify_failed" : failures[0].Code;
 
     private static MigrationActivationException Failed(string message) =>
         new(MigrationActivationErrorCodes.Failed, message);

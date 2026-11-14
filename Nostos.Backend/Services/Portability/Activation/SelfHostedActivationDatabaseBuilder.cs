@@ -33,6 +33,21 @@ internal interface ISelfHostedActivationDatabaseBuilder
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Builds the same fresh current-schema candidate database from a relational
+    /// payload file the caller already verified (recovery restore extracts the
+    /// previous library's portable state and binds its SHA-256). The candidate is
+    /// deliberately not cutover-ready: <see cref="FinalizeCandidateAsync"/> still
+    /// imports the current host operational state under the exclusive lease. This
+    /// is the only recovery-restore-specific entry point; activation behaviour is
+    /// unchanged.
+    /// </summary>
+    Task BuildPortableCandidateFromVerifiedPayloadAsync(
+        Guid jobId,
+        string verifiedPayloadPath,
+        IReadOnlyList<PortableArchiveMediaEntry> media,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Imports the live host operational state into the candidate under the
     /// caller's current exclusive maintenance lease and marks the candidate
     /// finalized. Must run after every pre-cutover live mutation and before
@@ -128,10 +143,9 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
     /// previous library's portable state and binds its SHA-256). The candidate
     /// is deliberately not cutover-ready: <see cref="FinalizeCandidateAsync"/>
     /// still imports the current host operational state under the exclusive
-    /// lease. This overload is the only recovery-restore-specific entry point;
-    /// activation behaviour is unchanged.
+    /// lease.
     /// </summary>
-    internal async Task BuildPortableCandidateFromVerifiedPayloadAsync(
+    public async Task BuildPortableCandidateFromVerifiedPayloadAsync(
         Guid jobId,
         string verifiedPayloadPath,
         IReadOnlyList<PortableArchiveMediaEntry> media,
@@ -446,25 +460,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         SelfHostedSqliteFile.ClearPools();
         using (var connection = SelfHostedSqliteFile.Open(candidate, readOnly: false))
         {
-            var integrity = SelfHostedSqliteFile.QueryStrings(connection, "PRAGMA integrity_check;");
-            if (integrity.Count != 1 || !string.Equals(integrity[0], "ok", StringComparison.Ordinal))
-            {
-                throw new MigrationActivationException(
-                    MigrationActivationErrorCodes.Failed,
-                    "The candidate database failed its integrity check.");
-            }
-
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = "PRAGMA foreign_key_check;";
-                using var reader = command.ExecuteReader();
-                if (reader.Read())
-                {
-                    throw new MigrationActivationException(
-                        MigrationActivationErrorCodes.Failed,
-                        "The candidate database has foreign-key violations.");
-                }
-            }
+            SelfHostedSqliteFile.VerifyIntegrityAndForeignKeys(connection, "The candidate");
 
             var busy = SelfHostedSqliteFile.CheckpointTruncate(connection);
             if (busy != 0)

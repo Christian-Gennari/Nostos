@@ -91,6 +91,62 @@ internal abstract class SelfHostedLibrarySwitchRunSlot(Guid key)
 }
 
 /// <summary>
+/// Shared per-run state between the lifecycle core and one switch kind: the
+/// request that admitted the run, the monotonic phase the status reader serves
+/// and the terminal status retained for the TTL. The two slot types differ only
+/// in the snapshot fields each status answer needs.
+/// </summary>
+internal abstract class SelfHostedLibrarySwitchRunSlot<TRequest, TStatus>(Guid key)
+    : SelfHostedLibrarySwitchRunSlot(key)
+{
+    internal TRequest? Request { get; private set; }
+
+    internal MigrationActivationPhase Phase { get; private set; } = MigrationActivationPhase.Queued;
+
+    internal TStatus? LastStatus { get; private set; }
+
+    /// <summary>
+    /// Claims the run for a new request unless one is already accepted/running.
+    /// A <see langword="null"/> request is a resume of a durably admitted run,
+    /// whose binding comes from the durable journal or claim.
+    /// </summary>
+    protected bool Admit(TRequest? request)
+    {
+        if (!TryAdmitCore()) return false;
+        Request = request;
+        Phase = MigrationActivationPhase.Queued;
+        LastStatus = default;
+        return true;
+    }
+
+    protected bool BeginRunning()
+    {
+        if (!TryMarkRunningCore()) return false;
+        SetPhase(MigrationActivationPhase.Preparing);
+        return true;
+    }
+
+    /// <summary>Monotonic phase update: the switch never moves backwards.</summary>
+    internal void SetPhase(MigrationActivationPhase phase)
+    {
+        if (phase > Phase) Phase = phase;
+    }
+
+    protected void Finish(TStatus status, DateTimeOffset now)
+    {
+        LastStatus = status;
+        MarkFinishedCore(now);
+    }
+
+    /// <summary>A queued run dropped at shutdown: no run remains and durable state still decides.</summary>
+    protected void Drop(DateTimeOffset now)
+    {
+        LastStatus = default;
+        MarkDroppedCore(now);
+    }
+}
+
+/// <summary>
 /// Bounded per-key run registry shared by activation and recovery restore.
 /// Finished slots are retained for a TTL so a late duplicate request can replay
 /// the outcome instead of starting a second run; they are pruned afterwards, at

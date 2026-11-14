@@ -34,7 +34,7 @@ internal sealed record SelfHostedActivationResult(
 /// process loss. The coordinator rethrows it without rolling back, releasing
 /// or cleaning anything, exactly like a host that died at that boundary.
 /// </summary>
-internal sealed class SelfHostedActivationAbandonedException : Exception;
+internal sealed class SelfHostedActivationAbandonedException : Exception, ISelfHostedLibrarySwitchAbandoned;
 
 /// <summary>
 /// Destination facts read through the coordinator's own admission reader: the
@@ -108,15 +108,14 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     private readonly SelfHostedRecoveryManifestStore _manifests;
     private readonly ISelfHostedActivationDatabaseBuilder _databaseBuilder;
     private readonly ISelfHostedActivationCandidateMediaBuilder _mediaBuilder;
-    private readonly ISelfHostedSqliteLifecycle _sqlite;
     private readonly IPortableLibraryVerifier _verifier;
     private readonly IBookAssetStorage _assets;
-    private readonly IReadOnlyList<ISelfHostedActivationRecoveryStep> _recoverySteps;
     private readonly IServiceScopeFactory _scopes;
     private readonly TransferPathResolver _transferPaths;
     private readonly ILibraryDestinationRevisionProvider _revisionProvider;
     private readonly ILogger<SelfHostedActivationCoordinator> _logger;
     private readonly TimeProvider _clock;
+    private readonly SelfHostedLibraryCutover _cutover;
 
     /// <summary>Test seam: invoked after each named boundary; throwing models a crash.</summary>
     internal Action<string>? StepObserverForTesting { get; set; }
@@ -166,15 +165,15 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         _manifests = manifests;
         _databaseBuilder = databaseBuilder;
         _mediaBuilder = mediaBuilder;
-        _sqlite = sqlite;
         _verifier = verifier;
         _assets = assets;
-        _recoverySteps = recoverySteps.OrderBy(step => step.Order).ToArray();
         _scopes = scopes;
         _transferPaths = transferPaths;
         _revisionProvider = revisionProvider;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _cutover = new SelfHostedLibraryCutover(paths, maintenance, journals, sqlite,
+            recoverySteps.OrderBy(step => step.Order).ToArray(), scopes, logger, Step);
     }
 
     /// <summary>
@@ -564,6 +563,14 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         }
     }
 
+    /// <summary>
+    /// Phase B: the shared journaled cutover (#1604). Activation supplies the
+    /// authoritative admission recheck, the transition out of
+    /// <c>ReadyToActivate</c>, candidate finalization, its retention strategy
+    /// (retained copy or empty scratch) and post-commit job completion; the
+    /// window, every durable phase write, the renames and the rollback are the
+    /// protocol in <see cref="SelfHostedLibraryCutover"/>.
+    /// </summary>
     private async Task<MigrationRecoveryStatus> RunCutoverAsync(
         Guid jobId,
         MigrationJobState state,
@@ -576,211 +583,98 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         string token,
         CancellationToken ct)
     {
-        IAsyncDisposable? exclusive = null;
-        LeaseHeartbeat? heartbeat = null;
-        var jobEnteredActivation = false;
-        var committed = false;
-        try
+        var status = MigrationRecoveryStatus.NotRequired;
+        var plan = new SelfHostedLibraryCutoverPlan
         {
-            // Fail closed when the drain cannot complete: nothing has changed.
-            exclusive = await _maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation, ct);
-
-            // The authoritative recheck only closes the race once admission is
-            // closed and every reader/writer has drained. Nothing has been
-            // renamed yet; a refusal returns a durably Activating job to
-            // re-confirmation and leaves a new ReadyToActivate admission
-            // retryable as before.
-            var facts = await ReadDestinationFactsAsync(CancellationToken.None);
-            await EnsureDurableAdmissionAsync(jobId, retain, confirmedRevision, facts, token,
-                CancellationToken.None);
-
-            if (state == MigrationJobState.ReadyToActivate)
+            SwitchId = jobId,
+            Reason = LibraryMaintenanceReason.Activation,
+            Labels = SelfHostedLibraryCutoverLabels.Activation,
+            Steps = SelfHostedLibraryCutoverSteps.Activation,
+            RetainPreviousLibrary = retain,
+            AdmitAsync = async (exclusive, _) =>
             {
-                await using var scope = _scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
-                    .TransitionAsync(jobId, MigrationJobState.Activating, token, CancellationToken.None);
-            }
-
-            jobEnteredActivation = true;
-
+                // The authoritative recheck only closes the race once admission is
+                // closed and every reader/writer has drained. Nothing has been
+                // renamed yet; a refusal returns a durably Activating job to
+                // re-confirmation and leaves a new ReadyToActivate admission
+                // retryable as before.
+                var facts = await ReadDestinationFactsAsync(CancellationToken.None);
+                await EnsureDurableAdmissionAsync(jobId, retain, confirmedRevision, facts, token,
+                    CancellationToken.None);
+            },
+            EnterSwitchAsync = async (exclusive, _) =>
+            {
+                if (state == MigrationJobState.ReadyToActivate)
+                {
+                    await using var scope = _scopes.CreateAsyncScope();
+                    await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+                        .TransitionAsync(jobId, MigrationJobState.Activating, token, CancellationToken.None);
+                }
+            },
             // The cutover window must not outlive the job lease: renew once the
             // exact boundary is reached (the pre-window heartbeat has stopped).
-            await RenewLeaseOnceAsync(jobId, token);
-
-            _journals.Advance(jobId, SelfHostedActivationPhase.ExclusiveEntered, exclusive);
-            Step(SelfHostedActivationSteps.PhaseExclusiveEntered);
-
-            // Last live database mutation is the finalized candidate snapshot
-            // plus the revision bump. Everything after quiesce is path movement.
-            await _databaseBuilder.FinalizeCandidateAsync(jobId, exclusive, CancellationToken.None);
-            if (!_databaseBuilder.IsFinalized(jobId))
+            RenewLeaseAsync = (_, _) => RenewLeaseOnceAsync(jobId, token),
+            FinalizeCandidateAsync = async exclusive =>
             {
-                throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
-                    "The activation candidate was not finalized.");
-            }
-
-            Step(SelfHostedActivationSteps.AfterFinalize);
-            _sqlite.QuiesceLive(exclusive);
-            Step(SelfHostedActivationSteps.AfterQuiesce);
-            _journals.Advance(jobId, SelfHostedActivationPhase.DatabaseCheckpointed, exclusive);
-            Step(SelfHostedActivationSteps.PhaseDatabaseCheckpointed);
-
-            await using (var scope = _scopes.CreateAsyncScope())
-            {
-                var recovery = scope.ServiceProvider.GetRequiredService<SelfHostedMigrationRecoveryService>();
-                if (retain)
+                await _databaseBuilder.FinalizeCandidateAsync(jobId, exclusive, CancellationToken.None);
+                if (!_databaseBuilder.IsFinalized(jobId))
                 {
-                    if (_manifests.Read(jobId) is { Status: MigrationRecoveryStatus.Creating })
-                    {
-                        // A crash-terminated attempt may have left an unfinished
-                        // retention plan bound to the previous attempt.
-                        await recovery.AbandonAsync(jobId, exclusive, CancellationToken.None);
-                    }
-
-                    await recovery.PrepareRetentionAsync(jobId, capture!, exclusive, CancellationToken.None);
-                    Step(SelfHostedActivationSteps.AfterPrepareRetention);
+                    throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
+                        "The activation candidate was not finalized.");
+                }
+            },
+            PrepareRetentionAsync = async (recovery, exclusive) =>
+            {
+                if (_manifests.Read(jobId) is { Status: MigrationRecoveryStatus.Creating })
+                {
+                    // A crash-terminated attempt may have left an unfinished
+                    // retention plan bound to the previous attempt.
+                    await recovery.AbandonAsync(jobId, exclusive, CancellationToken.None);
                 }
 
-                _journals.Advance(jobId, SelfHostedActivationPhase.CutoverPrepared, exclusive);
-                Step(SelfHostedActivationSteps.PhaseCutoverPrepared);
-
-                if (retain)
-                {
-                    await recovery.RetainMediaAsync(jobId, exclusive, CancellationToken.None);
-                    Step(SelfHostedActivationSteps.AfterRetainMedia);
-                    _journals.Advance(jobId, SelfHostedActivationPhase.PreviousMediaRetained, exclusive);
-                    Step(SelfHostedActivationSteps.PhasePreviousMediaRetained);
-                    await recovery.RetainDatabaseAsync(jobId, exclusive, CancellationToken.None);
-                    Step(SelfHostedActivationSteps.AfterRetainDatabase);
-                    _journals.Advance(jobId, SelfHostedActivationPhase.PreviousDatabaseRetained, exclusive);
-                    Step(SelfHostedActivationSteps.PhasePreviousDatabaseRetained);
-                }
-                else
-                {
-                    // Empty destination: the same scratch renames, no manifest.
-                    RetainEmptyMedia(jobId);
-                    Step(SelfHostedActivationSteps.AfterRetainMedia);
-                    _journals.Advance(jobId, SelfHostedActivationPhase.PreviousMediaRetained, exclusive);
-                    Step(SelfHostedActivationSteps.PhasePreviousMediaRetained);
-                    RetainEmptyDatabase(jobId);
-                    Step(SelfHostedActivationSteps.AfterRetainDatabase);
-                    _journals.Advance(jobId, SelfHostedActivationPhase.PreviousDatabaseRetained, exclusive);
-                    Step(SelfHostedActivationSteps.PhasePreviousDatabaseRetained);
-                }
-            }
-
-            ActivationFileSystem.Rename(_paths.CandidateMedia(jobId), _paths.LiveMedia);
-            Step(SelfHostedActivationSteps.AfterActivateMedia);
-            _journals.Advance(jobId, SelfHostedActivationPhase.CandidateMediaActivated, exclusive);
-            Step(SelfHostedActivationSteps.PhaseCandidateMediaActivated);
-
-            ActivationFileSystem.Rename(_paths.CandidateDatabase(jobId), _paths.LiveDatabase);
-            Step(SelfHostedActivationSteps.AfterActivateDatabase);
-            _journals.Advance(jobId, SelfHostedActivationPhase.CandidateDatabaseActivated, exclusive);
-            Step(SelfHostedActivationSteps.PhaseCandidateDatabaseActivated);
-
-            _sqlite.ReopenActivated(exclusive);
-            Step(SelfHostedActivationSteps.AfterReopen);
-
-            // Verification reads the newly activated generation and may be long;
-            // keep the job lease alive against the activated database.
-            heartbeat = StartHeartbeat(jobId, token);
-            await PostActivationVerifyAsync(jobId, prepared, expected);
-            await heartbeat.DisposeAsync();
-            heartbeat = null;
-            Step(SelfHostedActivationSteps.AfterPostVerify);
-
-            _journals.Advance(jobId, SelfHostedActivationPhase.PostActivationVerified, exclusive);
-            Step(SelfHostedActivationSteps.PhasePostActivationVerified);
-            _journals.Advance(jobId, SelfHostedActivationPhase.Committed, exclusive);
-            Step(SelfHostedActivationSteps.PhaseCommitted);
-            committed = true;
-
-            return await FinalizePostCommitAsync(jobId, token, retain, exclusive, record);
-        }
-        catch (SelfHostedActivationAbandonedException)
-        {
-            // A process crash never runs a finally: admission must stay closed
-            // until a restart's reconciler decides the generation. Tests throw
-            // this sentinel at a boundary and then rebuild the host.
-            _maintenance.FailClosedForRecovery();
-            throw;
-        }
-        catch (Exception exception) when (!committed)
-        {
-            if (jobEnteredActivation && exclusive is not null)
+                await recovery.PrepareRetentionAsync(jobId, capture!, exclusive, CancellationToken.None);
+            },
+            RetainMediaAsync = (recovery, exclusive) =>
+                recovery.RetainMediaAsync(jobId, exclusive, CancellationToken.None),
+            RetainDatabaseAsync = (recovery, exclusive) =>
+                recovery.RetainDatabaseAsync(jobId, exclusive, CancellationToken.None),
+            RetainEmptyMediaAsync = () =>
             {
+                RetainEmptyMedia(jobId);
+                return Task.CompletedTask;
+            },
+            RetainEmptyDatabaseAsync = () =>
+            {
+                RetainEmptyDatabase(jobId);
+                return Task.CompletedTask;
+            },
+            VerifyActivatedLibraryAsync = async () =>
+            {
+                // Verification reads the newly activated generation and may be
+                // long; keep the job lease alive against the activated database.
+                var heartbeat = StartHeartbeat(jobId, token);
                 try
                 {
-                    await RollBackAsync(jobId, exclusive);
+                    await PostActivationVerifyAsync(jobId, prepared, expected);
                 }
-                catch (Exception rollbackFailure)
+                finally
                 {
-                    // Admission must not reopen onto a partially restored
-                    // generation. Keep the journal unresolved, keep the durable
-                    // maintenance marker, and let a restart's reconciler finish.
-                    _maintenance.FailClosedForRecovery();
-                    _logger.LogCritical(rollbackFailure,
-                        "Activation rollback could not complete; the library stays in maintenance until startup "
-                        + "reconciliation. Follow the activation recovery guide.");
-                    throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryFailed,
-                        "Activation failed and the original library could not be restored in-process. "
-                        + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.");
+                    await heartbeat.DisposeAsync();
                 }
+            },
+            FinalizeCommittedAsync = async exclusive =>
+                status = await FinalizePostCommitAsync(jobId, token, retain, exclusive, record),
+            OnRolledBackAsync = (_, _) => TryMarkFailedAsync(jobId, token),
+            RollbackFailureLogMessage =
+                "Activation rollback could not complete; the library stays in maintenance until startup "
+                + "reconciliation. Follow the activation recovery guide.",
+            RollbackFailedMessage =
+                "Activation failed and the original library could not be restored in-process. "
+                + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.",
+        };
 
-                await TryMarkFailedAsync(jobId, token);
-            }
-
-            throw WrapActivationFailure(exception);
-        }
-        finally
-        {
-            if (heartbeat is not null) await heartbeat.DisposeAsync();
-            if (exclusive is not null) await exclusive.DisposeAsync();
-        }
-    }
-
-    /// <summary>
-    /// Rollback through the startup reconciler's own steps: the durable phase
-    /// selects the direction, every step validates before any executes, and
-    /// repeating from any partially repaired position succeeds.
-    /// </summary>
-    private async Task RollBackAsync(Guid jobId, IAsyncDisposable exclusive)
-    {
-        var journal = _journals.Read(jobId)
-            ?? throw SelfHostedActivationPaths.Failure("The activation journal is missing.");
-        var action = SelfHostedActivationState.RecoveryAction(journal);
-        if (action == SelfHostedRecoveryAction.Nothing)
-        {
-            // No rename is possible before CutoverPrepared: the live paths are
-            // still the original generation and the journal is retryable.
-            return;
-        }
-
-        if (action != SelfHostedRecoveryAction.RollBackOriginal)
-        {
-            throw SelfHostedActivationPaths.Failure(
-                "The activation journal does not describe a recoverable pre-commit state.");
-        }
-
-        foreach (var step in _recoverySteps) step.Validate(journal, action);
-        _journals.Advance(jobId, SelfHostedActivationPhase.RollingBack, exclusive);
-        foreach (var step in _recoverySteps) step.Execute(journal, action);
-        if (!File.Exists(_paths.LiveDatabase) || !Directory.Exists(_paths.LiveMedia))
-        {
-            throw SelfHostedActivationPaths.Failure("Activation rollback did not restore the live library.");
-        }
-
-        // The restored original has a new file identity at the live pathname:
-        // pooled connections may still reference the quarantined candidate
-        // inode, so clear every pool and verify the restored database before
-        // admission can reopen.
-        _sqlite.ReopenActivated(exclusive);
-
-        _journals.Advance(jobId, SelfHostedActivationPhase.RolledBack, exclusive);
-        _journals.MarkResolved(jobId, exclusive);
-        Step("after:rollback");
-        await Task.CompletedTask;
+        await _cutover.RunAsync(plan, ct);
+        return status;
     }
 
     private async Task<SelfHostedActivationResult> ResumeCommittedAsync(
@@ -893,7 +787,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         if (!database.Passed)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
-                $"The activated library failed authoritative verification ({FirstFailureCode(database.Failures)}).");
+                $"The activated library failed authoritative verification ({SelfHostedVerificationFailures.FirstCode(database.Failures)}).");
         }
 
         var media = await _verifier.VerifyMediaAsync(
@@ -901,7 +795,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         if (!media.Passed)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
-                $"The activated media failed authoritative verification ({FirstFailureCode(media.Failures)}).");
+                $"The activated media failed authoritative verification ({SelfHostedVerificationFailures.FirstCode(media.Failures)}).");
         }
     }
 
@@ -917,7 +811,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         if (!report.Passed)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
-                $"The activation candidate failed verification ({FirstFailureCode(report.Failures)}).");
+                $"The activation candidate failed verification ({SelfHostedVerificationFailures.FirstCode(report.Failures)}).");
         }
     }
 
@@ -941,7 +835,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         if (!expected.Passed)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
-                $"The prepared import failed verification ({FirstFailureCode(expected.Failures)}).");
+                $"The prepared import failed verification ({SelfHostedVerificationFailures.FirstCode(expected.Failures)}).");
         }
 
         if (expected.Metadata.StagingId != prepared.Metadata.StagingId
@@ -1381,9 +1275,6 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             throw SelfHostedActivationCapacity.Exhausted();
         }
     }
-
-    private static string FirstFailureCode(IReadOnlyList<PortableLibraryVerificationFailure> failures) =>
-        failures.Count == 0 ? "portable_verify_failed" : failures[0].Code;
 
     private static bool IsRecoveryRequired(Exception exception) =>
         exception is MigrationActivationException { Code: MigrationActivationErrorCodes.RecoveryFailed };

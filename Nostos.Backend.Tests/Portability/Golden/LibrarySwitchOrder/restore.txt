@@ -1,0 +1,62 @@
+restore:phase:CandidatePrepared
+  +db:/.nostos-activation/<id>/
+  +db:/.nostos-activation/<id>/activation.json
+  +db:/.nostos-recovery/<id>/
+  +media:/.nostos-activation/<e3b0c442>/
+  +media:/.nostos-recovery/<e3b0c442>/
+restore:after:capture
+restore:after:admission
+restore:after:verify-source-db
+restore:after:build-media
+  +media:/.nostos-activation/<e3b0c442>/candidate-books/
+  +media:/.nostos-activation/<e3b0c442>/candidate-books/<64f17b9c>/
+restore:after:extract-payload
+  +db:/.nostos-activation/<id>/recovery-payload.json
+  +db:/.nostos-activation/<id>/recovery-source.db
+restore:after:build-database
+  +db:/.nostos-activation/<id>/candidate.db
+restore:after:verify-candidate
+restore:phase:ExclusiveEntered
+  +db:/.nostos-activation/maintenance.json
+  -db:/.nostos-activation/<id>/recovery-payload.json
+  -db:/.nostos-activation/<id>/recovery-source.db
+restore:after:finalize
+  +db:/.nostos-activation/<id>/candidate.finalized.json
+restore:after:quiesce
+restore:phase:DatabaseCheckpointed
+restore:after:prepare-retention
+  +db:/.nostos-recovery/<id>/recovery.json
+restore:phase:CutoverPrepared
+restore:after:retain-media
+  +media:/.nostos-recovery/<e3b0c442>/books/
+  +media:/.nostos-recovery/<e3b0c442>/books/<34af58be>/
+  +media:/.nostos-recovery/<e3b0c442>/books/<7eb12439>/
+  +media:/.nostos-recovery/<e3b0c442>/books/<efea8815>/
+  -media:/library/
+  -media:/library/<34af58be>/
+  -media:/library/<7eb12439>/
+  -media:/library/<efea8815>/
+restore:phase:PreviousMediaRetained
+restore:after:retain-db
+  +db:/.nostos-recovery/<id>/nostos.db
+  -db:/nostos.db
+restore:phase:PreviousDatabaseRetained
+restore:after:activate-media
+  +media:/library/
+  +media:/library/<64f17b9c>/
+  -media:/.nostos-activation/<e3b0c442>/candidate-books/
+  -media:/.nostos-activation/<e3b0c442>/candidate-books/<64f17b9c>/
+restore:phase:CandidateMediaActivated
+restore:after:activate-db
+  +db:/nostos.db
+  -db:/.nostos-activation/<id>/candidate.db
+restore:phase:CandidateDatabaseActivated
+restore:after:reopen
+restore:after:post-verify
+restore:phase:PostActivationVerified
+restore:phase:Committed
+restore:after:finalize-replaced-retention
+restore:after:mark-source-restored
+restore:after:finalize-restore
+  +db:/.nostos-activation/<id>/activation.resolved.json
+  -db:/.nostos-activation/<id>/activation.json

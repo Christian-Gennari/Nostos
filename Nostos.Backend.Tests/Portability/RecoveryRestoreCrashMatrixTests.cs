@@ -16,7 +16,7 @@ namespace Nostos.Backend.Tests.Portability;
 [Collection(ActivationCoordinatorCollection.Name)]
 public sealed class RecoveryRestoreCrashMatrixTests
 {
-    private static readonly string[] Boundaries =
+    internal static readonly string[] Boundaries =
     [
         SelfHostedRecoveryRestoreSteps.PhaseCandidatePrepared,
         SelfHostedRecoveryRestoreSteps.AfterCapture,
