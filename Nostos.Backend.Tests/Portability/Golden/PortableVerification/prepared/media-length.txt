@@ -1,0 +1,26 @@
+passed=false
+failures=9
+dataBytes=9834
+dataSha256=de324eaa9b08552d9c030863172f6e913629d37dfe7299476555f290cce057f7
+counts=works=4 books=5 collections=2 memberships=3 notes=2 topics=2 noteTopics=3 writings=2 writingNotes=1 acquisitions=1 assistantSettings=1 importLinks=1 readingList=2 media=9
+media=9
+mediaBytes=12135
+descriptor|20000000-0000-0000-0000-000000000001|book|media/books/20000000000000000000000000000001/book.epub|book.epub|19|f1093bedf3e92cef328ac3fb75bec8bc5735ddcc571693204029215b0957ab31
+descriptor|20000000-0000-0000-0000-000000000001|cover|media/books/20000000000000000000000000000001/cover.jpg|cover.jpg|20|f5889d381e759ee1bbe7033857dbb310ad59b03a555020310ac2fa39f0c34883
+descriptor|20000000-0000-0000-0000-000000000002|book|media/books/20000000000000000000000000000002/book.pdf|book.pdf|18|bf99693fec09d601ead35479f6404ebfcd87a0dfb9457191031cfbdf99a5b014
+descriptor|20000000-0000-0000-0000-000000000003|book|media/books/20000000000000000000000000000003/book.m4b|book.m4b|20|ef8e5685f61fd835a92206bc380cef7c0c460a3eec3f8f90207821620dd68a54
+descriptor|20000000-0000-0000-0000-000000000003|cover|media/books/20000000000000000000000000000003/cover.png|cover.png|20|f5889d381e759ee1bbe7033857dbb310ad59b03a555020310ac2fa39f0c34883
+descriptor|20000000-0000-0000-0000-000000000005|cover|media/books/20000000000000000000000000000005/cover.jpg|cover.jpg|20|f5889d381e759ee1bbe7033857dbb310ad59b03a555020310ac2fa39f0c34883
+descriptor|20000000-0000-0000-0000-000000000005|track|media/books/20000000000000000000000000000005/track-0001.mp3|track-0001.mp3|3000|b28f79d37ba7880b955f796e06d1c00c380b7615565dedcb190f0b0df2c50585
+descriptor|20000000-0000-0000-0000-000000000005|track|media/books/20000000000000000000000000000005/track-0002.mp3|track-0002.mp3|17|0b3a803f98227d74ccc21643526725689148799401a8c3020cf3e8188c40bc0d
+descriptor|20000000-0000-0000-0000-000000000005|track|media/books/20000000000000000000000000000005/track-0003.mp3|track-0003.mp3|9001|5557bf4ae94b57ca56de4040444aca8ba04eac7642956d29932926660458b173
+--
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000001|book|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000001|cover|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000002|book|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000003|book|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000003|cover|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000005|track|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000005|track|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000005|track|A staged media item length does not match the prepared descriptor.
+portable_verify_media_length|media|20000000-0000-0000-0000-000000000005|cover|A staged media item length does not match the prepared descriptor.

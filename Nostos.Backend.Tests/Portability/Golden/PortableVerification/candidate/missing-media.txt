@@ -1,0 +1,9 @@
+passed=false
+failureCount=2
+kinds=PortableWork,PortableBook,PortableBookMetadata,PortableReadingProgress,PortableCollection,PortableBookCollection,PortableNote,PortableTopic,PortableNoteTopic,PortableWriting,PortableWritingNote,PortableBookAcquisition,PortableAssistantSettings,PortableNoteImportBookLink,PortableReadingListEntry,PortableArchiveMediaEntry
+rows=29
+mediaFiles=8
+mediaBytes=12115
+--
+portable_verify_media_missing|media|20000000-0000-0000-0000-000000000001|cover|A prepared media item is missing from the candidate media root.
+portable_verify_count_mismatch|counts||MediaEntries|A candidate portable count does not match the prepared import.

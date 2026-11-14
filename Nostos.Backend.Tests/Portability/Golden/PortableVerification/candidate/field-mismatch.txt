@@ -1,0 +1,8 @@
+passed=false
+failureCount=1
+kinds=PortableWork,PortableBook,PortableBookMetadata,PortableReadingProgress,PortableCollection,PortableBookCollection,PortableNote,PortableTopic,PortableNoteTopic,PortableWriting,PortableWritingNote,PortableBookAcquisition,PortableAssistantSettings,PortableNoteImportBookLink,PortableReadingListEntry,PortableArchiveMediaEntry
+rows=29
+mediaFiles=9
+mediaBytes=12135
+--
+portable_verify_field_mismatch|book|20000000-0000-0000-0000-000000000001|Title|book field 'Title' does not match the prepared import.

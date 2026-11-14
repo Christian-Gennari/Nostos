@@ -1,0 +1,9 @@
+passed=false
+failureCount=2
+kinds=PortableWork,PortableBook,PortableBookMetadata,PortableReadingProgress,PortableCollection,PortableBookCollection,PortableNote,PortableTopic,PortableNoteTopic,PortableWriting,PortableWritingNote,PortableBookAcquisition,PortableAssistantSettings,PortableNoteImportBookLink,PortableReadingListEntry,PortableArchiveMediaEntry
+rows=28
+mediaFiles=9
+mediaBytes=12135
+--
+portable_verify_entity_missing|noteImportBookLink|80000000-0000-0000-0000-000000000001||A noteImportBookLink from the prepared import is missing from the candidate database.
+portable_verify_count_mismatch|counts||NoteImportBookLinks|A candidate portable count does not match the prepared import.

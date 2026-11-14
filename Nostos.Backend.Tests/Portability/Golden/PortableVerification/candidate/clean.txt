@@ -1,0 +1,7 @@
+passed=true
+failureCount=0
+kinds=PortableWork,PortableBook,PortableBookMetadata,PortableReadingProgress,PortableCollection,PortableBookCollection,PortableNote,PortableTopic,PortableNoteTopic,PortableWriting,PortableWritingNote,PortableBookAcquisition,PortableAssistantSettings,PortableNoteImportBookLink,PortableReadingListEntry,PortableArchiveMediaEntry
+rows=29
+mediaFiles=9
+mediaBytes=12135
+--

@@ -383,45 +383,6 @@ public sealed class PortableArchiveValidationTests
     }
 
     [Fact]
-    public void Stored_media_length_reopen_and_hash_decisions_preserve_integrity_errors()
-    {
-        PortableArchiveValidation.ValidateStoredMediaLength("media/item.epub", 10, 10);
-        PortableArchiveValidation.ValidateStoredMediaCanReopen("media/item.epub", opened: true);
-        PortableArchiveValidation.ValidateStoredMediaHash(
-            "media/item.epub",
-            10,
-            10,
-            ValidHash,
-            ValidHash);
-
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateStoredMediaLength(
-                "media/item.epub",
-                null,
-                10),
-            "integrity_failed");
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateStoredMediaLength(
-                "media/item.epub",
-                9,
-                10),
-            "integrity_failed");
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateStoredMediaCanReopen(
-                "media/item.epub",
-                opened: false),
-            "integrity_failed");
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateStoredMediaHash(
-                "media/item.epub",
-                9,
-                10,
-                ValidHash,
-                ValidHash),
-            "integrity_failed");
-    }
-
-    [Fact]
     public void Media_manifest_rejects_unknown_kind_book_and_duplicate_media()
     {
         var data = DataWithBook(hasBookFile: true);
@@ -799,81 +760,6 @@ public sealed class PortableArchiveValidationTests
                 ],
             },
             "duplicate_relationship");
-    }
-
-    [Fact]
-    public void Imported_relational_state_guards_preserve_integrity_failures()
-    {
-        var counts = EmptyCounts();
-        PortableArchiveValidation.ValidateImportedCounts(counts, counts);
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateImportedCounts(
-                counts with { Books = 1 },
-                counts),
-            "integrity_failed");
-
-        var workId = Guid.NewGuid();
-        PortableArchiveValidation.RequireSameIds([workId], [workId], "work");
-        ThrowPortableError(
-            () => PortableArchiveValidation.RequireSameIds([Guid.NewGuid()], [], "work"),
-            "integrity_failed");
-        PortableArchiveValidation.ValidateImportedRelationshipSet([1, 2], [2, 1], "links differ");
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateImportedRelationshipSet([1], [2], "links differ"),
-            "integrity_failed");
-
-        var expectedBook = Book(Guid.NewGuid(), Guid.NewGuid());
-        PortableArchiveValidation.ValidateImportedBookType(
-            expectedBook.Id,
-            expectedBook.Type,
-            expectedBook.Type);
-        PortableArchiveValidation.ValidateImportedBookProgress(
-            expectedBook,
-            expectedBook.Progress.LastLocation,
-            expectedBook.Progress.ProgressPercent,
-            expectedBook.Progress.Rating,
-            expectedBook.Progress.PersonalReview);
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateImportedBookType(
-                expectedBook.Id,
-                expectedBook.Type,
-                "other"),
-            "integrity_failed");
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateImportedBookProgress(
-                expectedBook,
-                expectedBook.Progress.LastLocation,
-                expectedBook.Progress.ProgressPercent,
-                expectedBook.Progress.Rating + 1,
-                expectedBook.Progress.PersonalReview),
-            "integrity_failed");
-
-        var expectedWriting = Writing(Guid.NewGuid());
-        PortableArchiveValidation.ValidateImportedWritingState(
-            expectedWriting,
-            expectedWriting.ParentId,
-            expectedWriting.Name,
-            expectedWriting.Content,
-            expectedWriting.Type,
-            expectedWriting.PageSetup);
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateImportedWritingState(
-                expectedWriting,
-                Guid.NewGuid(),
-                expectedWriting.Name,
-                expectedWriting.Content,
-                expectedWriting.Type,
-                expectedWriting.PageSetup),
-            "integrity_failed");
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateImportedWritingState(
-                expectedWriting,
-                expectedWriting.ParentId,
-                expectedWriting.Name,
-                expectedWriting.Content,
-                expectedWriting.Type,
-                "{\"paper\":\"letter\"}"),
-            "integrity_failed");
     }
 
     private static void RejectData(PortableLibraryData data, string code) =>

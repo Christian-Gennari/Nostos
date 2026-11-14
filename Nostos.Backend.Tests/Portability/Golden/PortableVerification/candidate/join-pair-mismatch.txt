@@ -1,0 +1,8 @@
+passed=false
+failureCount=1
+kinds=PortableWork,PortableBook,PortableBookMetadata,PortableReadingProgress,PortableCollection,PortableBookCollection,PortableNote,PortableTopic,PortableNoteTopic,PortableWriting,PortableWritingNote,PortableBookAcquisition,PortableAssistantSettings,PortableNoteImportBookLink,PortableReadingListEntry,PortableArchiveMediaEntry
+rows=29
+mediaFiles=9
+mediaBytes=12135
+--
+portable_verify_relationship_mismatch|noteTopic||NoteId,TopicId|The candidate noteTopic NoteId,TopicId pairs differ from the prepared import.
