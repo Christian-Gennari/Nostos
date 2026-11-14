@@ -1,0 +1,434 @@
+<form id="add-book-form" (ngSubmit)="submitted.emit()" class="modal-form">
+  @if (!isEditMode() && (flowIntent() === 'physical' || flowIntent() === 'manual')) {
+    <section
+      class="quick-identifier"
+      aria-labelledby="physical-lookup-heading"
+      [hidden]="flowIntent() === 'manual' && model.type !== 'physical'"
+    >
+      <div class="section-heading">
+        <div>
+          <h3 id="physical-lookup-heading">Identify by ISBN</h3>
+          <p>Optional. Fetch what Nostos can, then review the result below.</p>
+        </div>
+      </div>
+      <app-form-field label="ISBN" forId="book-isbn-quick">
+        <div class="input-group-fetch">
+          <input
+            #isbnInput
+            id="book-isbn-quick"
+            appInput
+            controlSize="compact"
+            type="text"
+            [(ngModel)]="model.isbn"
+            name="isbn"
+            placeholder="ISBN"
+            (blur)="model.isbn = sanitizeIsbn(model.isbn)"
+            (keydown.enter)="$event.preventDefault(); fetchMetadata.emit()"
+          />
+          <button
+            type="button"
+            appButton
+            variant="secondary"
+            class="btn-fetch"
+            [disabled]="!model.isbn || isFetching()"
+            (click)="fetchMetadata.emit()"
+          >
+            {{ isFetching() ? '…' : 'Fetch' }}
+          </button>
+        </div>
+      </app-form-field>
+    </section>
+  }
+
+  <section class="review-core" aria-labelledby="review-core-heading">
+    <div class="section-heading">
+      <div>
+        <h3 id="review-core-heading">{{ isEditMode() ? 'Book details' : 'Review book' }}</h3>
+        <p>{{ isEditMode() ? 'The fields most often changed.' : 'Make sure this is the book you meant to add.' }}</p>
+      </div>
+    </div>
+
+    @if (isEditMode() || flowIntent() === 'manual') {
+      <app-form-field label="Book type" forId="book-type">
+        <app-dropdown
+          controlId="book-type"
+          controlSize="compact"
+          ariaLabel="Format"
+          [fullWidth]="true"
+          [options]="bookTypeOptions()"
+          [value]="model.type"
+          (valueChange)="onTypeChange($event)"
+          [disabled]="isEditMode()"
+        />
+      </app-form-field>
+    }
+
+    <app-form-field label="Title" forId="book-title" [required]="true">
+      <input
+        #titleInput
+        id="book-title"
+        appInput
+        controlSize="compact"
+        type="text"
+        [(ngModel)]="model.title"
+        name="title"
+        required
+        placeholder="Book title"
+      />
+    </app-form-field>
+
+    <app-form-field label="Author" forId="book-author">
+      <input
+        id="book-author"
+        appInput
+        controlSize="compact"
+        type="text"
+        [(ngModel)]="model.author"
+        name="author"
+        placeholder="Primary author"
+      />
+    </app-form-field>
+
+    <div class="collection-field">
+      <app-collection-picker
+        label="Collections"
+        [collections]="collections()"
+        [selectedIds]="model.collectionIds"
+        (selectedIdsChange)="model.collectionIds = $event"
+      ></app-collection-picker>
+    </div>
+  </section>
+
+  <details class="metadata-disclosure">
+    <summary class="metadata-disclosure__summary">
+      <span>
+        <strong>More details</strong>
+        <small>Contributors, publishing, identifiers, cover and notes</small>
+      </span>
+      <span class="metadata-disclosure__state" aria-hidden="true">
+        <span class="when-closed">Show</span>
+        <span class="when-open">Hide</span>
+      </span>
+    </summary>
+
+    <div class="metadata-groups">
+      <section class="metadata-group" aria-labelledby="identity-metadata-heading">
+        <div class="section-heading">
+          <div>
+            <h3 id="identity-metadata-heading">Identity &amp; contributors</h3>
+            <p>Optional details that distinguish this edition or recording.</p>
+          </div>
+        </div>
+
+        <app-form-field label="Subtitle" forId="book-subtitle">
+          <input
+            id="book-subtitle"
+            appInput
+            controlSize="compact"
+            type="text"
+            [(ngModel)]="model.subtitle"
+            name="subtitle"
+            placeholder="Subtitle"
+          />
+        </app-form-field>
+
+        <div class="grid grid-2">
+          <app-form-field label="Editor" forId="book-editor" labelNote="(Harvard)">
+            <input
+              id="book-editor"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.editor"
+              name="editor"
+              placeholder="Editor (ed.)"
+            />
+          </app-form-field>
+          <app-form-field label="Translator" forId="book-translator">
+            <input
+              id="book-translator"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.translator"
+              name="translator"
+              placeholder="Translator"
+            />
+          </app-form-field>
+        </div>
+
+        @if (model.type === 'audiobook') {
+          <app-form-field label="Narrator" forId="book-narrator">
+            <input
+              id="book-narrator"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.narrator"
+              name="narrator"
+              placeholder="Narrator name"
+            />
+          </app-form-field>
+        }
+
+        <div class="grid grid-2">
+          <app-form-field label="Series" forId="book-series">
+            <input
+              id="book-series"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.series"
+              name="series"
+              placeholder="Series name"
+            />
+          </app-form-field>
+          <app-form-field label="Volume #" forId="book-volume-number">
+            <input
+              id="book-volume-number"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.volumeNumber"
+              name="volumeNumber"
+              placeholder="e.g. 1"
+            />
+          </app-form-field>
+        </div>
+
+        <app-form-field label="Description" forId="book-description">
+          <textarea
+            id="book-description"
+            appTextarea
+            controlSize="compact"
+            rows="4"
+            [(ngModel)]="model.description"
+            name="description"
+          ></textarea>
+        </app-form-field>
+      </section>
+
+      <section class="metadata-group" aria-labelledby="publication-metadata-heading">
+        <div class="section-heading">
+          <div>
+            <h3 id="publication-metadata-heading">Publication</h3>
+            <p>Edition and catalogue details.</p>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <app-form-field label="Publisher" forId="book-publisher">
+            <input
+              id="book-publisher"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.publisher"
+              name="publisher"
+            />
+          </app-form-field>
+          <app-form-field
+            label="Place of pub."
+            forId="book-place-of-publication"
+            labelNote="(Harvard)"
+          >
+            <input
+              id="book-place-of-publication"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.placeOfPublication"
+              name="placeOfPublication"
+              placeholder="e.g. London"
+            />
+          </app-form-field>
+        </div>
+
+        <div class="grid grid-2">
+          <app-form-field label="Published date" forId="book-published-date">
+            <input
+              id="book-published-date"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.publishedDate"
+              name="publishedDate"
+              placeholder="YYYY or YYYY-MM-DD"
+              (blur)="model.publishedDate = sanitizeDate(model.publishedDate)"
+            />
+          </app-form-field>
+          <app-form-field label="Edition" forId="book-edition">
+            <input
+              id="book-edition"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.edition"
+              name="edition"
+              placeholder="e.g. 2nd edn"
+            />
+          </app-form-field>
+        </div>
+
+        <div class="grid grid-2">
+          <app-form-field label="Language" forId="book-language">
+            <input
+              id="book-language"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.language"
+              name="language"
+              placeholder="en"
+            />
+          </app-form-field>
+          <app-form-field label="Genres" forId="book-genres">
+            <input
+              id="book-genres"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.categories"
+              name="categories"
+              placeholder="Fiction, sci-fi…"
+            />
+          </app-form-field>
+        </div>
+
+        <app-form-field
+          [label]="model.type === 'audiobook' ? 'Duration' : 'Page count'"
+          [forId]="model.type === 'audiobook' ? 'book-duration' : 'book-page-count'"
+        >
+          @if (model.type === 'audiobook') {
+            <input
+              id="book-duration"
+              appInput
+              controlSize="compact"
+              type="text"
+              [(ngModel)]="model.duration"
+              name="duration"
+              placeholder="e.g. 12h 30m"
+            />
+          } @else {
+            <input
+              id="book-page-count"
+              appInput
+              controlSize="compact"
+              type="number"
+              [(ngModel)]="model.pageCount"
+              name="pageCount"
+              placeholder="e.g. 450"
+            />
+          }
+        </app-form-field>
+      </section>
+
+      @if (isEditMode() || flowIntent() !== 'physical') {
+        <section
+          class="metadata-group"
+          aria-labelledby="identifier-metadata-heading"
+          [hidden]="!isEditMode() && flowIntent() === 'manual' && model.type === 'physical'"
+        >
+          <div class="section-heading">
+            <div>
+              <h3 id="identifier-metadata-heading">Identifiers</h3>
+              <p>Useful for lookup and future reference workflows.</p>
+            </div>
+          </div>
+
+          <app-form-field
+            [label]="model.type === 'audiobook' ? 'ASIN' : 'ISBN'"
+            [forId]="model.type === 'audiobook' ? 'book-asin' : 'book-isbn'"
+          >
+            @if (model.type === 'audiobook') {
+              <input
+                id="book-asin"
+                appInput
+                controlSize="compact"
+                type="text"
+                [(ngModel)]="model.asin"
+                name="asin"
+                placeholder="ASIN (e.g. B00…)"
+              />
+            } @else {
+              <div class="input-group-fetch">
+                <input
+                  id="book-isbn"
+                  appInput
+                  controlSize="compact"
+                  type="text"
+                  [(ngModel)]="model.isbn"
+                  name="isbn"
+                  placeholder="ISBN"
+                  (blur)="model.isbn = sanitizeIsbn(model.isbn)"
+                  (keydown.enter)="$event.preventDefault(); fetchMetadata.emit()"
+                />
+                <button
+                  type="button"
+                  appButton
+                  variant="secondary"
+                  class="btn-fetch"
+                  [disabled]="!model.isbn || isFetching()"
+                  (click)="fetchMetadata.emit()"
+                >
+                  {{ isFetching() ? '…' : 'Fetch' }}
+                </button>
+              </div>
+            }
+          </app-form-field>
+        </section>
+      }
+
+      <section class="metadata-group" aria-labelledby="library-metadata-heading">
+        <div class="section-heading">
+          <div>
+            <h3 id="library-metadata-heading">Library details</h3>
+            <p>Personal context that belongs to your copy.</p>
+          </div>
+        </div>
+
+        @if (!isEditMode() && !seededFromSource()) {
+          <div class="asset-field">
+            <span class="asset-field__label">Cover image</span>
+            <label
+              appDropZone
+              density="compact"
+              class="file-drop-zone file-drop-zone--cover"
+              [active]="coverDragActive()"
+              (dragover)="coverDragOver.emit($event)"
+              (dragleave)="coverDragLeave.emit($event)"
+              (drop)="coverDragLeave.emit($event)"
+            >
+              <input
+                type="file"
+                class="file-input"
+                accept="image/*"
+                (change)="coverChosen.emit($event)"
+              />
+              @if (coverPreview(); as preview) {
+                <img class="cover-preview" [src]="preview" alt="" />
+                <span class="nostos-drop-zone__hint">{{ selectedCoverName() }}</span>
+              } @else {
+                <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
+                <span class="nostos-drop-zone__title">Choose a cover image or drop it here</span>
+                <span class="nostos-drop-zone__hint">PNG, JPG, WEBP</span>
+              }
+            </label>
+          </div>
+        }
+
+        <app-form-field label="Personal review / notes" forId="book-personal-review">
+          <textarea
+            id="book-personal-review"
+            appTextarea
+            controlSize="compact"
+            rows="3"
+            [(ngModel)]="model.personalReview"
+            name="personalReview"
+            placeholder="Your thoughts on this book…"
+          ></textarea>
+        </app-form-field>
+      </section>
+    </div>
+  </details>
+</form>

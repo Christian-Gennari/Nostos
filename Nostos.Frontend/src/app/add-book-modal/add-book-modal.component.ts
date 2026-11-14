@@ -1,56 +1,56 @@
-import { ChangeDetectorRef, Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild, ChangeDetectionStrategy } from '@angular/core';
-import { EBOOK_CATEGORY_LABEL, EBOOK_CATEGORY_LABEL_PLURAL } from '../core/book-format';
-import { formatByteProgress, formatFileSize } from '../core/format';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import {
+  ChangeDetectorRef,
+  Component,
+  DestroyRef,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  computed,
+  untracked,
+  viewChild,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { formatFileSize } from '../core/format';
+import { finalize, lastValueFrom } from 'rxjs';
+import { filter } from 'rxjs/operators';
 import { HttpEventType } from '@angular/common/http';
-import { finalize, Subscription } from 'rxjs';
 import {
   BookLookupError,
   BooksService,
   Book as BookModel,
 } from '../core/services/books.service';
 import { ProvidersService } from '../core/services/providers.service';
-import { BadgeComponent } from '../ui/badge/badge.component';
 import { ImportService } from '../core/services/import.service';
 import { ToastService } from '../core/services/toast.service';
-import {
-  ACQUISITION_FINISHED_STATES,
-  ProviderAcquisition,
-  ProviderDiscoverySourceStatus,
-  ProviderItem,
-  ProviderMetadataOverrides,
-  ProviderSummary,
-} from '../core/dtos/provider.dtos';
+import { ProviderItem, ProviderMetadataOverrides } from '../core/dtos/provider.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
-import { BookType } from '../core/dtos/book.dtos';
-import { CollectionPickerComponent } from '../ui/collection-picker/collection-picker.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
-import { FormFieldComponent } from '../ui/form-field/form-field.component';
-import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
-import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
-import { NoticeComponent } from '../ui/notice/notice.component';
-import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
-import { DropZoneComponent } from '../ui/drop-zone/drop-zone.component';
-import { SegmentedComponent } from '../ui/segmented/segmented.component';
-import { RadioDirective } from '../ui/check/check.directive';
-import { ProgressComponent } from '../ui/progress/progress.component';
-import { SearchFieldComponent } from '../ui/search-field/search-field.component';
-import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
 import { BulkEbookAddComponent } from './bulk-ebook-add.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { describeUploadFailure } from '../core/uploads/upload-error-copy';
+import { AddBookFileStepComponent } from './add-book-file-step.component';
+import { AddBookMetadataFormComponent } from './add-book-metadata-form.component';
 import {
-  BookUploadService,
-  BookUploadPhase,
-  rejectedFileMessage,
-} from '../core/services/book-upload.service';
-
-type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
+  AddBookSourcePickerComponent,
+  type SourceSelection,
+} from './add-book-source-picker.component';
+import { AddBookUploadPanelComponent } from './add-book-upload-panel.component';
+import { AddBookUploadSession } from './add-book-upload-session';
+import {
+  BOOK_TYPE_OPTIONS,
+  DEFAULT_LANGUAGE,
+  MAX_METADATA_READ_BYTES,
+  languageName,
+  sanitizeDate,
+  sanitizeIsbn,
+  type AddBookIntentKind,
+  type BookForm,
+} from './book-form';
 
 /** See `AddBookModal.prefill`. */
 export interface AddBookPrefill {
@@ -60,63 +60,47 @@ export interface AddBookPrefill {
   publishedDate?: string | null;
 }
 
-/** Larger files are not sent just to read their title; the file name stays. */
-const MAX_METADATA_READ_BYTES = 50 * 1024 * 1024;
-const DEFAULT_LANGUAGE = 'en';
-
+/**
+ * The Add book / Edit book sheet: the step flow and the writes.
+ *
+ * It used to also be the catalogue search, the file run and the whole record
+ * (#1639). Those are now `app-add-book-source-picker` (discovery),
+ * `AddBookUploadSession` (the file run), `app-add-book-file-step` (how the book
+ * arrived) and `app-add-book-metadata-form` (the record). What stays here is
+ * what genuinely spans the flow: which step is open, the draft, the create or
+ * update call, and the source import.
+ */
 @Component({
   selector: 'app-add-book-modal',
   standalone: true,
   imports: [
-    SearchFieldComponent,
-    BookCoverComponent,
-    RadioDirective,
-    ProgressComponent,
-    DropZoneComponent,
-    IconTileComponent,
-    NoticeComponent,
-    CommonModule,
-    FormsModule,
-    NostosIconComponent,
-    LoadingIndicatorComponent,
-    CollectionPickerComponent,
-    FormFieldComponent,
-    InputDirective,
-    DropdownComponent,
-    TextareaDirective,
     ModalShell,
     DialogActionsComponent,
     ButtonComponent,
-    BadgeComponent,
-    SegmentedComponent,
+    NostosIconComponent,
     ConfirmModal,
     BulkEbookAddComponent,
+    AddBookFileStepComponent,
+    AddBookMetadataFormComponent,
+    AddBookSourcePickerComponent,
+    AddBookUploadPanelComponent,
   ],
+  providers: [AddBookUploadSession],
   templateUrl: './add-book-modal.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './add-book-modal.component.css',
 })
 export class AddBookModal {
-  /**
-   * How long a search may wait before the waiting state says a catalogue is
-   * being slow (#658). Below the server's 4 s aggregate budget, so the notice
-   * only appears when a source is actually dragging the search out.
-   */
-  static readonly SOURCE_SLOW_AFTER_MS = 2500;
-
-  readonly bookTypeOptions = [
-    { value: 'physical', label: 'Physical book' },
-    { value: 'ebook', label: 'E-book (EPUB, PDF)' },
-    { value: 'audiobook', label: 'Audiobook' },
-  ] satisfies readonly DropdownOption[];
+  readonly bookTypeOptions = BOOK_TYPE_OPTIONS;
   private booksService = inject(BooksService);
   private providers = inject(ProvidersService);
   private toast = inject(ToastService);
   private readonly changeDetector = inject(ChangeDetectorRef);
-  /** Resumable uploads outlive this modal, so they are owned by a root service. */
-  private bookUploads = inject(BookUploadService);
+  private readonly destroyRef = inject(DestroyRef);
   /** The import feed: opened on demand once an import has actually been queued. */
   private imports = inject(ImportService);
+  /** The file run; it outlives neither this modal nor a closed one. */
+  private readonly uploadSession = inject(AddBookUploadSession);
 
   // Inputs & Outputs
   isOpen = input.required<boolean>();
@@ -156,10 +140,10 @@ export class AddBookModal {
    */
   flowIntent = signal<AddBookIntentKind>('manual');
   sourceMode = signal(false);
-  private titleInput = viewChild<ElementRef<HTMLInputElement>>('titleInput');
-  private localFileInput = viewChild<ElementRef<HTMLInputElement>>('localFileInput');
-  private isbnInput = viewChild<ElementRef<HTMLInputElement>>('isbnInput');
-  private sourceQueryInput = viewChild<ElementRef<HTMLInputElement>>('sourceQueryInput');
+
+  private readonly fileStep = viewChild(AddBookFileStepComponent);
+  private readonly metadataForm = viewChild(AddBookMetadataFormComponent);
+  private readonly sourcePicker = viewChild(AddBookSourcePickerComponent);
 
   // Computed State
   isEditMode = computed(() => !!this.book());
@@ -169,10 +153,18 @@ export class AddBookModal {
   isFetching = signal(false);
   /** Blocks re-entrant create/update submits until the whole mutation pipeline settles. */
   isSubmitting = signal(false);
-  /** Existing row kept after a failed file upload so retry never creates another book. */
-  private pendingUploadBook = signal<BookModel | null>(null);
-  readonly hasPendingUpload = computed(() => this.pendingUploadBook() !== null);
-  readonly uploadError = signal<string | null>(null);
+  readonly hasPendingUpload = computed(() => this.uploadSession.book() !== null);
+  /** A chosen book file, so the step never looks empty after a choice. */
+  readonly fileSummary = computed(() => {
+    const file = this.selectedFile();
+    if (!file) return null;
+    const tracks = this.trackFiles();
+    const bytes = tracks.length > 1 ? tracks.reduce((sum, track) => sum + track.size, 0) : file.size;
+    const name = tracks.length > 1 ? `${tracks.length} audio files` : file.name;
+    const size = formatFileSize(bytes);
+    return size ? `${name} · ${size}` : name;
+  });
+  readonly uploadError = this.uploadSession.error;
   /**
    * The library already holds this exact book and it has its own file. The new
    * file is held back until the user chooses; it never replaces one silently.
@@ -180,40 +172,46 @@ export class AddBookModal {
   readonly existingWithFile = signal<BookModel | null>(null);
 
   // Form State
-  form = {
+  /**
+   * The draft the whole step flow reads and submit() sends. Replace it, never
+   * mutate it: the metadata form is OnPush and re-reads the object when the
+   * input's identity changes (its own field edits mutate it in place through
+   * `ngModel`, inside its own event, so its view is already being checked).
+   */
+  form: BookForm = {
     // No file yet, so nothing says this is a paper copy: a hand-entered book is
     // a metadata-only digital book. "Physical book" is a choice in the format
     // dropdown, and a chosen file decides ebook vs audiobook on its own.
-    type: 'ebook' as BookType,
+    type: 'ebook',
     title: '',
-    subtitle: '' as string | null,
+    subtitle: null,
 
-    author: '' as string | null,
-    editor: '' as string | null,
-    translator: '' as string | null,
-    narrator: '' as string | null,
+    author: null,
+    editor: null,
+    translator: null,
+    narrator: null,
 
-    description: '' as string | null,
+    description: null,
 
-    isbn: '' as string | null,
-    asin: '' as string | null,
+    isbn: null,
+    asin: null,
 
-    publisher: '' as string | null,
-    placeOfPublication: '' as string | null,
-    publishedDate: '' as string | null,
+    publisher: null,
+    placeOfPublication: null,
+    publishedDate: null,
 
-    edition: '' as string | null,
-    pageCount: null as number | null,
-    duration: '' as string | null,
-    language: 'en',
-    categories: '' as string | null,
-    series: '' as string | null,
-    volumeNumber: '' as string | null,
+    edition: null,
+    pageCount: null,
+    duration: null,
+    language: DEFAULT_LANGUAGE,
+    categories: null,
+    series: null,
+    volumeNumber: null,
     // Membership is a set: a book may belong to any number of collections.
     // The picker owns the checkbox list; this array is the value it edits.
-    collectionIds: [] as string[],
+    collectionIds: [],
 
-    personalReview: '' as string | null,
+    personalReview: null,
   };
 
   selectedFile = signal<File | null>(null);
@@ -226,111 +224,109 @@ export class AddBookModal {
    * is ours to release — or the provider's URL when the cover comes from the
    * source. A source-seeded form deliberately does NOT set a File: the import
    * fetches and stores the provider's cover server-side (`IncludeCover` defaults
-   * to true), so there is nothing for the browser to upload. A File set here on
-   * that path would be silently discarded, because the import never calls the
-   * cover upload.
+   * to true), so there is nothing for the browser to upload.
    */
   coverPreview = signal<string | null>(null);
 
-  /** The picked book's cover, shown as already handled on the import path. */
-  sourceCoverUrl = computed(() => this.selectedSourceItem()?.coverUrl ?? null);
-
-  /** A chosen book file, so the zone never looks empty after a choice. */
-  fileSummary = computed(() => {
-    const file = this.selectedFile();
-    if (!file) return null;
-    const tracks = this.trackFiles();
-    const bytes = tracks.length > 1 ? tracks.reduce((sum, t) => sum + t.size, 0) : file.size;
-    const name = tracks.length > 1 ? `${tracks.length} audio files` : file.name;
-    const size = this.formatBytes(bytes);
-    return size ? `${name} · ${size}` : name;
-  });
-  uploadProgress = signal<number | null>(null);
-  /** Which visible stage the resumable path is in; null on the legacy path. */
-  uploadPhase = signal<BookUploadPhase | null>(null);
-  /** Bytes behind the percentage, so the upload line can say how much is left. */
-  private readonly uploadByteProgress = signal<{ loaded: number; total: number } | null>(null);
+  // Upload run state, owned by `AddBookUploadSession`.
+  readonly uploadProgress = this.uploadSession.progress;
   /** The stop question, asked through the shared confirm modal. */
   readonly confirmStopOpen = signal(false);
-  /** True while the chosen Stop is being carried out (pause in flight). */
-  readonly uploadStopping = signal(false);
-  /**
-   * The focused upload view: the file's own run, whether it is moving or has
-   * failed and can be retried. Never the ordinary form (#1275).
-   */
-  readonly uploadViewOpen = computed(
-    () =>
-      this.uploadProgress() !== null ||
-      (this.pendingUploadBook() !== null && this.uploadError() !== null),
-  );
+  readonly uploadStopping = this.uploadSession.stopping;
+  readonly uploadViewOpen = computed(() => this.uploadSession.viewOpen());
   /** A book file is actively moving; closing must ask before it disappears. */
   readonly isUploading = computed(
-    () => this.pendingUploadBook() !== null && this.isSubmitting(),
+    () => this.uploadSession.book() !== null && this.isSubmitting(),
   );
   readonly uploadBookTitle = computed(
-    () => this.pendingUploadBook()?.title || this.form.title || 'This book',
+    () => this.uploadSession.book()?.title || this.form.title || 'This book',
   );
-  readonly uploadFileName = computed(() =>
-    this.trackFiles().length > 1 ? `${this.trackFiles().length} audio files` : (this.selectedFile()?.name ?? ''),
+  readonly uploadFileName = computed(() => this.uploadSession.fileName());
+  readonly uploadStatusText = computed(() => this.uploadSession.statusText());
+  /** The same line, only while there is a run to report on the form itself. */
+  readonly uploadStatusLine = computed(() =>
+    this.uploadProgress() !== null ? this.uploadSession.statusText() : null,
   );
-  readonly uploadStatusText = computed(() => {
-    const percent = this.uploadProgress() ?? 0;
-    const bytes = this.uploadByteProgress();
-    const moved = bytes ? formatByteProgress(bytes.loaded, bytes.total) : '';
-    switch (this.uploadPhase()) {
-      case 'preparing':
-        return `Preparing file… ${percent}%`;
-      case 'finishing':
-        return 'Finishing upload…';
-      default:
-        return `Uploading… ${percent}%${moved ? ` · ${moved}` : ''}`;
-    }
-  });
-  uploadStartTime: number | null = null;
-
-  /** Distinguishes this modal's run from an older one whose callbacks arrive late. */
-  private uploadGeneration = 0;
-  private activeUploadBookId: string | null = null;
-  private stopRequested = false;
-  private legacyUploadSub: Subscription | null = null;
-  private beforeUnloadAttached = false;
-  private destroyed = false;
 
   // Drag-over highlight for the two dropzones. The native file input stretched
   // across each zone still owns the actual drop, so these only toggle styling.
   fileDragActive = signal(false);
   coverDragActive = signal(false);
 
+  // ------------------------------------------------------------------
+  // From a source (issue #167)
+  // ------------------------------------------------------------------
+  // The picker owns the search; the shell keeps the chosen item because the
+  // review step and the import both need it.
+  readonly sourceSelection = signal<SourceSelection | null>(null);
+  /** Why the chosen edition could not be loaded, or why an import did not start. */
+  sourceImportError = signal<string | null>(null);
+
+  readonly selectedItem = computed(() => this.sourceSelection()?.item ?? null);
+  readonly selectedDetail = computed(() => this.sourceSelection()?.detail ?? null);
+  readonly selectedAssetId = computed(() => this.sourceSelection()?.assetId ?? null);
+  readonly selectedSourceItem = computed(() => this.selectedDetail() ?? this.selectedItem());
+  /** The asset that will actually be imported, named in the collapsed summary. */
+  readonly selectedAssetLabel = computed(() => this.sourceSelection()?.assetLabel ?? '');
+  readonly sourceCoverUrl = computed(() => this.selectedItem()?.coverUrl ?? null);
+  readonly selectedAsset = computed(() => {
+    const item = this.selectedSourceItem();
+    if (!item) return null;
+    const id = this.selectedAssetId();
+    return (
+      item.assets.find((asset) => asset.id === id) ??
+      item.assets.find((asset) => asset.isPreferred) ??
+      item.assets[0] ??
+      null
+    );
+  });
+  /** True when the form was seeded from a source item: the primary action imports. */
+  readonly seededFromSource = computed(() => !this.isEditMode() && this.selectedItem() !== null);
+  /** The selected result owns its provider identity even after source mode closes. */
+  readonly seededSourceName = computed(
+    () => this.sourceSelection()?.providerName ?? 'the source',
+  );
+  /** The footer's next action, computed by the picker that owns the selection. */
+  readonly sourcePrimaryAction = computed<{ label: string; enabled: boolean }>(
+    () => this.sourcePicker()?.primaryAction() ?? { label: 'Select a book', enabled: false },
+  );
+  /** Set when a title in hand should run the catalogue search once discovery opens. */
+  readonly searchOnSourceOpen = signal(false);
+
   constructor() {
-    // A closed or destroyed modal must not leave catalogue requests running.
-    inject(DestroyRef).onDestroy(() => {
-      this.destroyed = true;
-      this.detachBeforeUnload();
-      this.legacyUploadSub?.unsubscribe();
-      this.legacyUploadSub = null;
-      this.cancelSourceRequests();
+    // The run needs the shell's guard and the chosen files; everything else it
+    // owns itself.
+    this.uploadSession.bind({
+      isSubmitting: this.isSubmitting,
+      selectedFile: () => this.selectedFile(),
+      trackFiles: () => this.trackFiles(),
+      onFileRejected: () => this.selectedFile.set(null),
+      onFileUploaded: (book) => void this.uploadCoverIfNeeded(book.id),
+      onDiscardedBook: () => this.bookAdded.emit(),
+      onStopped: () => {
+        this.confirmStopOpen.set(false);
+        this.closeModal.emit();
+        this.bookAdded.emit();
+      },
     });
 
     effect(() => {
       // Only external modal inputs are allowed to reinitialize the draft.
-      // Helpers below read internal signals (cover preview, provider state, etc.),
-      // so keep their work outside this effect's dependency tracking.
+      // Helpers below read internal signals, so keep their work outside this
+      // effect's dependency tracking.
       const isOpen = this.isOpen();
       const currentBook = this.book();
       const sourceFirst = this.sourceFirst();
       const initialIntent = this.initialIntent();
 
       untracked(() => {
-        if (!isOpen) {
-          this.cancelSourceRequests();
-          return;
-        }
+        if (!isOpen) return;
 
         if (currentBook) {
           this.fillForm(currentBook);
           this.flowIntent.set('manual');
           this.sourceMode.set(false);
-          setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+          setTimeout(() => this.metadataForm()?.focusTitle(), 0);
           return;
         }
 
@@ -351,74 +347,70 @@ export class AddBookModal {
 
     if (intent === 'source') {
       this.enterSourceMode();
-      setTimeout(() => this.sourceQueryInput()?.nativeElement?.focus(), 0);
+      setTimeout(() => this.sourcePicker()?.focusQuery(), 0);
       return;
     }
 
     if (intent === 'upload') {
-      this.form.type = 'ebook';
-      setTimeout(() => this.localFileInput()?.nativeElement?.focus(), 0);
+      this.form = { ...this.form, type: 'ebook' };
+      setTimeout(() => this.fileStep()?.focusFileInput(), 0);
       return;
     }
 
     if (intent === 'physical') {
-      this.form.type = 'physical';
-      setTimeout(() => this.isbnInput()?.nativeElement?.focus(), 0);
+      this.form = { ...this.form, type: 'physical' };
+      setTimeout(() => this.metadataForm()?.focusIsbn(), 0);
       return;
     }
 
-    setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+    setTimeout(() => this.metadataForm()?.focusTitle(), 0);
   }
 
   private applyPrefill(prefill: AddBookPrefill): void {
-    this.form.title = prefill.title;
-    this.form.author = prefill.author ?? null;
-    this.form.isbn = prefill.isbn ?? null;
-    this.form.publishedDate = prefill.publishedDate ?? null;
+    this.form = {
+      ...this.form,
+      title: prefill.title,
+      author: prefill.author ?? null,
+      isbn: prefill.isbn ?? null,
+      publishedDate: prefill.publishedDate ?? null,
+    };
 
     // The title opens the catalogue search, so a book that is free somewhere is
     // already on screen. The author stays out: catalogues match the query as one
     // phrase, and "title author" found nothing.
     this.sourceQuery.set(prefill.title);
-    if (this.sourceMode()) this.searchSource();
+    if (this.sourceMode()) this.searchOnSourceOpen.set(true);
   }
 
-  /** Switch the same Add Book sheet back to unified provider discovery. */
-  showSourceMode(): void {
-    if (this.isEditMode() || this.runningAcquisition()) return;
-
-    this.flowIntent.set('source');
-    this.enterSourceMode();
-    setTimeout(() => this.sourceQueryInput()?.nativeElement?.focus(), 0);
-  }
+  /** The catalogue query; the picker edits it and the shell restores it. */
+  readonly sourceQuery = signal('');
 
   /**
    * Manual is one fallback mode. Format decides whether ISBN lookup or a local
    * book file is relevant; those are not separate top-level acquisition doors.
    */
   showManualMode(): void {
-    if (this.isEditMode() || this.runningAcquisition()) return;
+    if (this.isEditMode()) return;
 
     this.clearSourceSelection();
     this.sourceMode.set(false);
     this.flowIntent.set('manual');
 
     setTimeout(() => {
-      if (this.form.type === 'physical') this.isbnInput()?.nativeElement?.focus();
-      else this.titleInput()?.nativeElement?.focus();
+      if (this.form.type === 'physical') this.metadataForm()?.focusIsbn();
+      else this.metadataForm()?.focusTitle();
     }, 0);
   }
 
   onTypeChange(type: string): void {
     if (type !== 'physical' && type !== 'ebook' && type !== 'audiobook') return;
 
-    const bookType: BookType = type;
-    this.form.type = bookType;
+    this.form = { ...this.form, type };
 
     // A file belongs to a digital edition, never to a physical metadata record.
     // Clear a previously chosen file when switching back to Physical so it
     // cannot be carried invisibly into a later submit.
-    if (bookType === 'physical') {
+    if (type === 'physical') {
       this.selectedFile.set(null);
       this.trackFiles.set([]);
       this.fileDragActive.set(false);
@@ -426,7 +418,7 @@ export class AddBookModal {
   }
 
   fillForm(b: BookModel) {
-    this.resetUploadState();
+    this.uploadSession.reset();
     this.form = {
       type: b.type || 'ebook',
       title: b.title,
@@ -449,7 +441,7 @@ export class AddBookModal {
       edition: b.edition || '',
       pageCount: b.pageCount || null,
       duration: b.duration || '',
-      language: b.language || 'en',
+      language: b.language || DEFAULT_LANGUAGE,
       categories: b.categories || '',
       series: b.series || '',
       volumeNumber: b.volumeNumber || '',
@@ -458,7 +450,7 @@ export class AddBookModal {
       personalReview: b.personalReview || '',
     };
     this.clearChosenFiles();
-    this.resetSourceTab();
+    this.resetSource();
   }
 
   resetForm(): void {
@@ -486,7 +478,7 @@ export class AddBookModal {
       edition: null,
       pageCount: null,
       duration: null,
-      language: 'en',
+      language: DEFAULT_LANGUAGE,
       categories: null,
       series: null,
       volumeNumber: null,
@@ -495,51 +487,21 @@ export class AddBookModal {
       personalReview: null,
     };
     this.clearChosenFiles();
-    this.resetUploadState();
+    this.uploadSession.reset();
     this.existingWithFile.set(null);
     this.isFetching.set(false);
     this.isSubmitting.set(false);
     this.fileDragActive.set(false);
     this.coverDragActive.set(false);
+    this.confirmStopOpen.set(false);
     // The source search holds its own selection and job state; a stale
     // poll from a previous visit must not survive into this one.
-    this.resetSourceTab();
-  }
-
-  /**
-   * Helper to format dates into YYYY or YYYY-MM-DD
-   */
-  sanitizeDate(dateStr: string | null): string | null {
-    if (!dateStr) return null;
-    const clean = dateStr.trim();
-
-    // 1. If it's already just a year (e.g. "1999"), keep it.
-    if (/^\d{4}$/.test(clean)) return clean;
-
-    // 2. Try parsing as a standard date (handles "Jan 1, 2020", "2020/01/01")
-    const timestamp = Date.parse(clean);
-    if (!isNaN(timestamp)) {
-      const date = new Date(timestamp);
-      return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD
-    }
-
-    // 3. Fallback: Try to just find a 4-digit year in the string
-    const yearMatch = clean.match(/\d{4}/);
-    return yearMatch ? yearMatch[0] : clean;
-  }
-
-  /**
-   * Helper to clean ISBNs (remove dashes, spaces, keep only digits and X)
-   */
-  sanitizeIsbn(isbn: string | null): string | null {
-    if (!isbn) return null;
-    // Removes anything that is NOT a digit or 'X', and uppercases it
-    return isbn.replace(/[^0-9X]/gi, '').toUpperCase();
+    this.resetSource();
   }
 
   fetchMetadata(): void {
     // 1. Clean the ISBN immediately
-    this.form.isbn = this.sanitizeIsbn(this.form.isbn);
+    this.form = { ...this.form, isbn: sanitizeIsbn(this.form.isbn) };
     const isbn = this.form.isbn;
 
     if (!isbn) return;
@@ -547,7 +509,10 @@ export class AddBookModal {
 
     this.booksService
       .lookup(isbn)
-      .pipe(finalize(() => this.isFetching.set(false)))
+      .pipe(
+        finalize(() => this.isFetching.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
       .subscribe({
         next: (data) => {
           this.form = {
@@ -560,9 +525,9 @@ export class AddBookModal {
             publisher: data.publisher || this.form.publisher,
             placeOfPublication: data.placeOfPublication || this.form.placeOfPublication, // <--- Map from API
             // Sanitize the date coming from the API
-            publishedDate: this.sanitizeDate(data.publishedDate) || this.form.publishedDate,
+            publishedDate: sanitizeDate(data.publishedDate) || this.form.publishedDate,
             pageCount: data.pageCount || this.form.pageCount,
-            language: this.getFullLanguageName(data.language) || this.form.language,
+            language: languageName(data.language) || this.form.language,
             categories: data.categories || this.form.categories,
           };
           this.toast.success('Metadata fetched');
@@ -603,8 +568,8 @@ export class AddBookModal {
       }
       this.trackFiles.set(chosen);
       this.selectedFile.set(chosen[0]);
-      this.form.type = 'audiobook';
-      setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+      this.onTypeChange('audiobook');
+      setTimeout(() => this.metadataForm()?.focusTitle(), 0);
       return;
     }
 
@@ -613,7 +578,7 @@ export class AddBookModal {
 
     if (!file) return;
 
-    this.form.type = this.isAudioFile(file) ? 'audiobook' : 'ebook';
+    this.onTypeChange(this.isAudioFile(file) ? 'audiobook' : 'ebook');
 
     const nameTitle = file.name
       .replace(/\.[^.]+$/, '')
@@ -621,12 +586,12 @@ export class AddBookModal {
       .replace(/\s+/g, ' ')
       .trim();
     if (!this.form.title.trim()) {
-      this.form.title = nameTitle;
+      this.form = { ...this.form, title: nameTitle };
     }
 
     this.prefillFromFile(file, nameTitle);
 
-    setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+    setTimeout(() => this.metadataForm()?.focusTitle(), 0);
   }
 
   /**
@@ -638,20 +603,28 @@ export class AddBookModal {
   private prefillFromFile(file: File, nameTitle: string): void {
     if (!/\.(epub|pdf)$/i.test(file.name) || file.size > MAX_METADATA_READ_BYTES) return;
 
-    this.booksService.readFileMetadata(file).subscribe({
-      next: (found) => {
-        if (this.selectedFile() !== file) return;
+    this.booksService
+      .readFileMetadata(file)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (found) => {
+          if (this.selectedFile() !== file) return;
 
-        const title = this.form.title.trim();
-        if (found.title && (!title || title === nameTitle)) this.form.title = found.title;
-        if (found.author && !this.form.author?.trim()) this.form.author = found.author;
-        if (found.language && this.form.language === DEFAULT_LANGUAGE)
-          this.form.language = found.language;
-        this.changeDetector.markForCheck();
-      },
-      // The file name stays as the title; nothing for the person to do.
-      error: () => undefined,
-    });
+          const title = this.form.title.trim();
+          this.form = {
+            ...this.form,
+            title: found.title && (!title || title === nameTitle) ? found.title : this.form.title,
+            author: found.author && !this.form.author?.trim() ? found.author : this.form.author,
+            language:
+              found.language && this.form.language === DEFAULT_LANGUAGE
+                ? found.language
+                : this.form.language,
+          };
+          this.changeDetector.markForCheck();
+        },
+        // The file name stays as the title; nothing for the person to do.
+        error: () => undefined,
+      });
   }
 
   /** Several EPUB/PDF files at once: the list view owns them from here (#1407). */
@@ -736,70 +709,75 @@ export class AddBookModal {
     this.isSubmitting.set(true);
 
     // From here on this is the ordinary REST create/update path.
-    // Sanitize Language
-    if (this.form.language) {
-      this.form.language = this.getFullLanguageName(this.form.language) || this.form.language;
-    }
-
-    // Sanitize Date
-    const cleanDate = this.sanitizeDate(this.form.publishedDate);
-
-    // Sanitize ISBN (in case user typed it and hit save directly)
-    this.form.isbn = this.sanitizeIsbn(this.form.isbn);
+    // Sanitize Language, Date and ISBN (in case the user typed them and hit save).
+    this.form = {
+      ...this.form,
+      language: this.form.language
+        ? (languageName(this.form.language) ?? this.form.language)
+        : this.form.language,
+      isbn: sanitizeIsbn(this.form.isbn),
+      publishedDate: sanitizeDate(this.form.publishedDate),
+    };
 
     // Membership is sent as the authoritative set from the picker. No singular
     // mirror is written any more — the column is gone, so sending one would be
     // a dead field on the wire.
-    const payload = { ...this.form, publishedDate: cleanDate || null };
+    const payload = { ...this.form };
 
     if (this.isEditMode()) {
-      this.booksService.update(this.book()!.id, payload).subscribe({
-        next: (updated) => {
-          this.isSubmitting.set(false);
-          this.bookUpdated.emit(updated);
-          this.closeModal.emit();
-        },
-        error: () => {
-          this.isSubmitting.set(false);
-          this.toast.error('Could not update the book');
-        },
-      });
+      this.booksService
+        .update(this.book()!.id, payload)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (updated) => {
+            this.isSubmitting.set(false);
+            this.bookUpdated.emit(updated);
+            this.closeModal.emit();
+          },
+          error: () => {
+            this.isSubmitting.set(false);
+            this.toast.error('Could not update the book');
+          },
+        });
     } else {
       this.existingWithFile.set(null);
       const wantsUpload = this.form.type !== 'physical' && this.selectedFile() !== null;
-      const resumable = this.bookUploads.supportsResumable();
-      this.booksService.createOrMatch({
-        ...payload,
-        // The legacy one-request path marks an incomplete row so the library
-        // does not present it before /file succeeds. The resumable contract
-        // keeps the book visible while its parts arrive: the upload session,
-        // not the row's status, says a transfer is in progress.
-        fileUploadExpected: wantsUpload && (!resumable || this.trackFiles().length > 1),
-        // Said on both paths: without it the resumable path looked like a
-        // metadata-only add, matched an edition with its own file, and the
-        // new file (another translation, say) could not be added at all.
-        fileAttached: wantsUpload,
-      }).subscribe({
-        next: ({ book, created }) => {
-          this.bookCreated.emit(book.id);
-          if (!created) {
-            this.handleExistingBook(book, wantsUpload);
-            return;
-          }
-          if ((book.editionCount ?? 1) > 1) {
-            this.toast.info(`Added as another edition of “${book.title}”`);
-          }
-          if (wantsUpload) {
-            this.handleFileUpload(book);
-          } else {
-            this.uploadCoverIfNeeded(book.id);
-          }
-        },
-        error: () => {
-          this.isSubmitting.set(false);
-          this.toast.error('Could not create the book');
-        },
-      });
+      const resumable = this.uploadSession.supportsResumable();
+      this.booksService
+        .createOrMatch({
+          ...payload,
+          // The legacy one-request path marks an incomplete row so the library
+          // does not present it before /file succeeds. The resumable contract
+          // keeps the book visible while its parts arrive: the upload session,
+          // not the row's status, says a transfer is in progress.
+          fileUploadExpected: wantsUpload && (!resumable || this.trackFiles().length > 1),
+          // Said on both paths: without it the resumable path looked like a
+          // metadata-only add, matched an edition with its own file, and the
+          // new file (another translation, say) could not be added at all.
+          fileAttached: wantsUpload,
+        })
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: ({ book, created }) => {
+            this.bookCreated.emit(book.id);
+            if (!created) {
+              this.handleExistingBook(book, wantsUpload);
+              return;
+            }
+            if ((book.editionCount ?? 1) > 1) {
+              this.toast.info(`Added as another edition of “${book.title}”`);
+            }
+            if (wantsUpload) {
+              this.handleFileUpload(book);
+            } else {
+              void this.uploadCoverIfNeeded(book.id);
+            }
+          },
+          error: () => {
+            this.isSubmitting.set(false);
+            this.toast.error('Could not create the book');
+          },
+        });
     }
   }
 
@@ -824,11 +802,18 @@ export class AddBookModal {
 
   /** Says why the library's book counts as the same one, when an identifier decided it. */
   existingNotice(book: BookModel): string {
-    const sameIsbn = !!book.isbn && this.sanitizeIsbn(this.form.isbn) === this.sanitizeIsbn(book.isbn);
-    const sameAsin = !!book.asin && (this.form.asin ?? '').trim().toUpperCase() === book.asin.toUpperCase();
+    const sameIsbn = !!book.isbn && sanitizeIsbn(this.form.isbn) === sanitizeIsbn(book.isbn);
+    const sameAsin =
+      !!book.asin && (this.form.asin ?? '').trim().toUpperCase() === book.asin.toUpperCase();
     const why = sameIsbn ? ' with the same ISBN' : sameAsin ? ' with the same ASIN' : '';
     return `“${book.title}” is already in your library${why} and has its own file. Your new file was not added.`;
   }
+
+  /** The existing-book notice's sentence, or null when there is nothing to say. */
+  readonly existingNoticeText = computed(() => {
+    const book = this.existingWithFile();
+    return book ? this.existingNotice(book) : null;
+  });
 
   keepExistingFile(): void {
     this.finishAdd();
@@ -842,164 +827,35 @@ export class AddBookModal {
   }
 
   handleFileUpload(createdBook: BookModel): void {
-    const file = this.selectedFile();
-    if (!file) {
-      this.isSubmitting.set(false);
-      this.uploadError.set('Choose a book file before retrying the upload.');
-      return;
-    }
-
-    const generation = ++this.uploadGeneration;
-    this.activeUploadBookId = createdBook.id;
-    this.stopRequested = false;
-    this.pendingUploadBook.set(createdBook);
-    this.uploadError.set(null);
-    this.isSubmitting.set(true);
-    this.uploadStartTime = performance.now();
-    this.uploadProgress.set(0);
-    const tracks = this.trackFiles();
-    const several = tracks.length > 1;
-    const totalBytes = several ? tracks.reduce((sum, t) => sum + t.size, 0) : file.size;
-    this.uploadByteProgress.set({ loaded: 0, total: totalBytes });
-    this.attachBeforeUnload();
-
-    // The resumable contract carries one file per session, so the parts of
-    // one audiobook always go in a single request.
-    if (!several && this.bookUploads.supportsResumable()) {
-      this.uploadResumable(createdBook, file, generation);
-      return;
-    }
-
-    const upload$ = several
-      ? this.booksService.uploadTracks(createdBook.id, tracks)
-      : this.booksService.uploadFile(createdBook.id, file);
-    this.legacyUploadSub = upload$.subscribe({
-      next: (event) => {
-        if (this.isStaleUpload(generation)) return;
-        if (event.type === HttpEventType.UploadProgress) {
-          const percent = Math.round((event.loaded / (event.total ?? 1)) * 100);
-          this.uploadProgress.set(percent);
-          this.uploadByteProgress.set({
-            loaded: event.loaded,
-            total: event.total ?? totalBytes,
-          });
-        }
-        if (event.type === HttpEventType.Response) {
-          this.onUploadComplete(createdBook);
-        }
-      },
-      error: (error: unknown) => {
-        if (this.isStaleUpload(generation)) return;
-        this.uploadProgress.set(null);
-        this.uploadPhase.set(null);
-        this.uploadByteProgress.set(null);
-        this.isSubmitting.set(false);
-        this.detachBeforeUnload();
-        if (this.discardRejectedBook(createdBook, error)) return;
-        this.uploadError.set(
-          describeUploadFailure(error, { bookSaved: true, resumable: false }),
-        );
-      },
-    });
-  }
-
-  /**
-   * Chunked upload owned by the root service. Closing this modal no longer
-   * hides it: the close paths ask first, and Stop pauses the session through
-   * the service so the same file can resume (#1275).
-   */
-  private uploadResumable(
-    createdBook: BookModel,
-    file: File,
-    generation: number,
-  ): void {
-    this.uploadPhase.set('preparing');
-    this.uploadProgress.set(0);
-    void this.bookUploads
-      .upload(createdBook.id, file, {
-        onProgress: (progress) => {
-          if (this.isStaleUpload(generation)) return;
-          this.uploadPhase.set(progress.phase);
-          this.uploadProgress.set(progress.percent);
-          this.uploadByteProgress.set({
-            loaded: progress.movedBytes,
-            total: progress.totalBytes,
-          });
-        },
-      })
-      .then(() => {
-        if (this.isStaleUpload(generation)) return;
-        this.onUploadComplete(createdBook);
-      })
-      .catch((error: unknown) => {
-        if (this.isStaleUpload(generation)) return;
-        this.uploadProgress.set(null);
-        this.uploadPhase.set(null);
-        this.uploadByteProgress.set(null);
-        this.isSubmitting.set(false);
-        this.detachBeforeUnload();
-        if (this.discardRejectedBook(createdBook, error)) return;
-        this.uploadError.set(
-          describeUploadFailure(error, { bookSaved: true }),
-        );
-      });
-  }
-
-  /**
-   * The server read the file and refused it (empty, damaged, wrong kind). A
-   * book this form just made would be left without a file, so remove it and
-   * send the reader back to the form to choose another file. A book that
-   * already had a file is kept as it was.
-   */
-  private discardRejectedBook(createdBook: BookModel, error: unknown): boolean {
-    const message = rejectedFileMessage(error);
-    if (!message) return false;
-    if (!createdBook.hasFile) {
-      this.booksService.delete(createdBook.id).subscribe({
-        next: () => this.bookAdded.emit(),
-        error: () => undefined,
-      });
-    }
-    this.pendingUploadBook.set(null);
-    this.selectedFile.set(null);
-    this.uploadError.set(`${message} Choose a different file.`);
-    return true;
-  }
-
-  private onUploadComplete(createdBook: BookModel): void {
-    const elapsed = performance.now() - (this.uploadStartTime ?? 0);
-    this.pendingUploadBook.set(null);
-    this.uploadError.set(null);
-    this.detachBeforeUnload();
-    setTimeout(
-      () => {
-        if (this.destroyed) return;
-        // Keep the upload view up until finishAdd resets it: clearing the
-        // progress first would flash the form back while a cover uploads.
-        this.uploadCoverIfNeeded(createdBook.id);
-      },
-      Math.max(0, 1200 - elapsed),
-    );
+    this.uploadSession.start(createdBook);
   }
 
   retryUpload(): void {
-    const createdBook = this.pendingUploadBook();
-    if (!createdBook || this.isSubmitting()) return;
-    this.handleFileUpload(createdBook);
+    this.uploadSession.retry();
   }
 
-  uploadCoverIfNeeded(bookId: string) {
+  /**
+   * The book row exists by now; the cover is the last thing in flight. It is
+   * async rather than a component subscription on purpose: the sheet may be
+   * closed in the second the cover takes, and the upload must still land so the
+   * library refresh the close path asks for shows the finished book.
+   */
+  async uploadCoverIfNeeded(bookId: string): Promise<void> {
     const cover = this.selectedCover();
     if (!cover) {
       this.finishAdd();
       return;
     }
-    this.booksService.uploadCover(bookId, cover).subscribe({
-      next: (event) => {
-        if (event.type === 4) this.finishAdd();
-      },
-      error: () => this.finishAdd(),
-    });
+    try {
+      await lastValueFrom(
+        this.booksService
+          .uploadCover(bookId, cover)
+          .pipe(filter((event) => event.type === HttpEventType.Response)),
+      );
+    } catch {
+      // The book is saved; a cover failure is not the add's failure.
+    }
+    this.finishAdd();
   }
 
   finishAdd() {
@@ -1028,7 +884,7 @@ export class AddBookModal {
   /** The Stop control in the upload view. A failed run has nothing to stop. */
   requestStopUpload(): void {
     if (!this.isUploading()) {
-      void this.stopUpload();
+      void this.uploadSession.stop();
       return;
     }
     this.confirmStopOpen.set(true);
@@ -1039,434 +895,37 @@ export class AddBookModal {
     this.confirmStopOpen.set(false);
   }
 
-  /**
-   * Stop upload: abort in-flight requests and pause the resumable session
-   * through the root service, so the saved row and the same file survive this
-   * session. Closing then leaves the library refreshed.
-   */
-  async stopUpload(): Promise<void> {
-    if (this.uploadStopping()) return;
-    this.uploadStopping.set(true);
-    this.stopRequested = true;
-    this.legacyUploadSub?.unsubscribe();
-    this.legacyUploadSub = null;
-
-    const generation = this.uploadGeneration;
-    const bookId = this.activeUploadBookId;
-    try {
-      if (bookId) await this.bookUploads.stop(bookId);
-    } finally {
-      if (generation !== this.uploadGeneration) return;
-      this.resetUploadState();
-      this.isSubmitting.set(false);
-      this.closeModal.emit();
-      this.bookAdded.emit();
-    }
-  }
-
-  /** True once this run's callbacks may no longer paint the modal. */
-  private isStaleUpload(generation: number): boolean {
-    return this.destroyed || this.stopRequested || generation !== this.uploadGeneration;
-  }
-
-  /** A refresh or tab close loses a File the browser cannot hand back. */
-  private readonly onBeforeUnload = (event: BeforeUnloadEvent): void => {
-    if (!this.isUploading()) return;
-    event.preventDefault();
-    event.returnValue = '';
-  };
-
-  private attachBeforeUnload(): void {
-    if (this.beforeUnloadAttached) return;
-    window.addEventListener('beforeunload', this.onBeforeUnload);
-    this.beforeUnloadAttached = true;
-  }
-
-  private detachBeforeUnload(): void {
-    if (!this.beforeUnloadAttached) return;
-    window.removeEventListener('beforeunload', this.onBeforeUnload);
-    this.beforeUnloadAttached = false;
-  }
-
-  /** Clears every trace of a file run so a reopened Add book starts clean. */
-  private resetUploadState(): void {
-    this.uploadGeneration += 1;
-    this.activeUploadBookId = null;
-    this.stopRequested = false;
-    this.legacyUploadSub?.unsubscribe();
-    this.legacyUploadSub = null;
-    this.detachBeforeUnload();
-    this.confirmStopOpen.set(false);
-    this.uploadStopping.set(false);
-    this.uploadProgress.set(null);
-    this.uploadPhase.set(null);
-    this.uploadByteProgress.set(null);
-    this.uploadError.set(null);
-    this.pendingUploadBook.set(null);
+  stopUpload(): void {
+    void this.uploadSession.stop();
   }
 
   // ------------------------------------------------------------------
-  // From a source (issue #167)
+  // Source discovery: the picker owns it; these are the step's entry points.
   // ------------------------------------------------------------------
-  // An acquisition surface, not a second library. Its whole job is to put a
-  // file into the user's own library and then get out of the way — so there is
-  // no feed, no recommendations and no browsing beyond the search the user
-  // actually asked for.
 
-  providerList = signal<ProviderSummary[]>([]);
-  providersLoading = signal(false);
-  providersError = signal<string | null>(null);
-
-  sourceQuery = signal('');
-  sourceKind = signal<'all' | 'ebook' | 'audiobook'>('all');
-  readonly sourceKinds = [
-    { value: 'all', label: 'All' },
-    { value: 'ebook', label: EBOOK_CATEGORY_LABEL_PLURAL },
-    { value: 'audiobook', label: 'Audiobooks' },
-  ] as const;
-  sourceResults = signal<ProviderItem[]>([]);
-  sourceStatuses = signal<ProviderDiscoverySourceStatus[]>([]);
-  sourceHasMore = signal(false);
-  sourceSearching = signal(false);
-  sourceSearched = signal(false);
-  sourceSearchError = signal<string | null>(null);
-  /**
-   * True once a search has been waiting long enough that a slow catalogue is
-   * the likely cause (#658). The aggregate search is bounded server-side, so
-   * the copy can promise that late sources are skipped rather than awaited.
-   */
-  sourceSearchSlow = signal(false);
-  private sourceSlowTimer: ReturnType<typeof setTimeout> | null = null;
-  private sourceSearchVersion = 0;
-  /** The in-flight aggregate search; a newer search aborts it (#641). */
-  private sourceSearchSub: Subscription | null = null;
-  /** The in-flight detail request for the selected result. */
-  private sourceDetailSub: Subscription | null = null;
-
-  /**
-   * Narrow layouts show results and the selected book as two views (#641).
-   * Desktop shows both panes at once and ignores this.
-   */
-  sourceDetailOpen = signal(false);
-  private sourceResultsScrollTop = 0;
-  private sourceResultsPane = viewChild<ElementRef<HTMLElement>>('sourceResultsPane');
-
-  /**
-   * The persistent footer's next action. Choosing a result only seeds the
-   * Review Book step, so this is never labelled "Import".
-   */
-  sourcePrimaryAction = computed<{ label: string; enabled: boolean }>(() => {
-    const item = this.selectedItem();
-    if (!item) return { label: 'Select a book', enabled: false };
-    if (this.sourceImportError()) return { label: 'Use this book', enabled: false };
-    const detail = this.selectedDetail();
-    if (!detail) return { label: 'Loading edition…', enabled: false };
-    return {
-      label: 'Use this book',
-      enabled: detail.assets.length > 0 && !this.runningAcquisition(),
-    };
-  });
-
-  /** Names of the sources that could not be searched, for one compact line. */
-  sourceFailureNames = computed(() =>
-    this.sourceFailures().map((source) => source.displayName).join(', '),
-  );
-
-  selectedItem = signal<ProviderItem | null>(null);
-
-  /**
-   * The asset that will actually be imported, named in the collapsed summary so
-   * the answer is visible without opening the list.
-   */
-  selectedAssetLabel = computed(() => {
-    const item = this.selectedSourceItem();
-    if (!item) return '';
-
-    const id = this.selectedAssetId();
-    const asset =
-      item.assets.find((a) => a.id === id) ??
-      item.assets.find((a) => a.isPreferred) ??
-      item.assets[0];
-    if (!asset) return '';
-
-    const size = this.formatBytes(asset.sizeBytes);
-    return size ? `${asset.label} · ${size}` : asset.label;
-  });
-  /**
-   * The catalogue's rights text, minus the full stop it ends with: the line
-   * finishes with the attribution in parentheses, so the source's own terminal
-   * punctuation would sit mid-sentence. Only the final one is dropped — any
-   * full stops inside the statement are the source's and stay.
-   */
-  rightsText = computed(() => {
-    const statement = this.selectedSourceItem()?.rightsStatement ?? '';
-    return statement.trim().replace(/\.+$/, '');
-  });
-
-  /** The full item behind the selected result: this is what carries the assets. */
-  selectedDetail = signal<ProviderItem | null>(null);
-  selectedAssetId = signal<string | null>(null);
-
-  /**
-   * The picked result with its assets. A search result carries none of its own,
-   * so the fetched detail wins as soon as it arrives and the thin search result
-   * is only a stand-in until then.
-   */
-  selectedSourceItem = computed(() => this.selectedDetail() ?? this.selectedItem());
-
-  /** The live job, or null when nothing has been started. */
-  acquisition = signal<ProviderAcquisition | null>(null);
-  sourceImportError = signal<string | null>(null);
-
-
-  sourceFailures = computed(() => this.sourceStatuses().filter((source) => !source.succeeded));
-
-  /**
-   * The catalogues the current search is querying (#658), so the waiting state
-   * names them instead of reading as a frozen modal. Mirrors the server's
-   * eligibility rule (ProviderDiscoveryService.IsEligible): a source must
-   * search and be able to acquire the requested kind.
-   */
-  searchingSources = computed(() => {
-    const kind = this.sourceKind();
-    return this.providerList().filter((provider) => {
-      const capabilities = provider.capabilities.map((name) => name.toLowerCase());
-      if (!capabilities.includes('search')) return false;
-      const ebook = capabilities.includes('ebookacquisition');
-      const audiobook = capabilities.includes('audiobookacquisition');
-      if (kind === 'ebook') return ebook;
-      if (kind === 'audiobook') return audiobook;
-      return ebook || audiobook;
-    });
-  });
-
-  /** Why a source contributed nothing, in two or three words (#658). */
-  sourceFailureReason(source: ProviderDiscoverySourceStatus): string {
-    return source.errorCode === 'provider_timeout' ? 'timed out' : 'unavailable';
-  }
-  sourceNotices = computed(() =>
-    this.sourceStatuses().filter((source) => source.succeeded && !!source.notice),
-  );
-  allSourcesFailed = computed(
-    () =>
-      this.sourceSearched() &&
-      this.sourceStatuses().length > 0 &&
-      this.sourceStatuses().every((source) => !source.succeeded),
-  );
-
-  /**
-   * True when the form was seeded from a source item, which is what turns the
-   * primary action into "Import" instead of "Create".
-   */
-  seededFromSource = computed(() => !this.isEditMode() && this.selectedItem() !== null);
-
-  /** The selected result owns its provider identity even after source mode closes. */
-  seededSourceName = computed(() => {
-    const item = this.selectedItem();
-    return item ? this.providerName(item.providerId) : 'the source';
-  });
-
-  selectedAsset = computed(() => {
-    const item = this.selectedSourceItem();
-    if (!item) return null;
-
-    const selectedId = this.selectedAssetId();
-    return (
-      item.assets.find((asset) => asset.id === selectedId) ??
-      item.assets.find((asset) => asset.isPreferred) ??
-      item.assets[0] ??
-      null
-    );
-  });
-
-  ebookFormatFamilies = computed(() => {
-    const item = this.selectedSourceItem();
-    if (!item || item.mediaKind !== 'ebook') return [] as Array<'EPUB' | 'PDF'>;
-
-    const families = item.assets
-      .map((asset) => this.assetFormatFamily(asset.sourceFormat))
-      .filter((family): family is 'EPUB' | 'PDF' => family !== null);
-
-    return [...new Set(families)];
-  });
-
-  selectedFormatFamily = computed(() => {
-    const asset = this.selectedAsset();
-    return asset ? this.assetFormatFamily(asset.sourceFormat) : null;
-  });
-
-  /** Non-null only while an import is actually in flight. */
-  runningAcquisition = computed(() => {
-    const job = this.acquisition();
-    return job && !ACQUISITION_FINISHED_STATES.has(job.state) ? job : null;
-  });
-
-  /**
-   * Human wording for the pipeline's stage names. The stages are deliberately
-   * coarse and stable so the client never has to know which source is running.
-   */
-  private readonly stageLabels: Record<string, string> = {
-    queued: 'Queued',
-    starting: 'Starting',
-    resolving: 'Contacting the source',
-    checking: 'Checking your library',
-    downloading: 'Downloading',
-    validating: 'Validating the download',
-    assembling: 'Preparing the file',
-    importing: 'Adding to your library',
-    done: 'Finished',
-    failed: 'Failed',
-  };
-
-  stageLabel(job: ProviderAcquisition): string {
-    return this.stageLabels[job.stage] ?? job.stage;
-  }
-
-  formatBytes(bytes: number | null): string {
-    return bytes && bytes > 0 ? formatFileSize(bytes) : '';
-  }
-
-  /**
-   * Show the source search on its own, before the form.
-   *
-   * Reached from "Import from a source". The user searches, picks a result, and
-   * the form opens prefilled — so the metadata is reviewed and completed before
-   * anything is downloaded.
-   */
+  /** Show the source search on its own, before the form. */
   enterSourceMode(): void {
     if (this.isEditMode()) return;
 
     this.flowIntent.set('source');
     this.sourceMode.set(true);
-    if (this.providerList().length === 0 && !this.providersLoading()) this.loadProviders();
   }
 
-  private loadProviders(): void {
-    this.providersLoading.set(true);
-    this.providersError.set(null);
-
-    this.providers
-      .list()
-      .pipe(finalize(() => this.providersLoading.set(false)))
-      .subscribe({
-        next: (list) => {
-          this.providerList.set(list);
-          if (list.length === 0) {
-            this.providersError.set('No book sources are enabled. Turn them on in Settings.');
-          }
-        },
-        error: () => this.providersError.set('Could not load the available sources.'),
-      });
+  /** Runs the picker's search for the shell's current query. */
+  searchSource(): void {
+    this.sourcePicker()?.searchSource(this.sourceQuery());
   }
 
   setSourceKind(kind: 'all' | 'ebook' | 'audiobook'): void {
-    if (kind === this.sourceKind()) return;
-
-    this.sourceKind.set(kind);
-    // A search for the previous filter is obsolete whether or not a new one starts.
-    this.cancelSourceRequests();
-    this.clearSourceSelection();
-    this.sourceDetailOpen.set(false);
-
-    if (this.sourceQuery().trim().length >= 2) this.searchSource();
-  }
-
-  searchSource(): void {
-    const query = this.sourceQuery().trim();
-    if (query.length < 2) return;
-
-    const kind = this.sourceKind();
-    const version = ++this.sourceSearchVersion;
-    // Abort, not just ignore, the search this one replaces.
-    this.sourceSearchSub?.unsubscribe();
-    this.sourceSearching.set(true);
-    this.sourceSearchError.set(null);
-    this.clearSourceSelection();
-    this.sourceDetailOpen.set(false);
-    this.sourceResultsScrollTop = 0;
-    this.clearSourceSlowTimer();
-    this.sourceSlowTimer = setTimeout(() => {
-      if (this.sourceSearchVersion === version && this.sourceSearching()) {
-        this.sourceSearchSlow.set(true);
-      }
-    }, AddBookModal.SOURCE_SLOW_AFTER_MS);
-
-    this.sourceSearchSub = this.providers
-      .searchAll(query, kind === 'all' ? undefined : kind)
-      .pipe(
-        finalize(() => {
-          if (this.sourceSearchVersion === version) {
-            this.sourceSearching.set(false);
-            this.clearSourceSlowTimer();
-          }
-        }),
-      )
-      .subscribe({
-        next: (result) => {
-          // A response for a filter/query the user has already moved away from
-          // must not replace the current discovery state.
-          if (
-            this.sourceSearchVersion !== version ||
-            this.sourceQuery().trim() !== query ||
-            this.sourceKind() !== kind
-          )
-            return;
-
-          this.sourceResults.set(result.items);
-          this.sourceStatuses.set(result.sources);
-          this.sourceHasMore.set(result.hasMore);
-          this.sourceSearched.set(true);
-        },
-        error: (error) => {
-          if (
-            this.sourceSearchVersion !== version ||
-            this.sourceQuery().trim() !== query ||
-            this.sourceKind() !== kind
-          )
-            return;
-
-          this.sourceResults.set([]);
-          this.sourceStatuses.set([]);
-          this.sourceSearched.set(true);
-          this.sourceSearchError.set(
-            this.describeError(error, 'Free sources could not be searched right now.'),
-          );
-        },
-      });
+    this.sourcePicker()?.setKind(kind, this.sourceQuery());
   }
 
   selectSourceItem(item: ProviderItem): void {
-    this.selectedItem.set(item);
-    this.selectedDetail.set(null);
-    this.selectedAssetId.set(null);
-    this.sourceImportError.set(null);
+    this.sourcePicker()?.selectItem(item);
+  }
 
-    // Detail and acquisition are routed by the result's own provider. Capturing
-    // both halves of the identity prevents identical external ids from two
-    // sources from colliding when responses arrive out of order.
-    const selectedKey = this.sourceItemKey(item);
-    this.openSourceDetail();
-
-    this.sourceDetailSub?.unsubscribe();
-    this.sourceDetailSub = this.providers.item(item.providerId, item.externalId).subscribe({
-      next: (detail) => {
-        const current = this.selectedItem();
-        if (!current || this.sourceItemKey(current) !== selectedKey) return;
-        if (this.sourceItemKey(detail) !== selectedKey) return;
-
-        this.selectedDetail.set(detail);
-        const preferredDetail = detail.assets.find((a) => a.isPreferred) ?? detail.assets[0];
-        this.selectedAssetId.set(preferredDetail?.id ?? null);
-      },
-      error: () => {
-        const current = this.selectedItem();
-        if (!current || this.sourceItemKey(current) !== selectedKey) return;
-
-        this.sourceImportError.set(
-          "That book's details could not be loaded, so it cannot be imported right now.",
-        );
-      },
-    });
+  selectFormatFamily(family: 'EPUB' | 'PDF'): void {
+    this.sourcePicker()?.selectFormatFamily(family);
   }
 
   /**
@@ -1486,34 +945,36 @@ export class AddBookModal {
 
     // Collections are deliberately not offered here: the form that follows has
     // its own picker, and the same question twice is one too many.
-    const asset =
-      item.assets.find((a) => a.id === this.selectedAssetId()) ??
-      item.assets.find((a) => a.isPreferred) ??
-      item.assets[0];
+    const asset = this.selectedAsset();
 
-    this.form.title = item.title ?? '';
-    this.form.subtitle = item.subtitle ?? '';
-    this.form.author = item.author ?? '';
-    this.form.narrator = item.narrator ?? '';
-    this.form.description = item.description ?? '';
-    this.form.language = item.language ?? 'en';
-    this.form.publisher = item.publisher ?? '';
-    this.form.publishedDate = item.publishedDate ?? '';
-    this.form.categories = item.categories ?? '';
-    this.form.duration = item.duration ?? '';
-    this.form.pageCount = item.pageCount;
-
-    // The type follows what is actually being fetched. An audiobook asset makes
-    // an audiobook; guessing otherwise would file it where no reader can open it.
-    if (asset?.kind === 'audiobook') this.form.type = 'audiobook';
-    else if (asset?.kind === 'ebook') this.form.type = 'ebook';
+    this.form = {
+      ...this.form,
+      title: item.title ?? '',
+      subtitle: item.subtitle ?? '',
+      author: item.author ?? '',
+      narrator: item.narrator ?? '',
+      description: item.description ?? '',
+      language: item.language ?? DEFAULT_LANGUAGE,
+      publisher: item.publisher ?? '',
+      publishedDate: item.publishedDate ?? '',
+      categories: item.categories ?? '',
+      duration: item.duration ?? '',
+      pageCount: item.pageCount,
+      // The type follows what is actually being fetched. An audiobook asset makes
+      // an audiobook; guessing otherwise would file it where no reader can open it.
+      type:
+        asset?.kind === 'audiobook'
+          ? 'audiobook'
+          : asset?.kind === 'ebook'
+            ? 'ebook'
+            : this.form.type,
+    };
 
     this.sourceImportError.set(null);
-    this.acquisition.set(null);
     // The search has done its job: the compact review is the rest of the flow.
     this.sourceMode.set(false);
     this.flowIntent.set('source');
-    setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+    setTimeout(() => this.metadataForm()?.focusTitle(), 0);
   }
 
   /**
@@ -1556,10 +1017,9 @@ export class AddBookModal {
     // isSubmitting covers the request itself: until the server answers, nothing
     // else marks the import as started, and a second click (or Enter plus a
     // click) would queue the same book twice.
-    if (!item || this.runningAcquisition() || this.isSubmitting()) return;
+    if (!item || this.isSubmitting()) return;
 
     this.sourceImportError.set(null);
-    this.acquisition.set(null);
     this.isSubmitting.set(true);
 
     this.providers
@@ -1569,14 +1029,13 @@ export class AddBookModal {
         collectionIds: this.form.collectionIds,
         metadataOverrides: this.buildOverrides(),
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (job) => {
           this.isSubmitting.set(false);
           if (job?.bookId) this.bookCreated.emit(job.bookId);
           else if (job?.jobId) this.importQueued.emit(job.jobId);
-          this.toast.success(
-            'Import started — it will appear in your library when it finishes.',
-          );
+          this.toast.success('Import started — it will appear in your library when it finishes.');
           // The feed is opened here, on demand: the user just created work to
           // watch, so the "Imports in progress" section starts following it before
           // the modal is even gone. Nothing in the library query is refetched.
@@ -1593,153 +1052,25 @@ export class AddBookModal {
       });
   }
 
-  cancelImport(): void {
-    const job = this.runningAcquisition();
-    if (!job) return;
-
-    this.providers.cancel(job.jobId).subscribe({
-      next: () => {
-        this.acquisition.set({ ...job, state: 'cancelled', stage: 'cancelled' });
-      },
-      error: () => undefined,
-    });
-  }
-
-  /** Narrow layouts: leave the list for the selected book, keeping its scroll. */
-  private openSourceDetail(): void {
-    const pane = this.sourceResultsPane()?.nativeElement;
-    if (pane) this.sourceResultsScrollTop = pane.scrollTop;
-    this.sourceDetailOpen.set(true);
-  }
-
-  /** Narrow layouts: back to the same list, query, filter, order and selection. */
-  backToSourceResults(): void {
-    this.sourceDetailOpen.set(false);
-    setTimeout(() => {
-      const pane = this.sourceResultsPane()?.nativeElement;
-      if (pane) pane.scrollTop = this.sourceResultsScrollTop;
-    }, 0);
-  }
-
-  private cancelSourceRequests(): void {
-    this.sourceSearchSub?.unsubscribe();
-    this.sourceSearchSub = null;
-    this.sourceDetailSub?.unsubscribe();
-    this.sourceDetailSub = null;
-    this.sourceSearching.set(false);
-    this.clearSourceSlowTimer();
-  }
-
-  private clearSourceSlowTimer(): void {
-    if (this.sourceSlowTimer !== null) clearTimeout(this.sourceSlowTimer);
-    this.sourceSlowTimer = null;
-    this.sourceSearchSlow.set(false);
+  /** The picker's selection crossed into the shell's review step. */
+  onSourceSelection(selection: SourceSelection | null): void {
+    this.sourceSelection.set(selection);
+    if (!selection) this.sourceImportError.set(null);
   }
 
   private clearSourceSelection(): void {
-    this.sourceDetailSub?.unsubscribe();
-    this.sourceDetailSub = null;
-    this.selectedItem.set(null);
-    this.selectedDetail.set(null);
-    this.selectedAssetId.set(null);
+    this.sourceSelection.set(null);
     this.sourceImportError.set(null);
   }
 
-  private clearSourceResults(): void {
-    this.sourceResults.set([]);
-    this.sourceStatuses.set([]);
-    this.sourceHasMore.set(false);
-    this.sourceSearched.set(false);
-    this.sourceSearchError.set(null);
-    this.clearSourceSelection();
-  }
-
-  private resetSourceTab(): void {
-    this.cancelSourceRequests();
-    this.sourceDetailOpen.set(false);
-    this.clearSourceResults();
+  private resetSource(): void {
+    this.searchOnSourceOpen.set(false);
     this.sourceQuery.set('');
-    this.sourceKind.set('all');
-    this.acquisition.set(null);
-    this.sourceImportError.set(null);
+    this.clearSourceSelection();
   }
 
   private describeError(error: unknown, fallback: string): string {
     const body = (error as { error?: { detail?: string; title?: string } })?.error;
     return body?.detail || body?.title || fallback;
-  }
-
-  /**
-   * The facts that decide between two recordings of the same work: who reads
-   * it, how long it is and how many sections it has. Empty for an ebook, so a
-   * Gutenberg row renders exactly as it did.
-   */
-  sourceFacts(item: ProviderItem): string {
-    return [
-      item.narrator ? `Narrated by ${item.narrator}` : null,
-      item.duration,
-      item.partCount && item.partCount > 1 ? `${item.partCount} sections` : null,
-    ]
-      .filter((part): part is string => !!part)
-      .join(' · ');
-  }
-
-  sourceItemKey(item: Pick<ProviderItem, 'providerId' | 'externalId'>): string {
-    return `${encodeURIComponent(item.providerId)}::${encodeURIComponent(item.externalId)}`;
-  }
-
-  isSelectedSourceItem(item: ProviderItem): boolean {
-    const selected = this.selectedItem();
-    return !!selected && this.sourceItemKey(selected) === this.sourceItemKey(item);
-  }
-
-  providerName(providerId: string): string {
-    return (
-      this.providerList().find((provider) => provider.id === providerId)?.displayName ??
-      this.sourceStatuses().find((source) => source.providerId === providerId)?.displayName ??
-      providerId
-    );
-  }
-
-  mediaKindLabel(item: ProviderItem): string {
-    return item.mediaKind === 'audiobook' ? 'Audiobook' : EBOOK_CATEGORY_LABEL;
-  }
-
-  assetFormatFamily(sourceFormat: string | null): 'EPUB' | 'PDF' | null {
-    const format = sourceFormat?.toLowerCase();
-    if (!format) return null;
-    if (format === 'application/epub+zip' || format.startsWith('epub')) return 'EPUB';
-    if (format === 'application/pdf' || format.startsWith('pdf')) return 'PDF';
-    return null;
-  }
-
-  selectFormatFamily(family: 'EPUB' | 'PDF'): void {
-    const item = this.selectedSourceItem();
-    if (!item) return;
-
-    const candidates = item.assets.filter(
-      (asset) => this.assetFormatFamily(asset.sourceFormat) === family,
-    );
-    const selected = candidates.find((asset) => asset.isPreferred) ?? candidates[0];
-    if (selected) this.selectedAssetId.set(selected.id);
-  }
-
-  assetsForSelectedFamily(): ProviderItem['assets'] {
-    const item = this.selectedSourceItem();
-    const family = this.selectedFormatFamily();
-    if (!item || !family) return [];
-
-    return item.assets.filter((asset) => this.assetFormatFamily(asset.sourceFormat) === family);
-  }
-
-  private getFullLanguageName(input: string | null): string | null {
-    if (!input) return null;
-    const clean = input.trim();
-    if (clean.length > 3) return clean;
-    try {
-      return new Intl.DisplayNames(['en'], { type: 'language' }).of(clean) || clean;
-    } catch (e) {
-      return clean;
-    }
   }
 }

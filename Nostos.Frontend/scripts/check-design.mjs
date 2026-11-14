@@ -852,6 +852,10 @@ function legacySettingsFormRecipes(css) {
 const MIGRATED_UI_V1_TEMPLATES = [
   'src/app/settings/settings.component.html',
   'src/app/add-book-modal/add-book-modal.component.html',
+  'src/app/add-book-modal/add-book-file-step.component.html',
+  'src/app/add-book-modal/add-book-metadata-form.component.html',
+  'src/app/add-book-modal/add-book-source-picker.component.html',
+  'src/app/add-book-modal/add-book-upload-panel.component.html',
   'src/app/ui/assistant/assistant.component.html',
   'src/app/library/library.component.html',
   'src/app/brain/brain-list.page.html',
@@ -952,6 +956,10 @@ for (const relativePath of MIGRATED_UI_V1_TEMPLATES) {
 const MIGRATED_UI_V1_STYLES = [
   'src/app/settings/settings.component.css',
   'src/app/add-book-modal/add-book-modal.component.css',
+  'src/app/add-book-modal/add-book-file-step.component.css',
+  'src/app/add-book-modal/add-book-metadata-form.component.css',
+  'src/app/add-book-modal/add-book-source-picker.component.css',
+  'src/app/add-book-modal/add-book-upload-panel.component.css',
   'src/app/ui/assistant/assistant.component.css',
   'src/app/library/library.component.css',
   'src/app/brain/brain-list.page.css',
@@ -1023,7 +1031,9 @@ for (const relativePath of MIGRATED_UI_V1_STYLES) {
  */
 const PRODUCT_RAW_BUTTON_CLASSES = new Map([
   ['src/app/settings/settings.component.html', new Set(['settings-nav-item', 'theme-card'])],
-  ['src/app/add-book-modal/add-book-modal.component.html', new Set(['tab-btn', 'source-choice', 'source-result', 'source-filter'])],
+  // The acquisition rows moved into the source picker when Add Book was split;
+  // they are still product controls, not ordinary buttons.
+  ['src/app/add-book-modal/add-book-source-picker.component.html', new Set(['source-result'])],
   ['src/app/ui/assistant/assistant.component.html',
     // 'starter' rows send a ready-made question, like suggestion-chip applies a
     // topic: full-width rows with a trailing go glyph, not ordinary buttons.

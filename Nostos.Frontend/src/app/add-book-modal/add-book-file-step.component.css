@@ -1,0 +1,172 @@
+/* How the book arrived (a file, a source, paper, or nothing) and the drop zones
+   that change it. The shell owns the sheet frame; this owns the file step. */
+.acquisition-start {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem 0.9rem;
+  align-items: start;
+}
+.acquisition-start__copy h3,
+.section-heading h3 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+.acquisition-start__copy p,
+.section-heading p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.acquisition-start .file-drop-zone {
+  grid-column: 1 / -1;
+  margin-top: 0.35rem;
+}
+
+.review-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface-alt);
+}
+.review-summary__visual {
+  display: flex;
+  flex: 0 0 48px;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 60px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--color-text-light);
+}
+.review-summary__copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.review-summary__copy strong {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-summary__copy > span:not(.review-eyebrow) {
+  color: var(--color-text-light);
+  font-size: 0.76rem;
+}
+.review-eyebrow {
+  color: var(--color-text-light);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.review-change-file {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 36px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-action);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.review-change-file:hover,
+.review-change-file:focus-within {
+  border-color: var(--border-focus);
+}
+.review-change-file__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.upload-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: var(--fw-medium);
+}
+.upload-failure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.existing-book {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.existing-book__message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: var(--color-info);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.existing-book__message nostos-icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+.existing-book__actions {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
+}
+.upload-failure__message {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-danger);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.bulk-pick {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .review-summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .review-change-file {
+    margin-left: 3.9rem;
+  }
+  .upload-failure {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .existing-book {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .existing-book__actions {
+    flex-wrap: wrap;
+  }
+}

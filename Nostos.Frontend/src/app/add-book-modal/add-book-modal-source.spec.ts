@@ -1,8 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 
 import { AddBookModal } from './add-book-modal.component';
+import { AddBookSourcePickerComponent } from './add-book-source-picker.component';
 import { Book, BooksService } from '../core/services/books.service';
 import { ProvidersService } from '../core/services/providers.service';
 import {
@@ -107,6 +109,10 @@ describe('AddBookModal — From a Source', () => {
   let fixture: ComponentFixture<AddBookModal>;
   let providers: ProvidersService;
   let books: BooksService;
+  /** Discovery is its own component now; its state is read from there. */
+  const picker = () =>
+    fixture.debugElement.query(By.directive(AddBookSourcePickerComponent))
+      ?.componentInstance as AddBookSourcePickerComponent;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -198,7 +204,7 @@ describe('AddBookModal — From a Source', () => {
     expect(fixture.nativeElement.querySelector('#source-query')).toBeTruthy();
     // And the sources have to actually be loaded, or the search has nothing to
     // run against. Found by pressing the button, not by reading the code.
-    expect(component.providerList().length).toBeGreaterThan(0);
+    expect(picker().providerList().length).toBeGreaterThan(0);
   });
 
   it('keeps provider discovery as its own first step with a manual fallback', async () => {
@@ -299,7 +305,7 @@ describe('AddBookModal — From a Source', () => {
     fixture.detectChanges();
 
     expect(providers.list).toHaveBeenCalled();
-    expect(component.sourceKind()).toBe('all');
+    expect(picker().kind()).toBe('all');
     expect(fixture.nativeElement.textContent).toContain('Search free books and audiobooks');
     expect(fixture.nativeElement.querySelectorAll('.source-choice').length).toBe(0);
   });
@@ -323,7 +329,7 @@ describe('AddBookModal — From a Source', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(component.providersError()).toBeTruthy();
+    expect(picker().providersError()).toBeTruthy();
     expect(fixture.nativeElement.querySelector('#source-query')).toBeTruthy();
   });
 
@@ -514,12 +520,12 @@ describe('AddBookModal — From a Source', () => {
 
     expect(providers.item).toHaveBeenLastCalledWith('wikisource', '1342');
     expect(component.selectedItem()?.providerId).toBe('wikisource');
-    expect(component.sourceItemKey(component.sourceResults()[0])).not.toBe(
-      component.sourceItemKey(component.sourceResults()[1]),
+    expect(picker().sourceItemKey(picker().results()[0])).not.toBe(
+      picker().sourceItemKey(picker().results()[1]),
     );
   });
 
-  it('ignores late detail from a previously selected provider with the same external id', () => {
+  it('ignores late detail from a previously selected provider with the same external id', async () => {
     const gutenbergDetail = new Subject<ProviderItem>();
     const wikisourceDetail = new Subject<ProviderItem>();
     vi.spyOn(providers, 'item').mockImplementation((providerId) =>
@@ -529,6 +535,8 @@ describe('AddBookModal — From a Source', () => {
     const g = { ...pride, assets: [] };
     const w = { ...pride, providerId: 'wikisource', assets: [] };
 
+    component.enterSourceMode();
+    await fixture.whenStable();
     component.selectSourceItem(g);
     component.selectSourceItem(w);
 
@@ -562,10 +570,12 @@ describe('AddBookModal — From a Source', () => {
     vi.spyOn(providers, 'item').mockReturnValue(of(detail));
     const acquire = vi.spyOn(providers, 'acquire').mockReturnValue(of(job({ assetId: 'pdf' })));
 
+    component.enterSourceMode();
+    await fixture.whenStable();
     component.selectSourceItem({ ...pride, assets: [] });
     await fixture.whenStable();
 
-    expect(component.selectedFormatFamily()).toBe('EPUB');
+    expect(picker().selectedFormatFamily()).toBe('EPUB');
     component.selectFormatFamily('PDF');
     expect(component.selectedAssetId()).toBe('pdf');
 
@@ -992,7 +1002,7 @@ describe('AddBookModal — From a Source', () => {
       component.sourceQuery.set('x'); // too short to start a replacement
       component.setSourceKind('audiobook');
       expect(pending.observed).toBe(false);
-      expect(component.sourceSearching()).toBe(false);
+      expect(picker().searching()).toBe(false);
     });
 
     it('aborts source requests when the modal closes', async () => {
@@ -1119,9 +1129,9 @@ describe('AddBookModal — From a Source', () => {
       fixture.detectChanges();
       expect(workspace().classList.contains('showing-detail')).toBe(false);
       expect(component.sourceQuery()).toBe('austen');
-      expect(component.sourceKind()).toBe('ebook');
+      expect(picker().kind()).toBe('ebook');
       expect(titles()).toEqual(['Pride and Prejudice', 'Emma', 'Persuasion']);
-      expect(component.isSelectedSourceItem(emma)).toBe(true);
+      expect(picker().isSelectedSourceItem(emma)).toBe(true);
     });
 
     // --------------------------------------------------------------------
@@ -1156,12 +1166,13 @@ describe('AddBookModal — From a Source', () => {
         const pending = new Subject<ProviderDiscoverySearchResult>();
         vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
         component.enterSourceMode();
+        fixture.detectChanges();
         component.sourceQuery.set('austen');
         component.searchSource();
         fixture.detectChanges();
         expect(el('source-slow')).toBeNull();
 
-        vi.advanceTimersByTime(AddBookModal.SOURCE_SLOW_AFTER_MS - 1);
+        vi.advanceTimersByTime(AddBookSourcePickerComponent.SOURCE_SLOW_AFTER_MS - 1);
         fixture.detectChanges();
         expect(el('source-slow')).toBeNull();
 
@@ -1172,7 +1183,7 @@ describe('AddBookModal — From a Source', () => {
         pending.next(ok([pride]));
         pending.complete();
         fixture.detectChanges();
-        expect(component.sourceSearchSlow()).toBe(false);
+        expect(picker().slow()).toBe(false);
         expect(el('source-slow')).toBeNull();
       } finally {
         vi.useRealTimers();
@@ -1184,11 +1195,12 @@ describe('AddBookModal — From a Source', () => {
       try {
         vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([pride])));
         component.enterSourceMode();
+        fixture.detectChanges();
         component.sourceQuery.set('austen');
         component.searchSource();
-        vi.advanceTimersByTime(AddBookModal.SOURCE_SLOW_AFTER_MS * 2);
+        vi.advanceTimersByTime(AddBookSourcePickerComponent.SOURCE_SLOW_AFTER_MS * 2);
         fixture.detectChanges();
-        expect(component.sourceSearchSlow()).toBe(false);
+        expect(picker().slow()).toBe(false);
       } finally {
         vi.useRealTimers();
       }
@@ -1199,14 +1211,15 @@ describe('AddBookModal — From a Source', () => {
       try {
         vi.spyOn(providers, 'searchAll').mockReturnValue(new Subject<ProviderDiscoverySearchResult>());
         component.enterSourceMode();
+        fixture.detectChanges();
         component.sourceQuery.set('austen');
         component.searchSource();
-        vi.advanceTimersByTime(AddBookModal.SOURCE_SLOW_AFTER_MS);
-        expect(component.sourceSearchSlow()).toBe(true);
+        vi.advanceTimersByTime(AddBookSourcePickerComponent.SOURCE_SLOW_AFTER_MS);
+        expect(picker().slow()).toBe(true);
 
         component.sourceQuery.set('bronte');
         component.searchSource();
-        expect(component.sourceSearchSlow()).toBe(false);
+        expect(picker().slow()).toBe(false);
       } finally {
         vi.useRealTimers();
       }

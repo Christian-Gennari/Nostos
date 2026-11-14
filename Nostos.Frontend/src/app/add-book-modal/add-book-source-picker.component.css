@@ -1,0 +1,399 @@
+/* --- From a Source (issue #167) ---
+   An acquisition surface inside the dialog the user already opened, not a
+   second library: one search, one result list, one import action, and a clear
+   account of what is happening while it runs.
+   Colours come only from the existing token graph — no new literals, so the
+   design-language ratchet is unaffected. */
+.source-hint {
+  display: block;
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+.source-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+  color: var(--color-danger);
+}
+/* The material filter is nostos-segmented; the modal owns its spacing only. */
+.source-filters {
+  margin-top: 0.65rem;
+}
+.source-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.source-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 1rem;
+}
+.source-search-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+  font-weight: var(--fw-medium);
+}
+/* Discovery workspace (#641). One box whose size does not depend on what is
+   in it, so the loading surface and the results occupy the same space and a
+   finished search swaps in without the modal jumping. It takes the height the
+   viewport can spare (clamped, not a fixed number) and each pane scrolls on
+   its own, so the footer's next action never leaves the screen. */
+.source-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  height: clamp(15rem, calc(90dvh - 21rem), 36rem);
+  margin-top: 0.85rem;
+}
+.source-results-pane,
+.source-detail-pane {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.source-results-pane {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+}
+.source-results-pane > .source-hint,
+.source-results-pane > .source-error,
+.source-results-pane > .source-partial {
+  margin: 0.6rem 0.75rem;
+}
+.source-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.source-partial {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+.source-detail-empty {
+  margin: 0;
+}
+/* Per-source state (#658): the UI kit's dot Badge, one per catalogue. Wraps
+   rather than scrolls so every source stays legible at any width. */
+.source-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+/* Nothing picked yet (#658): the detail pane keeps an intentional frame — a
+   dashed hairline, the workspace radius, a quiet glyph and one line — instead
+   of an unbordered void beside the results while a search runs. */
+.source-detail-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  min-height: 8rem;
+  padding: 16px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-surface);
+  color: var(--color-text-light);
+  text-align: center;
+}
+.source-back {
+  display: none;
+  align-self: flex-start;
+  margin-bottom: 0.5rem;
+}
+/* Reserved waiting state: the pane holds its size while the shared loading
+   indicator sits beside the existing status copy. The pane surface itself never
+   changes colour, so results can arrive without a full-area visual swap. */
+.source-loading {
+  position: relative;
+  height: 100%;
+  min-height: 8rem;
+  overflow: hidden;
+}
+.source-loading-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0.6rem 0.75rem;
+}
+.source-loading-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.source-loading-label,
+.source-slow {
+  margin: 0;
+}
+.source-slow {
+  max-width: 34rem;
+}
+/* Desktop: results and the selected book side by side. */
+@media (min-width: 769px) {
+  .source-workspace {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  }
+}
+/* Narrow: one view at a time, list first; the list keeps its query, filter,
+   order and selection while the detail is open. */
+@media (max-width: 768px) {
+  .source-workspace {
+    height: clamp(15rem, calc(100dvh - 22rem), 36rem);
+  }
+  .source-workspace:not(.showing-detail) .source-detail-pane,
+  .source-workspace.showing-detail .source-results-pane {
+    display: none;
+  }
+  .source-back {
+    display: inline-flex;
+  }
+}
+.source-result {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.source-result:hover:not(:disabled) {
+  background: var(--bg-surface-alt);
+}
+.source-result.active {
+  --nostos-accent-rail-color: var(--color-primary);
+  background: var(--bg-surface-alt);
+}
+.source-result:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+/* nostos-book-cover at this row's own 34×52 box. */
+.source-cover {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 52px;
+}
+.source-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.source-result-title {
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+.source-result-author {
+  font-size: 0.82rem;
+  color: var(--color-text-light);
+}
+.source-result-provenance {
+  font-size: 0.76rem;
+  color: var(--color-text-main);
+}
+.source-result-meta {
+  font-size: 0.74rem;
+  color: var(--color-text-light);
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.source-detail-title {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.source-detail-author {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+}
+.source-detail-description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-main);
+}
+
+.source-format-families {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.source-format-families legend {
+  width: 100%;
+  margin-bottom: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+.source-format-family {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.source-format-family:has(input:checked) {
+  border-color: var(--border-focus);
+  background: var(--color-accent-bg);
+}
+.source-format-recommended {
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+}
+
+.source-asset {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* The format list, collapsed. Native <details>, so the disclosure is
+   keyboard-reachable and works without script; only the look is ours.
+   Closed by default: the source has already chosen, and this is here for the
+   reader who wants to change that, not as a decision in the way. */
+.source-formats {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+.source-formats-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* 44px floor: the summary is a control, like every other one here. */
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+/* Safari and Chrome draw a marker of their own; the label replaces it. */
+.source-formats-summary::-webkit-details-marker {
+  display: none;
+}
+.source-formats-current {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-formats-change {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+/* Says what the control does in the state it is in. */
+.source-formats-when-open {
+  display: none;
+}
+.source-formats[open] .source-formats-when-closed {
+  display: none;
+}
+.source-formats[open] .source-formats-when-open {
+  display: inline;
+}
+.source-formats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.25rem 0.75rem 0.6rem;
+  border-top: 1px solid var(--border-color);
+}
+.source-asset-size {
+  margin-left: auto;
+  font-size: 0.74rem;
+  color: var(--color-text-light);
+}
+/* One sentence in reading order: the status, then who said it. Inline flow, not
+   a flex row — that would put a 0.5rem gap between the status and its
+   parenthetical. It was a flex row when the source name led the sentence. */
+.source-rights {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--color-text-light);
+}
+/* The link keeps the line's own colour: it is a quiet aside, and the arrow is
+   the affordance. Underlined so it does not rely on colour alone. */
+.source-rights-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  /* "(via Project Gutenberg ↗)" is one unit: never split it across lines. */
+  white-space: nowrap;
+}
+.source-rights-link nostos-icon {
+  vertical-align: -0.12em;
+}
+/* Angular drops the whitespace between two inline elements, so the gap between
+   the status and its parenthetical is a margin rather than a stray space in the
+   template. Scoped to the sibling that follows the status, so the no-rights
+   branch — where the link is the whole line — is not indented. */
+.source-rights-status + .source-rights-link,
+.source-rights-status + .source-rights-via {
+  margin-left: 0.25em;
+}
+
+@media (max-width: 560px) {
+  .source-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .source-search > button {
+    align-self: stretch;
+  }
+
+  .source-result {
+    align-items: flex-start;
+  }
+
+  .source-result-meta {
+    white-space: normal;
+  }
+
+  .source-format-families {
+    flex-direction: column;
+  }
+
+  .source-format-family {
+    width: 100%;
+  }
+}
