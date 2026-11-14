@@ -1,11 +1,24 @@
-<span class="row-top">
-  <span class="row-book">{{ bookTitle() }}</span>
-  <time class="row-date" [attr.datetime]="note().createdAt">{{ note().createdAt | nostosDate }}</time>
-</span>
-<span class="row-excerpt" [class.is-words]="isWords()">{{ excerpt() }}</span>
-<span class="row-foot">
-  {{ foot() }}
-  @if (format(); as edition) {
-  <span class="row-format">· {{ edition }}</span>
-  }
+@if (selectable()) {
+<label class="row-select" (click)="$event.stopPropagation()">
+  <input
+    type="checkbox"
+    appCheckbox
+    [checked]="checked()"
+    [attr.aria-label]="'Select note from ' + (note().bookTitle || 'an unknown book')"
+    (change)="toggleChecked($any($event.target).checked)"
+  />
+</label>
+}
+<span class="row-body">
+  <span class="row-top">
+    <span class="row-book">{{ bookTitle() }}</span>
+    <time class="row-date" [attr.datetime]="note().createdAt">{{ note().createdAt | nostosDate }}</time>
+  </span>
+  <span class="row-excerpt" [class.is-words]="isWords()">{{ excerpt() }}</span>
+  <span class="row-foot">
+    {{ foot() }}
+    @if (format(); as edition) {
+    <span class="row-format">· {{ edition }}</span>
+    }
+  </span>
 </span>

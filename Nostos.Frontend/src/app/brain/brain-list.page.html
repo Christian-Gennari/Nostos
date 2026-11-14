@@ -228,8 +228,11 @@
       <app-brain-note-row
         [note]="note"
         [selected]="selectedNoteId() === note.id"
+        [selectable]="selecting()"
+        [checked]="selected().has(note.id)"
         [tabIndex]="rowTabIndex(note.id)"
-        (click)="chooseNote(note)"
+        (checkedChange)="setSelected(note.id, $event)"
+        (click)="onRowClick(note)"
       />
       } @else {
       <app-note-item
